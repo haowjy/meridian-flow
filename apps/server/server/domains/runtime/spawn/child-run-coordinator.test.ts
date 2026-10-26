@@ -271,7 +271,7 @@ async function fixture(
           (options.realRuntime
             ? runtimeHarness.orchestrator
             : stubOrchestrator(turns, repos, runClaim))),
-    repos: { executionReports: repos.executionReports },
+    repos: { executionReports: repos.executionReports, asks: repos.asks },
     eventWriter,
     readActivity,
     publisher,

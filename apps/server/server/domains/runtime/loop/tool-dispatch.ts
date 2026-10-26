@@ -22,7 +22,7 @@ import type {
 } from "@meridian/contracts/threads";
 import { testHook } from "../../../shared/test-hooks.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { readThreadActivity } from "../../threads/index.js";
+import { readThreadActivity, threadAsk } from "../../threads/index.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
@@ -71,6 +71,8 @@ export interface ToolDispatchContext {
   allTurns: Turn[];
   /** The ids that credited the request that produced this call (C4's planning cut). */
   planningBlockIds: readonly string[];
+  /** Latest still-open child question whose structured evidence was in this request. */
+  boundChildQuestions?: ReadonlyMap<string, string>;
   /** The provider reply's own accepted mutations, replayed after the planning cut. */
   replyMutations: ReplyMutations;
   /** The run's credited ids, live: a sibling call's result counts as seen. */
@@ -262,6 +264,9 @@ export async function dispatchToolCall(
             ref: messageInput.ref,
             prompt: messageInput.message,
             toolCallId: call.id,
+            ...(ctx.boundChildQuestions?.get(messageInput.ref)
+              ? { boundAskId: ctx.boundChildQuestions.get(messageInput.ref) }
+              : {}),
             budget: ctx.treeBudget,
             ...(messageInput.mode === "foreground"
               ? {
@@ -344,20 +349,58 @@ export async function dispatchToolCall(
   }
 
   if (call.name === "ask_user" && execResult.isError !== true) {
-    const ask = await deps.asks.create({
-      threadId: ctx.threadId,
-      askingTurnId: ctx.currentTurn.id,
-      executionId: ctx.lease.executionId,
-      toolCallId: call.id,
-      kind: "question",
-      payload: execResult.result as import("@meridian/contracts/threads").QuestionAskPayload,
-      deadlineAt: null,
-      status: "pending",
-      resolution: null,
-      submissionId: null,
-    });
-    await testHook("ask.pending");
-    return { kind: "deferred", askId: ask.id };
+    const askInput = execResult.result as import("@meridian/contracts/components").AskToolInput;
+    let payload: import("@meridian/contracts/threads").QuestionAskPayload | null = null;
+    if ("forward" in askInput) {
+      const forwarded = await deps.asks.findById(askInput.forward);
+      const child = forwarded
+        ? await deps.persistenceDeps.repos.threads.findById(forwarded.threadId)
+        : null;
+      if (
+        forwarded?.kind !== "question" ||
+        forwarded.status !== "open" ||
+        child?.parentThreadId !== ctx.threadId ||
+        !child.ref
+      ) {
+        const refusal = {
+          code: "ask_not_open",
+          ...(forwarded ? { ask: threadAsk(forwarded) } : {}),
+        };
+        execResult.output = refusal;
+        execResult.result = refusal;
+        execResult.isError = true;
+      } else {
+        payload = {
+          ...(forwarded.payload as import("@meridian/contracts/threads").QuestionAskPayload),
+          forwardedFrom: {
+            threadId: forwarded.threadId,
+            askId: forwarded.id,
+            handle: child.ref,
+          },
+        };
+      }
+    } else {
+      payload = askInput;
+    }
+    if (execResult.isError === true) {
+      // The ordinary tool-result path below records the typed refusal.
+    } else {
+      if (!payload) throw new Error("Successful ask has no question payload");
+      const ask = await deps.asks.create({
+        threadId: ctx.threadId,
+        askingTurnId: ctx.currentTurn.id,
+        executionId: ctx.lease.executionId,
+        toolCallId: call.id,
+        kind: "question",
+        payload,
+        deadlineAt: null,
+        status: "pending",
+        resolution: null,
+        submissionId: null,
+      });
+      await testHook("ask.pending");
+      return { kind: "deferred", askId: ask.id };
+    }
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;

@@ -9,6 +9,7 @@ import {
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { Tool } from "../gateway/index.js";
+import { openChildQuestionTurnIds } from "../spawn/child-question-binding.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
@@ -173,6 +174,15 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
           knownLocalTurns: input.turns,
         });
   const current = input.continuation ?? { kind: "ordinary" };
+  const childQuestionPins = await openChildQuestionTurnIds({
+    turns: input.turns,
+    blocks,
+    asks: input.deps.repos.asks,
+  });
+  const pinnedRequestTurnIds = new Set([
+    ...(input.pinnedRequestTurnIds ?? []),
+    ...childQuestionPins,
+  ]);
   const usable = assembled.compactionUsableWindowTokens;
   const tokenizer = assembled.resolvedModel?.tokenizer;
   const measure = (context: AssembledNextTurnContext) => {
@@ -229,7 +239,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
         : forcedDecision,
       controlMessageId: input.controlMessageId,
       instructions: input.instructions,
-      pinnedRequestTurnIds: input.pinnedRequestTurnIds,
+      pinnedRequestTurnIds,
       baseline,
       tokenizer,
     });

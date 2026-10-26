@@ -24,7 +24,7 @@ type Props = {
   agentName: string;
   title: string | null;
   status: "running" | "completed" | "failed";
-  outcome?: "succeeded" | "failed" | "cancelled";
+  outcome?: "succeeded" | "asked" | "failed" | "cancelled";
   deliveryMode: "direct" | "background_notification";
   startedAt?: string;
   terminalAt?: string | null;
@@ -102,6 +102,10 @@ export function SpawnReportCard({
         detail={
           running ? (
             <SubagentToolLine run={run} fallback={<Trans>Working</Trans>} />
+          ) : resolvedOutcome === "asked" ? (
+            <p className="text-xs text-muted-foreground">
+              <Trans>Asked a question</Trans>
+            </p>
           ) : reason ? (
             <p className="text-xs text-muted-foreground">{reason}</p>
           ) : undefined

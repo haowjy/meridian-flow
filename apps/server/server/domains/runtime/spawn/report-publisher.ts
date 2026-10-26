@@ -6,11 +6,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type {
-  EventJournalWriter,
-  LiveEventWriter,
-  ThreadRepositories,
-} from "../../threads/index.js";
+import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
@@ -70,6 +66,15 @@ export function createReportPublisher(deps: {
           child?.agentName,
         );
 
+        const asked =
+          report.outcome === "asked" && report.terminalTurnId
+            ? (await deps.repos.asks.listByTurnIds([report.terminalTurnId])).find(
+                (candidate) => candidate.status === "open" && candidate.kind === "question",
+              )
+            : null;
+        if (report.outcome === "asked" && !asked) {
+          throw new Error("Asked execution report has no open question");
+        }
         const events: OrchestratorEvent[] = [];
         if (report.cardBlockId && report.callerTurnId) {
           if (!report.toolCallId || report.deliveryMode === "none") {
@@ -81,65 +86,97 @@ export function createReportPublisher(deps: {
               throw new Error("Execution report card no longer belongs to its caller turn");
             }
             const priorProps = parseInvocationCard(card.content);
-            events.push({
-              type: "block.updated",
-              block: contentForBlockInput({
-                id: card.id,
-                turnId: card.turnId,
-                blockType: "custom",
-                sequence: card.sequence,
-                content: buildInvocationCardContent(
-                  invocationCardProps({
-                    agent: report.agentSlug ?? undefined,
-                    agentName,
-                    name: report.name ?? undefined,
-                    correlation: {
-                      parentTurnId: report.callerTurnId,
-                      toolCallId: report.toolCallId,
-                      deliveryMode: report.deliveryMode,
-                    },
-                    childThreadId: report.childThreadId,
-                    execution: report.executionTurnId,
-                    startedAt: report.admittedAt,
-                    terminalAt: report.terminalAt,
-                    outcome: report.outcome,
-                    fromThreadId: priorProps?.fromThreadId,
-                    fromThreadRef: priorProps?.fromThreadRef,
-                    fromThreadTitle: priorProps?.fromThreadTitle,
-                  }),
-                ),
-                status: "complete",
-              }),
-            });
+            const projectedExecution =
+              priorProps?.childThreadId === report.childThreadId ? priorProps.execution : null;
+            const [projectedTurn, reportTurn] = await Promise.all([
+              projectedExecution ? deps.repos.turns.findById(projectedExecution) : null,
+              deps.repos.turns.findById(report.executionTurnId),
+            ]);
+            const isNewerProjection =
+              projectedTurn !== null &&
+              reportTurn !== null &&
+              projectedTurn.position > reportTurn.position;
+            if (!isNewerProjection)
+              events.push({
+                type: "block.updated",
+                block: contentForBlockInput({
+                  id: card.id,
+                  turnId: card.turnId,
+                  blockType: "custom",
+                  sequence: card.sequence,
+                  content: buildInvocationCardContent(
+                    invocationCardProps({
+                      agent: report.agentSlug ?? undefined,
+                      agentName,
+                      name: report.name ?? undefined,
+                      correlation: {
+                        parentTurnId: report.callerTurnId,
+                        toolCallId: report.toolCallId,
+                        deliveryMode: report.deliveryMode,
+                      },
+                      childThreadId: report.childThreadId,
+                      execution: report.executionTurnId,
+                      startedAt: report.admittedAt,
+                      terminalAt: report.terminalAt,
+                      outcome: report.outcome,
+                      fromThreadId: priorProps?.fromThreadId,
+                      fromThreadRef: priorProps?.fromThreadRef,
+                      fromThreadTitle: priorProps?.fromThreadTitle,
+                    }),
+                  ),
+                  status: "complete",
+                }),
+              });
           }
         }
-        events.push({
-          type: "agent.run_completed",
-          parentThreadId: callerThreadId,
-          parentTurnId: report.callerTurnId,
-          childThreadId: report.childThreadId,
-          execution: report.executionTurnId,
-          handle: report.handle,
-          outcome: report.outcome,
-        });
+        if (report.outcome !== "asked") {
+          events.push({
+            type: "agent.run_completed",
+            parentThreadId: callerThreadId,
+            parentTurnId: report.callerTurnId,
+            childThreadId: report.childThreadId,
+            execution: report.executionTurnId,
+            handle: report.handle,
+            outcome: report.outcome,
+          });
+        }
         await persistAndAppendEvents(deps, callerThreadId, async () => ({
           result: null,
           events,
         }));
         if (report.deliveryMode === "background_notification") {
+          const question = asked
+            ? (asked.payload as import("@meridian/contracts/threads").QuestionAskPayload)
+            : null;
           await producer.enqueue({
             threadId: callerThreadId,
             intent: "message",
             provenance: {
               kind: "child",
               threadId: report.childThreadId,
-              reportId: report.executionTurnId,
               handle: report.handle,
-              outcome: report.outcome,
               agentName,
+              ...(asked && question
+                ? {
+                    ask: {
+                      id: asked.id,
+                      question: question.question,
+                      options: question.options.map((option) => option.label),
+                      ...(question.recommended ? { recommended: question.recommended } : {}),
+                    },
+                  }
+                : { reportId: report.executionTurnId, outcome: report.outcome }),
             },
-            body: { kind: "text", text: notificationText(report) },
-            idempotencyKey: `child-report:${report.executionTurnId}`,
+            body: {
+              kind: "text",
+              text:
+                asked && question
+                  ? questionText(report.handle, asked.id, question)
+                  : notificationText(report),
+            },
+            idempotencyKey: asked
+              ? `child-question:${asked.id}`
+              : `child-report:${report.executionTurnId}`,
           });
         }
         await deps.repos.executionReports.markPublished(
@@ -181,6 +218,15 @@ export function createReportPublisher(deps: {
   }
 
   return { publish, sweep };
+}
+
+function questionText(
+  handle: string,
+  askId: string,
+  payload: import("@meridian/contracts/threads").QuestionAskPayload,
+): string {
+  const options = payload.options.map((option) => option.label).join(", ");
+  return `@${handle} asks (ask ${askId}): ${payload.question} (options: ${options})`;
 }
 
 function notificationText(report: SavedExecutionReport): string {

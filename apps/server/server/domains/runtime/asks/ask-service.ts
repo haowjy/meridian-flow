@@ -56,6 +56,14 @@ export interface AskService {
     submissionId: string;
     answer: AskAnswer;
   }): Promise<AskAnswerResult>;
+  /** Resolves exactly the ask named by a parent message; never searches for a newer ask. */
+  answerFromParent(input: {
+    parentThreadId: ThreadId;
+    childThreadId: ThreadId;
+    askId: string;
+    submissionId: string;
+    text: string;
+  }): Promise<AskAnswerResult>;
   expireDue(now?: Date, limit?: number): Promise<number>;
   cancelOpen(threadId: ThreadId, askId: string): Promise<AskAnswerResult>;
   /** Joins a thread lifecycle transaction; claims the ask before its thread lock. */
@@ -275,6 +283,30 @@ export function createAskService(deps: {
       if (result.ok) await testHook("ask.answer.afterCommit");
       return result;
     },
+    async answerFromParent(input) {
+      const child = await deps.repos.threads.findById(input.childThreadId);
+      const stored = await deps.repos.asks.findById(input.askId);
+      if (
+        child?.parentThreadId !== input.parentThreadId ||
+        !stored ||
+        stored.threadId !== input.childThreadId ||
+        stored.kind !== "question"
+      ) {
+        return {
+          ok: false,
+          code: "ask_not_open",
+          ...(stored ? { ask: threadAsk(stored) } : {}),
+        };
+      }
+      if (!input.text.trim()) return { ok: false, code: "invalid_answer", ask: threadAsk(stored) };
+      return resolve({
+        askId: stored.id,
+        threadId: input.childThreadId,
+        status: "answered",
+        resolution: { kind: "parent", text: input.text },
+        submissionId: input.submissionId,
+      });
+    },
     async expireDue(now = new Date(), limit = 100) {
       const due = await deps.repos.asks.listOpenDueBy(now, limit);
       let expired = 0;
@@ -303,17 +335,18 @@ export function createAskService(deps: {
       });
     },
     async cancelForThreadLifecycle(threadId) {
-      const ask = await deps.repos.asks.findLiveByThread(threadId);
-      if (!ask) return;
-      const result = await resolve({
-        askId: ask.id,
-        threadId,
-        status: "cancelled",
-        resolution: { kind: "cancelled" },
-        claimLive: true,
-      });
-      if (!result.ok && result.code !== "ask_not_open")
-        throw new Error(`Could not cancel live ask ${ask.id}`);
+      const asks = await deps.repos.asks.listLiveByLineage(threadId);
+      for (const ask of asks) {
+        const result = await resolve({
+          askId: ask.id,
+          threadId: ask.threadId,
+          status: "cancelled",
+          resolution: { kind: "cancelled" },
+          claimLive: true,
+        });
+        if (!result.ok && result.code !== "ask_not_open")
+          throw new Error(`Could not cancel live ask ${ask.id}`);
+      }
     },
   };
 }

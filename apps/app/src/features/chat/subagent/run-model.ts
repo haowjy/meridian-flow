@@ -32,6 +32,7 @@ export function statusFromSources(input: {
   endedAt?: string | null;
 }): SubagentRunStatus {
   if (input.outcome === "succeeded") return "done";
+  if (input.outcome === "asked") return "running";
   if (input.outcome === "failed" || input.outcome === "cancelled") return "stopped";
   if (input.live) return "running";
   if (input.endedAt) return input.savedRunning ? "unknown" : "unknown";

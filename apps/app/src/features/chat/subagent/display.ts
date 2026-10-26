@@ -22,6 +22,7 @@ export function subagentMarkName(agentName?: string | null): string {
 export function subagentStatus(outcome: unknown, running = false): SubagentVisualStatus {
   if (running) return "running";
   if (outcome === "succeeded") return "done";
+  if (outcome === "asked") return "running";
   if (outcome === "failed" || outcome === "cancelled") return "stopped";
   return "unknown";
 }

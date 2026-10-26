@@ -643,7 +643,7 @@ export const threadExecutionReports = pgTable(
     ),
     check(
       "thread_execution_reports_outcome_valid",
-      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('succeeded','failed','cancelled')`,
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('succeeded','asked','failed','cancelled')`,
     ),
     check(
       "thread_execution_reports_source_valid",

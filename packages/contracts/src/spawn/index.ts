@@ -53,7 +53,7 @@ export const returnResultCaptureSchema = z.strictObject({
 /** A run accepts one report; a second return_result is refused, not thrown. */
 export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
 
-export type SavedOutcome = "succeeded" | "failed" | "cancelled";
+export type SavedOutcome = "succeeded" | "asked" | "failed" | "cancelled";
 export type ExecutionReportSource = "return_result" | "final_assistant" | "empty";
 type ExecutionReportOrigin = "spawn" | "message" | "thread_run";
 export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
@@ -72,7 +72,7 @@ const subagentUpdateMetadataSchema = z.object({
   kind: z.literal("subagent_update"),
   handle: z.string(),
   execution: z.string().nullable(),
-  outcome: z.enum(["succeeded", "failed", "cancelled"]),
+  outcome: z.enum(["succeeded", "asked", "failed", "cancelled"]),
   childThreadId: z.string(),
   agentName: z.string(),
 });
@@ -165,7 +165,7 @@ const threadReportResultSchema = z.union([
     childThreadId: z.string(),
     ref: z.string(),
     run: z.number().int().positive(),
-    outcome: z.enum(["succeeded", "failed", "cancelled"]),
+    outcome: z.enum(["succeeded", "asked", "failed", "cancelled"]),
     deliveryMode: z.enum(["background_notification", "direct", "none"]),
     source: z.enum(["return_result", "final_assistant", "empty"]),
     summary: z.string(),
@@ -181,7 +181,7 @@ const threadReportResultSchema = z.union([
   }),
   z.object({
     ref: z.string(),
-    outcome: z.enum(["succeeded", "failed", "cancelled"]),
+    outcome: z.enum(["succeeded", "asked", "failed", "cancelled"]),
     summary: z.string(),
     payload: jsonValueSchema.optional(),
     artifacts: z.array(artifactRefSchema).optional(),
@@ -252,6 +252,14 @@ export type AgentReport = {
 
 export type SpawnResult =
   | { status: "completed"; execution: TurnId; outcome: "succeeded"; report: AgentReport }
+  | {
+      status: "asked";
+      execution: TurnId;
+      outcome: "asked";
+      ask: { id: string; question: string; options: string[]; recommended?: string };
+      childThreadId: ThreadId;
+      handle: string;
+    }
   | {
       status: "background";
       handle: string;

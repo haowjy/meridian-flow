@@ -1427,6 +1427,12 @@ export function createInMemoryRepositories(
         const row = asks.get(id);
         return row ? { ...row } : null;
       },
+      async listByIds(ids) {
+        return ids.flatMap((id) => {
+          const row = asks.get(id);
+          return row ? [{ ...row }] : [];
+        });
+      },
       async findLiveByTurnForUpdate(turnId) {
         return (
           [...asks.values()].find(
@@ -1447,6 +1453,26 @@ export function createInMemoryRepositories(
             (ask) =>
               ask.threadId === threadId && (ask.status === "pending" || ask.status === "open"),
           ) ?? null
+        );
+      },
+      async listLiveByLineage(threadId) {
+        const lineage = new Set<string>([threadId]);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const thread of threads.values()) {
+            if (
+              thread.parentThreadId &&
+              lineage.has(thread.parentThreadId) &&
+              !lineage.has(thread.id)
+            ) {
+              lineage.add(thread.id);
+              changed = true;
+            }
+          }
+        }
+        return [...asks.values()].filter(
+          (ask) => lineage.has(ask.threadId) && (ask.status === "pending" || ask.status === "open"),
         );
       },
       async listByThread(threadId) {

@@ -46,8 +46,6 @@ export function projectToolPolicy(
     ),
   );
   if (kind === "subagent") {
-    // Remove this temporary exclusion when the subagent-question PR adds forwarding.
-    tools.delete("ask_user");
     tools.add(SUBAGENT_REPORT);
   }
   return tools;
