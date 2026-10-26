@@ -88,7 +88,9 @@ export function useCreateEntryForm({
         if (!destinationParent) throw new Error(t`Couldn't create this file.`);
         // The destination goes out with the create, so a branch's new document waiting at
         // this name is joined instead of a twin being made.
-        const reservation = await resources.reserveDocument(projectId, parent, {
+        // No Unfiled folder path: the destination is the home, and a refused create lists
+        // the document in Unfiled itself, not under a phantom folder named like this one.
+        const reservation = await resources.reserveDocument(projectId, "", {
           parent: destinationParent,
           name,
         });
