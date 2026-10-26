@@ -285,7 +285,7 @@ export async function importSummary(
     },
     destination: {
       folderUri: effective?.uri ?? record.destinationUri,
-      folderId: effective?.folderId ?? record.folderId,
+      folderId: effective ? effective.folderId : record.folderId,
       fellBack: record.fellBack,
     },
     root:
