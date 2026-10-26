@@ -144,7 +144,9 @@ Stop the owned stack with `pnpm dev --stop`.
 
 ## Subagent questions
 
-Use fresh child runs for each case and inspect both chats after every step.
+Use fresh child runs for each case and inspect both chats after every step. Save
+child refs and ask ids from `./mf thread view <thread> --json --full`; mock
+scripts cannot interpolate the ids returned by an earlier tool call.
 
 1. Have a foreground child call `ask`. PASS: the parent call returns
    `@child asks (ask …)` and the parent inbox has no duplicate. Answer with a
@@ -157,15 +159,26 @@ Use fresh child runs for each case and inspect both chats after every step.
 3. Forward an open child question with `ask({"forward":"$childAsk"})`. Answer
    before the child deadline. PASS: the parent continuation waits for the child
    and sees one enriched result with `relayed_to` and `report`.
-4. Repeat forwarding after forcing the child deadline first, and after answering
-   in the child chat. PASS: the parent's answer becomes an ordinary child
-   message and its result says `late: true`; it never answers a newer ask.
-5. Answer the child chat while its forwarded copy remains open. PASS: the
-   eventual forwarded answer is late. Repeat with three levels of children;
-   each parent owns one question and relays one level down.
+4. Repeat after forcing the child deadline first. PASS: the parent's later
+   answer becomes an ordinary child message and its result says `late: true`.
+5. While the forwarded copy remains open, answer in the child chat. Have the
+   child's continuation ask a new question before answering the forwarded copy.
+   PASS: the eventual forwarded answer is late, remains bound to the old ask,
+   and does not answer the new one. Repeat with three levels of children; each
+   parent owns one question and relays one level down.
 6. Race a parent answer with a writer answer in the child chat. PASS: one answer
    wins. The losing parent text remains an ordinary queued message with its
    original ask binding.
-7. Cancel the root while a descendant is parked on an ask. PASS: every open ask
-   in that subtree becomes cancelled, including children absent from the live
-   session map, and no continuation starts.
+7. Forward a descendant's question so the root also has an open ask. Cancel the
+   root asking turn with `./mf thread cancel "$root" --turn "$rootAskingTurn"`.
+   Do not use chat Stop on an idle root; it is a no-op and does not exercise
+   ancestor cancellation. PASS: every open ask in that subtree becomes
+   cancelled, including children absent from the live session map, and no
+   continuation starts.
+8. Hold a background child's continuation with a slow mock step. PASS: the same
+   parent card moves from “Asked a question” while the ask is open, to running
+   as soon as the continuation starts, to its final outcome. The primary chat
+   never becomes action-required for the child question.
+9. Open a forwarded question in the primary chat at 390 px wide. PASS: the
+   takeover attributes the question as `@child asks: …`; the options, own-answer
+   field, Skip and countdown remain usable.
