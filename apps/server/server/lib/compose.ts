@@ -172,6 +172,7 @@ import {
   createInMemoryThreadLock,
   createInspectionToolRegistrations,
   createInstrumentedGateway,
+  createLineageCancellation,
   createOrchestrator,
   createOrphanReportRepair,
   createPrefixCacheStateService,
@@ -1069,7 +1070,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     onRunSettled(threadId: ThreadId) {
       refreshSubagentActivity(threadId);
     },
-    cancelSubtreeAsks: (threadId: ThreadId) => asks.cancelForThreadLifecycle(threadId),
+    lineage: createLineageCancellation({
+      threads: ports.threadRepos.threads,
+      runClaim,
+      delivery,
+      asks,
+      publisher: reportPublisher,
+      refreshActivity: refreshSubagentActivity,
+    }),
     reports: { projectRunning: reportPublisher.projectRunning, publish: reportPublisher.publish },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
@@ -1699,6 +1707,7 @@ export function createInMemoryAppServices(): AppServices {
       async cancel() {
         return "not_found" as const;
       },
+      async cancelLineage() {},
     },
     async stopThreadRun() {},
     runStarter,

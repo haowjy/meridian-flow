@@ -18,7 +18,9 @@ export default defineEventHandler(async (event) => {
     if (ask?.askingTurnId === turnId && (await app.asks.cancelOpen(thread.id, ask.id)).ok)
       status = "cancelled";
   }
-  if (status === "cancelled") await app.asks.cancelForThreadLifecycle(thread.id);
+  // A turn owns only the subagents its execution spawned (and its own question).
+  if (status === "cancelled")
+    await runner.cancelLineage({ kind: "turn", threadId: thread.id, turnId });
 
   return { threadId: thread.id, turnId, status };
 });

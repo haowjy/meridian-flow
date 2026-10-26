@@ -45,6 +45,31 @@ type RunSession = {
   completion: Promise<void>;
 };
 
+/**
+ * What a lineage cancellation reaches. `chat` (Stop): the chat's whole subtree.
+ * `turn`: only the subtrees that turn's execution spawned. `terminal`: a child
+ * run that ended, which takes its whole subtree with it.
+ */
+export type LineageScope =
+  | { kind: "chat"; threadId: ThreadId }
+  | { kind: "turn"; threadId: ThreadId; turnId: TurnId }
+  | { kind: "terminal"; threadId: ThreadId };
+
+/** The durable steps of lineage cancellation; the run session adds local aborts and waits. */
+export type LineageCancellation = {
+  /** Subagent threads the scope cancels, parents before children; never the owner. */
+  targets(scope: LineageScope): Promise<ThreadId[]>;
+  /** Durable cancel flag on each live run, honoured by heartbeats in any process. */
+  requestCancel(threadIds: readonly ThreadId[]): Promise<void>;
+  /** Drops queued agent work on the targets and their notices to the owner. */
+  dropPending(owner: ThreadId, threadIds: readonly ThreadId[]): Promise<void>;
+  /** Cancels the scope's open asks and finalizes each parked invocation as cancelled. */
+  settle(scope: LineageScope, threadIds: readonly ThreadId[]): Promise<void>;
+};
+
+/** Bounds re-aborting targets that a cancelled run's notice woke again. */
+const LINEAGE_CANCEL_ROUNDS = 5;
+
 /** Child invocation cards: running at admission, the saved report when the run ends. */
 export type RunSessionReports = {
   projectRunning(threadId: ThreadId, executionTurnId: TurnId): Promise<void>;
@@ -80,7 +105,7 @@ export function createRunSessions(deps: {
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
-  cancelSubtreeAsks?: (threadId: ThreadId) => Promise<void>;
+  lineage?: LineageCancellation;
   reports?: RunSessionReports;
 }) {
   const running = new Map<ThreadId, RunSession>();
@@ -96,25 +121,54 @@ export function createRunSessions(deps: {
       payload: unknownToEventPayload(error),
     });
   }
-  function abortChildrenOf(parentThreadId: ThreadId, includeBackground = false) {
+  /** A root run's foreground children, which die with the call that drives them. */
+  function abortChildrenOf(parentThreadId: ThreadId) {
     for (const [id, session] of running) {
-      if (session.child?.parentThreadId !== parentThreadId) continue;
-      if (session.child.background && !includeBackground) continue;
-      abortChildrenOf(id, includeBackground);
+      if (session.child?.parentThreadId !== parentThreadId || session.child.background) continue;
+      abortChildrenOf(id);
       session.controller.abort();
     }
   }
 
   /**
    * The local consequence of a command whose durable answer cancelled an execution (Stop, Send now):
-   * abort this session's run and its children when it is that execution. A replayed answer names an
-   * execution that may be long over, so it never aborts a newer one.
+   * abort this session's run when it is that execution. A replayed answer names an execution that
+   * may be long over, so it never aborts a newer one. Foreground children follow its signal.
+   * Returns a turn of the aborted execution.
    */
-  function abortConfirmedExecution(threadId: ThreadId, cancelledExecutionId: string | null) {
+  function abortConfirmedExecution(
+    threadId: ThreadId,
+    cancelledExecutionId: string | null,
+  ): TurnId | null {
     const active = running.get(threadId);
-    if (!active || cancelledExecutionId !== active.executionId) return;
-    abortChildrenOf(threadId, true);
+    if (!active || cancelledExecutionId !== active.executionId) return null;
     active.controller.abort();
+    return active.currentTurn?.id ?? null;
+  }
+
+  /**
+   * Ends a lineage: flags and aborts its live runs, waits for this process's to
+   * settle, drops their queued work, then cancels their asks and parked cards. A
+   * cancelled run's notice can wake another target before the drop, so the abort
+   * repeats while a target is running here. Runs in other processes stop at their
+   * next heartbeat; a notice they publish after the drop can still wake its parent.
+   */
+  async function cancelLineage(scope: LineageScope): Promise<void> {
+    const lineage = deps.lineage;
+    if (!lineage) return;
+    const threads = await lineage.targets(scope);
+    for (let round = 0; threads.length > 0 && round < LINEAGE_CANCEL_ROUNDS; round += 1) {
+      await lineage.requestCancel(threads);
+      const live = threads.flatMap((id) => {
+        const session = running.get(id);
+        return session ? [session] : [];
+      });
+      for (const session of live) session.controller.abort();
+      await Promise.all(live.map((session) => session.completion));
+      await lineage.dropPending(scope.threadId, threads);
+      if (!threads.some((id) => running.has(id))) break;
+    }
+    await lineage.settle(scope, threads);
   }
 
   async function prepare(input: RunTurnInput): Promise<PreparedRun> {
@@ -142,13 +196,18 @@ export function createRunSessions(deps: {
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let preparedRun = false;
     let setupMayWake = false;
+    // Holding its claim, a terminal child ends its subtree before anything can wake it.
+    const cancelOwnLineage = () =>
+      cancelLineage({ kind: "terminal", threadId }).catch((error) =>
+        observe(threadId, "lineage.cancel_failed", error),
+      );
     async function cleanup(preserveDescendants = false) {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
-      // An asked child is parked, not terminal: its descendants keep running
-      // and their notifications remain ordered behind its ask barrier.
-      if (!preserveDescendants) abortChildrenOf(threadId, !!input.child);
+      // A child's subtree is ended by lineage cancellation before cleanup; a root
+      // run's background children outlive it, and an asked child is parked.
+      if (!preserveDescendants && !input.child) abortChildrenOf(threadId);
       let claimReleased = !lease;
       let wakeAfterRelease = false;
       try {
@@ -262,14 +321,10 @@ export function createRunSessions(deps: {
         await deps.reports
           ?.publish(threadId, executionTurnId)
           .catch((error) => observe(threadId, "report.publish_failed", error));
+        // An asked child is parked, not terminal: its descendants keep running
+        // and their notifications remain ordered behind its ask barrier.
         const asked = outcome.status !== "failed" && outcome.turn.status === "awaiting_answer";
-        if (input.child && !asked) {
-          try {
-            await deps.cancelSubtreeAsks?.(threadId);
-          } catch (error) {
-            observe(threadId, "subtree_asks.cancel_failed", error);
-          }
-        }
+        if (input.child && !asked) await cancelOwnLineage();
         await cleanup(asked);
         return outcome;
       }
@@ -295,6 +350,7 @@ export function createRunSessions(deps: {
         } catch (failure) {
           observe(threadId, "terminal_fallback.failed", failure);
         }
+        if (input.child) await cancelOwnLineage();
       }
       await cleanup();
       throw error;
@@ -454,6 +510,8 @@ export function createRunSessions(deps: {
     async stop(threadId: ThreadId, request: StopRequest): Promise<StopResponse> {
       const response = await deps.delivery.stop(threadId, request);
       abortConfirmedExecution(threadId, response.cancelledExecutionId);
+      // Stop is "stop everything": the whole subtree, whichever turn spawned it.
+      await cancelLineage({ kind: "chat", threadId });
       return response;
     },
     /** The queue's x and Cancel queue: decided under the thread lock; never cancels a reply. */
@@ -462,7 +520,9 @@ export function createRunSessions(deps: {
     /** Send now: as Stop aborts the run it flagged, and nothing is handed back. */
     async sendNow(threadId: ThreadId, request: SendNowRequest): Promise<SendNowResponse> {
       const response = await deps.delivery.sendNow(threadId, request);
-      abortConfirmedExecution(threadId, response.cancelledExecutionId);
+      const cancelledTurn = abortConfirmedExecution(threadId, response.cancelledExecutionId);
+      // Like cancelling that turn: it ends what the reply spawned, nothing older.
+      if (cancelledTurn) await cancelLineage({ kind: "turn", threadId, turnId: cancelledTurn });
       return response;
     },
     async cancel(
@@ -475,12 +535,11 @@ export function createRunSessions(deps: {
       if (await deps.handoffBriefs.stop(threadId, turnId)) return "cancelled";
       if (!(await authority.cancelExecution(threadId, turnId)))
         return isTerminalTurnStatus(turn.status) || active ? "already_finished" : "not_found";
-      if (active) {
-        abortChildrenOf(threadId, true);
-        active.controller.abort();
-      }
+      // Foreground children follow the signal; the caller ends what this turn spawned.
+      active?.controller.abort();
       return "cancelled";
     },
+    cancelLineage,
   };
 }
 

@@ -185,6 +185,7 @@ export {
   type ChildRunDriverDeps,
   createChildRunDriver,
 } from "./spawn/child-run-driver.js";
+export { createLineageCancellation } from "./spawn/lineage-cancellation.js";
 export { createOrphanReportRepair } from "./spawn/orphan-report-repair.js";
 export { createReportPublisher, type ReportPublisher } from "./spawn/report-publisher.js";
 export { createConversationSummarizer } from "./summary/conversation-summarizer.js";

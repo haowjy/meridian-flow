@@ -440,6 +440,27 @@ export function createDrizzleThreadRepository(
         siblingCount: row.siblingCount,
       }));
     },
+    async listSubtreeIds(threadId, spawnedByTurnId) {
+      const roots = spawnedByTurnId
+        ? sql`AND child.origin_turn_id IN (
+            SELECT spawning.id FROM turns spawning
+            JOIN turns cancelled ON cancelled.id = ${spawnedByTurnId}
+            WHERE spawning.thread_id = ${threadId}
+              AND (spawning.id = cancelled.id OR spawning.execution_id = cancelled.execution_id)
+          )`
+        : sql``;
+      const rows = await currentDrizzleDb(db).execute(sql`
+        WITH RECURSIVE subtree AS (
+          SELECT child.id, 1 AS depth FROM threads child
+          WHERE child.parent_thread_id = ${threadId} ${roots}
+          UNION ALL
+          SELECT child.id, subtree.depth + 1 FROM threads child
+          JOIN subtree ON child.parent_thread_id = subtree.id
+        )
+        SELECT id FROM subtree ORDER BY depth, id
+      `);
+      return rows.map((row) => row.id as ThreadId);
+    },
     async listChildren(threadId: ThreadId) {
       const rows = await currentDrizzleDb(db)
         .select({

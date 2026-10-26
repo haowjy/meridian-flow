@@ -139,6 +139,11 @@ export interface RunClaim {
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
   /** Stop the live run that has bound this turn, matching membership under the lease row lock. */
   cancelExecution(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  /**
+   * Flags whatever live run each thread holds as cancelled, in any process: its
+   * heartbeat and batch adoption honour the flag. Lineage cancellation's durable half.
+   */
+  requestCancel(threadIds: readonly ThreadId[]): Promise<void>;
   /** See `ThreadStatusReader.readOpenExecutionId`. */
   readOpenExecutionId(threadId: ThreadId): Promise<ExecutionId | null>;
   /** Threads whose lease row expired: stale executions for the repair lane to settle. */
