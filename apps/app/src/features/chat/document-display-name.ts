@@ -102,17 +102,17 @@ function skillFileDisplayName(uriOrPath: string): string | null {
 }
 
 /**
- * Where a move took a document, as little as tells it apart: its new name for a rename in
- * place; the folder path for a move between folders; the area too ("Manuscript/part2/ch4",
- * "Scratch for Ascension/notes") for a move between sections or owners.
+ * What a model's move did, as little as tells it apart: for a move, where the document went (its
+ * new name for a rename in place; the folder path between folders; the area too between sections
+ * or owners); for a reorder, only that its position changed.
  */
-export function moveDestinationName(from: string, to: string, names?: OwnerNames): string {
+export function describeModelMove(from: string, to: string, names?: OwnerNames) {
   return describeMove(
     parseContextLocation(from),
     parseContextLocation(to),
     documentDisplayName(to),
     names,
-  ).place;
+  );
 }
 
 /**
