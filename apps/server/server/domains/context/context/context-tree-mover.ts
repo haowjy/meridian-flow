@@ -224,7 +224,7 @@ export class ContextTreeMover {
             policy.authorizeDestination &&
             !(await policy.authorizeDestination(destination.canonical))
           )
-            return Err({ code: "destination_missing", uri: destination.canonical });
+            return Err({ code: "permission_denied", uri: destination.canonical });
           if (policy.target === "exact" && policy.expected) {
             const token = await this.inspect(source);
             if (!token.ok) return token;

@@ -110,6 +110,16 @@ interface MutationDispatch extends Dispatch {
   requireCreation: (kind: "entry" | "intake") => Result<void, ContextError>;
 }
 
+/** A destination named by folder identity, with the missing segments beneath it. */
+type IdentityDestination = {
+  folderId: string;
+  createFolders?: readonly string[];
+};
+
+function joinContextPath(base: string, segments: readonly string[]): string {
+  return segments.length === 0 ? base : [base.replace(/\/$/, ""), ...segments].join("/");
+}
+
 function sameOwner(a: CanonicalContextAuthority, b: CanonicalContextAuthority): boolean {
   if (!("kind" in a)) return !("kind" in b) && a.workId === b.workId;
   if (!("kind" in b) || a.kind !== b.kind) return false;
@@ -256,16 +266,20 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     const destination = options.destination;
     if (!destination) return Ok({ resolved: home, folderPath: home.path });
     const { parent, name } = destination;
-    const joinUri = (base: string, segments: readonly string[]) =>
-      segments.length === 0 ? base : [base.replace(/\/$/, ""), ...segments].join("/");
-    let dirUri: string;
     if (parent.kind === "folder") {
-      const folderUri = await deps.resolveDestinationFolder?.(parent.folderId);
-      if (!folderUri) return Err({ code: "destination_missing", uri: homeUri });
-      dirUri = joinUri(folderUri, parent.createFolders ?? []);
-    } else {
-      dirUri = joinUri(homeUri, parent.createFolders ?? []);
+      const resolved = await resolveIdentityDestination(parent, {
+        ...(options.authorizeDestination ? { authorize: options.authorizeDestination } : {}),
+        ...(options.origin ? { origin: options.origin } : {}),
+      });
+      if (!resolved.ok) return resolved;
+      return Ok({
+        resolved: resolved.value,
+        folderPath: resolved.value.path,
+        name,
+        ...(parent.createFolders?.length ? {} : { expectFolderId: parent.folderId }),
+      });
     }
+    const dirUri = joinContextPath(homeUri, parent.createFolders ?? []);
     if (options.authorizeDestination && !(await options.authorizeDestination(dirUri))) {
       return Err({ code: "permission_denied", uri: dirUri });
     }
@@ -273,14 +287,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     if (!resolved.ok) {
       return Err({ code: "destination_missing", uri: homeUri });
     }
-    return Ok({
-      resolved: resolved.value,
-      folderPath: resolved.value.path,
-      name,
-      ...(parent.kind === "folder" && !parent.createFolders?.length
-        ? { expectFolderId: parent.folderId }
-        : {}),
-    });
+    return Ok({ resolved: resolved.value, folderPath: resolved.value.path, name });
   }
 
   const treeMover = new ContextTreeMover(
@@ -446,6 +453,27 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     });
   }
 
+  /**
+   * The destination a writer named by folder identity, with the missing segments beneath it.
+   * Create, Move and Copy all resolve it here so one refusal mapping holds: a folder that is
+   * gone (or an address that no longer resolves) is `destination_missing`; a destination the
+   * writer cannot edit is `permission_denied`.
+   */
+  async function resolveIdentityDestination(
+    parent: IdentityDestination,
+    options: { authorize?: (uri: string) => Promise<boolean>; origin?: WriteProvenance } = {},
+  ): Promise<Result<MutationDispatch, ContextError>> {
+    const folderUri = await deps.resolveDestinationFolder?.(parent.folderId);
+    if (!folderUri) return Err({ code: "destination_missing", uri: parent.folderId });
+    const dirUri = joinContextPath(folderUri, parent.createFolders ?? []);
+    const resolved = await resolveMutation(dirUri, options.origin);
+    if (!resolved.ok) return Err({ code: "destination_missing", uri: dirUri });
+    if (options.authorize && !(await options.authorize(resolved.value.canonical))) {
+      return Err({ code: "permission_denied", uri: resolved.value.canonical });
+    }
+    return resolved;
+  }
+
   function fileDispatch<T extends Dispatch>(
     dispatch: T,
     binary?: ContextWriteBinaryOptions,
@@ -501,7 +529,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       copy: deps.copy,
       receipts: deps.operationReceipts,
       commandTransaction: deps.commandTransaction,
-      resolveDestinationFolder: deps.resolveDestinationFolder,
+      resolveIdentityDestination,
       resolve,
     }),
 
@@ -770,29 +798,35 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       )
         return Err({ code: "destination_missing", uri: destinationUri });
       const name = destination.value.path.split("/").at(-1) ?? "";
-      const resolveDestination =
-        destinationParent?.kind === "folder"
-          ? async () => {
-              const uri = await deps.resolveDestinationFolder?.(destinationParent.folderId);
-              if (!uri) return Err({ code: "destination_missing", uri: destinationUri } as const);
-              const target = await resolveMutation(
-                [uri.replace(/\/$/, ""), ...(destinationParent.createFolders ?? []), name].join(
-                  "/",
-                ),
-              );
-              if (!target.ok)
-                return Err({ code: "destination_missing", uri: destinationUri } as const);
-              const denied = moveCreationDenied(source.value, target.value);
-              return denied ?? target;
-            }
-          : undefined;
+      const identityParent = destinationParent?.kind === "folder" ? destinationParent : null;
+      const resolveDestination = identityParent
+        ? async (): Promise<Result<ContextTreeDispatch, ContextError>> => {
+            const parent = await resolveIdentityDestination(identityParent, {
+              ...(options?.authorizeDestination ? { authorize: options.authorizeDestination } : {}),
+              ...(options?.origin ? { origin: options.origin } : {}),
+            });
+            if (!parent.ok) return parent;
+            const target = await resolveMutation(
+              joinContextPath(parent.value.path, [name]),
+              options?.origin,
+            );
+            if (!target.ok) return Err({ code: "destination_missing", uri: destinationUri });
+            const denied = moveCreationDenied(source.value, target.value);
+            return denied ?? target;
+          }
+        : undefined;
       if (!resolveDestination) {
         const creationDenied = moveCreationDenied(source.value, destination.value);
         if (creationDenied) return creationDenied;
       }
+      const { authorizeDestination, ...rest } = options ?? {};
       return treeMover.commitWriterLocation(source.value, destination.value, {
-        ...options,
-        resolveDestination,
+        ...rest,
+        ...(resolveDestination
+          ? { resolveDestination }
+          : authorizeDestination
+            ? { authorizeDestination }
+            : {}),
       });
     },
 

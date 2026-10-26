@@ -71,6 +71,13 @@ export function namespaceContextRefusal(
       return namespaceRefusal(command, "location_taken", paths);
     case "destination_missing":
       return namespaceRefusal(command, "destination_missing", paths);
+    case "permission_denied":
+      return writeToolError(
+        command,
+        `Can't ${command} ${paths.path}: you don't have edit access there.`,
+        "permission_denied",
+        { path: paths.path },
+      );
     case "stale_source":
     case "stale_target":
     case "operation_mismatch":

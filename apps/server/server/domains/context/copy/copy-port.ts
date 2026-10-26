@@ -10,7 +10,7 @@ import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextOperationReceipts } from "../context/context-operation-receipts.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
-import type { ContextCopyRequest, ContextError } from "../ports/context-port.js";
+import type { ContextCopyRequest, ContextError, ContextScheme } from "../ports/context-port.js";
 import {
   type ContextCopyCommandDeps,
   type CopyDestinationHandoff,
@@ -32,18 +32,28 @@ export interface ContextCopyPortDeps {
   copy: ContextCopyCommandDeps | undefined;
   receipts: ContextOperationReceipts | undefined;
   commandTransaction: ContextCommandTransaction | undefined;
-  /** A folder identity's address now, or null once it is gone. */
-  resolveDestinationFolder: ((folderId: string) => Promise<string | null>) | undefined;
+  /** The router's one identity-destination resolver, re-run under the command's locks. */
+  resolveIdentityDestination: (
+    parent: { folderId: string; createFolders?: readonly string[] },
+    options: { authorize?: (uri: string) => Promise<boolean> },
+  ) => Promise<Result<CopyEnd, ContextError>>;
   resolve(uri: string): Promise<Result<CopyEnd, ContextError>>;
 }
 
 export function createContextCopyPort(deps: ContextCopyPortDeps) {
-  const handoff = (end: CopyEnd): CopyDestinationHandoff => ({
-    uri: end.canonical,
-    adapter: end.adapter,
-    dir: end.path.split("/").filter(Boolean),
-    workScopeId: end.workScopeId,
-  });
+  /** A destination this scheme can copy into, or null when it has no copy capability. */
+  const handoff = (end: CopyEnd): CopyDestinationHandoff | null => {
+    const copy = end.adapter.copy;
+    return copy
+      ? {
+          uri: end.canonical,
+          copy,
+          scheme: end.adapter.name as ContextScheme,
+          dir: end.path.split("/").filter(Boolean),
+          workScopeId: end.workScopeId,
+        }
+      : null;
+  };
 
   return async function copy(
     request: ContextCopyRequest,
@@ -61,7 +71,8 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
       const resolved = await deps.resolve(source.uri);
       if (!resolved.ok) return resolved;
       const { adapter, workScopeId, canonical, path } = resolved.value;
-      if (!adapter.copy) {
+      const copy = adapter.copy;
+      if (!copy) {
         return Err({
           code: "invalid_operation",
           uri: canonical,
@@ -70,18 +81,20 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
       }
       sources.push({
         uri: canonical,
-        adapter,
+        copy,
         path,
         workScopeId,
         view: source.view ?? { kind: "live" },
         expected: source.expected,
+        ...(source.copyId ? { copyId: source.copyId } : {}),
         ...(source.stateVector ? { stateVector: source.stateVector } : {}),
       });
     }
 
     const destination = await deps.resolve(request.destinationUri);
     if (!destination.ok) return destination;
-    if (!destination.value.adapter.copy) {
+    const destinationHandoff = handoff(destination.value);
+    if (!destinationHandoff) {
       return Err({
         code: "invalid_operation",
         uri: destination.value.canonical,
@@ -95,28 +108,24 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
       environment: { receipts, commandTransaction },
       request,
       sources,
-      destination: handoff(destination.value),
+      destination: destinationHandoff,
       ...(folderParent
         ? {
             resolveDestination: async (): Promise<Result<CopyDestinationHandoff, ContextError>> => {
-              const gone = Err({
-                code: "destination_missing",
-                uri: request.destinationUri,
-              } as const);
-              const fresh = await deps.resolveDestinationFolder?.(folderParent.folderId);
-              if (!fresh) return gone;
-              const suffix = folderParent.createFolders ?? [];
-              const target = await deps.resolve(
-                suffix.length === 0 ? fresh : [fresh.replace(/\/$/, ""), ...suffix].join("/"),
-              );
-              if (!target.ok) return gone;
-              if (
-                request.authorizeDestination &&
-                !(await request.authorizeDestination(target.value.canonical))
-              ) {
-                return Err({ code: "permission_denied", uri: target.value.canonical });
-              }
-              return Ok(handoff(target.value));
+              const target = await deps.resolveIdentityDestination(folderParent, {
+                ...(request.authorizeDestination
+                  ? { authorize: request.authorizeDestination }
+                  : {}),
+              });
+              if (!target.ok) return target;
+              const current = handoff(target.value);
+              return current
+                ? Ok(current)
+                : Err({
+                    code: "invalid_operation",
+                    uri: target.value.canonical,
+                    message: "This destination cannot take a copy",
+                  });
             },
           }
         : {}),
