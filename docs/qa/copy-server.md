@@ -88,7 +88,10 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
     mock model for a document that links to itself: the copy's own link names the
     copy, and its other links keep their targets. The turn's live lineage gives the
     copy `tree: {op: "copy", from, to}`, which the chat receipt reads as
-    `Copied <source> to <name>`.
+    `Copied <source> to <name>`. The model names the exact path, so a path another
+    entry holds answers `invalid_write` ("File already exists: …") as a typed tool
+    error and creates nothing; the model chooses another path. The command's copy
+    instead plans a free name (steps 2 and 17).
 12. **Arrival.** Write a link to an address that does not exist yet, then copy a
     document to that address: `link_ahead_refs.settled_document_id` is the copy.
 13. **Nested selection.** `./mf doc copy "manuscript://Book" "manuscript://Book/Ch1"
@@ -109,10 +112,11 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
     once into distinct folders: all 40 answer 200. (Before the reads moved out of the
     transaction, ten or more of them held every pool connection and waited for one
     more.)
-17. **A taken name.** While a copy prepares, create the folder or file it would take in
-    the destination: the copy lands under the next free name (`Book (2)`) and its
-    internal links name the copy. Only a temporary sleep between the plan and the lock
-    makes the race reproducible, so no step here reaches it without one.
+17. **A taken name.** While a `./mf doc copy` prepares, create the folder or file it
+    would take in the destination: the copy lands under the next free name (`Book (2)`)
+    and its internal links name the copy. Only a temporary sleep between the plan and
+    the lock makes the race reproducible, so no step here reaches it without one. The
+    model's copy has no plan to reallocate, so it refuses instead; step 11.
 
 ## Cleanup
 
