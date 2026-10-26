@@ -130,6 +130,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
         origin: prepared.origin,
       },
       treeBudget: input.budget,
+      ...(input.relayAdmission ? { relayAdmission: input.relayAdmission } : {}),
     });
     const report = await deps.repos.executionReports.findByExecution(
       prepared.child.id as ThreadId,
