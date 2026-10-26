@@ -255,15 +255,17 @@ it("rebases queued placement behind the retry when creation remints", () => {
     result: { status: "conflict" },
   });
   if (!received) throw new Error("Expected conflict outcome");
+  const settled = settleNamespaceOutcome(received.next);
+  if (!settled) throw new Error("Expected conflict settlement");
 
   const reminted = remintCreateConflict({
-    record: received.next,
+    record: settled.next,
     documentId: "document-b",
     retryIntentId: "create-b",
     rebasedIntentIds: { "place-a": "place-b" },
   });
   if (!reminted) throw new Error("Expected remint");
-  validateResourceRecordUpdate(received.next, reminted.next);
+  validateResourceRecordUpdate(settled.next, reminted.next);
   expect(reminted.next.intents).toMatchObject([
     { intentId: "create-a", state: "superseded", identityRevision: 1 },
     { intentId: "place-a", state: "cancelled", identityRevision: 1 },

@@ -1,5 +1,5 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
-import { createAwaitsRemint, intentOwnsDeletion } from "./resource-intent-policy";
+import { intentOwnsDeletion, namespaceRepairOwner } from "./resource-intent-policy";
 import {
   type FolderNamespaceRecord,
   type NamespaceIntent,
@@ -100,13 +100,12 @@ export function resolveUnavailableNamespace(
 
 /**
  * `intent` is queued placement work that rides on `earlier`: a later move of the same identity, or
- * a move queued behind its first placement (a create). Both end with what refused `earlier`.
+ * a move queued behind its first placement. Both end with what refused `earlier`.
  */
 function followsLocationIntent(intent: NamespaceIntent, earlier: NamespaceIntent): boolean {
-  const follower = earlier.desired.kind === "create" ? "set-location" : earlier.desired.kind;
   return (
-    (follower === "set-location" || follower === "set-folder-location") &&
-    intent.desired.kind === follower &&
+    (earlier.desired.kind === "set-location" || earlier.desired.kind === "set-folder-location") &&
+    intent.desired.kind === earlier.desired.kind &&
     intent.identityRevision === earlier.identityRevision &&
     intent.sequence > earlier.sequence
   );
@@ -118,7 +117,7 @@ export function resolveRefusedLocationChain(
   failed: NamespaceIntent,
 ): NamespaceIntent[] {
   // The runner remints this create; the work queued behind it moves to the new identity.
-  if (createAwaitsRemint(failed)) return [...intents];
+  if (namespaceRepairOwner(failed) === "remint") return [...intents];
   const deleted =
     failed.desired.kind !== "delete" &&
     intents.some(
@@ -153,8 +152,9 @@ export function namespaceRepairDestination(
     failed,
   );
   if (latest.desired.kind === "set-location")
-    return { ...latest.desired.destination, name: latest.desired.typedName };
-  if (latest.desired.kind === "create") return latest.desired.destination ?? null;
+    return latest.desired.destination
+      ? { ...latest.desired.destination, name: latest.desired.typedName }
+      : null;
   return latest.desired.kind === "set-folder-location" ? latest.desired.destination : null;
 }
 

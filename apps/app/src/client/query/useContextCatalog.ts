@@ -293,9 +293,7 @@ export function projectCatalogView(
                 ...(record.resource.content.initialization === "reserved"
                   ? {}
                   : { localContent: true as const }),
-                ...(record.intents.some((intent) => intent.desired.kind === "create")
-                  ? { resourceOrigin: "local" as const }
-                  : {}),
+                ...(record.resource.materialization ? { resourceOrigin: "local" as const } : {}),
               }
             : {}),
           ...(repair?.kind === "delete"

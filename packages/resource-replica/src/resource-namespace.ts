@@ -116,29 +116,9 @@ function requestFor(
 ): NamespaceRequest | null {
   const { resource } = record;
   if (resource.obligations.canonicalRefresh) return null;
-  if (intent.desired.kind === "create") {
-    if (
-      resource.lifecycle.kind !== "local" ||
-      resource.canonical ||
-      resource.obligations.createEligibility?.eligibleAt == null ||
-      (resource.content.kind === "exact" && resource.content.initialization === "reserved")
-    )
-      return null;
-    return {
-      kind: "create",
-      body: {
-        documentId: resource.identity.documentId,
-        ...(intent.desired.destination
-          ? { destination: createDestination(intent.desired.destination) }
-          : intent.desired.folderPath
-            ? { folderPath: normalizedPath(intent.desired.folderPath) }
-            : {}),
-      },
-    };
-  }
   const source = resource.canonical;
-  if (!source) return null;
   if (intent.desired.kind === "delete") {
+    if (!source) return null;
     return {
       kind: "delete",
       scheme: source.scheme,
@@ -153,7 +133,9 @@ function requestFor(
       },
     };
   }
-  const destination = intent.desired.destination;
+  if (!source) return materializationRequest(record, intent);
+  const destination = intent.desired.kind === "set-location" ? intent.desired.destination : null;
+  if (!destination) return null;
   const parent = destinationParentLocation(destination.parent, lookup);
   if (!parent) return null;
   const owners = moveOwnerFields(source, parent);
@@ -176,6 +158,37 @@ function requestFor(
       ...owners.body,
       newName: intent.desired.kind === "set-location" ? intent.desired.typedName : destination.name,
       ...(destination.position ? { position: destination.position } : {}),
+    },
+  };
+}
+
+/**
+ * What the server makes of a document it holds no row for. The placement says where it goes; the
+ * resource says what it is (an untitled document, or a copy), so a new kind of first materialization
+ * adds a branch here and no placement, projection, repair or Undo branch anywhere else.
+ */
+function materializationRequest(
+  record: ResourceRecord,
+  intent: NamespaceIntent,
+): NamespaceRequest | null {
+  const { resource } = record;
+  const materialization = resource.materialization;
+  if (!materialization || intent.desired.kind !== "set-location") return null;
+  if (
+    resource.lifecycle.kind !== "local" ||
+    resource.obligations.createEligibility?.eligibleAt == null ||
+    (resource.content.kind === "exact" && resource.content.initialization === "reserved")
+  )
+    return null;
+  return {
+    kind: "create",
+    body: {
+      documentId: resource.identity.documentId,
+      ...(intent.desired.destination
+        ? { destination: createDestination(intent.desired.destination) }
+        : materialization.folderPath
+          ? { folderPath: normalizedPath(materialization.folderPath) }
+          : {}),
     },
   };
 }
@@ -234,7 +247,8 @@ export function prepareNamespaceAttempt(
     };
   }
   if (
-    (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+    intent.desired.kind === "set-location" &&
+    intent.desired.destination &&
     !destinationParentLocation(intent.desired.destination.parent, lookup)
   )
     return {
@@ -702,7 +716,7 @@ export function reconcileResourceNamespace(input: {
     prepare: async (record, ids) => {
       const intent = activeNamespaceIntent(record);
       const parent =
-        intent?.desired.kind === "set-location" ? intent.desired.destination.parent : null;
+        intent?.desired.kind === "set-location" ? intent.desired.destination?.parent : null;
       const observed =
         parent?.kind === "folder"
           ? await input.transport.lookupIdentity(intent!.projectId, {

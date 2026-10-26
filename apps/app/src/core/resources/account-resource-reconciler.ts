@@ -13,6 +13,7 @@ import {
   latestAdmittedPlacement,
   type NamespaceIntent,
   type PlacementVerdict,
+  pendingJoinProject,
   pendingJoinTarget,
   placementDispatchVerdict,
   type ResourceKey,
@@ -292,7 +293,7 @@ export class AccountResourceReconciler {
    */
   private async planJoin(current: ResourceRecord): Promise<IdentityPlan | null> {
     const target = pendingJoinTarget(current);
-    const projectId = current.intents.find((intent) => intent.desired.kind === "create")?.projectId;
+    const projectId = pendingJoinProject(current);
     if (!target || !projectId) return null;
     const { records } = await this.ports.metadata.readProjection(projectId);
     const owner = resourceIdentityIndex(records).byDocumentId(target.documentId);

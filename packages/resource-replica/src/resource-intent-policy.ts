@@ -3,23 +3,25 @@ import { newerCanonicalObservation } from "./canonical-observation";
 import type { NamespaceIntent, ResourceDestination, ResourceRecord } from "./resource-records";
 
 /**
- * A create the server answered `conflict` or `joined` (the id is taken, or a branch's document
- * stood there) is repaired by the runner under a new identity (`remintCreateConflict`). Every
- * other failed intent, a refused create included, waits for the writer.
+ * Who repairs a failed placement. A materialization the server answered `conflict` or `joined` is
+ * the runner's: the answer is about the id, so it materializes under a new one (`remintCreateConflict`).
+ * Every other failure is the writer's: the server answered about the request, and only the writer
+ * can change it. Answered for a recorded outcome, before or after its settlement.
  */
-export function createAwaitsRemint(intent: NamespaceIntent): boolean {
-  if (intent.desired.kind !== "create") return false;
-  if (intent.state !== "received" && intent.state !== "needs-repair") return false;
+export type NamespaceRepairOwner = "remint" | "writer";
+
+export function namespaceRepairOwner(intent: NamespaceIntent): NamespaceRepairOwner | null {
+  if (intent.state !== "received" && intent.state !== "needs-repair") return null;
   const outcome = intent.attempts.at(-1)?.outcome;
-  return (
-    outcome?.kind === "create" &&
+  return outcome?.kind === "create" &&
     (outcome.result.status === "conflict" || outcome.result.status === "joined")
-  );
+    ? "remint"
+    : "writer";
 }
 
-/** A failed intent only the writer can repair: a refused create, move or delete. */
+/** A settled failure only the writer can repair: a refused placement or delete. */
 export function awaitsWriterRepair(intent: NamespaceIntent): boolean {
-  return intent.state === "needs-repair" && !createAwaitsRemint(intent);
+  return intent.state === "needs-repair" && namespaceRepairOwner(intent) === "writer";
 }
 
 /** Work that can make progress without a new metadata revision. */
@@ -31,14 +33,14 @@ export function resourceNeedsBackgroundReconciliation(record: ResourceRecord): b
       intent.state === "pending" ||
       intent.state === "submitted" ||
       intent.state === "received" ||
-      createAwaitsRemint(intent),
+      namespaceRepairOwner(intent) === "remint",
   );
 }
 
 /**
  * The writer's next placement or delete retires what failed before it: each failed intent
- * (a refused create too) is superseded and unsent work queued behind it is cancelled. A create
- * the runner will remint is left alone, as is any unsent create (the new command rebuilds it).
+ * (a refused placement too) is superseded and unsent work queued behind it is cancelled. A create
+ * the runner will remint is left alone.
  */
 export function supersedeRepairableNamespaceWork(
   record: Pick<ResourceRecord, "intents">,
@@ -51,12 +53,7 @@ export function supersedeRepairableNamespaceWork(
     repaired: true,
     intents: record.intents.map((intent) => {
       if (failed(intent)) return { ...intent, state: "superseded" };
-      if (
-        inScope(intent) &&
-        intent.desired.kind !== "create" &&
-        intent.state === "pending" &&
-        intent.attempts.length === 0
-      )
+      if (inScope(intent) && intent.state === "pending" && intent.attempts.length === 0)
         return { ...intent, state: "cancelled" };
       return intent;
     }),
@@ -112,8 +109,9 @@ export function intentOwnsLocation(intent: NamespaceIntent): boolean {
 }
 
 /**
- * Where the writer put the document and the record still shows it: an owning move's
- * destination, else the destination its create carries until the create settles.
+ * Where the writer put the document and the record still shows it: an owning placement's
+ * destination. A document the server has not materialized yet may have no destination (the
+ * editor's nameless create), so this answers undefined and the projection's base location shows.
  */
 export function placementDestination(
   projectId: string | null,
@@ -124,17 +122,7 @@ export function placementDestination(
     record.intents,
     Boolean(record.resource.obligations.canonicalRefresh),
   )?.desired;
-  if (owner?.kind === "set-location") return owner.destination;
-  if (record.resource.canonical) return undefined;
-  for (const intent of record.intents) {
-    if (
-      (projectId === null || intent.projectId === projectId) &&
-      intent.desired.kind === "create" &&
-      (intent.state === "pending" || intent.state === "submitted" || intent.state === "received")
-    )
-      return intent.desired.destination;
-  }
-  return undefined;
+  return owner?.kind === "set-location" ? owner.destination : undefined;
 }
 
 /**

@@ -69,20 +69,17 @@ export function validateResourceRecordUpdate(
     (!Number.isFinite(eligibility.eligibleAt) || eligibility.eligibleAt < 0)
   )
     throw new Error("Resource create eligibility is invalid");
-  const executableCreate = next.intents.some(
-    (intent) =>
-      intent.desired.kind === "create" &&
-      intent.state !== "cancelled" &&
-      intent.state !== "settled" &&
-      intent.state !== "superseded" &&
-      intent.state !== "settled-locally",
-  );
-  if (
-    executableCreate &&
-    resource.lifecycle.kind === "local" &&
+  const executableCreate =
     resource.canonical === null &&
-    !eligibility
-  )
+    next.intents.some(
+      (intent) =>
+        (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+        intent.state !== "cancelled" &&
+        intent.state !== "settled" &&
+        intent.state !== "superseded" &&
+        intent.state !== "settled-locally",
+    );
+  if (executableCreate && resource.lifecycle.kind === "local" && !eligibility)
     throw new Error("Local creation requires an explicit eligibility witness");
   const previousEligibility = previous?.resource.obligations.createEligibility;
   if (

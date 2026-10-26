@@ -143,14 +143,16 @@ Apply completed.
 
 A new document is an account resource exposed to its creating project before it
 has a server row. Reservation atomically records a stable handle, document ID,
-exact persistence name, provisional Unfiled location, and a create intent whose
-eligibility is initially null. Local persistence initialization completes before
-the editor receives the handle.
+exact persistence name, its untitled materialization, provisional Unfiled location,
+and a first `set-location` placement whose eligibility is initially null. Local
+persistence initialization completes before the editor receives the handle.
 
 First content marks eligibility once. Explicit filing both marks eligibility and
-appends a location intent. The runner persists immutable request bytes before
-HTTP, records outcomes before applying them, and resumes after response loss or
-reload. Creation acknowledgement records canonical metadata and transfers the
+appends a location intent. Dispatch sends a create while the record has no canonical
+place and a move afterwards, so a refused first placement is repaired by placing it
+again rather than by a different intent kind. The runner persists immutable request
+bytes before HTTP, records outcomes before applying them, and resumes after response
+loss or reload. Creation acknowledgement records canonical metadata and transfers the
 same Y.Doc into registry transport. Closing every tab leaves the resource in the
 sidebar; explicit Delete is the only writer command that removes it.
 

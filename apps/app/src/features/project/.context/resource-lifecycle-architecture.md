@@ -45,7 +45,7 @@ Three facts must stay separate:
 
 ## New, write, and acknowledge
 
-1. New atomically reserves an account-global resource handle, Document ID, exact content database, provisional Unfiled location, and ineligible create intention.
+1. New atomically reserves an account-global resource handle, Document ID, exact content database, its untitled materialization, provisional Unfiled location, and an ineligible first placement.
 2. Content initialization completes before the editor receives the handle. The workspace opens the resource synchronously and the stable session boundary binds its Y.Doc.
 3. First content marks creation eligible. Explicit filing also marks an empty resource eligible and appends the desired location.
 4. The namespace runner persists immutable request bytes before HTTP, records the outcome, then applies it through metadata CAS. Reload, response loss, and another browser context resume the same recorded work.

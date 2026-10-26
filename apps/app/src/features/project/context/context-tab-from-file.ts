@@ -136,7 +136,7 @@ export function contextTabFromResource(
   if (!location || !tabOwner) return null;
   const { resource } = record;
   if (!resource.classification.editable) return null;
-  const locallyCreated = record.intents.some((intent) => intent.desired.kind === "create");
+  const locallyCreated = record.resource.materialization !== undefined;
   if (resource.lifecycle.kind === "local" && location.provisional) {
     return {
       kind: "new",

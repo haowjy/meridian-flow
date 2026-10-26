@@ -58,8 +58,9 @@ export function settleDeletionLocally(
 
 /**
  * Undo of a deletion that settled on this device, inside its window: the deletion is superseded
- * and the document's create is sent again, since what the deletion cancelled cannot restart. Null
- * once the window has closed (the content may already be cleaned up) or when no such deletion is held.
+ * and the document's last placement is sent again, since what the deletion cancelled cannot restart.
+ * Null once the window has closed (the content may already be cleaned up) or when no such
+ * deletion is held.
  */
 export function planLocalDeletionUndo(
   record: ResourceRecord,
@@ -78,10 +79,10 @@ export function planLocalDeletionUndo(
     (cleanup.notBefore !== undefined && input.now >= cleanup.notBefore)
   )
     return null;
-  const create = record.intents
-    .filter((intent) => intent.desired.kind === "create")
+  const placement = record.intents
+    .filter((intent) => intent.desired.kind === "set-location")
     .sort((left, right) => right.sequence - left.sequence)[0];
-  if (!create) return null;
+  if (!placement) return null;
   return {
     expectedRevision: record.resource.revision,
     next: {
@@ -91,13 +92,13 @@ export function planLocalDeletionUndo(
           intent === deletion ? { ...intent, state: "superseded" as const } : intent,
         ),
         {
-          projectId: create.projectId,
+          projectId: placement.projectId,
           handle: record.resource.handle,
           intentId: input.createIntentId,
           sequence: Math.max(...record.intents.map((intent) => intent.sequence)) + 1,
           identityRevision: record.resource.identity.revision,
-          desired: create.desired,
-          ...(create.admission ? { admission: create.admission } : {}),
+          desired: placement.desired,
+          ...(placement.admission ? { admission: placement.admission } : {}),
           attempts: [],
           state: "pending",
         },

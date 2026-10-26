@@ -300,22 +300,27 @@ Bare HTTP or network failures still need receipt evidence and stay replayable.
 The journal accepts a refusal on every request kind, so a request kind added later
 (folder create, Copy) settles the same way and only has to say what its identity is.
 
-A refused create is the first placement refused. The intent is `needs-repair`, never
+A refused first placement is the first placement refused. How the server materializes an
+identity is a property of the resource (`ResourceDescriptor.materialization`: an untitled
+document, or a Copy), and the placement is always `set-location` / `set-folder-location`.
+A document the server holds no row for sends a `create`; once it holds one, the same
+intent sends a move (`prepareNamespaceAttempt`). The intent is `needs-repair`, never
 resent and not woken by the 30-second retry; the document stays local (lifecycle
 `local`, no canonical place), shown in Unfiled at its provisional name with its text and
 exact content. Queued moves behind it are cancelled (`resolveRefusedLocationChain`) and the
 newest one is offered back as the repair destination (`namespaceRepairDestination`). The
-writer repairs it by placing it: `planResourceLocation` supersedes the refused create
-and files a new create under the same document id at the picked destination, with its
-sibling `position` (no remint: the create route answers an id it holds before it checks
+writer repairs it by placing it: `planResourceLocation` supersedes the refused intent
+and files the same `set-location` again at the picked destination, with its sibling
+`position` (no remint: the create route answers an id it holds before it checks
 authority, so a final refusal means the server holds none; an id held where the writer can
 no longer edit answers `conflict`). Deleting it settles locally (`resourceNeverAccepted`:
 local, unplaced, every answered request refused), including a delete queued behind the
 in-flight create when the refusal arrives (`prepareNamespaceAttempt`). The local deletion keeps
 the exact content for `LOCAL_DELETION_UNDO_MS` (`cleanup.notBefore`); `planLocalDeletionUndo`
-supersedes it and sends the create again inside the window. Only a create the
-server answered `conflict` or `joined` is the runner's to repair (`createAwaitsRemint`): it
-is reminted under a new id and its queued work moves with it.
+supersedes it and files the last placement again inside the window. A failed placement has
+one decision, `namespaceRepairOwner`: a materialization the server answered `conflict` or
+`joined` is reminted under a new id and its queued work moves with it, and every other
+failure waits for the writer.
 
 Folder deletion shares the folder namespace journal. Only a delete receipt's exact
 document IDs authorize atomic descendant terminalization with the folder

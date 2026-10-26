@@ -80,6 +80,19 @@ export type ResourceDestination = Readonly<{
 }>;
 export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
 
+/**
+ * How the server first makes an identity it does not hold yet. Placement (`set-location`) says
+ * where it goes; this says what the server makes there, so a new kind of first materialization
+ * (Copy) adds an arm here and nowhere else.
+ */
+export type DocumentMaterialization = {
+  kind: "untitled";
+  /** Where an unnamed create lands; empty is Unfiled's root. */
+  folderPath: string;
+  /** The row's name until the server names the document. */
+  provisionalName: string;
+};
+
 /** Resolve only canonical observations when preparing immutable transport evidence. */
 export function destinationParentLocation(
   parent: ParentRef,
@@ -122,6 +135,13 @@ export type ResourceDescriptor = ResourceKey & {
     | { kind: "unacquired" };
   /** Stable editor/viewer classification retained when no catalog checkpoint is available. */
   classification: CatalogFileClassification;
+  /**
+   * How the server first materializes this identity, while it holds no such document: an untitled
+   * document, or (from Copy) a copy of a source. Placement is separate and always a location
+   * intent, so a refused first placement is repaired by placing it again, not by a new request
+   * kind. Absent for a document installed from the catalog.
+   */
+  materialization?: DocumentMaterialization;
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
@@ -269,20 +289,14 @@ export type NamespaceIntent = ResourceKey & {
   identityRevision: number;
   desired:
     | {
-        kind: "create";
-        folderPath: string;
-        provisionalName?: string;
-        /**
-         * Where the writer put the document, sent with the create so the server can join a
-         * branch's document waiting there. Absent for a nameless create (the editor's New document).
-         */
-        destination?: ResourceDestination;
-      }
-    | {
         kind: "set-location";
         /** Original input; canonical destination is only for display and comparison. */
         typedName: string;
-        destination: ResourceDestination;
+        /**
+         * Where the writer put the document. Absent only for the editor's nameless create: the
+         * server materializes it wherever its untitled create lands (`materialization.folderPath`).
+         */
+        destination?: ResourceDestination;
       }
     | {
         kind: "set-folder-location";

@@ -63,7 +63,7 @@ it("projects only the requesting project's durable location intention", () => {
   const settled = placed.next;
   settled.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   settled.intents = settled.intents.map((intent) =>
-    intent.desired.kind === "create" ? { ...intent, state: "settled" } : intent,
+    intent.intentId === "create" ? { ...intent, state: "settled" } : intent,
   );
   const submitted = prepareNamespaceAttempt(
     settled,

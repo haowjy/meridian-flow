@@ -2,8 +2,7 @@
 import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
 import {
-  awaitsWriterRepair,
-  createAwaitsRemint,
+  namespaceRepairOwner,
   owningLocationIntent,
   supersedeRepairableNamespaceWork,
 } from "./resource-intent-policy";
@@ -44,6 +43,11 @@ export function reserveResourceDocument(input: {
       initialization: "reserved",
     },
     classification: { editable: true, filetype: "markdown", schemaType: "document" },
+    materialization: {
+      kind: "untitled",
+      folderPath: input.folderPath ?? "",
+      provisionalName: input.provisionalName ?? "Untitled",
+    },
     canonical: null,
     lifecycle: { kind: "local" },
     aliases: {},
@@ -57,9 +61,8 @@ export function reserveResourceDocument(input: {
     ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: 1,
     desired: {
-      kind: "create",
-      folderPath: input.folderPath ?? "",
-      ...(input.provisionalName ? { provisionalName: input.provisionalName } : {}),
+      kind: "set-location",
+      typedName: input.provisionalName ?? "Untitled",
       ...(input.destination ? { destination: input.destination.value } : {}),
     },
     attempts: [],
@@ -94,8 +97,8 @@ export function markResourceCreateEligible(
 }
 
 /**
- * Where the writer puts a document. One the server never accepted (its create was refused) has
- * nothing to move: the placement becomes a new create under the same id, at the picked destination.
+ * Where the writer puts a document the server has not accepted yet: the placement is the same
+ * `set-location` a move files, and dispatch derives the create from the resource's materialization.
  */
 export function planResourceLocation(input: {
   record: ResourceRecord;
@@ -117,9 +120,8 @@ export function planResourceLocation(input: {
   // Compute the optimistic name once, retaining the input for server dispatch.
   const stored = storedFilename(
     input.destination.name,
-    latest?.desired.kind === "set-location"
-      ? latest.desired.destination.name
-      : record.resource.canonical?.name,
+    (latest?.desired.kind === "set-location" ? latest.desired.destination?.name : undefined) ??
+      record.resource.canonical?.name,
   );
   const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
@@ -134,12 +136,6 @@ export function planResourceLocation(input: {
     JSON.stringify(latest.desired.destination) === JSON.stringify(destination)
   )
     return null;
-  const refusedCreate = record.intents.some(
-    (intent) =>
-      intent.projectId === input.projectId &&
-      intent.desired.kind === "create" &&
-      awaitsWriterRepair(intent),
-  );
   const intent: NamespaceIntent = {
     projectId: input.projectId,
     handle: record.resource.handle,
@@ -147,13 +143,11 @@ export function planResourceLocation(input: {
     sequence: nextSequence(record),
     ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: record.resource.identity.revision,
-    desired: refusedCreate
-      ? { kind: "create", folderPath: "", provisionalName: destination.name, destination }
-      : {
-          kind: "set-location",
-          typedName: input.typedName ?? input.destination.name,
-          destination,
-        },
+    desired: {
+      kind: "set-location",
+      typedName: input.typedName ?? input.destination.name,
+      destination,
+    },
     ...(input.operationId ? { operationId: input.operationId } : {}),
     attempts: [],
     state: "pending",
@@ -189,7 +183,7 @@ export function remintCreateConflict(input: {
   const { record } = input;
   const conflicted = [...record.intents]
     .sort((left, right) => right.sequence - left.sequence)
-    .find((intent) => intent.desired.kind === "create" && createAwaitsRemint(intent));
+    .find((intent) => namespaceRepairOwner(intent) === "remint");
   if (
     !conflicted ||
     record.resource.lifecycle.kind !== "local" ||

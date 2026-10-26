@@ -22,6 +22,11 @@ exports rather than implementation modules.
   immutable `PlacementAdmission` (order, conflict scope, predecessors), and projection, dispatch and
   Undo all read it (`placement-journal.ts`). Never infer order from adjacency, latest-per-entry or a
   scheduler queue.
+- Where a placement goes and what the server first makes there are separate. A placement is
+always `set-location` / `set-folder-location`; `ResourceDescriptor.materialization` says
+whether the server materializes an untitled document or (Copy) a copy, and dispatch derives
+`create` from it while `canonical` is null. A new kind of first materialization is a new
+materialization arm, not a placement kind.
 - Namespace intents and receipts are immutable evidence. Accepted, refused,
   superseded, and terminal outcomes must not be confused with current
   placement or deletion ownership.
