@@ -104,7 +104,7 @@ The route passes that identity into the domain command and receipt, maps typed
 the resolved destination under the move transaction. URI-only callers retain
 path semantics.
 
-The app's durable namespace queue resends any move, delete or create-untitled it
+The app's durable namespace queue resends any move, delete, create-untitled or create-folder it
 has not settled, and it settles a refusal only from a typed non-retryable 4xx (the
 interrupt envelope, `retryable: false`) or a receipt. Those routes must therefore
 answer a deterministic refusal typed. Each route body runs inside

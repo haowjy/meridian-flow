@@ -129,6 +129,13 @@ write: a draft placement ends the branch's use unless another thread's committed
 text makes the document stand, and only that Work's document draft, peers, and
 rooms retire.
 
+A device-minted folder ID is idempotent the same way (`createFolderIfAbsent`, the
+`create-folder` route): a replay finds the folder under its ID and answers
+`already-exists`. The folder takes the first free name at the destination and absorbs a
+hidden branch folder already there, so a create is never refused for a name. A destination
+that is gone is `destination_missing`, and an ID held by a deleted or foreign folder is a
+conflict, both typed and final.
+
 A hidden node with no active branch use is tombstoned, never left live. End of
 use locks and rechecks the complete namespace/document scope, releases its
 storage and drafts, and prunes empty hidden folders. A moved scope aborts

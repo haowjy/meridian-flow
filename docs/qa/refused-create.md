@@ -92,3 +92,5 @@ Post a body to `/api/projects/<id>/context/unfiled/create-untitled` with `./mf a
 | `uploads` root | 400 `invalid_uri` |
 
 A 401 (expired session), 408, 429, any 5xx and a network failure stay retryable.
+
+A refused folder create settles the same way; its recipe is [New folder](folder-create.md).

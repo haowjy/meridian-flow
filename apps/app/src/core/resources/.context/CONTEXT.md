@@ -18,10 +18,15 @@ checks every resource before an outer transaction writes anything.
 Folder placement lives in the same database (`folders` table, keyed by handle) and
 the same projection stream: `IndexedDbResourceMetadata` implements
 `FolderNamespaceStore`, and `ResourceProjectionSnapshot.folders` carries every
-folder record beside the file records. A folder's handle is `folder:<catalog folder
-id>`, so it can never collide with a document's. `setFolderLocation` admits a
+folder record beside the file records. A folder's handle is `folder:<folder id>`, so
+it can never collide with a document's. `setFolderLocation` admits a
 rename or move from the installed catalog's location (never the optimistic
-projection) and the runner dispatches it like a file's. A catalog commit may carry
+projection) and the runner dispatches it like a file's. `createFolder` mints the
+folder id on this device and admits the create the way `reserveDocument` admits a
+document's: the row is listed at once and the `create-folder` request goes out in the
+background. A folder only this device holds is a parent like any other
+(`findParentAtLocation`), so documents and folders can be put in it before the server
+has answered; those later intents wait for the create. A catalog commit may carry
 folder writes; they apply or fail with the checkpoint. Namespace refresh also uses
 the existing exact-ID availability endpoint, including folder IDs: available identity
 installs canonical location through CAS, unavailable identity exposes queued work
@@ -53,7 +58,8 @@ the runner records server attempts and outcomes later. Shutdown unsubscribes the
 sources, fences new delivery and drains active runners before metadata closes.
 
 The namespace transport uses existing create/move/delete, receipt and exact-ID
-availability APIs. Shared package reconciliation owns refresh progress for both
+availability APIs, plus `create-folder` (a replay is the same request under the same folder id).
+Shared package reconciliation owns refresh progress for both
 files and folders; the account owner has no separate folder refresh loop. The
 Web Lock adapter serializes only short account/resource reconciliation sections;
 missing lock support blocks dispatch. Neither adapter owns retry scheduling or UI
@@ -70,6 +76,9 @@ untyped refusal there, not by settling bare 4xx here. A refused create leaves th
 document on this device with its text, listed in Unfiled with a failure mark
 (`namespaceFailure: "create"`); placing or deleting it repairs it (see the
 [replica contract](../../../../../../packages/resource-replica/.context/CONTEXT.md)).
+A refused folder create does the same: the folder, and anything the writer put in it,
+is listed in Unfiled with a mark until each is placed or deleted. Deleting a folder
+the server never accepted settles on this device, with nothing to Undo.
 
 Folder deletion is another folder namespace intent (`planFolderDeletion`,
 `AccountResourceReplica.deleteFolder`), admitted by stable folder ID. Its delete

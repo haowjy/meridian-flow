@@ -7,11 +7,6 @@
   `features/project/.context/resource-lifecycle-architecture.md`. It requires an
   authenticated-shell bootstrap policy for cached account/project authority; do not
   infer authorization from locally retained resource metadata.
-- Folder create still uses the direct context API. If offline creation becomes a
-  product requirement, extend the folder namespace identity and conflict policy,
-  not the document journal; folders do not
-  have document resource handles or Yjs content sessions.
-
 - Rejected `submitted` namespace requests are retried on every journal change and
   every 30 s. Offline with two tabs, about a dozen identical retries ran in 85 s.
   They carry one operation id, so they are harmless; back the retry off if the
@@ -25,3 +20,9 @@
   local one back. The document's own tab shows the failure and its text. Make the route
   follow a local resource handle through a rollback if this shows up beyond the repair
   path.
+
+- A document or folder put inside a folder whose create was refused settles to repair with
+  it, each with its own mark, and repairing the folder does not re-send them. In Unfiled a
+  child document sits under its refused parent but a child folder lists beside it, because a
+  refused folder's place is read from its typed name alone. If writers hit this, repair a
+  refused folder together with what waited on it and nest children under it.
