@@ -126,7 +126,8 @@ Tree writes return changed identities; ContextFS, the mover, Apply, and Discard
 refresh the catalog in their own surrounding transaction.
 
 Sibling order is part of effective placement. Parents are either `default` (folders first, then
-numeric-aware names) or `manual` (lexical stored ranks). Position commands carry start/end or
+numeric-aware names) or `manual` (stored ranks in byte order: every SQL comparison or `ORDER BY` on
+`rank` uses `COLLATE "C"`, matching `compareCatalogSiblings` in `@meridian/resource-replica`, which also defines the default order). Position commands carry start/end or
 before/after one sibling identity; the server resolves the anchor and allocates the rank while the
 namespace lock is held. Draft-Work placement carries the same position fact, so pending detection,
 Apply, Discard, and inverse operations cannot erase a reorder. Settlement reconciles only the

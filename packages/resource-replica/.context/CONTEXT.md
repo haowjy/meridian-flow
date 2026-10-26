@@ -150,6 +150,10 @@ position? }`, where `position` is one of start, end, before a sibling identity, 
 identity. The destination parent remains explicit: an anchor that moves cannot retarget the command.
 The server resolves this intent and mints the stored rank under the namespace lock. A parent owns an
 explicit default/manual order policy; ranks affect display only for manual parents.
+`sibling-order.ts` is the one comparator: the catalog projection, folder projection and the
+server's tree readers and `ls` all import it, so the tree, Move… and the model see one order. Ranks
+compare bytewise there and `COLLATE "C"` in SQL; a locale collator would order them differently on
+each side. Don't add a surface-local sort.
 Canonical ranks and folder child-order policy are retained with canonical identity metadata as
 checkpoints reload or temporarily disappear. Synthetic ranks are projection-only: transport sends the
 relative position, and a newer catalog observation replaces the prediction.
