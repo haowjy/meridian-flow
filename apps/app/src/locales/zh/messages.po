@@ -1632,6 +1632,14 @@ msgstr ""
 msgid "Couldn't create this file."
 msgstr ""
 
+#: src/features/project/context/use-create-entry-form.ts
+msgid "Couldn't create this folder."
+msgstr ""
+
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't create this folder. Try again."
+msgstr ""
+
 #: src/features/chat/derivation/derive-conversation.ts
 msgid "Couldn't create this fork."
 msgstr ""

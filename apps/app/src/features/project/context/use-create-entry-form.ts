@@ -78,32 +78,40 @@ export function useCreateEntryForm({
       const stored = kind === "file" ? storedFilename(typed) : null;
       const name = stored?.ok ? stored.name : typed;
       const path = joinContextEntryPath(parent, name);
-      if (kind === "file" && usesResourceDocumentCreate(name)) {
+      if (kind === "folder" || usesResourceDocumentCreate(name)) {
         const destinationParent = await resources.findParentAtLocation(projectId, {
           scheme,
           path: parent,
           name: "",
           workId: null,
         });
-        if (!destinationParent) throw new Error(t`Couldn't create this file.`);
-        // The destination goes out with the create, so a branch's new document waiting at
-        // this name is joined instead of a twin being made.
-        // No Unfiled folder path: the destination is the home, and a refused create lists
-        // the document in Unfiled itself, not under a phantom folder named like this one.
-        const reservation = await resources.reserveDocument(projectId, "", {
-          parent: destinationParent,
-          name,
-        });
-        if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
-        reservation.content.handle.release();
-        // This path bypasses the create mutation's own invalidation, so the new
-        // entry stays out of the cached catalog until we drop it here; without
-        // this, the tree and any catalog-driven open lag behind the create.
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextCatalogView(projectId, scheme, undefined),
-        });
+        if (!destinationParent)
+          throw new Error(
+            kind === "folder" ? t`Couldn't create this folder.` : t`Couldn't create this file.`,
+          );
+        if (kind === "folder") {
+          // The row is listed at once; the server's answer, or its refusal, settles it later.
+          await resources.createFolder(projectId, scheme, { parent: destinationParent, name });
+        } else {
+          // The destination goes out with the create, so a branch's new document waiting at
+          // this name is joined instead of a twin being made.
+          // No Unfiled folder path: the destination is the home, and a refused create lists
+          // the document in Unfiled itself, not under a phantom folder named like this one.
+          const reservation = await resources.reserveDocument(projectId, "", {
+            parent: destinationParent,
+            name,
+          });
+          if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
+          reservation.content.handle.release();
+          // This path bypasses the create mutation's own invalidation, so the new
+          // entry stays out of the cached catalog until we drop it here; without
+          // this, the tree and any catalog-driven open lag behind the create.
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.contextCatalogView(projectId, scheme, undefined),
+          });
+        }
       } else {
-        const result = await mutation.mutateAsync({ scheme, type: kind, path, workId: null });
+        const result = await mutation.mutateAsync({ scheme, type: "file", path, workId: null });
         if (result.status === "conflict") {
           throw new Error(
             result.occupantKind

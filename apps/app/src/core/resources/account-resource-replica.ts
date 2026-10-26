@@ -1,5 +1,5 @@
 /** Sole browser account owner for durable resource metadata, content, catalogs, and namespace work. */
-import type { CatalogScope } from "@meridian/contracts/protocol";
+import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeResourceTerminalCleanup,
@@ -12,6 +12,7 @@ import {
   type PlacementAdmission,
   type PlacementSpec,
   planCachedSessionAdoption,
+  planFolderCreate,
   planFolderDeletion,
   planFolderLocation,
   planResourceDeletion,
@@ -636,16 +637,24 @@ export class AccountResourceReplica {
       return { kind: "root", scheme: location.scheme, owner: ownerOf(location) };
     const snapshot = await this.readProjection(projectId);
     const placement = resourcePlacementForSnapshot(projectId, snapshot);
-    for (const entry of snapshot.catalogs.flatMap((catalog) => catalog.entries)) {
-      if (entry.kind !== "folder" || entry.navigationOnly) continue;
-      const home = placement.folderLocation(entry.entryId);
+    // A folder only this device holds yet is a parent like any other.
+    const folderIds = [
+      ...snapshot.catalogs
+        .flatMap((catalog) => catalog.entries)
+        .flatMap((entry) =>
+          entry.kind === "folder" && !entry.navigationOnly ? [entry.entryId] : [],
+        ),
+      ...snapshot.folders.map((folder) => folder.folderId),
+    ];
+    for (const folderId of folderIds) {
+      const home = placement.folderLocation(folderId);
       if (
         home &&
         home.scheme === location.scheme &&
         sameOwner(home, location) &&
         home.path === location.path
       )
-        return { kind: "folder", folderId: entry.entryId };
+        return { kind: "folder", folderId };
     }
     return null;
   }
@@ -708,6 +717,48 @@ export class AccountResourceReplica {
   }
 
   /**
+   * Create a folder under an id this device mints. The writer sees it at once and can place
+   * documents and folders in it; the server's answer arrives in the background, and a refusal
+   * stays on the folder.
+   */
+  async createFolder(
+    projectId: string,
+    scheme: ProjectContextTreeScheme,
+    destination: ResourceDestination,
+  ): Promise<{ folderId: string }> {
+    this.requireOpen();
+    const folderId = crypto.randomUUID();
+    const key = folderKey(folderId);
+    await this.admitPlacement(
+      projectId,
+      null,
+      () => ({
+        projectId,
+        subject: folderId,
+        source: null,
+        destination: destination.parent,
+        position: destination.position,
+      }),
+      async (admission) => {
+        const committed = await this.metadata.commitFolder(
+          planFolderCreate({
+            projectId,
+            scheme,
+            handle: key.handle,
+            folderId,
+            intentId: crypto.randomUUID(),
+            admission,
+            destination,
+          }),
+        );
+        if (committed !== "committed") throw new Error("Folder identity reservation collided");
+      },
+    );
+    this.reconciler.scheduleFolder(key);
+    return { folderId };
+  }
+
+  /**
    * Admit a folder rename or move locally. The source is the installed catalog's location,
    * never the optimistic projection, so a pending parent move cannot leak into the request.
    */
@@ -761,8 +812,9 @@ export class AccountResourceReplica {
         this.metadata.readProjection(projectId),
       ]);
       const observation = installedFolderObservation(projection.catalogs, projectId, folderId);
+      // A folder only this device holds has no place yet, but it has a record.
       const source = current?.canonical ?? observation?.location;
-      if (!source) throw new Error("Folder is unavailable");
+      if (!current && !source) throw new Error("Folder is unavailable");
       const write = plan({
         record: current,
         projectId,
@@ -778,7 +830,11 @@ export class AccountResourceReplica {
       if (!write) return {};
       if ((await this.metadata.commitFolder(write)) !== "committed") continue;
       this.reconciler.scheduleFolder(key);
-      return { operationId };
+      // Deleting a folder the server never held settled here: there is nothing to Undo.
+      const local = write.next.intents.some(
+        (intent) => intent.operationId === operationId && intent.state === "settled-locally",
+      );
+      return local ? {} : { operationId };
     }
   }
 
