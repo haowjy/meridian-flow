@@ -157,14 +157,6 @@ export interface ContextDocumentStore {
     /** Source-relative path segments, the folder's own name last. */
     path: readonly string[];
   }>;
-  /**
-   * Any catalog row under `id`: a live folder of this source, an id held out of reach (deleted,
-   * hidden, another source's, or a document's), or null. One read answers a create replay and
-   * the create itself, so both agree on what "already held" means.
-   */
-  findFolderIdentity(
-    id: string,
-  ): Promise<{ status: "live"; path: readonly string[] } | { status: "unreachable" } | null>;
   /** What a live create at this path would reveal, holding nothing (§6.3 step 1). */
   findLiveCreateCandidate(
     dir: readonly string[],

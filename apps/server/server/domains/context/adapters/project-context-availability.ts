@@ -915,17 +915,10 @@ async function resolveHeldContextNode(input: {
     ? { kind: "document" as const, id: forwardedTo as DocumentId }
     : input.node;
   const row = await heldRow(tx, node);
-  if (!row) {
-    // Document and folder ids are one catalog space: an id this project holds under the other
-    // kind is spent, and can never become the node the create asks for.
-    const other =
-      node.kind === "document"
-        ? await heldRow(tx, { kind: "folder", id: node.id })
-        : await heldRow(tx, { kind: "document", id: node.id as DocumentId });
-    if (other && heldInProject(other, input.projectId, input.userId))
-      return { kind: "unreachable" };
-    return forwardedTo ? { kind: "unreachable" } : null;
-  }
+  if (!row) return forwardedTo ? { kind: "unreachable" } : null;
+  // Another project holding the id is not this project's row: the create proceeds and the
+  // catalog's global entry-id space answers it.
+  if (!heldInProject(row, input.projectId, input.userId)) return null;
   if (row.heldOutOfReach) return { kind: "unreachable" };
   if (row.source.deletedAt || row.sourceProject?.deletedAt || row.work?.deletedAt)
     return { kind: "unreachable" };

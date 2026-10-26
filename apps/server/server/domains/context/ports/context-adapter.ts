@@ -128,9 +128,6 @@ export type AdapterCreatedFolder = {
 
 export type AdapterLocatedDocument = Omit<AdapterUntitledDocumentResult, "status">;
 
-/** A client-minted folder id: a live folder here, or an id held out of this caller's reach. */
-export type AdapterLocatedFolder = { status: "live"; path: string } | { status: "unreachable" };
-
 export type AdapterMoveResult = {
   linkUpdate?: { links: number; documents: number };
   movedNodeId?: string;
@@ -231,8 +228,6 @@ export interface ContextSchemeAdapter {
     documentId: string,
     options?: { includeDeleted?: boolean },
   ): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
-  /** Any catalog row under this id that this source owns: live, or held out of reach (deleted, hidden, foreign, a document). */
-  locateFolder(folderId: string): Promise<Result<AdapterLocatedFolder | null, AdapterFault>>;
   createUntitledDocument(
     path: string,
     options: AdapterCreateUntitledOptions,

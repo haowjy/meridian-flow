@@ -17,7 +17,7 @@ import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
-import { isUuid } from "../../../../shared/uuid.js";
+
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
@@ -223,26 +223,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       .map((link) => link.name);
   }
 
-  async findFolderIdentity(
-    id: string,
-  ): Promise<{ status: "live"; path: readonly string[] } | { status: "unreachable" } | null> {
-    if (!isUuid(id)) return null;
-    const folderId = id as FolderId;
-    const [held] = await loadFolderIdentityRows(this.db, [folderId]);
-    if (held) {
-      // Another source's folder is found by that source's own reader, not this one.
-      if (held.contextSourceId !== this.sourceId) return null;
-      if (held.deleted || held.hidden) return { status: "unreachable" };
-      const path = [...((await loadFolderChains(this.db, [folderId])).get(folderId) ?? [])]
-        .reverse()
-        .map((link) => link.name);
-      return { status: "live", path };
-    }
-    // Folder and document ids share the catalog's entry-id space.
-    const [document] = await loadDocumentIdentityRows(this.db, [folderId]);
-    return document?.contextSourceId === this.sourceId ? { status: "unreachable" } : null;
-  }
-
   async createFolderIfAbsent(input: {
     parentId: string | null;
     name: string;
@@ -316,6 +296,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   ): Promise<LiveDocumentCreation | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
+      // The catalog's entry-id space is global: a folder anywhere already holds this id, so the
+      // document create can never take it (the folder create enforces the same invariant).
+      if (input.id) {
+        const [folder] = await loadFolderIdentityRows(this.db, [input.id as FolderId]);
+        if (folder) throw new ContextEntryConflictError("folder");
+      }
       const occupant = await liveFileOccupant(this, this.deps.db, this.sourceId, input);
       if (occupant === "folder") throw new ContextEntryConflictError("folder");
       if (occupant) return null;
