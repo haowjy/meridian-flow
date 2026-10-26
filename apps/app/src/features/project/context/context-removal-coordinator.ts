@@ -544,6 +544,24 @@ export class ContextRemovalCoordinator {
     );
   }
 
+  /**
+   * A tab whose create the server refused went back to Unfiled. The server answers a recent route
+   * for a document it does not hold with a 400, so the route leaves the working set with the tab.
+   */
+  releaseNeverAcceptedRoute(projectId: string, tab: ContextTab): void {
+    const route = workingSetRouteForTab(tab);
+    if (!route) return;
+    this.workingSet.reconcileContextRoutes(projectId, {
+      removedLocators: [route],
+      survivingOwnedLocators: this.workspace
+        .read(projectId)
+        .tabs.filter((item) => item.documentId !== tab.documentId)
+        .flatMap((item) => workingSetRouteForTab(item) ?? []),
+      promote: null,
+      clearAll: false,
+    });
+  }
+
   private applyDocumentAvailability(
     commands: readonly ProjectDocumentAvailabilityCommand[],
     reapplyDocumentIds: ReadonlySet<string>,

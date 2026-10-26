@@ -1,6 +1,7 @@
 /** Serialized report-and-sweep driver for device working-set state. */
 
 import type { ProjectWorkingSet, WorkingSetRoute } from "@meridian/contracts/protocol";
+import { httpErrorStatus } from "@/client/api/http-client";
 import { getProjectWorkingSet, updateProjectWorkingSet } from "@/client/api/projects-api";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
@@ -19,6 +20,16 @@ import {
 
 const REPORT_DEBOUNCE_MS = 3_000;
 const MAX_BACKOFF_MS = 60_000;
+
+/**
+ * The server read the snapshot and refused it (a route it does not hold is a 400). The same
+ * snapshot gets the same answer, so a timed retry only repeats it. 401, 408 and 429 are not
+ * answers about the snapshot.
+ */
+function isFinalRefusal(error: unknown): boolean {
+  const status = httpErrorStatus(error);
+  return status !== undefined && status >= 400 && status < 500 && ![401, 408, 429].includes(status);
+}
 
 export function canSweepWorkingSet(
   enabled: boolean,
@@ -205,8 +216,13 @@ export class WorkingSetSyncDriver {
           this.confirmBaseline(projectId, response.revision);
           const ack = this.store.acknowledge(projectId, sentVersion, response.revision);
           if (ack.status === "advanced") this.scheduled.add(projectId);
-        } catch {
+        } catch (error) {
           if (sentGeneration !== this.sessionGeneration) continue;
+          // The pending record stays, so the next report, flush or hydration sends again.
+          if (isFinalRefusal(error)) {
+            this.failures.delete(projectId);
+            continue;
+          }
           this.markSuspect(projectId);
           const failures = (this.failures.get(projectId) ?? 0) + 1;
           this.failures.set(projectId, failures);

@@ -30,6 +30,15 @@ it never reopens a historical path. An empty browser-local workspace stays empty
 through screen entry and reload. Project-entry validation reconciles only tabs
 already restored from sessionStorage against the resource replica.
 
+## Refusals and routes the server does not hold
+
+The server answers a snapshot naming a document it does not hold with a 400. The sweep treats
+any 4xx but 401, 408 and 429 as an answer about the snapshot: no suspect baseline, no timed
+retry, and the pending record stays, so the next report, flush or hydration sends again. A
+create the server is still deciding holds its route in the working set and costs one such 400
+until it lands. A create the server refused leaves with its tab: `releaseNeverAcceptedRoute`
+removes the route when the tab returns to Unfiled.
+
 ## Suspect baseline (recovery sweep errata)
 
 Design reference: `client-engine.md` § the sweep — the happy path stays
