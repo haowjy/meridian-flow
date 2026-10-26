@@ -11,6 +11,7 @@ import {
   classifyCommandFailure,
   classifyReplyFailure,
   type Failure,
+  type FailureOccurrence,
   usageFailure,
 } from "@meridian/contracts/failures";
 import type { Turn } from "@meridian/contracts/protocol";
@@ -35,6 +36,7 @@ export type CardControl = { id: string; control: ControlBody } & (
 
 export type ChatCardsInput = {
   threadId: string;
+  unavailable?: FailureOccurrence | null;
   /** The same turn facts `viewTranscript` takes, so both read one normalized sequence. */
   turns: NormalizedTurns;
   runState: RunStateView;
@@ -94,6 +96,16 @@ export function chatCards(input: ChatCardsInput): ChatCards {
         failure: usageFailure(input.runState.record?.blocked?.reason ?? "credits_exhausted"),
         copy: "usage-blocked",
         action: "add_usage",
+        anchor: "composer",
+      }),
+    );
+  if (input.unavailable)
+    cards.push(
+      card({
+        key: input.unavailable.occurrenceId,
+        failure: input.unavailable.failure,
+        copy: "updates-disconnected",
+        action: "reload",
         anchor: "composer",
       }),
     );

@@ -55,9 +55,8 @@ describe("inverse integration (postgres)", () => {
     await resetDatabase(db);
     harness = createHarness(db);
   });
-  afterEach(() => {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+  afterEach(async () => {
+    await harness.dispose();
   });
   afterAll(() => closeDatabase(db));
 

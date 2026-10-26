@@ -70,9 +70,8 @@ describe("response helper replay (Postgres)", () => {
     await resetDatabase(db);
     harness = createHarness(db);
   });
-  afterEach(() => {
-    harness.cancelScheduledPulls();
-    harness.destroyWarmState();
+  afterEach(async () => {
+    await harness.dispose();
   });
   afterAll(() => closeDatabase(db));
   it("a save whose second document moves between capture and commit folds the move and commits once", async () => {

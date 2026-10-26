@@ -40,7 +40,6 @@ const state = {
     mode: "direct" as const,
     blocked: null,
   },
-  resumeAfterSeq: "100",
 };
 function delta(seq: string, text: string) {
   return {

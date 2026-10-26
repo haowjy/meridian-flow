@@ -62,8 +62,6 @@ export type ThreadLiveState = {
   activity: ThreadActivity;
   /** What the chat is doing, read with the journal head in one transaction; `version` is that head. */
   runState: RunState;
-  /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
-  resumeAfterSeq: string;
 };
 
 export const projectBootstrapResponseSchema = z.object({
@@ -101,12 +99,6 @@ export type { ProjectChatFeedPage as ListWorkThreadsResponse } from "../threads/
 export type { AiWriteMode, Work };
 
 export type ListWorksResponse = WorksSnapshot;
-
-/** Identity projection for callers resolving a named Work, not a complete catalog validator. */
-export const workCatalogIdentitySchema = z.object({
-  projectId: z.string().min(1),
-  works: z.array(z.object({ id: z.string().min(1), handle: z.string().min(1), name: z.string() })),
-});
 
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
@@ -158,18 +150,25 @@ export type CreateUntitledContextDocumentJoined = {
   address: ContextDocumentAddress;
 };
 
-/** File creation success always carries the created identity and its canonical URI. */
-export const createContextFileResponseSchema = z.object({
-  status: z.literal("created"),
-  documentId: z.string().min(1),
-  uri: z.string().min(1),
-});
-export type CreateContextFileResponse = z.infer<typeof createContextFileResponseSchema>;
+/** One create route: file success carries identity, folder success carries no file identity. */
+export const createContextEntryResultSchema = z.union([
+  z.object({ status: z.literal("created"), documentId: z.string().min(1), uri: z.string().min(1) }),
+  z.object({
+    status: z.literal("created"),
+    documentId: z.never().optional(),
+    uri: z.never().optional(),
+  }),
+  z.object({
+    status: z.literal("conflict"),
+    uri: z.string().min(1),
+    occupantKind: z.enum(["file", "folder"]).optional(),
+  }),
+]);
+export type CreateContextEntryResult = z.infer<typeof createContextEntryResultSchema>;
 
-/** Creation uses the same conflict payload for files and folders, including HTTP 409. */
-export type CreateContextEntryResult =
-  | { status: "created"; documentId?: string; uri?: string }
-  | { status: "conflict"; uri: string; occupantKind?: "file" | "folder" };
+/** A file-only caller derives its success proof from the route's canonical variants. */
+export const createContextFileResponseSchema = createContextEntryResultSchema.options[0];
+export type CreateContextFileResponse = z.infer<typeof createContextFileResponseSchema>;
 
 export type CreateUntitledContextDocumentResult =
   | CreateUntitledContextDocumentResponse
@@ -404,6 +403,8 @@ export type AuthenticatedUser = {
   name: string | null;
   avatarUrl: string | null;
 };
+
+export const authIdentitySchema = z.object({ user: z.object({ userId: z.uuid() }) });
 
 export type AuthMeResponse = { user: AuthenticatedUser };
 

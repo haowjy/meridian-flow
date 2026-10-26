@@ -11,6 +11,11 @@
  * their timers; the transport owns the socket.
  */
 import {
+  classifyUnavailable,
+  type FailureLog,
+  type FailureOccurrence,
+} from "@meridian/contracts/failures";
+import {
   compareSeq,
   type SequencedEvent,
   type WsClientMessage,
@@ -43,6 +48,7 @@ type ThreadSubscription = {
   /** This thread's backoff for failed requests. Reset by `subscribed`, connection loss, and removal. */
   retry: { attempt: number; timer?: Timer };
   gapCount: number;
+  unavailable: FailureOccurrence | null;
 };
 
 function selectNewestSeq(a?: string, b?: string): string | undefined {
@@ -70,6 +76,8 @@ export class WsThreadSubscriptionRegistry {
       isConnected: () => boolean;
       nextRequestId: () => string;
       send: (message: WsClientMessage) => void;
+      failureLog: FailureLog;
+      connectionFailure: () => FailureOccurrence | null;
     },
   ) {}
 
@@ -158,6 +166,7 @@ export class WsThreadSubscriptionRegistry {
     }));
     if (subscription.request?.id === message.requestId) {
       this.settle(subscription, message.after, catchup);
+      this.setAvailability(message.threadId, subscription, null, "resolved");
       // After catch-up: a replayed frame is frozen at emit time, so the
       // server-computed live state wins over any stale replayed value.
       for (const handler of subscription.handlers) handler.onLiveState?.(message.state);
@@ -182,7 +191,42 @@ export class WsThreadSubscriptionRegistry {
       requestId: this.transport.nextRequestId(),
       threadId,
     });
+    this.setAvailability(threadId, subscription, {
+      occurrenceId: `connection:${globalThis.crypto.randomUUID()}`,
+      failure: classifyUnavailable("subscribe_refused"),
+    });
     for (const handler of subscription.handlers) handler.onError?.(error);
+  }
+
+  private setAvailability(
+    threadId: string,
+    subscription: ThreadSubscription,
+    failure: FailureOccurrence | null,
+    end: "resolved" | "moot" = "moot",
+  ) {
+    const previous = subscription.unavailable;
+    if (previous?.occurrenceId === failure?.occurrenceId) return;
+    // Connection-wide episodes are logged by the socket owner, not once per mounted chat.
+    if (previous && previous !== this.transport.connectionFailure())
+      this.transport.failureLog.record({ ...previous, threadId, phase: "ended", end });
+    subscription.unavailable = failure;
+    if (failure && failure !== this.transport.connectionFailure())
+      this.transport.failureLog.record({ ...failure, threadId, phase: "recorded" });
+    for (const handler of subscription.handlers) handler.onUnavailable?.(failure);
+  }
+
+  connectionUnavailable(failure: FailureOccurrence): void {
+    for (const [threadId, subscription] of this.subscriptions)
+      this.setAvailability(threadId, subscription, failure);
+  }
+
+  hasUnavailable(failure: FailureOccurrence): boolean {
+    return [...this.subscriptions.values()].some((entry) => entry.unavailable === failure);
+  }
+
+  clearAvailability(): void {
+    for (const [threadId, subscription] of this.subscriptions)
+      this.setAvailability(threadId, subscription, null);
   }
 
   private get(threadId: string): ThreadSubscription | undefined {
@@ -227,8 +271,10 @@ export class WsThreadSubscriptionRegistry {
         held: new Map(),
         retry: { attempt: 0 },
         gapCount: 0,
+        unavailable: this.transport.connectionFailure(),
       };
       this.subscriptions.set(threadId, subscription);
+      handler.onUnavailable?.(subscription.unavailable);
       this.sendRequest(threadId, subscription);
       return;
     }
@@ -238,6 +284,7 @@ export class WsThreadSubscriptionRegistry {
     const inFlight = Boolean(subscription.request);
     // A cursorless handler starts at the position, else at the replay in flight.
     subscription.handlers.add(handler);
+    handler.onUnavailable?.(subscription.unavailable);
     subscription.cursors.set(handler, after ?? position ?? (inFlight ? requested : undefined));
 
     if (!this.transport.isConnected()) {
@@ -274,6 +321,7 @@ export class WsThreadSubscriptionRegistry {
     subscription.waiting.delete(handler);
     if (subscription.handlers.size > 0) return;
 
+    this.setAvailability(threadId, subscription, null);
     this.subscriptions.delete(threadId);
     endRequest(subscription);
     clearRetryTimer(subscription);

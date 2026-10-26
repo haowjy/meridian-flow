@@ -9,6 +9,8 @@ import { controlStatusCopy, controlWithdrawFailedCopy } from "./thread-controls/
 
 export function chatCardText(card: ChatCard): string {
   switch (card.copy) {
+    case "updates-disconnected":
+      return t`Chat updates disconnected`;
     case "reply-failed":
       return t`This response failed.`;
     case "reply-declined":
