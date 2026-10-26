@@ -55,6 +55,8 @@ import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-map
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
+/** Postgres binds at most 65,534 parameters per statement; an entry row binds three. */
+const ENTRY_INSERT_ROWS = 10_000;
 
 type CatalogDb = Pick<Database, "delete" | "insert" | "select" | "update">;
 
@@ -548,9 +550,9 @@ export function createDrizzleContextCatalog(
     if (changes.length === 0) return;
     const revision = head.headRevision + 1;
     await tx.delete(contextCatalogEntries).where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
-    if (authoritative.length > 0) {
+    for (let offset = 0; offset < authoritative.length; offset += ENTRY_INSERT_ROWS) {
       await tx.insert(contextCatalogEntries).values(
-        authoritative.map((entry) => ({
+        authoritative.slice(offset, offset + ENTRY_INSERT_ROWS).map((entry) => ({
           scopeKey: head.scopeKey,
           entryId: entry.entryId,
           entry,
