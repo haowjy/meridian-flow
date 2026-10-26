@@ -163,10 +163,12 @@ Each placement-bearing intent (move, reorder, delete, create with a destination)
 a sequence `order`, conflict `scope` keys (subject; the sibling sequences it leaves and joins; its
 anchor; the destination's folder ancestry) and `predecessors`, the intents still unresolved at that
 moment with an overlapping scope. The lock covers reading the snapshot and committing the intent, so
-two tabs cannot assign contradictory order. Admission reads only what is in flight (indexed on
-intent state and outstanding refresh, `readPlacementAdmissionView`) plus the admission high-water
-mark, an index maximum read inside that lock; settled history is never scanned, and projection skips
-it before allocating or sorting. A predecessor reference names the admission `order`, the placement's
+two tabs cannot assign contradictory order. Admission reads only what is in flight: unresolved intents and the
+accepted one an outstanding canonical refresh waits on, found by index
+(`readPlacementAdmissionView`), never a handle's whole journal. The high-water mark is a stored
+counter raised in the commit that stores an admitted intent, so it is read inside that lock without
+a scan. Folder records (embedded histories, needed for parent resolution) and the reactive account
+projection still load complete journals, which Undo and receipts read. A predecessor reference names the admission `order`, the placement's
 logical identity, and resolves to the newest intent carrying it, so a remint's replacements stay
 waited on. Project area roots are qualified by project in the scope; the User area is shared.
 
