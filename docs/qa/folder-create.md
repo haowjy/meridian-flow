@@ -142,3 +142,14 @@ so a pending child's create stops with the parent and one Undo restores the subt
   create waits for the parent and goes out only after the parent lands.
 - A child document that was already refused restores with the parent and keeps its mark; it
   is not re-sent by the Undo.
+
+## A folder create carries position
+
+`destination.position` is parsed by the same `parseSiblingPosition` a move uses, carried by
+`create-folder`, and resolved by the store under the same namespace lock
+(`createFolderIfAbsent` → `placeLiveSibling`). With `./mf api`: create `Order A`, `Order B`,
+then `Order C` with `{kind: "after", siblingId: <A>}`; the snapshot ranks read `a1`, `a2`,
+`a1V`, so C sits between A and B. A malformed position is a typed 400, and an anchor the
+server does not hold leaves the folder at the parent's arrival placement. Dropping a row on
+a collapsed pending folder's lower edge still sends the move with `position: after` and the
+folder as its anchored predecessor.
