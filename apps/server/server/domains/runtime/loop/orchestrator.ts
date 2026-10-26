@@ -912,6 +912,7 @@ async function runDrainTurn(
         ],
         inheritedBlocks,
         initialContext: relayed ? undefined : preflight?.assembled,
+        initialContextInvalidated: relayed,
         initialContinuation: preflight?.continuation ?? { kind: "ordinary" },
         initialCompaction: relayed
           ? { kind: "generate" }
@@ -1944,6 +1945,7 @@ async function executeLoop({
   initialTurns,
   inheritedBlocks,
   initialContext,
+  initialContextInvalidated,
   initialCompaction,
   initialContinuation,
   initialExecutionAdmitted,
@@ -1959,6 +1961,8 @@ async function executeLoop({
   initialTurns: Turn[];
   inheritedBlocks: Block[];
   initialContext: AssembledNextTurnContext | undefined;
+  /** A pre-request relay rewrote a tool result after setup assembled the request. */
+  initialContextInvalidated: boolean;
   initialCompaction: CompactionDecision;
   initialContinuation: NotesContinuation;
   initialExecutionAdmitted: boolean;
@@ -2029,12 +2033,14 @@ async function executeLoop({
   ];
   // The reservation already prepared this request, so its first generation is
   // not another boundary.
-  let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined = {
-    turns: [],
-    blocks: [],
-    events: [],
-    ackIds: (await deps.delivery.readPendingProjection(input.threadId)).run?.messageIds ?? [],
-  };
+  let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined = initialContextInvalidated
+    ? undefined
+    : {
+        turns: [],
+        blocks: [],
+        events: [],
+        ackIds: (await deps.delivery.readPendingProjection(input.threadId)).run?.messageIds ?? [],
+      };
   let executionSelector: TurnId | null = initialExecutionAdmitted ? reservedTurn.id : null;
   let terminalControl = false;
   // A message waits behind a queued write-mode switch: end the reply here.
