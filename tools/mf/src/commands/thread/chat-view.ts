@@ -554,6 +554,8 @@ function rowLines(row: ChatRow): string[] {
         `provider error (${row.providerError.status ?? "in-stream"}): ${row.providerError.message}`,
       ),
     );
+  // Deliveries under an asking reply arrived after its question, so they follow its receipt.
+  const deliveryLines: string[] = [];
   row.items?.forEach((item, index) => {
     const marker = index === row.finalFrom ? "answer: " : "";
     switch (item.kind) {
@@ -589,13 +591,14 @@ function rowLines(row: ChatRow): string[] {
         break;
       case "delivery":
         for (const group of item.groups)
-          lines.push(
+          deliveryLines.push(
             ...indent(`delivery:${group.id} ${group.events.map(deliveryLine).join("; ")}`),
           );
         break;
     }
   });
   if (row.ask) lines.push(...indent(askLine(row.ask)));
+  lines.push(...deliveryLines);
   return lines;
 }
 
