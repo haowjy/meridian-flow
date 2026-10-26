@@ -55,17 +55,12 @@ export async function persistWriterTurn(input: {
   beforePersist?: () => Promise<void>;
   afterEnqueue?: (userTurnId: TurnId) => Promise<void>;
   afterTurnCreated?: (userTurnId: TurnId) => void;
-}): Promise<ReturnType<typeof createLocalTurn> | null> {
-  const placeNow = await input.producer.materializePrefix();
+}): Promise<ReturnType<typeof createLocalTurn>> {
+  await input.producer.materializePrefix();
   const current = await input.persistence.repos.threads.findById(input.threadId);
   if (!current) throw new Error(`Thread not found: ${input.threadId}`);
 
   await input.beforePersist?.();
-  if (!placeNow) {
-    await input.producer.enqueue(input.draft);
-    await input.afterEnqueue?.(input.userTurnId);
-    return null;
-  }
   const persisted = await persistAndAppendTurnStartEvents(
     input.persistence,
     input.threadId,

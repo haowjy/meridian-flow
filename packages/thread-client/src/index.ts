@@ -74,7 +74,6 @@ export type { DirectInvocationResult } from "./view/invocation-direct-result";
 export { latestRow } from "./view/latest-row";
 export { type NormalizedTurns, normalizeTurns, type TurnFacts } from "./view/normalize-turns";
 export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic-turn-id";
-export { queuedWriterTurnStandIns } from "./view/queued-writer-turns";
 export { replyDrawsNothing } from "./view/reply-draws-nothing";
 export { placeStandIns } from "./view/retry-stand-ins";
 export {
