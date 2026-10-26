@@ -75,6 +75,7 @@ export function createRunSessions(deps: {
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
   cancelSubtreeAsks?: (threadId: ThreadId) => Promise<void>;
+  projectRunning?: (threadId: ThreadId, executionTurnId: TurnId) => Promise<void>;
 }) {
   const running = new Map<ThreadId, RunSession>();
   const shutdown = deps.shutdown;
@@ -213,6 +214,7 @@ export function createRunSessions(deps: {
         },
       });
       session.currentTurn = loop.currentTurn;
+      await deps.projectRunning?.(threadId, loop.currentTurn.id);
       if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       preparedRun = true;
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
