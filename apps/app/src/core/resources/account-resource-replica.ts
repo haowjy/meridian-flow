@@ -323,10 +323,10 @@ export class AccountResourceReplica {
     // Reconciliation belongs to the account lifetime, not mounted catalog consumers.
     this.stopReconciliation = this.metadata.observeProjection(
       "",
-      ({ records, folders }) => {
+      ({ records, folders, operations }) => {
         if (this.closing) return;
         this.identities.observe(records);
-        this.reconciler.reconcileProjection(records, folders);
+        this.reconciler.reconcileProjection(records, folders, operations);
       },
       () => undefined,
     );

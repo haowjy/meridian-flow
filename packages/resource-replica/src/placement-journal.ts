@@ -10,6 +10,7 @@ import type { ResourcePlacement } from "./folder-projection";
 import type {
   FolderNamespaceRecord,
   NamespaceIntent,
+  OperationRecord,
   ParentRef,
   PlacementAdmission,
   PlacementPredecessor,
@@ -25,9 +26,10 @@ export function placementParentKey(parent: ParentRef): string {
 
 /** A placement intent in a journal, with the identity it places. */
 export type PlacementOp = {
-  kind: "resource" | "folder";
+  kind: PlacementPredecessor["kind"];
+  /** The journal's handle: a resource's or folder's, or an operation's id. */
   handle: string;
-  /** The entry id the catalog and anchors name. */
+  /** The entry id the catalog and anchors name; an operation places no entry, so its own id. */
   subject: string;
   intent: NamespaceIntent & { admission: PlacementAdmission };
 };
@@ -48,11 +50,14 @@ function shapesList(intent: NamespaceIntent, refreshing: string | undefined): bo
 
 /**
  * The admitted intents that still shape the list, in admission order. Settled history is skipped
- * before anything is allocated or sorted, so the work follows what is in flight.
+ * before anything is allocated or sorted, so the work follows what is in flight. `operations` are
+ * the operation journals the caller read (admission reads them all); the list fold passes none,
+ * because it places only records until an operation's roots have a projection of their own.
  */
 export function placementOps(snapshot: {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
+  operations?: readonly OperationRecord[];
 }): PlacementOp[] {
   const ops: PlacementOp[] = [];
   const add = (
@@ -82,7 +87,37 @@ export function placementOps(snapshot: {
       folder.intents,
       folder.canonicalRefresh?.operationId,
     );
+  if (snapshot.operations?.length) {
+    // An operation shapes the list until no root's refresh barrier names it.
+    const refreshing = refreshBarrierOperationIds(snapshot);
+    for (const { operationId, intents } of snapshot.operations)
+      add(
+        "operation",
+        operationId,
+        operationId,
+        intents,
+        refreshing.has(operationId) ? operationId : undefined,
+      );
+  }
   return ops.sort((left, right) => left.intent.admission.order - right.intent.admission.order);
+}
+
+/**
+ * The operations a record's canonical refresh waits on. A record that an operation placed rests on
+ * that operation's receipt until the barrier clears, so the operation's journal must outlive it.
+ */
+export function refreshBarrierOperationIds(snapshot: {
+  records: readonly ResourceRecord[];
+  folders: readonly FolderNamespaceRecord[];
+}): Set<string> {
+  const ids = new Set<string>();
+  for (const { resource } of snapshot.records) {
+    const operationId = resource.obligations.canonicalRefresh?.operationId;
+    if (operationId) ids.add(operationId);
+  }
+  for (const folder of snapshot.folders)
+    if (folder.canonicalRefresh) ids.add(folder.canonicalRefresh.operationId);
+  return ids;
 }
 
 /** Work the server has not finished with: it still shapes what later placements read. */
@@ -189,7 +224,11 @@ function currentSpec(
  */
 export function capturePlacementAdmission(input: {
   /** The journals in flight; settled history is not needed (see `highWater`). */
-  snapshot: { records: readonly ResourceRecord[]; folders: readonly FolderNamespaceRecord[] };
+  snapshot: {
+    records: readonly ResourceRecord[];
+    folders: readonly FolderNamespaceRecord[];
+    operations: readonly OperationRecord[];
+  };
   /** The highest admission order ever assigned, read atomically with the snapshot. */
   highWater: number;
   placement: Pick<ResourcePlacement, "parentForFolder">;

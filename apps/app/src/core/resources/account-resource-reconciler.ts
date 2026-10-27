@@ -1,7 +1,8 @@
 /**
- * Account-scoped background reconciliation of resource metadata: one runner per handle that
- * dispatches namespace work, follows joins and reminted creates, adopts sessions and cleans up
- * deleted content. Retry triggers and projection observations feed it; the replica composes it.
+ * Account-scoped background reconciliation of resource metadata: one runner per handle (a
+ * resource's, a folder's or an operation's) that dispatches namespace work, follows joins and
+ * reminted creates, adopts sessions and cleans up deleted content. Retry triggers and projection
+ * observations feed it; the replica composes it.
  * Runners are independent: a placement waits only for the predecessors its journal admission
  * names (`placementDispatchVerdict`), so unrelated work never queues behind a held request.
  */
@@ -13,6 +14,8 @@ import {
   joinReservation,
   latestAdmittedPlacement,
   type NamespaceIntent,
+  type OperationRecord,
+  operationNeedsBackgroundReconciliation,
   type PlacementPredecessor,
   type PlacementVerdict,
   pendingJoinProject,
@@ -23,12 +26,13 @@ import {
   type ResourceRecord,
   type ResourceWrite,
   reconcileFolderNamespace,
+  reconcileOperationNamespace,
   reconcileResourceNamespace,
   remintFolder,
   remintResource,
   resourceIdentityIndex,
   resourceNeedsBackgroundReconciliation,
-  type ServerHold,
+  retiredOperations,
   settleNamespaceOutcome,
 } from "@meridian/resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
@@ -110,6 +114,7 @@ export class AccountResourceReconciler {
   private readonly reruns = new Map<string, () => void>();
   private readonly observedResourceRevisions = new Map<string, number>();
   private readonly observedFolderRevisions = new Map<string, number>();
+  private readonly observedOperationRevisions = new Map<string, number>();
   /** Handles holding a placement behind predecessors, woken when a journal they wait on changes. */
   private readonly waiting = new Map<string, { rerun: () => void; on: ReadonlySet<string> }>();
   private stopHints: (() => void) | null = null;
@@ -145,6 +150,7 @@ export class AccountResourceReconciler {
   reconcileProjection(
     records: readonly ResourceRecord[],
     folders: readonly FolderNamespaceRecord[],
+    operations: readonly OperationRecord[],
   ): void {
     const changed = new Set<string>();
     for (const record of records) {
@@ -161,9 +167,23 @@ export class AccountResourceReconciler {
       changed.add(folder.handle);
       if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
     }
+    for (const operation of operations) {
+      const { operationId, revision } = operation;
+      if (this.observedOperationRevisions.get(operationId) === revision) continue;
+      this.observedOperationRevisions.set(operationId, revision);
+      changed.add(operationId);
+      if (operationNeedsBackgroundReconciliation(operation)) this.scheduleOperation(operation);
+    }
     // A change from any tab may resolve a predecessor; only its waiters look again.
     for (const { rerun, on } of [...this.waiting.values()])
       if ([...on].some((handle) => changed.has(handle))) rerun();
+    this.retireOperations({ records, folders, operations });
+  }
+
+  /** Drops the operations nothing reads any more. Another tab may win the race; its drop is the same. */
+  private retireOperations(snapshot: Parameters<typeof retiredOperations>[0]): void {
+    for (const { operationId, revision } of retiredOperations(snapshot, Date.now()))
+      void this.ports.metadata.retireOperation(operationId, revision).catch(() => undefined);
   }
 
   schedule(key: ResourceKey): void {
@@ -182,14 +202,28 @@ export class AccountResourceReconciler {
     );
   }
 
+  /** An operation's handle is its id: `key.handle` and `operationId` are the same string. */
+  private scheduleOperation(operation: Pick<OperationRecord, "operationId">): void {
+    const key = { handle: operation.operationId };
+    this.scheduleOnce(
+      key,
+      () => this.runOperation(key),
+      () => this.scheduleOperation(operation),
+    );
+  }
+
   private readonly retryAll = () => {
     void this.ports.metadata
       .readProjection("")
-      .then(({ records, folders }) => {
+      .then(({ records, folders, operations }) => {
         for (const record of records)
           if (resourceNeedsBackgroundReconciliation(record)) this.schedule(record.resource);
         for (const folder of folders)
           if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
+        for (const operation of operations)
+          if (operationNeedsBackgroundReconciliation(operation)) this.scheduleOperation(operation);
+        // A notice window closes with no projection change, so the sweep also runs here.
+        this.retireOperations({ records, folders, operations });
       })
       .catch(() => undefined);
   };
@@ -228,6 +262,21 @@ export class AccountResourceReconciler {
       });
       if ((result === "needs-repair" || result === "blocked") && (await this.remintFolder(key)))
         continue;
+      if (result !== "progressed") return;
+    }
+  }
+
+  private async runOperation(key: ResourceKey): Promise<void> {
+    const { metadata, namespace: transport, lock } = this.ports;
+    for (let step = 0; step < 100 && !this.ports.isClosing(); step += 1) {
+      const result = await reconcileOperationNamespace({
+        key,
+        metadata,
+        transport,
+        lock,
+        newAttemptIds,
+        gate: this.gate(key, () => this.scheduleOperation({ operationId: key.handle })),
+      });
       if (result !== "progressed") return;
     }
   }
@@ -296,7 +345,7 @@ export class AccountResourceReconciler {
           ref.order,
           journal ? latestAdmittedPlacement(journal.intents, ref.order) : undefined,
         );
-        if (journal && awaitsRemint(journal)) replacing = true;
+        if (journal?.replacing) replacing = true;
       }
       const verdict = replacing
         ? "wait"
@@ -306,12 +355,29 @@ export class AccountResourceReconciler {
     };
   }
 
+  /** The journal a predecessor names, and whether it is mid-replacement (a spent id: an operation never is). */
   private async predecessorJournal(
     ref: PlacementPredecessor,
-  ): Promise<{ serverHold: ServerHold; intents: readonly NamespaceIntent[] } | null> {
-    if (ref.kind === "folder") return this.ports.metadata.readFolder({ handle: ref.handle });
-    const record = await this.ports.metadata.readResource({ handle: ref.handle });
-    return record && { serverHold: record.resource.serverHold, intents: record.intents };
+  ): Promise<{ intents: readonly NamespaceIntent[]; replacing: boolean } | null> {
+    const { metadata } = this.ports;
+    if (ref.kind === "operation") {
+      const operation = await metadata.readOperation(ref.handle);
+      return operation && { intents: operation.intents, replacing: false };
+    }
+    if (ref.kind === "folder") {
+      const folder = await metadata.readFolder({ handle: ref.handle });
+      return folder && { intents: folder.intents, replacing: awaitsRemint(folder) };
+    }
+    const record = await metadata.readResource({ handle: ref.handle });
+    return (
+      record && {
+        intents: record.intents,
+        replacing: awaitsRemint({
+          serverHold: record.resource.serverHold,
+          intents: record.intents,
+        }),
+      }
+    );
   }
 
   /** Returns whether a plan applied or a conflict was settled, so the runner takes another pass. */

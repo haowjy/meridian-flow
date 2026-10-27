@@ -5,9 +5,12 @@ APIs, Web Locks and exact local document sessions. `AccountResourceReplica` is
 the production account-scoped owner. The authenticated feature lifetime creates
 one instance and closes the whole document runtime if its storage is invalidated.
 
-`IndexedDbResourceMetadata` owns one `v3` physical database per account; the
-incompatible inactive predecessor schemas are deliberately ignored rather than
-migrated. Resource descriptors are account-global by stable handle and retain
+`IndexedDbResourceMetadata` owns one physical database per account
+(`meridian:resource-metadata:v4:<account>`; its Dexie schema version, 6 today, is
+separate from that name); the incompatible inactive predecessor schemas are
+deliberately ignored rather than migrated. Never edit a Dexie version that has
+reached a browser: add the next one, or the automatic schema diff skips its
+upgrade steps for databases already at it. Resource descriptors are account-global by stable handle and retain
 catalog-defined file classification. Namespace intentions carry the project used
 for their command. Catalog checkpoints carry both server scope and consuming
 project, so the same account-owned User catalog can project into several projects
@@ -32,7 +35,11 @@ document's: the row is listed at once and the `create-folder` request goes out i
 background. A folder only this device holds is a parent like any other
 (`findParentAtLocation`), so documents and folders can be put in it before the server
 has answered; those later intents wait for the create. A catalog commit may carry
-folder writes; they apply or fail with the checkpoint. Namespace refresh also uses
+folder writes; they apply or fail with the checkpoint. An operation over several records
+(Copy) lives in the `operations` table beside them: `readOperation`, `commitOperation`
+and `retireOperation`, a third `scheduleOnce` arm in `AccountResourceReconciler`, and
+`ResourceProjectionSnapshot.operations` in the same projection stream (see the
+[replica contract](../../../../../../packages/resource-replica/.context/CONTEXT.md#operations-operation-journalts-first-placets)). Namespace refresh also uses
 the existing exact-ID availability endpoint, including folder IDs: available identity
 installs canonical location through CAS, unavailable identity exposes queued work
 as repair, and a folder tombstone retires it as terminal history. Scoped absence

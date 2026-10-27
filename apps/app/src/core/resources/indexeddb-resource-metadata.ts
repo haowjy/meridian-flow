@@ -6,6 +6,10 @@ import type {
   FolderNamespaceStore,
   FolderNamespaceWrite,
   NamespaceIntent,
+  OperationReader,
+  OperationRecord,
+  OperationStore,
+  OperationWrite,
   ResourceCatalogCheckpoint,
   ResourceDescriptor,
   ResourceDestination,
@@ -21,12 +25,14 @@ import {
   catalogScopeBelongsToProject,
   folderDeletionSettlement,
   holdAfterAttempt,
+  originOperation,
   planFolderDeletionResources,
   planFolderRemintDependents,
   resourceForDocumentIdentity,
   resourceVisibleInProject,
   untitledDestination,
   validateFolderNamespaceUpdate,
+  validateOperationRecordUpdate,
   validateResourceRecordUpdate,
 } from "@meridian/resource-replica";
 import Dexie, { liveQuery, type Table } from "dexie";
@@ -49,6 +55,7 @@ type LegacyIntent = Omit<NamespaceIntent, "desired"> & { desired: LegacyDesired 
 type AccountProjectionSnapshot = {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
+  operations: readonly OperationRecord[];
   catalogs: readonly ResourceCatalogCheckpoint[];
 };
 type ProjectionListener = {
@@ -151,15 +158,22 @@ function upgradedMaterialization(
  * Expected revisions belong to the caller's immutable snapshot; stale writes never partly apply.
  * Folder placement shares the file journal's transactions, catalog commits and projection stream.
  */
-export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderNamespaceStore {
+export class IndexedDbResourceMetadata
+  implements ResourceMetadataStore, FolderNamespaceStore, OperationStore
+{
   private readonly database: Dexie;
   private readonly resources: Table<ResourceDescriptor, string>;
   private readonly intents: Table<NamespaceIntent, string>;
   private readonly catalogs: Table<StoredCatalog, string>;
   private readonly folders: Table<FolderNamespaceRecord, string>;
+  private readonly operations: Table<OperationRecord, string>;
   private readonly meta: Table<StoredMeta, string>;
-  private readonly operations = new Set<Promise<unknown>>();
+  private readonly inFlight = new Set<Promise<unknown>>();
   private readonly projectionListeners = new Map<symbol, ProjectionListener>();
+  /** Reads an operation inside the caller's transaction, for the record validators. */
+  private readonly operationReader: OperationReader = {
+    readOperation: async (operationId) => (await this.operations.get(operationId)) ?? null,
+  };
   private projectionStop: (() => void) | null = null;
   private projectionRetry: ReturnType<typeof setTimeout> | null = null;
   private projectionSnapshot: AccountProjectionSnapshot | null = null;
@@ -246,10 +260,15 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
             serverHold: replayedServerHold(folder.canonical === null, folder.intents, 1),
           });
       });
+    // An operation over several records (a Copy) is journaled once, under its operation id. A new
+    // version, not an edit of 5: browsers that ran the release branch already hold a v5 database,
+    // and the automatic schema diff would skip every upgrade step for them.
+    this.database.version(6).stores({ operations: "operationId,projectId" });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");
     this.folders = this.database.table("folders");
+    this.operations = this.database.table("operations");
     this.meta = this.database.table("meta");
     this.database.on("versionchange", () => {
       this.beginClose();
@@ -265,8 +284,8 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
   private run<T>(operation: () => Promise<T>): Promise<T> {
     if (this.closing) return Promise.reject(new Error("Resource metadata is closing"));
     const promise = Promise.resolve().then(operation);
-    this.operations.add(promise);
-    void promise.finally(() => this.operations.delete(promise)).catch(() => undefined);
+    this.inFlight.add(promise);
+    void promise.finally(() => this.inFlight.delete(promise)).catch(() => undefined);
     return promise;
   }
 
@@ -299,16 +318,19 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
       this.intents,
       this.catalogs,
       this.folders,
+      this.operations,
       async () => {
-        const [resources, intents, catalogs, folders] = await Promise.all([
+        const [resources, intents, catalogs, folders, operations] = await Promise.all([
           this.resources.toArray(),
           this.intents.toArray(),
           this.catalogs.toArray(),
           this.folders.toArray(),
+          this.operations.toArray(),
         ]);
         return {
           records: this.records(resources, intents),
           folders,
+          operations,
           catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
         };
       },
@@ -322,6 +344,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     return {
       records: snapshot.records,
       folders: snapshot.folders,
+      operations: snapshot.operations,
       catalogs: snapshot.catalogs.filter((catalog) => catalog.projectId === projectId),
     };
   }
@@ -378,9 +401,9 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
    * What admitting a placement reads: for the journals that still shape the list, only their
    * unresolved intents and the accepted one a canonical refresh waits on (found through indexes,
    * so a handle's settled history is never loaded); the optional subject's resource; every folder
-   * record, which parent resolution needs; the project's catalogs; and the stored high-water
-   * mark. Call it inside the placement admission lock, which makes the mark atomic with the
-   * commit that follows.
+   * record, which parent resolution needs; every operation record (retention keeps them few); the
+   * project's catalogs; and the stored high-water mark. Call it inside the placement admission
+   * lock, which makes the mark atomic with the commit that follows.
    */
   readPlacementAdmissionView(
     projectId: string,
@@ -389,11 +412,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     return this.run(() =>
       this.database.transaction(
         "r",
-        this.resources,
-        this.intents,
-        this.catalogs,
-        this.folders,
-        this.meta,
+        [this.resources, this.intents, this.catalogs, this.folders, this.operations, this.meta],
         async () => {
           const shaping = await this.intents
             .where("state")
@@ -420,14 +439,16 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
             ),
             shaping,
           );
-          const [folders, catalogs, highWater] = await Promise.all([
+          const [folders, operations, catalogs, highWater] = await Promise.all([
             this.folders.toArray(),
+            this.operations.toArray(),
             this.catalogs.where("projectId").equals(projectId).toArray(),
             this.meta.get("placementHighWater"),
           ]);
           return {
             records,
             folders,
+            operations,
             catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
             highWater: highWater?.value ?? 0,
           };
@@ -446,6 +467,27 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
       await this.meta.put({ key: "placementHighWater", value: highest });
   }
 
+  /** A record's update is checked with the journal of the operation that made it, when one did. */
+  private async validateResource(previous: ResourceRecord | null, next: ResourceRecord) {
+    const origin = { intents: next.intents, copiedBy: next.resource.copiedBy };
+    validateResourceRecordUpdate(
+      previous,
+      next,
+      await originOperation(origin, this.operationReader),
+    );
+  }
+
+  private async validateFolder(
+    previous: FolderNamespaceRecord | null,
+    next: FolderNamespaceRecord,
+  ) {
+    validateFolderNamespaceUpdate(
+      previous,
+      next,
+      await originOperation(next, this.operationReader),
+    );
+  }
+
   private async isCurrent(writes: readonly ResourceWrite[]): Promise<boolean> {
     const keys = new Set<string>();
     const intentKeys = new Set<string>();
@@ -456,7 +498,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
       keys.add(key);
       const current = await this.resources.get(resource.handle);
       if ((current?.revision ?? null) !== expectedRevision) return false;
-      validateResourceRecordUpdate(current ? await this.record(current) : null, next);
+      await this.validateResource(current ? await this.record(current) : null, next);
       for (const intent of next.intents) {
         const key = intent.intentId;
         const existing = await this.intents.get(intent.intentId);
@@ -488,11 +530,15 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
   async commitResource(input: ResourceWrite) {
     const write = structuredClone(input);
     return this.run(() =>
-      this.database.transaction("rw", this.resources, this.intents, this.meta, async () => {
-        if (!(await this.isCurrent([write]))) return "stale" as const;
-        await this.putResources([write]);
-        return "committed" as const;
-      }),
+      this.database.transaction(
+        "rw",
+        [this.resources, this.intents, this.operations, this.meta],
+        async () => {
+          if (!(await this.isCurrent([write]))) return "stale" as const;
+          await this.putResources([write]);
+          return "committed" as const;
+        },
+      ),
     );
   }
 
@@ -525,7 +571,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
       handles.add(next.handle);
       const current = (await this.folders.get(next.handle)) ?? null;
       if ((current?.revision ?? null) !== expectedRevision) return false;
-      validateFolderNamespaceUpdate(current, next);
+      await this.validateFolder(current, next);
     }
     return true;
   }
@@ -535,10 +581,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     return this.run(() =>
       this.database.transaction(
         "rw",
-        this.folders,
-        this.resources,
-        this.intents,
-        this.meta,
+        [this.folders, this.resources, this.intents, this.operations, this.meta],
         async () => {
           if (!(await this.foldersAreCurrent([write]))) return "stale" as const;
           const previous = (await this.folders.get(write.next.handle)) ?? null;
@@ -551,7 +594,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
             const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
             const descendants = planFolderDeletionResources(receipt, records);
             for (const descendant of descendants) {
-              validateResourceRecordUpdate(
+              await this.validateResource(
                 byHandle.get(descendant.next.resource.handle) ?? null,
                 descendant.next,
               );
@@ -588,14 +631,44 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     });
     const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
     for (const write of resources)
-      validateResourceRecordUpdate(byHandle.get(write.next.resource.handle) ?? null, write.next);
+      await this.validateResource(byHandle.get(write.next.resource.handle) ?? null, write.next);
     for (const write of followers)
-      validateFolderNamespaceUpdate(
+      await this.validateFolder(
         folders.find((folder) => folder.handle === write.next.handle) ?? null,
         write.next,
       );
     await this.putResources(resources);
     await this.folders.bulkPut(followers.map(({ next }) => next));
+  }
+
+  readOperation(operationId: string): Promise<OperationRecord | null> {
+    return this.run(async () => (await this.operations.get(operationId)) ?? null);
+  }
+
+  async commitOperation(input: OperationWrite) {
+    const write = structuredClone(input);
+    return this.run(() =>
+      this.database.transaction("rw", this.operations, this.meta, async () => {
+        const current = (await this.operations.get(write.next.operationId)) ?? null;
+        if ((current?.revision ?? null) !== write.expectedRevision) return "stale" as const;
+        validateOperationRecordUpdate(current, write.next);
+        await this.operations.put(write.next);
+        await this.raiseHighWater(write.next.intents);
+        return "committed" as const;
+      }),
+    );
+  }
+
+  /** Drops an operation that nothing reads any more; stale when it changed since `revision` was read. */
+  retireOperation(operationId: string, revision: number) {
+    return this.run(() =>
+      this.database.transaction("rw", this.operations, async () => {
+        if ((await this.operations.get(operationId))?.revision !== revision)
+          return "stale" as const;
+        await this.operations.delete(operationId);
+        return "committed" as const;
+      }),
+    );
   }
 
   readCatalog(projectId: string, scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null> {
@@ -613,11 +686,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     return this.run(() =>
       this.database.transaction(
         "rw",
-        this.catalogs,
-        this.resources,
-        this.intents,
-        this.folders,
-        this.meta,
+        [this.catalogs, this.resources, this.intents, this.folders, this.operations, this.meta],
         async () => {
           if (!catalogScopeBelongsToProject(input.next.projectId, input.next.scope))
             throw new Error("Catalog scope belongs to another project");
@@ -704,7 +773,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
 
   async finishClose(): Promise<void> {
     this.beginClose();
-    await Promise.allSettled([...this.operations]);
+    await Promise.allSettled([...this.inFlight]);
     this.database.close({ disableAutoOpen: true });
   }
 }

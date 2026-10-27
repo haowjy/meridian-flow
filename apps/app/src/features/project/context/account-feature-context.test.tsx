@@ -75,7 +75,9 @@ describe("AccountFeatureTestProvider", () => {
       return null;
     }
     await withReactRoot(<Child />, async () => {
-      await act(async () => publish?.({ records: [record], catalogs: [], folders: [] }));
+      await act(async () =>
+        publish?.({ records: [record], operations: [], catalogs: [], folders: [] }),
+      );
       expect(projections.at(-1)).toMatchObject({
         kind: "terminal",
         documentIds: ["gone"],
@@ -108,7 +110,7 @@ describe("AccountFeatureTestProvider", () => {
       await act(async () => fail?.(new Error("temporary projection failure")));
       expect(observed.at(-1)?.error).toBeInstanceOf(Error);
 
-      await act(async () => publish?.({ records: [], folders: [], catalogs: [] }));
+      await act(async () => publish?.({ records: [], folders: [], operations: [], catalogs: [] }));
       expect(observed.at(-1)).toMatchObject({ error: null, records: [] });
     });
   });
