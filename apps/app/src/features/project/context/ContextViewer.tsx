@@ -9,7 +9,11 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type {
+  ContextOwner,
+  CopyContextEntryView,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
@@ -140,13 +144,23 @@ export function ContextViewer({
     activeTab.rootThreadId === undefined;
 
   // Draft review state: the review's controls live in the identity bar.
-  const { controller } = useDraftReview();
+  const { controller, fileForDocument } = useDraftReview();
   const activeReviewItemKey =
     activeTab &&
     controller.inlineReview?.documentId === activeTab.documentId &&
     controller.inlineReview.shown
       ? controller.inlineReview.itemKey
       : null;
+  // A Copy of the tab under review reads the draft as a chat of the Work reads it: the review's own
+  // chat when it has one, else the chat that wrote the draft.
+  const reviewReader =
+    controller.threadId ??
+    (activeReviewItemKey && activeTab
+      ? fileForDocument(activeTab.documentId)?.draft.actorThreads[0]?.threadId
+      : undefined);
+  const reviewView: CopyContextEntryView | null = reviewReader
+    ? { kind: "draft", workId: controller.workId, threadId: reviewReader }
+    : null;
   const archivedEditorWork = editorWork && isWorkArchived(editorWork) ? editorWork : null;
   // Archiving freezes the Editor Work's own files and its drafts (D30). A
   // review edits the draft, so its editor freezes and shows the notice; the
@@ -169,11 +183,7 @@ export function ContextViewer({
         activeTabId={activeTabId}
         activeTabInstanceId={(activeTab ?? settledTab)?.tabInstanceId}
         reviewingTabId={activeReviewItemKey ? activeTabId : null}
-        reviewView={
-          controller.threadId
-            ? { kind: "draft", workId: controller.workId, threadId: controller.threadId }
-            : null
-        }
+        reviewView={reviewView}
         optimisticTab={settledTab ? null : optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}
