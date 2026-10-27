@@ -1,7 +1,8 @@
 /** Journal invariants shared by storage adapters; attempts are immutable once submitted. */
 import { newerCanonicalObservation } from "./canonical-observation";
-import { resourceNeverAccepted, validateNamespaceJournal } from "./namespace-journal-policy";
+import { validateNamespaceJournal } from "./namespace-journal-policy";
 import type { ResourceRecord } from "./resource-records";
+import { deleteNeedsServer } from "./server-hold";
 
 export function validateResourceRecordUpdate(
   previous: ResourceRecord | null,
@@ -14,6 +15,20 @@ export function validateResourceRecordUpdate(
     throw new Error("Invalid resource revision");
   if (previous && previous.resource.handle !== resource.handle)
     throw new Error("Resource identity mismatch");
+  // The server's acceptance is the one fact a document cannot lose; only a spent id is replaced.
+  if (
+    (resource.canonical !== null || resource.lifecycle.kind === "acknowledged") &&
+    resource.serverHold !== "held"
+  )
+    throw new Error("A document the server placed is held");
+  if (previous?.resource.serverHold === "held" && resource.serverHold !== "held")
+    throw new Error("A held document id never stops being held");
+  if (
+    previous?.resource.serverHold === "spent" &&
+    resource.serverHold === "local" &&
+    previous.resource.identity.documentId === resource.identity.documentId
+  )
+    throw new Error("A spent document id is replaced, never reused");
   if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal") {
     // Only a strictly newer server observation of the document as present supersedes deletion,
     // and never under an outstanding purge of the deleted lineage's content.
@@ -165,7 +180,7 @@ export function validateResourceRecordUpdate(
     previous: previous ? { handle: previous.resource.handle, intents: previous.intents } : null,
     next: { handle: resource.handle, intents: next.intents },
     identityRevision: resource.identity.revision,
-    localDeletionAllowed: resourceNeverAccepted(next),
+    localDeletionAllowed: !deleteNeedsServer(resource.serverHold),
     revokedLocalDeletions: new Set(
       previous?.intents
         .filter(

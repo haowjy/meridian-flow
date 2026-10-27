@@ -78,6 +78,7 @@ export function planFolderCatalogInstallation(input: {
         folderId: entry.entryId,
         projectId: location.scheme === "user" ? null : input.projectId,
         revision: 1,
+        serverHold: "held",
         canonical: location,
         observationVersion: entry.observationVersion,
         canonicalParent: catalogEntryParent(entry, location),

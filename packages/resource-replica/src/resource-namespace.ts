@@ -11,11 +11,7 @@ import type {
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation } from "./canonical-observation";
-import {
-  resolveUnavailableNamespace,
-  resourceNeverAccepted,
-  settleNamespaceIntent,
-} from "./namespace-journal-policy";
+import { resolveUnavailableNamespace, settleNamespaceIntent } from "./namespace-journal-policy";
 import type { PlacementVerdict } from "./placement-journal";
 import { committedResourceDeletion, settleDeletionLocally } from "./resource-deletion";
 import { namespaceIntentOutcome } from "./resource-intent-policy";
@@ -38,6 +34,7 @@ import type {
 } from "./resource-records";
 import { destinationParentLocation, namespaceRequestId, sameOwner } from "./resource-records";
 import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
+import { deleteNeedsServer, holdAfterAttempt } from "./server-hold";
 
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
   NamespaceAttempt,
@@ -133,7 +130,17 @@ function requestFor(
       },
     };
   }
-  if (!source) return materializationRequest(record, intent);
+  switch (resource.serverHold) {
+    case "local":
+      return materializationRequest(record, intent);
+    case "held":
+      // A move starts from the place the catalog (or the create's answer) gave.
+      if (!source) return null;
+      break;
+    default:
+      // `uncertain` is replayed, never re-created; `spent` moves to a new id first.
+      return null;
+  }
   const destination = intent.desired.kind === "set-location" ? intent.desired.destination : null;
   if (!destination) return null;
   const parent = destinationParentLocation(destination.parent, lookup);
@@ -176,7 +183,6 @@ function materializationRequest(
   const materialization = resource.materialization;
   if (!materialization || intent.desired.kind !== "set-location") return null;
   if (
-    resource.lifecycle.kind !== "local" ||
     resource.obligations.createEligibility?.eligibleAt == null ||
     (resource.content.kind === "exact" && resource.content.initialization === "reserved")
   )
@@ -211,9 +217,10 @@ function replaceIntent(
   record: ResourceRecord,
   intentId: string,
   replace: (intent: NamespaceIntent) => NamespaceIntent,
+  serverHold = record.resource.serverHold,
 ): ResourceRecord {
   return {
-    resource: { ...record.resource, revision: record.resource.revision + 1 },
+    resource: { ...record.resource, revision: record.resource.revision + 1, serverHold },
     intents: record.intents.map((intent) =>
       intent.intentId === intentId ? replace(intent) : intent,
     ),
@@ -237,7 +244,7 @@ export function prepareNamespaceAttempt(
       },
     };
   // A delete queued behind a refused create has nothing on the server to delete.
-  if (intent.desired.kind === "delete" && resourceNeverAccepted(record))
+  if (intent.desired.kind === "delete" && !deleteNeedsServer(record.resource.serverHold))
     return settleDeletionLocally(record, intent.intentId);
   if (intent.identityRevision !== record.resource.identity.revision) {
     return {
@@ -250,6 +257,7 @@ export function prepareNamespaceAttempt(
   }
   if (
     intent.desired.kind === "set-location" &&
+    record.resource.serverHold === "held" &&
     record.resource.canonical !== null &&
     !destinationParentLocation(intent.desired.destination.parent, lookup)
   )
@@ -262,11 +270,13 @@ export function prepareNamespaceAttempt(
     };
   const request = requestFor(record, intent, intent.operationId ?? ids.operationId, lookup);
   if (!request) return null;
-  const next = replaceIntent(record, intent.intentId, (current) => ({
-    ...current,
-    state: "submitted",
-    attempts: [...current.attempts, unrecordedAttempt(ids.attemptId, request)],
-  }));
+  const attempt = unrecordedAttempt(ids.attemptId, request);
+  const next = replaceIntent(
+    record,
+    intent.intentId,
+    (current) => ({ ...current, state: "submitted", attempts: [...current.attempts, attempt] }),
+    holdAfterAttempt(record.resource.serverHold, attempt),
+  );
   return { expectedRevision: record.resource.revision, next };
 }
 
@@ -450,15 +460,19 @@ export function recordNamespaceOutcome(
   if (attempt.outcome) return null;
   if (intent.state !== "submitted" || !namespaceOutcomeMatches(attempt, outcome))
     throw new Error("Namespace outcome does not match current attempt");
-  const next = replaceIntent(record, intentId, (current) => ({
-    ...current,
-    state: "received",
-    attempts: current.attempts.map((candidate) =>
-      candidate.attemptId === attemptId
-        ? namespaceAttemptWithOutcome(candidate, outcome)
-        : candidate,
-    ),
-  }));
+  const answered = namespaceAttemptWithOutcome(attempt, outcome);
+  const next = replaceIntent(
+    record,
+    intentId,
+    (current) => ({
+      ...current,
+      state: "received",
+      attempts: current.attempts.map((candidate) =>
+        candidate.attemptId === attemptId ? answered : candidate,
+      ),
+    }),
+    holdAfterAttempt(record.resource.serverHold, answered),
+  );
   return { expectedRevision: record.resource.revision, next };
 }
 
@@ -499,7 +513,9 @@ export function settleNamespaceOutcome(
     // records that it happened.
     if (!followedJoin(record, attempt.request.body.documentId, outcome.result.documentId)) {
       if (!joinTaken) return null;
+      // Another record holds the joined document, so this id cannot follow it: replace it.
       repair = true;
+      resource = { ...resource, serverHold: "spent" };
     }
   } else if (outcome.kind === "create") {
     if (
@@ -584,6 +600,7 @@ export function settleNamespaceOutcome(
       intent,
       disposition === "accepted" && repair ? "refused" : disposition,
       settledAt,
+      resource.serverHold,
     ),
   };
   return { expectedRevision: record.resource.revision, next };
@@ -718,7 +735,7 @@ export function reconcileResourceNamespace(input: {
     prepare: async (record, ids) => {
       // A move resolves its parent by id now; a create names its parent in the request and the
       // server answers a destination it cannot find.
-      const intent = record.resource.canonical !== null ? activeNamespaceIntent(record) : null;
+      const intent = record.resource.serverHold === "held" ? activeNamespaceIntent(record) : null;
       if (intent?.desired.kind === "set-location") {
         const parent = intent.desired.destination.parent;
         if (parent.kind === "folder") {

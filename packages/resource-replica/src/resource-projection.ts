@@ -1,10 +1,6 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
 import { namespaceRepairDestination } from "./namespace-journal-policy";
-import {
-  awaitsWriterRepair,
-  intentOwnsDeletionAt,
-  placementDestination,
-} from "./resource-intent-policy";
+import { intentOwnsDeletionAt, placementDestination } from "./resource-intent-policy";
 import {
   type DestinationParentLookup,
   destinationLocation,
@@ -67,9 +63,13 @@ export function projectResourceNeedsRepair(
   name: string;
   destination?: ResourceDestination;
 } | null {
-  const failed = record.intents.find(
-    (intent) => intent.projectId === projectId && awaitsWriterRepair(intent),
-  );
+  // A spent id's failed placement is not the writer's to repair: it moves to a new id on its own.
+  const failed =
+    record.resource.serverHold === "spent"
+      ? undefined
+      : record.intents.find(
+          (intent) => intent.projectId === projectId && intent.state === "needs-repair",
+        );
   if (!failed || failed.desired.kind === "set-folder-location") return null;
   if (failed.desired.kind === "delete")
     return {
@@ -111,7 +111,7 @@ export function projectResourceLocation(
         // The editor's nameless create invites a home until the writer names it. A server-held
         // document's provisional name is the catalog's.
         provisional:
-          record.resource.canonical === null &&
+          record.resource.serverHold !== "held" &&
           record.resource.materialization?.kind === "untitled" &&
           record.resource.materialization.unnamed === true,
       };

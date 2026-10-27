@@ -16,6 +16,7 @@ import type {
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import type { CatalogCacheView } from "./catalog";
+import type { ServerHold } from "./server-hold";
 
 /** Account-global identity. Project access belongs to catalogs and namespace intentions. */
 export type ResourceKey = Readonly<{ handle: string }>;
@@ -160,6 +161,8 @@ export type ResourceDescriptor = ResourceKey & {
    * the catalog.
    */
   materialization?: DocumentMaterialization;
+  /** What the server holds under this document id, as its answers prove (`server-hold.ts`). */
+  serverHold: ServerHold;
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
@@ -352,6 +355,8 @@ export type FolderNamespaceRecord = ResourceKey & {
   projectId: string | null;
   folderId: string;
   revision: number;
+  /** What the server holds under `folderId`, as its answers prove (`server-hold.ts`). */
+  serverHold: ServerHold;
   /** Null while the folder is local: its first placement has not been accepted. */
   canonical: ResourceLocation | null;
   /** Parent identity installed atomically with the canonical location. */

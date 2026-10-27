@@ -35,6 +35,7 @@ function reserved(): ResourceRecord {
         unnamed: true,
       },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: null } },
@@ -84,6 +85,7 @@ it("preserves a reservation through local metadata progress but blocks unsafe au
   for (const mutate of [
     (record: ResourceRecord) => {
       record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: null };
+      record.resource.serverHold = "held";
     },
     (record: ResourceRecord) => {
       const intent = record.intents[0];
@@ -148,6 +150,7 @@ it("does not let reserved content change identity or restart after acknowledgeme
           unnamed: true,
         },
         canonical: null,
+        serverHold: "local",
         lifecycle: { kind: "local" },
         aliases: {},
         obligations: { createEligibility: { eligibleAt: 1 } },
@@ -230,6 +233,7 @@ it("does not let reserved content change identity or restart after acknowledgeme
 
   it("preserves submitted create uncertainty rather than pretending deletion canceled its HTTP request", () => {
     const before = local();
+    before.resource.serverHold = "uncertain";
     const create = before.intents[0];
     if (!create) throw new Error("fixture missing create");
     before.intents = [
@@ -260,8 +264,10 @@ it("does not let reserved content change identity or restart after acknowledgeme
     "acknowledged",
   ] as const)("keeps %s deletion pending without a remote outcome", (evidence) => {
     const before = local();
-    if (evidence === "acknowledged")
+    if (evidence === "acknowledged") {
       before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+      before.resource.serverHold = "held";
+    }
     const write = planResourceDeletion(before, "project", "delete");
     if (!write) throw new Error("missing plan");
     expect(write.next.intents.at(-1)?.state).toBe("pending");
@@ -271,6 +277,7 @@ it("does not let reserved content change identity or restart after acknowledgeme
   it("lets delete supersede a failed location and dispatch next", () => {
     const before = local();
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    before.resource.serverHold = "held";
     before.resource.canonical = {
       scheme: "manuscript",
       path: "/Chapter.md",

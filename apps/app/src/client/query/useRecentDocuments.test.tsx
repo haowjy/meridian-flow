@@ -157,6 +157,8 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
         handle: "folder:A",
         folderId: "A",
         revision: 1,
+        serverHold: "held",
+        observationVersion: "0",
         canonical: { scheme: "kb", path: "/P/A", name: "A", workId: null },
         canonicalParent: { kind: "folder", folderId: "P" },
         intents: [],
@@ -235,6 +237,7 @@ it("marks a pending file delete suppressed even without a loaded catalog", () =>
   }).next;
   record.resource.canonical = { scheme: "kb", path: "/doc.md", name: "doc.md", workId: null };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  record.resource.serverHold = "held";
   record.intents = [];
   const deletion = planResourceDeletion(record, "project", "delete");
   if (!deletion) throw new Error("Missing deletion");
@@ -268,6 +271,7 @@ it.each([
   record.resource.canonical = { scheme: "kb", path: "/P/A/doc.md", name: "doc.md", workId: null };
   record.resource.canonicalParent = { kind: "folder", folderId: "A" };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  record.resource.serverHold = "held";
   record.intents = [];
   const deletion = planFolderDeletion({
     projectId: "project",
@@ -288,6 +292,8 @@ it.each([
         handle: "folder:A",
         folderId: "A",
         revision: 1,
+        serverHold: "held",
+        observationVersion: "0",
         canonical: { scheme: "kb", path: "/P/A", name: "A", workId: null },
         canonicalParent: { kind: "folder", folderId: "P" },
         intents: [],

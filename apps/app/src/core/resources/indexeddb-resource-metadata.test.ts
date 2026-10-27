@@ -57,6 +57,7 @@ function resource(handle = "doc", revision = 1): ResourceRecord {
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
       materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: null } },
@@ -98,7 +99,9 @@ it("serializes competing revisions without losing or partially publishing the lo
   const a = resource("doc", 2);
   const b = resource("doc", 2);
   a.resource.canonical = { scheme: "unfiled", path: "/A", name: "A", workId: null };
+  a.resource.serverHold = "held";
   b.resource.canonical = { scheme: "unfiled", path: "/B", name: "B", workId: null };
+  b.resource.serverHold = "held";
   const results = await Promise.all([
     left.commitResource({ expectedRevision: 1, next: a }),
     right.commitResource({ expectedRevision: 1, next: b }),
@@ -341,6 +344,7 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
     record.intents = [];
     record.resource.obligations = {};
     record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: generation };
+    record.resource.serverHold = "held";
     record.resource.canonical = {
       scheme: "manuscript",
       path: `/A/${handle}.md`,
@@ -427,6 +431,7 @@ it.each([
   initial.intents = [];
   initial.resource.obligations = {};
   initial.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  initial.resource.serverHold = "held";
   initial.resource.canonical = {
     scheme: "manuscript",
     path: "/A/child.md",

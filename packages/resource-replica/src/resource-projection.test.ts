@@ -62,6 +62,7 @@ it("projects only the requesting project's durable location intention", () => {
   // Lowest-level contract: naming remains complete after placement ownership retires.
   const settled = placed.next;
   settled.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  settled.resource.serverHold = "held";
   settled.intents = settled.intents.map((intent) =>
     intent.intentId === "create" ? { ...intent, state: "settled" } : intent,
   );
@@ -395,6 +396,7 @@ it("never calls a server-held document provisional, whatever its journal says", 
     workId: null,
   };
   reserved.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  reserved.resource.serverHold = "held";
   reserved.intents = [];
   expect(projectResourceLocation("project-a", reserved)).toMatchObject({
     scheme: "manuscript",

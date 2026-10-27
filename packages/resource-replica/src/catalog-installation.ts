@@ -267,6 +267,7 @@ function revivedResourceWrite(
     canonicalRank: rank,
     canonicalLocationVersion: locationVersion,
     observationVersion: input.observationVersion,
+    serverHold: "held",
     lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     revivedFrom: {
       generation: current.lifecycle.generation,
@@ -290,6 +291,7 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
     canonicalRank: entry.rank,
     canonicalLocationVersion: entry.locationVersion,
     observationVersion: entry.observationVersion,
+    serverHold: "held",
     lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     aliases: {},
     obligations: {},

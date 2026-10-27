@@ -141,6 +141,7 @@ function resource(
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
       materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: 1 } },
@@ -418,6 +419,7 @@ it("releases every project registry ownership after the final shared-content lea
   const metadata = openMetadata();
   const record = resource("registry-shared");
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: null };
+  record.resource.serverHold = "held";
   record.intents = [];
   await initialize(record);
   const key = await install(metadata, record);

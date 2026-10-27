@@ -140,6 +140,7 @@ function localRecord(): ResourceRecord {
         unnamed: true,
       },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: {},

@@ -1,62 +1,28 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
 import {
   intentOwnsDeletion,
+  type NamespaceIntentOutcome,
   namespaceIntentOutcome,
-  namespaceRepairOwner,
 } from "./resource-intent-policy";
 import {
   type NamespaceIntent,
   namespaceRequestId,
   type ResourceDestination,
-  type ResourceLocation,
-  type ResourceRecord,
 } from "./resource-records";
+import type { ServerHold } from "./server-hold";
 
 type Journal = { handle: string; intents: readonly NamespaceIntent[] };
 
-/** Semantic settlement is distinct from immutable transport evidence. Terminal always absorbs it. */
-export type NamespaceIntentOutcome =
-  | "accepted"
-  | "refused"
-  | "superseded"
-  | "unexecutable-after-terminal";
-
-/** Every request the server answered refused it (a request with no answer yet may still land). */
-function everyAnsweredRequestRefused(intents: readonly NamespaceIntent[]): boolean {
-  return intents.every((intent) =>
-    intent.attempts.every(
-      (attempt) => attempt.outcome && namespaceIntentOutcome(attempt.outcome) === "refused",
-    ),
-  );
-}
-
 /**
- * Nothing the server answered took this identity: it has no canonical place, and every request
- * the server answered refused it. A folder is local by `canonical: null` alone; a document must
- * also be lifecycle `local` (`resourceNeverAccepted`), since an acknowledged one may be waiting
- * for the catalog read that proves its place.
+ * Both journals use this transition; effects belong to the identity's own layer. A refusal retires
+ * the placements queued behind it, except on a spent id: that work moves to a new one.
  */
-export function neverAccepted(record: {
-  canonical: ResourceLocation | null;
-  intents: readonly NamespaceIntent[];
-}): boolean {
-  return record.canonical === null && everyAnsweredRequestRefused(record.intents);
-}
-
-/** The server never accepted this document: it exists only on this device. */
-export function resourceNeverAccepted(record: Pick<ResourceRecord, "resource" | "intents">) {
-  return (
-    record.resource.lifecycle.kind === "local" &&
-    neverAccepted({ canonical: record.resource.canonical, intents: record.intents })
-  );
-}
-
-/** Both journals use this transition; effects belong to the identity's own layer. */
 export function settleNamespaceIntent(
   intents: readonly NamespaceIntent[],
   intent: NamespaceIntent,
   disposition: NamespaceIntentOutcome,
   settledAt: number,
+  hold: ServerHold,
 ): NamespaceIntent[] {
   const state =
     disposition === "accepted"
@@ -69,7 +35,10 @@ export function settleNamespaceIntent(
       current.intentId === intent.intentId ? { ...current, state, settledAt } : current,
   );
   const evidence = intent.attempts.at(-1)?.outcome;
-  return disposition === "refused" && evidence && namespaceIntentOutcome(evidence) === "refused"
+  return disposition === "refused" &&
+    hold !== "spent" &&
+    evidence &&
+    namespaceIntentOutcome(evidence) === "refused"
     ? resolveRefusedLocationChain(next, intent)
     : next;
 }
@@ -105,8 +74,6 @@ export function resolveRefusedLocationChain(
   intents: readonly NamespaceIntent[],
   failed: NamespaceIntent,
 ): NamespaceIntent[] {
-  // The runner remints this create; the work queued behind it moves to the new identity.
-  if (namespaceRepairOwner(failed) === "remint") return [...intents];
   const deleted =
     failed.desired.kind !== "delete" &&
     intents.some(
@@ -124,6 +91,79 @@ export function resolveRefusedLocationChain(
         ? { ...intent, state: "cancelled" }
         : intent,
   );
+}
+
+/**
+ * The journal side of replacing a spent id, shared by documents and folders. The failed placement
+ * is superseded and sent again as a new intent, and the unsent intents queued behind it are
+ * cancelled and queued again after it. Each copy keeps its admission, so a placement that waited on
+ * the original keeps waiting on its replacement. `from` is the identity revision of the work being
+ * replaced and `to` the one its copies carry. Null when nothing is left to send.
+ */
+export function remintJournal(input: {
+  intents: readonly NamespaceIntent[];
+  from: number;
+  to: number;
+  retryIntentId: string;
+  rebasedIntentIds: Readonly<Record<string, string>>;
+}): NamespaceIntent[] | null {
+  const { intents } = input;
+  const failed = [...intents]
+    .filter(
+      (intent) =>
+        intent.state === "needs-repair" &&
+        intent.identityRevision === input.from &&
+        (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location"),
+    )
+    .sort((left, right) => right.sequence - left.sequence)[0];
+  const dependents = intents.filter(
+    (intent) =>
+      (!failed || intent.sequence > failed.sequence) &&
+      intent.identityRevision === input.from &&
+      intent.state === "pending" &&
+      intent.attempts.length === 0,
+  );
+  for (const dependent of dependents) {
+    if (!input.rebasedIntentIds[dependent.intentId])
+      throw new Error("Remint requires an identity for every dependent intention");
+  }
+  if (!failed && dependents.length === 0) return null;
+  let sequence = Math.max(0, ...intents.map((intent) => intent.sequence));
+  const retry: NamespaceIntent[] = failed
+    ? [
+        {
+          projectId: failed.projectId,
+          handle: failed.handle,
+          intentId: input.retryIntentId,
+          sequence: ++sequence,
+          identityRevision: input.to,
+          desired: failed.desired,
+          // The retry stands where the failed placement stood in the account's causal order.
+          ...(failed.admission ? { admission: failed.admission } : {}),
+          attempts: [],
+          state: "pending",
+        },
+      ]
+    : [];
+  const rebased = dependents.map(
+    (intent): NamespaceIntent => ({
+      ...intent,
+      intentId: input.rebasedIntentIds[intent.intentId] as string,
+      sequence: ++sequence,
+      identityRevision: input.to,
+    }),
+  );
+  return [
+    ...intents.map((intent) =>
+      intent.intentId === failed?.intentId
+        ? { ...intent, state: "superseded" as const }
+        : dependents.includes(intent)
+          ? { ...intent, state: "cancelled" as const }
+          : intent,
+    ),
+    ...retry,
+    ...rebased,
+  ];
 }
 
 /** The failed receipt stays the repair anchor; its cancelled chain supplies the newest destination. */

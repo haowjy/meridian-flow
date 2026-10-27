@@ -22,7 +22,7 @@ import {
   type ResourceWrite,
   reconcileFolderNamespace,
   reconcileResourceNamespace,
-  remintCreateConflict,
+  remintResource,
   resourceIdentityIndex,
   resourceNeedsBackgroundReconciliation,
   settleNamespaceOutcome,
@@ -239,7 +239,11 @@ export class AccountResourceReconciler {
       });
       if (namespace === "needs-join" && (await this.commitIdentity(key, (c) => this.planJoin(c))))
         continue;
-      if (namespace === "needs-repair" && (await this.commitIdentity(key, planRemint))) continue;
+      if (
+        (namespace === "needs-repair" || namespace === "blocked") &&
+        (await this.commitIdentity(key, planRemint))
+      )
+        continue;
       await this.ports.capturesSettled(key.handle);
       const adopted = await adoption.reconcile(key);
       const cleanup = await this.reconcileLocalCleanup(key);
@@ -350,7 +354,7 @@ function planRemint(current: ResourceRecord): IdentityPlan | null {
       )
       .map((intent) => [intent.intentId, crypto.randomUUID()]),
   );
-  const write = remintCreateConflict({
+  const write = remintResource({
     record: current,
     documentId: nextDocumentId,
     retryIntentId: crypto.randomUUID(),

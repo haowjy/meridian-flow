@@ -1,7 +1,7 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
 import { newerCanonicalObservation } from "./canonical-observation";
-import { resourceNeverAccepted, undoLocalDeletion } from "./namespace-journal-policy";
+import { undoLocalDeletion } from "./namespace-journal-policy";
 import { intentOwnsDeletionAt, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
@@ -9,6 +9,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
+import { deleteNeedsServer } from "./server-hold";
 
 /**
  * How long a deleted document that exists only on this device can be brought back. The server
@@ -100,7 +101,7 @@ export function planResourceDeletion(
     )
   )
     return null;
-  const neverAccepted = resourceNeverAccepted(record);
+  const neverAccepted = !deleteNeedsServer(record.resource.serverHold);
   const superseded = supersedeRepairableNamespaceWork(record, projectId);
   const deletion: NamespaceIntent = {
     projectId,

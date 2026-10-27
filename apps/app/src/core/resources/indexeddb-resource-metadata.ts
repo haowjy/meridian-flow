@@ -1,6 +1,7 @@
 /** Account-qualified metadata transactions and one shared reactive projection stream. */
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import type {
+  DocumentMaterialization,
   FolderNamespaceRecord,
   FolderNamespaceStore,
   FolderNamespaceWrite,
@@ -13,11 +14,13 @@ import type {
   ResourceProjectionSnapshot,
   ResourceRecord,
   ResourceWrite,
+  ServerHold,
 } from "@meridian/resource-replica";
 import {
   catalogProjectionKey,
   catalogScopeBelongsToProject,
   folderDeletionSettlement,
+  holdAfterAttempt,
   planFolderDeletionResources,
   resourceForDocumentIdentity,
   resourceVisibleInProject,
@@ -52,6 +55,89 @@ type ProjectionListener = {
   listener(snapshot: ResourceProjectionSnapshot): void;
   onError(error: unknown): void;
 };
+
+/**
+ * What the server holds under an id, replayed from the create attempts an older build recorded:
+ * the same fold the journal now keeps current (`holdAfterAttempt`), run once.
+ */
+function replayedServerHold(neverPlaced: boolean, intents: readonly LegacyIntent[]): ServerHold {
+  if (!neverPlaced) return "held";
+  return [...intents]
+    .sort((left, right) => left.sequence - right.sequence)
+    .flatMap((intent) => intent.attempts)
+    .reduce<ServerHold>((hold, attempt) => holdAfterAttempt(hold, attempt), "local");
+}
+
+/**
+ * A pre-`materialization` document: the materialization its create intent recorded, and the
+ * rewrite that gives each of its placements a destination. Null when nothing needs rewriting.
+ */
+function upgradedMaterialization(
+  resource: ResourceDescriptor,
+  held: readonly LegacyIntent[],
+): {
+  materialization: DocumentMaterialization;
+  place: (intent: LegacyIntent) => NamespaceIntent;
+} | null {
+  const creates = held
+    .filter((intent) => intent.desired.kind === "create")
+    .sort((left, right) => left.sequence - right.sequence);
+  const placements = held.filter(
+    (intent): intent is LegacyIntent & { desired: { kind: "set-location" } } =>
+      intent.desired.kind === "set-location",
+  );
+  if (creates.length === 0 && !placements.some((intent) => !intent.desired.destination))
+    return null;
+  const first = creates[0]?.desired;
+  const base =
+    first?.kind === "create"
+      ? {
+          kind: "untitled" as const,
+          folderPath: first.folderPath,
+          provisionalName: first.provisionalName ?? "Untitled",
+        }
+      : resource.materialization;
+  if (!base) return null;
+  // A record is unnamed only while no placement names it: the writer's first placement
+  // (a filed create) means the local row no longer invites a home.
+  const names = [
+    ...creates.flatMap((intent) =>
+      intent.desired.kind === "create" ? [intent.desired.destination] : [],
+    ),
+    ...placements.map((intent) => intent.desired.destination),
+  ];
+  const unnamed = names.length > 0 && names.every((destination) => !destination);
+  return {
+    materialization: {
+      kind: "untitled",
+      folderPath: base.folderPath,
+      provisionalName: base.provisionalName,
+      ...(unnamed ? { unnamed: true as const } : {}),
+    },
+    place: (intent) => {
+      if (intent.desired.kind === "create")
+        return {
+          ...intent,
+          desired: {
+            kind: "set-location",
+            typedName: base.provisionalName,
+            destination:
+              intent.desired.destination ??
+              untitledDestination(base.folderPath, base.provisionalName),
+          },
+        };
+      if (intent.desired.kind === "set-location" && !intent.desired.destination)
+        return {
+          ...intent,
+          desired: {
+            ...intent.desired,
+            destination: untitledDestination(base.folderPath, intent.desired.typedName),
+          },
+        };
+      return intent as NamespaceIntent;
+    },
+  };
+}
 
 /**
  * Expected revisions belong to the caller's immutable snapshot; stale writes never partly apply.
@@ -120,82 +206,34 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     // A document's first placement is a `set-location` that always names its destination, and its
     // home comes from `materialization`. A journal written before that keeps its pending work: a
     // create intent becomes the placement it now is, and a placement with no destination (the
-    // editor's nameless create) names the home its materialization records.
+    // editor's nameless create) names the home its materialization records. Every document and
+    // folder also gains `serverHold`, replayed from the create attempts it already recorded.
     this.database
       .version(5)
       .stores({})
       .upgrade(async (transaction) => {
         const resources = transaction.table<ResourceDescriptor, string>("resources");
         const intents = transaction.table<LegacyIntent, string>("intents");
-        for (const resource of await resources.toArray()) {
-          const held = await intents.where("handle").equals(resource.handle).toArray();
-          const creates = held
-            .filter((intent) => intent.desired.kind === "create")
-            .sort((left, right) => left.sequence - right.sequence);
-          const placements = held.filter(
-            (intent): intent is LegacyIntent & { desired: { kind: "set-location" } } =>
-              intent.desired.kind === "set-location",
+        const folders = transaction.table<FolderNamespaceRecord, string>("folders");
+        for (const stored of await resources.toArray()) {
+          const held = await intents.where("handle").equals(stored.handle).toArray();
+          const serverHold = replayedServerHold(
+            stored.lifecycle.kind === "local" && stored.canonical === null,
+            held,
           );
-          if (creates.length === 0 && !placements.some((intent) => !intent.desired.destination))
-            continue;
-          const first = creates[0]?.desired;
-          const materialization =
-            first?.kind === "create"
-              ? {
-                  kind: "untitled" as const,
-                  folderPath: first.folderPath,
-                  provisionalName: first.provisionalName ?? "Untitled",
-                }
-              : resource.materialization;
-          if (!materialization) continue;
-          // A record is unnamed only while no placement names it: the writer's first placement
-          // (a filed create) means the local row no longer invites a home.
-          const names = [
-            ...creates.flatMap((intent) =>
-              intent.desired.kind === "create" ? [intent.desired.destination] : [],
-            ),
-            ...placements.map((intent) => intent.desired.destination),
-          ];
-          const unnamed = names.length > 0 && names.every((destination) => !destination);
-          const put = (intent: LegacyIntent): NamespaceIntent => {
-            if (intent.desired.kind === "create")
-              return {
-                ...intent,
-                desired: {
-                  kind: "set-location",
-                  typedName: materialization.provisionalName,
-                  destination:
-                    intent.desired.destination ??
-                    untitledDestination(
-                      materialization.folderPath,
-                      materialization.provisionalName,
-                    ),
-                },
-              };
-            if (intent.desired.kind === "set-location" && !intent.desired.destination)
-              return {
-                ...intent,
-                desired: {
-                  ...intent.desired,
-                  destination: untitledDestination(
-                    materialization.folderPath,
-                    intent.desired.typedName,
-                  ),
-                },
-              };
-            return intent as NamespaceIntent;
-          };
+          const upgraded = upgradedMaterialization(stored, held);
           await resources.put({
-            ...resource,
-            materialization: {
-              kind: "untitled",
-              folderPath: materialization.folderPath,
-              provisionalName: materialization.provisionalName,
-              ...(unnamed ? { unnamed: true as const } : {}),
-            },
+            ...stored,
+            serverHold,
+            ...(upgraded ? { materialization: upgraded.materialization } : {}),
           });
-          for (const intent of held) await intents.put(put(intent));
+          if (upgraded) for (const intent of held) await intents.put(upgraded.place(intent));
         }
+        for (const folder of await folders.toArray())
+          await folders.put({
+            ...folder,
+            serverHold: replayedServerHold(folder.canonical === null, folder.intents),
+          });
       });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");

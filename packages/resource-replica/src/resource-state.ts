@@ -1,8 +1,9 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
 import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
+import { remintJournal } from "./namespace-journal-policy";
 import {
-  namespaceRepairOwner,
+  awaitsRemint,
   owningLocationIntent,
   supersedeRepairableNamespaceWork,
 } from "./resource-intent-policy";
@@ -52,6 +53,7 @@ export function reserveResourceDocument(input: {
       provisionalName,
       ...(input.destination ? {} : { unnamed: true as const }),
     },
+    serverHold: "local",
     canonical: null,
     lifecycle: { kind: "local" },
     aliases: {},
@@ -188,84 +190,46 @@ export function planResourceLocation(input: {
   };
 }
 
-/** A recorded create conflict owns its old identity; remint preserves content and history. */
-export function remintCreateConflict(input: {
+/**
+ * A spent document id (the server holds it out of reach) is replaced: its content, handle and
+ * history stay, the old id becomes an alias, and the placement work carries to the new id
+ * (`remintJournal`).
+ */
+export function remintResource(input: {
   record: ResourceRecord;
   documentId: string;
   retryIntentId: string;
   rebasedIntentIds: Readonly<Record<string, string>>;
 }): ResourceWrite | null {
   const { record } = input;
-  const conflicted = [...record.intents]
-    .sort((left, right) => right.sequence - left.sequence)
-    .find((intent) => namespaceRepairOwner(intent) === "remint");
-  if (
-    !conflicted ||
-    record.resource.lifecycle.kind !== "local" ||
-    record.resource.canonical !== null
-  )
+  if (!awaitsRemint({ serverHold: record.resource.serverHold, intents: record.intents }))
     return null;
   const oldDocumentId = record.resource.identity.documentId;
   if (oldDocumentId === input.documentId)
     throw new Error("Remint requires a new document identity");
   const identityRevision = record.resource.identity.revision + 1;
-  const dependents = record.intents.filter(
-    (intent) =>
-      intent.sequence > conflicted.sequence &&
-      intent.identityRevision === conflicted.identityRevision &&
-      intent.state === "pending" &&
-      intent.attempts.length === 0,
-  );
-  for (const dependent of dependents) {
-    if (!input.rebasedIntentIds[dependent.intentId])
-      throw new Error("Remint requires an identity for every dependent intention");
-  }
-  const retry: NamespaceIntent = {
-    projectId: conflicted.projectId,
-    handle: record.resource.handle,
-    intentId: input.retryIntentId,
-    sequence: nextSequence(record),
-    identityRevision,
-    desired: conflicted.desired,
-    // The retry stands where the conflicted create stood in the account's causal order.
-    ...(conflicted.admission ? { admission: conflicted.admission } : {}),
-    attempts: [],
-    state: "pending",
-  };
-  let sequence = retry.sequence;
-  const rebased = dependents.map(
-    (intent): NamespaceIntent => ({
-      ...intent,
-      intentId: input.rebasedIntentIds[intent.intentId] as string,
-      sequence: ++sequence,
-      identityRevision,
-    }),
-  );
+  const intents = remintJournal({
+    intents: record.intents,
+    from: record.resource.identity.revision,
+    to: identityRevision,
+    retryIntentId: input.retryIntentId,
+    rebasedIntentIds: input.rebasedIntentIds,
+  });
+  if (!intents) return null;
   return {
     expectedRevision: record.resource.revision,
     next: {
       resource: {
         ...record.resource,
         revision: record.resource.revision + 1,
+        serverHold: "local",
         identity: { documentId: input.documentId, revision: identityRevision },
         aliases: {
           ...record.resource.aliases,
-          [oldDocumentId]: {
-            introducedAtIdentityRevision: identityRevision,
-          },
+          [oldDocumentId]: { introducedAtIdentityRevision: identityRevision },
         },
       },
-      intents: [
-        ...record.intents.map((intent) => {
-          if (intent.intentId === conflicted.intentId)
-            return { ...intent, state: "superseded" as const };
-          if (dependents.some((dependent) => dependent.intentId === intent.intentId))
-            return { ...intent, state: "cancelled" as const };
-          return intent;
-        }),
-        retry,
-        ...rebased,
-      ],
+      intents,
     },
   };
 }

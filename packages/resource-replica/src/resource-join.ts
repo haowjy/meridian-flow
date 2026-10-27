@@ -155,7 +155,7 @@ export function joinReservation(input: {
     }),
   );
   const settled = answered
-    ? settleNamespaceIntent(record.intents, create.intent, "accepted", input.settledAt)
+    ? settleNamespaceIntent(record.intents, create.intent, "accepted", input.settledAt, "held")
     : record.intents;
   return {
     expectedRevision: resource.revision,
@@ -168,6 +168,7 @@ export function joinReservation(input: {
           ...resource.aliases,
           [resource.identity.documentId]: { introducedAtIdentityRevision: identityRevision },
         },
+        serverHold: "held",
         lifecycle: { kind: "acknowledged", availabilityGeneration: null },
         ...(target.classification ? { classification: target.classification } : {}),
         canonical: target.location,

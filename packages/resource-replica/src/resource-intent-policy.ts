@@ -6,6 +6,7 @@ import type {
   ResourceDestination,
   ResourceRecord,
 } from "./resource-records";
+import type { ServerHold } from "./server-hold";
 
 /** Semantic settlement is distinct from immutable transport evidence. Terminal always absorbs it. */
 export type NamespaceIntentOutcome =
@@ -32,57 +33,48 @@ export function namespaceIntentOutcome(
 }
 
 /**
- * Who repairs a failed placement. A materialization the server answered `conflict` or `joined` is
- * the runner's: the answer is about the id, so it materializes under a new one (`remintCreateConflict`).
- * A refused request is the writer's: the server answered about the request, and only the writer
- * can change it. `null` when the outcome needs no repair. Answered for a recorded outcome, before
- * or after its settlement.
+ * An id the server holds out of reach with work still to send: a failed placement to try again, or
+ * unsent ones queued behind it. That work moves to a new id (`remintJournal`); until it does, the
+ * journal is mid-transition, not waiting for the writer, and a placement that depends on it waits.
  */
-export type NamespaceRepairOwner = "remint" | "writer";
-
-export function namespaceRepairOwner(intent: NamespaceIntent): NamespaceRepairOwner | null {
-  if (intent.state !== "received" && intent.state !== "needs-repair") return null;
-  const outcome = intent.attempts.at(-1)?.outcome;
-  // The client sends a placement to repair without a server answer when its premise moved
-  // (its identity was reminted, or its destination parent no longer resolves).
-  if (!outcome) return intent.state === "needs-repair" ? "writer" : null;
-  if (
-    outcome.kind === "create" &&
-    (outcome.result.status === "conflict" || outcome.result.status === "joined")
-  )
-    return "remint";
-  return namespaceIntentOutcome(outcome) === "refused" ? "writer" : null;
-}
-
-/** A settled failure only the writer can repair: a refused placement or delete. */
-export function awaitsWriterRepair(intent: NamespaceIntent): boolean {
-  return intent.state === "needs-repair" && namespaceRepairOwner(intent) === "writer";
+export function awaitsRemint(journal: {
+  serverHold: ServerHold;
+  intents: readonly NamespaceIntent[];
+}): boolean {
+  return (
+    journal.serverHold === "spent" &&
+    journal.intents.some(
+      (intent) =>
+        (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+        (intent.state === "needs-repair" ||
+          (intent.state === "pending" && intent.attempts.length === 0)),
+    )
+  );
 }
 
 /** Work that can make progress without a new metadata revision. */
 export function resourceNeedsBackgroundReconciliation(record: ResourceRecord): boolean {
   if (record.resource.obligations.sessionAdoption || record.resource.obligations.cleanup)
     return true;
-  return record.intents.some(
-    (intent) =>
-      intent.state === "pending" ||
-      intent.state === "submitted" ||
-      intent.state === "received" ||
-      namespaceRepairOwner(intent) === "remint",
+  return (
+    awaitsRemint({ serverHold: record.resource.serverHold, intents: record.intents }) ||
+    record.intents.some(
+      (intent) =>
+        intent.state === "pending" || intent.state === "submitted" || intent.state === "received",
+    )
   );
 }
 
 /**
  * The writer's next placement or delete retires what failed before it: each failed intent
- * (a refused placement too) is superseded and unsent work queued behind it is cancelled. A create
- * the runner will remint is left alone.
+ * is superseded and unsent work queued behind it is cancelled.
  */
 export function supersedeRepairableNamespaceWork(
   record: Pick<ResourceRecord, "intents">,
   projectId: string | null,
 ): { intents: NamespaceIntent[]; repaired: boolean } {
   const inScope = (intent: NamespaceIntent) => projectId === null || intent.projectId === projectId;
-  const failed = (intent: NamespaceIntent) => inScope(intent) && awaitsWriterRepair(intent);
+  const failed = (intent: NamespaceIntent) => inScope(intent) && intent.state === "needs-repair";
   if (!record.intents.some(failed)) return { intents: [...record.intents], repaired: false };
   return {
     repaired: true,

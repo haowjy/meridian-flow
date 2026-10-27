@@ -189,6 +189,7 @@ it("parents a refused create by the folder that holds its shown location", () =>
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
       materialization: { kind: "untitled", folderPath, provisionalName: "Untitled" },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: 1 } },

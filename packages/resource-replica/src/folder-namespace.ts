@@ -8,7 +8,6 @@ import type {
 import { canonicalRefreshObservation, newerCanonicalObservation } from "./canonical-observation";
 import {
   namespaceRepairDestination,
-  neverAccepted,
   resolveUnavailableNamespace,
   settleNamespaceIntent,
   undoLocalDeletion,
@@ -16,6 +15,7 @@ import {
 } from "./namespace-journal-policy";
 import { committedResourceDeletion, LOCAL_DELETION_UNDO_MS } from "./resource-deletion";
 import {
+  awaitsRemint,
   intentOwnsDeletionAt,
   namespaceIntentOutcome,
   owningLocationIntent,
@@ -38,6 +38,7 @@ import type {
   FolderNamespaceRecord,
   FolderNamespaceWrite,
   MetadataCommitResult,
+  NamespaceAttempt,
   NamespaceIdentityAvailability,
   NamespaceIntent,
   NamespaceOutcome,
@@ -59,6 +60,7 @@ import {
   sameOwner,
 } from "./resource-records";
 import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
+import { deleteNeedsServer, holdAfterAttempt } from "./server-hold";
 
 /** Browser persistence implements this alongside its file journal, in the same account owner. */
 export interface FolderNamespaceStore {
@@ -93,7 +95,11 @@ export function projectFolderNeedsRepair(record: FolderNamespaceRecord): {
   name: string;
   destination?: ResourceDestination;
 } | null {
-  const failed = record.intents.find((intent) => intent.state === "needs-repair");
+  // A spent id's failed placement is not the writer's to repair: it moves to a new id on its own.
+  const failed =
+    record.serverHold === "spent"
+      ? undefined
+      : record.intents.find((intent) => intent.state === "needs-repair");
   if (failed?.desired.kind === "delete")
     return { intentId: failed.intentId, kind: "delete", name: folderBaseLocation(record).name };
   if (failed?.desired.kind !== "set-folder-location") return null;
@@ -101,7 +107,7 @@ export function projectFolderNeedsRepair(record: FolderNamespaceRecord): {
   return destination
     ? {
         intentId: failed.intentId,
-        kind: record.canonical ? "set-location" : "create",
+        kind: record.serverHold === "held" ? "set-location" : "create",
         name: destination.name,
         destination,
       }
@@ -110,24 +116,25 @@ export function projectFolderNeedsRepair(record: FolderNamespaceRecord): {
 
 /**
  * Whether the folder has a row of its own beside the catalog's: one in repair, or one created
- * here that no catalog read has observed yet (local, or accepted and not yet listed).
+ * here that no catalog read has observed yet (not held, or held and not yet listed). A folder
+ * installed from a catalog always carries that observation's version.
  */
 export function folderListedLocally(record: FolderNamespaceRecord): boolean {
   return (
     projectFolderNeedsRepair(record) !== null ||
-    record.canonical === null ||
-    (record.observationVersion === undefined &&
-      record.intents.some((intent) =>
-        intent.attempts.some((attempt) => attempt.request.kind === "create-folder"),
-      ))
+    record.serverHold !== "held" ||
+    record.observationVersion === undefined
   );
 }
 
 /** Work that can progress without a new writer command, as `resourceNeedsBackgroundReconciliation` for files. */
 export function folderNeedsBackgroundReconciliation(record: FolderNamespaceRecord): boolean {
-  return record.intents.some(
-    (intent) =>
-      intent.state === "pending" || intent.state === "submitted" || intent.state === "received",
+  return (
+    awaitsRemint(record) ||
+    record.intents.some(
+      (intent) =>
+        intent.state === "pending" || intent.state === "submitted" || intent.state === "received",
+    )
   );
 }
 
@@ -179,6 +186,7 @@ function folderRecordFor(input: {
     handle: input.handle,
     folderId: input.folderId,
     revision: 0,
+    serverHold: "held",
     canonical: input.source,
     canonicalParent: input.sourceParent,
     observationVersion: input.sourceObservationVersion,
@@ -205,7 +213,7 @@ export function planFolderDeletion(input: {
   if (record.canonical) resourceContextAuthority(record.canonical.scheme, record.canonical);
   // A folder the server never accepted has nothing to delete there: deleting it is local, and
   // the writer keeps the same Undo window a server deletion has.
-  const localDeletion = neverAccepted(record);
+  const localDeletion = !deleteNeedsServer(record.serverHold);
   const now = input.now ?? Date.now();
   const superseded = supersedeRepairableNamespaceWork(record, record.projectId);
   return {
@@ -327,6 +335,7 @@ export function planFolderCreate(input: {
     handle: input.handle,
     folderId: input.folderId,
     revision: 1,
+    serverHold: "local",
     canonical: null,
     intents: [],
   };
@@ -436,7 +445,7 @@ export function validateFolderNamespaceUpdate(
     next,
     identityRevision: 1,
     terminal: Boolean(next.terminal),
-    localDeletionAllowed: neverAccepted(next),
+    localDeletionAllowed: !deleteNeedsServer(next.serverHold),
     // Undo of a local folder deletion clears its window; that deletion may become superseded.
     revokedLocalDeletions: new Set(
       previous?.intents
@@ -466,6 +475,10 @@ export function validateFolderNamespaceUpdate(
     )
   )
     throw new Error("A settled local deletion keeps its Undo window");
+  if (next.canonical && next.serverHold !== "held")
+    throw new Error("A folder the server placed is held");
+  if (previous?.serverHold === "held" && next.serverHold !== "held")
+    throw new Error("A held folder id never stops being held");
   if (next.canonical) resourceContextAuthority(next.canonical.scheme, next.canonical);
   else if (
     next.canonicalParent ||
@@ -504,12 +517,14 @@ function replaceIntent(
   record: FolderNamespaceRecord,
   intentId: string,
   replace: (intent: NamespaceIntent) => NamespaceIntent,
+  serverHold = record.serverHold,
 ): FolderNamespaceWrite {
   return {
     expectedRevision: record.revision,
     next: {
       ...record,
       revision: record.revision + 1,
+      serverHold,
       intents: record.intents.map((intent) =>
         intent.intentId === intentId ? replace(intent) : intent,
       ),
@@ -541,11 +556,12 @@ export function prepareFolderNamespaceAttempt(
   const source = record.canonical;
   if (intent.desired.kind === "delete") {
     // A delete queued behind a refused create has nothing on the server to delete.
-    if (!source)
+    if (!deleteNeedsServer(record.serverHold))
       return replaceIntent(record, intent.intentId, (current) => ({
         ...current,
         state: "settled-locally",
       }));
+    if (!source) return null;
     const request: Extract<NamespaceRequest, { kind: "delete" }> = {
       kind: "delete",
       scheme: source.scheme,
@@ -572,18 +588,28 @@ export function prepareFolderNamespaceAttempt(
       ...current,
       state: "needs-repair",
     }));
-  if (!source) {
-    const request: Extract<NamespaceRequest, { kind: "create-folder" }> = {
-      kind: "create-folder",
-      owner: ownerOf(parent),
-      body: { folderId: record.folderId, destination: createDestination(destination) },
-    };
-    return replaceIntent(record, intent.intentId, (current) => ({
-      ...current,
-      state: "submitted",
-      attempts: [...current.attempts, { attemptId: ids.attemptId, request }],
-    }));
+  if (record.serverHold === "local") {
+    const attempt = {
+      attemptId: ids.attemptId,
+      request: {
+        kind: "create-folder",
+        owner: ownerOf(parent),
+        body: { folderId: record.folderId, destination: createDestination(destination) },
+      },
+    } satisfies NamespaceAttempt;
+    return replaceIntent(
+      record,
+      intent.intentId,
+      (current) => ({
+        ...current,
+        state: "submitted",
+        attempts: [...current.attempts, attempt],
+      }),
+      holdAfterAttempt(record.serverHold, attempt),
+    );
   }
+  // Held without a place waits for it; `uncertain` is replayed, never re-created; `spent` is replaced first.
+  if (record.serverHold !== "held" || !source) return null;
   const owners = moveOwnerFields(source, parent);
   const request: Extract<NamespaceRequest, { kind: "move" }> = {
     kind: "move",
@@ -626,15 +652,19 @@ export function recordFolderNamespaceOutcome(
   if (attempt.outcome) return null;
   if (intent.state !== "submitted" || !namespaceOutcomeMatches(attempt, outcome))
     throw new Error("Namespace outcome does not match current attempt");
-  return replaceIntent(record, intentId, (current) => ({
-    ...current,
-    state: "received",
-    attempts: current.attempts.map((candidate) =>
-      candidate.attemptId === attemptId
-        ? namespaceAttemptWithOutcome(candidate, outcome)
-        : candidate,
-    ),
-  }));
+  const answered = namespaceAttemptWithOutcome(attempt, outcome);
+  return replaceIntent(
+    record,
+    intentId,
+    (current) => ({
+      ...current,
+      state: "received",
+      attempts: current.attempts.map((candidate) =>
+        candidate.attemptId === attemptId ? answered : candidate,
+      ),
+    }),
+    holdAfterAttempt(record.serverHold, answered),
+  );
 }
 
 export function settleFolderNamespaceOutcome(
@@ -658,7 +688,13 @@ export function settleFolderNamespaceOutcome(
     next: {
       ...record,
       revision: record.revision + 1,
-      intents: settleNamespaceIntent(record.intents, intent, disposition, settledAt),
+      intents: settleNamespaceIntent(
+        record.intents,
+        intent,
+        disposition,
+        settledAt,
+        record.serverHold,
+      ),
     },
   };
   if (disposition !== "accepted") return write;
