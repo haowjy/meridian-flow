@@ -884,6 +884,10 @@ msgstr ""
 msgid "Already redone"
 msgstr ""
 
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Already there"
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Already undone"
 msgstr ""
@@ -1106,6 +1110,7 @@ msgstr ""
 msgid "Can't delete {source}: it changed during the delete."
 msgstr ""
 
+#: src/features/project/context/entry-drag/drop-choice.ts
 #: src/features/project/context/entry-drag/use-entry-list.tsx
 msgid "Can't go inside itself"
 msgstr ""
@@ -1196,6 +1201,7 @@ msgstr ""
 #: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
+#: src/features/project/context/entry-drag/DropChoiceMenu.tsx
 #: src/features/project/work/WorkChanges.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
@@ -3356,12 +3362,12 @@ msgstr ""
 msgid "Move {rowName}"
 msgstr ""
 
-#: src/features/project/context/entry-drag/use-entry-list.tsx
+#: src/features/project/context/entry-drag/drop-choice.ts
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Move after {sibling}"
 msgstr ""
 
-#: src/features/project/context/entry-drag/use-entry-list.tsx
+#: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Move before {sibling}"
 msgstr ""
 
@@ -3394,7 +3400,7 @@ msgstr ""
 msgid "Move to {0}"
 msgstr ""
 
-#: src/features/project/context/entry-drag/use-entry-list.tsx
+#: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Move to {destinationName}"
 msgstr ""
 
@@ -4726,6 +4732,10 @@ msgstr ""
 msgid "Some changes to {name} couldn't be completed."
 msgstr ""
 
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Some of these items are no longer there"
+msgstr ""
+
 #: src/features/editor/SchemaNotices.tsx
 msgid "Some text was removed"
 msgstr ""
@@ -5079,6 +5089,10 @@ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 msgid "That picture is no longer in the document."
+msgstr ""
+
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "That place is no longer available"
 msgstr ""
 
 #: src/features/project/context/use-rename-entry-form.ts

@@ -56,7 +56,7 @@ export type MoveView = PlacementView & {
 };
 
 /** An entry as the replica places it now. */
-type PlacedEntry = {
+export type PlacedEntry = {
   ref: EntryRef;
   name: string;
   location: ResourceLocation;
@@ -110,7 +110,7 @@ export type MoveRow = {
   position?: ContextSiblingPosition;
 };
 
-type MovePlan =
+export type MovePlan =
   | { kind: "none" }
   /** A folder over its own subtree; the only drop that refuses rather than doing nothing. */
   | { kind: "inside-itself" }
@@ -190,14 +190,20 @@ function dropNested<T extends { ref: EntryRef }>(
 /** A folder carries its contents, so a row inside a carried folder is dropped from the carry. */
 type Refusal = "inside-itself" | "already-there";
 
+/** A folder dropped on itself or anywhere below itself. */
+function insideItself(view: PlacementView, source: PlacedEntry, into: ParentRef): boolean {
+  return (
+    source.ref.kind === "folder" && into.kind === "folder" && within(view, into, source.ref.id)
+  );
+}
+
 function refusalFor(
   view: PlacementView,
   source: PlacedEntry,
   into: ParentRef,
   position?: ContextSiblingPosition,
 ): Refusal | null {
-  if (source.ref.kind === "folder" && into.kind === "folder" && within(view, into, source.ref.id))
-    return "inside-itself";
+  if (insideItself(view, source, into)) return "inside-itself";
   return sameParent(source.parent, into) && !position ? "already-there" : null;
 }
 
@@ -227,21 +233,46 @@ export function sameParent(a: ParentRef, b: ParentRef): boolean {
   );
 }
 
-/** What dropping `entries` on `target` would do: move, refuse with a reason, or nothing. */
-export function planMove(
+/**
+ * A drop, resolved: what the carried rows and the target are now, before any
+ * action decides what to do with them. Move plans from it and Copy will, so
+ * neither resolves identities again.
+ */
+export type ResolvedDrop = {
+  /** The carried rows as the replica places them; a row inside a carried folder rides with it and is left out. */
+  sources: readonly PlacedEntry[];
+  /** The target's parent: a folder by ID, or an area's root with its authority. */
+  into: ParentRef;
+  destinationName: string;
+  /** A sibling edge in `into`; absent when the folder or area itself is the target. */
+  position?: ContextSiblingPosition;
+  /** Some source sits in another system than the target (the project's areas are one; User and each Scratch or Uploads owner are their own). */
+  crossing: boolean;
+  /** A carried folder would land on itself or below itself. */
+  insideItself: boolean;
+  /** Carried rows the replica can't place now (gone, or their parent isn't known yet). Nothing acts on a selection that has lost rows. */
+  unavailable: readonly EntryRef[];
+  /** Every carried row's surface grants Move (an archived Work's Scratch doesn't). */
+  movable: boolean;
+};
+
+/**
+ * Resolves dropping `entries` on `target` from the replica as it is now; null
+ * when the target isn't a place a drop can land (no such area, an owner that
+ * accepts no arrivals, a navigation-only folder, a parent not known yet).
+ */
+export function resolveDrop(
   view: MoveView,
   entries: readonly DragEntry[],
   target: TreeDropTarget,
-): MovePlan {
+): ResolvedDrop | null {
   const area = view.areas.find(
     (candidate) => candidate.catalog.root.entryId === target.catalogRootId,
   );
-  if (!area?.movable || target.scheme !== area.scheme) return NONE;
-  // A selection holding a row without Move moves nowhere, rather than silently leaving rows behind.
-  if (!entries.every((entry) => entry.movable)) return NONE;
+  if (!area?.movable || target.scheme !== area.scheme) return null;
   const { scheme, owner, catalog } = area;
   const folder = target.folder ? menuEntryFor(catalog, target.folder.entryId) : null;
-  if (target.folder && (folder?.kind !== "dir" || folder.navigationOnly)) return NONE;
+  if (target.folder && (folder?.kind !== "dir" || folder.navigationOnly)) return null;
   const destination: MoveDestination = {
     scheme,
     owner,
@@ -249,33 +280,42 @@ export function planMove(
     entryId: target.folder?.entryId ?? catalog.root.entryId,
   };
   const into = destinationParent(destination, view.works, view.noWork);
-  if (!into) return NONE;
-  const destinationName = target.folder?.name ?? schemeLabel(scheme);
-  const placed = entries.flatMap((entry) => {
-    const now = placeEntryRef(view, entry.ref);
-    return now ? [now] : [];
-  });
+  if (!into) return null;
+  const looked = entries.map((entry) => ({ ref: entry.ref, now: placeEntryRef(view, entry.ref) }));
+  const placed = looked.flatMap(({ now }) => (now ? [now] : []));
   const sources = dropNested(view, placed, (source) => source.parent);
-  // The project areas are one system, each owner's Scratch its own; crossing is Move or Copy.
   const system = entrySystem(scheme, owner);
-  if (sources.some((source) => entrySystem(source.location.scheme, source.location) !== system))
-    return NONE;
+  return {
+    sources,
+    into,
+    destinationName: folder?.name ?? schemeLabel(scheme),
+    ...(target.position ? { position: target.position } : {}),
+    crossing: sources.some(
+      (source) => entrySystem(source.location.scheme, source.location) !== system,
+    ),
+    insideItself: sources.some((source) => insideItself(view, source, into)),
+    unavailable: looked.flatMap(({ ref, now }) => (now ? [] : [ref])),
+    movable: entries.every((entry) => entry.movable),
+  };
+}
 
-  const refusals = sources.map((source) => refusalFor(view, source, into, target.position));
-  if (refusals.includes("inside-itself")) return { kind: "inside-itself" };
-  if (target.position) return planPositioned(view, sources, into, destinationName, target.position);
+/**
+ * What a resolved drop would do as a Move: move, refuse with a reason, or
+ * nothing. A drop across systems plans like any other; whether to move at once
+ * or ask first is the list's call (`resolved.crossing`).
+ */
+export function planMove(view: PlacementView, resolved: ResolvedDrop | null): MovePlan {
+  if (!resolved) return NONE;
+  const { sources, into, destinationName, position } = resolved;
+  // A selection holding a row without Move, or one that lost a row, moves nowhere rather than silently leaving rows behind.
+  if (!resolved.movable || resolved.unavailable.length > 0) return NONE;
+  if (resolved.insideItself) return { kind: "inside-itself" };
+  if (position) return planPositioned(view, sources, into, destinationName, position);
   // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
-  const moves = sources.flatMap((source, index) =>
-    refusals[index] === null
-      ? [
-          {
-            entry: source.ref,
-            name: source.name,
-            before: source.parent,
-            after: into,
-          },
-        ]
-      : [],
+  const moves = sources.flatMap((source) =>
+    sameParent(source.parent, into)
+      ? []
+      : [{ entry: source.ref, name: source.name, before: source.parent, after: into }],
   );
   return moves.length === 0 ? NONE : { kind: "ready", destinationName, moves };
 }
@@ -289,7 +329,7 @@ export function planMove(
  * would end where it already is.
  */
 function planPositioned(
-  view: MoveView,
+  view: PlacementView,
   sources: readonly PlacedEntry[],
   into: ParentRef,
   destinationName: string,
