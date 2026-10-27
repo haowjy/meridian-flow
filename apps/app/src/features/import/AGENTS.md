@@ -8,29 +8,46 @@ routed exports have no pending rows. Documents are born complete.
 `ImportsProvider` at the authenticated root owns one account-lifetime coordinator;
 project `ImportProvider` owns only pick/drop doors. Navigation never stops an
 upload. File handles are private and ephemeral. The open list is server truth;
-BroadcastChannel only nudges a refresh. Upload presence is the Web Lock
-`import-upload:<id>`, which a tab holds exactly while it reads, sends or hashes
-that import's files. Every refresh reads `navigator.locks.query()`, so a tab
-without File handles says "Uploading in another window" only while another tab
-holds the lock, and offers Continue once that tab closes, crashes or pauses. A
-stalled or missing-files tab releases the lock; a timer heartbeat cannot do this
-because background tabs throttle timers.
+BroadcastChannel only nudges a refresh.
+
+Work on one import is an `UploadAttempt` (`upload-attempt.ts`): begin, Continue,
+Retry and Import without them each open one, and it ends when its sends and hash
+report settle, when another attempt supersedes it, or when the import finishes or
+stops. The attempt owns its abort signal and the tab's presence lease, so "this
+tab is working" is one predicate (`UploadPresence.working`), used for the Web Lock
+and for `beforeunload` alike. The lease is requested before the attempt it
+replaces is released and is held through reading, creating and matching, so the
+lock never lapses between phases. Upload presence is the Web Lock
+`import-upload:<id>` (`upload-presence.ts`). Every refresh reads
+`navigator.locks.query()`, so a tab without File handles says "Uploading in another
+window" only while another tab holds the lock, and offers Continue once that tab
+closes, crashes or pauses. `publish()` derives `local.elsewhere` from the last query
+minus this tab's own leases; nothing else writes it. A stalled or missing-files tab
+holds no lease; a timer heartbeat cannot do this because background tabs throttle
+timers.
 
 Continue reads fresh detail and pairs awaiting and received entries by root
 name, kind and path. Size and modified time break ties
 between duplicate candidates; a changed awaiting file is sent as it is now and
 marked in `X-Import-Changed-Entries`. A received entry is never sent again:
 when its re-pick differs, or it is already marked changed, the browser hashes
-just that file and posts the hash with its size and time. A file edited after
-it uploaded is listed as `changed_after_upload` ("the imported copy is the
-earlier version"); equal bytes clear it, and clear a receive-time
-`changed_after_pick` only when the file also matches the recorded pick. Hashing
-runs a few files at a time beside the upload queue, and the receive that would
-complete the upload waits for the report, because the server takes hashes only
-while the import is uploading. A file that cannot be read is skipped with its
-reason untouched; a failed report stays owed (`record.picked`) so Retry repeats
-it; a file already reported at the same size and time is not hashed again.
-Missing files stay awaiting until the writer chooses "Import without them". Starting an upload still never hashes or sniffs files.
+just that file and posts the hash with its size and time. Two facts come back and
+stay apart: `changedAfterUpload` ("Edited after it uploaded. The imported copy is
+the earlier version.") is the disk differing from the receipt, set and cleared by
+each report alone; `changed_after_pick` is the receive-time mark, and a report
+clears it only when the file is the originally picked one and equals the receipt.
+The need-a-look list shows both sentences when both hold.
+
+The owed hash report is the record's obligation (`record.picked`), discharged by
+the attempt (`attempt.reporting`) beside the upload queue, four files at a time.
+The server takes hashes only while the import is uploading, so everything that can
+end the upload waits for the report: the queue's gate holds the batch that takes the
+last file, and Import without them awaits it before its skip. A report that fails
+keeps the error and stays owed (Retry repeats it) without changing the card while
+sends are in flight; a 4xx refusal drops it, because the marks are advisory. Local
+reads are bounded: a file that does not answer in time is unreadable, so a send skips
+it and a report leaves its marks. Missing files stay awaiting until the writer chooses
+"Import without them". Starting an upload still never hashes or sniffs files.
 
 The browser mints the import id before reading; every create replay uses that id.
 Creation knowledge (`local`, `uncertain`, `created`), not the toast phase, decides
