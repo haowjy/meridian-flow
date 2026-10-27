@@ -1,14 +1,14 @@
 /**
  * A drop is planned from where the replica places each dragged row now, not
  * from what the drag recorded: rows are found by identity in any catalog, a
- * selection that spans systems is flagged as crossing (the list asks before
+ * selection that spans systems asks (the list asks before
  * moving it), a folder carries what's inside it, and a folder never lands
  * inside itself.
  */
 import type { ParentRef, ResourceLocation, ResourceRecord } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import type { DragEntry, EntryRef } from "./entry";
+import { type EntryDrag, type EntryRef, LIVE_VIEW } from "./entry";
 import { type MoveArea, type MoveView, planMove, resolveDrop } from "./move-plan";
 
 const location = (
@@ -85,7 +85,8 @@ const area = (
 
 const view = (areas: MoveArea[]): MoveView => ({
   records: [record("ch1", ["local-ch1"]), record("note")],
-  works: [],
+  // The Work `note` sits in must be listed: a Scratch row of an unlisted Work may not Move.
+  works: [{ id: "w1", handle: null, archivedAt: null }],
   noWork: null,
   placement: {
     resourceLocation: (r: ResourceRecord) =>
@@ -98,14 +99,13 @@ const view = (areas: MoveArea[]): MoveView => ({
   areas,
 });
 
-const planDrop = (
-  view: MoveView,
-  entries: DragEntry[],
-  target: Parameters<typeof resolveDrop>[2],
-) => planMove(view, resolveDrop(view, entries, target));
+const planDrop = (view: MoveView, drag: EntryDrag, target: Parameters<typeof resolveDrop>[2]) =>
+  planMove(view, resolveDrop(view, drag, target));
 
-const drag = (...refs: EntryRef[]): DragEntry[] =>
-  refs.map((ref) => ({ ref, name: keyOf(ref), uri: "", can: { move: true, copy: true } }));
+const drag = (...refs: EntryRef[]): EntryDrag => ({
+  entries: refs.map((ref) => ({ ref, name: keyOf(ref), view: LIVE_VIEW })),
+  source: "list-row",
+});
 const file = (id: string): EntryRef => ({ kind: "file", id });
 const folder = (id: string): EntryRef => ({ kind: "folder", id });
 const into = (rootId: string, scheme: "manuscript" | "kb", entryId: string, name: string) => ({
@@ -133,11 +133,11 @@ it("finds a dragged row by identity in a catalog the destination list doesn't sh
   });
 });
 
-it("flags a selection that spans systems as crossing and still plans every row", () => {
+it("asks about a selection that spans systems and still plans every row", () => {
   const kb = view([area("kb", "kb-root", { characters: "characters" })]);
   const target = into("kb-root", "kb", "characters", "characters");
   const rows = drag(file("ch1"), file("note"));
-  expect(resolveDrop(kb, rows, target)).toMatchObject({ crossing: true });
+  expect(resolveDrop(kb, rows, target)).toMatchObject({ asks: true });
   expect(planDrop(kb, rows, target)).toMatchObject({
     kind: "ready",
     moves: [{ entry: file("ch1") }, { entry: file("note") }],

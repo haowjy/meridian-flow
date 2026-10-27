@@ -472,6 +472,9 @@ export type EffectiveReadVersion =
   | { destination: "live"; workId?: never }
   | { destination: "draft"; workId: WorkId };
 
+/** A draft read of a Work that holds no draft of the document. */
+export type WorkDraftMissing = { code: "draft_not_found"; documentId: string };
+
 /** A copy's source cut: the blocks, the revision they had, how they spelled, and its vector. */
 export type EffectiveBlocksRead = VersionedDocumentRead<
   readonly import("@meridian/markup").PMNode[]
@@ -505,15 +508,13 @@ export type DraftPeerShadowAccess = {
   /**
    * One document's frozen cut for a copy: the blocks a whole-document write would see,
    * the revision a `read` of that version reports, the holder those links spell from, and
-   * the Yjs state vector of the cut (what a client's own vector is compared against).
+   * the Yjs state vector of the cut (what a client's own vector is compared against). A draft
+   * read is of the named Work's draft, whatever chat reads it; a Work that holds no draft of
+   * the document is `draft_not_found`, never the live document.
    */
   readEffectiveBlocks(
-    input: {
-      documentId: DocumentId;
-      threadId?: ThreadId | null;
-      responseId?: string | null;
-    } & EffectiveReadVersion,
-  ): Promise<Result<EffectiveBlocksRead, SyncError>>;
+    input: { documentId: DocumentId } & EffectiveReadVersion,
+  ): Promise<Result<EffectiveBlocksRead, SyncError | WorkDraftMissing>>;
   /**
    * One hashline per block, and per block the ref-bearing links it spells
    * (`spelledLinks`), computed with the same scope in the same synchronous block.

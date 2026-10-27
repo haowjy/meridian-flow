@@ -355,11 +355,14 @@ folder inside itself. A lone moved row stays selected on its own (an explicit
 selection of one), not the open row, and Undo needs no reselect because keys
 never change.
 
-### Dropping across systems
+### Dropping across systems, and dropping references
 
-A drop within one system moves at once. A drop that crosses systems (the
-project's areas are one system; User and each Scratch or Uploads owner are their
-own, `entrySystem` in `entry.ts`) changes ownership, so the list asks first. The
+A list row dropped within one system moves at once. A drop that crosses systems (the
+project's areas are one system; User and each Scratch owner and each chat's Uploads
+are their own, `entrySystem` in `entry.ts`) changes ownership, so the list asks first.
+So does every drag that is not a list row (a `reference`, below), even within one
+system: a mention chip, an Editor tab, a path crumb, a Recent row, a receipt or Work
+change entry, an Uploads entry, a selected Editor link. The
 hover accepts with the first thing the menu would offer and an ellipsis ("Move to
 Act 2…", or "Copy to Act 2…" when Move is disabled); the drop opens a compact menu
 at the pointer, no heading: "Move to Act 2", "Copy to Act 2", then Cancel. A
@@ -378,19 +381,26 @@ The hover verdict, the decision to ask and the menu all come from `dropChoices`
 for a crossing drop (`planMove` alone serves a same-system drop), so a new action
 is a new item there and a branch in the list's `choose`. The contract:
 
-- `ResolvedDrop` (`move-plan.ts`, from `resolveDrop(view, entries, target)`):
+- `EntryDrag` (`entry.ts`, held by `drag-session.ts`): `{ entries, source }`. An entry is
+  identity (`ref`), the name the preview shows, and the `view` a Copy of it reads (the live
+  document, or the draft a tab or receipt row shows). `source` is `list-row` or `reference`.
+  A drag carries no placement and no grant.
+- `ResolvedDrop` (`move-plan.ts`, from `resolveDrop(view, drag, target)`):
   what a drop is now, before any action decides what to do with it. `sources` are
-  the outermost placed rows (a row inside a carried folder rides with it),
-  `into`, `scheme`, `destinationName` (the catalog's current name), `position`,
-  `crossing`, `insideItself`, `unavailable` (carried rows the replica can't place)
-  and `can` (what every carried row's surface grants). `resolveDrop` returns null
+  the outermost placed entries (one inside a carried folder rides with it) with their
+  views, `into`, `scheme`, `destinationName` (the catalog's current name), `position`,
+  `asks` (a reference, or a source in another system than the target), `insideItself`,
+  `unavailable` (carried entries the replica can't place) and `canMove`. Copy has no
+  condition; Move is refused for a row in the Scratch of an archived Work or of one the project
+  doesn't list (it fails closed), judged here from each source's placement so a new drag
+  source never says it. `resolveDrop` returns null
   when the target isn't a place a drop can land. `planMove` and `planCopy` turn it
   into a plan; an action plans from the resolution and never resolves identities
   again.
-- `PendingChoice` (`drop-choice.ts`): a crossing drop waiting for its choice, held
-  by the list. It carries the dragged entries, the target, the pointer point, the
+- `PendingChoice` (`drop-choice.ts`): a drop that asks, waiting for its choice, held
+  by the list. It carries the drag, the target, the pointer point, the
   notice surface and the focus-return callback, captured at the drop because
-  `dragend` clears `activeEntryDrag()` right after it. `EntriesRoute.drop`
+  `dragend` clears the drag session right after it. `EntriesRoute.drop`
   therefore receives the point.
 - `DropChoiceItem` (`drop-choice.ts`): `{ action, label, enabled, reason? }`. The
   menu is `dropChoices(view, resolved, target)`, derived from `resolveDrop`
@@ -400,12 +410,49 @@ is a new item there and a branch in the list's `choose`. The contract:
   disabled with its reason. `DropChoiceMenu.tsx` renders the items and knows no
   action.
 
+#### Reference sources
+
+Every non-row source starts its drag through one adapter, `entry-drag/reference-source.ts`: the
+source supplies what it names (a document or folder by identity, the name to show, and the view it
+shows). An element spreads the props `useReferenceDrag` returns: `draggable` and an `onDragStart`
+that publishes the drag with `source: "reference"`. A source that isn't an element (the Editor's
+link) takes `useReferenceDragStart()` and calls the start it returns; both give nothing on the
+phone shell, and a source that names nothing yet gets no props. A source never reads the replica
+or decides what a drop does: `resolveDrop` finds the entry by identity, so a renamed or moved
+document drags as itself and a gone one answers "Some of these items are no longer there".
+
+| Source | Names | View |
+|---|---|---|
+| Editor tab (`ContextTabBar`) | the tab's document | the draft of the Work under review while the tab is under review (`draftCopyView`, owned by draft review); local and draft-only tabs don't drag |
+| Path crumb (`DocumentPath`) | the document (filename) or the folder (read up the placement graph, so no catalog is acquired); the area crumb navigates | the filename follows its tab (the draft while under review); folders live |
+| Recent row | the document by id, never the path it was opened at | live |
+| Transcript chip (`TranscriptReference`) | an exact reference the host still resolves; syntax links name no entry | live |
+| Composer chip (`ComposerReferenceMenu`) | its document or folder | live |
+| Receipt row (`TurnEditsReceipt`), Work change row (`WorkChangeFile`) | the document the row represents | `draft` for a draft row: the Work the turn wrote in (the receipt's lineage names it) or the Work the row lists (`draftCopyView`); a row the turn deleted, or a change with no draft text, doesn't drag |
+| Uploads entry (`ChatFilesMenu`) | the upload's document | live; the section is a drop target that refuses |
+| Editor link (`LinkSurfaceExtension`) | the entry a link names, once the link's text is the selection | live |
+
+Nothing a source does after a drag follows or navigates: browsers fire no `click` after a drag.
+What a source must still handle is what it carries and what its host does on press.
+`startEntryDrag` clears the native drag data (an `<a>` otherwise carries its URL), and the session
+is the data: the drag carries only Meridian's own MIME type, empty. In the Editor an unselected
+press on a link still sweeps text selection (law 7), so a link drags only once its text is the
+selection. ProseMirror starts that drag as it starts any selection's (its `dragstart` runs first),
+and `LinkSurface.registerDragSource` is told afterwards (core knows an identity and a label; the app
+decides what a drag carries). A drop back into the same editor therefore stays an ordinary text move
+(the reference-drop extension defers to the view's own drag); only a drop elsewhere, on a tree
+container or the composer, is the entry. A composer chip is a TipTap node view, whose `stopEvent`
+already leaves a drag that starts inside it alone.
+
 ### Copy
 
 Copy duplicates the carried rows into the destination and leaves the sources where
 they are (`planCopy`, `copyRows` in `execute-copy.ts`). Every carried row is
 copied, the one already in the destination's parent included (its copy takes the
-next free name), and an edge drop may anchor on a carried row. The copies are
+next free name), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
+server with its root: a tree row copies the live document, a draft tab or receipt row the draft it
+shows. A draft view names its Work and no chat; the server reads that Work's active branch's draft
+of the document, and a Work with no draft of it refuses the Copy (it never reads live text). The copies are
 listed at once under predicted names (`arrivals`, as for Move): the replica holds
 one operation with one root per row, and the answer places every root or refuses
 the whole Copy (see `packages/resource-replica/.context/CONTEXT.md`, "Copy"). A
@@ -425,8 +472,7 @@ the window, and the journal keeps the refusal: `CopyRefusalNotices` shows "Could
 copy chapter-3 to Vault. A source or the destination is no longer there." with
 Copy to… (the same rows, picked afresh) and Dismiss, on the destination list's
 surface, or on the surface that started it when the destination is gone, until the
-writer resolves it. A draft tab's copy of the draft is a later surface; the
-replica already carries a source view for it.
+writer resolves it.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the

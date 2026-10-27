@@ -8,8 +8,10 @@ import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextOwner,
   ContextSiblingPosition,
+  CopyContextEntryView,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import {
   type FolderNamespaceRecord,
   type ParentRef,
@@ -25,7 +27,7 @@ import { schemeLabel } from "../context-schemes";
 import { menuEntryFor } from "../menu-tree";
 import { destinationParent, type MoveDestination } from "../move-entry";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
-import { type DragEntry, type EntryGrant, type EntryRef, entrySystem } from "./entry";
+import { type EntryDrag, type EntryRef, entrySystem } from "./entry";
 
 /** A catalog a list shows, and so a place a drop can land. */
 export type MoveArea = {
@@ -46,7 +48,7 @@ export type PlacementView = {
   >;
 };
 
-type WorkDirectory = Parameters<typeof destinationParent>[1];
+type WorkDirectory = readonly Pick<Work, "id" | "handle" | "archivedAt">[] | null | undefined;
 type NoWork = Parameters<typeof destinationParent>[2];
 
 export type MoveView = PlacementView & {
@@ -180,6 +182,19 @@ export function outermostEntries(view: PlacementView, refs: readonly EntryRef[])
   return dropNested(view, placed, (entry) => entry.parent);
 }
 
+/** The folders `ref` sits inside now, outermost first; null when it is gone or not placed yet. */
+export function folderChain(view: PlacementView, ref: EntryRef): string[] | null {
+  const placed = placeEntryRef(view, ref);
+  if (!placed) return null;
+  const chain: string[] = [];
+  let parent: ParentRef | null = placed.parent;
+  while (parent?.kind === "folder" && !chain.includes(parent.folderId)) {
+    chain.unshift(parent.folderId);
+    parent = view.placement.parentForFolder(parent.folderId);
+  }
+  return chain;
+}
+
 /** The parent `ref` sits in now, or null when it is gone or not placed yet. */
 export function parentOf(view: PlacementView, ref: EntryRef): ParentRef | null {
   return placeEntryRef(view, ref)?.parent ?? null;
@@ -244,39 +259,62 @@ export function sameParent(a: ParentRef, b: ParentRef): boolean {
   );
 }
 
+/** A carried entry as the replica places it now, with what a Copy of it reads. */
+export type PlacedSource = PlacedEntry & { view: CopyContextEntryView };
+
 /**
  * A drop, resolved: what the carried rows and the target are now, before any
  * action decides what to do with them. Move and Copy both plan from it, so
  * neither resolves identities again.
  */
 export type ResolvedDrop = {
-  /** The carried rows as the replica places them; a row inside a carried folder rides with it and is left out. */
-  sources: readonly PlacedEntry[];
+  /** The carried entries as the replica places them; one inside a carried folder rides with it and is left out. */
+  sources: readonly PlacedSource[];
   /** The target's parent: a folder by ID, or an area's root with its authority. */
   into: ParentRef;
   destinationName: string;
   /** A sibling edge in `into`; absent when the folder or area itself is the target. */
   position?: ContextSiblingPosition;
-  /** Some source sits in another system than the target (the project's areas are one; User and each Scratch or Uploads owner are their own). */
-  crossing: boolean;
+  /**
+   * The drop asks Move, Copy or Cancel instead of moving at once: some source sits in another
+   * system than the target (the project's areas are one; User and each Scratch or Uploads owner
+   * are their own), or the drag is a reference, which only a list row within one system outranks.
+   */
+  asks: boolean;
   /** A carried folder would land on itself or below itself. */
   insideItself: boolean;
   /** Carried rows the replica can't place now (gone, or their parent isn't known yet). Nothing acts on a selection that has lost rows. */
   unavailable: readonly EntryRef[];
   /** The target's scheme, for the records a Copy makes there. */
   scheme: ProjectContextTreeScheme;
-  /** What every carried row's surface grants (an archived Work's Scratch grants Copy, not Move). */
-  can: EntryGrant;
+  /**
+   * Every carried row may Move. A row in the Scratch of an archived Work, or of a Work the project
+   * doesn't list, is frozen: it can be copied from, not moved out of. Judged here from where the
+   * replica places each row, so a drag source never has to say.
+   */
+  canMove: boolean;
 };
 
 /**
- * Resolves dropping `entries` on `target` from the replica as it is now; null
+ * Fails closed, as the rule the row menus used to carry did: a row in a Work's Scratch may Move
+ * only when that Work is found and not archived (No Work is never archived). A Work the project
+ * doesn't list (deleted, or the list not loaded) freezes its Scratch rather than opening it.
+ */
+function movable(view: MoveView, { location }: PlacedEntry): boolean {
+  if (location.scheme !== "scratch" || !location.workId) return true;
+  if (location.workId === view.noWork?.id) return true;
+  const work = view.works?.find((candidate) => candidate.id === location.workId);
+  return Boolean(work && !isWorkArchived(work));
+}
+
+/**
+ * Resolves dropping `drag` on `target` from the replica as it is now; null
  * when the target isn't a place a drop can land (no such area, an owner that
  * accepts no arrivals, a navigation-only folder, a parent not known yet).
  */
 export function resolveDrop(
   view: MoveView,
-  entries: readonly DragEntry[],
+  drag: EntryDrag,
   target: TreeDropTarget,
 ): ResolvedDrop | null {
   const area = view.areas.find(
@@ -294,8 +332,12 @@ export function resolveDrop(
   };
   const into = destinationParent(destination, view.works, view.noWork);
   if (!into) return null;
-  const looked = entries.map((entry) => ({ ref: entry.ref, now: placeEntryRef(view, entry.ref) }));
-  const placed = looked.flatMap(({ now }) => (now ? [now] : []));
+  const looked = drag.entries.map((entry) => ({
+    ref: entry.ref,
+    view: entry.view,
+    now: placeEntryRef(view, entry.ref),
+  }));
+  const placed = looked.flatMap(({ now, view: read }) => (now ? [{ ...now, view: read }] : []));
   const sources = dropNested(view, placed, (source) => source.parent);
   const system = entrySystem(scheme, owner);
   return {
@@ -303,29 +345,26 @@ export function resolveDrop(
     into,
     destinationName: folder?.name ?? schemeLabel(scheme),
     ...(target.position ? { position: target.position } : {}),
-    crossing: sources.some(
-      (source) => entrySystem(source.location.scheme, source.location) !== system,
-    ),
+    asks:
+      drag.source === "reference" ||
+      sources.some((source) => entrySystem(source.location.scheme, source.location) !== system),
     insideItself: sources.some((source) => insideItself(view, source, into)),
     unavailable: looked.flatMap(({ ref, now }) => (now ? [] : [ref])),
     scheme,
-    can: {
-      move: entries.every((entry) => entry.can.move),
-      copy: entries.every((entry) => entry.can.copy),
-    },
+    canMove: sources.every((source) => movable(view, source)),
   };
 }
 
 /**
  * What a resolved drop would do as a Move: move, refuse with a reason, or
- * nothing. A drop across systems plans like any other; whether to move at once
- * or ask first is the list's call (`resolved.crossing`).
+ * nothing. A drop that asks plans like any other; whether to move at once
+ * or ask first is the list's call (`resolved.asks`).
  */
 export function planMove(view: PlacementView, resolved: ResolvedDrop | null): MovePlan {
   if (!resolved) return NONE;
   const { sources, into, destinationName, position } = resolved;
   // A selection holding a row without Move, or one that lost a row, moves nowhere rather than silently leaving rows behind.
-  if (!resolved.can.move || resolved.unavailable.length > 0) return NONE;
+  if (!resolved.canMove || resolved.unavailable.length > 0) return NONE;
   if (resolved.insideItself) return { kind: "inside-itself" };
   if (position) return planPositioned(view, sources, into, destinationName, position);
   // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
@@ -337,8 +376,8 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
   return moves.length === 0 ? NONE : { kind: "ready", destinationName, moves };
 }
 
-/** One row a Copy duplicates: the row as it is named now. */
-export type CopyRow = { entry: EntryRef; name: string };
+/** One row a Copy duplicates: the row as it is named now, and the view it reads. */
+export type CopyRow = { entry: EntryRef; name: string; view: CopyContextEntryView };
 
 export type CopyPlan =
   | { kind: "none" }
@@ -362,11 +401,15 @@ export type ReadyCopy = Extract<CopyPlan, { kind: "ready" }>;
  * carried row, which stays where it is. A selection that lost a row copies nothing.
  */
 export function planCopy(view: PlacementView, resolved: ResolvedDrop | null): CopyPlan {
-  if (!resolved?.can.copy || resolved.unavailable.length > 0 || resolved.sources.length === 0)
+  if (!resolved || resolved.unavailable.length > 0 || resolved.sources.length === 0)
     return NONE_COPY;
   if (resolved.insideItself) return { kind: "inside-itself" };
   const { sources, into, destinationName, position, scheme } = resolved;
-  const copies = sources.map((source) => ({ entry: source.ref, name: source.name }));
+  const copies = sources.map((source) => ({
+    entry: source.ref,
+    name: source.name,
+    view: source.view,
+  }));
   if (!position) return { kind: "ready", destinationName, scheme, into, copies };
   if (!("siblingId" in position)) return NONE_COPY;
   const anchor = view.placement

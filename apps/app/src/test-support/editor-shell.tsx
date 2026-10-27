@@ -17,6 +17,7 @@ import * as focus from "@/features/editor/useInlineReviewFocus";
 import * as links from "@/features/links";
 import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
+import * as phoneShell from "@/hooks/use-phone-shell";
 
 export function installEditorShell(registry: LiveDocumentSessionRegistry) {
   const removal = new ContextRemovalCoordinator();
@@ -47,6 +48,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
       refetch: () => undefined,
     }),
     vi.spyOn(trail, "usePrefetchTrailDetails").mockImplementation(() => {}),
+    vi.spyOn(phoneShell, "usePhoneShell").mockReturnValue(false),
     vi.spyOn(account, "useContextRemovalCoordinator").mockReturnValue(removal),
     vi.spyOn(account, "useOptionalAccountResourceReplica").mockReturnValue(null),
     vi.spyOn(account, "useLiveDocumentSessionRegistry").mockReturnValue(registry),

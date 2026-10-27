@@ -36,7 +36,7 @@ import {
 } from "../account-feature-context";
 import { type CopyRefusal, copyRefusals } from "./copy-refusal";
 import type { EntryRef } from "./entry";
-import type { MoveContext } from "./execute-move";
+import type { ReplicaContext } from "./execute-move";
 import { entryNameNow, intentSettlement, type PlacementView } from "./move-plan";
 
 /** A row an operation could not take back or the replica would not admit. */
@@ -66,7 +66,7 @@ export interface Operation {
   settlement(view: NoticeView): Operation | null;
   /** Takes it back as ordinary operations through the replica. */
   undo(
-    context: MoveContext,
+    context: ReplicaContext,
   ): Promise<{ failed: readonly Failure[]; followed: readonly Followed[] }>;
   /** What the notice says when Undo could not put back `failed` (empty when it threw before naming any). */
   describeUndoFailure(failed: readonly Failure[]): string;

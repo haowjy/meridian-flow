@@ -168,7 +168,6 @@ export function ContextViewer({
         tabs={tabs}
         activeTabId={activeTabId}
         activeTabInstanceId={(activeTab ?? settledTab)?.tabInstanceId}
-        reviewingTabId={activeReviewItemKey ? activeTabId : null}
         optimisticTab={settledTab ? null : optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}

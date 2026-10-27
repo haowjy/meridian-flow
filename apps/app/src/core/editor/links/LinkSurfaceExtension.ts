@@ -18,6 +18,7 @@
  * deeper owner than a mark on its text.
  */
 
+import { parseLinkRef } from "@meridian/contracts";
 import { type Editor, Extension } from "@tiptap/core";
 import {
   type EditorState,
@@ -293,8 +294,26 @@ export const LinkSurfaceExtension = Extension.create({
           };
           editor.on("transaction", followDocument);
 
+          /**
+           * A selection that is one internal link's text is also the entry the link names, handed
+           * to the app. ProseMirror's own `dragstart` ran first (its listeners predate the plugin
+           * views) and made the selection an ordinary text drag, so a drop back into this editor
+           * moves the text as it always did; the app's drag only decides what a drop elsewhere
+           * means. This listener sees the drag ProseMirror started (`view.dragging`), never starts
+           * one: an unselected press still sweeps a selection (law 7), a selection that is more than
+           * the link, an image or a block is ProseMirror's alone, and with no app registered the
+           * text just drags as text.
+           */
+          const announceDrag = (event: DragEvent) => {
+            if (!view.dragging || !surface.dragSource) return;
+            const dragged = selectedLinkEntry(view, event);
+            if (dragged) surface.dragSource({ ...dragged, event });
+          };
+          view.dom.addEventListener("dragstart", announceDrag);
+
           return {
             destroy() {
+              view.dom.removeEventListener("dragstart", announceDrag);
               editor.off("transaction", followDocument);
               releaseHover?.();
               releaseHover = null;
@@ -348,6 +367,27 @@ export const LinkSurfaceExtension = Extension.create({
     ];
   },
 });
+
+/**
+ * The entry a drag names when the pointer starts it inside a selection that lies within one
+ * internal link: a document or folder link, never an address with nothing behind it yet.
+ */
+function selectedLinkEntry(
+  view: EditorView,
+  event: DragEvent,
+): { entry: { kind: "file" | "folder"; id: string }; name: string } | null {
+  const { from, to, empty } = view.state.selection;
+  if (empty) return null;
+  const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+  if (at === undefined || at < from || at > to) return null;
+  const link = linkAt(view.state, from + 1) ?? linkAt(view.state, from);
+  if (!link || link.from > from || link.to < to) return null;
+  const ref = parseLinkRef(linkKeyOfMark(link.attributes).ref);
+  const name = view.state.doc.textBetween(link.from, link.to);
+  if (ref?.kind === "doc") return { entry: { kind: "file", id: ref.documentId }, name };
+  if (ref?.kind === "folder") return { entry: { kind: "folder", id: ref.folderId }, name };
+  return null;
+}
 
 /** The anchor element under a DOM node, when it belongs to this editor. */
 function anchorIn(view: EditorView, node: EventTarget | null): HTMLElement | null {
