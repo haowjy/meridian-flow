@@ -27,7 +27,12 @@ always `set-location` / `set-folder-location`; `ResourceDescriptor.materializati
 what the server makes of a document identity it does not hold (today an untitled document it
 names), and dispatch derives `create` from it while `canonical` is null. A new kind of
 single-document first materialization is a new materialization arm, not a placement kind. Copy
-is not one: it is one operation over several roots, so its client journal is a separate decision.
+is not one: it is one operation over several roots, journaled once as an `OperationRecord`.
+- An operation over several records is the third journal kind beside a resource's and a folder's
+  (`operation-journal.ts`): its own intents, attempts and admission, replayed by the same generic
+  loop. The records it makes carry `copiedBy`, are born `uncertain`, and rest on the operation's
+  receipt for their first place and refresh. Ask `first-place.ts` which accepted answer placed a
+  record; never read "its own attempt" to prove a place.
 - Namespace intents and receipts are immutable evidence. Accepted, refused,
   superseded, and terminal outcomes must not be confused with current
   placement or deletion ownership.

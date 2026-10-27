@@ -170,7 +170,8 @@ function requestFor(
  * What the server makes of a document it holds no row for. The placement says where it goes; the
  * resource says what it is (an untitled document the server names), so a new kind of
  * single-document materialization adds a branch here and no placement, projection, repair or Undo
- * branch anywhere else. Copy's multi-root journal is a separate decision.
+ * branch anywhere else. A root an operation made (`copiedBy`) is never `local`, so it never reaches
+ * a create here.
  */
 function materializationRequest(
   record: ResourceRecord,

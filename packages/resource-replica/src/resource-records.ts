@@ -86,7 +86,8 @@ export type DestinationParentLookup = (folderId: string) => ResourceLocation | n
  * placement of that one document carries the request. Placement says where it goes; this says
  * what the server makes there, so a new kind of single-document materialization adds an arm here
  * and nowhere else. Copy is not one: one Copy names several roots and answers with an operation
- * receipt, so its client journal is a separate decision (see `design-e2-folder-create.md`).
+ * receipt, so it is an `OperationRecord`, and each root it makes carries `copiedBy` instead of a
+ * materialization.
  */
 export type DocumentMaterialization = {
   kind: "untitled";
