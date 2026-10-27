@@ -2,11 +2,6 @@
 
 export { createDrizzleAccountSkillInstallStore } from "./adapters/drizzle-account-skill-install-store.js";
 export { createDrizzleAgentRevisionStore } from "./adapters/drizzle-agent-revision-store.js";
-export {
-  createGitHubMarsPackageFetcher,
-  type GitHubMarsPackageFetcherDeps,
-  parseGitHubRepoUrl,
-} from "./adapters/github-mars-package-fetcher.js";
 export { createInMemoryAccountSkillInstallStore } from "./adapters/in-memory-account-skill-install-store.js";
 export {
   createInMemoryAgentRevisionStore,
@@ -45,15 +40,12 @@ export {
   createBoundAgentCatalog,
 } from "./domain/bound-agent-catalog.js";
 export {
-  type DefaultPackageSeedConfig,
-  defaultPackageSeedConfigFromEnv,
-  seedDefaultAgentPackages,
   seedGeneralAgent,
+  seedLaunchAgentPackage,
 } from "./domain/default-package-seeding.js";
 export {
   FIRST_PARTY_CATALOG,
   listFirstPartyCatalog,
-  resolveCatalogSource,
 } from "./domain/first-party-catalog.js";
 export {
   canonicalizeJsonObject,
@@ -61,20 +53,12 @@ export {
   parseMarsToml,
   serializeMarkdownDefinition,
 } from "./domain/mars-source.js";
-export { exportMarsPackage, writeExportedMarsDirectory } from "./domain/package-export.js";
 export {
-  isPackageImportError,
-  PackageImportError,
-  packageDependencyUnresolved,
-} from "./domain/package-import-error.js";
-export {
-  applyPackageInstall,
-  applyPackageUpdate,
-  checkPackageUpdate,
-  findOwnedPackageInstall,
-  previewPackageInstall,
-  resolvePackageInstallSource,
-} from "./domain/package-install-ops.js";
+  exportMarsPackage,
+  findOwnedInstallation,
+  PackageInstallationNotFoundError,
+  writeExportedMarsDirectory,
+} from "./domain/package-export.js";
 export { buildMarsPackageZip } from "./domain/package-zip.js";
 export {
   bufferToSkillFileEntry,
@@ -87,7 +71,6 @@ export type {
   AgentConfigOverlay,
   ExportedMarsDirectory,
   JsonObject,
-  MarsDependency,
   MarsPackageMetadata,
   PackageVisibility,
   ParsedMarsToml,
@@ -104,8 +87,3 @@ export type {
   AgentRevisionBinding,
   AgentRevisionStore,
 } from "./ports/agent-revision-store.js";
-export type {
-  FetchedMarsSource,
-  MarsPackageFetcher,
-} from "./ports/mars-package-fetcher.js";
-export { fetchedMarsSourceFromDirectory } from "./ports/mars-package-fetcher.js";

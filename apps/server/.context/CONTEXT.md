@@ -49,7 +49,7 @@ The shipped route surface covers:
   threads, project thread list/create, and the flat project chat feed;
   account settings expose the
   working-set sync toggle.
-- Package preview/apply, update check/apply, and export.
+- Package export.
 - Global thread list/create, snapshot, delete/restore, turn cancel, model-request debug,
   turn-context preview, and owner-gated favorite/read desired-state mutation.
 - Writer-message routes authenticate and delegate replay, exact block/reference
@@ -209,8 +209,8 @@ The Nitro file under `server/routes/api/...` should authenticate, extract params
 and body, delegate to the route-core, then serialize the response.
 
 Route-core functions take a `Deps` interface and plain-data input. They should
-not depend on Nitro event objects. This keeps owner gates, validation, package
-install/update logic, and model-request debug projection testable with Vitest without booting Nitro.
+not depend on Nitro event objects. This keeps owner gates, validation, and
+model-request debug projection testable with Vitest without booting Nitro.
 
 ### Adding a command route
 

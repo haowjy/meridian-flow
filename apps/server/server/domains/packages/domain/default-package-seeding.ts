@@ -1,23 +1,18 @@
 /**
- * Publishes configured first-party package sources to the immutable system catalog at startup.
+ * Publishes the built-in launch-agent package to the immutable system catalog at startup.
  * Local development and bundled Nitro assets feed the same retained-source publisher.
  */
 
-import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
-import type { MarsPackageFetcher } from "../ports/mars-package-fetcher.js";
+import type { AgentSourceSnapshot } from "./agent-source-revision.js";
 import { installSystemAgentSource } from "./bound-agent-catalog.js";
-import { serializeMarkdownDefinition } from "./mars-source.js";
-import { readPackageGraph } from "./package-source.js";
+import { parseMarsToml, serializeMarkdownDefinition } from "./mars-source.js";
+import { readSkillFileFromDisk, type SkillFiles } from "./skill-files.js";
 import { publishAgentSource } from "./source-publication.js";
-
-export interface DefaultPackageSeedConfig {
-  /** Absolute or process-cwd-relative Mars package directories. */
-  packageDirs: string[];
-}
 
 const LAUNCH_AGENT_PACKAGE_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -28,65 +23,40 @@ const SOURCE_LAUNCH_AGENT_PACKAGE_RELATIVE_PATH =
   "apps/server/server/domains/packages/builtin/launch-agents";
 let materializedLaunchAgentPackageDir: Promise<string> | null = null;
 
-export function defaultPackageSeedConfigFromEnv(env: {
-  DEFAULT_PACKAGE_DIRS?: string;
-}): DefaultPackageSeedConfig {
-  return {
-    packageDirs: [
-      LAUNCH_AGENT_PACKAGE_DIR,
-      ...(env.DEFAULT_PACKAGE_DIRS ?? "")
-        .split(/[,;]/)
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    ],
-  };
+export async function seedLaunchAgentPackage(store: AgentRevisionStore): Promise<void> {
+  const source = await readPackageDir(await resolveLaunchAgentPackageDir());
+  await store.withCatalogTransaction(null, async () => {
+    const head = (await store.listInstallations(null)).find(
+      (item) => item.coordinate === source.coordinate,
+    );
+    const installed = await store.installSource(source);
+    await publishAgentSource({
+      store,
+      ownerUserId: null,
+      source,
+      upstreamRevisionId: installed.packageRevisionId,
+      expectedRevisionId: head?.currentRevisionId,
+    });
+  });
 }
 
-export async function seedDefaultAgentPackages(input: {
-  store: AgentRevisionStore;
-  fetcher: MarsPackageFetcher;
-  config: DefaultPackageSeedConfig;
-}): Promise<void> {
-  for (const sourceDir of input.config.packageDirs) {
-    const graph = await readPackageGraph({
-      kind: "local",
-      sourceDir: await resolvePackageSourceDir(path.resolve(sourceDir)),
-      fetcher: input.fetcher,
-    });
-    await input.store.withCatalogTransaction(null, async () => {
-      const heads = new Map(
-        (await input.store.listInstallations(null)).map((item) => [item.coordinate, item]),
-      );
-      for (const node of graph) {
-        const dependencies = Object.fromEntries(
-          Object.entries(node.dependencies).map(([name, coordinate]) => {
-            const head = heads.get(coordinate);
-            if (!head) throw new Error(`Missing system package dependency ${coordinate}`);
-            return [name, head.currentRevisionId];
-          }),
-        );
-        const source = { ...node.source, dependencies };
-        const installed = await input.store.installSource(source);
-        const published = await publishAgentSource({
-          store: input.store,
-          ownerUserId: null,
-          source,
-          origin: node.origin,
-          upstreamRevisionId: installed.packageRevisionId,
-          expectedRevisionId: heads.get(source.coordinate)?.currentRevisionId,
-        });
-        heads.set(source.coordinate, published.installation);
-      }
-    });
+async function readPackageDir(dir: string): Promise<AgentSourceSnapshot> {
+  const files: SkillFiles = {};
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const full = path.join(entry.parentPath, entry.name);
+    files[path.relative(dir, full).split(path.sep).join("/")] = await readSkillFileFromDisk(full);
   }
+  if (typeof files["mars.toml"] !== "string") throw new Error("Package requires a UTF-8 mars.toml");
+  const manifest = parseMarsToml(files["mars.toml"], { packageNameFallback: path.basename(dir) });
+  return { coordinate: manifest.package.name, files };
 }
 
-async function resolvePackageSourceDir(sourceDir: string): Promise<string> {
+async function resolveLaunchAgentPackageDir(): Promise<string> {
   try {
-    await access(path.join(sourceDir, "mars.toml"));
-    return sourceDir;
-  } catch (error) {
-    if (path.normalize(sourceDir) !== path.normalize(LAUNCH_AGENT_PACKAGE_DIR)) throw error;
+    await access(path.join(LAUNCH_AGENT_PACKAGE_DIR, "mars.toml"));
+    return LAUNCH_AGENT_PACKAGE_DIR;
+  } catch {
     const sourceFallback = await firstExistingPackageDir(launchAgentPackageDirCandidates());
     if (sourceFallback) return sourceFallback;
     materializedLaunchAgentPackageDir ??= materializeLaunchAgentPackageFromNitroAssets();
