@@ -77,6 +77,8 @@ function OpenMovePicker({
   const currentTrail = source.own.openAt(entry.path);
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);
+  // The caption names the row as the list shows it; a retry may carry a refused name.
+  const rowName = entry.name;
   const failedFolder = repairMove
     ? repairMove.parent.kind === "root"
       ? schemeLabel(repairMove.parent.scheme)
@@ -197,7 +199,7 @@ function OpenMovePicker({
           ?.querySelector<HTMLElement>('button[data-slot="icon-button"], [role="button"]')
           ?.focus();
       }}
-      caption={t`Move ${name}`}
+      caption={t`Move ${rowName}`}
       status={error ?? refusal}
       isDisabled={(node) => {
         if (!node.folder) return true;

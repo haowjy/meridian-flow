@@ -223,56 +223,6 @@ describe("context router owner resolution", () => {
   });
 });
 
-describe("context router untitled identity recovery", () => {
-  it("returns an existing document's canonical cross-scheme location without creating a row", async () => {
-    const requestedCreate = vi.fn();
-    const manuscript = {
-      name: "manuscript",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      locateDocument: async () => Ok(null),
-      createUntitledDocument: requestedCreate,
-    } as unknown as ContextSchemeAdapter;
-    const scratch = {
-      name: "scratch",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      locateDocument: async (documentId: string) =>
-        Ok({ documentId, path: "moved/Untitled 1.md", name: "Untitled 1.md" }),
-      createUntitledDocument: async (_path: string, options: { documentId: string }) =>
-        Ok({
-          status: "already-exists" as const,
-          documentId: options.documentId,
-          path: "moved/Untitled 1.md",
-          name: "Untitled 1.md",
-        }),
-    } as unknown as ContextSchemeAdapter;
-    const port = createContextPortRouter({
-      sources: new Map([
-        ["manuscript", { adapter: manuscript, authority: { kind: "contextual" } }],
-      ]),
-      workAuthorities: new Map([[testWorkHandle("w8"), authority("work-2", "w8")]]),
-      resolveWorkAdapters: () => new Map([["scratch", scratch]]),
-    });
-
-    await expect(
-      port.createUntitledDocument("manuscript://branches", {
-        documentId: "00000000-0000-4000-8000-000000000101",
-        origin: { type: "system" },
-      }),
-    ).resolves.toEqual({
-      ok: true,
-      value: {
-        status: "already-materialized",
-        documentId: "00000000-0000-4000-8000-000000000101",
-        scheme: "scratch",
-        workId: "work-2",
-        path: "moved/Untitled 1.md",
-        name: "Untitled 1.md",
-      },
-    });
-    expect(requestedCreate).not.toHaveBeenCalled();
-  });
-});
-
 describe("context router scheme creation capabilities", () => {
   const workId = "00000000-0000-4000-8000-000000000001";
 

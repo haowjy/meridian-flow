@@ -17,6 +17,7 @@ import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
+
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
@@ -41,7 +42,9 @@ import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import { insertNewTree, type NewTreeNode } from "../../tree/new-tree.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
-import { ensureLiveFolderPath } from "../../tree/placement.js";
+import { createLiveFolder, ensureLiveFolderPath } from "../../tree/placement.js";
+import { placeLiveSibling } from "../../tree/sibling-order.js";
+import { loadFolderChains } from "../../tree/tree-addresses.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -51,7 +54,11 @@ import {
   visibleDocuments,
   visibleFolders,
 } from "../../tree/tree-view.js";
-import { loadDocumentIdentityRows, loadHiddenFilenames } from "../../tree/tree-view-sql.js";
+import {
+  loadDocumentIdentityRows,
+  loadFolderIdentityRows,
+  loadHiddenFilenames,
+} from "../../tree/tree-view-sql.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import { hasOppositeContextEntry, lockContextSources } from "./document-locations.js";
 
@@ -213,6 +220,62 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
+  private async folderPath(folderId: FolderId): Promise<string[]> {
+    return [...((await loadFolderChains(this.db, [folderId])).get(folderId) ?? [])]
+      .reverse()
+      .map((link) => link.name);
+  }
+
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: ContextSiblingPosition;
+  }) {
+    const folderId = input.id as FolderId;
+    return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      // The catalog's entry-id space is global: a live id in this source is a replay, while any
+      // other holder (another source, deleted, hidden, a document) can never become this folder.
+      const [held] = await loadFolderIdentityRows(this.db, [folderId]);
+      if (held) {
+        if (held.contextSourceId !== this.sourceId || held.deleted || held.hidden)
+          throw new ContextEntryConflictError("folder");
+        return {
+          status: "already-exists" as const,
+          folderId,
+          path: await this.folderPath(folderId),
+        };
+      }
+      const [document] = await loadDocumentIdentityRows(this.db, [folderId]);
+      if (document) throw new ContextEntryConflictError("folder");
+      await createLiveFolder(this.deps.db, {
+        contextSourceId: this.sourceId,
+        parentId: input.parentId as FolderId | null,
+        name: input.name,
+        id: folderId,
+      });
+      if (input.position) {
+        const placed = await placeLiveSibling(this.deps.db, {
+          node: { kind: "folder", id: folderId },
+          sourceId: this.sourceId,
+          parentId: input.parentId as FolderId | null,
+          position: input.position,
+          arrived: true,
+        });
+        if (placed === "stale-anchor")
+          await placeLiveSibling(this.deps.db, {
+            node: { kind: "folder", id: folderId },
+            sourceId: this.sourceId,
+            parentId: input.parentId as FolderId | null,
+            arrived: true,
+          });
+      }
+      await this.deps.catalogMutations?.refreshSources([this.sourceId], [folderId]);
+      return { status: "created" as const, folderId, path: await this.folderPath(folderId) };
+    });
+  }
+
   async insertNewTree(input: {
     parentId: string | null;
     roots: readonly NewTreeNode[];
@@ -259,6 +322,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   ): Promise<LiveDocumentCreation | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
+      // The catalog's entry-id space is global: a folder anywhere already holds this id, so the
+      // document create can never take it (the folder create enforces the same invariant).
+      if (input.id) {
+        const [folder] = await loadFolderIdentityRows(this.db, [input.id as FolderId]);
+        if (folder) throw new ContextEntryConflictError("folder");
+      }
       const occupant = await liveFileOccupant(this, this.deps.db, this.sourceId, input);
       if (occupant === "folder") throw new ContextEntryConflictError("folder");
       if (occupant) return null;
@@ -289,6 +358,24 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           toId: outcome.documentId,
           projectId: input.joinFrom.projectId,
         });
+      }
+      if (outcome.kind === "inserted" && input.position) {
+        // The insert took the parent's arrival rule; the writer's position replaces it. A
+        // sibling that is gone leaves the arrival placement, never fails the create.
+        const placed = await placeLiveSibling(this.deps.db, {
+          node: { kind: "document", id: outcome.documentId },
+          sourceId: this.sourceId,
+          parentId: input.folderId as FolderId | null,
+          position: input.position,
+          arrived: true,
+        });
+        if (placed === "stale-anchor")
+          await placeLiveSibling(this.deps.db, {
+            node: { kind: "document", id: outcome.documentId },
+            sourceId: this.sourceId,
+            parentId: input.folderId as FolderId | null,
+            arrived: true,
+          });
       }
       if (outcome.kind === "inserted") {
         await this.deps.catalogMutations?.refreshSources([this.sourceId]);

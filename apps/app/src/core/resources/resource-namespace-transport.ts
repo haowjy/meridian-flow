@@ -5,10 +5,12 @@ import {
   catalogEntryOwner,
   type NamespaceIdentityAvailability,
   type NamespaceRequest,
+  namespaceRequestId,
   type ResourceNamespaceTransport,
 } from "@meridian/resource-replica";
 import { httpErrorStatus, isMeridianApiError } from "@/client/api/http-client";
 import {
+  createContextFolder,
   createUntitledContextDocument,
   deleteContextEntry,
   getContextOperationReceipt,
@@ -56,9 +58,9 @@ export function createResourceNamespaceTransport(
     request: NamespaceRequest,
   ) => {
     requireOpen();
-    // Create has no operation receipt. Replay uses the recorded document ID/request,
+    // A create has no operation receipt. Replay uses the recorded document or folder ID/request,
     // while current availability is a separate observation, not a historical outcome.
-    if (request.kind === "create") return null;
+    if (request.kind === "create" || request.kind === "create-folder") return null;
     const receipt = await getContextOperationReceipt(projectId, request.body.operationId, {
       signal,
     });
@@ -129,18 +131,25 @@ export function createResourceNamespaceTransport(
 
   async function submitWithin(signal: AbortSignal, projectId: string, request: NamespaceRequest) {
     requireOpen();
-    if (request.kind === "create") {
-      const result = await createUntitledContextDocument(
-        projectId,
-        "unfiled",
-        request.body,
-        undefined,
-        { signal },
-      );
-      requireOpen();
-      return { kind: "create" as const, result };
-    }
     try {
+      if (request.kind === "create") {
+        const result = await createUntitledContextDocument(
+          projectId,
+          "unfiled",
+          request.body,
+          undefined,
+          { signal },
+        );
+        requireOpen();
+        return { kind: "create" as const, result };
+      }
+      if (request.kind === "create-folder") {
+        const result = await createContextFolder(projectId, "unfiled", request.body, undefined, {
+          signal,
+        });
+        requireOpen();
+        return { kind: "create-folder" as const, result };
+      }
       if (request.kind === "move") {
         await moveContextEntry(projectId, request.scheme, request.body, { signal });
       } else {
@@ -167,7 +176,7 @@ export function createResourceNamespaceTransport(
       ) {
         return {
           kind: "refusal" as const,
-          operationId: request.body.operationId,
+          operationId: namespaceRequestId(request),
           error: error.envelope,
         };
       }

@@ -27,6 +27,7 @@ import {
   submit,
 } from "./namespace-schedule-fixtures";
 import type { ResourceRecord } from "./resource-records";
+import { untitledDestination } from "./resource-records";
 
 const boundedMs = 500;
 
@@ -178,7 +179,7 @@ it("roots a self-parent canonical observation without attaching its old home", (
   expect(placement.parentForFolder("F")?.kind).toBe("root");
 });
 
-it("parents a just-created document by the folder that holds its shown location", () => {
+it("parents a refused create by the folder that holds its shown location", () => {
   const create = (folderPath: string): ResourceRecord => ({
     resource: {
       handle: "r",
@@ -186,7 +187,9 @@ it("parents a just-created document by the folder that holds its shown location"
       identity: { documentId: "d", revision: 1 },
       content: { kind: "exact", databaseName: "c", schema: null },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      materialization: { kind: "untitled", folderPath, provisionalName: "Untitled" },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: 1 } },
@@ -198,9 +201,29 @@ it("parents a just-created document by the folder that holds its shown location"
         intentId: "i",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "create", folderPath, provisionalName: "Untitled" },
-        attempts: [],
-        state: "pending",
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination(folderPath, "Untitled"),
+        },
+        // A refused create owns no placement, so its shown location names its parent.
+        attempts: [
+          {
+            attemptId: "attempt",
+            request: { kind: "create", body: { documentId: "d", folderPath } },
+            outcome: {
+              kind: "refusal",
+              operationId: "d",
+              error: {
+                code: "bad_request",
+                message: "refused",
+                retryable: false,
+                source: "gateway",
+              },
+            },
+          },
+        ],
+        state: "needs-repair",
       },
     ],
   });

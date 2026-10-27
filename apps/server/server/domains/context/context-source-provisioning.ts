@@ -346,6 +346,15 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return this.mutate((store) => store.ensureFolderPath(dir));
   }
 
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
+  }) {
+    return this.mutate((store) => store.createFolderIfAbsent(input));
+  }
+
   async insertNewTree(input: Parameters<ContextDocumentStore["insertNewTree"]>[0]) {
     return this.mutate((store) => store.insertNewTree(input));
   }

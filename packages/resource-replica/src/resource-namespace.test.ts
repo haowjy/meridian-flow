@@ -23,6 +23,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
+import { untitledDestination } from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import { planResourceLocation } from "./resource-state";
 
@@ -34,7 +35,14 @@ function local(): ResourceRecord {
       identity: { documentId: "document", revision: 1 },
       content: { kind: "exact", databaseName: "content", schema: null },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      materialization: {
+        kind: "untitled",
+        folderPath: "drafts",
+        provisionalName: "Untitled",
+        unnamed: true,
+      },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: 1 } },
@@ -46,7 +54,11 @@ function local(): ResourceRecord {
         intentId: "create",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "create", folderPath: "drafts" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("drafts", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },
@@ -188,6 +200,7 @@ describe("namespace record transitions", () => {
         name: "Untitled",
         workId: null,
       },
+      serverHold: "held",
       lifecycle: { kind: "acknowledged", availabilityGeneration: null },
       obligations: {
         sessionAdoption: {
@@ -213,6 +226,7 @@ describe("namespace record transitions", () => {
       workId: null,
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "old" };
+    before.resource.serverHold = "held";
     before.intents = [
       {
         ...before.intents[0],
@@ -276,6 +290,7 @@ describe("namespace record transitions", () => {
       workId: null,
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    before.resource.serverHold = "held";
     before.intents = [
       {
         ...before.intents[0],
@@ -343,6 +358,7 @@ describe("namespace record transitions", () => {
       workId: null,
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    before.resource.serverHold = "held";
     before.intents = [
       {
         ...before.intents[0],
@@ -438,6 +454,7 @@ describe("namespace record transitions", () => {
       workId: null,
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    before.resource.serverHold = "held";
     before.intents = [
       {
         ...before.intents[0],
@@ -493,6 +510,7 @@ describe("namespace record transitions", () => {
       workHandle: "w1",
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    before.resource.serverHold = "held";
     before.intents = [
       {
         ...before.intents[0],
@@ -551,6 +569,7 @@ describe("a chat's Scratch owner", () => {
       rootThreadRef: "c12",
     };
     record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    record.resource.serverHold = "held";
     return record;
   }
 
@@ -769,6 +788,7 @@ it.each([
     workHandle: "w5",
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.resource.serverHold = "held";
   before.intents = [
     {
       ...before.intents[0],
@@ -908,6 +928,7 @@ it("restores a rejected delete after retry and admits another delete", async () 
     workHandle: "w1",
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.resource.serverHold = "held";
   before.intents = [];
   const store = new MemoryStore(before);
   for (const number of [1, 2]) {
@@ -951,6 +972,7 @@ it("offers the latest queued file name after refusal and retries from accepted p
   const source = { scheme: "manuscript" as const, path: "/A", name: "A", workId: null };
   before.resource.canonical = source;
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.resource.serverHold = "held";
   before.intents = [];
   const location = (record: ResourceRecord, name: string) => {
     const write = planResourceLocation({
@@ -1046,6 +1068,7 @@ it.each([
   const before = local();
   before.resource.canonical = { scheme: "manuscript", path: "/A", name: "A", workId: null };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.resource.serverHold = "held";
   before.intents = [];
   const move = planResourceLocation({
     record: before,
@@ -1173,6 +1196,7 @@ it("matches immutable identity moves after the destination's path and owner chan
     workId: null,
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.resource.serverHold = "held";
   before.intents = [
     {
       ...before.intents[0],
@@ -1213,6 +1237,7 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
   const record = local();
   record.resource.canonical = { scheme: "unfiled", path: "/A", name: "A", workId: null };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  record.resource.serverHold = "held";
   record.intents = [
     {
       ...record.intents[0],
@@ -1304,6 +1329,7 @@ describe("a name the writer typed with a prose suffix", () => {
       workId: null,
     };
     record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+    record.resource.serverHold = "held";
     record.intents = [];
     return record;
   }

@@ -1,7 +1,12 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
 import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
-import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { remintJournal } from "./namespace-journal-policy";
+import {
+  awaitsRemint,
+  owningLocationIntent,
+  supersedeRepairableNamespaceWork,
+} from "./resource-intent-policy";
 import type {
   NamespaceIntent,
   PlacementAdmission,
@@ -10,6 +15,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
+import { untitledDestination } from "./resource-records";
 
 function nextSequence(record: ResourceRecord): number {
   return Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1;
@@ -28,6 +34,8 @@ export function reserveResourceDocument(input: {
   destination?: { value: ResourceDestination; eligibleAt: number };
   admission?: PlacementAdmission;
 }): ResourceWrite {
+  const folderPath = input.folderPath ?? "";
+  const provisionalName = input.provisionalName ?? "Untitled";
   const resource: ResourceDescriptor = {
     handle: input.handle,
     revision: 1,
@@ -39,6 +47,13 @@ export function reserveResourceDocument(input: {
       initialization: "reserved",
     },
     classification: { editable: true, filetype: "markdown", schemaType: "document" },
+    materialization: {
+      kind: "untitled",
+      folderPath,
+      provisionalName,
+      ...(input.destination ? {} : { unnamed: true as const }),
+    },
+    serverHold: "local",
     canonical: null,
     lifecycle: { kind: "local" },
     aliases: {},
@@ -52,10 +67,9 @@ export function reserveResourceDocument(input: {
     ...(input.admission ? { admission: input.admission } : {}),
     identityRevision: 1,
     desired: {
-      kind: "create",
-      folderPath: input.folderPath ?? "",
-      ...(input.provisionalName ? { provisionalName: input.provisionalName } : {}),
-      ...(input.destination ? { destination: input.destination.value } : {}),
+      kind: "set-location",
+      typedName: provisionalName,
+      destination: input.destination?.value ?? untitledDestination(folderPath, provisionalName),
     },
     attempts: [],
     state: "pending",
@@ -88,6 +102,10 @@ export function markResourceCreateEligible(
   };
 }
 
+/**
+ * Where the writer puts a document the server has not accepted yet: the placement is the same
+ * `set-location` a move files, and dispatch derives the create from the resource's materialization.
+ */
 export function planResourceLocation(input: {
   record: ResourceRecord;
   projectId: string;
@@ -108,9 +126,8 @@ export function planResourceLocation(input: {
   // Compute the optimistic name once, retaining the input for server dispatch.
   const stored = storedFilename(
     input.destination.name,
-    latest?.desired.kind === "set-location"
-      ? latest.desired.destination.name
-      : record.resource.canonical?.name,
+    (latest?.desired.kind === "set-location" ? latest.desired.destination.name : undefined) ??
+      record.resource.canonical?.name,
   );
   const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
@@ -141,12 +158,23 @@ export function planResourceLocation(input: {
     attempts: [],
     state: "pending",
   };
+  const materialization = record.resource.materialization;
   return {
     expectedRevision: record.resource.revision,
     next: {
       resource: {
         ...record.resource,
         revision: record.resource.revision + 1,
+        // A writer placement names the document: the local row stops inviting a home.
+        ...(materialization?.kind === "untitled" && materialization.unnamed
+          ? {
+              materialization: {
+                kind: materialization.kind,
+                folderPath: materialization.folderPath,
+                provisionalName: materialization.provisionalName,
+              },
+            }
+          : {}),
         obligations: record.resource.obligations.createEligibility
           ? {
               ...record.resource.obligations,
@@ -162,91 +190,48 @@ export function planResourceLocation(input: {
   };
 }
 
-/** A recorded create conflict owns its old identity; remint preserves content and history. */
-export function remintCreateConflict(input: {
+/**
+ * A spent document id (the server holds it out of reach) is replaced: its content, handle and
+ * history stay, the old id becomes an alias, and the placement work carries to the new id
+ * (`remintJournal`).
+ */
+export function remintResource(input: {
   record: ResourceRecord;
   documentId: string;
   retryIntentId: string;
   rebasedIntentIds: Readonly<Record<string, string>>;
 }): ResourceWrite | null {
   const { record } = input;
-  const conflicted = [...record.intents]
-    .sort((left, right) => right.sequence - left.sequence)
-    .find(
-      (intent) =>
-        (intent.state === "received" || intent.state === "needs-repair") &&
-        intent.desired.kind === "create",
-    );
-  const outcome = conflicted?.attempts.at(-1)?.outcome;
-  if (
-    !conflicted ||
-    outcome?.kind !== "create" ||
-    (outcome.result.status !== "conflict" && outcome.result.status !== "joined") ||
-    record.resource.lifecycle.kind !== "local" ||
-    record.resource.canonical !== null
-  )
+  if (!awaitsRemint({ serverHold: record.resource.serverHold, intents: record.intents }))
     return null;
   const oldDocumentId = record.resource.identity.documentId;
   if (oldDocumentId === input.documentId)
     throw new Error("Remint requires a new document identity");
   const identityRevision = record.resource.identity.revision + 1;
-  const dependents = record.intents.filter(
-    (intent) =>
-      intent.sequence > conflicted.sequence &&
-      intent.identityRevision === conflicted.identityRevision &&
-      intent.state === "pending" &&
-      intent.attempts.length === 0,
-  );
-  for (const dependent of dependents) {
-    if (!input.rebasedIntentIds[dependent.intentId])
-      throw new Error("Remint requires an identity for every dependent intention");
-  }
-  const retry: NamespaceIntent = {
-    projectId: conflicted.projectId,
-    handle: record.resource.handle,
-    intentId: input.retryIntentId,
-    sequence: nextSequence(record),
-    identityRevision,
-    desired: conflicted.desired,
-    // The retry stands where the conflicted create stood in the account's causal order.
-    ...(conflicted.admission ? { admission: conflicted.admission } : {}),
-    attempts: [],
-    state: "pending",
-  };
-  let sequence = retry.sequence;
-  const rebased = dependents.map(
-    (intent): NamespaceIntent => ({
-      ...intent,
-      intentId: input.rebasedIntentIds[intent.intentId] as string,
-      sequence: ++sequence,
-      identityRevision,
-    }),
-  );
+  const intents = remintJournal({
+    intents: record.intents,
+    from: record.resource.identity.revision,
+    to: identityRevision,
+    fromId: oldDocumentId,
+    toId: input.documentId,
+    retryIntentId: input.retryIntentId,
+    rebasedIntentIds: input.rebasedIntentIds,
+  });
+  if (!intents) return null;
   return {
     expectedRevision: record.resource.revision,
     next: {
       resource: {
         ...record.resource,
         revision: record.resource.revision + 1,
+        serverHold: "local",
         identity: { documentId: input.documentId, revision: identityRevision },
         aliases: {
           ...record.resource.aliases,
-          [oldDocumentId]: {
-            introducedAtIdentityRevision: identityRevision,
-          },
+          [oldDocumentId]: { introducedAtIdentityRevision: identityRevision },
         },
       },
-      intents: [
-        ...record.intents.map((intent) => {
-          if (intent.intentId === conflicted.intentId)
-            return { ...intent, state: "superseded" as const };
-          if (dependents.some((dependent) => dependent.intentId === intent.intentId))
-            return { ...intent, state: "cancelled" as const };
-          return intent;
-        }),
-        retry,
-        ...rebased,
-      ],
+      intents,
     },
   };
 }

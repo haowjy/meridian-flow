@@ -6,6 +6,7 @@ export * from "./catalog-scope";
 export * from "./folder-catalog-installation";
 export * from "./folder-namespace";
 export * from "./folder-projection";
+export * from "./folder-remint";
 export * from "./namespace-receipts";
 export * from "./optimistic-sibling-order";
 export * from "./placement-journal";
@@ -20,4 +21,5 @@ export { destinationLocation, destinationParentLocation } from "./resource-recor
 export * from "./resource-records-policy";
 export * from "./resource-state";
 export * from "./resource-work-authority";
+export * from "./server-hold";
 export * from "./sibling-order";

@@ -138,6 +138,7 @@ function MobileFolderTree({
             capabilities: ["rename", "move", "delete"],
             activeScheme: null,
             activePath: null,
+            refusalNotice: true,
             isExpanded,
             toggleEntry,
             onRequestDelete: deletion.requestDelete,

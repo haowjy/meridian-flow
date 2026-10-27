@@ -124,7 +124,7 @@ export class ReplicaHarness {
       projectId: this.projectId,
       handle: record.handle,
       folderId,
-      source: record.canonical,
+      source: record.canonical ?? undefined,
       intentId: `folder-delete-${id}`,
       operationId,
     });

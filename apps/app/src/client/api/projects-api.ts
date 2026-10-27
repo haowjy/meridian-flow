@@ -21,6 +21,7 @@ import {
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
   apiProjectContextCatalogPath,
+  apiProjectContextCreateFolderPath,
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
@@ -39,6 +40,8 @@ import {
   type CatalogSnapshot,
   type ContextReadResponse,
   type CreateContextEntryResult,
+  type CreateContextFolderRequest,
+  type CreateContextFolderResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
   type CreateThreadRequest,
@@ -366,6 +369,20 @@ export async function createUntitledContextDocument(
     path: response.path.startsWith("/") ? response.path : `/${response.path}`,
   };
 }
+export async function createContextFolder(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  body: CreateContextFolderRequest,
+  opts?: ProjectContextRequestOptions,
+  init?: RequestInitOptions,
+): Promise<CreateContextFolderResponse> {
+  return postJson(urlFor(apiProjectContextCreateFolderPath(projectId, scheme, opts), init), body, {
+    acceptErrorResponse: acceptsContextConflict,
+    headers: init?.headers,
+    signal: init?.signal,
+  });
+}
+
 /**
  * Move (and optionally rename) a context entry across folders or schemes.
  * Paths in the request/response are scheme-relative WITHOUT a leading slash

@@ -22,6 +22,12 @@ exports rather than implementation modules.
   immutable `PlacementAdmission` (order, conflict scope, predecessors), and projection, dispatch and
   Undo all read it (`placement-journal.ts`). Never infer order from adjacency, latest-per-entry or a
   scheduler queue.
+- Where a placement goes and what the server first makes there are separate. A placement is
+always `set-location` / `set-folder-location`; `ResourceDescriptor.materialization` says
+what the server makes of a document identity it does not hold (today an untitled document it
+names), and dispatch derives `create` from it while `canonical` is null. A new kind of
+single-document first materialization is a new materialization arm, not a placement kind. Copy
+is not one: it is one operation over several roots, so its client journal is a separate decision.
 - Namespace intents and receipts are immutable evidence. Accepted, refused,
   superseded, and terminal outcomes must not be confused with current
   placement or deletion ownership.
@@ -34,9 +40,21 @@ exports rather than implementation modules.
 - Dispatch captures destination parent identity and typed filename. Receipts
   match identity and creation suffix, never a stale path; requests never
   retarget after submission.
-- Typed non-retryable HTTP refusals settle attempts against the submitted
-  operation id. Network failures remain replayable until receipt evidence
-  exists.
+- Typed non-retryable HTTP refusals settle an attempt of any request kind
+  against the request's identity (`namespaceRequestId`: a move's or delete's
+  operation id, a create's document id, a folder create's folder id). Network
+  failures remain replayable until receipt evidence exists. A refused create
+  leaves the document or folder local and repairable, never deleted.
+- What the server holds under an id is `serverHold` (`local | uncertain | held |
+  spent`, `server-hold.ts`), on documents and folders alike. It is set only by
+  server answers, through `holdAfterAttempt`; read it, never rederive it from
+  `canonical`, `lifecycle` or an outcome's shape. It decides create vs move, whether
+  a delete needs the server, and whether the id is replaced (`awaitsRemint`).
+  Deleting a document or folder the server may not hold (`!deleteNeedsServer`) keeps
+  its content and place until an Undo window closes (`cleanup.notBefore`,
+  `localDeletion.notBefore`). A folder the server never accepted has
+  `canonical: null`; read its place through `folderBaseLocation`, never `canonical`
+  directly.
 - A confirmed deletion is versioned. Only strictly newer evidence can restore;
   stale catalog pages, exact-ID presence where disallowed, and scoped absence
   never revive or authorize purge.

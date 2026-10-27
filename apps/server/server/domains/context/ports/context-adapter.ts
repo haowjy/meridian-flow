@@ -19,6 +19,7 @@ import type { BoundWrite } from "../../collab/index.js";
 import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
 import type { ContextCopyAdapter } from "./context-copy.js";
 import type {
+  AdapterCreateFolderOptions,
   AdapterCreateUntitledOptions,
   ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
@@ -115,6 +116,13 @@ export type AdapterContextWriteResult = Omit<ContextWriteResult, "uri">;
 export type AdapterUntitledDocumentResult = {
   status: "created" | "already-exists" | "joined";
   documentId: string;
+  path: string;
+  name: string;
+};
+
+export type AdapterCreatedFolder = {
+  status: "created" | "already-exists";
+  folderId: string;
   path: string;
   name: string;
 };
@@ -249,5 +257,10 @@ export interface ContextSchemeAdapter {
     options?: ContextListOptions,
   ): Promise<Result<AdapterFileEntry[], AdapterFault>>;
   mkdir(path: string, options?: ContextWriteOptions): Promise<Result<void, AdapterFault>>;
+  /** A folder under a device-minted id in the folder at `path`; see `AdapterCreateFolderOptions`. */
+  createFolder(
+    path: string,
+    options: AdapterCreateFolderOptions,
+  ): Promise<Result<AdapterCreatedFolder, AdapterFault>>;
   search(query: string, pathPrefix?: string): Promise<Result<AdapterSearchHit[], AdapterFault>>;
 }

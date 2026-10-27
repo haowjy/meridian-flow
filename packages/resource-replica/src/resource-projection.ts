@@ -58,24 +58,32 @@ export function projectResourceNeedsRepair(
   record: ResourceRecord,
 ): {
   intentId: string;
-  kind: "set-location" | "delete";
+  /** `create`: the server refused the document's first placement, so it exists only here. */
+  kind: "set-location" | "delete" | "create";
   name: string;
   destination?: ResourceDestination;
 } | null {
-  const failed = record.intents.find(
-    (intent) => intent.projectId === projectId && intent.state === "needs-repair",
-  );
-  if (!failed || failed.desired.kind === "create" || failed.desired.kind === "set-folder-location")
-    return null;
-  const destination =
-    failed.desired.kind === "set-location"
-      ? (namespaceRepairDestination(record.intents, failed) ?? failed.desired.destination)
-      : undefined;
+  // A spent id's failed placement is not the writer's to repair: it moves to a new id on its own.
+  const failed =
+    record.resource.serverHold === "spent"
+      ? undefined
+      : record.intents.find(
+          (intent) => intent.projectId === projectId && intent.state === "needs-repair",
+        );
+  if (!failed || failed.desired.kind === "set-folder-location") return null;
+  if (failed.desired.kind === "delete")
+    return {
+      intentId: failed.intentId,
+      kind: "delete",
+      name: record.resource.canonical?.name ?? "document",
+    };
+  const destination = namespaceRepairDestination(record.intents, failed) ?? undefined;
   return {
     intentId: failed.intentId,
-    kind: failed.desired.kind,
+    kind: record.resource.canonical ? "set-location" : "create",
     ...(destination ? { destination } : {}),
-    name: destination?.name ?? record.resource.canonical?.name ?? "document",
+    // A nameless create has no name of the writer's to offer back.
+    name: destination?.name ?? record.resource.canonical?.name ?? "",
   };
 }
 
@@ -97,34 +105,28 @@ export function projectResourceLocation(
   const placement = placementDestination(projectId, record);
   if (placement) {
     const location = destinationLocation(placement, lookup);
-    if (location) return { ...location, provisional: false };
+    if (location)
+      return {
+        ...location,
+        // The editor's nameless create invites a home until the writer names it. A server-held
+        // document's provisional name is the catalog's.
+        provisional:
+          record.resource.serverHold !== "held" &&
+          record.resource.materialization?.kind === "untitled" &&
+          record.resource.materialization.unnamed === true,
+      };
   }
-
-  const create = record.intents.find(
-    (intent) => intent.projectId === projectId && intent.desired.kind === "create",
-  )?.desired;
-  // Refused filing returns a normal file to its accepted home, not a provisional reservation.
-  const filed =
-    create?.kind === "create" && create.destination
-      ? true
-      : record.intents.some(
-          (intent) =>
-            intent.desired.kind === "set-location" &&
-            (intent.state === "settled" ||
-              intent.state === "needs-repair" ||
-              intent.state === "superseded"),
-        );
-  if (record.resource.canonical)
-    return { ...record.resource.canonical, provisional: create?.kind === "create" && !filed };
-  if (create?.kind !== "create") return null;
-  const folder = create.folderPath.split("/").filter(Boolean).join("/");
-  const name = create.provisionalName ?? "Untitled";
+  if (record.resource.canonical) return { ...record.resource.canonical, provisional: false };
+  const materialization = record.resource.materialization;
+  if (!materialization) return null;
+  const folder = materialization.folderPath.split("/").filter(Boolean).join("/");
+  const name = materialization.provisionalName;
   return {
     scheme: "unfiled",
     path: `/${[folder, name].filter(Boolean).join("/")}`,
     name,
     workId: null,
-    provisional: true,
+    provisional: materialization.kind === "untitled" && materialization.unnamed === true,
   };
 }
 

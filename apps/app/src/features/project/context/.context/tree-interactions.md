@@ -116,8 +116,11 @@ namespace journal. Undo waits for a pending intent, reads the delete receipt, an
 receipt's named removals. The catalog stream makes restored identities visible again. A local
 file restoration then replays the deletion-time sibling witnesses through `moveRows`, so a manual
 parent regains the file's former position and remains manual; it is skipped when the writer admitted
-a newer placement of the restored file meanwhile (`placementTakenSince`). A local document that never reached
-the server and an empty folder deletion have no Undo window.
+a newer placement of the restored file meanwhile (`placementTakenSince`). A document the server never
+accepted gets an Undo window too, ten minutes (`LOCAL_DELETION_UNDO_MS`): the deletion settles on this device
+and its exact content waits out the window (`cleanup.notBefore`). Undo supersedes that deletion and sends the
+document's create again; a document whose create the server refused is refused again, once, and stays listed
+in Unfiled with its text. An empty folder deletion has no Undo window.
 
 ## Downlinks
 
@@ -150,6 +153,12 @@ The list repair field opens once, as the refusal arrives (`use-repair-on-fresh-f
 failure already there on mount, a remount, or one that lands while another input is
 active leaves only the mark; blur dismisses the field without retrying and Enter
 retries.
+
+A document whose create the server refused sits in Unfiled with its text and the same mark
+(`namespaceFailure: "create"`, "Couldn't create this document. Try another place."). Its row menu
+repairs it like any row: Move… or Rename files it with a new create under the same id,
+Delete removes it from this device with the Undo window above. A refused named create (New file in a folder, a link's
+Create) is listed at its name, not under a folder of the refused destination.
 
 The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
 return the operation id issued at admission; the account-owned lifecycle watches
@@ -283,7 +292,8 @@ and the notice stops saying it moved: "Couldn't move chapter-3." without Undo,
 or "Moved 2 items to Act 2. Couldn't move chapter-3." when the rest landed.
 Refused means the replica settled that move's own operation (`MoveEffect.operationId`)
 as needs-repair (`moveSettlement`); a row the writer changed since supersedes that
-intent, so it only loses Undo.
+intent, so it only loses Undo. A refusal names its row as it was (`entryNameNow`), so the
+notice drops that line once the row is renamed or gone, and the notice itself once nothing is left to say.
 Freshness uses the move receipt's per-entry `locationVersion` after its server observation fence,
 not the catalog's scope-wide observation version; unrelated namespace edits therefore do not retire
 Undo, while a same-entry peer change does even if it later returns to the same rank.

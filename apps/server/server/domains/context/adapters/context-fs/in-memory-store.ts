@@ -1,4 +1,5 @@
 import {
+  allocateFilename,
   folderDocumentName,
   parseDocumentFilename,
   type RetractionCause,
@@ -281,6 +282,48 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return parentId;
   }
 
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: unknown;
+  }) {
+    const held = this.backing.folders.get(input.id);
+    if (held) {
+      // A live folder of this source is a replay; any other holder can never become this folder.
+      if (held.contextSourceId !== this.sourceId || held.deletedAt !== null)
+        throw new ContextEntryConflictError("folder");
+      return {
+        status: "already-exists" as const,
+        folderId: input.id,
+        path: locationPath(this.backing, held.parentId, held.name).split("/"),
+      };
+    }
+    // The catalog's entry-id space is global, and another source holding the id is final too.
+    if (this.backing.documents.has(input.id)) throw new ContextEntryConflictError("folder");
+    const name = await allocateFilename({ kind: "folder", name: input.name }, ({ filename }) =>
+      Promise.resolve(
+        this.findFolderRecord(input.parentId, filename) !== null ||
+          hasOppositeEntry(this.backing, this.sourceId, input.parentId, filename, "folder"),
+      ),
+    );
+    const folder: FolderRow = {
+      id: input.id,
+      contextSourceId: this.sourceId,
+      parentId: input.parentId,
+      name,
+      deletedAt: null,
+      updatedAt: this.nextTimestamp(),
+    };
+    this.backing.folders.set(folder.id, folder);
+    claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
+    return {
+      status: "created" as const,
+      folderId: folder.id,
+      path: locationPath(this.backing, folder.parentId, folder.name).split("/"),
+    };
+  }
+
   async insertNewTree(input: {
     parentId: string | null;
     roots: readonly NewTreeNode[];
@@ -392,6 +435,8 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   async createDocumentRecordIfAbsent(
     input: CreateDocumentInput,
   ): Promise<LiveDocumentCreation | null> {
+    // The catalog's entry-id space is global: a folder anywhere already holds this id.
+    if (this.backing.folders.has(input.id ?? "")) throw new ContextEntryConflictError("folder");
     if (
       hasOppositeEntry(
         this.backing,
