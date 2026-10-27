@@ -4,7 +4,6 @@
  * Meridian's own type: writing surfaces turn resolvable rows into mentions,
  * while every other surface ignores it rather than pasting stray text.
  */
-import type { DragEvent } from "react";
 import { MERIDIAN_ENTRIES_MIME } from "../tree-drop/drag-payload";
 import type { DragEntry, DragSource, EntryDrag } from "./entry";
 
@@ -21,17 +20,17 @@ export function activeDragSession(): EntryDrag | null {
 }
 
 export function startEntryDrag(
-  event: DragEvent,
+  event: Pick<globalThis.DragEvent, "dataTransfer">,
   entries: readonly DragEntry[],
   source: DragSource,
 ) {
-  if (entries.length === 0) return;
-  active = { entries, source };
   const transfer = event.dataTransfer;
+  if (!transfer || entries.length === 0) return;
+  active = { entries, source };
   // An `<a>` carries its URL, and a drop on the window would navigate to it.
   transfer.clearData();
   transfer.effectAllowed = "copyMove";
-  transfer.setData(MERIDIAN_ENTRIES_MIME, JSON.stringify(entries.map((entry) => entry.uri)));
+  transfer.setData(MERIDIAN_ENTRIES_MIME, JSON.stringify(entries.map((entry) => entry.ref)));
   setPreview(transfer, entries);
   window.addEventListener("dragend", endEntryDrag, { once: true });
 }

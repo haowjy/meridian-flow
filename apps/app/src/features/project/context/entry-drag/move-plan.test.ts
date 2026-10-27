@@ -102,7 +102,7 @@ const planDrop = (view: MoveView, drag: EntryDrag, target: Parameters<typeof res
   planMove(view, resolveDrop(view, drag, target));
 
 const drag = (...refs: EntryRef[]): EntryDrag => ({
-  entries: refs.map((ref) => ({ ref, name: keyOf(ref), uri: "", view: LIVE_VIEW })),
+  entries: refs.map((ref) => ({ ref, name: keyOf(ref), view: LIVE_VIEW })),
   source: "list-row",
 });
 const file = (id: string): EntryRef => ({ kind: "file", id });

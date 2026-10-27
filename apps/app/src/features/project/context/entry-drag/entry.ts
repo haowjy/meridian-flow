@@ -15,10 +15,10 @@ export type EntryRef = LinkNoteSubject;
 export const entryKey = (ref: EntryRef): string => `${ref.kind}:${ref.id}`;
 
 /**
- * A dragged entry: identity, what the preview and payload show, and what a Copy of it reads: the
- * live document (a tree row), or the draft the source shows (a draft tab).
+ * A dragged entry: identity, the name the preview shows, and what a Copy of it reads: the live
+ * document (a tree row), or the draft the source shows (a draft tab).
  */
-export type DragEntry = { ref: EntryRef; name: string; uri: string; view: CopyContextEntryView };
+export type DragEntry = { ref: EntryRef; name: string; view: CopyContextEntryView };
 
 /**
  * A list row dragged in its list's selection, or any other source naming a document or folder (a
@@ -39,7 +39,6 @@ export function dragEntry(node: CatalogNode): DragEntry {
         ? { kind: "file", id: node.documentId }
         : { kind: "folder", id: node.entryId },
     name: node.name,
-    uri: node.uri,
     view: LIVE_VIEW,
   };
 }

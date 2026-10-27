@@ -15,7 +15,6 @@ function entry(id: string): DragEntry {
   return {
     ref: { kind: "file", id },
     name: id,
-    uri: `scratch://@w/${id}`,
     view: LIVE_VIEW,
   };
 }
