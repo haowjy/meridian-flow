@@ -112,7 +112,7 @@ msgid "{0, plural, one {# file wasn't in the folder you picked} other {# files w
 msgstr "{0, plural, one {# file wasn't in the folder you picked} other {# files weren't in the folder you picked}}"
 
 #. placeholder {0}: renamed.length
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/drop-choice.ts
 msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
 msgstr "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
 
@@ -126,13 +126,38 @@ msgstr "{0, plural, one {# link points to {where}, which won't be included.} oth
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 
+#. placeholder {0}: copies.length
+#: src/features/project/context/entry-drag/copy-operation.ts
+msgid "{0, plural, one {Copied # item to {destinationName}.} other {Copied # items to {destinationName}.}}"
+msgstr "{0, plural, one {Copied # item to {destinationName}.} other {Copied # items to {destinationName}.}}"
+
+#. placeholder {0}: entries.length
+#: src/features/project/context/EntryDestinationPicker.tsx
+msgid "{0, plural, one {Copy # item} other {Copy # items}}"
+msgstr "{0, plural, one {Copy # item} other {Copy # items}}"
+
+#. placeholder {0}: copies.length
+#: src/features/project/context/entry-drag/copy-operation.ts
+msgid "{0, plural, one {Copying # item to {destinationName}…} other {Copying # items to {destinationName}…}}"
+msgstr "{0, plural, one {Copying # item to {destinationName}…} other {Copying # items to {destinationName}…}}"
+
+#. placeholder {0}: sources.length
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "{0, plural, one {Couldn't copy # item to {destination}.} other {Couldn't copy # items to {destination}.}}"
+msgstr "{0, plural, one {Couldn't copy # item to {destination}.} other {Couldn't copy # items to {destination}.}}"
+
+#. placeholder {0}: sources.length
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "{0, plural, one {Couldn't copy # item.} other {Couldn't copy # items.}}"
+msgstr "{0, plural, one {Couldn't copy # item.} other {Couldn't copy # items.}}"
+
 #. placeholder {0}: failed.length
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
 msgstr "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
 
 #. placeholder {0}: failed.length
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 msgstr "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 
@@ -146,8 +171,13 @@ msgstr "{0, plural, one {Couldn't move your queued message to the message box.} 
 msgid "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
 msgstr "{0, plural, one {Couldn't move your queued message.} other {Couldn't move your queued messages.}}"
 
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/copy-operation.ts
+msgid "{0, plural, one {Couldn't remove # copy.} other {Couldn't remove # copies.}}"
+msgstr "{0, plural, one {Couldn't remove # copy.} other {Couldn't remove # copies.}}"
+
 #. placeholder {0}: moved.length
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 msgstr "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 
@@ -157,7 +187,7 @@ msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: moved.length
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "{0, plural, one {Reordered # item.} other {Reordered # items.}}"
 msgstr "{0, plural, one {Reordered # item.} other {Reordered # items.}}"
 
@@ -255,7 +285,7 @@ msgstr "{0} tok/s"
 
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/drop-choice.ts
 msgid "{0} will be renamed {1}"
 msgstr "{0} will be renamed {1}"
 
@@ -386,6 +416,10 @@ msgstr "{hours, plural, one {# hour ago} other {# hours ago}}"
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}h"
+
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "{label}…"
+msgstr "{label}…"
 
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "{links, plural, one {Updated # link} other {Updated # links}}"
@@ -673,6 +707,14 @@ msgstr "A folder named {name} already exists in this location."
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
 
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "A source is no longer there."
+msgstr "A source is no longer there."
+
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "A source or the destination is no longer there."
+msgstr "A source or the destination is no longer there."
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
 msgstr "A table keeps at least one column."
@@ -876,7 +918,7 @@ msgid "All your devices"
 msgstr "All your devices"
 
 #. placeholder {0}: folder.name
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Already in {0}"
 msgstr "Already in {0}"
 
@@ -1106,6 +1148,10 @@ msgstr "Cache resets"
 msgid "Calls"
 msgstr "Calls"
 
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Can't copy these"
+msgstr "Can't copy these"
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't delete {source} from this location."
 msgstr "Can't delete {source} from this location."
@@ -1115,7 +1161,6 @@ msgid "Can't delete {source}: it changed during the delete."
 msgstr "Can't delete {source}: it changed during the delete."
 
 #: src/features/project/context/entry-drag/drop-choice.ts
-#: src/features/project/context/entry-drag/use-entry-list.tsx
 msgid "Can't go inside itself"
 msgstr "Can't go inside itself"
 
@@ -1154,6 +1199,10 @@ msgstr "Can't move {source}: that location is already taken."
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source}: the folder for {place} doesn't exist."
 msgstr "Can't move {source}: the folder for {place} doesn't exist."
+
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Can't move these from here"
+msgstr "Can't move these from here"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."
@@ -1241,7 +1290,7 @@ msgid "Change"
 msgstr "Change"
 
 #. placeholder {0}: folder.name
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Change position in {0}"
 msgstr "Change position in {0}"
 
@@ -1638,6 +1687,14 @@ msgstr "Copied {source} to"
 msgid "Copied {source} to {place}"
 msgstr "Copied {source} to {place}"
 
+#: src/features/project/context/entry-drag/copy-operation.ts
+msgid "Copied {sourceName} to {destinationName} as {name}."
+msgstr "Copied {sourceName} to {destinationName} as {name}."
+
+#: src/features/project/context/entry-drag/copy-operation.ts
+msgid "Copied {sourceName} to {destinationName}."
+msgstr "Copied {sourceName} to {destinationName}."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Copied file"
 msgstr "Copied file"
@@ -1658,6 +1715,18 @@ msgstr "Copy"
 msgid "Copy {0} source"
 msgstr "Copy {0} source"
 
+#: src/features/project/context/EntryDestinationPicker.tsx
+msgid "Copy {rowName}"
+msgstr "Copy {rowName}"
+
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Copy after {sibling}"
+msgstr "Copy after {sibling}"
+
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Copy before {sibling}"
+msgstr "Copy before {sibling}"
+
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/rich-content/DocumentCodeBlock.tsx
@@ -1676,6 +1745,20 @@ msgstr "Copy link address"
 msgid "Copy reference"
 msgstr "Copy reference"
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryDestinationPicker.tsx
+msgid "Copy to {0}"
+msgstr "Copy to {0}"
+
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Copy to {destinationName}"
+msgstr "Copy to {destinationName}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/context/entry-drag/CopyRefusalNotices.tsx
+msgid "Copy to…"
+msgstr "Copy to…"
+
 #: src/features/draft-review/ReviewToast.tsx
 msgid "Copy unsent text"
 msgstr "Copy unsent text"
@@ -1687,6 +1770,10 @@ msgstr "Copying"
 #: src/features/chat/command-descriptor.ts
 msgid "Copying {source} to"
 msgstr "Copying {source} to"
+
+#: src/features/project/context/entry-drag/copy-operation.ts
+msgid "Copying {sourceName} to {destinationName}…"
+msgstr "Copying {sourceName} to {destinationName}…"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying from {source} into"
@@ -1728,6 +1815,20 @@ msgstr "Couldn't confirm whether this discarded. Check what is left before you t
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't copy"
 msgstr "Couldn't copy"
+
+#. placeholder {0}: only.name
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "Couldn't copy {0} to {destination}."
+msgstr "Couldn't copy {0} to {destination}."
+
+#. placeholder {0}: only.name
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "Couldn't copy {0}."
+msgstr "Couldn't copy {0}."
+
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Couldn't copy these items"
+msgstr "Couldn't copy these items"
 
 #: src/features/editor/SchemaNotices.tsx
 msgid "Couldn't copy. Select the text to copy it."
@@ -1900,16 +2001,16 @@ msgid "Couldn't move"
 msgstr "Couldn't move"
 
 #. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "Couldn't move {0} back."
 msgstr "Couldn't move {0} back."
 
 #. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "Couldn't move {0}."
 msgstr "Couldn't move {0}."
 
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "Couldn't move it back."
 msgstr "Couldn't move it back."
 
@@ -1917,7 +2018,7 @@ msgstr "Couldn't move it back."
 msgid "Couldn't move this entry. Try again."
 msgstr "Couldn't move this entry. Try again."
 
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
 msgstr "Couldn't move to {failedFolder}. Try again or pick another folder."
 
@@ -1974,6 +2075,11 @@ msgstr "Couldn't refresh chats."
 msgid "Couldn't refresh recent documents."
 msgstr "Couldn't refresh recent documents."
 
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/copy-operation.ts
+msgid "Couldn't remove {0}."
+msgstr "Couldn't remove {0}."
+
 #: src/features/chat/ChatThreadTitle.tsx
 msgid "Couldn’t rename this chat. Try again."
 msgstr "Couldn’t rename this chat. Try again."
@@ -1999,7 +2105,7 @@ msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr "Couldn't rename. Use Rename in the file list to try again."
 
 #. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "Couldn't reorder {0}."
 msgstr "Couldn't reorder {0}."
 
@@ -2019,7 +2125,7 @@ msgid "Couldn't restore {0}. Try again."
 msgstr "Couldn't restore {0}. Try again."
 
 #. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "Couldn't restore {0}'s position."
 msgstr "Couldn't restore {0}'s position."
 
@@ -3370,12 +3476,12 @@ msgstr "More chats couldn't load."
 msgid "More composer controls"
 msgstr "More composer controls"
 
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Move {rowName}"
 msgstr "Move {rowName}"
 
 #: src/features/project/context/entry-drag/drop-choice.ts
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Move after {sibling}"
 msgstr "Move after {sibling}"
 
@@ -3408,7 +3514,7 @@ msgid "Move row up"
 msgstr "Move row up"
 
 #. placeholder {0}: folder.name
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Move to {0}"
 msgstr "Move to {0}"
 
@@ -3416,7 +3522,7 @@ msgstr "Move to {0}"
 msgid "Move to {destinationName}"
 msgstr "Move to {destinationName}"
 
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Move to the bottom of {folderName}"
 msgstr "Move to the bottom of {folderName}"
 
@@ -3424,7 +3530,7 @@ msgstr "Move to the bottom of {folderName}"
 msgid "Move to the message box"
 msgstr "Move to the message box"
 
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Move to the top of {folderName}"
 msgstr "Move to the top of {folderName}"
 
@@ -3443,12 +3549,12 @@ msgstr "Moved"
 
 #. placeholder {0}: first.previousName
 #. placeholder {1}: first.name
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "Moved {0} to {destinationName} as {1}."
 msgstr "Moved {0} to {destinationName} as {1}."
 
 #. placeholder {0}: first.name
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "Moved {0} to {destinationName}."
 msgstr "Moved {0} to {destinationName}."
 
@@ -4298,7 +4404,7 @@ msgid "Reopens the documents you had open when you switch devices."
 msgstr "Reopens the documents you had open when you switch devices."
 
 #. placeholder {0}: first.name
-#: src/features/project/context/entry-drag/move-notice.tsx
+#: src/features/project/context/entry-drag/move-operation.ts
 msgid "Reordered {0}."
 msgstr "Reordered {0}."
 
@@ -5067,7 +5173,7 @@ msgid "That file is binary."
 msgstr "That file is binary."
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "that folder"
 msgstr "that folder"
 
@@ -5115,6 +5221,10 @@ msgstr "That rename couldn't be completed. Choose another name or try again."
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "That Work is no longer available. Choose another Work."
 msgstr "That Work is no longer available. Choose another Work."
+
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "That Work isn't available."
+msgstr "That Work isn't available."
 
 #: src/features/import/selection-limits.ts
 msgid "That's {count} files. Import up to {limit} at a time."
@@ -5201,6 +5311,10 @@ msgstr "The change could not be confirmed. Try again."
 msgid "The change didn't fit the current draft. The AI will read it again."
 msgstr "The change didn't fit the current draft. The AI will read it again."
 
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "The destination is no longer there."
+msgstr "The destination is no longer there."
+
 #: src/features/import/toast-presentation.ts
 msgid "The destination was deleted. Added at the area root."
 msgstr "The destination was deleted. Added at the area root."
@@ -5236,6 +5350,10 @@ msgstr "The header row does not merge into the body."
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
 msgstr "The header row stays first."
+
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "The latest edits hadn't reached the server."
+msgstr "The latest edits hadn't reached the server."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
@@ -5604,7 +5722,7 @@ msgstr "This isn't the same selection as the one already started."
 msgid "This link can no longer be edited. Close the form and try again."
 msgstr "This link can no longer be edited. Close the form and try again."
 
-#: src/features/project/context/EntryMovePicker.tsx
+#: src/features/project/context/EntryDestinationPicker.tsx
 msgid "This location is unavailable. Refresh and try again."
 msgstr "This location is unavailable. Refresh and try again."
 
@@ -6142,6 +6260,10 @@ msgstr "You can close this tab."
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "You can retry when this chat is free."
 msgstr "You can retry when this chat is free."
+
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "You can't copy there."
+msgstr "You can't copy there."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

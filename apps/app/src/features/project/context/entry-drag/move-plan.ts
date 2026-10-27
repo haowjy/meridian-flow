@@ -25,15 +25,15 @@ import { schemeLabel } from "../context-schemes";
 import { menuEntryFor } from "../menu-tree";
 import { destinationParent, type MoveDestination } from "../move-entry";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
-import { type DragEntry, type EntryRef, entrySystem } from "./entry";
+import { type DragEntry, type EntryGrant, type EntryRef, entrySystem } from "./entry";
 
 /** A catalog a list shows, and so a place a drop can land. */
 export type MoveArea = {
   scheme: ProjectContextTreeScheme;
   owner: ContextOwner;
   catalog: CatalogContextView;
-  /** The owner accepts moves (an archived Work's Scratch does not). */
-  movable: boolean;
+  /** The owner accepts arrivals, by move or copy (an archived Work's Scratch does not). */
+  accepts: boolean;
 };
 
 /** The project's current placement: every catalog and folder journal, not just what a list shows. */
@@ -122,6 +122,8 @@ export type MovePlan =
       moves: readonly MoveRow[];
     };
 
+export type ReadyMove = Extract<MovePlan, { kind: "ready" }>;
+
 const NONE: MovePlan = { kind: "none" };
 
 // Hovering plans on every `dragover`; one index per snapshot keeps each plan linear in the selection.
@@ -167,6 +169,15 @@ function within(view: PlacementView, start: ParentRef | null, folderId: string):
     parent = view.placement.parentForFolder(parent.folderId);
   }
   return false;
+}
+
+/**
+ * The placed rows among `refs` that no other of them sits above, by where they are now: the rows
+ * whose deletion takes the rest with them. A row that is gone or not placed yet is left out.
+ */
+export function outermostEntries(view: PlacementView, refs: readonly EntryRef[]): PlacedEntry[] {
+  const placed = refs.flatMap((ref) => placeEntryRef(view, ref) ?? []);
+  return dropNested(view, placed, (entry) => entry.parent);
 }
 
 /** The parent `ref` sits in now, or null when it is gone or not placed yet. */
@@ -235,7 +246,7 @@ export function sameParent(a: ParentRef, b: ParentRef): boolean {
 
 /**
  * A drop, resolved: what the carried rows and the target are now, before any
- * action decides what to do with them. Move plans from it and Copy will, so
+ * action decides what to do with them. Move and Copy both plan from it, so
  * neither resolves identities again.
  */
 export type ResolvedDrop = {
@@ -252,8 +263,10 @@ export type ResolvedDrop = {
   insideItself: boolean;
   /** Carried rows the replica can't place now (gone, or their parent isn't known yet). Nothing acts on a selection that has lost rows. */
   unavailable: readonly EntryRef[];
-  /** Every carried row's surface grants Move (an archived Work's Scratch doesn't). */
-  movable: boolean;
+  /** The target's scheme, for the records a Copy makes there. */
+  scheme: ProjectContextTreeScheme;
+  /** What every carried row's surface grants (an archived Work's Scratch grants Copy, not Move). */
+  can: EntryGrant;
 };
 
 /**
@@ -269,7 +282,7 @@ export function resolveDrop(
   const area = view.areas.find(
     (candidate) => candidate.catalog.root.entryId === target.catalogRootId,
   );
-  if (!area?.movable || target.scheme !== area.scheme) return null;
+  if (!area?.accepts || target.scheme !== area.scheme) return null;
   const { scheme, owner, catalog } = area;
   const folder = target.folder ? menuEntryFor(catalog, target.folder.entryId) : null;
   if (target.folder && (folder?.kind !== "dir" || folder.navigationOnly)) return null;
@@ -295,7 +308,11 @@ export function resolveDrop(
     ),
     insideItself: sources.some((source) => insideItself(view, source, into)),
     unavailable: looked.flatMap(({ ref, now }) => (now ? [] : [ref])),
-    movable: entries.every((entry) => entry.movable),
+    scheme,
+    can: {
+      move: entries.every((entry) => entry.can.move),
+      copy: entries.every((entry) => entry.can.copy),
+    },
   };
 }
 
@@ -308,7 +325,7 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
   if (!resolved) return NONE;
   const { sources, into, destinationName, position } = resolved;
   // A selection holding a row without Move, or one that lost a row, moves nowhere rather than silently leaving rows behind.
-  if (!resolved.movable || resolved.unavailable.length > 0) return NONE;
+  if (!resolved.can.move || resolved.unavailable.length > 0) return NONE;
   if (resolved.insideItself) return { kind: "inside-itself" };
   if (position) return planPositioned(view, sources, into, destinationName, position);
   // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
@@ -319,6 +336,55 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
   );
   return moves.length === 0 ? NONE : { kind: "ready", destinationName, moves };
 }
+
+/** One row a Copy duplicates: the row as it is named now. */
+export type CopyRow = { entry: EntryRef; name: string };
+
+export type CopyPlan =
+  | { kind: "none" }
+  /** A folder copied over its own subtree: refused like a Move, with the same words. */
+  | { kind: "inside-itself" }
+  | {
+      kind: "ready";
+      destinationName: string;
+      beside?: { kind: "before" | "after"; name: string };
+      scheme: ProjectContextTreeScheme;
+      into: ParentRef;
+      position?: ContextSiblingPosition;
+      copies: readonly CopyRow[];
+    };
+
+export type ReadyCopy = Extract<CopyPlan, { kind: "ready" }>;
+
+/**
+ * What a resolved drop would do as a Copy. Every carried row is copied, the one already in the
+ * target's parent included (its copy takes the next free name), and an edge drop may anchor on a
+ * carried row, which stays where it is. A selection that lost a row copies nothing.
+ */
+export function planCopy(view: PlacementView, resolved: ResolvedDrop | null): CopyPlan {
+  if (!resolved?.can.copy || resolved.unavailable.length > 0 || resolved.sources.length === 0)
+    return NONE_COPY;
+  if (resolved.insideItself) return { kind: "inside-itself" };
+  const { sources, into, destinationName, position, scheme } = resolved;
+  const copies = sources.map((source) => ({ entry: source.ref, name: source.name }));
+  if (!position) return { kind: "ready", destinationName, scheme, into, copies };
+  if (!("siblingId" in position)) return NONE_COPY;
+  const anchor = view.placement
+    .childrenAt(into, view.records)
+    .find((entry) => entry.entryId === position.siblingId);
+  if (!anchor) return NONE_COPY;
+  return {
+    kind: "ready",
+    destinationName,
+    beside: { kind: position.kind, name: anchor.name },
+    scheme,
+    into,
+    position,
+    copies,
+  };
+}
+
+const NONE_COPY: CopyPlan = { kind: "none" };
 
 /**
  * An edge drop: the carried rows land together, in screen order, beside the
@@ -489,29 +555,29 @@ function placementIsFresh(view: PlacementView, effect: MoveEffect): boolean {
 const UNANSWERED = new Set(["pending", "submitted", "received"]);
 
 /**
- * Where the server stands on each move. Refused: the row's intent for that
- * operation settled as needs-repair, so the row went back to where it came
- * from carrying the failure mark. Pending: unanswered, or not in this
- * projection yet (the replica admits a move before its projection shows the
- * intent). Journals keep their intents, so a missing intent is never one that
- * was pruned. Every other state (accepted, superseded by the writer's next
- * change, cancelled) settled it for good, and it is in neither list.
+ * Where the server stands on each operation a notice follows (a move, or the deletes an Undo
+ * admitted). Refused: the row's intent for that operation settled as needs-repair, so the row
+ * went back to where it was carrying the failure mark. Pending: unanswered, or not in this
+ * projection yet (the replica admits an operation before its projection shows the intent).
+ * Journals keep their intents, so a missing intent is never one that was pruned. Every other
+ * state (accepted, superseded by the writer's next change, cancelled) settled it for good, and
+ * it is in neither list.
  */
-export function moveSettlement(
+export function intentSettlement<T extends { entry: EntryRef; operationId?: string }>(
   view: { records: readonly ResourceRecord[]; folders: readonly FolderNamespaceRecord[] },
-  effects: readonly MoveEffect[],
-): { refused: MoveEffect[]; pending: MoveEffect[] } {
-  const refused: MoveEffect[] = [];
-  const pending: MoveEffect[] = [];
-  for (const effect of effects) {
-    if (!effect.operationId) continue;
+  followed: readonly T[],
+): { refused: T[]; pending: T[] } {
+  const refused: T[] = [];
+  const pending: T[] = [];
+  for (const item of followed) {
+    if (!item.operationId) continue;
     const intents =
-      effect.entry.kind === "folder"
-        ? view.folders.find((folder) => folder.folderId === effect.entry.id)?.intents
-        : recordFor(view.records, effect.entry.id)?.intents;
-    const state = intents?.find((intent) => intent.operationId === effect.operationId)?.state;
-    if (state === "needs-repair") refused.push(effect);
-    else if (!state || UNANSWERED.has(state)) pending.push(effect);
+      item.entry.kind === "folder"
+        ? view.folders.find((folder) => folder.folderId === item.entry.id)?.intents
+        : recordFor(view.records, item.entry.id)?.intents;
+    const state = intents?.find((intent) => intent.operationId === item.operationId)?.state;
+    if (state === "needs-repair") refused.push(item);
+    else if (!state || UNANSWERED.has(state)) pending.push(item);
   }
   return { refused, pending };
 }
