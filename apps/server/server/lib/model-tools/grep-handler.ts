@@ -6,9 +6,7 @@
  */
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { compileAddressGlob } from "../../domains/context/grep/address-glob.js";
-import { compileGrep } from "../../domains/context/grep/matcher.js";
-import type { GrepFile } from "../../domains/context/index.js";
+import { compileAddressGlob, compileGrep, type GrepFile } from "../../domains/context/index.js";
 import {
   type GrepToolInput,
   grepPassage,
@@ -67,7 +65,7 @@ export function createGrepHandler(deps: ToolWiringDeps) {
       },
     });
     if (!result.ok) return contextToolError(result.error);
-    const { files, totalFiles, exact } = result.value;
+    const { files, totalFiles, exact, stopped } = result.value;
     return {
       // Host-only facts never reach the model.
       output: {
@@ -76,6 +74,7 @@ export function createGrepHandler(deps: ToolWiringDeps) {
         ),
         totalFiles,
         exact,
+        ...(stopped ? { stopped } : {}),
       },
       // Only returned, authorized files were shown, and only the passages their text shows whole.
       evidence: { shown: files.flatMap((file) => shownPassages(file, verbose)) },

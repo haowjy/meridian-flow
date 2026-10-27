@@ -35,10 +35,11 @@ describe.skipIf(!runDbTests || !databaseUrl)("0104 grep tool rename", () => {
           input: { pattern: n === 0 ? "a.b\\_c (x)" : "Lin", scope: "kb://" },
         });
       }
+      // A result block names its call by id only.
       await block("tool_result", 1000, {
         toolCallId: "c0",
-        toolName: "search",
-        output: [{ uri: "kb://a", matches: [{ excerpt: "x" }], matchCount: 1 }],
+        output: "text",
+        result: [{ uri: "kb://a", matches: [{ excerpt: "x" }], matchCount: 1 }],
       });
       await block("tool_use", 1001, {
         toolCallId: "r",
@@ -87,8 +88,8 @@ describe.skipIf(!runDbTests || !databaseUrl)("0104 grep tool rename", () => {
       const [result] =
         await session`SELECT content FROM turn_blocks WHERE block_type = 'tool_result'`;
       expect(result?.content).toMatchObject({
-        toolName: "grep",
-        output: { files: [{ uri: "kb://a" }], totalFiles: 1, exact: true },
+        output: "text",
+        result: { files: [{ uri: "kb://a" }], totalFiles: 1, exact: true },
       });
       const [read] =
         await session`SELECT content FROM turn_blocks WHERE content->>'toolName' = 'read'`;

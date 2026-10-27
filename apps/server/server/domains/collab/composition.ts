@@ -535,6 +535,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftPeers = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts,
+      derivations: derivationStore,
       draftPulls,
       agentEdit,
       documents: runtime.markdownDocuments,

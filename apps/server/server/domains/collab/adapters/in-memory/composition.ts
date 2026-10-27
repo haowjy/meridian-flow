@@ -1,6 +1,5 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
 
-import { destinationFreeBlocks } from "@meridian/agent-edit";
 import {
   type AgentEditCodecFactory,
   toDocHandle,
@@ -8,7 +7,6 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createAllowAllFileAccess } from "../../../file-policy/index.js";
@@ -30,6 +28,7 @@ import { createDocumentCreationAggregate } from "../../domain/document-creation.
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
 import { DraftNotFoundError } from "../../domain/draft-resolver.js";
+import { hashlineBlocks } from "../../domain/hashline-blocks.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createReplySaveFences } from "../../domain/reply-save-fences.js";
@@ -284,22 +283,22 @@ function createInMemoryDraftPeerStub(
       return read.ok ? read.value.revision : null;
     },
     async flushDraftLivePull() {},
-    isStagedByResponse: () => false,
+    // Nothing is derived in memory.
+    readStoredGrepTexts: async () => new Map(),
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
         const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
-        const bound = codec.forScope(scope);
-        const read = versioned(doc, scope, (doc) =>
-          model.serializeBlockLines(toDocHandle(doc), bound),
+        const { content: blocks, revision } = versioned(doc, scope, () =>
+          hashlineBlocks({
+            model,
+            markup: codec.markup,
+            codec: codec.forScope(scope),
+            scope,
+            doc: toDocHandle(doc),
+          }),
         );
-        const blocks = model.projectBlocks(toDocHandle(doc));
-        return Ok({
-          ...read,
-          links: blocks.map((block) => spelledLinks([block], scope)),
-          destinationFree: destinationFreeBlocks(codec.markup, blocks),
-          holder: { uri: scope.holder.uri, view: LIVE_VIEW },
-        });
+        return Ok({ blocks, revision, holder: { uri: scope.holder.uri, view: LIVE_VIEW } });
       }),
     async ensureCreatedDocumentDraft() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");

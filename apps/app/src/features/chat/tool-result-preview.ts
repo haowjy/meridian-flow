@@ -40,7 +40,11 @@ export type CappedList<T> = {
 export type ToolResultRows = CappedList<ToolResultRow>;
 
 /** A capped list of documents plus what the grep found across all of them. */
-export type GrepResultRows = CappedList<GrepHitRow> & { matches: number };
+export type GrepResultRows = CappedList<GrepHitRow> & {
+  matches: number;
+  /** False when `total` is a lower bound: the server stopped counting or the scan stopped. */
+  exact: boolean;
+};
 
 export const LISTING_CAP = 8;
 
@@ -61,7 +65,7 @@ const LISTING: RowSpec<ToolResultRow> = { cap: LISTING_CAP, toRow: listingEntry 
 
 /** What `grep` returned (`{ files, totalFiles }`): the documents the model was shown. */
 export function normalizeGrepResult(output: JsonValue | undefined): GrepResultRows {
-  if (!isRecord(output)) return { rows: [], total: 0, matches: 0 };
+  if (!isRecord(output)) return { rows: [], total: 0, matches: 0, exact: true };
   const files = normalizeEntries(output.files, { cap: GREP_CAP, toRow: grepHit });
   const total = Math.max(
     typeof output.totalFiles === "number" ? output.totalFiles : files.total,
@@ -69,7 +73,12 @@ export function normalizeGrepResult(output: JsonValue | undefined): GrepResultRo
   );
   // The model is sent at most `head_limit` files, so their match counts add up to a part of the
   // total; the header may state a match count only when the files sent are every file that matched.
-  return { ...files, total, matches: total > files.total ? 0 : totalMatches(output.files) };
+  return {
+    ...files,
+    total,
+    matches: total > files.total ? 0 : totalMatches(output.files),
+    exact: output.exact !== false,
+  };
 }
 
 function totalMatches(files: JsonValue | undefined): number {
@@ -180,12 +189,10 @@ export function boundLabel<T>({ rows, total }: CappedList<T>): string | null {
 /** The card's header: what this grep found, and nothing else. */
 export function grepCardSummary(results: GrepResultRows): string {
   const documents = results.total;
-  if (results.matches <= documents) {
-    return plural(documents, { one: "# document", other: "# documents" });
-  }
-  const matches = results.matches;
   const inDocuments = plural(documents, { one: "# document", other: "# documents" });
-  return t`${matches} results in ${inDocuments}`;
+  const matches = results.matches;
+  const found = matches <= documents ? inDocuments : t`${matches} results in ${inDocuments}`;
+  return results.exact ? found : t`At least ${found}`;
 }
 
 export function matchCountLabel(count: number): string {

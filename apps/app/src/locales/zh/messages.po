@@ -902,6 +902,10 @@ msgstr ""
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
+#: src/features/chat/tool-result-preview.ts
+msgid "At least {found}"
+msgstr ""
+
 #: src/components/app/composer/Composer.tsx
 msgid "Attach file"
 msgstr ""

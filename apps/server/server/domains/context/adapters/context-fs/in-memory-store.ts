@@ -471,11 +471,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     );
   }
 
-  /** No derivation here, so no stored grep text: every document is read. */
-  async readGrepTexts(): Promise<Map<string, string>> {
-    return new Map();
-  }
-
   async listTree(
     view: TreeView,
   ): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }> {

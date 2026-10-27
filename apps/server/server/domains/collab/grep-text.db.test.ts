@@ -94,7 +94,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destination: "live",
         });
         if (!read.ok) throw new Error(JSON.stringify(read.error));
-        expect(row?.grepText, shape.name).toBe(grepText(read.value.destinationFree));
+        expect(row?.grepText, shape.name).toBe(
+          grepText(read.value.blocks.map((block) => block.destinationFree)),
+        );
         expect(row?.grepText, shape.name).not.toBeNull();
       }
     });

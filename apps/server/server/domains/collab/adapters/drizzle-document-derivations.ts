@@ -4,6 +4,7 @@ import type { Database } from "@meridian/database";
 import {
   contextSources,
   documentDerivations,
+  documentDrafts,
   documentLinks,
   documentMarkdownProjections,
   documents,
@@ -11,7 +12,7 @@ import {
   projects,
   works,
 } from "@meridian/database";
-import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, not, notExists, or, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -174,6 +175,27 @@ export type AheadRegistrationRecovery = {
 
 const AHEAD_RECOVERY_PAGE = 100;
 
+/**
+ * The derived outputs are behind the document: never derived, or a watermark (projection or
+ * links) differs from the document's head, location or the extractor version. Needs
+ * `documentDerivations` left-joined to `documents` and `documentYjsHeads`.
+ */
+const staleDerivation = or(
+  isNull(documentDerivations.documentId),
+  ne(documentDerivations.projectionGeneration, documentYjsHeads.authorityGeneration),
+  ne(documentDerivations.projectionAdmissionSequence, documentYjsHeads.nextAdmissionSequence),
+  ne(documentDerivations.projectionLocationVersion, documents.locationVersion),
+  ne(documentDerivations.projectionExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
+  isNull(documentDerivations.linksGeneration),
+  isNull(documentDerivations.linksAdmissionSequence),
+  isNull(documentDerivations.linksLocationVersion),
+  isNull(documentDerivations.linksExtractorVersion),
+  ne(documentDerivations.linksGeneration, documentYjsHeads.authorityGeneration),
+  ne(documentDerivations.linksAdmissionSequence, documentYjsHeads.nextAdmissionSequence),
+  ne(documentDerivations.linksLocationVersion, documents.locationVersion),
+  ne(documentDerivations.linksExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
+);
+
 export function createDrizzleDocumentDerivationStore(
   db: Database,
   lastAddress: DocumentLastAddress,
@@ -236,6 +258,42 @@ export function createDrizzleDocumentDerivationStore(
         return certifyDocumentDerivation(tx, cut, outputs, at);
       });
     },
+    async grepTexts(ids, { ignoreDrafts }) {
+      if (!ids.length) return new Map();
+      const rows = await currentDrizzleDb(db)
+        .select({
+          id: documentMarkdownProjections.documentId,
+          text: documentMarkdownProjections.grepText,
+        })
+        .from(documentMarkdownProjections)
+        .innerJoin(documents, eq(documents.id, documentMarkdownProjections.documentId))
+        .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
+        .innerJoin(documentDerivations, eq(documentDerivations.documentId, documents.id))
+        .where(
+          and(
+            inArray(documentMarkdownProjections.documentId, ids),
+            sql`${documentMarkdownProjections.grepText} is not null`,
+            not(staleDerivation as NonNullable<typeof staleDerivation>),
+            // A draft reader sees the draft, which the projection of the live document doesn't.
+            ignoreDrafts
+              ? undefined
+              : notExists(
+                  currentDrizzleDb(db)
+                    .select({ one: sql`1` })
+                    .from(documentDrafts)
+                    .where(
+                      and(
+                        eq(documentDrafts.documentId, documents.id),
+                        eq(documentDrafts.status, "active"),
+                      ),
+                    ),
+                ),
+          ),
+        );
+      return new Map(
+        rows.flatMap((row) => (row.text === null ? [] : [[row.id, row.text] as const])),
+      );
+    },
     async stale(scope, page) {
       // LIMIT bounds returned stale rows, not the cross-table freshness scan.
       const projectId = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
@@ -250,27 +308,7 @@ export function createDrizzleDocumentDerivationStore(
         .where(
           and(
             isNull(documents.deletedAt),
-            or(
-              isNull(documentDerivations.documentId),
-              ne(documentDerivations.projectionGeneration, documentYjsHeads.authorityGeneration),
-              ne(
-                documentDerivations.projectionAdmissionSequence,
-                documentYjsHeads.nextAdmissionSequence,
-              ),
-              ne(documentDerivations.projectionLocationVersion, documents.locationVersion),
-              ne(documentDerivations.projectionExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-              isNull(documentDerivations.linksGeneration),
-              isNull(documentDerivations.linksAdmissionSequence),
-              isNull(documentDerivations.linksLocationVersion),
-              isNull(documentDerivations.linksExtractorVersion),
-              ne(documentDerivations.linksGeneration, documentYjsHeads.authorityGeneration),
-              ne(
-                documentDerivations.linksAdmissionSequence,
-                documentYjsHeads.nextAdmissionSequence,
-              ),
-              ne(documentDerivations.linksLocationVersion, documents.locationVersion),
-              ne(documentDerivations.linksExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-            ),
+            staleDerivation,
             scope
               ? scope.personalOwnerId
                 ? eq(projects.userId, scope.personalOwnerId)

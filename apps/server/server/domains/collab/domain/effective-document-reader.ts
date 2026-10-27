@@ -1,5 +1,4 @@
 /** Effective document reads for non-tool callers: the same room copy a model call would read. */
-import { destinationFreeBlocks } from "@meridian/agent-edit";
 import {
   type AgentEditCodecFactory,
   type DocHandle,
@@ -10,7 +9,6 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -23,8 +21,10 @@ import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import { documentRevision, versioned } from "./document-revision.js";
 import type { DraftPullService } from "./draft-pulls.js";
+import { hashlineBlocks } from "./hashline-blocks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
+import type { DocumentDerivationStore } from "./ports/document-derivations.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
@@ -35,6 +35,7 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
+  derivations: Pick<DocumentDerivationStore, "grepTexts">;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
@@ -98,8 +99,16 @@ export function createEffectiveDocumentReader(input: {
         return null;
       }
     },
-    isStagedByResponse(responseId, documentId) {
-      return input.agentEdit.hasResponseDocument(responseId, documentId);
+    async readStoredGrepTexts({ documentIds, responseId, ...version }) {
+      const texts = await input.derivations.grepTexts(documentIds, {
+        ignoreDrafts: version.destination === "live",
+      });
+      // A reply's writes to a document stay in its room until a commit and leave no draft row,
+      // so the stored text can lag the reply's own view.
+      if (responseId)
+        for (const id of texts.keys())
+          if (input.agentEdit.hasResponseDocument(responseId, id)) texts.delete(id);
+      return texts;
     },
     flushDraftLivePull(documentId) {
       return input.draftPulls.flushLivePull(documentId);
@@ -117,19 +126,16 @@ export function createEffectiveDocumentReader(input: {
       return readEffective(command, async (handle): Promise<HashlineRead> => {
         const doc = unwrapDoc(handle);
         const scope = await spelling(command, doc);
-        const codec = input.codec.forScope(scope);
-        const read = versioned(doc, scope, (doc) =>
-          input.model.serializeBlockLines(toDocHandle(doc), codec),
+        const { content: blocks, revision } = versioned(doc, scope, () =>
+          hashlineBlocks({
+            model: input.model,
+            markup: input.codec.markup,
+            codec: input.codec.forScope(scope),
+            scope,
+            doc: toDocHandle(doc),
+          }),
         );
-        const blocks = input.model.projectBlocks(toDocHandle(doc));
-        const links = blocks.map((block) => spelledLinks([block], scope));
-        const destinationFree = destinationFreeBlocks(input.codec.markup, blocks);
-        return {
-          ...read,
-          links,
-          destinationFree,
-          holder: { uri: scope.holder.uri, view: scope.holder.view },
-        };
+        return { blocks, revision, holder: { uri: scope.holder.uri, view: scope.holder.view } };
       });
     },
     ensureCreatedDocumentDraft(command) {

@@ -902,6 +902,10 @@ msgstr "Archived Work {name}"
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
 
+#: src/features/chat/tool-result-preview.ts
+msgid "At least {found}"
+msgstr "At least {found}"
+
 #: src/components/app/composer/Composer.tsx
 msgid "Attach file"
 msgstr "Attach file"

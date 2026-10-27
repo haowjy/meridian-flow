@@ -341,7 +341,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const hit = search.value.files.find((each) => each.documentId === DOC_ID);
       expect.soft(JSON.stringify(read.result), "model read").toContain(spelled);
       expect.soft(markdown.value.content, "effective Markdown").toContain(spelled);
-      expect.soft(hashlines.value.content.join("\n"), "effective hashlines").toContain(spelled);
+      expect
+        .soft(hashlines.value.blocks.map((block) => block.body).join("\n"), "effective hashlines")
+        .toContain(spelled);
       expect.soft(JSON.stringify(hit?.matches), "search").toContain(spelled);
       expect.soft(read.revision).toMatch(/^y2:/);
       expect
@@ -369,7 +371,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       // Read back (pulling the thread's peer) before the process goes away.
       const before = await collab.readEffectiveHashlines(draftRead);
-      expect(before.ok && before.value.content.join("\n")).toContain("Suffix.");
+      expect(before.ok && before.value.blocks.map((block) => block.body).join("\n")).toContain(
+        "Suffix.",
+      );
       await collab.documentDerivations.stop();
       await collab.dispose();
       collab = start();
@@ -383,7 +387,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!after.ok) throw new Error(JSON.stringify(after));
       expect(undone.status).toBe("success");
       expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
-      expect.soft(after.value.content.join("\n")).toContain(spelled);
+      expect.soft(after.value.blocks.map((block) => block.body).join("\n")).toContain(spelled);
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
       // The same comparison in live. A create is a row, not a reply's in-memory set: a live

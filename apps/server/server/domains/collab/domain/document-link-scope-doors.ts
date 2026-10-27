@@ -120,7 +120,7 @@ export function scopeDraftPeer(
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
     flushDraftLivePull: access.flushDraftLivePull,
-    isStagedByResponse: access.isStagedByResponse,
+    readStoredGrepTexts: access.readStoredGrepTexts,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,

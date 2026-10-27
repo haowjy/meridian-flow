@@ -113,6 +113,7 @@ export type AdapterGrepResult = {
   files: AdapterGrepFile[];
   totalFiles: number;
   exact: boolean;
+  stopped?: true;
 };
 export type AdapterContextReadResult = Omit<ContextReadResult, "uri">;
 export type AdapterContextWriteResult = Omit<ContextWriteResult, "uri">;
