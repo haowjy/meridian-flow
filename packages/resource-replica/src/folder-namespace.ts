@@ -397,11 +397,16 @@ export function validateFolderNamespaceUpdate(
 ): void {
   if (next.revision !== (previous?.revision ?? 0) + 1)
     throw new Error("Invalid folder namespace revision");
+  if (previous && (next.handle !== previous.handle || next.projectId !== previous.projectId))
+    throw new Error("Folder namespace identity mismatch");
+  // Only a spent id is replaced, by a new one that keeps the old as an alias.
   if (
     previous &&
-    (next.handle !== previous.handle ||
-      next.folderId !== previous.folderId ||
-      next.projectId !== previous.projectId)
+    next.folderId !== previous.folderId &&
+    (previous.serverHold !== "spent" ||
+      next.serverHold !== "local" ||
+      next.aliases?.[previous.folderId] !== true ||
+      Object.keys(previous.aliases ?? {}).some((id) => next.aliases?.[id] !== true))
   )
     throw new Error("Folder namespace identity mismatch");
   if (
@@ -413,15 +418,15 @@ export function validateFolderNamespaceUpdate(
     )
   )
     throw new Error("Folder journal only admits folder namespace commands");
+  const named = (id: string) => id === next.folderId || next.aliases?.[id] === true;
   if (
     next.intents.some((intent) =>
       intent.attempts.some(({ request }) =>
         request.kind === "create"
           ? true
           : request.kind === "create-folder"
-            ? request.body.folderId !== next.folderId
-            : request.body.expected.kind !== "folder" ||
-              request.body.expected.nodeId !== next.folderId,
+            ? !named(request.body.folderId)
+            : request.body.expected.kind !== "folder" || !named(request.body.expected.nodeId),
       ),
     )
   )

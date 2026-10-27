@@ -4,6 +4,8 @@ import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeResourceTerminalCleanup,
   capturePlacementAdmission,
+  deleteNeedsServer,
+  type FolderNamespaceRecord,
   type FolderNamespaceWrite,
   installedFolderObservation,
   markResourceCreateEligible,
@@ -811,13 +813,14 @@ export class AccountResourceReplica {
     admission: PlacementAdmission,
     plan: (input: Parameters<typeof planFolderDeletion>[0]) => FolderNamespaceWrite | null,
   ): Promise<{ operationId?: string }> {
-    const key = folderKey(folderId);
     const operationId = crypto.randomUUID();
     for (;;) {
       const [current, projection] = await Promise.all([
-        this.metadata.readFolder(key),
+        this.metadata.readFolderById(folderId),
         this.metadata.readProjection(projectId),
       ]);
+      // A reminted folder keeps its handle; the id the writer acted on may be its former one.
+      const key = current ? { handle: current.handle } : folderKey(folderId);
       const observation = installedFolderObservation(projection.catalogs, projectId, folderId);
       // A folder only this device holds has no place yet, but it has a record.
       const source = current?.canonical ?? observation?.location;
@@ -826,7 +829,7 @@ export class AccountResourceReplica {
         record: current,
         projectId,
         handle: key.handle,
-        folderId,
+        folderId: current?.folderId ?? folderId,
         source,
         sourceParent: current?.canonicalParent ?? observation?.parent,
         sourceObservationVersion: current?.observationVersion ?? observation?.observationVersion,
@@ -852,8 +855,7 @@ export class AccountResourceReplica {
     folderId: string,
     operationId: string,
   ): Promise<void> {
-    const rootKey = folderKey(folderId);
-    const root = await this.metadata.readFolder(rootKey);
+    const root = await this.metadata.readFolderById(folderId);
     const local = root?.intents.some(
       (intent) =>
         intent.operationId === operationId &&
@@ -863,7 +865,7 @@ export class AccountResourceReplica {
     if (!local) return;
     const projection = await this.metadata.readProjection(projectId);
     const placement = resourcePlacementForSnapshot(projectId, projection);
-    const descendants = new Set<string>();
+    const descendants = new Map<string, FolderNamespaceRecord>();
     for (let added = true; added; ) {
       added = false;
       for (const folder of projection.folders) {
@@ -871,19 +873,20 @@ export class AccountResourceReplica {
         const parent = placement.parentForFolder(folder.folderId);
         if (
           parent?.kind === "folder" &&
-          (parent.folderId === folderId || descendants.has(parent.folderId))
+          (parent.folderId === root?.folderId || descendants.has(parent.folderId))
         ) {
-          descendants.add(folder.folderId);
+          descendants.set(folder.folderId, folder);
           added = true;
         }
       }
     }
-    for (const id of descendants) await this.settleLocalFolderDeletion(projectId, id, operationId);
+    for (const folder of descendants.values())
+      await this.settleLocalFolderDeletion(projectId, folder, operationId);
     for (const record of projection.records) {
       const parent = placement.parentForResource(record);
       if (
         parent?.kind === "folder" &&
-        (parent.folderId === folderId || descendants.has(parent.folderId))
+        (parent.folderId === root?.folderId || descendants.has(parent.folderId))
       )
         await this.settleLocalDocumentDeletion(projectId, record.resource.handle, operationId);
     }
@@ -891,19 +894,19 @@ export class AccountResourceReplica {
 
   private async settleLocalFolderDeletion(
     projectId: string,
-    folderId: string,
+    folder: FolderNamespaceRecord,
     operationId: string,
   ): Promise<boolean> {
-    const key = folderKey(folderId);
+    const key: ResourceKey = { handle: folder.handle };
     return this.withResourceLock(key, async () => {
       for (;;) {
         const current = await this.metadata.readFolder(key);
-        if (!current || current.canonical) return false;
+        if (!current || deleteNeedsServer(current.serverHold)) return false;
         const write = planFolderDeletion({
           record: current,
           projectId,
           handle: key.handle,
-          folderId,
+          folderId: current.folderId,
           intentId: crypto.randomUUID(),
           operationId,
         });
@@ -925,7 +928,7 @@ export class AccountResourceReplica {
     return this.withResourceLock(key, async () => {
       for (;;) {
         const current = await this.metadata.readResource(key);
-        if (!current || current.resource.canonical) return false;
+        if (!current || deleteNeedsServer(current.resource.serverHold)) return false;
         const write = planResourceDeletion(current, projectId, crypto.randomUUID(), operationId);
         const settled = write?.next.intents.some(
           (intent) =>
@@ -1038,7 +1041,9 @@ export class AccountResourceReplica {
     folderId: string,
     operationId: string,
   ): Promise<boolean> {
-    const key = folderKey(folderId);
+    const folder = await this.metadata.readFolderById(folderId);
+    if (!folder) return false;
+    const key: ResourceKey = { handle: folder.handle };
     const restored = await this.withResourceLock(key, async () => {
       for (;;) {
         const current = await this.metadata.readFolder(key);

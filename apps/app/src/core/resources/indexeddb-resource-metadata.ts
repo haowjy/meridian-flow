@@ -22,6 +22,7 @@ import {
   folderDeletionSettlement,
   holdAfterAttempt,
   planFolderDeletionResources,
+  planFolderRemintDependents,
   resourceForDocumentIdentity,
   resourceVisibleInProject,
   untitledDestination,
@@ -489,6 +490,19 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     return this.run(async () => (await this.folders.get(key.handle)) ?? null);
   }
 
+  /**
+   * The record a folder id names: a folder keeps its handle through a remint (`remintFolder`), so
+   * its current id is found by scan, and a former id still resolves through its handle.
+   */
+  readFolderById(folderId: string): Promise<FolderNamespaceRecord | null> {
+    return this.run(
+      async () =>
+        (await this.folders.get(`folder:${folderId}`)) ??
+        (await this.folders.filter((folder) => folder.folderId === folderId).first()) ??
+        null,
+    );
+  }
+
   readFolders(projectId: string): Promise<readonly FolderNamespaceRecord[]> {
     return this.run(() =>
       this.folders
@@ -537,12 +551,44 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
             }
             await this.resources.bulkPut(descendants.map((write) => write.next.resource));
           }
+          if (previous && previous.folderId !== write.next.folderId)
+            await this.followRemintedFolder(previous.folderId, write.next);
           await this.folders.put(write.next);
           await this.raiseHighWater(write.next.intents);
           return "committed" as const;
         },
       ),
     );
+  }
+
+  /**
+   * A folder's remint commits with the placements that named its old id: each unsent one is queued
+   * again under the new id, so a child never reaches the server naming a folder it cannot use.
+   */
+  private async followRemintedFolder(
+    previousId: string,
+    reminted: FolderNamespaceRecord,
+  ): Promise<void> {
+    const records = this.records(await this.resources.toArray(), await this.intents.toArray());
+    const folders = (await this.folders.toArray()).filter(
+      (folder) => folder.handle !== reminted.handle,
+    );
+    const { resources, folders: followers } = planFolderRemintDependents({
+      previousFolderId: previousId,
+      folderId: reminted.folderId,
+      records,
+      folders,
+    });
+    const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
+    for (const write of resources)
+      validateResourceRecordUpdate(byHandle.get(write.next.resource.handle) ?? null, write.next);
+    for (const write of followers)
+      validateFolderNamespaceUpdate(
+        folders.find((folder) => folder.handle === write.next.handle) ?? null,
+        write.next,
+      );
+    await this.putResources(resources);
+    await this.folders.bulkPut(followers.map(({ next }) => next));
   }
 
   readCatalog(projectId: string, scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null> {
