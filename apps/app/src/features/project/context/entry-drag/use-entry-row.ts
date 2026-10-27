@@ -4,13 +4,14 @@ import { startEntryDrag } from "./drag-session";
 import type { DragEntry } from "./entry";
 import { useEntrySelectionRow } from "./selection";
 
-export function useEntryRow(entry: DragEntry, active: boolean) {
+/** `draggable` is false for a row that names nothing a drag could act on (a navigation-only folder). */
+export function useEntryRow(entry: DragEntry, active: boolean, draggable = true) {
   const { selection, selected, rowProps } = useEntrySelectionRow(entry, active);
   return {
     selected,
     rowProps: {
       ...rowProps,
-      draggable: Boolean(selection?.draggable && (entry.can.move || entry.can.copy)),
+      draggable: Boolean(selection?.draggable && draggable),
       onDragStart: (event: DragEvent) => {
         event.stopPropagation();
         startEntryDrag(event, selection ? selection.dragged(entry) : [entry]);

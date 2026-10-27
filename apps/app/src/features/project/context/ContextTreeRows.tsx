@@ -255,10 +255,8 @@ function DirRow({
       edges: { folder: parent, siblingId: dir.entryId, band: FOLDER_EDGE_BAND, after: !isOpen },
     },
   );
-  const move = interaction.actions.includes("move");
-  const copy = interaction.actions.includes("copy");
-  const entry = useMemo(() => dragEntry(dir, { move, copy }), [dir, move, copy]);
-  const row = useEntryRow(entry, false);
+  const entry = useMemo(() => dragEntry(dir), [dir]);
+  const row = useEntryRow(entry, false, !dir.navigationOnly);
   const toggle = () => {
     if (env.creation?.creating) env.creation.done();
     env.toggleEntry(dir.entryId);
@@ -399,9 +397,7 @@ function FileRow({
   });
   const select = () => env.onSelectFile(env.scheme, file);
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
-  const move = interaction.actions.includes("move");
-  const copy = interaction.actions.includes("copy");
-  const entry = useMemo(() => dragEntry(file, { move, copy }), [file, move, copy]);
+  const entry = useMemo(() => dragEntry(file), [file]);
   const row = useEntryRow(entry, active);
   if (interaction.renaming) {
     return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;

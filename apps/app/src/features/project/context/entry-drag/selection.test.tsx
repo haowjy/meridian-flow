@@ -16,7 +16,6 @@ function entry(id: string): DragEntry {
     ref: { kind: "file", id },
     name: id,
     uri: `scratch://@w/${id}`,
-    can: { move: true, copy: true },
   };
 }
 

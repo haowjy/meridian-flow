@@ -79,9 +79,8 @@ function reason(
   if (!resolved) return t`That place is no longer available`;
   if (resolved.unavailable.length > 0) return noLongerThere();
   if (plan.kind === "inside-itself") return insideItself();
-  if (action === "move")
-    return resolved.can.move ? t`Already there` : t`Can't move these from here`;
-  return resolved.can.copy ? t`That place is no longer available` : t`Can't copy these`;
+  if (action === "move") return resolved.canMove ? t`Already there` : t`Can't move these from here`;
+  return t`Can't copy these`;
 }
 
 /**

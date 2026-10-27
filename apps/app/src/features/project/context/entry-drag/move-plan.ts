@@ -10,6 +10,7 @@ import type {
   ContextSiblingPosition,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import {
   type FolderNamespaceRecord,
   type ParentRef,
@@ -25,7 +26,7 @@ import { schemeLabel } from "../context-schemes";
 import { menuEntryFor } from "../menu-tree";
 import { destinationParent, type MoveDestination } from "../move-entry";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
-import { type DragEntry, type EntryGrant, type EntryRef, entrySystem } from "./entry";
+import { type DragEntry, type EntryRef, entrySystem } from "./entry";
 
 /** A catalog a list shows, and so a place a drop can land. */
 export type MoveArea = {
@@ -46,7 +47,7 @@ export type PlacementView = {
   >;
 };
 
-type WorkDirectory = Parameters<typeof destinationParent>[1];
+type WorkDirectory = readonly Pick<Work, "id" | "handle" | "archivedAt">[] | null | undefined;
 type NoWork = Parameters<typeof destinationParent>[2];
 
 export type MoveView = PlacementView & {
@@ -265,9 +266,21 @@ export type ResolvedDrop = {
   unavailable: readonly EntryRef[];
   /** The target's scheme, for the records a Copy makes there. */
   scheme: ProjectContextTreeScheme;
-  /** What every carried row's surface grants (an archived Work's Scratch grants Copy, not Move). */
-  can: EntryGrant;
+  /**
+   * Every carried row may Move. A row in an archived Work's Scratch is frozen: it can be copied
+   * from, not moved out of. Judged here from where the replica places each row, so a drag source
+   * never has to say.
+   */
+  canMove: boolean;
 };
+
+function movable(view: MoveView, { location }: PlacedEntry): boolean {
+  const work =
+    location.scheme === "scratch" && location.workId
+      ? view.works?.find((candidate) => candidate.id === location.workId)
+      : null;
+  return !(work && isWorkArchived(work));
+}
 
 /**
  * Resolves dropping `entries` on `target` from the replica as it is now; null
@@ -309,10 +322,7 @@ export function resolveDrop(
     insideItself: sources.some((source) => insideItself(view, source, into)),
     unavailable: looked.flatMap(({ ref, now }) => (now ? [] : [ref])),
     scheme,
-    can: {
-      move: entries.every((entry) => entry.can.move),
-      copy: entries.every((entry) => entry.can.copy),
-    },
+    canMove: sources.every((source) => movable(view, source)),
   };
 }
 
@@ -325,7 +335,7 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
   if (!resolved) return NONE;
   const { sources, into, destinationName, position } = resolved;
   // A selection holding a row without Move, or one that lost a row, moves nowhere rather than silently leaving rows behind.
-  if (!resolved.can.move || resolved.unavailable.length > 0) return NONE;
+  if (!resolved.canMove || resolved.unavailable.length > 0) return NONE;
   if (resolved.insideItself) return { kind: "inside-itself" };
   if (position) return planPositioned(view, sources, into, destinationName, position);
   // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
@@ -362,7 +372,7 @@ export type ReadyCopy = Extract<CopyPlan, { kind: "ready" }>;
  * carried row, which stays where it is. A selection that lost a row copies nothing.
  */
 export function planCopy(view: PlacementView, resolved: ResolvedDrop | null): CopyPlan {
-  if (!resolved?.can.copy || resolved.unavailable.length > 0 || resolved.sources.length === 0)
+  if (!resolved || resolved.unavailable.length > 0 || resolved.sources.length === 0)
     return NONE_COPY;
   if (resolved.insideItself) return { kind: "inside-itself" };
   const { sources, into, destinationName, position, scheme } = resolved;

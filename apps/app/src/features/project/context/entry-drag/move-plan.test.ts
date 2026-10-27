@@ -105,7 +105,7 @@ const planDrop = (
 ) => planMove(view, resolveDrop(view, entries, target));
 
 const drag = (...refs: EntryRef[]): DragEntry[] =>
-  refs.map((ref) => ({ ref, name: keyOf(ref), uri: "", can: { move: true, copy: true } }));
+  refs.map((ref) => ({ ref, name: keyOf(ref), uri: "" }));
 const file = (id: string): EntryRef => ({ kind: "file", id });
 const folder = (id: string): EntryRef => ({ kind: "folder", id });
 const into = (rootId: string, scheme: "manuscript" | "kb", entryId: string, name: string) => ({
