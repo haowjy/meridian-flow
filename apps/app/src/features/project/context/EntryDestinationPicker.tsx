@@ -30,6 +30,7 @@ import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { copyOperation } from "./entry-drag/copy-operation";
 import { describeRenames } from "./entry-drag/drop-choice";
+import { LIVE_VIEW } from "./entry-drag/entry";
 import { copyArrivals, copyRows } from "./entry-drag/execute-copy";
 import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
 import { moveOperation } from "./entry-drag/move-operation";
@@ -252,6 +253,7 @@ function OpenPicker({
     copies: entries.map((picked) => ({
       entry: { kind: picked.kind, id: picked.id },
       name: picked.name,
+      view: LIVE_VIEW,
     })),
   });
 

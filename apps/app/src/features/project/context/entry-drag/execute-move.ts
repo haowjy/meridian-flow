@@ -32,7 +32,8 @@ import {
   siblingPositionWitness,
 } from "./move-plan";
 
-export type MoveContext = {
+/** The replica and project a Move, a Copy and their Undo act through. */
+export type ReplicaContext = {
   resources: AccountResourceReplica;
   projectId: string;
 };
@@ -146,7 +147,7 @@ export function renamesOnArrival(
   });
 }
 
-export async function currentView(context: MoveContext) {
+export async function currentView(context: ReplicaContext) {
   const snapshot = await context.resources.readProjection(context.projectId);
   return {
     records: snapshot.records,
@@ -158,7 +159,7 @@ export async function currentView(context: MoveContext) {
 /** Move…, a drop and Undo all move rows here, each under its predicted free name. */
 export async function moveRows(
   rows: readonly MoveRow[],
-  context: MoveContext,
+  context: ReplicaContext,
   view?: NamingView,
 ): Promise<MoveResult> {
   const { resources, projectId } = context;
@@ -204,7 +205,7 @@ export async function moveRows(
  */
 export async function undoMove(
   effects: readonly MoveEffect[],
-  context: MoveContext,
+  context: ReplicaContext,
 ): Promise<MoveResult> {
   const view = await currentView(context);
   return moveRows(planUndo(view, effects), context, view);

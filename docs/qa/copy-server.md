@@ -44,9 +44,13 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](copy-bro
    `Vault (2)` in the draft, still holding the draft's text. The same copy where the
    name is held by a live document lands at `Sheet (2)`.
 3. **Draft source.** The same chat overwrites `manuscript://Outside/Sheet` in its
-   draft. Copy it with `--draft-work w1 --draft-thread <chat>`: the copy holds the
-   draft text and `metadata.copiedFrom.version` is `draft`. Copy without the flags:
-   the live text, `live`. A folder with a draft view is refused (`invalid_operation`).
+   draft. Copy it with `--draft-work w1`: the copy holds the draft text and
+   `metadata.copiedFrom.version` is `draft`. Copy without the flag: the live text,
+   `live`. A folder with a draft view is refused (`invalid_operation`). The draft is the
+   Work's, whichever chat wrote it: rebind the chat to another Work, and `--draft-work w1`
+   still copies Work w1's draft. A Work that holds no draft of the document (`--draft-work`
+   a second Work) is refused with `invalid_operation` reason `no_draft`, never the
+   live text.
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
    in one transaction (about 4 s here, most of it reading the sources before any
    lock), the ring closes inside the copy, and concurrent copies into one folder get
@@ -79,8 +83,8 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](copy-bro
    deleted or never existed (`destination_missing`), a destination path that is a
    document (`conflict`), a path with `..` (`bad_request`), an uploads folder named by
    identity as the destination (`bad_request`, the same out-only answer as by path),
-   and a draft view whose chat belongs to another project or does not exist
-   (`not_found`, "Chat not found"). Each answer is typed and non-retryable.
+   and a draft view whose Work belongs to another project or does not exist
+   (`context_unavailable`, `work_missing`). Each answer is typed and non-retryable.
 10. **Other owners.** Copy a Work's Scratch folder into a project area, a project
     document into a Work's Scratch and into a chat's Scratch, an upload out into a
     Work's Scratch, and a chat lineage Scratch note out. A Work note's link to the

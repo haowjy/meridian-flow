@@ -1,7 +1,8 @@
 /**
- * What a row drop across systems offers. A same-system drop moves at once; a
- * crossing one changes ownership, so the list holds the drop as a
- * `PendingChoice` and asks at the drop point: Move, Copy or Cancel. The hover
+ * What a drop that asks offers. A list row dropped within one system moves at
+ * once; one that crosses systems changes ownership, and any other source
+ * names a document without being a row to reposition, so the list holds the
+ * drop as a `PendingChoice` and asks at the drop point: Move, Copy or Cancel. The hover
  * hint, the decision to ask and the menu all come from `dropChoices`, derived
  * from `resolveDrop` against the replica as it is when each asks, so a
  * destination renamed or removed while the menu was open is judged by
@@ -12,7 +13,7 @@ import { plural, t } from "@lingui/core/macro";
 import type { NoticeSurface } from "../../shell/SurfaceNotice";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
-import type { DragEntry } from "./entry";
+import type { EntryDrag } from "./entry";
 import {
   type CopyPlan,
   type MovePlan,
@@ -39,7 +40,7 @@ export type DropChoiceItem = {
  * the drag session, so it holds identities and the target, not the drag's data.
  */
 export type PendingChoice = {
-  entries: readonly DragEntry[];
+  drag: EntryDrag;
   target: TreeDropTarget;
   /** Where the pointer let go, in client coordinates; the menu hangs here. */
   point: { x: number; y: number };
@@ -79,9 +80,8 @@ function reason(
   if (!resolved) return t`That place is no longer available`;
   if (resolved.unavailable.length > 0) return noLongerThere();
   if (plan.kind === "inside-itself") return insideItself();
-  if (action === "move")
-    return resolved.can.move ? t`Already there` : t`Can't move these from here`;
-  return resolved.can.copy ? t`That place is no longer available` : t`Can't copy these`;
+  if (action === "move") return resolved.canMove ? t`Already there` : t`Can't move these from here`;
+  return t`Can't copy these`;
 }
 
 /**

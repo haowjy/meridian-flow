@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
 import { FileImage, FileText, FileType, PanelRightOpen, Paperclip, Trash2 } from "lucide-react";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { deleteChatUpload } from "@/client/api/upload-intake-api";
 import { type ChatUpload, useChatUploads } from "@/client/query/useChatUploads";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -20,8 +20,14 @@ import {
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
+import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useOpenChatResource } from "@/features/project/context/open-chat-document";
 import { SurfaceNotices } from "@/features/project/context/project-notices";
+import {
+  type EntriesRoute,
+  TreeDropScope,
+  useTreeDropTarget,
+} from "@/features/project/context/tree-drop/tree-drop";
 import { cn } from "@/lib/utils";
 import { attachedAgo, uploadTypeLabel } from "./chat-upload-display";
 import { insertIntoChatComposer, removeFromChatComposer } from "./composer-insertion";
@@ -214,39 +220,41 @@ function FilesDropdown({
             threadId={threadId}
             onPicked={() => close(false)}
           />
-          <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">
-            <Trans>Uploads</Trans>
-          </h3>
-          {rows.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-muted-foreground">
-              <Trans>No files attached in this chat yet.</Trans>
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-[var(--chat-space-row)]">
-              {rows.map((upload) => (
-                <UploadRow
-                  key={upload.documentId}
-                  upload={upload}
-                  now={now}
-                  canDelete={upload.deletion !== null && !used.has(upload.documentId)}
-                  failed={failed.has(upload.documentId)}
-                  onInsert={() => insert(upload)}
-                  onOpen={
-                    openResource
-                      ? () => {
-                          close(false);
-                          void openResource({
-                            documentId: upload.documentId,
-                            disposition: "current",
-                          });
-                        }
-                      : null
-                  }
-                  onDelete={() => remove(upload)}
-                />
-              ))}
-            </ul>
-          )}
+          <UploadsRefuseDrops>
+            <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">
+              <Trans>Uploads</Trans>
+            </h3>
+            {rows.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-muted-foreground">
+                <Trans>No files attached in this chat yet.</Trans>
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-[var(--chat-space-row)]">
+                {rows.map((upload) => (
+                  <UploadRow
+                    key={upload.documentId}
+                    upload={upload}
+                    now={now}
+                    canDelete={upload.deletion !== null && !used.has(upload.documentId)}
+                    failed={failed.has(upload.documentId)}
+                    onInsert={() => insert(upload)}
+                    onOpen={
+                      openResource
+                        ? () => {
+                            close(false);
+                            void openResource({
+                              documentId: upload.documentId,
+                              disposition: "current",
+                            });
+                          }
+                        : null
+                    }
+                    onDelete={() => remove(upload)}
+                  />
+                ))}
+              </ul>
+            )}
+          </UploadsRefuseDrops>
         </div>
         <SurfaceNotices surface="chat-files" className="sticky bottom-2 mx-2 mb-2" />
       </PopoverContent>
@@ -274,6 +282,7 @@ function UploadRow({
 }) {
   const Icon = iconFor(upload);
   const name = upload.name;
+  const drag = useReferenceDrag({ ref: { kind: "file", id: upload.documentId }, name });
   const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
     <li data-upload-item className="relative flex flex-col">
@@ -286,6 +295,7 @@ function UploadRow({
         <button
           data-upload-row
           type="button"
+          {...drag}
           onClick={onInsert}
           aria-label={t`Add ${name} to your message`}
           className={cn(
@@ -337,6 +347,35 @@ function UploadRow({
       </span>
     </li>
   );
+}
+
+/**
+ * Uploads is out-only: its files can be moved or copied elsewhere, but nothing is dropped into it.
+ * The section is a drop target that always refuses, so the pointer says why instead of showing a
+ * silent no-drop cursor.
+ */
+const refuseUploadsDrops: EntriesRoute = {
+  verdict: () => ({
+    kind: "refuse",
+    label: t`Files move or copy out of Uploads; they can't be dropped into it`,
+  }),
+  drop: () => {},
+};
+
+const UPLOADS_TARGET = { scheme: "uploads", catalogRootId: "uploads", folder: null } as const;
+
+function UploadsRefuseDrops({ children }: { children: ReactNode }) {
+  const routes = useMemo(() => ({ entries: refuseUploadsDrops }), []);
+  return (
+    <TreeDropScope routes={routes}>
+      <UploadsDropArea>{children}</UploadsDropArea>
+    </TreeDropScope>
+  );
+}
+
+function UploadsDropArea({ children }: { children: ReactNode }) {
+  const { dropProps } = useTreeDropTarget(UPLOADS_TARGET);
+  return <div {...dropProps}>{children}</div>;
 }
 
 function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {

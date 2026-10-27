@@ -6,8 +6,8 @@ import type {
   TreeReversalLanding,
   Turn,
   TurnInverseSkip,
+  TurnLiveLineageDocumentItem,
   TurnReceiptChip,
-  TurnTreeLine,
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
@@ -21,6 +21,7 @@ import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { DraftStatsLabel } from "@/features/draft-review/draft-stats";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
+import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
@@ -46,14 +47,8 @@ import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 import { workReceiptLine } from "./work-receipt-copy";
 
-export type TurnEditDocument = {
-  documentId: string;
-  path: string;
-  uri: string;
-  scope: "live" | "draft";
-  /** The turn moved or deleted it: the row says so instead of only naming it. */
-  tree?: TurnTreeLine;
-};
+/** One document a turn edited: where the edit landed (a draft names its Work), and what it did to the document's place. */
+export type TurnEditDocument = TurnLiveLineageDocumentItem;
 
 function hasTurnEditsReceiptDocuments(
   documents: TurnEditDocument[],
@@ -542,11 +537,15 @@ function DocumentRow({
   onOpenContextUri: ((uri: string) => void) | null;
   canOpenContextUri: ((uri: string) => boolean) | null;
 }) {
+  const drag = useDocumentRowDrag(document);
   const openable =
     document.tree?.op !== "delete" && onOpenContextUri && canOpenContextUri?.(document.uri);
   if (!openable) {
     return (
-      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
+      <span
+        {...drag}
+        className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+      >
         <DocumentRowLabel document={document} />
       </span>
     );
@@ -554,11 +553,32 @@ function DocumentRow({
   return (
     <button
       type="button"
+      {...drag}
       onClick={() => onOpenContextUri(document.uri)}
       className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
     >
       <DocumentRowLabel document={document} />
     </button>
+  );
+}
+
+/**
+ * Dragging a row drags the document it represents, never the receipt or the pathname the turn
+ * wrote. A draft row copies the draft of the Work the turn wrote in, even after the chat moved
+ * to another Work; a document the turn deleted names nothing a drop could act on.
+ */
+function useDocumentRowDrag(document: TurnEditDocument) {
+  return useReferenceDrag(
+    document.tree?.op !== "delete"
+      ? {
+          ref: { kind: "file", id: document.documentId },
+          name: documentDisplayName(document.uri),
+          view:
+            document.scope === "draft"
+              ? { kind: "draft", workId: document.workId }
+              : { kind: "live" },
+        }
+      : null,
   );
 }
 

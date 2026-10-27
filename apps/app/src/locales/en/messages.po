@@ -2814,6 +2814,10 @@ msgstr "Files"
 msgid "Files attached in chat, grouped by Work."
 msgstr "Files attached in chat, grouped by Work."
 
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "Files move or copy out of Uploads; they can't be dropped into it"
+msgstr "Files move or copy out of Uploads; they can't be dropped into it"
+
 #: src/features/import/ImportMenuItems.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Files…"
@@ -5225,6 +5229,10 @@ msgstr "That Work is no longer available. Choose another Work."
 #: src/features/project/context/entry-drag/copy-refusal.ts
 msgid "That Work isn't available."
 msgstr "That Work isn't available."
+
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "That Work no longer has a draft of it."
+msgstr "That Work no longer has a draft of it."
 
 #: src/features/import/selection-limits.ts
 msgid "That's {count} files. Import up to {limit} at a time."

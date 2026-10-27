@@ -58,9 +58,17 @@ export function contextErrorToHttp(error: ContextError): never {
         409,
       );
     case "invalid_name":
+      return throwHttpInterrupt(meridianErrorFromSystem(error.code, error.message, false), 400);
     case "invalid_operation":
       return throwHttpInterrupt(
-        meridianErrorFromSystem(error.code, error.message ?? "Invalid context operation", false),
+        {
+          ...meridianErrorFromSystem(
+            error.code,
+            error.message ?? "Invalid context operation",
+            false,
+          ),
+          ...(error.reason ? { details: { reason: error.reason } } : {}),
+        },
         400,
       );
     case "not_found":

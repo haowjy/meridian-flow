@@ -15,16 +15,18 @@ import {
 import { type HTMLAttributes, type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useReviewCopy } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "./context-file-icon";
 import type { OptimisticContextTab } from "./context-pane-state";
+import { useReferenceDrag } from "./entry-drag/reference-source";
 import { RemovedNoticeSlot } from "./RemovedDocumentNotice";
+import { tabSubject } from "./tab-subject";
 
 export type ContextTabBarProps = {
   tabs: ContextTab[];
   activeTabId: string | null;
   activeTabInstanceId?: string;
-  reviewingTabId?: string | null;
   optimisticTab?: OptimisticContextTab | null;
   onSelect: (tab: ContextTab) => void;
   onClose: (tab: ContextTab) => void;
@@ -46,7 +48,6 @@ export function ContextTabBar({
   tabs,
   activeTabId,
   activeTabInstanceId,
-  reviewingTabId,
   optimisticTab,
   onSelect,
   onClose,
@@ -112,7 +113,6 @@ export function ContextTabBar({
               key={tab.tabInstanceId ?? tab.documentId}
               tab={tab}
               active={active}
-              reviewing={active && tab.documentId === reviewingTabId}
               // Divider only between two adjacent inactive tabs — the active
               // tab's canvas shape provides its own separation.
               divider={!active && previous !== undefined && !isActive(previous)}
@@ -182,23 +182,27 @@ function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
   );
 }
 
+const NOT_REVIEWING = { reviewing: false, view: null } as const;
+
 function TabChip({
   tab,
   active,
-  reviewing,
   divider,
   onSelect,
   onClose,
 }: {
   tab: ContextTab;
   active: boolean;
-  reviewing: boolean;
   divider: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
+  // The review is in the active tab; another tab of the same document shows it live.
+  const review = useReviewCopy(tab.documentId);
+  const reviewing = active && review.reviewing;
+  const drag = useReferenceDrag(tabSubject(tab, reviewing ? review : NOT_REVIEWING));
   return (
-    <TabChipFrame active={active} reviewing={reviewing} divider={divider}>
+    <TabChipFrame active={active} reviewing={reviewing} divider={divider} tabProps={drag}>
       <button
         type="button"
         role="tab"

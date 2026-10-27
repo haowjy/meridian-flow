@@ -127,6 +127,15 @@ export function createDrizzleDraftStore(
     return row.workId;
   }
 
+  async function findWorkDraft(
+    documentId: DocumentId,
+    workId: WorkId,
+  ): Promise<ResolvedDraft | null> {
+    const branch = await branches.activeForWork(workId);
+    const row = branch ? await activeDocumentDraft(documentId, branch.id) : null;
+    return row ? resolved(row) : null;
+  }
+
   async function activeDocumentDraft(
     documentId: DocumentId,
     branchId: BranchId,
@@ -692,11 +701,12 @@ export function createDrizzleDraftStore(
         if (cause instanceof NoPrimaryWorkError) throw new DraftNotFoundError(documentId, threadId);
         throw cause;
       }
-      const branch = await branches.activeForWork(workId);
-      const row = branch ? await activeDocumentDraft(documentId, branch.id) : null;
-      if (!row) throw new DraftNotFoundError(documentId, threadId);
-      return resolved(row);
+      const draft = await findWorkDraft(documentId, workId);
+      if (!draft) throw new DraftNotFoundError(documentId, threadId);
+      return draft;
     },
+
+    findWorkDraft,
 
     async listActiveWorkDraftIds(documentId) {
       const rows = await currentDrizzleDb(db)

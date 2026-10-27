@@ -40,16 +40,19 @@ export type TurnTreeLine =
   /** `from` is the source document the copy read; `to` is where the copy landed. */
   | { op: "copy"; from: string; to: string };
 
-export interface TurnLiveLineageDocumentItem {
+export type TurnLiveLineageDocumentItem = {
   documentId: string;
   /** Where the document is now; where it was deleted from when it is deleted. */
   uri: string;
   /** Slash-prefixed display path derived from the canonical context URI. */
   path: string;
-  scope: "live" | "draft";
   /** Present when the turn moved or deleted the document. */
   tree?: TurnTreeLine;
-}
+} & (
+  | { scope: "live" }
+  /** The edit landed in a draft: `workId` names the Work whose branch held it. */
+  | { scope: "draft"; workId: string }
+);
 
 export type TurnReceiptState =
   | "live-active"

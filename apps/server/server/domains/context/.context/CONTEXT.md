@@ -252,10 +252,12 @@ one source's tree contributes.
   moved, `permission_denied` for an identity destination the writer cannot edit,
   `invalid_operation`
   for a folder into its own subtree ("Can't go inside itself", the drag hint's words), an
-  unsupported source (a draft view of a folder), the source root, or a draft placement
-  destination. Uploads as the destination (by path or by folder identity), a malformed path
-  or state vector, a vector sent for a folder, and a draft view whose chat is not in the
-  project are refused by the route before the domain runs, typed and unrecorded.
+  unsupported source (a draft view of a folder, or of a document its Work holds no draft of:
+  reason `no_draft`), the source root, or a draft placement destination. Uploads as the
+  destination (by path or by folder identity), a malformed path or state vector, and a vector
+  sent for a folder are refused by the route before the domain runs, typed and unrecorded. A
+  draft view names its Work and no chat: the server reads that Work's active branch's draft of
+  the document, and a Work outside the project is refused as `work_missing`.
 - A duplicate request with the same operation ID waits for an in-flight prepare in this
   process before reading, then answers from the receipt the first attempt recorded (or
   prepares itself when that attempt recorded none). Another process still re-prepares; only

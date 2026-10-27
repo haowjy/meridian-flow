@@ -79,12 +79,10 @@ function reasonOf(intent: NamespaceIntent): string | null {
   if (!outcome) return t`A source or the destination is no longer there.`;
   if (outcome.kind === "refusal") {
     const details = outcome.error.details;
-    return details &&
-      typeof details === "object" &&
-      "reason" in details &&
-      details.reason === "source_behind"
-      ? t`The latest edits hadn't reached the server.`
-      : null;
+    const reason = details && typeof details === "object" && "reason" in details && details.reason;
+    if (reason === "source_behind") return t`The latest edits hadn't reached the server.`;
+    if (reason === "no_draft") return t`That Work no longer has a draft of it.`;
+    return null;
   }
   if (outcome.kind !== "operation" || outcome.receipt.result.ok) return null;
   return describeContextError(outcome.receipt.result.error);

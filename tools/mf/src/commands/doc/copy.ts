@@ -6,6 +6,7 @@ import {
   type CatalogLookupResult,
   type ContextSiblingPosition,
   type CopyContextEntrySource,
+  type CopyContextEntryView,
   copyContextEntriesResultSchema,
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
@@ -13,11 +14,7 @@ import { type CommandSpec, stringOption } from "../../core/command";
 import type { Session } from "../../core/session";
 import { jsonResponse } from "../../core/session";
 import { resolveProjectId, resolveWork } from "../project/resolve";
-import { resolveThreadId } from "../thread/resolve";
 import { PROJECT_OPTION, type ResolvedUri, resolveUri } from "./uri";
-
-/** The read view every tracked source is copied through. */
-type SourceView = { kind: "live" } | { kind: "draft"; workId: string; threadId: string };
 
 export const docCopyCommand: CommandSpec = {
   path: ["doc", "copy"],
@@ -37,18 +34,14 @@ export const docCopyCommand: CommandSpec = {
     "draft-work": {
       type: "string",
       description:
-        "Copy every tracked source's draft in this Work instead of its live text (needs --draft-thread)",
-    },
-    "draft-thread": {
-      type: "string",
-      description: "The chat whose draft view is read (a cN ref or thread id)",
+        "Copy every tracked source's draft in this Work instead of its live text; a Work with no draft of a source refuses",
     },
   },
   examples: [
     './mf doc copy "manuscript://Act 1" --to kb://',
     './mf doc copy "manuscript://Chapter 1" "manuscript://Chapter 2" --to "manuscript://Act 2"',
     './mf doc copy "uploads://@c12/cover.png" --to manuscript://Images',
-    './mf doc copy "manuscript://Chapter 3" --to "scratch://@w3/" --draft-work w3 --draft-thread c12',
+    './mf doc copy "manuscript://Chapter 3" --to "scratch://@w3/" --draft-work w3',
   ],
   async run(ctx) {
     const session = await ctx.session();
@@ -57,18 +50,10 @@ export const docCopyCommand: CommandSpec = {
     if (!to) throw usageError("--to <folder-uri> is required");
 
     const draftWork = stringOption(ctx, "draft-work");
-    const draftThread = stringOption(ctx, "draft-thread");
-    if ((draftWork === undefined) !== (draftThread === undefined)) {
-      throw usageError("--draft-work and --draft-thread go together");
-    }
-    const view: SourceView | undefined =
-      draftWork === undefined || draftThread === undefined
+    const view: CopyContextEntryView | undefined =
+      draftWork === undefined
         ? undefined
-        : {
-            kind: "draft",
-            workId: (await resolveWork(session, projectId, draftWork)).id,
-            threadId: await resolveThreadId(session, draftThread, projectId),
-          };
+        : { kind: "draft", workId: (await resolveWork(session, projectId, draftWork)).id };
 
     if (ctx.positionals.length === 0) throw usageError("Name at least one source URI");
     const sources: CopyContextEntrySource[] = [];

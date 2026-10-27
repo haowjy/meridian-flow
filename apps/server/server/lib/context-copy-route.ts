@@ -33,7 +33,6 @@ import {
   requireProjectOwner,
   type WorkRepository,
 } from "../domains/projects/index.js";
-import type { ThreadRepository } from "../domains/threads/index.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import {
   type ContextLocator,
@@ -52,7 +51,6 @@ import { requireRequestId } from "./request-id.js";
 export interface ContextCopyRouteDeps {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   projectRepo: ProjectRepository;
-  threads: Pick<ThreadRepository, "findProjectIdByIdIncludingDeleted">;
   workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
@@ -217,11 +215,7 @@ function parseView(raw: unknown): CopyContextEntryView {
     if (typeof view.workId !== "string" || !view.workId.trim()) {
       throw createError({ statusCode: 400, message: "A draft view names its Work" });
     }
-    return {
-      kind: "draft",
-      workId: view.workId as WorkId,
-      threadId: requireRequestId(view.threadId, "sources[].view.threadId"),
-    };
+    return { kind: "draft", workId: view.workId as WorkId };
   }
   throw createError({ statusCode: 400, message: "Source view is invalid" });
 }
@@ -367,15 +361,8 @@ export async function handleContextCopyRequest(
     const resolved = await resolveLocator(source.locator);
     const workId = resolved.scope === "work" ? resolved.authority.workId : null;
     if (workId) workIds.add(workId);
-    if (source.view.kind === "draft") {
-      // The chat names whose draft is read; a chat of another project (or none) is no chat here.
-      const owner = await deps.threads.findProjectIdByIdIncludingDeleted(
-        source.view.threadId as ThreadId,
-      );
-      if (owner !== input.projectId)
-        throw createError({ statusCode: 404, message: "Chat not found" });
-      workIds.add(source.view.workId);
-    }
+    // The port below refuses a Work that isn't this project's (`work_missing`).
+    if (source.view.kind === "draft") workIds.add(source.view.workId);
     sources.push({
       uri: locatorUri(resolved),
       expected: source.expected,

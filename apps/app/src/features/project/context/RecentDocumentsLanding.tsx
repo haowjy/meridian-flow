@@ -29,6 +29,7 @@ import { relativeTime } from "../relative-time";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
 import { fileKindIcon } from "./context-file-icon";
+import { useReferenceDrag } from "./entry-drag/reference-source";
 import { useOpenProjectDocument } from "./open-project-document";
 import { RemovedDocumentLandingNotice } from "./RemovedDocumentNotice";
 
@@ -167,10 +168,17 @@ function RecentDocumentRow({
   const router = useRouter();
   const href = recentDocumentHref(item, projectId);
   const content = <RecentDocumentContent item={item} now={now} />;
+  // By the document's identity, never the path it was opened at; a local document is no entry yet.
+  const drag = useReferenceDrag(
+    item.address.kind === "document"
+      ? { ref: { kind: "file", id: item.documentId }, name: item.name }
+      : null,
+  );
   if (!href) {
     return (
       <button
         type="button"
+        {...drag}
         onClick={() => onOpen(item)}
         className={cn(recentRowClass, "border-0 bg-transparent")}
       >
@@ -181,6 +189,7 @@ function RecentDocumentRow({
   return (
     <a
       href={href}
+      {...drag}
       onClick={(event) => {
         // Plain left-click navigates in place; modified clicks keep their
         // native new-tab/window behavior.

@@ -37,7 +37,7 @@ import {
   useAccountId,
   useAccountResourceProjection,
 } from "@/features/project/context/account-feature-context";
-import { activeEntryDrag } from "@/features/project/context/entry-drag/drag-session";
+import { activeDragSession } from "@/features/project/context/entry-drag/drag-session";
 import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { cn } from "@/lib/utils";
@@ -274,7 +274,7 @@ function ActiveSessionEditorView({
   }, [effectiveEditable, identity.schemaType, linkAhead, sharedReferenceCatalog]);
   const referenceDrop = useMemo<ReferenceDropOptions>(
     () => ({
-      activeDrag: activeEntryDrag,
+      activeDrag: () => activeDragSession()?.entries ?? null,
       content: (schema, entries) => {
         if (!sharedReferenceCatalog) return null;
         const nodes = entries.map((entry) => {
