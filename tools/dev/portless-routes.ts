@@ -65,7 +65,7 @@ export interface ParsedPortlessList {
 }
 
 const ROUTE_LINE_RE =
-  /^https:\/\/(\S+)\s+->\s+(?:http:\/\/)?[^\s:]+:(\d+)(?:\s+\(pid\s+(\d+)\))?(?:\s*\(alias\))?\s*$/i;
+  /^https:\/\/(\S+)\s+->\s+(?:http:\/\/)?[^\s:]+:(\d+)(?:\s+\(pid\s+(\d+)\))?(?:\s*\(alias\))?(?:\s+up\s+\S+)?\s*$/i;
 const SHARE_LINE_RE = /^(tailscale|funnel):\s*(.+)$/i;
 
 export function parsePortlessListOutput(output: string): ParsedPortlessList {
