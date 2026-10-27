@@ -648,3 +648,11 @@ warm documents or resetting fixture rows. The PostgreSQL change-trail harness
 owns that ordering in `dispose`; its mid-case `cancelScheduledPulls` and
 `destroyWarmState` controls are not teardown. `flush` remains assertion-time
 convergence, not shutdown.
+
+## Import staging
+
+Import preparation produces Yjs state, a state vector, and attribution without publishing document authority. Staged states remain private until Context reveals the matching generation; commit installs sequence-zero checkpoints and heads in the journal adapter's authority order, while discard removes only the bounded staged batch.
+
+A first state is written one of two ways, by where its content comes from. Import stages it (`prepareSeed`, `stageInitialStates`, `commitStagedStates`), because the import queue must keep the encoded states across generations and discard them when a generation is refused. A Copy encodes it in memory (`encodeSeed`) and installs it inside the transaction that inserts the documents (`installSeeds`), because it holds the bound content already and has nothing to resume. Both install heads and sequence-zero checkpoints set-wise; neither writes over an existing head.
+
+Planned import binding uses stable `doc:<id>` targets before those documents are visible. Its ahead mints remain unregistered until reveal. Ordinary binding still runs before the command transaction, uses the current `LinkView` and folder addresses, and registers through the durable refusal-preserving registry.

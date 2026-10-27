@@ -104,7 +104,7 @@ const folder = (id: string): EntryRef => ({ kind: "folder", id });
 const into = (rootId: string, scheme: "manuscript" | "kb", entryId: string, name: string) => ({
   scheme,
   catalogRootId: rootId,
-  folder: { entryId, path: `/${name}`, name },
+  folder: { entryId, path: `/${name}`, uri: `${scheme}://${name}/`, name },
 });
 
 it("finds a dragged row by identity in a catalog the destination list doesn't show", () => {

@@ -7,6 +7,7 @@ import { Trans } from "@lingui/react/macro";
 import { AlertCircle, X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import { IconButton } from "@/components/ui/icon-button";
+import { cn } from "@/lib/utils";
 
 export function InlineErrorRow({
   message,
@@ -14,6 +15,7 @@ export function InlineErrorRow({
   actionLabel,
   retryRef,
   onDismiss,
+  wrap = false,
 }: {
   message: ReactNode;
   onRetry?: () => void;
@@ -21,11 +23,17 @@ export function InlineErrorRow({
   retryRef?: RefObject<HTMLButtonElement | null>;
   /** A failed command the writer may leave as it is. */
   onDismiss?: () => void;
+  /** Let a long message wrap, for dialogs where the words are the point. */
+  wrap?: boolean;
 }) {
   return (
     <div role="alert" className="flex items-center gap-2 px-2 py-1.5">
       <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-xs text-foreground">{message}</span>
+      <span
+        className={cn("min-w-0 flex-1 text-xs text-foreground", wrap ? "break-words" : "truncate")}
+      >
+        {message}
+      </span>
       {onRetry ? (
         <button
           ref={retryRef}

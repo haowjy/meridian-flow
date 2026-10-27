@@ -236,3 +236,7 @@ authenticated API or SQL, but never write Yjs content or
 derived cache. Teardown removes context sources and relies on cascades.
 
 Related server contracts live in [the server context](../../server/server/domains/threads/.context/CONTEXT.md).
+
+## Import activity
+
+The authenticated app root owns one account-keyed import coordinator and the app-wide activity toast registry. They survive project navigation, so uploads continue and their status remains reviewable after the initiating tree unmounts.

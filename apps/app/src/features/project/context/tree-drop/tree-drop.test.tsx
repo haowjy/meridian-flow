@@ -20,7 +20,7 @@ afterEach(() => vi.useRealTimers());
 const folder: TreeDropTarget = {
   scheme: "manuscript",
   catalogRootId: "root",
-  folder: { entryId: "act", path: "Act 2", name: "Act 2" },
+  folder: { entryId: "act", path: "Act 2", uri: "manuscript://Act 2/", name: "Act 2" },
 };
 const area: TreeDropTarget = { ...folder, folder: null };
 const accept: EntriesVerdict = { kind: "accept", label: "Move to Act 2" };
@@ -31,7 +31,9 @@ function Row({ id, target, reveal }: { id: string; target: TreeDropTarget; revea
 }
 
 function scope(verdict: (target: TreeDropTarget) => EntriesVerdict | null, children: ReactNode) {
-  return <TreeDropScope route={{ verdict, drop: () => {} }}>{children}</TreeDropScope>;
+  return (
+    <TreeDropScope routes={{ entries: { verdict, drop: () => {} } }}>{children}</TreeDropScope>
+  );
 }
 
 async function fire(id: string, type: string) {

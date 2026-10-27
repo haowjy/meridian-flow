@@ -97,6 +97,8 @@ export interface MarkupPlugin {
 }
 
 export interface BuildOptions {
+  /** Folder export only; ordinary and model output remain escaped. */
+  export?: boolean;
   requireSchemaBlockCoverage?: boolean;
   requiredBlockNames?: readonly string[];
 }

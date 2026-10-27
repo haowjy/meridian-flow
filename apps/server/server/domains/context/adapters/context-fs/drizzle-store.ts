@@ -67,6 +67,7 @@ type DocumentRow = Pick<
   | "sizeBytes"
   | "updatedAt"
   | "provisionalName"
+  | "metadata"
   | "rank"
 >;
 
@@ -84,6 +85,7 @@ function mapDocument(row: DocumentRow): ContextDocument {
     sizeBytes: row.sizeBytes === null ? null : Number(row.sizeBytes),
     updatedAt: row.updatedAt.toISOString(),
     provisionalName: row.provisionalName,
+    metadata: row.metadata,
     rank: row.rank,
   };
 }

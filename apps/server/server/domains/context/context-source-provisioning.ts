@@ -165,6 +165,14 @@ async function ensureProjectContextSource(
   return raced;
 }
 
+export function provisionProjectContextSource(
+  db: Database,
+  owner: { projectId: string; userId: string },
+  scheme: ProjectContextFsScheme,
+): Promise<string> {
+  return ensureProjectContextSource(db, owner.projectId, scheme, owner.userId);
+}
+
 async function findWorkContextSource(
   db: Database,
   workId: string,

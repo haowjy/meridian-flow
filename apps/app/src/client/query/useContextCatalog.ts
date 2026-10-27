@@ -186,6 +186,7 @@ export function projectCatalogFile(
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
     provisionalName: entry.provisionalName,
+    hasProperties: entry.hasProperties ?? false,
   };
   if (entry.editable) {
     return {

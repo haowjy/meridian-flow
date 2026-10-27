@@ -63,3 +63,8 @@ See [write architecture](write-architecture.md) and the
 [link-identity design][design].
 
 [design]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/model-tool-surface/design/link-identity-729-730.md
+
+Host integration also exports the pure `assignOccurrences` and
+`rebuildOccurrences` primitives. The server's import binder uses them to override
+specific occurrences with validated planned identities; that capability is not
+part of the model's ref-assignment input.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A pasted Obsidian note's `[[Name]]` arrives as standard links through the
+ * A pasted wiki-style note's `[[Name]]` arrives as standard links through the
  * Editor's real paste path, whichever door the clipboard text takes: Markdown
  * with structure, or plain prose.
  */
@@ -136,4 +136,38 @@ it("keeps the characters of an HTML-only clipboard pasted into code, by key or f
   menu.view.pasteHTML("<p>see [[Lin Feng]] here</p>", menuPaste());
   expect(links(menu)).toEqual([]);
   expect(menu.state.doc.textContent).toContain("see [[Lin Feng]] here");
+});
+
+it.each([
+  "%%\n\n[[Hidden]]\n\n%% [[Visible]]",
+  "%% **secret** [[Hidden]] %% [[Visible]]",
+])("keeps comment context through Markdown paste: %s", (source) => {
+  const target = editor(DOCUMENTS);
+  paste(target, { "text/plain": source });
+  expect(links(target).map(([text]) => text)).toEqual(["Visible"]);
+  expect(target.state.doc.textContent).toContain("[[Hidden]]");
+});
+
+it("uses HTML node semantics rather than Markdown indentation for pasted prose", () => {
+  const target = editor(DOCUMENTS);
+  paste(target, { "text/html": "<p style='white-space: pre'>    [[Visible]]</p>" });
+  expect(links(target).map(([text]) => text)).toEqual(["Visible"]);
+});
+
+it("maps a wikilink split by formatting and leaves code fragments literal", () => {
+  const target = editor(DOCUMENTS);
+  paste(target, {
+    "text/html":
+      "<p>[[<strong>Visible</strong>]] [[<code>Hidden</code>]] <code>%%</code> [[After]]</p>",
+  });
+  expect(links(target).map(([text]) => text)).toEqual(["Visible", "After"]);
+  expect(target.state.doc.textContent).toContain("[[Hidden]]");
+});
+
+it("keeps comment context through HTML marks, hard breaks and paragraphs", () => {
+  const target = editor(DOCUMENTS);
+  paste(target, {
+    "text/html": "<p>%% <strong>secret</strong><br>[[Hidden]]</p><p>%% [[Visible]]</p>",
+  });
+  expect(links(target).map(([text]) => text)).toEqual(["Visible"]);
 });

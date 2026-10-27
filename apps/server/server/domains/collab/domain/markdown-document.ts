@@ -47,7 +47,11 @@ import {
   type HolderLinkScope,
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
-import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
+import type {
+  InitialDocumentSeeds,
+  PreparedSeed,
+  SeedAnnouncement,
+} from "./ports/initial-document-seeds.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
@@ -77,6 +81,7 @@ export type MarkdownSerializationAnomalyObserver = (anomaly: MarkdownSerializati
 
 type MarkdownDocumentEngineDeps = {
   codec: MarkupCodec;
+  exportCodec: MarkupCodec;
   /**
    * The operation's document-link scope: each method prepares it with the
    * document it is about to spell, then serializes through the holder. The
@@ -135,6 +140,10 @@ export type MarkdownDocumentEngine = {
     snapshot: Y.Doc,
     origin: RuntimeOrigin,
   ): Promise<Result<MarkdownSetResult, SyncError>>;
+  readForExport(
+    documentId: string,
+    scope: (links: HolderLinkScope) => DocumentLinkScope,
+  ): Promise<Result<string, SyncError>>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /**
    * Whole-document writes take a write a `LinkBinder` bound before the
@@ -162,6 +171,14 @@ export type MarkdownDocumentEngine = {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
+  prepareSeed(input: {
+    documentId: DocumentId;
+    projectId: string;
+    uri: string;
+    content: BoundWrite;
+    origin: DocumentSeedOrigin;
+  }): Promise<PreparedSeed>;
+  announceSeeds(seeds: readonly SeedAnnouncement[]): Promise<void>;
   /**
    * The first state of fresh bound content, built in memory with no database or document in
    * reach: a bulk create encodes it before its transaction and installs it inside.
@@ -220,11 +237,12 @@ export function createMarkdownDocumentEngine(
     doc: Y.Doc,
     schemaType: YjsTrackedSchemaType,
     links: DocumentLinkScope,
+    codec: MarkupCodec = deps.codec,
   ): string {
     return projectBlocks(documentId, doc, (blocks) => {
       if (blocks.length === 0) return "";
       if (schemaType === "code") return blocks[0]?.textContent ?? "";
-      return deps.codec.serialize(blocks, links);
+      return codec.serialize(blocks, links);
     });
   }
 
@@ -555,6 +573,29 @@ export function createMarkdownDocumentEngine(
       );
     },
 
+    async readForExport(documentId, scope) {
+      try {
+        const typedDocumentId = documentId as DocumentId;
+        const format = await documentFormat(typedDocumentId);
+        if (!format.ok) return format;
+        return Ok(
+          await deps.coordinator.withDocument(documentId, async (doc) => {
+            const links = await spelling(typedDocumentId, [doc]);
+            return serializeForSchema(
+              typedDocumentId,
+              doc,
+              format.value.schemaType,
+              scope(links),
+              deps.exportCodec,
+            );
+          }),
+        );
+      } catch (cause) {
+        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
+        throw cause;
+      }
+    },
+
     async readAsMarkdown(documentId) {
       const read = await engine.readVersionedMarkdown(documentId);
       return read.ok ? Ok(read.value.content) : read;
@@ -604,6 +645,45 @@ export function createMarkdownDocumentEngine(
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
       }
       return Ok(null);
+    },
+
+    async prepareSeed({ documentId, uri, content, origin }) {
+      assertHolder(documentId, content, "seed");
+      if (!content.fresh) {
+        throw new Error("A seed takes a fresh write; this one was bound against a document");
+      }
+      const seededDoc = createCollabYDoc({ gc: false });
+      try {
+        seededDoc.transact(() => {
+          deps.model.insertBlocks(toDocHandle(seededDoc), null, { blocks: [...content.blocks] });
+        }, yjsTransactionOrigin(origin));
+        await deps.links.prepare({ holders: [], docs: [seededDoc], views: [LIVE_VIEW] });
+        const markdown = serializeForSchema(
+          documentId,
+          seededDoc,
+          content.schemaType,
+          deps.links.reader({ uri, view: LIVE_VIEW }),
+        );
+        return {
+          documentId,
+          state: Y.encodeStateAsUpdate(seededDoc),
+          stateVector: Y.encodeStateVector(seededDoc),
+          attributionManifest: { version: 1, floor: null, attributions: [] },
+          markdown,
+        };
+      } finally {
+        seededDoc.destroy();
+      }
+    },
+
+    async announceSeeds(seeds) {
+      for (let offset = 0; offset < seeds.length; offset += 8) {
+        await Promise.all(
+          seeds
+            .slice(offset, offset + 8)
+            .map(({ documentId, markdown }) => deps.afterWrite?.({ documentId, markdown })),
+        );
+      }
     },
 
     encodeSeed(content, origin) {

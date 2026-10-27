@@ -7,8 +7,8 @@ import { escapeProseForMdxIngress } from "../escape.js";
 import { demoteAutolinks } from "../helpers.js";
 import { joinBreakLines } from "../markdown/blocks/hard-break.js";
 import { hardBreakCodec, imageCodec, tableCodec } from "../markdown/blocks/index.js";
-import { normalizeGfmTableHardBreaks } from "../markdown/blocks/table.js";
 import { markdownBlockCodecs, markdownMarkCodecs } from "../markdown/index.js";
+import { normalizeGfmTableHardBreaks } from "../markdown/table-ingress.js";
 import type { BlockCodec, MarkupPlugin } from "../types.js";
 import {
   createFigureCodec,
@@ -50,8 +50,12 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
   };
 }
 
-export function mdxCodec(options: { schema: Schema; components?: ComponentRegistry }) {
+export function mdxCodec(options: {
+  schema: Schema;
+  components?: ComponentRegistry;
+  export?: boolean;
+}) {
   return createMarkupCodec({ schema: options.schema })
     .use(mdx({ components: options.components }))
-    .build({ requireSchemaBlockCoverage: true });
+    .build({ requireSchemaBlockCoverage: true, export: options.export });
 }
