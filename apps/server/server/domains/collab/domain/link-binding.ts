@@ -9,7 +9,10 @@
  * whole-document door (ContextFS write and create, uploads, import, writer
  * writes, seeds) binds first and passes the result in;
  * the binder refuses to run inside a transaction so a door that forgot to
- * hoist fails at once.
+ * hoist fails at once. A copy is the exception: its content is already bound to
+ * identities by `copied-blocks.ts`, so `bindCopiedBlocks` spells nothing
+ * against a catalog and mints nothing, and may run where the copy's names are
+ * final (inside its transaction).
  *
  * A bound write is desired state: its assigned blocks, applied under the
  * document's lock as agent-edit's ordinary whole-document overwrite, which
@@ -37,6 +40,7 @@ import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
+import { type CopyIdentityMap, remapCopiedBlocks } from "./copied-blocks.js";
 import { aheadRegistrations } from "./document-links-port.js";
 import {
   type AheadRefRegistrar,
@@ -98,12 +102,37 @@ export interface BindMarkdownInput {
   view?: LinkView;
 }
 
+/**
+ * A copy's content: one stored document's blocks for a document about to be created at
+ * `uri`. The copy's remap has already rewritten the identities it copies and left every
+ * other link naming its target, so binding spells no link freshly and mints nothing; it
+ * only gives the blocks the holder and schema type the new document needs.
+ */
+export interface BindCopiedBlocksInput {
+  /** The address the new document will have. */
+  uri: string;
+  /** The new document's filetype, as its create resolved it. */
+  filetype: string | null;
+  /** The source holder's address: a stored relative spelling was written against it. */
+  sourceHolderUri: string | null;
+  blocks: readonly PMNode[];
+  map: CopyIdentityMap;
+  /** Where each `ahead:` ref settles now (`EffectiveBlocksRead.aheadSettlements`). */
+  aheadSettlements?: ReadonlyMap<string, string>;
+}
+
 export interface LinkBinder {
   /**
    * Outside any transaction: open the holder's scope, parse, prepare, assign
    * (fresh, or against the current document) and register minted ahead refs.
    */
   bindMarkdown(input: BindMarkdownInput): Promise<BoundWrite>;
+  /**
+   * A copied document's blocks for a fresh holder (`copied-blocks.ts` owns the remap).
+   * Pure: it resolves no catalog and mints no ahead ref, so it may run inside a
+   * transaction. The result is a fresh write: it lands only in an empty document.
+   */
+  bindCopiedBlocks(input: BindCopiedBlocksInput): BoundWrite;
   /**
    * Content fixed in code with no link or source in it (a project's first
    * chapter): parsed without a scope, so it may be bound anywhere. Throws if
@@ -249,6 +278,27 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
           ? { documentId: input.holder.documentId }
           : { projectId: input.holder.projectId };
       return deps.links.within(key, () => bind(input));
+    },
+
+    bindCopiedBlocks(input) {
+      const blocks = remapCopiedBlocks({
+        blocks: input.blocks,
+        map: input.map,
+        sourceHolderUri: input.sourceHolderUri,
+        ...(input.aheadSettlements ? { aheadSettlements: input.aheadSettlements } : {}),
+      });
+      // Stored hrefs are already what the wire shows; the pass-through scope keeps them.
+      const markdown = deps.codec.serialize(blocks, {
+        spellLink: ({ href }) => ({ href, address: null }),
+        spellSource: ({ src }) => ({ href: src, address: null }),
+      });
+      return boundWrite({
+        holder: { kind: "new", uri: input.uri },
+        fresh: true,
+        blocks,
+        markdown,
+        schemaType: schemaTypeOf(input.filetype),
+      });
     },
 
     bindStatic(markdown, filetype = null) {

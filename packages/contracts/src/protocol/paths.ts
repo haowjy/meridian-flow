@@ -222,6 +222,11 @@ export function apiProjectContextMovePath(
   return `${apiProjectPath(projectId)}/context/${scheme}/move`;
 }
 
+/** One Copy command: many sources, one destination, one receipt. */
+export function apiProjectContextCopyPath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/copy`;
+}
+
 export function apiProjectContextOperationPath(projectId: string, operationId: string): string {
   return `${apiProjectPath(projectId)}/context/operations/${encodeURIComponent(operationId)}`;
 }

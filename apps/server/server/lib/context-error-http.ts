@@ -71,7 +71,13 @@ export function contextErrorToHttp(error: ContextError): never {
     case "context_unavailable":
       return throwContextWorkUnavailableHttpError(error.reason);
     case "io_error":
-      return throwHttpInterrupt(meridianErrorFromSystem("io_error", error.message, true), 502);
+      return throwHttpInterrupt(
+        {
+          ...meridianErrorFromSystem("io_error", error.message, true),
+          ...(error.reason ? { details: { reason: error.reason } } : {}),
+        },
+        502,
+      );
   }
 }
 

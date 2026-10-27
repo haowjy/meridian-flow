@@ -346,6 +346,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return this.mutate((store) => store.ensureFolderPath(dir));
   }
 
+  async insertNewTree(input: Parameters<ContextDocumentStore["insertNewTree"]>[0]) {
+    return this.mutate((store) => store.insertNewTree(input));
+  }
+
   async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {
     return (
       (await this.readableSourceStore())?.findLiveCreateCandidate(dir, name, extension) ?? {

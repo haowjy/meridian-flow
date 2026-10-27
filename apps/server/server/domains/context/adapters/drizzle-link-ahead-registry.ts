@@ -37,11 +37,10 @@ import {
   RegistrationInsideTransactionError,
   UnregistrableAheadRefError,
 } from "../ports/link-ahead-registry.js";
-import type { DocumentCoordinates } from "../tree/tree-addresses.js";
+import { type DocumentCoordinates, loadDocumentAddresses } from "../tree/tree-addresses.js";
 import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { assertNamespaceKeysHeld, lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
-  loadDocumentAddresses,
   resolveCanonicalAddress,
   sameCoordinates,
   UnresolvableAddressError,

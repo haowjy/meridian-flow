@@ -56,9 +56,11 @@ import { captureDrizzleCheckpoint } from "./drizzle-checkpoint-capture.js";
 import {
   advanceHead,
   allocateAdmission,
+  FIRST_AUTHORITY_GENERATION,
   findDocumentAuthorityHead,
   findHeadSchemaVersion,
   initializeHead,
+  insertFreshHeads,
   readDocumentAuthorityHead,
   retireThrough,
 } from "./drizzle-document-authority-head.js";
@@ -69,6 +71,9 @@ type JournalDb = Pick<
   Database,
   "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction" | "execute"
 >;
+
+/** Seeds per statement in a bulk create: bounds the parameter count, not the atomic operation. */
+const SEED_BATCH = 500;
 
 type OriginType = "agent" | "human" | "system";
 type UpdateMetaMode = "journal" | "latest";
@@ -439,6 +444,23 @@ async function checkpointAttributionManifest(
       asc(documentYjsUpdates.batchOrdinal),
       asc(documentYjsUpdates.id),
     );
+  return attributionManifestOf(rows, previousManifest);
+}
+
+type ManifestRow = {
+  id: number;
+  admissionSequence: bigint;
+  batchOrdinal: number;
+  updateData: Buffer;
+  originType: string | null;
+  actorUserId: string | null;
+};
+
+/** The attribution manifest of a checkpoint over `rows`, on top of the previous checkpoint's. */
+function attributionManifestOf(
+  rows: readonly ManifestRow[],
+  previousManifest: ReturnType<typeof parseAttributionManifest> | null,
+): unknown {
   const floorRow = rows.at(-1);
   return {
     version: 1,
@@ -992,6 +1014,50 @@ function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
         );
         return true;
       });
+    },
+
+    async seedInitialDocuments(seeds) {
+      const txDb = currentDrizzleDb(db as Database) as JournalDb;
+      // Nothing yet holds these documents, so there is no mutation lock to take and no head or
+      // checkpoint to find first: the unique keys on both refuse a document that has one.
+      const manifest = attributionManifestOf([], null);
+      for (let offset = 0; offset < seeds.length; offset += SEED_BATCH) {
+        const batch = seeds.slice(offset, offset + SEED_BATCH).map((seed) => ({
+          ...seed,
+          authorityId: crypto.randomUUID() as DocumentAuthorityId,
+          stateVector: Y.encodeStateVectorFromUpdate(seed.state),
+        }));
+        const checkpoints = await txDb
+          .insert(documentYjsCheckpoints)
+          .values(
+            batch.map((seed) => ({
+              documentId: asDocumentId(seed.documentId),
+              authorityId: seed.authorityId,
+              authorityGeneration: FIRST_AUTHORITY_GENERATION,
+              attributionManifest: manifest,
+              state: toBuffer(seed.state),
+              stateVector: toBuffer(seed.stateVector),
+              upToSeq: 0,
+              // An empty authority's checkpoint is a placeholder the first stored checkpoint
+              // replaces; a seed with content stays as the document's first version.
+              reason: Y.decodeUpdate(seed.state).structs.length === 0 ? "checkpoint" : "seed",
+            })),
+          )
+          .returning({
+            id: documentYjsCheckpoints.id,
+            documentId: documentYjsCheckpoints.documentId,
+          });
+        const checkpointOf = new Map(checkpoints.map((row) => [row.documentId, row.id]));
+        await insertFreshHeads(
+          txDb,
+          batch.map((seed) => ({
+            documentId: seed.documentId,
+            authorityId: seed.authorityId,
+            checkpointId: checkpointOf.get(seed.documentId) as number,
+            stateVector: seed.stateVector,
+          })),
+        );
+      }
     },
 
     async missingAuthorityProjection(docId) {

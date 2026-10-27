@@ -35,6 +35,15 @@ export interface InitialDocumentSeeds {
    */
   seedInitialDocument(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
   /**
+   * The first state of documents the caller's transaction just created, installed in a fixed
+   * number of statements: a bulk create's seeds. Takes no lock and proves no liveness, so it
+   * takes only documents nothing else can yet reach, and refuses (a unique key) one that
+   * already has a head or a seed checkpoint.
+   */
+  seedInitialDocuments(
+    seeds: readonly { documentId: DocumentId; state: Uint8Array }[],
+  ): Promise<void>;
+  /**
    * The stored projection (empty when none) of a document with no checkpoint and no update,
    * or null when its authority exists. One read; the repair's fast path.
    */
