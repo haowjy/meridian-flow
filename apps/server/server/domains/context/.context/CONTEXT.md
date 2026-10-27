@@ -75,8 +75,8 @@ authoritative URI.
 `grep/matcher.ts`) lists a source's documents once, asks the caller's `readable`
 before matching or counting anything, and walks them in path order until
 `headLimit` files have matched. Patterns are RE2 (`re2js`, no backtracking, but
-time still grows with text times program size, so repeats whose counts multiply past
-100 are refused; `repeatProduct` reads the source) matched per line of the document's
+time still grows with text times program size, so patterns whose repeat counts add up past
+100, nested ones multiplied, are refused; `repeatWeight` reads the source) matched per line of the document's
 grep text: markdown as `read` shows it, link destinations spelled empty, decoded to
 the text view. Each document's text comes first: collab's `readStoredGrepTexts`
 answers which of a slice of 50 documents have stored text matching what this reader

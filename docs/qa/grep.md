@@ -50,33 +50,34 @@ chapter; `LIVE\_ONLY` (escaped) is in chapter-001 only. Seeding `basic.json` ear
 
 | Case | Args | Expect | Predicted | Measured (ms, 3 runs) |
 |---|---|---|---|---|
-| Literal, 9 documents | `Azure Dragon Seal` | the nine chapters, one passage each | 300–500 | 389 (cold), 343, 313 |
-| Literal, `-i` | `azure dragon seal`, `-i` | the same nine | 300–500 | 337, 314, 311 |
-| No match | `zzqxv` | `No matches.` | 30–300 | 134, 135, 124 |
-| No match, `-i` | `ZZQXV`, `-i` | `No matches.` | 30–300 | 108, 115, 114 |
-| Regex | `Qi (Condensation\|Foundation) [0-9]+` | 15 chapters, 2 matches each | 300–500 | 423, 417, 419 |
-| Word boundary, everywhere | `\bLin\b` | first 50 files, "50 of at least 451 files" | 1000–1500 | 1072, 1099, 1077 |
-| Heading anchor | `^#` | first 50 files, each `# Chapter n` | 1000–1500 | 1066, 1076, 1052 |
-| Empty-line count | `^$`, `count` | `No matches.` (every block has text) | none | 130, 119, 113 |
+| Literal, 9 documents | `Azure Dragon Seal` | the nine chapters, one passage each | 300–500 | 301, 266, 268 |
+| Literal, `-i` | `azure dragon seal`, `-i` | the same nine | 300–500 | 297, 289, 287 |
+| No match | `zzqxv` | `No matches.` | 30–300 | 108, 96, 97 |
+| No match, `-i` | `ZZQXV`, `-i` | `No matches.` | 30–300 | 97, 95, 94 |
+| Regex | `Qi (Condensation\|Foundation) [0-9]+` | 15 chapters, 2 matches each | 300–500 | 495, 425, 453 |
+| Word boundary, everywhere | `\bLin\b` | first 50 files, "50 of at least 451 files" | 1000–1500 | 1092, 1005, 1036 |
+| Heading anchor | `^#` | first 50 files, each `# Chapter n` | 1000–1500 | 1018, 1002, 1006 |
+| Empty-line count | `^$`, `count` | `No matches.` (every block has text) | none | 105, 102, 101 |
 | `\A` | `\ALin` | matches at line starts, as `^Lin` | 1000–1500 | 1070, 1083, 1074 |
 | `\A`, files only | `\ALin`, `files_with_matches` | files, no reads | 50–300 | 109, 99, 117 |
 | Across a line break | `line\sfoo` | `No matches.` | 30–300 | 129, 104, 141 |
-| `-i` alternation, everywhere | `lin feng\|su yan\|elder mo`, `-i` | 50 files with 130+ matches each | 1000–1500 | 1307, 1290, 1278 |
-| `-i` alternation, count | same, `count` | counts, no reads | 50–300 | 327, 332, 324 |
-| Files only, everywhere | `Lin Feng`, `files_with_matches` | 50 URIs and the total | 50–300 | 121, 104, 95 |
-| Count, everywhere | `Lin Feng`, `count` | 50 URIs with "(1 match)" | 50–300 | 123, 126, 120 |
-| `head_limit` | `Lin Feng`, `head_limit` 5 | 5 files and "5 of at least 451 files" | 200 | 223, 223, 208 |
-| Folder | `Lin Feng`, `path` `kb://lore` | `kb://lore/entry-…` only | n/a | 646, 637, 642 |
+| `-i` alternation, everywhere | `lin feng\|su yan\|elder mo`, `-i` | 50 files with 130+ matches each | 1000–1500 | 1201, 1210, 1203 |
+| `-i` alternation, count | same, `count` | counts, no reads | 50–300 | 301, 300, 309 |
+| Files only, everywhere | `Lin Feng`, `files_with_matches` | 50 URIs and the total | 50–300 | 97, 93, 97 |
+| Count, everywhere | `Lin Feng`, `count` | 50 URIs with "(1 match)" | 50–300 | 100, 95, 98 |
+| `head_limit` | `Lin Feng`, `head_limit` 5 | 5 files and "5 of at least 451 files" | 200 | 187, 196, 187 |
+| Folder | `Lin Feng`, `path` `kb://lore` | `kb://lore/entry-…` only | n/a | 575, 607, 578 |
 | Glob, name only | `Lin Feng`, `glob` `*chapter-01*`, `files_with_matches` | `chapter-010` to `chapter-019` | n/a | 42, 69, 66 |
 | Glob, address | `Lin Feng`, `path` `kb://`, `glob` `lore/**`, `count`, `head_limit` 2 | `kb://lore/…`, "2 of 100 files" | n/a | 65, 66, 44 |
 | One document | `Azure`, `path` `manuscript://book/chapter-007` | that chapter | n/a | 76, 85, 75 |
 | Escaped form | `LIVE_ONLY` | chapter-001 (stored `LIVE\_ONLY`) | n/a | 149, 150, 143 |
-| Repeat at the limit | `.{100}[a-q]`, `count` | counts | n/a | 247, 255, 244 |
-| Slowest allowed pattern | `[^z]{100}x`, `-i`, `count` | `No matches.` | n/a | 9946, 9861, 9893 |
+| Repeat at the limit | `.{100}[a-q]`, `count` | counts | n/a | 241, 228, 230 |
+| Slowest allowed pattern | `[^z]{100}x`, `-i`, `count` | `No matches.` | n/a | 8848, 9155, 8819 |
 | Pathological | `(a+)+$`, `count`, `path` `kb://probe/aaa` (10,000 `a`) | one match | under 50 beyond the floor | 54, 44, 60 |
 
-Refusals (`isError`), each in about 35–50 ms: a repeat above 100 (`.{101}x`: "repeat count 101
-is above the limit of 100"), `(?<=a)b` and `[` ("Invalid pattern: error parsing
+Refusals (`isError`), each in about 30–50 ms: repeat counts that add up past 100 (`.{101}x`:
+"repeat counts add up to 101, above the limit of 100"; also `(?:\pL{100}){10}x`, 1000, and
+`[^z]{100}[^z]{100}x`, 200; `[x{200}]` is a class and passes), `(?<=a)b` and `[` ("Invalid pattern: error parsing
 regexp…"), `(a)\1`, a 513-character pattern ("Invalid arguments for grep: pattern: must be at
 most 512 characters") and `path` `skills://` ("grep doesn't cover skills://").
 
@@ -95,9 +96,10 @@ State cases (mock script with a `write` step before the `grep`):
 
 ## Measured against predicted
 
-Run on the review-fix commit (its hash is in the PR), 2026-10-27, the shared dev machine,
-Postgres 16 in the local container, `MODEL_PROVIDER=mock`. The first call after a server start
-is cold (389 ms against 313–343 warm); every other row is warm. Every case is inside its
+Run on the round-2 commit (its hash is in the PR), 2026-10-27, the shared dev machine,
+Postgres 16 in the local container, `MODEL_PROVIDER=mock`. Every row is warm. Rows not
+re-run after the round-2 change (the glob, one-document, escaped-form and pathological rows) are
+from the review-fix commit. Every case is inside its
 prediction; the notes below explain the slow and the fast.
 
 - `\bLin\b`, `^#` and `\ALin` (content, everywhere), 1.05–1.1 s: 50 reads and passages. The
@@ -113,8 +115,12 @@ prediction; the notes below explain the slow and the fast.
 
 Limits, checked live:
 
-- **Repeat counts** above 100 are refused. At 250 the same `-i` pattern took 19 s over this
-  project, at 100 about 10 s, inside the scan's 20 s budget.
+- **Repeat counts** that add up past 100 are refused. At 250 the same `-i` pattern took 19 s over
+  this project, at 100 about 9 s, inside the scan's 20 s budget. The bound also covers one long
+  line, which the budget cannot interrupt: one `re2js` call on a 1M-character single line took
+  at most 2.0 s at weight 100 (`[^z]{100}x` over text of all `a`; 0.6 s over prose). Chains the
+  old per-repeat cap allowed took 3.8 s (two), 9.4 s (five) and 18.9 s (ten), and
+  `(?:\pL{100}){10}x` 29 s.
 - **Event loop.** A scan of a pattern with no literal yields every 10 ms between lines. While
   `[^z]{100}[^y]{100}x` (`-i`) ran for 12 s, `GET /health` took about 240 ms; with the yield
   between documents it took 3 s.
