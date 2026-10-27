@@ -10,7 +10,7 @@ export function useEntryRow(entry: DragEntry, active: boolean) {
     selected,
     rowProps: {
       ...rowProps,
-      draggable: Boolean(selection?.draggable && entry.movable),
+      draggable: Boolean(selection?.draggable && (entry.can.move || entry.can.copy)),
       onDragStart: (event: DragEvent) => {
         event.stopPropagation();
         startEntryDrag(event, selection ? selection.dragged(entry) : [entry]);

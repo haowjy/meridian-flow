@@ -35,17 +35,17 @@ query or adding a held-candidate cursor.
 
 ## Copy: client intent and draft destinations
 
-The server Copy command exists (`copy/`); the browser's Copy intent does not. K2 models each
-copied root as a create-shaped replica record, so a request may mint each root's identity
-(`copyId`, a UUID); the command takes it and mints descendants itself. K2 should send it and
-record in `DECISIONS.md` if its design rules that out. Copy still refuses a draft placement destination (`invalid_operation`): a
+The browser sends a Copy under its own operation id with each root's `copyId` (a UUID the
+command takes and mints descendants around), from a live view: a drop across systems and
+Copy to… in the tree. Copy still refuses a draft placement destination (`invalid_operation`): a
 draft-mode chat's copy would need a branch create, which is E2's replica intent work. A
 document that exists only in a Work's draft cannot be a source for the same reason: the
 listing reads the live tree.
 
 The state-vector check compares against the draft room for a draft view, but only against
-vectors a probe built. Before K2 sends one for a draft tab, compare the draft room's vector
-(`drafts.copyDraft`) against a real tab's.
+vectors a probe built. The browser sends a live document's vector from its open session and
+has been checked against it; no surface sends a draft tab's yet. Before one does, compare the
+draft room's vector (`drafts.copyDraft`) against a real tab's.
 
 ## Copy: preparation cost and the catalog reconcile
 

@@ -11,7 +11,12 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
-export type NoticeSurface = "sidebar" | "work-files" | "mobile" | "chat-files";
+export const NOTICE_SURFACES = ["sidebar", "work-files", "mobile", "chat-files"] as const;
+export type NoticeSurface = (typeof NOTICE_SURFACES)[number];
+
+/** For a surface name that was stored and read back. */
+export const isNoticeSurface = (value: unknown): value is NoticeSurface =>
+  NOTICE_SURFACES.some((surface) => surface === value);
 
 type NoticeSlots = {
   /** Claims a surface's notice place; `release` closes whatever held it before. */
@@ -40,6 +45,8 @@ export function useNoticeSlot(): NoticeSlots {
 
 export type SurfaceNoticeModel = {
   message: ReactNode;
+  /** A repair the notice offers beside its message, when Undo is not the answer. */
+  action?: { label: ReactNode; run: () => void };
   undo: (() => void) | null;
   dismiss: () => void;
   failure?: ReactNode;
@@ -61,6 +68,15 @@ export function SurfaceNotice({
         className="flex min-h-10 min-w-0 items-center gap-3 rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-popover-foreground shadow-sm"
       >
         <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{notice.message}</span>
+        {notice.action ? (
+          <button
+            type="button"
+            className="text-button shrink-0 text-sm"
+            onClick={notice.action.run}
+          >
+            {notice.action.label}
+          </button>
+        ) : null}
         {notice.undo ? (
           <button
             type="button"

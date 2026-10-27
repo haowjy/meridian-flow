@@ -51,13 +51,14 @@ function shapesList(intent: NamespaceIntent, refreshing: string | undefined): bo
 /**
  * The admitted intents that still shape the list, in admission order. Settled history is skipped
  * before anything is allocated or sorted, so the work follows what is in flight. `operations` are
- * the operation journals the caller read (admission reads them all); the list fold passes none,
- * because it places only records until an operation's roots have a projection of their own.
+ * the operation journals the caller read (admission reads them all). The list fold passes none: an
+ * operation's roots carry its placement into the list (`overlayCopyRoots`), so the operation
+ * itself would count twice.
  */
 export function placementOps(snapshot: {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
-  operations?: readonly OperationRecord[];
+  operations: readonly OperationRecord[];
 }): PlacementOp[] {
   const ops: PlacementOp[] = [];
   const add = (
@@ -87,7 +88,7 @@ export function placementOps(snapshot: {
       folder.intents,
       folder.canonicalRefresh?.operationId,
     );
-  if (snapshot.operations?.length) {
+  if (snapshot.operations.length) {
     // An operation shapes the list until no root's refresh barrier names it.
     const refreshing = refreshBarrierOperationIds(snapshot);
     for (const { operationId, intents } of snapshot.operations)
@@ -118,6 +119,21 @@ export function refreshBarrierOperationIds(snapshot: {
   for (const folder of snapshot.folders)
     if (folder.canonicalRefresh) ids.add(folder.canonicalRefresh.operationId);
   return ids;
+}
+
+/**
+ * The conflict keys of a Copy: its roots (a later placement of a copy, or into a copied folder,
+ * waits for the Copy) and its sources (the Copy waits behind a pending move or create of its
+ * source, and a later move of the source waits behind the Copy).
+ */
+export function copyScopeKeys(
+  roots: readonly { kind: string; copyId: string; sourceId: string }[],
+) {
+  return roots.flatMap((root) => [
+    `entry:${root.copyId}`,
+    `entry:${root.sourceId}`,
+    ...(root.kind === "folder" ? [`parent:folder:${root.copyId}`] : []),
+  ]);
 }
 
 /** Work the server has not finished with: it still shapes what later placements read. */
@@ -151,6 +167,8 @@ export type PlacementSpec = {
   projectId: string;
   /** The entry id placed, moved or deleted. */
   subject: string;
+  /** Further entries the placement touches (an operation's roots and sources), by conflict key. */
+  touches?: readonly string[];
   /** Where it sits now, as the projection shows it; null for a new document. */
   source: ParentRef | null;
   /** Where it goes; null for a deletion. */
@@ -166,7 +184,7 @@ function scopeOf(
   spec: PlacementSpec,
   parentOfFolder: (folderId: string) => ParentRef | null,
 ): string[] {
-  const keys = new Set([`entry:${spec.subject}`]);
+  const keys = new Set([`entry:${spec.subject}`, ...(spec.touches ?? [])]);
   if (spec.source) keys.add(`parent:${conflictParentKey(spec.source, spec.projectId)}`);
   if (spec.destination) {
     keys.add(`parent:${conflictParentKey(spec.destination, spec.projectId)}`);

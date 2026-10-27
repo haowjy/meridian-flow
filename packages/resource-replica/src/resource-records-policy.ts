@@ -17,6 +17,8 @@ export function validateResourceRecordUpdate(
   const resource = next.resource;
   if (next.intents.some((intent) => intent.desired.kind === "set-folder-location"))
     throw new Error("Folder placement requires a folder namespace record");
+  if (next.intents.some((intent) => intent.desired.kind === "copy"))
+    throw new Error("A Copy is journaled by its operation, not by a document");
   if (resource.revision !== (previous?.resource.revision ?? 0) + 1)
     throw new Error("Invalid resource revision");
   if (previous && previous.resource.handle !== resource.handle)
@@ -29,7 +31,7 @@ export function validateResourceRecordUpdate(
     throw new Error("A document the server placed is held");
   if (previous?.resource.serverHold === "held" && resource.serverHold !== "held")
     throw new Error("A held document id never stops being held");
-  if (previous && JSON.stringify(previous.resource.copiedBy) !== JSON.stringify(resource.copiedBy))
+  if (previous && previous.resource.copiedBy?.operationId !== resource.copiedBy?.operationId)
     throw new Error("The operation that made a record never changes");
   // `local` means the next placement is a create and a delete settles on this device. Either would
   // act on an id the operation owns while it may still land, so a missed dispatch gate would write

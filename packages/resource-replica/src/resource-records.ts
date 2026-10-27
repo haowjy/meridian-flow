@@ -6,6 +6,8 @@ import type {
   ContextOperationReceipt,
   ContextParentOrderPolicy,
   ContextSiblingPosition,
+  CopyContextEntriesRequest,
+  CopyContextEntryView,
   CreateContextFolderRequest,
   CreateContextFolderResponse,
   CreateUntitledContextDocumentAnswer,
@@ -143,9 +145,10 @@ export function destinationLocation(
 
 /**
  * The operation that made a record: the record is one root of it (a Copy), and the operation's
- * receipt, not a create of the record's own, gives it its first place (`first-place.ts`).
+ * receipt, not a create of the record's own, gives it its first place (`first-place.ts`). The
+ * project is the operation's, so the record is visible there before any catalog lists it.
  */
-export type CopiedBy = { operationId: string };
+export type CopiedBy = { operationId: string; projectId: string };
 
 export type ResourceDescriptor = ResourceKey & {
   revision: number;
@@ -248,6 +251,12 @@ export type NamespaceRequest =
       rootThreadId?: string | null;
       rootThreadRef?: string | null;
       body: DeleteContextEntryRequest;
+    }
+  | {
+      kind: "copy";
+      /** Owner of the destination parent when sent, so each root's answered path becomes a full location. */
+      owner: ResourceOwner;
+      body: CopyContextEntriesRequest;
     };
 
 /**
@@ -309,6 +318,33 @@ export type PlacementAdmission = {
   predecessors: readonly PlacementPredecessor[];
 };
 
+/** One selected root of a Copy: the record that stands for its copy until the server answers. */
+export type CopyRoot = {
+  kind: "file" | "folder";
+  /** The handle of the record that holds `copyId`. */
+  handle: string;
+  /** Device-minted; the server gives the root's copy this id. */
+  copyId: string;
+  /** The source identity (`expected.nodeId`): Copy finds the source by it, not by path. */
+  sourceId: string;
+  /** What is copied: the live document, or the draft a tab shows. */
+  view: CopyContextEntryView;
+  /** The source's Yjs state vector (base64) when this device held it open at the drop: the server waits for the room to catch up to it. */
+  stateVector?: string;
+  /** Shown until the server's answer names the copy. */
+  predictedName: string;
+};
+
+/** Where a Copy's roots land: one parent, and where among its children. */
+export type CopyDesired = {
+  kind: "copy";
+  /** The selection's outermost roots as the device saw them at the drop, in selection order; the request names fewer when the server holds one inside another. */
+  roots: readonly CopyRoot[];
+  destination: Pick<ResourceDestination, "parent" | "position">;
+  /** Where the writer started it (opaque to the replica): a refusal shows there when the destination is gone. */
+  origin?: string;
+};
+
 export type NamespaceIntent = ResourceKey & {
   projectId: string;
   intentId: string;
@@ -335,7 +371,8 @@ export type NamespaceIntent = ResourceKey & {
         typedName: string;
         destination: ResourceDestination;
       }
-    | { kind: "delete" };
+    | { kind: "delete" }
+    | CopyDesired;
   attempts: readonly NamespaceAttempt[];
   /** Local receipt application time; immutable evidence is retained after the UI note expires. */
   settledAt?: number;
@@ -404,13 +441,51 @@ export type OperationRecord = {
   operationId: string;
   projectId: string;
   revision: number;
+  /** When the server first said a source room had not received this device's edits (epoch ms); bounds the resends. */
+  behindSince?: number;
   intents: readonly NamespaceIntent[];
 };
 
+/**
+ * An operation's record with the records it makes or removes, in one transaction: the roots a Copy
+ * admits, the places its answer gives them, or the roots a refusal drops. The operation's own
+ * record is written first, so the validators read the receipt that places a root.
+ */
 export type OperationWrite = {
   expectedRevision: number | null;
   next: OperationRecord;
+  roots?: {
+    /** New root records (admission): written, then validated against the operation just written. */
+    created?: {
+      resources: readonly ResourceRecord[];
+      folders: readonly FolderNamespaceRecord[];
+    };
+    /** Roots given the place the receipt names, from whatever state they are in when the transaction runs. */
+    placed?: readonly RootPlace[];
+    /** Handles of root records deleted with their intents: the Copy did not happen. */
+    dropped?: readonly string[];
+  };
 };
+
+/** Where the server put one root, from the receipt and the request that asked. */
+export type RootPlace = {
+  handle: string;
+  kind: "file" | "folder";
+  location: ResourceLocation;
+  parent: ParentRef;
+  /** The receipt's namespace version: a catalog read at or after it completes the refresh. */
+  observationVersion: string;
+};
+
+/**
+ * A Copy's source room has not received the edits this device holds. The server recorded nothing,
+ * and the same request may be sent again; the replica bounds how long it does.
+ */
+export class SourceBehindError extends Error {
+  constructor(readonly error: MeridianError) {
+    super("The source has edits the server has not received yet");
+  }
+}
 
 /** What the replica needs of an operation from a record's side: its journal, by id. */
 export interface OperationReader {
@@ -495,6 +570,7 @@ export interface ResourceNamespaceTransport {
     identity: { kind: "file" | "folder"; id: string },
   ): Promise<NamespaceIdentityAvailability>;
   readOutcome(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
+  /** Rejects with `SourceBehindError` when a Copy's source room has not caught up; any other failure leaves the attempt uncertain. */
   submit(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
 }
 

@@ -92,12 +92,14 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
                      │
           validateContextEntryName (pure)
 
-Delete and move notices share one notice place per surface (sidebar, Work
+Delete, move and copy notices share one notice place per surface (sidebar, Work
 Files, phone browser, chat Files menu), drawn with `SurfaceNotice`: a newer
-notice of either kind replaces the older (`useNoticeSlot`). Each kind has one
+notice of any kind replaces the older (`useNoticeSlot`). Each kind has one
 owner per project, mounted together by `ProjectNoticesProvider`:
-`DocumentDeleteUndoProvider` for deletes, `MoveNoticesProvider`
-(`entry-drag/move-notice.tsx`) for moves. Each owner keeps its notice's Undo
+`DocumentDeleteUndoProvider` for deletes, `OperationNoticesProvider`
+(`entry-drag/operation-notice.tsx`) for moves and copies. A refused Copy is
+not a window: `CopyRefusalNotices` derives it from the operations journal and
+shows it beside whichever notice holds the place. Each owner keeps its notice's Undo
 and decides from the replica when Undo still applies, so a notice outlives the
 list that published it. A Trash restore reports its removal to the delete
 owner (`useReportRestoredRemovals`), which closes a delete's notice once every
