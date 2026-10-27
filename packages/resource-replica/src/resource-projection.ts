@@ -135,6 +135,7 @@ export function resourceVisibleInProject(
   record: ResourceRecord,
   catalogs: readonly ResourceCatalogCheckpoint[],
 ): boolean {
+  if (record.resource.copiedBy?.projectId === projectId) return true;
   if (
     record.intents.some(
       (intent) =>

@@ -350,12 +350,20 @@ export function validateNamespaceJournal(input: {
           request.kind === "move" && command.kind === "move"
             ? request.body.expected.kind === command.expected.kind &&
               request.body.expected.nodeId === command.expected.nodeId
-            : request.kind === "delete" &&
-              command.kind === "delete" &&
-              request.body.expected.kind === command.expected.kind &&
-              (request.body.expected.kind !== "file" ||
-                (command.expected.kind === "file" &&
-                  request.body.expected.documentId === command.expected.documentId));
+            : request.kind === "copy" && command.kind === "copy"
+              ? request.body.sources.length === command.sources.length &&
+                request.body.sources.every(
+                  (source, index) =>
+                    source.copyId === command.sources[index]?.copyId &&
+                    source.expected.kind === command.sources[index]?.expected.kind &&
+                    source.expected.nodeId === command.sources[index]?.expected.nodeId,
+                )
+              : request.kind === "delete" &&
+                command.kind === "delete" &&
+                request.body.expected.kind === command.expected.kind &&
+                (request.body.expected.kind !== "file" ||
+                  (command.expected.kind === "file" &&
+                    request.body.expected.documentId === command.expected.documentId));
         if (!matchesIdentity)
           throw new Error("Namespace outcome does not match submitted identity");
       } else if (attempt.outcome?.kind === "create") {
