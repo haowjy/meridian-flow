@@ -51,18 +51,6 @@ export {
   seedGeneralAgent,
 } from "./domain/default-package-seeding.js";
 export {
-  DefinitionEditError,
-  listAgentDefinitionRevisions,
-  listSkillDefinitionRevisions,
-  patchAgentSkillLink,
-  restoreAgentDefinitionOriginal,
-  restoreAgentDefinitionRevision,
-  restoreSkillDefinitionOriginal,
-  restoreSkillDefinitionRevision,
-  saveAgentDefinition,
-  saveSkillDefinition,
-} from "./domain/definition-editing.js";
-export {
   FIRST_PARTY_CATALOG,
   listFirstPartyCatalog,
   resolveCatalogSource,

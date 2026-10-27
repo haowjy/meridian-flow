@@ -49,8 +49,6 @@ The shipped route surface covers:
   threads, project thread list/create, and the flat project chat feed;
   account settings expose the
   working-set sync toggle.
-- Agent and skill definition reads, saves, revision lists, revision restores,
-  restore-original, and agent skill-link patching.
 - Package preview/apply, update check/apply, and export.
 - Global thread list/create, snapshot, delete/restore, turn cancel, model-request debug,
   turn-context preview, and owner-gated favorite/read desired-state mutation.
@@ -212,8 +210,7 @@ and body, delegate to the route-core, then serialize the response.
 
 Route-core functions take a `Deps` interface and plain-data input. They should
 not depend on Nitro event objects. This keeps owner gates, validation, package
-install/update logic, model-request debug projection, and definition editing
-testable with Vitest without booting Nitro.
+install/update logic, and model-request debug projection testable with Vitest without booting Nitro.
 
 ### Adding a command route
 
