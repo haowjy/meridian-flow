@@ -1037,6 +1037,10 @@ msgstr "Assistant is thinking"
 msgid "Attach file"
 msgstr "Attach file"
 
+#: src/components/app/composer/use-file-drop.ts
+msgid "Attach to this chat"
+msgstr "Attach to this chat"
+
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Auto-apply"
 msgstr "Auto-apply"
@@ -2043,6 +2047,10 @@ msgstr "Couldn't open this folder."
 msgid "Couldn't queue the compaction."
 msgstr "Couldn't queue the compaction."
 
+#: src/client/api/upload-intake-api.ts
+msgid "Couldn't reach the server. Check your connection."
+msgstr "Couldn't reach the server. Check your connection."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
 msgstr "Couldn't read"
@@ -2848,6 +2856,10 @@ msgstr "Folder name"
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Folder…"
 msgstr "Folder…"
+
+#: src/components/app/composer/Composer.tsx
+msgid "Folders can't be attached"
+msgstr "Folders can't be attached"
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Fork from here"
