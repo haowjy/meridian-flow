@@ -57,9 +57,10 @@ const DebugOverlay =
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
     : null;
 
-// The query devtools launcher floats over the top-right corner, where a narrow window's top bar
-// keeps its context toggle. Narrow by width, not pointer: a desktop browser resized to phone
-// width gets the same top bar as a phone.
+// The query devtools launcher floats over the bottom-right corner: the bottom-left holds the
+// import activity cards, the top-right the dock's header, and a narrow window's top bar keeps its
+// context toggle and its bottom the composer. Narrow by width, not pointer: a desktop browser
+// resized to phone width gets the same layout as a phone, so the launcher is dropped there.
 const NARROW_QUERY = "(max-width: 767px)";
 function useNarrowViewport(): boolean {
   return useSyncExternalStore(
@@ -252,7 +253,7 @@ function AuthenticatedProviderTree({
                     ) : null}
                     {ReactQueryDevtools && !narrow ? (
                       <Suspense fallback={null}>
-                        <ReactQueryDevtools buttonPosition="top-right" initialIsOpen={false} />
+                        <ReactQueryDevtools buttonPosition="bottom-right" initialIsOpen={false} />
                       </Suspense>
                     ) : null}
                   </ImportsProvider>
