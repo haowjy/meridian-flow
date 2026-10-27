@@ -26,7 +26,7 @@ import { activeEntryDrag } from "./drag-session";
 import { entryKey } from "./entry";
 import { type MoveResult, moveRows, renamesOnArrival } from "./execute-move";
 import { describeRenames, MoveFeedbackProvider, useMoveNotices } from "./move-notice";
-import { type MoveArea, planMove } from "./move-plan";
+import { type MoveArea, planMove, resolveDrop } from "./move-plan";
 import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
 type ListMoveEffects = {
@@ -85,7 +85,9 @@ export function useEntryList({
     const plan = (target: Parameters<EntriesRoute["verdict"]>[0]) => {
       const entries = activeEntryDrag();
       const { areas, projection, works, noWork } = latest.current;
-      return entries ? planMove({ ...projection, areas, works, noWork }, entries, target) : null;
+      if (!entries) return null;
+      const view = { ...projection, areas, works, noWork };
+      return planMove(view, resolveDrop(view, entries, target));
     };
     const judge = (target: Parameters<EntriesRoute["verdict"]>[0]): EntriesVerdict | null => {
       const planned = plan(target);
