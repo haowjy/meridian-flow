@@ -9,7 +9,6 @@ import { compileAgentDefinition } from "../domain/agent-definition-compiler.js";
 import { prepareAgentSourceRevision } from "../domain/agent-source-revision.js";
 import {
   canonicalizeJsonObject,
-  normalizeAgentMeta,
   parseMarkdownDefinition,
   parseMarsToml,
   serializeMarkdownDefinition,
@@ -206,19 +205,6 @@ __mergedSuite("mars-source.test.ts", () => {
       "[agents]\nx = false",
     ])("rejects malformed Agent overlay tables %s", (toml) => {
       expect(() => parseMarsToml(toml, { packageNameFallback: "pkg" })).toThrow("table");
-    });
-    it("round-trips structured skill channels without merging them", () => {
-      const meta = {
-        name: "critic",
-        skills: { load: ["voice"], available: ["continuity"] },
-        tools: ["read", "write"],
-        "disallowed-tools": ["spawn"],
-        subagents: [],
-      };
-      const body = "Review the chapter.\n";
-      const parsed = parseMarkdownDefinition(serializeMarkdownDefinition(meta, body));
-      expect(normalizeAgentMeta(parsed.meta)).toEqual(meta);
-      expect(parsed.body).toBe(body);
     });
   });
 });

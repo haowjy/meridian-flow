@@ -9,11 +9,11 @@ and a thread binding fixes a revision plus resolved configuration.
 ## Compilation and configuration
 
 `mars.toml`, Agent Markdown, and skill files are parsed into a canonical source
-snapshot. Source checksums detect edited/pristine state; compiled-definition
-digests identify normalized Agent content. Both canonicalize object-key order
-while retaining list order. Unknown metadata is retained, but compilation is
-syntax validation only: runtime support, authorization, model resolution, and
-dependency binding happen in the retained configuration resolver.
+snapshot. Compiled-definition digests identify normalized Agent content and
+canonicalize object-key order while retaining list order. Unknown metadata is
+retained, but compilation is syntax validation only: runtime support,
+authorization, model resolution, and dependency binding happen in the retained
+configuration resolver.
 
 Execution-knob schemas are canonical in `@meridian/contracts/agents`; this
 domain consumes them rather than redefining effort, permission, aliases, or
@@ -32,12 +32,13 @@ expected revision and retains old membership so a reserved first Send keeps
 its exact revision. Removal hides selection but leaves bound revisions
 readable; explicit restore names the retained revision.
 
-`source-publication.ts` is the atomic owner for save, import, update, edit,
-restore, and system provisioning. It validates the complete retained graph,
-advances future-chat pointers, and commits installation history under one
-owner lock. A source collision refuses the complete import rather than
-silently renaming or partially applying it. Fetching happens outside the owner
-transaction.
+`source-publication.ts` is the atomic owner for publishing a source and for
+system provisioning. It validates one source, advances
+future-chat pointers, and commits installation history under one owner lock. A
+source collision (found from file paths alone) refuses the publication rather
+than silently renaming or partially applying it. Startup seeds the built-in
+launch-agent directory as one snapshot. No route imports, updates, or edits a
+package today; export reads the retained files.
 
 Account-installed skills are separate user-slash inventory, not package
 content, prompt-list entries, or replacements for retained skill files.

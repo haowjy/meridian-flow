@@ -176,7 +176,6 @@ const SAFE_MERIDIAN_ERROR_CODES = new Set([
   "network_error",
   "not_found",
   "not_subscribed",
-  "package_dependency_unresolved",
   "permission_denied",
   "provider_error",
   "rate_limited",
