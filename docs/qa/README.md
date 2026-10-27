@@ -58,6 +58,7 @@ stack.
 - [New folder](folder-create.md): a folder listed at once and settled in the background: offline and reload, documents and reorders put in a pending folder, a refused create with contents, deleting before it lands, rename, and two tabs.
 - [Copy in the tree](copy-browser.md): a drop across systems and Copy to… in the browser: the menu, predicted names, Undo before and after the answer, a refusal in another tab, a source with unsynced edits, a queued rename, a hidden draft at the target name, a selection another peer nested before the send and the phone, with `agent-browser`.
 - [The server Copy command](copy-server.md): rich folder, hidden occupants, draft sources, fifty documents, a failure on the last child, replay, a source not yet caught up, positions, refusals, other owners and the model's copy, driven with `./mf`.
+- [Desktop files dropped on a chat](chat-file-drop.md): files onto the composer and the transcript attach through the paperclip's intake; folders, a bad name, offline, the tree's own drops and the phone.
 - [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as word-snapped `@` references, with refusals and drop-regression checks.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 - [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.
