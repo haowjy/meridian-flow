@@ -8,7 +8,10 @@
  * its roots' refresh barriers and its retention. The answer moves the roots in the same
  * transaction that records it: a receipt places each of them, a refusal drops them.
  */
-import type { CatalogFileClassification } from "@meridian/contracts/protocol";
+import type {
+  CatalogFileClassification,
+  CopyContextEntryCreated,
+} from "@meridian/contracts/protocol";
 import { newCopyRootRecord } from "./copy-roots";
 import { settleNamespaceIntent, validateNamespaceJournal } from "./namespace-journal-policy";
 import { NAMESPACE_RECEIPT_NOTE_TTL_MS, namespaceReceiptIs } from "./namespace-receipts";
@@ -113,6 +116,7 @@ export function planCopy(input: {
   scheme: string;
   roots: readonly (CopyRoot & { classification: CatalogFileClassification | null })[];
   destination: CopyDesired["destination"];
+  origin?: string;
 }): OperationWrite {
   const { projectId, operationId } = input;
   const records = input.roots.map((root) =>
@@ -137,6 +141,7 @@ export function planCopy(input: {
             kind: "copy",
             roots: input.roots.map(({ classification: _, ...root }) => root),
             destination: input.destination,
+            ...(input.origin ? { origin: input.origin } : {}),
           },
           attempts: [],
           state: "pending",
@@ -270,6 +275,20 @@ export function recordCopyOutcome(
 }
 
 /**
+ * What a Copy's answer created, roots first and then each root's subtree; null while the Copy has
+ * no receipt. A notice that outlives the record keeps its own copy of the entries.
+ */
+export function copyReceipt(
+  intent: NamespaceIntent,
+): { observationVersion: string; entries: readonly CopyContextEntryCreated[] } | null {
+  const outcome = intent.attempts.at(-1)?.outcome;
+  const receipt = outcome?.kind === "operation" ? outcome.receipt : null;
+  return receipt && namespaceReceiptIs(receipt, "copy") && receipt.result.ok
+    ? { observationVersion: receipt.observationVersion, entries: receipt.result.value.entries }
+    : null;
+}
+
+/**
  * Applies the recorded answer to the roots in the transaction that settles the operation: a
  * receipt gives each its place, anything else drops them. A root the receipt does not name is a
  * contract violation, not a refusal.
@@ -298,12 +317,9 @@ export function settleCopy(record: OperationRecord, settledAt = Date.now()): Ope
   if (disposition !== "accepted")
     return { ...settled, roots: { dropped: copy.roots.map((root) => root.handle) } };
   const { request } = attempt;
-  const receipt = outcome.kind === "operation" ? outcome.receipt : null;
-  const entries =
-    receipt && namespaceReceiptIs(receipt, "copy") && receipt.result.ok
-      ? receipt.result.value.entries
-      : null;
-  if (!receipt || !entries) throw new Error("An accepted Copy answers with its receipt");
+  const receipt = copyReceipt(intent);
+  if (!receipt) throw new Error("An accepted Copy answers with its receipt");
+  const { entries } = receipt;
   const places = copy.roots.map((root): RootPlace => {
     const entry = entries.find((candidate) => candidate.id === root.copyId);
     if (!entry || entry.kind !== root.kind)

@@ -749,6 +749,8 @@ export class AccountResourceReplica {
       /** The destination's scheme: an account-owned `user` folder belongs to no project. */
       scheme: ProjectContextTreeScheme;
       destination: { parent: ParentRef; position?: ContextSiblingPosition };
+      /** Where the writer started it; a refusal shows there when the destination is gone. */
+      origin?: string;
     },
   ): Promise<{ operationId: string; roots: readonly CopyRoot[] }> {
     this.requireOpen();
@@ -797,6 +799,7 @@ export class AccountResourceReplica {
             scheme: input.scheme,
             roots,
             destination: input.destination,
+            origin: input.origin,
           }),
         );
         if (committed !== "committed") throw new Error("Copy operation identity collided");
