@@ -6,7 +6,7 @@
  */
 import type { EntryRef } from "./entry";
 import { arrivals, currentView, type MoveContext } from "./execute-move";
-import { outermostEntries, type PlacementView, type ReadyCopy } from "./move-plan";
+import { outermostEntries, type ReadyCopy } from "./move-plan";
 
 /** One copy as the replica listed it: the copy's identity, and the row it came from. */
 export type CopyEffect = {
@@ -85,12 +85,11 @@ export type CopyUndoResult = {
 export async function undoCopy(
   entries: readonly EntryRef[],
   context: MoveContext,
-  view?: PlacementView,
 ): Promise<CopyUndoResult> {
   const { resources, projectId } = context;
   const deleted: CopyUndoResult["deleted"][number][] = [];
   const failed: CopyUndoResult["failed"][number][] = [];
-  for (const { ref, name } of outermostEntries(view ?? (await currentView(context)), entries)) {
+  for (const { ref, name } of outermostEntries(await currentView(context), entries)) {
     try {
       const key = ref.kind === "file" ? await resources.keyForDocument(projectId, ref.id) : null;
       if (ref.kind === "file" && !key) throw new Error("Document is not in the replica");
