@@ -19,6 +19,7 @@ import { hasTreeLine } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
+import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 
 export function WorkChangeFile({
@@ -52,6 +53,18 @@ export function WorkChangeFile({
   const wholeDocument = shown && isWholeDocumentChange(view);
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
+  // The draft is read as the chat that wrote it reads it. A document the draft created is no
+  // placed entry yet, and a tree-only change has no draft text to copy.
+  const writer = file.draft.actorThreads[0]?.threadId;
+  const drag = useReferenceDrag(
+    writer && file.draft.hasDraft && !file.draftOnly
+      ? {
+          ref: { kind: "file", id: file.documentId },
+          name,
+          view: { kind: "draft", workId, threadId: writer },
+        }
+      : null,
+  );
 
   const review = (focus?: ReviewFocus) => {
     controller.dismissNotice();
@@ -95,6 +108,7 @@ export function WorkChangeFile({
         ) : (
           <button
             type="button"
+            {...drag}
             className={cn(
               "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-dropdown-hover",
               "w-auto flex-1 pl-1",

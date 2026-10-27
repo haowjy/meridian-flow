@@ -182,6 +182,19 @@ export function outermostEntries(view: PlacementView, refs: readonly EntryRef[])
   return dropNested(view, placed, (entry) => entry.parent);
 }
 
+/** The folders `ref` sits inside now, outermost first; null when it is gone or not placed yet. */
+export function folderChain(view: PlacementView, ref: EntryRef): string[] | null {
+  const placed = placeEntryRef(view, ref);
+  if (!placed) return null;
+  const chain: string[] = [];
+  let parent: ParentRef | null = placed.parent;
+  while (parent?.kind === "folder" && !chain.includes(parent.folderId)) {
+    chain.unshift(parent.folderId);
+    parent = view.placement.parentForFolder(parent.folderId);
+  }
+  return chain;
+}
+
 /** The parent `ref` sits in now, or null when it is gone or not placed yet. */
 export function parentOf(view: PlacementView, ref: EntryRef): ParentRef | null {
   return placeEntryRef(view, ref)?.parent ?? null;

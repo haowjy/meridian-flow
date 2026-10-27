@@ -19,7 +19,10 @@ import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
+import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeIcon, schemeLabel } from "./context-schemes";
+import { folderChain } from "./entry-drag/move-plan";
+import { type ReferenceSubject, useReferenceDrag } from "./entry-drag/reference-source";
 import type { TabLocation } from "./identity-location";
 import { useOwnAreaHeading, useProjectMenuSource } from "./use-project-menu-source";
 
@@ -53,8 +56,15 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
   const { folders } = location;
   const SchemeIcon = schemeIcon(location.scheme);
   const area = schemeLabel(location.scheme);
-  const crumb = (key: string, label: ReactNode, depth: number, className?: string) => (
-    <Crumb key={key} browse={browse} depth={depth} className={className}>
+  const subjects = useCrumbSubjects(browse, location);
+  const crumb = (
+    key: string,
+    label: ReactNode,
+    depth: number,
+    className?: string,
+    subject: ReferenceSubject | null = null,
+  ) => (
+    <Crumb key={key} browse={browse} depth={depth} className={className} subject={subject}>
       {label}
     </Crumb>
   );
@@ -78,6 +88,7 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
               <span className="truncate">{folder}</span>,
               folderIndex + 1,
               "min-w-0",
+              subjects.folders[folderIndex],
             )}
           </span>
         ))}
@@ -90,10 +101,35 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
         </span>,
         folders.length + 1,
         "min-w-16 flex-1 text-ink-muted [@media(pointer:coarse)]:min-w-0",
+        subjects.leaf,
       )}
     </span>
   );
 }
+
+/**
+ * What each crumb names, by identity: the document for the filename, the folder entry for a folder
+ * crumb (read up the placement graph from the document, so no catalog is acquired for a closed
+ * crumb). The area crumb names no entry: it navigates. A document the replica doesn't place yet
+ * (a local or draft-only one) names nothing.
+ */
+function useCrumbSubjects(browse: Browse, location: TabLocation) {
+  const projection = useAccountResourceProjection(browse.projectId);
+  const { tab } = browse;
+  if (tab.kind === "new" || isDraftOnly(tab)) return NO_SUBJECTS;
+  const ref = { kind: "file", id: tab.documentId } as const;
+  const chain = folderChain(projection, ref);
+  return {
+    leaf: { ref, name: location.leaf },
+    folders: location.folders.map((name, index) =>
+      chain?.length === location.folders.length && chain[index]
+        ? ({ ref: { kind: "folder", id: chain[index] }, name } as const)
+        : null,
+    ),
+  };
+}
+
+const NO_SUBJECTS = { leaf: null, folders: [] as (ReferenceSubject | null)[] };
 
 function Separator() {
   return <ChevronRight aria-hidden className="size-3 shrink-0 opacity-60" />;
@@ -110,13 +146,16 @@ function Crumb({
   browse,
   depth,
   className,
+  subject,
   children,
 }: {
   browse: Browse;
   depth: number;
   className?: string;
+  subject: ReferenceSubject | null;
   children: ReactNode;
 }) {
+  const drag = useReferenceDrag(subject);
   const classes = cn("flex items-center gap-1 rounded-sm px-0.5", className);
   // Neither local-new nor draft-only documents belong to a browsable catalog yet.
   if (browse.tab.kind === "new" || isDraftOnly(browse.tab))
@@ -124,6 +163,7 @@ function Crumb({
   const button = (
     <button
       type="button"
+      {...drag}
       className={cn(
         classes,
         "focus-ring hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent/50 data-[state=open]:text-foreground",

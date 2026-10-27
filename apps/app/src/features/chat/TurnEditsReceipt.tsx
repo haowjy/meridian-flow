@@ -16,11 +16,13 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
+import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { DraftStatsLabel } from "@/features/draft-review/draft-stats";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
+import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
@@ -392,6 +394,7 @@ export function TurnEditsReceipt({
                 <li key={doc.uri}>
                   <DocumentRow
                     document={doc}
+                    threadId={threadId}
                     onOpenContextUri={openContextUri}
                     canOpenContextUri={canOpenContextUri}
                   />
@@ -489,6 +492,7 @@ function ChangeViewDetail({
         {editedDocument ? (
           <DocumentRow
             document={editedDocument}
+            threadId={threadId}
             onOpenContextUri={onOpenContextUri}
             canOpenContextUri={canOpenContextUri}
           />
@@ -535,18 +539,24 @@ function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
  */
 function DocumentRow({
   document,
+  threadId,
   onOpenContextUri,
   canOpenContextUri,
 }: {
   document: TurnEditDocument;
+  threadId: string;
   onOpenContextUri: ((uri: string) => void) | null;
   canOpenContextUri: ((uri: string) => boolean) | null;
 }) {
+  const drag = useDocumentRowDrag(document, threadId);
   const openable =
     document.tree?.op !== "delete" && onOpenContextUri && canOpenContextUri?.(document.uri);
   if (!openable) {
     return (
-      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
+      <span
+        {...drag}
+        className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+      >
         <DocumentRowLabel document={document} />
       </span>
     );
@@ -554,11 +564,37 @@ function DocumentRow({
   return (
     <button
       type="button"
+      {...drag}
       onClick={() => onOpenContextUri(document.uri)}
       className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
     >
       <DocumentRowLabel document={document} />
     </button>
+  );
+}
+
+/**
+ * Dragging a row drags the document it represents, never the receipt or the pathname the turn
+ * wrote. A draft row copies the draft that chat wrote (the chat's Work and the chat name it); a
+ * document the turn deleted names nothing a drop could act on.
+ */
+function useDocumentRowDrag(document: TurnEditDocument, threadId: string) {
+  const projectId = useProjectDocumentNavigationProjectId();
+  const workId = useDisplayedThread(projectId ?? "", projectId ? threadId : null)?.workId;
+  const view =
+    document.scope === "draft"
+      ? workId
+        ? ({ kind: "draft", workId, threadId } as const)
+        : null
+      : ({ kind: "live" } as const);
+  return useReferenceDrag(
+    view && document.tree?.op !== "delete"
+      ? {
+          ref: { kind: "file", id: document.documentId },
+          name: documentDisplayName(document.uri),
+          view,
+        }
+      : null,
   );
 }
 

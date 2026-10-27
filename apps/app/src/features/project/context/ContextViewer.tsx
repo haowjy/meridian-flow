@@ -169,6 +169,11 @@ export function ContextViewer({
         activeTabId={activeTabId}
         activeTabInstanceId={(activeTab ?? settledTab)?.tabInstanceId}
         reviewingTabId={activeReviewItemKey ? activeTabId : null}
+        reviewView={
+          controller.threadId
+            ? { kind: "draft", workId: controller.workId, threadId: controller.threadId }
+            : null
+        }
         optimisticTab={settledTab ? null : optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}
