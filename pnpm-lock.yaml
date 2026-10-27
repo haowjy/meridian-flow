@@ -479,6 +479,9 @@ importers:
       prosemirror-transform:
         specifier: ^1.12.0
         version: 1.12.0
+      re2js:
+        specifier: ^2.9.0
+        version: 2.9.0
       semver:
         specifier: ^7.8.5
         version: 7.8.5
@@ -5578,6 +5581,10 @@ packages:
         optional: true
       '@types/react-dom':
         optional: true
+
+  re2js@2.9.0:
+    resolution: {integrity: sha512-rZpqkd4ETP3GrQ5mDLzADr14OleeKdb/40lG84WE8absRfsVLJpWt2ifjtYYeoPqeouIkcxhTlurxIXfR5kR5Q==}
+    engines: {node: '>=20.0.0'}
 
   react-dom@19.2.7:
     resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
@@ -11698,6 +11705,8 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
+
+  re2js@2.9.0: {}
 
   react-dom@19.2.7(react@19.2.7):
     dependencies:

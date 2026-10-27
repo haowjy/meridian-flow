@@ -3,16 +3,22 @@
  * the model reads of them. Each file is its URI, then one `hash|excerpt` line
  * per passage, as `read` prints blocks, so the hash targets `read` and
  * `write`. The excerpt is a window around the match; `verbose` gives the whole
- * block and the score. The app's previews and compaction read the typed hits.
+ * block. The app's previews and compaction read the typed hits.
  */
-import { markdownPlainText, toHashline } from "@meridian/agent-edit";
+import { toHashline } from "@meridian/agent-edit";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+
+/** One passage of a hit. `anchor` is where its first match sits in `excerpt`; old results have none. */
+export interface SearchPassage {
+  excerpt: string;
+  blockHash?: string;
+  anchor?: { start: number; end: number };
+}
 
 export interface SearchHit {
   uri: string;
-  matches: { excerpt: string; blockHash?: string }[];
+  matches: SearchPassage[];
   matchCount: number;
-  score?: number;
   /** True when the agent can't edit the file. */
   readonly?: boolean;
 }
@@ -54,20 +60,18 @@ export function renderSearchHits(
   cleared: (hit: SearchHit) => boolean = () => false,
 ): string {
   if (hits.length === 0) return "No matches.";
-  const pattern = typeof input.pattern === "string" ? input.pattern : "";
   const verbose = input.verbose === true;
   return hits
     .map((hit) => {
       const notes = [
         hit.matchCount > hit.matches.length ? matches(hit.matchCount) : undefined,
         hit.readonly ? "read-only" : undefined,
-        verbose && hit.score !== undefined ? `score ${hit.score.toFixed(2)}` : undefined,
       ].filter((note) => note !== undefined);
       const head = notes.length > 0 ? `${hit.uri} (${notes.join(", ")})` : hit.uri;
       if (cleared(hit)) return `${head}\n${CLEARED_SEARCH_PASSAGES}`;
-      const passages = hit.matches.map(({ excerpt, blockHash }) => {
-        const { text } = searchPassage(excerpt, pattern, verbose);
-        return blockHash ? toHashline(blockHash, text) : text;
+      const passages = hit.matches.map((passage) => {
+        const { text } = searchPassage(passage, verbose);
+        return passage.blockHash ? toHashline(passage.blockHash, text) : text;
       });
       return [head, ...passages].join("\n");
     })
@@ -92,35 +96,34 @@ function matches(count: number): string {
  * window cut through or left out is never claimed as shown.
  */
 export function searchPassage(
-  excerpt: string,
-  pattern: string,
+  passage: SearchPassage,
   verbose: boolean,
 ): { text: string; whole: boolean } {
-  return verbose ? { text: excerpt, whole: true } : around(excerpt, pattern);
+  return verbose ? { text: passage.excerpt, whole: true } : around(passage);
 }
 
 /**
- * About {@link WINDOW} characters either side of the first match, on one line,
- * cut at word boundaries and marked with `…`. A block whose match can't be
- * located (the query matched its plain text, not its markdown) starts at the top.
- * Flattening whitespace keeps every link whole, so an uncut window shows them all.
+ * About {@link WINDOW} characters either side of the match, on one line, cut at
+ * word boundaries and marked with `…`. A passage with no anchor (a result from
+ * before grep) starts at the top. Flattening whitespace keeps every link whole,
+ * so an uncut window shows them all.
  */
-function around(excerpt: string, pattern: string): { text: string; whole: boolean } {
+function around({ excerpt, anchor }: SearchPassage): { text: string; whole: boolean } {
   const flat = excerpt.replace(/\s+/gu, " ").trim();
-  const lower = flat.toLowerCase();
-  const needles = [pattern, markdownPlainText(pattern)].map((needle) => needle.toLowerCase());
-  const needle = needles.find((candidate) => candidate && lower.includes(candidate)) ?? "";
-  const at = needle ? lower.indexOf(needle) : 0;
+  // The anchor is an offset into the unflattened excerpt; flatten its prefix to find it in `flat`.
+  const flatOffset = (offset: number) =>
+    excerpt.slice(0, offset).replace(/\s+/gu, " ").trimStart().length;
+  const at = anchor ? Math.min(flatOffset(anchor.start), flat.length) : 0;
+  const length = anchor ? Math.max(flatOffset(anchor.end) - at, 0) : 0;
   let start = at - WINDOW > SLACK ? at - WINDOW : 0;
-  let end =
-    flat.length - (at + needle.length + WINDOW) > SLACK ? at + needle.length + WINDOW : flat.length;
+  let end = flat.length - (at + length + WINDOW) > SLACK ? at + length + WINDOW : flat.length;
   if (start > 0) {
     const space = flat.indexOf(" ", start);
     if (space >= 0 && space < at) start = space + 1;
   }
   if (end < flat.length) {
     const space = flat.lastIndexOf(" ", end);
-    if (space > at + needle.length) end = space;
+    if (space > at + length) end = space;
   }
   const cutStart = start > 0;
   const cutEnd = end < flat.length;
