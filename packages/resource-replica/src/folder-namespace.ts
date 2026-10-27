@@ -492,6 +492,11 @@ export function validateFolderNamespaceUpdate(
     throw new Error("A folder the server placed is held");
   if (previous?.serverHold === "held" && next.serverHold !== "held")
     throw new Error("A held folder id never stops being held");
+  if (previous && JSON.stringify(previous.copiedBy) !== JSON.stringify(next.copiedBy))
+    throw new Error("The operation that made a record never changes");
+  // See `validateResourceRecordUpdate`: a root is never `local`, so a missed gate stalls, not writes.
+  if (next.copiedBy && next.serverHold !== "uncertain" && next.serverHold !== "held")
+    throw new Error("An operation's root awaits its answer or is held");
   if (next.canonical) resourceContextAuthority(next.canonical.scheme, next.canonical);
   else if (
     next.canonicalParent ||

@@ -29,6 +29,13 @@ export function validateResourceRecordUpdate(
     throw new Error("A document the server placed is held");
   if (previous?.resource.serverHold === "held" && resource.serverHold !== "held")
     throw new Error("A held document id never stops being held");
+  if (previous && JSON.stringify(previous.resource.copiedBy) !== JSON.stringify(resource.copiedBy))
+    throw new Error("The operation that made a record never changes");
+  // `local` means the next placement is a create and a delete settles on this device. Either would
+  // act on an id the operation owns while it may still land, so a missed dispatch gate would write
+  // where an `uncertain` root only waits.
+  if (resource.copiedBy && resource.serverHold !== "uncertain" && resource.serverHold !== "held")
+    throw new Error("An operation's root awaits its answer or is held");
   if (
     previous?.resource.serverHold === "spent" &&
     resource.serverHold === "local" &&
