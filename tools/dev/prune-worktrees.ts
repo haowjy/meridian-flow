@@ -927,7 +927,7 @@ async function main(): Promise<void> {
     for (const orphan of orphans) {
       console.log(`\n- session: ${orphan.sessionName} (${orphan.sessionId})`);
       console.log(`  missing checkout: ${orphan.worktreePath}`);
-      console.log(`  pane PIDs: ${orphan.panePids.join(", ")}`);
+      console.log(`  pane PIDs: ${orphan.panePids.join(", ") || "none (every pane has exited)"}`);
       console.log(
         "  actions: terminate owned process trees; kill tmux session; force-kill survivors; prune portless routes",
       );

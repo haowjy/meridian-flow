@@ -208,12 +208,24 @@ mode requires confirmation or `--yes` and supports `--dry-run`; it needs no PR,
 branch-merge evidence, database access, or Meridian work-item discovery.
 
 A candidate must have a managed session name with the SHA-256 path hash from
-`session-identity.ts`, a missing session creation directory, and every pane cwd
-still under that directory. A registered locked checkout is protected.
+`session-identity.ts`, a missing session creation directory, and every live
+pane's cwd still under that directory. A registered locked checkout is protected.
+
 Unregistered candidates must be immediate children of the primary checkout's
 sibling `<repo>.worktrees/` directory; arbitrary missing paths do not prove repo
 ownership. Existing directories, dangling symlinks, and inspection failures are
 not deletion evidence.
+
+The private server loads the owner's `tmux.conf`, so attaching keeps their keys,
+mouse and colors (dev passes no `-f /dev/null`, and a running server would keep
+its loaded config anyway). There, `remain-on-exit on` keeps an exited pane listed
+with an empty cwd. The sweep reads `#{pane_dead}`: a dead pane skips the cwd check
+and contributes no PID, since the PID may belong to another process by now and
+nothing is left to signal. A session whose panes are all dead is reaped by
+`kill-session` alone, on the same name, path and checkout evidence. Live panes
+keep every check, and a live pane with an empty cwd or unreadable PID still
+refuses, so the sweep never fails on a dead pane and never signals a process
+because of one.
 
 Git discovery uses the canonical `runGit` boundary, ignoring inherited `GIT_*`
 repository overrides. Discovery and execution use the same session authorization

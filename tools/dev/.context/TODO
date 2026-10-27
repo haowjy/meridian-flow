@@ -34,14 +34,3 @@
   generation overwrite older snapshots (0071 and 0072 were overwritten after
   tag 0076). Until automated, follow the timestamp-prefix workflow in
   `packages/database/.context/CONTEXT.md`; never rewrite applied identities.
-
-- Make the orphan sweep (`lib/worktree-cleanup-orphans.ts`) tolerate dead panes.
-  Under `set -g remain-on-exit on` (the owner's `~/.tmux.conf` has it) a pane
-  whose process exited stays listed with an empty `pane_current_path`, and
-  `listPanes` throws "Could not inspect tmux pane ownership". Any dead pane on
-  `meridian-dev` then fails the sweep at the start of `pnpm dev`, and a SIGTERM
-  during an orphan stop fails its own ownership recheck. Read `#{pane_dead}`;
-  skip a dead pane's cwd check and keep its PID out of the signal roots (the PID
-  may be reused); let a session with only dead panes still be reaped when its
-  name, path and checkout prove ownership. The orphan tests pass `-f /dev/null`
-  so this config does not leak in.
