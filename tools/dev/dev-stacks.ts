@@ -15,6 +15,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { resolveCurrentRepoRoot } from "./lib/dev-env";
+import { DEFAULT_TMUX_SERVER, DEV_TMUX_SERVER } from "./lib/dev-tmux-server";
 
 type Stack = {
   worktree: string;
@@ -48,21 +49,37 @@ function parseArgs(argv: string[]): {
  * dev-tmux names the stack session `meridian-*`, so that one is authoritative;
  * an agent shell that merely sits in the same worktree must not make a dead
  * stack look busy.
+ *
+ * New stacks live on the private dev server. The default server is still read
+ * so a stack started before that move reports its idle time instead of
+ * "unknown".
  */
+const SESSION_SERVERS = [DEV_TMUX_SERVER, DEFAULT_TMUX_SERVER] as const;
+
+function listSessionRows(server: string): string[] {
+  try {
+    return execFileSync(
+      "tmux",
+      [
+        "-L",
+        server,
+        "list-sessions",
+        "-F",
+        "#{session_name}|#{pane_current_path}|#{session_activity}",
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    )
+      .toString()
+      .split("\n");
+  } catch {
+    return [];
+  }
+}
+
 function idleMinutesByWorktree(): Map<string, number> {
   const now = Math.floor(Date.now() / 1000);
   const byWorktree = new Map<string, { idle: number; authoritative: boolean }>();
-  let sessions: string;
-  try {
-    sessions = execFileSync("tmux", [
-      "list-sessions",
-      "-F",
-      "#{session_name}|#{pane_current_path}|#{session_activity}",
-    ]).toString();
-  } catch {
-    return new Map();
-  }
-  for (const line of sessions.split("\n")) {
+  for (const line of SESSION_SERVERS.flatMap(listSessionRows)) {
     const [name, path, activity] = line.split("|");
     const worktree = path ? WORKTREE_PATH.exec(path)?.[0] : undefined;
     if (!worktree || !activity) continue;

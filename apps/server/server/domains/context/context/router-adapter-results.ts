@@ -46,6 +46,8 @@ export function toFileRef(
     sizeBytes: ref.sizeBytes,
     updatedAt: ref.updatedAt,
     readonly,
+    ...(ref.properties ? { properties: ref.properties } : {}),
+    ...(ref.aliases ? { aliases: ref.aliases } : {}),
   };
   return ref.kind === "binary"
     ? {

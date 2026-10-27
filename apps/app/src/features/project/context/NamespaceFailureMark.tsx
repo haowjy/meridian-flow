@@ -48,6 +48,10 @@ export function NamespaceFailureMark({
   message?: string;
 }) {
   const message = customMessage ?? namespaceFailureMessage(failure, folder, move);
+  return <FailureMark message={message} labelled={labelled} />;
+}
+
+function FailureMark({ message, labelled }: { message: string; labelled?: boolean }) {
   if (labelled)
     return (
       <span className="flex min-w-0 items-start gap-1 text-xs text-destructive">

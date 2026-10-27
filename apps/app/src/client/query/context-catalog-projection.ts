@@ -16,6 +16,8 @@ type CatalogFileBase = {
   path: string;
   uri: string;
   provisionalName: boolean;
+  /** The document has imported properties to show; they load by document id. */
+  hasProperties: boolean;
   /** Present only for a locally owned resource not yet represented by server authority. */
   resourceHandle?: string;
   resourceState?: "local" | "acknowledged";

@@ -16,6 +16,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import {
   agentEditWidCounters,
+  collabStagedStates,
   documentMarkdownProjections,
   documentYjsCheckpoints,
   documentYjsHeads,
@@ -27,6 +28,7 @@ import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   createCollabYDoc,
+  packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
@@ -54,9 +56,11 @@ import { captureDrizzleCheckpoint } from "./drizzle-checkpoint-capture.js";
 import {
   advanceHead,
   allocateAdmission,
+  FIRST_AUTHORITY_GENERATION,
   findDocumentAuthorityHead,
   findHeadSchemaVersion,
   initializeHead,
+  insertFreshHeads,
   readDocumentAuthorityHead,
   retireThrough,
 } from "./drizzle-document-authority-head.js";
@@ -67,6 +71,9 @@ type JournalDb = Pick<
   Database,
   "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction" | "execute"
 >;
+
+/** Seeds per statement in a bulk create: bounds the parameter count, not the atomic operation. */
+const SEED_BATCH = 500;
 
 type OriginType = "agent" | "human" | "system";
 type UpdateMetaMode = "journal" | "latest";
@@ -437,6 +444,23 @@ async function checkpointAttributionManifest(
       asc(documentYjsUpdates.batchOrdinal),
       asc(documentYjsUpdates.id),
     );
+  return attributionManifestOf(rows, previousManifest);
+}
+
+type ManifestRow = {
+  id: number;
+  admissionSequence: bigint;
+  batchOrdinal: number;
+  updateData: Buffer;
+  originType: string | null;
+  actorUserId: string | null;
+};
+
+/** The attribution manifest of a checkpoint over `rows`, on top of the previous checkpoint's. */
+function attributionManifestOf(
+  rows: readonly ManifestRow[],
+  previousManifest: ReturnType<typeof parseAttributionManifest> | null,
+): unknown {
   const floorRow = rows.at(-1);
   return {
     version: 1,
@@ -899,6 +923,61 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
 function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
   return {
+    async stageInitialStates(stagingId, projectId, generation, seeds) {
+      if (seeds.length === 0) return;
+      await currentDrizzleDb(db as Database)
+        .insert(collabStagedStates)
+        .values(
+          seeds.map((seed) => ({
+            ...seed,
+            stagingId,
+            projectId,
+            generation,
+            state: Buffer.from(seed.state),
+            stateVector: Buffer.from(seed.stateVector),
+          })),
+        );
+    },
+    async commitStagedStates(stagingId) {
+      const tx = currentDrizzleDb(db as Database);
+      // Staged identities have never been live. Never adopt another authority head.
+      await tx.execute(sql`
+        insert into document_yjs_heads (document_id, schema_version)
+        select document_id, ${packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)}
+        from collab_staged_states where staging_id = ${stagingId}`);
+      await tx.execute(sql`
+        insert into document_yjs_checkpoints
+          (document_id, authority_id, authority_generation, state, state_vector, attribution_manifest, up_to_seq, reason)
+        select s.document_id, h.authority_id, h.authority_generation,
+          s.state, s.state_vector, s.attribution_manifest, 0, 'seed'
+        from collab_staged_states s join document_yjs_heads h on h.document_id = s.document_id
+        where s.staging_id = ${stagingId}`);
+      await tx.execute(sql`
+        update document_yjs_heads h set latest_checkpoint_id = c.id,
+          latest_state_vector = c.state_vector, latest_update_seq = 0, updated_at = now()
+        from document_yjs_checkpoints c, collab_staged_states s
+        where s.staging_id = ${stagingId} and c.document_id = s.document_id
+          and h.document_id = s.document_id and c.up_to_seq = 0
+          and c.authority_id = h.authority_id and c.authority_generation = h.authority_generation`);
+      return tx
+        .delete(collabStagedStates)
+        .where(eq(collabStagedStates.stagingId, stagingId))
+        .returning({
+          documentId: collabStagedStates.documentId,
+          markdown: collabStagedStates.markdown,
+        });
+    },
+    async discardStagedStates(stagingId, limit) {
+      const tx = currentDrizzleDb(db as Database);
+      await tx.execute(sql`delete from collab_staged_states where staging_id = ${stagingId}
+        and document_id in (select document_id from collab_staged_states where staging_id = ${stagingId} order by document_id ${limit === undefined ? sql`` : sql`limit ${limit}`})`);
+      const [row] = await tx
+        .select({ id: collabStagedStates.documentId })
+        .from(collabStagedStates)
+        .where(eq(collabStagedStates.stagingId, stagingId))
+        .limit(1);
+      return { remaining: !!row };
+    },
     async seedInitialDocument(docId, state) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
@@ -935,6 +1014,50 @@ function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
         );
         return true;
       });
+    },
+
+    async seedInitialDocuments(seeds) {
+      const txDb = currentDrizzleDb(db as Database) as JournalDb;
+      // Nothing yet holds these documents, so there is no mutation lock to take and no head or
+      // checkpoint to find first: the unique keys on both refuse a document that has one.
+      const manifest = attributionManifestOf([], null);
+      for (let offset = 0; offset < seeds.length; offset += SEED_BATCH) {
+        const batch = seeds.slice(offset, offset + SEED_BATCH).map((seed) => ({
+          ...seed,
+          authorityId: crypto.randomUUID() as DocumentAuthorityId,
+          stateVector: Y.encodeStateVectorFromUpdate(seed.state),
+        }));
+        const checkpoints = await txDb
+          .insert(documentYjsCheckpoints)
+          .values(
+            batch.map((seed) => ({
+              documentId: asDocumentId(seed.documentId),
+              authorityId: seed.authorityId,
+              authorityGeneration: FIRST_AUTHORITY_GENERATION,
+              attributionManifest: manifest,
+              state: toBuffer(seed.state),
+              stateVector: toBuffer(seed.stateVector),
+              upToSeq: 0,
+              // An empty authority's checkpoint is a placeholder the first stored checkpoint
+              // replaces; a seed with content stays as the document's first version.
+              reason: Y.decodeUpdate(seed.state).structs.length === 0 ? "checkpoint" : "seed",
+            })),
+          )
+          .returning({
+            id: documentYjsCheckpoints.id,
+            documentId: documentYjsCheckpoints.documentId,
+          });
+        const checkpointOf = new Map(checkpoints.map((row) => [row.documentId, row.id]));
+        await insertFreshHeads(
+          txDb,
+          batch.map((seed) => ({
+            documentId: seed.documentId,
+            authorityId: seed.authorityId,
+            checkpointId: checkpointOf.get(seed.documentId) as number,
+            stateVector: seed.stateVector,
+          })),
+        );
+      }
     },
 
     async missingAuthorityProjection(docId) {

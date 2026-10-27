@@ -592,9 +592,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationParent: { kind: "folder", folderId },
           authorizeDestination: async () => false,
         }),
-      ).resolves.toMatchObject({ ok: false, error: { code: "destination_missing" } });
+      ).resolves.toMatchObject({ ok: false, error: { code: "permission_denied" } });
       await expect(port.lookupOperation(operationId)).resolves.toMatchObject({
-        result: { ok: false, error: { code: "destination_missing" } },
+        result: { ok: false, error: { code: "permission_denied" } },
       });
       await expect(port.stat("scratch://@w1/Untitled 1")).resolves.toMatchObject({
         ok: true,

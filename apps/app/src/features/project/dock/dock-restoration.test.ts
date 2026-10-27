@@ -113,6 +113,7 @@ function resources(snapshot = empty) {
                 parentId: "manuscript",
                 aliases: [],
                 provisionalName: false,
+                hasProperties: false,
                 observationVersion: "1",
                 editable: true as const,
                 filetype: "markdown" as const,

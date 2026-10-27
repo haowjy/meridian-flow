@@ -101,9 +101,24 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
+#. placeholder {0}: result.pendingDrafts
+#: src/features/export/ExportProjectDialog.tsx
+msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
+msgstr ""
+
+#. placeholder {0}: local.missing?.length ?? 0
+#: src/features/import/toast-presentation.ts
+msgid "{0, plural, one {# file wasn't in the folder you picked} other {# files weren't in the folder you picked}}"
+msgstr ""
+
 #. placeholder {0}: renamed.length
 #: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+msgstr ""
+
+#. placeholder {0}: result.outsideLinks.count
+#: src/features/export/ExportProjectDialog.tsx
+msgid "{0, plural, one {# link points to {where}, which won't be included.} other {# links point to {where}, which won't be included.}}"
 msgstr ""
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
@@ -179,6 +194,11 @@ msgstr ""
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/image-imports.ts
 msgid "{0} imported, but its link had moved on."
+msgstr ""
+
+#. placeholder {0}: running.length
+#: src/components/app/ToastRegion.tsx
+msgid "{0} in progress"
 msgstr ""
 
 #. placeholder {0}: file.name
@@ -307,6 +327,10 @@ msgstr ""
 msgid "{count} documents were removed ({names})."
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "{count} uploaded. Pick {name} again to continue."
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr ""
@@ -333,6 +357,22 @@ msgstr ""
 
 #: src/core/editor/images/image-imports.ts
 msgid "{filename} did not import. It stayed a link."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "{files, plural, one {{prepared} of # file ready} other {{prepared} of # files ready}}"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "{files, plural, one {{received} of # file} other {{received} of # files}}"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "{files, plural, one {# file} other {# files}}"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "{files, plural, one {Imported {organized} of # file} other {Imported {organized} of # files}}"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
@@ -449,6 +489,10 @@ msgstr ""
 msgid "{names} is back in the manuscript."
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
+msgstr ""
+
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
 msgstr ""
@@ -549,6 +593,10 @@ msgstr ""
 msgid "{work} is reordering this."
 msgstr ""
 
+#: src/components/app/ToastRegion.tsx
+msgid "+{hidden} more"
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
 msgstr "<0.1 秒"
@@ -612,6 +660,10 @@ msgstr ""
 msgid "A file named {name} already exists in this location."
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "A file path in this selection is too long to import."
+msgstr ""
+
 #: src/features/project/context/context-entry-name.ts
 msgid "A folder named {name} already exists in this location."
 msgstr ""
@@ -644,6 +696,10 @@ msgstr "一个工作中有此文档的草稿（{0}）"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "a writer"
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge Base and Unfiled."
 msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
@@ -684,6 +740,10 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Active Work"
+msgstr ""
+
+#: src/components/app/ToastRegion.tsx
+msgid "Activity"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
@@ -733,6 +793,10 @@ msgstr ""
 
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Added as {renamed}"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Adding {name} to {area}"
 msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
@@ -834,6 +898,10 @@ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "An entry named {name} already exists in this location."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Another import in this project is organizing."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -1125,6 +1193,7 @@ msgstr ""
 #: src/features/chat/DraftDock.tsx
 #: src/features/creation/CreationDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/work/WorkChanges.tsx
@@ -1138,6 +1207,10 @@ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Cancel queue"
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "Canvas and board files aren't imported."
 msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -1194,6 +1267,10 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Changed 1 Work"
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "Changed after you picked it."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
@@ -1285,8 +1362,16 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "Check your connection."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Checking links…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1339,6 +1424,8 @@ msgstr ""
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr ""
 
+#: src/components/app/ToastRegion.tsx
+#: src/components/ui/persistent-toast.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Close"
@@ -1420,6 +1507,10 @@ msgstr ""
 msgid "Collaborator"
 msgstr ""
 
+#: src/components/ui/persistent-toast.tsx
+msgid "Collapse"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 msgid "Collapse changes"
 msgstr ""
@@ -1442,6 +1533,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Column options"
+msgstr ""
+
+#: src/components/app/ToastRegion.tsx
+msgid "Combined progress"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
@@ -1500,6 +1595,10 @@ msgstr ""
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
+#: src/features/import/ImportToasts.tsx
+msgid "Continue…"
+msgstr ""
+
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Continues from <0/>"
 msgstr ""
@@ -1523,6 +1622,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copied {source} to"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Copied {source} to {place}"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1587,12 +1690,20 @@ msgstr ""
 msgid "Couldn't apply this draft."
 msgstr ""
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't be read"
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Couldn't be reversed"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "Couldn't complete the request. Check your connection and try again."
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
@@ -1711,6 +1822,10 @@ msgstr ""
 msgid "Couldn't finish that step"
 msgstr ""
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't load"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Couldn't load agents."
@@ -1728,6 +1843,10 @@ msgstr ""
 msgid "Couldn't load files."
 msgstr ""
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't load properties."
+msgstr ""
+
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Couldn't load recent documents."
@@ -1739,6 +1858,10 @@ msgstr ""
 
 #: src/features/chat/TurnList.tsx
 msgid "Couldn't load the conversation this fork continues."
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Couldn't load the preview."
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
@@ -1820,6 +1943,10 @@ msgstr ""
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Couldn't read report from {line}"
 msgstr "无法读取来自 {line} 的报告"
+
+#: src/features/import/reason-copy.ts
+msgid "Couldn't read this Word document. Kept as a file."
+msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
@@ -2293,6 +2420,10 @@ msgstr ""
 msgid "Document version"
 msgstr ""
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "documents that were deleted"
+msgstr ""
+
 #: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
@@ -2386,6 +2517,10 @@ msgstr ""
 msgid "Edited 1 document"
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "Edited after it uploaded. The imported copy is the earlier version."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Edited file"
 msgstr ""
@@ -2422,6 +2557,10 @@ msgstr ""
 msgid "Embedded blocks take no links."
 msgstr ""
 
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "Empty"
+msgstr ""
+
 #: src/features/chat/FormBlock.tsx
 msgid "Enabled"
 msgstr ""
@@ -2436,6 +2575,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "epigraph"
+msgstr ""
+
+#: src/components/ui/persistent-toast.tsx
+msgid "Expand"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -2474,6 +2617,22 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Exploring folders…"
 msgstr "正在浏览文件夹…"
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Export"
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Export {project}"
+msgstr ""
+
+#: src/features/project/shell/ProjectMenu.tsx
+msgid "Export project…"
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Exporting {project}."
+msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
@@ -2531,6 +2690,15 @@ msgstr ""
 msgid "Files"
 msgstr ""
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Files attached in chat, grouped by Work."
+msgstr ""
+
+#: src/features/import/ImportMenuItems.tsx
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Files…"
+msgstr ""
+
 #: src/features/chat/SubagentHeader.tsx
 msgid "Filter subagents"
 msgstr "筛选子代理"
@@ -2558,6 +2726,11 @@ msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
+msgstr ""
+
+#: src/features/import/ImportMenuItems.tsx
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Folder…"
 msgstr ""
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
@@ -2653,6 +2826,10 @@ msgstr ""
 msgid "Heading 3"
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "Hidden file."
+msgstr ""
+
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Hide changes"
 msgstr ""
@@ -2712,13 +2889,60 @@ msgstr ""
 msgid "Images need a project before they can be uploaded."
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "Import didn't finish"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Import didn't start"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Import discarded"
+msgstr ""
+
+#: src/features/project/context/ContextTreeRows.tsx
+msgid "Import in progress. Show activity"
+msgstr ""
+
+#. placeholder {0}: destination.name
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Import into {0}"
+msgstr ""
+
+#: src/features/import/ImportToasts.tsx
+msgid "Import without them"
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileCreateEntryMenu.tsx
+msgid "Import…"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Imported {name}"
+msgstr ""
+
 #: src/core/editor/links/link-mark-view.ts
 #: src/rich-content/TranscriptReference.tsx
 msgid "In a draft"
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "In the trash folder."
+msgstr ""
+
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "In the trash. Deleted by {actor} on {deleted}."
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Include Scratch"
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Include Uploads"
 msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -2789,8 +3013,20 @@ msgstr ""
 msgid "Invoking a skill…"
 msgstr ""
 
+#: src/features/import/ImportToasts.tsx
+msgid "It finished before it could stop."
+msgstr ""
+
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "It may have moved or been removed."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "It was waiting for 7 days."
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "It's over the import size limit."
 msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -2828,6 +3064,14 @@ msgstr ""
 msgid "Keep editing"
 msgstr ""
 
+#: src/features/import/ImportToasts.tsx
+msgid "Keep going"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Keep this tab open until the upload finishes."
+msgstr ""
+
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Kept while {works} has changes to it."
 msgstr ""
@@ -2836,6 +3080,7 @@ msgstr ""
 msgid "Kept while {works} have changes to it."
 msgstr ""
 
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
 msgstr ""
@@ -2945,6 +3190,10 @@ msgstr ""
 msgid "Loading document…"
 msgstr ""
 
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Loading files…"
+msgstr ""
+
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
@@ -3019,6 +3268,7 @@ msgstr ""
 msgid "Manage billing"
 msgstr ""
 
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
 msgstr ""
@@ -3326,6 +3576,10 @@ msgstr ""
 msgid "Next draft"
 msgstr ""
 
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "No"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr ""
@@ -3467,6 +3721,15 @@ msgstr ""
 msgid "Not Found"
 msgstr "未找到"
 
+#. placeholder {0}: skipped.join(", ")
+#: src/features/import/ImportToasts.tsx
+msgid "Not imported: {0}"
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "Not in the folder you picked."
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"
 msgstr "未报告"
@@ -3477,6 +3740,14 @@ msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 msgid "Notebook"
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Notes the AI kept, grouped by Work."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Nothing from it will be kept."
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -3501,6 +3772,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to undo yet."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Nothing uploaded yet. Pick {name} again to continue."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Nothing was added. Your files are kept for 7 days so you can try again."
 msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -3648,6 +3927,10 @@ msgstr ""
 msgid "ordered"
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "Organizing {name}"
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Output speed"
 msgstr "输出速度"
@@ -3704,6 +3987,14 @@ msgstr ""
 msgid "photo"
 msgstr ""
 
+#: src/features/import/ImportToasts.tsx
+msgid "Pick again"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Pick the folder named {name} to continue."
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
 msgstr ""
@@ -3733,6 +4024,10 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
+#: src/features/project/shell/ProjectMenu.tsx
+msgid "Project actions"
+msgstr ""
+
 #: src/features/project/ProjectCreationNotice.tsx
 msgid "Project creation failed."
 msgstr ""
@@ -3755,6 +4050,10 @@ msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "Projects couldn’t refresh. Showing saved results."
+msgstr ""
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Properties"
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
@@ -3806,6 +4105,10 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Reading"
 msgstr "阅读中"
+
+#: src/features/import/toast-presentation.ts
+msgid "Reading {name}"
+msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Reading report from {line}"
@@ -3943,6 +4246,10 @@ msgstr ""
 msgid "Rename chat"
 msgstr ""
 
+#: src/features/project/shell/ProjectMenu.tsx
+msgid "Rename project"
+msgstr ""
+
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename project: {title}"
 msgstr ""
@@ -4066,6 +4373,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/editor/EditorView.tsx
+#: src/features/import/ImportToasts.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -4175,6 +4483,7 @@ msgstr ""
 msgid "scene break"
 msgstr ""
 
+#: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
@@ -4245,6 +4554,10 @@ msgstr "正在搜索…"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "section"
+msgstr ""
+
+#: src/features/import/ImportToasts.tsx
+msgid "See files"
 msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
@@ -4319,6 +4632,10 @@ msgstr ""
 msgid "Shared an attachment"
 msgstr "分享了附件"
 
+#: src/features/import/ImportToasts.tsx
+msgid "Show"
+msgstr ""
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Show changes"
@@ -4326,6 +4643,10 @@ msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "Show chats"
+msgstr ""
+
+#: src/components/app/ToastRegion.tsx
+msgid "Show fewer"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -4409,6 +4730,10 @@ msgstr ""
 msgid "Some text was removed"
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "Something went wrong on our side. Try again."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "Something went wrong while changing {name}."
 msgstr ""
@@ -4465,8 +4790,17 @@ msgstr ""
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
+#: src/features/import/ImportToasts.tsx
 msgid "Stop"
 msgstr "停止"
+
+#: src/features/import/ImportToasts.tsx
+msgid "Stop and discard"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "Stop and discard this import?"
+msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/thread-controls/control-copy.ts
@@ -4715,6 +5049,10 @@ msgstr ""
 msgid "that folder"
 msgstr ""
 
+#: src/features/import/selection-limits.ts
+msgid "That folder has no files to import."
+msgstr ""
+
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "That image could not be read."
 msgstr ""
@@ -4750,6 +5088,22 @@ msgstr ""
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "That Work is no longer available. Choose another Work."
+msgstr ""
+
+#: src/features/import/selection-limits.ts
+msgid "That's {count} files. Import up to {limit} at a time."
+msgstr ""
+
+#: src/features/import/selection-limits.ts
+msgid "That's {size}. Import up to 2 GB at a time."
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "That's more files than one import can hold. Import fewer at a time."
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "That's more than one import can hold. Import less at a time."
 msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -4821,12 +5175,28 @@ msgstr ""
 msgid "The change didn't fit the current draft. The AI will read it again."
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "The destination was deleted. Added at the area root."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "The destination was deleted. It will be added at the area root."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "The destination was deleted. Trying again adds it at the area root."
+msgstr ""
+
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The document could not be created. Try again."
 msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "The folder you chose isn't there anymore."
 msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
@@ -4878,6 +5248,10 @@ msgstr ""
 msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "The uploaded file is no longer available."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The Work did not change. Try again."
@@ -4885,6 +5259,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Theme"
+msgstr ""
+
+#: src/features/import/selection-limits.ts
+msgid "There are no files to import here."
 msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
@@ -4906,6 +5284,18 @@ msgstr "这些偏好设置会随账号同步到你登录的所有设备。"
 #: src/features/account/SettingsDialog.tsx
 msgid "These preferences stay on this device to suit your screen."
 msgstr "这些偏好设置仅保存在此设备上，以适应当前屏幕。"
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "These properties are too large to show in full. The start is shown as written."
+msgstr ""
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "These properties couldn't be read, so they're shown as written."
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "They'll stay as Meridian links and won't open outside Meridian."
+msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
@@ -5127,6 +5517,10 @@ msgstr ""
 msgid "This draft was discarded."
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "This file couldn't be read."
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
 msgstr ""
@@ -5176,12 +5570,20 @@ msgstr ""
 msgid "This image never finished uploading."
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "This isn't the same selection as the one already started."
+msgstr ""
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "This link can no longer be edited. Close the form and try again."
 msgstr ""
 
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "This location is unavailable. Refresh and try again."
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "This Meridian export can't be read. Import its folders one at a time."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -5274,9 +5676,17 @@ msgstr ""
 msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 msgstr ""
 
+#: src/features/import/selection-limits.ts
+msgid "Those files can't be imported."
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Thread"
 msgstr "对话"
+
+#: src/features/import/reason-copy.ts
+msgid "Three imports are already open. Finish or stop one before starting another."
+msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Time to first token"
@@ -5303,6 +5713,10 @@ msgstr ""
 msgid "Tokens before"
 msgstr ""
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Too large to show"
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
@@ -5314,6 +5728,7 @@ msgstr ""
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/import/ImportToasts.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
 msgstr ""
@@ -5424,6 +5839,7 @@ msgstr ""
 msgid "Undoing…"
 msgstr ""
 
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
 msgstr ""
@@ -5486,6 +5902,10 @@ msgstr ""
 msgid "Upload or paste"
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "Upload paused"
+msgstr ""
+
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Uploading {0} ({percent}%)"
@@ -5496,11 +5916,20 @@ msgstr ""
 msgid "Uploading {0}…"
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "Uploading {name}"
+msgstr ""
+
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Uploading elsewhere…"
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "Uploading in another window"
+msgstr ""
+
 #: src/features/chat/ChatFilesMenu.tsx
+#: src/features/export/ExportProjectDialog.tsx
 #: src/features/project/context/context-schemes.ts
 msgid "Uploads"
 msgstr ""
@@ -5539,6 +5968,10 @@ msgstr ""
 msgid "Waiting for your review"
 msgstr ""
 
+#: src/features/import/toast-presentation.ts
+msgid "Waiting to organize {name}"
+msgstr ""
+
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
 msgstr ""
@@ -5553,6 +5986,10 @@ msgstr "你正在研究什么？"
 
 #: src/features/home/NewProjectView.tsx
 msgid "What are you writing?"
+msgstr ""
+
+#: src/components/app/ToastRegion.tsx
+msgid "What is running in the background, with its controls."
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
@@ -5623,6 +6060,10 @@ msgstr ""
 msgid "Working"
 msgstr "处理中"
 
+#: src/features/import/reason-copy.ts
+msgid "Works aren't imported."
+msgstr ""
+
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
 msgid "Workspace navigation"
@@ -5649,6 +6090,10 @@ msgstr "写作中"
 msgid "Writing the handoff brief"
 msgstr ""
 
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "Yes"
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"
@@ -5662,6 +6107,10 @@ msgstr ""
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
 msgid "you answered"
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
+msgid "You can close this tab."
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -5678,6 +6127,10 @@ msgstr ""
 
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Your answer may not have reached the agent."
+msgstr ""
+
+#: src/features/import/ImportProvider.tsx
+msgid "your files"
 msgstr ""
 
 #: src/features/chat/UserTurn.tsx
@@ -5714,6 +6167,10 @@ msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
 msgid "Your selected Work is unavailable. Choose another Work or No Work."
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "your User files"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx

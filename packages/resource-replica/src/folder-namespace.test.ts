@@ -460,6 +460,8 @@ it.each([
       path: ["A", "Child", "doc.md"],
       uri: "manuscript://A/Child/doc.md",
       aliases: [],
+
+      hasProperties: false,
       provisionalName: false,
       editable: true,
       filetype: "markdown",

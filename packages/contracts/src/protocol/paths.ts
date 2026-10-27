@@ -230,6 +230,11 @@ export function apiProjectContextMovePath(
   return `${apiProjectPath(projectId)}/context/${scheme}/move`;
 }
 
+/** One Copy command: many sources, one destination, one receipt. */
+export function apiProjectContextCopyPath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/copy`;
+}
+
 export function apiProjectContextOperationPath(projectId: string, operationId: string): string {
   return `${apiProjectPath(projectId)}/context/operations/${encodeURIComponent(operationId)}`;
 }
@@ -245,14 +250,6 @@ export function apiProjectContextDeletePath(
 /** Internal document-link resolution: three spellings in, one document or none. */
 export function apiProjectLinksResolvePath(projectId: string): string {
   return `${apiProjectPath(projectId)}/links/resolve`;
-}
-
-export function apiProjectContextKbImportPath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/context/kb/import`;
-}
-
-export function apiProjectContextKbImportDriveFixturePath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/context/kb/import-drive-fixture`;
 }
 
 export function apiThreadPath(threadId: string): string {

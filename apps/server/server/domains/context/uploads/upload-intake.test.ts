@@ -170,15 +170,19 @@ describe("UploadIntake", () => {
     expect(objectStore.put).toHaveBeenCalledOnce();
   });
 
-  it("classifies text, images, and designation-only binaries on the server", () => {
-    expect(classifyUpload({ filename: "notes.unknown", mimeType: "text/plain", bytes })).toBe(
+  it("classifies text, images, and designation-only binaries on the server", async () => {
+    expect(await classifyUpload({ filename: "notes.unknown", mimeType: "text/plain", bytes })).toBe(
       "markdown",
     );
     expect(
-      classifyUpload({ filename: "cover.png", mimeType: "image/png", bytes: new Uint8Array([0]) }),
+      await classifyUpload({
+        filename: "cover.png",
+        mimeType: "image/png",
+        bytes: new Uint8Array([0]),
+      }),
     ).toBe("image");
     expect(
-      classifyUpload({
+      await classifyUpload({
         filename: "archive.bin",
         mimeType: "application/octet-stream",
         bytes: new Uint8Array([0]),

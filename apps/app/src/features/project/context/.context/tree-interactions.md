@@ -368,3 +368,11 @@ scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one
 block. Hovering a
 closed folder or area for 600 ms reveals it, and so does an accepted drop on it. The phone shell has no drag.
+
+A scope holds two routes: `entries` (rows dragged inside the app) and `files` (desktop files, imported
+into the target's folder; see the [import feature](../../../import/AGENTS.md)). The routes share the
+verdict shape, so the hint says what the drop will do ("Import into Lore"). Edges are for rows only: a
+file drag skips `targetAt`, so a drop on a row's edge or centre alike imports into that row's folder
+and lands by the folder's order rule (name order in a default parent, the end of a manual one), never
+at the edge's position. Import can't place an arbitrary position for a batch, and an edge that
+appeared to accept but landed elsewhere would mislead.

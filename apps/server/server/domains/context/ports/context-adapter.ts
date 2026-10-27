@@ -17,6 +17,7 @@ import type {
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
+import type { ContextCopyAdapter } from "./context-copy.js";
 import type {
   AdapterCreateFolderOptions,
   AdapterCreateUntitledOptions,
@@ -196,6 +197,8 @@ export interface ContextSchemeAdapter {
   readonly tree?: ContextTreeAdapter;
   /** Only a draft placement has one. */
   readonly branchTree?: ContextBranchTreeAdapter;
+  /** Copy's source read and destination insert (`context/copy/` orchestrates a drop). */
+  readonly copy?: ContextCopyAdapter;
 
   stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>>;
   read(path: string): Promise<Result<AdapterContextReadResult | null, AdapterFault>>;

@@ -26,6 +26,9 @@ import {
   loadDocumentAddresses,
   presentSourceId,
 } from "../tree/tree-addresses.js";
+
+export { loadDocumentAddresses, loadFolderAddresses } from "../tree/tree-addresses.js";
+
 import { inspectTreeLocation } from "./context-fs/drizzle-tree-mutation-store.js";
 
 type CoordinateKey = Pick<
@@ -105,6 +108,13 @@ export async function resolveCanonicalFolderAddress(
   input: { holderProjectId: ProjectId; address: string },
 ): Promise<DocumentCoordinates> {
   return resolveAddressCoordinates(db, input, "folder");
+}
+
+export function resolveCanonicalAddresses(
+  db: Database,
+  inputs: readonly { holderProjectId: ProjectId; address: string }[],
+): Promise<DocumentCoordinates[]> {
+  return Promise.all(inputs.map((input) => resolveCanonicalAddress(db, input)));
 }
 
 async function resolveAddressCoordinates(

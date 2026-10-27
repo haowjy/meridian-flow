@@ -20,6 +20,10 @@ same thing: the record keeps its handle (opaque, like a document's: nothing deri
 its `folderId` is the current id, and requests are matched against the current id or an alias.
 Catalog discovery gives a folder it lists its own handle (`catalog-folder:<entry id>`), so a spent
 id that comes back in a catalog is a second folder beside the reminted record, not a collision.
+One acquisition attempt (a page) that leaves the checkpoint revision, applied
+revision and observed head exactly where they were made no progress, so eight of
+them in a row reject the acquisition instead of spending the page budget: a
+catalog that cannot install is an error the UI can retry, not a longer wait.
 A join (`resource-join.ts`) is the same re-identification triggered by a `joined`
 create answer or a catalog entry's `joinedFrom`: a create that carries its
 destination landed on a document that already existed (a branch's, hidden live until

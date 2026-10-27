@@ -4,11 +4,26 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { FilePlus, FolderPlus } from "lucide-react";
+import { FilePlus, FolderPlus, ImportIcon } from "lucide-react";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { destinationOf, isImportScheme } from "@/features/import/destination";
+import { ImportMenuItems } from "@/features/import/ImportMenuItems";
+import {
+  type PickKind,
+  useImportsSnapshot,
+  useOptionalImports,
+} from "@/features/import/ImportProvider";
+import { canPickFolders } from "@/features/import/SelectionPicker";
+import { rowId, rowKind } from "@/features/import/tree-rows";
+import { useImportedTree } from "@/features/import/use-imported-tree";
 import { DockedRailSection } from "../shell/DockedRailSection";
 import { TreeChildren, type TreeEnv, TreeEnvProvider, TreeGroup } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -23,7 +38,7 @@ import { EntryList, useEntryList } from "./entry-drag/use-entry-list";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
-import { dragEdgeScroll } from "./tree-drop/tree-drop";
+import { dragEdgeScroll, type FilesRoute } from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
 
@@ -62,7 +77,22 @@ type ContextTreePanelProps = {
  */
 export function ContextTreePanel(props: ContextTreePanelProps) {
   const scroller = useRef<HTMLDivElement>(null);
+  const imports = useOptionalImports();
   const { list, renderScheme } = useSchemeTree(props, PROJECT_TREE_SCHEMES);
+  const dropImport = imports?.drop;
+  const files = useMemo<FilesRoute>(
+    () => ({
+      verdict: (target) => {
+        const destination = destinationOf(target.scheme, target.folder);
+        return destination ? { kind: "accept", label: t`Import into ${destination.name}` } : null;
+      },
+      drop: (target, items) => {
+        const destination = destinationOf(target.scheme, target.folder);
+        if (destination) dropImport?.(destination, items);
+      },
+    }),
+    [dropImport],
+  );
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* The destination rows own the sidebar's single rule. Explorer panes
@@ -73,7 +103,7 @@ export function ContextTreePanel(props: ContextTreePanelProps) {
         onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
       >
-        <EntryList list={list}>
+        <EntryList list={list} files={files}>
           {PROJECT_TREE_SCHEMES.map((scheme) => renderScheme(scheme))}
         </EntryList>
       </div>
@@ -191,23 +221,25 @@ function SchemeSection({
   // later user collapse sticks until the user reopens it or a new selection
   // lands inside.
   const { catalog, isComplete, isError, refetch } = catalogState;
+  const imports = useOptionalImports();
+  const importedTree = useImportedTree(catalog, scheme, projectId);
   const folderIds = useMemo(() => {
-    if (!catalog || !isComplete) return null;
+    if (!importedTree || !isComplete) return null;
     return treeFolderIds((parentId) =>
-      catalog
-        .children(parentId ?? catalog.root.entryId)
-        .filter((entry) => entry.kind === "dir")
-        .map((entry) => entry.entryId),
+      importedTree
+        .rows(parentId ?? importedTree.root.entryId)
+        .filter((row) => rowKind(row) === "dir")
+        .map(rowId),
     );
-  }, [catalog, isComplete]);
-  const tree = useTreeExpansion(
+  }, [importedTree, isComplete]);
+  const expansion = useTreeExpansion(
     projectId,
     `editor:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
   );
-  const { isExpanded, toggleEntry, setExpandedEntryIds } = tree;
-  const expanded = pane?.expanded ?? tree.expanded;
-  const setExpanded = pane?.setExpanded ?? tree.setExpanded;
+  const { isExpanded, toggleEntry, setExpandedEntryIds } = expansion;
+  const expanded = pane?.expanded ?? expansion.expanded;
+  const setExpanded = pane?.setExpanded ?? expansion.setExpanded;
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const revealed = useRef<string | null>(null);
@@ -230,6 +262,28 @@ function SchemeSection({
     },
     [catalog, setExpandedEntryIds],
   );
+
+  const importSnapshot = useImportsSnapshot(imports?.coordinator ?? null);
+  const arrived = useRef(new Set<string>());
+  useEffect(() => {
+    for (const { importId, summary } of importSnapshot.imports) {
+      if (
+        summary.projectId !== projectId ||
+        summary.destination.folderUri.split(":")[0] !== scheme ||
+        arrived.current.has(importId)
+      )
+        continue;
+      arrived.current.add(importId);
+      setExpanded(true);
+      const parent = summary.destination.folderId
+        ? catalog?.normalized.entries.get(summary.destination.folderId)
+        : null;
+      if (parent?.kind === "folder") {
+        revealPath(`/${parent.path.join("/")}`);
+        setExpandedEntryIds((current) => ({ ...current, [parent.entryId]: true }));
+      }
+    }
+  }, [importSnapshot, projectId, scheme, setExpanded, revealPath, setExpandedEntryIds, catalog]);
 
   useEffect(() => {
     if (!activeLocationPath) {
@@ -269,9 +323,11 @@ function SchemeSection({
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deletion = useDeleteContextEntry();
+  const importable = imports !== null && isImportScheme(scheme);
+  const pickImport = imports?.pick;
   const env = useMemo<TreeEnv | null>(
     () =>
-      catalog
+      catalog && importedTree
         ? ({
             projectId,
             owner,
@@ -293,7 +349,17 @@ function SchemeSection({
               : undefined,
             onSelectFile,
             onRequestDelete: deletion.requestDelete,
+            importHere: importable
+              ? {
+                  folders: canPickFolders(),
+                  start: (folder, kind) => {
+                    const destination = destinationOf(scheme, folder);
+                    if (destination) pickImport?.(destination, kind);
+                  },
+                }
+              : undefined,
             catalog,
+            tree: importedTree,
             isExpanded,
             toggleEntry,
           } satisfies TreeEnv)
@@ -312,6 +378,9 @@ function SchemeSection({
       isExpanded,
       toggleEntry,
       catalog,
+      importedTree,
+      importable,
+      pickImport,
     ],
   );
 
@@ -335,6 +404,21 @@ function SchemeSection({
               label={t`New file`}
               onClick={() => requestCreate("file", "")}
             />
+            {importable ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <PaneHeaderActionButton icon={ImportIcon} label={t`Import…`} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <ImportMenuItems
+                    onPick={(kind: PickKind) => {
+                      const destination = destinationOf(scheme, null);
+                      if (destination) pickImport?.(destination, kind);
+                    }}
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             <PaneHeaderActionButton
               icon={FolderPlus}
               label={t`New folder`}
@@ -355,26 +439,31 @@ function SchemeSection({
         header={header}
         className={pane ? "flex min-h-0 flex-col" : undefined}
       >
-        {expanded && catalog && env ? (
-          <TreeEnvProvider value={env}>
-            {/* Docked, the header stays put and the rows scroll under it. */}
-            <div className={pane ? "min-h-0 overflow-y-auto overflow-x-hidden pb-1" : undefined}>
-              <TreeGroup depth={1}>
-                <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
-              </TreeGroup>
-              {/* "No context files yet." is a claim about the tree, so it waits
-                for a RESOLVED tree. While the query is in flight with nothing
-                cached the pane body stays blank (no spinner) — prefetch at
-                mount makes that window nearly unhittable. */}
-              {isError ? (
-                <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-              ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
-                <EmptyHint depth={1}>
-                  <Trans>No context files yet.</Trans>
-                </EmptyHint>
-              ) : null}
-            </div>
-          </TreeEnvProvider>
+        {expanded ? (
+          // Docked, the header stays put and the rows scroll under it.
+          <div className={pane ? "min-h-0 overflow-y-auto overflow-x-hidden pb-1" : undefined}>
+            {catalog && importedTree && env ? (
+              <TreeEnvProvider value={env}>
+                <TreeGroup depth={1}>
+                  <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+                </TreeGroup>
+              </TreeEnvProvider>
+            ) : null}
+            {/* The status line never waits on rows: a load that is still running and a
+              load that failed both leave the pane empty, so the writer cannot tell
+              "nothing here" from "not here yet" unless this row says which. */}
+            {isError ? (
+              <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+            ) : !isComplete || !importedTree ? (
+              <PaneHint depth={1} busy>
+                <Trans>Loading files…</Trans>
+              </PaneHint>
+            ) : importedTree.rows(importedTree.root.entryId).length === 0 && !creating ? (
+              <PaneHint depth={1}>
+                <Trans>No context files yet.</Trans>
+              </PaneHint>
+            ) : null}
+          </div>
         ) : null}
       </AreaDropRegion>
     </section>
@@ -386,11 +475,21 @@ function parentContextPath(path: string): string {
   return separator <= 0 ? "" : path.slice(0, separator);
 }
 
-function EmptyHint({ depth, children }: { depth: number; children: React.ReactNode }) {
+function PaneHint({
+  depth,
+  busy = false,
+  children,
+}: {
+  depth: number;
+  /** The tree is still loading; announce it instead of claiming the pane is empty. */
+  busy?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <p
       className="py-1.5 pr-2 text-xs text-ink-subtle"
       style={{ paddingLeft: rowPaddingLeft(depth) }}
+      {...(busy ? { role: "status", "aria-live": "polite" } : {})}
     >
       {children}
     </p>

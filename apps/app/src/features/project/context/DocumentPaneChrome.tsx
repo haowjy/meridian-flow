@@ -1,7 +1,8 @@
 /**
  * DocumentPaneChrome — the strip above an open document's editor: the passage
- * notice, the archived-Work notice and the review-capable identity bar (whose free end
- * says what live did to the document this draft holds).
+ * notice, the archived-Work notice, the review-capable identity bar (whose free end
+ * says what live did to the document this draft holds), and the document's
+ * properties.
  * The Editor's page and the dock's document stack the same chrome, so an open
  * document looks and behaves alike wherever it is shown; the dock shows the
  * identity bar in its header instead (`identity: null`). The draft hint is the
@@ -16,6 +17,7 @@ import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import { DocumentProperties } from "./DocumentProperties";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 
 /** The identity bar's inputs, or null where the pane's header shows the path instead (the dock). */
@@ -70,6 +72,9 @@ export function DocumentPaneChrome({
           onOpenExisting={identity.onOpenExisting}
         />
       ) : null}
+      {/* Properties — read-only frontmatter, under the path in the Editor and
+          the first chrome row in the dock, where the path is in the dock header. */}
+      <DocumentProperties projectId={projectId} tab={tab} />
       <DraftedDeleteNotice documentId={tab.documentId} />
       {/* Other Works' drafts of this document are discoverable wherever it is shown, live or in review. */}
       <DocumentDraftHint projectId={projectId} tab={tab} />

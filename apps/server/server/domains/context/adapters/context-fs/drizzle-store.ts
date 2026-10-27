@@ -40,6 +40,7 @@ import {
 import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
+import { insertNewTree, type NewTreeNode } from "../../tree/new-tree.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
 import { createLiveFolder, ensureLiveFolderPath } from "../../tree/placement.js";
 import { placeLiveSibling } from "../../tree/sibling-order.js";
@@ -73,6 +74,7 @@ type DocumentRow = Pick<
   | "sizeBytes"
   | "updatedAt"
   | "provisionalName"
+  | "metadata"
   | "rank"
 >;
 
@@ -90,6 +92,7 @@ function mapDocument(row: DocumentRow): ContextDocument {
     sizeBytes: row.sizeBytes === null ? null : Number(row.sizeBytes),
     updatedAt: row.updatedAt.toISOString(),
     provisionalName: row.provisionalName,
+    metadata: row.metadata,
     rank: row.rank,
   };
 }
@@ -270,6 +273,29 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       }
       await this.deps.catalogMutations?.refreshSources([this.sourceId], [folderId]);
       return { status: "created" as const, folderId, path: await this.folderPath(folderId) };
+    });
+  }
+
+  async insertNewTree(input: {
+    parentId: string | null;
+    roots: readonly NewTreeNode[];
+    position?: ContextSiblingPosition;
+  }): Promise<"inserted" | "stale-anchor"> {
+    return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      const inserted = await insertNewTree(this.deps.db, {
+        sourceId: this.sourceId,
+        parentId: input.parentId as FolderId | null,
+        roots: input.roots,
+        ...(input.position ? { position: input.position } : {}),
+      });
+      if (inserted === "stale-anchor") return inserted;
+      // The catalog reconciles the project's whole scope, so one refresh covers the tree.
+      await this.deps.catalogMutations?.refreshSources([this.sourceId], inserted.folderIds);
+      // An upload's arrival publishes with its live identity; a tracked document's waits for
+      // its content, in the creation aggregate that called this.
+      await this.deps.arrivals?.settle(inserted.binaryIds);
+      return "inserted";
     });
   }
 

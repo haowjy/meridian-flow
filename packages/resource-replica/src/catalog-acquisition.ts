@@ -41,6 +41,9 @@ type AcquisitionState = {
   followUp: Promise<CatalogCacheView> | null;
 };
 
+/** Install attempts that leave the checkpoint unchanged before the acquisition gives up. */
+const MAX_ATTEMPTS_WITHOUT_PROGRESS = 8;
+
 function checkpointFor(
   projectId: string,
   scope: CatalogScope,
@@ -217,10 +220,26 @@ export class ResourceCatalogAcquisition {
     state: AcquisitionState,
     epoch: number,
   ): Promise<CatalogCacheView> {
+    // One page is one install attempt. Repeating an attempt that leaves the
+    // checkpoint exactly where it was cannot converge, and each attempt reads the
+    // whole account projection, so a catalog that keeps refusing to install must
+    // fail here instead of burning every page before the writer hears about it.
+    let settledCheckpoint: string | null = null;
+    let attemptsWithoutProgress = 0;
     for (let page = 0; page < 100; page += 1) {
       const before = await this.metadata.readProjection(projectId);
       this.assertCurrent(epoch);
       const previous = checkpointFor(projectId, scope, before);
+      const checkpointMark = previous
+        ? `${previous.revision}:${previous.appliedRevision}:${previous.observedHeadRevision}`
+        : "absent";
+      if (checkpointMark === settledCheckpoint) attemptsWithoutProgress += 1;
+      else {
+        settledCheckpoint = checkpointMark;
+        attemptsWithoutProgress = 0;
+      }
+      if (attemptsWithoutProgress >= MAX_ATTEMPTS_WITHOUT_PROGRESS)
+        throw new Error("Resource catalog install is not settling");
       if (!previous) {
         const installed = await this.requestSnapshot(projectId, scope, epoch, before);
         if (!installed.committed) continue;

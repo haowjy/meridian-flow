@@ -9,8 +9,8 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { spelledLinks } from "@meridian/markup/links";
-import type * as Y from "yjs";
+import { settledAheads, spelledLinks } from "@meridian/markup/links";
+import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
   DraftPeerShadowAccess,
@@ -108,6 +108,20 @@ export function createEffectiveDocumentReader(input: {
           await viewOf(command),
         ),
       );
+    },
+    readEffectiveBlocks(command) {
+      return readEffective(command, async (handle) => {
+        const doc = unwrapDoc(handle);
+        const scope = await spelling(command, doc);
+        const blocks = [...input.model.projectBlocks(toDocHandle(doc))];
+        return {
+          content: blocks,
+          revision: documentRevision(doc, scope),
+          holderUri: scope.holder.uri,
+          stateVector: Y.encodeStateVector(doc),
+          aheadSettlements: settledAheads(blocks, scope),
+        };
+      });
     },
     readEffectiveHashlines(command) {
       return readEffective(command, async (handle): Promise<HashlineRead> => {

@@ -18,6 +18,15 @@
 @theme {
   --container-chat-column: 48rem;
   --container-project-screen: 60rem;
+  --animate-progress-slide: progress-slide 1.4s ease-in-out infinite;
+  @keyframes progress-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(333%);
+    }
+  }
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */
@@ -847,6 +856,14 @@
   .mobile-top-bar {
     padding-top: env(safe-area-inset-top);
   }
+}
+
+/* The phone's compact activity bar: 8px margins, directly under MobileTopBar
+   (its h-14 row plus the standalone status-bar inset) and over the content. */
+.activity-phone-bar {
+  top: calc(env(safe-area-inset-top) + 3.5rem + 0.5rem);
+  left: calc(0.5rem + env(safe-area-inset-left));
+  right: calc(0.5rem + env(safe-area-inset-right));
 }
 
 @keyframes block-reveal {

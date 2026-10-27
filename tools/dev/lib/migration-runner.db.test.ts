@@ -4,14 +4,18 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - single-snapshot migration bytes recorded before lock acquisition (kb/decisions/platform/stack/drizzle-migration-integrity.md)
  */
+
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MIGRATION_ADVISORY_LOCK_ID, runMigrations } from "./migration-runner";
 
+const execFileAsync = promisify(execFile);
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 
@@ -74,6 +78,8 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
   const scratchName = `migration_runner_test_${process.pid}_${Date.now()}`;
   const adminUrl = new URL(databaseUrl ?? "");
   adminUrl.pathname = "/postgres";
+  const psqlAdminUrl = new URL(adminUrl);
+  psqlAdminUrl.search = "";
   const scratch = new URL(adminUrl);
   scratch.pathname = `/${scratchName}`;
   const scratchUrl = scratch.toString();
@@ -95,10 +101,23 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
 
   afterAll(async () => {
     try {
-      await sql?.end();
-      await admin.unsafe(`DROP DATABASE IF EXISTS ${scratchName} WITH (FORCE)`);
+      // The full parallel suite can starve postgres.js cleanup behind its own pool.
+      // Start forced pool retirement without awaiting its bookkeeping, then let psql
+      // own the database drop without sharing either pool.
+      void sql?.end({ timeout: 0 });
+      void admin.end({ timeout: 0 });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await execFileAsync("psql", [
+        "--dbname",
+        psqlAdminUrl.toString(),
+        "--set",
+        "ON_ERROR_STOP=1",
+        "--command",
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${scratchName}' AND pid <> pg_backend_pid()`,
+        "--command",
+        `DROP DATABASE IF EXISTS ${scratchName}`,
+      ]);
     } finally {
-      await admin.end();
       if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true });
     }
   });

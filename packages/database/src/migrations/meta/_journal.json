@@ -701,6 +701,34 @@
       "when": 1792965445492,
       "tag": "0105_sibling_rank_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1793036378116,
+      "tag": "0106_import_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1793036403538,
+      "tag": "0107_import_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1793036408861,
+      "tag": "0108_import_staging",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1793063868020,
+      "tag": "0109_import_changed_after_upload",
+      "breakpoints": true
     }
   ]
 }

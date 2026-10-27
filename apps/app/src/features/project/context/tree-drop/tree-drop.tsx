@@ -1,8 +1,9 @@
 /**
  * The one drop dispatcher on the project tree. Rows dragged inside the app
  * (`entries`) have a route; the route decides, this file only dispatches,
- * lights the target and says what the drop will do. Desktop file drops arrive
- * with import.
+ * lights the target and says what the drop will do. Desktop files (`files`)
+ * have their own route: they always import into the row's folder, never at an
+ * edge position.
  */
 import type {
   ContextSiblingPosition,
@@ -20,15 +21,16 @@ import {
   useRef,
   useState,
 } from "react";
+import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
 import { clearDragHint, showDragHint } from "./drag-hint";
-import { dragPayloadKind } from "./drag-payload";
+import { type DragPayloadKind, dragPayloadKind } from "./drag-payload";
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;
   /** The catalog the target belongs to; one list can show several (a chat's Scratch and its earlier notes). */
   catalogRootId: string;
   /** The folder row, or null for the catalog's top level (the area header). */
-  folder: { entryId: string; path: string; name: string } | null;
+  folder: { entryId: string; path: string; uri: string; name: string } | null;
   /** A sibling edge; absent while the folder/container region owns the target. */
   position?: ContextSiblingPosition;
 };
@@ -49,6 +51,17 @@ export type EntriesRoute = {
   drop(target: TreeDropTarget): void;
 };
 
+/** Desktop files: the verdict is `EntriesVerdict`'s shape too, so the hint says what the drop will do. */
+export type FilesRoute = {
+  verdict(target: TreeDropTarget): EntriesVerdict | null;
+  drop(target: TreeDropTarget, items: DroppedItems): void;
+};
+
+export type TreeDropRoutes = {
+  entries?: EntriesRoute;
+  files?: FilesRoute;
+};
+
 export type TreeDropState = "idle" | "over" | "refused";
 
 const SPRING_MS = 600;
@@ -56,7 +69,7 @@ const SPRING_MS = 600;
 type Over = { key: string; refused: boolean; target: TreeDropTarget } | null;
 
 type ScopeValue = {
-  route: EntriesRoute;
+  routes: TreeDropRoutes;
   over: Over;
   /** An element of `key` came under the drag; arms the spring for an accepted target. */
   enter(
@@ -87,7 +100,13 @@ export function treeDropTargetKey(target: TreeDropTarget): string {
  * decides when the target goes dark. Counts, the lit target and spring timers
  * end together when a drag ends anywhere (Escape, a drop elsewhere).
  */
-export function TreeDropScope({ route, children }: { route: EntriesRoute; children: ReactNode }) {
+export function TreeDropScope({
+  routes,
+  children,
+}: {
+  routes: TreeDropRoutes;
+  children: ReactNode;
+}) {
   const [over, setOver] = useState<Over>(null);
   const counts = useRef(new Map<string, number>());
   const springs = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -155,7 +174,7 @@ export function TreeDropScope({ route, children }: { route: EntriesRoute; childr
     };
   }, [scope]);
 
-  const value = useMemo<ScopeValue>(() => ({ route, over, ...scope }), [route, over, scope]);
+  const value = useMemo<ScopeValue>(() => ({ routes, over, ...scope }), [routes, over, scope]);
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
 }
 
@@ -228,23 +247,27 @@ export function useTreeDropTarget(
   const latest = useRef({ target, scope, ...options });
   latest.current = { target, scope, ...options };
 
-  /** Claims the event for this element when the drag carries rows and the scope has a route. */
-  const claim = useCallback((event: DragEvent): boolean => {
-    if (!latest.current.scope || claimed.has(event.nativeEvent)) return false;
-    if (dragPayloadKind(Array.from(event.dataTransfer?.types ?? [])) !== "entries") return false;
+  /** Claims the event for this element when the scope owns the payload's route. */
+  const claim = useCallback((event: DragEvent): DragPayloadKind | null => {
+    if (!latest.current.scope || claimed.has(event.nativeEvent)) return null;
+    const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
+    if (kind === "none" || !latest.current.scope.routes[kind]) return null;
     claimed.add(event.nativeEvent);
-    return true;
+    return kind;
   }, []);
 
-  const resolve = useCallback((event: DragEvent) => {
+  /** Files ignore edges: an edge band is the row's own folder, so an import never takes a sibling position. */
+  const resolve = useCallback((event: DragEvent, kind: DragPayloadKind) => {
     const { target: own, edges } = latest.current;
-    const current = targetAt(own, edges, event);
+    const current = kind === "entries" ? targetAt(own, edges, event) : own;
     return { target: current, key: treeDropTargetKey(current) };
   }, []);
 
   const verdictFor = useCallback(
-    (current: TreeDropTarget): EntriesVerdict | null =>
-      latest.current.scope?.route.verdict(current) ?? null,
+    (kind: DragPayloadKind, current: TreeDropTarget): EntriesVerdict | null => {
+      const routes = latest.current.scope?.routes;
+      return (kind === "entries" ? routes?.entries : routes?.files)?.verdict(current) ?? null;
+    },
     [],
   );
 
@@ -264,6 +287,7 @@ export function useTreeDropTarget(
   const show = useCallback(
     (
       event: DragEvent,
+      kind: DragPayloadKind,
       current: { target: TreeDropTarget; key: string },
       verdict: EntriesVerdict,
     ) => {
@@ -283,17 +307,18 @@ export function useTreeDropTarget(
       }
       // Only an accepted target cancels the default; a refused one keeps the no-drop cursor.
       event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
+      event.dataTransfer.dropEffect = kind === "files" ? "copy" : "move";
     },
     [holding, release],
   );
 
   const hover = useCallback(
     (event: DragEvent) => {
-      if (!claim(event)) return;
-      const current = resolve(event);
-      const verdict = verdictFor(current.target);
-      if (verdict) show(event, current, verdict);
+      const kind = claim(event);
+      if (!kind) return;
+      const current = resolve(event, kind);
+      const verdict = verdictFor(kind, current.target);
+      if (verdict) show(event, kind, current, verdict);
       // The verdict went quiet while hovering (or the pointer reached a quiet edge): give the target back.
       else release();
     },
@@ -311,14 +336,17 @@ export function useTreeDropTarget(
         if (claim(event)) release();
       },
       onDrop(event) {
-        if (!claim(event)) return;
-        const { target: dropped } = resolve(event);
-        const verdict = verdictFor(dropped);
+        const kind = claim(event);
+        if (!kind) return;
+        const { target: dropped } = resolve(event, kind);
+        const verdict = verdictFor(kind, dropped);
         release();
         if (!verdict || verdict.kind === "refuse") return;
         event.preventDefault();
         event.stopPropagation();
-        latest.current.scope?.route.drop(dropped);
+        const routes = latest.current.scope?.routes;
+        if (kind === "entries") routes?.entries?.drop(dropped);
+        else routes?.files?.drop(dropped, captureDrop(event.dataTransfer));
         if (!dropped.position) latest.current.reveal?.();
       },
     }),
@@ -338,6 +366,24 @@ export function useTreeDropTarget(
     dropState: !lit ? "idle" : over?.refused ? "refused" : "over",
     edge,
   };
+}
+
+/** Prevents an unclaimed desktop file drop from navigating the browser away. */
+export function useWindowDropGuard() {
+  useEffect(() => {
+    const guard = (event: globalThis.DragEvent) => {
+      if (event.defaultPrevented) return;
+      if (dragPayloadKind(Array.from(event.dataTransfer?.types ?? [])) !== "files") return;
+      event.preventDefault();
+      if (event.dataTransfer && event.type === "dragover") event.dataTransfer.dropEffect = "none";
+    };
+    window.addEventListener("dragover", guard);
+    window.addEventListener("drop", guard);
+    return () => {
+      window.removeEventListener("dragover", guard);
+      window.removeEventListener("drop", guard);
+    };
+  }, []);
 }
 
 const EDGE_PX = 32;

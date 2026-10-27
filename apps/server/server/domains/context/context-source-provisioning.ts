@@ -165,6 +165,14 @@ async function ensureProjectContextSource(
   return raced;
 }
 
+export function provisionProjectContextSource(
+  db: Database,
+  owner: { projectId: string; userId: string },
+  scheme: ProjectContextFsScheme,
+): Promise<string> {
+  return ensureProjectContextSource(db, owner.projectId, scheme, owner.userId);
+}
+
 async function findWorkContextSource(
   db: Database,
   workId: string,
@@ -345,6 +353,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
   }) {
     return this.mutate((store) => store.createFolderIfAbsent(input));
+  }
+
+  async insertNewTree(input: Parameters<ContextDocumentStore["insertNewTree"]>[0]) {
+    return this.mutate((store) => store.insertNewTree(input));
   }
 
   async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {

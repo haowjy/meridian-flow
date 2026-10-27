@@ -43,6 +43,8 @@ function snapshot(path = "chapter.md", revision = "1"): CatalogSnapshot {
         parentId: "source",
         name: path,
         aliases: [],
+
+        hasProperties: false,
         path: [path],
         uri: `manuscript://${path}`,
         provisionalName: false,

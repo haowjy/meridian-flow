@@ -67,6 +67,8 @@ type CatalogFileEntryBase = {
   uri: CanonicalContextUri;
   /** Catalog-visible identity state used by cross-device untitled reconciliation. */
   provisionalName: boolean;
+  /** The document has imported frontmatter to show; the properties load by id. */
+  hasProperties?: boolean;
   rank?: string | null;
   /**
    * Ids a device's create forwarded into this document (a join). A device holding a

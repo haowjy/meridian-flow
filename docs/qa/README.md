@@ -56,6 +56,7 @@ stack.
 - [Row selection and drag](row-drag.md): multi-select, dragging rows into folders and areas, reordering on row edges and through Move…, refusals, Undo, Scratch and Work Files.
 - [Refused document creates](refused-create.md): a create the server refuses settles once, keeps the document and its text in Unfiled with a mark, and files again from the row or the identity bar; network drops still retry.
 - [New folder](folder-create.md): a folder listed at once and settled in the background: offline and reload, documents and reorders put in a pending folder, a refused create with contents, deleting before it lands, rename, and two tabs.
+- [The server Copy command](copy-server.md): rich folder, hidden occupants, draft sources, fifty documents, a failure on the last child, replay, a source not yet caught up, positions, refusals, other owners and the model's copy, driven with `./mf`.
 - [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as word-snapped `@` references, with refusals and drop-regression checks.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 - [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.
@@ -73,6 +74,7 @@ workloads separately. A missing prerequisite or skipped check is not a pass.
 - `pnpm smoke:prod-boot`: [production build, startup and public routes](../../tools/dev/smoke-app-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
 - `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
 - `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
+- `pnpm --filter @meridian/server exec tsx scripts/probe-link-resolution.ts`: [import link resolution and frontmatter parse timings](../../apps/server/scripts/probe-link-resolution.ts) at vault scale; pure, no database. These scale checks stay out of the correctness gate.
 - [Project repository smoke](../../tools/dev/smoke-project-domain.ts) is not recommended on a shared database: it deletes a fixed project UUID before seeding. It needs run-scoped fixture ownership before becoming a safe catalog entry.
 
 Large-chapter editing, image-in-table layout and browser first-send/concurrent
@@ -120,6 +122,137 @@ Without the stack running, this cannot be checked.
 [Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
 DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
 
+## Import
+
+Start the owned stack with `pnpm dev`; discover HTTPS origins with
+`pnpm portless:list`. The upload-first server and app switch together: do not use
+the old landing UI or old plan/finish probe scripts to certify the new protocol.
+
+For the upload-phase server slice, use an authenticated browser against the
+worktree's API origin and inspect the rendered detail/open-list responses:
+
+1. Create a selection with two small files and one declared over 50 MiB. Create
+   returns uploading, a pending root identity (`created: false`), and one failed
+   `too_large` file. No Context folder or document exists yet.
+2. Send one numbered multipart file, with its id in `X-Import-Changed-Entries`.
+   Repeat with a 200-part request (distinct numbered files under 8 MiB). All 200
+   must be received, selection sizes must stay unchanged, and changed-file
+   attention must count once. A header naming an absent part must return 400.
+   Detail reports received/changed_after_pick; replay the part and confirm the
+   receipt remains unchanged. Reload and confirm the other file is awaiting.
+3. Skip the missing file with `not_found`. State becomes organizing without any
+   additional browser command. Stop now cancels and removes it from the open
+   list. Stop returns without waiting for storage cleanup.
+4. Pick a small file, then send a 52 MiB body for its id. The response must be a
+   durable failed/too_large entry, not a 413 leaving the import awaiting. Send
+   Stop immediately afterwards to check keep-alive transport remains usable.
+5. Race Stop against the real reveal. Stop first leaves no live rows; reveal first
+   leaves the complete tree and returns 409 `import_finished` from Stop.
+6. Drive Folder/Files on desktop and a 393×852 touch phone in both themes.
+   Reading appears immediately. Only the pending folder root appears in the
+   tree/Files listing; tapping it opens the activity card. On phone the activity
+   bar must not cover the first row. On desktop the card fits the rail above its account/navigation footer; View
+   projects remains clickable. Devtools is bottom-right on desktop and absent on phone.
+7. Pause upload by reloading before all bytes arrive. The reloaded tab reads Upload
+   paused with Continue… at once, not Uploading in another window: it holds no upload
+   lock and no other tab does. Continue asks for the original folder. Repick with one
+   changed file and one missing file: only awaiting files send, the changed file is
+   marked, and the missing choice stays inline. Navigate to another project during
+   upload and confirm activity continues with the source project title. Stop in Reading,
+   Uploading, Organizing, and Adding uses one confirmation and discards everything before
+   reveal. Cancelling that confirmation resumes the same activity.
+8. Let the real organizer finish. The whole staged tree and catalog appear together
+   with Done; no imported child is visible beforehand. A lost Stop race says it
+   finished before it could stop. Clean Done acknowledges only after six visible
+   seconds; needs-a-look results stay until dismissed. The fake import API remains
+   useful for isolated rendering work, but is not acceptance evidence.
+9. Fail the first create transport, then return an empty open list. Retry and
+   Stop must remain available with held files. Restore transport and Retry:
+   the same import id succeeds. A later 4xx must not turn an earlier unanswered
+   create into a locally dismissible refusal.
+10. Verify atomic reveal and complete documents with the notes-folder fixture under
+   `apps/server/server/domains/import/__fixtures__/`, including properties and links.
+11. Verify order. In one project make a Knowledge Base folder with four documents and
+   reorder one of them (Move… > Change position, or a row-edge drag) so the folder is
+   manual; make a second folder with the same documents and leave it alone. Import 100+
+   files and a nested folder into each. In the default folder the arrivals list in name
+   order (folders first, numeric-aware); in the manual folder they sit after the last
+   existing row, with ranks above its largest (`select name, rank from documents where
+   folder_id = … order by rank collate "C"`), and the nested folder's own children stay
+   unranked. The pending root drawn while organizing is already in that slot. Then export
+   the project: each folder's entries stream in tree order, depth first, and a manual
+   folder's order survives. Drag a desktop file onto a row's edge and onto a folder: both
+   light the whole folder, the hint says "Import into <folder>", no insertion line draws,
+   and the file lands by the folder's rule, not at the edge.
+12. Reconcile a re-picked folder. To stop mid-upload at a known point, wrap
+   `XMLHttpRequest.prototype.send` in the page so `POST …/imports/<id>/files` fails
+   after N requests, then reload. Check each case with the done card's See files list
+   and the entry rows (`reason`):
+   - Edit a received file and Continue with the same folder. It lists as "Edited after
+     it uploaded. The imported copy is the earlier version." (the entry's
+     `changed_after_upload` column), and the landed document keeps the old text:
+     received bytes are never sent again.
+   - Edit an awaiting file and let one Continue send it, then pause again and Continue
+     with the same folder. It still lists "Changed after you picked it."
+     (`reason = changed_after_pick`): the second Continue must not clear a mark that was
+     true. Keep one other file awaiting (fail its request) so the import stays uploading
+     between Continues, then edit the file again and Continue: it lists both sentences
+     (`changed_after_pick` and `changed_after_upload`). Revert it to the uploaded bytes and
+     Continue: only "Changed after you picked it." remains, because the file is not the
+     one originally picked (its modified time changed). Check the rows after each step.
+   - Pick a copy of the folder with later modified times and some files removed, then
+     Pick again with the original after editing two files that landed from the copy. The
+     copy's marks clear; only the edits list, each with the "Edited after it uploaded"
+     sentence (a file that arrived from the copy and was then edited also lists "Changed
+     after you picked it", because the edit destroys the proof that mark was false). Pick
+     again must send the files the copy lacked.
+   - `chmod 000` a received file and touch it, then Continue. Everything else still
+     sends; the file keeps its reason and is not listed. Do the same to an awaiting file
+     and remove another, then Retry: both skip as unreadable and the rest send.
+   - Make the hash report fail once (wrap `fetch` so the first `POST …/picked` returns
+     500) while a second batch is still sending. The card keeps reading Uploading until
+     that batch lands, then stalls with the error and Retry; the import stays uploading
+     with the last batch held back. Retry repeats the report, then sends the batch, and
+     the import completes. A 400 from `picked` drops the report instead: the held batch
+     sends, the import completes with no marks and Retry is never needed.
+   - Click Import without them while the hash pass is still running (slow
+     `Blob.prototype.arrayBuffer` for `File`s). The report's `POST …/picked` goes before
+     the skip, and the edited files still list "Edited after it uploaded".
+   - Make a read never settle (`arrayBuffer` returning a pending promise for one edited
+     received file, or `slice(0, 1)` for an awaiting one). After 30 seconds the file counts
+     as unreadable: the report goes without it, or the send skips it. The import
+     completes, `navigator.locks.query()` lists no `import-upload`, and a synthetic
+     `beforeunload` event is not prevented.
+   - During a Continue that has received files to hash, the card reads Uploading, never
+     Upload paused.
+13. Two tabs. Start an upload in tab A with slow sends, then open the project in tab B:
+   B's first render reads Uploading in another window, with no Continue (check with a
+   MutationObserver registered at document start; the card must never read Upload paused
+   first). `navigator.locks.query()` lists `import-upload:<id>` while A works. Close A:
+   within one refresh (two seconds while the import is uploading) B reads Upload paused
+   with Continue…. Make A's sends fail until its queue stalls: A shows Retry and releases
+   the lock, and B offers Continue… rather than Uploading in another window. A background
+   tab's slow timers must not change this; presence is the lock, not a heartbeat.
+   Check the start of a fresh upload too, where the lock used to lapse between creating and
+   the first send: put B in its own window (a background tab's timers slow to one a
+   second), log `navigator.locks.query()` in B every 20 ms before A picks the folder, and
+   slow A's sends. `import-upload:<id>` must show from its first appearance until A
+   settles with no gap, and B must never read Upload paused for that import.
+   Reload A mid-upload: A's first render reads Upload paused with Continue…, never
+   Uploading in another window.
+
+For the large gate, generate a 3,219-file/1,207-folder vault with
+`pnpm --filter @meridian/server exec tsx scripts/build-import-performance-fixture.ts <output-dir>`.
+Import it through the browser. Sample the import header and `/readyz` while it runs;
+record selection-to-`organizing` as upload, `organizing` to every entry `prepared`
+as organize, and all-prepared to `revealed_at` as reveal. Keep upload, organize,
+reveal, batch count and unrelated-route p95 separate. The targets are under 60 s,
+under 5 s and under 300 ms respectively.
+
+The DB upload suite covers overlapping receipts, cumulative byte overflow,
+per-user admission, expiry, tombstones, key-age fences, and binary retention.
+Those checks do not replace the browser workflow on the merged app.
+
 ## Before you call it a defect
 
 Three harness artifacts have produced false defects. Rule them out first.
@@ -151,6 +284,39 @@ Three harness artifacts have produced false defects. Rule them out first.
 
 [Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.
 
+## Project export
+
+1. Start an owned worktree with `pnpm dev` and discover its HTTPS routes with
+   `pnpm portless:list`. Seed links across Manuscript and Knowledge Base, a
+   binary image, case-only siblings, two Works with Scratch and Uploads, and a
+   No Work chat with Scratch. Seed `documents.metadata.properties` directly
+   as `{ "format": "yaml", "text": "..." }`.
+2. Download a chapter with
+   `./mf api GET /api/documents/<id>/download --output /tmp/chapter.md`.
+   Check raw frontmatter, relative `.md` links, unescaped `[[text]]`, and
+   escaped `[ref]` and `[^1]`. Ordinary `./mf doc read` stays escaped.
+3. Preview with `./mf api GET '/api/projects/<id>/export/preview?scratch=0&uploads=0'
+   --json`. Check outside-link and pending-draft counts. Download directly with
+   `./mf api GET '/api/projects/<id>/export.zip?scratch=0&uploads=0' --output /tmp/project.zip`.
+   Repeat with both options 1. Each GET independently reauthorizes files and
+   Works; delete a disposable document or Work after preview and confirm it is
+   absent from the download. No ticket, expiry or server affinity exists.
+   Use `unzip -l` and extract to a temporary folder. Default exports omit Works;
+   opt-in exports group by Work and No Work Scratch by lineage chat. Compare
+   image SHA-256. The marker counts actual ZIP content, not the preview.
+4. The scripted relative-link check is in
+   `apps/server/server/domains/export/domain/project-export.test.ts`. It
+   verifies default and opt-in vaults and an in-flight move. The default
+   marker counts excluded Scratch/Uploads links; opt-in links resolve to
+   actual entries. Open the exported project folder in a note app for visual
+   review (not part of the automated check).
+5. In the project title menu, choose Export project. Both switches begin off.
+   A quiet preview loads beneath the switches, updates after a debounce and
+   hides zero counts. Preview failures offer Retry without blocking Export.
+   Export follows the native GET with the chosen options and closes the dialog.
+   Browser owns progress and failures; the app never buffers a ZIP or claims
+   download completion. Stop only
+   this stack with `pnpm dev --stop`.
 ## Messages waiting for usage
 
 [Saved messages waiting for usage](usage-waiting.md) covers durable credit blocks,
