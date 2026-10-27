@@ -5,7 +5,7 @@
  * `re2js`, which never backtracks: V8's own `RegExp` took 20 s on `(a+)+$`
  * against 29 characters. Linear is not free, though: time grows with text length
  * times the compiled program's size, and a bounded repeat multiplies that
- * size, so repeats that multiply past {@link MAX_REPEAT} are refused here. The scan
+ * size, so patterns whose repeat counts add up past {@link MAX_REPEAT} are refused here. The scan
  * adds the other bound, an abort signal it polls between lines. The unit of
  * matching is a line of the document's **grep text** (see `@meridian/agent-edit`'s
  * `grepText`): `^` and `$` anchor lines.
@@ -25,7 +25,7 @@ import { requiredLiterals } from "./required-literals.js";
 /** How many passages one document contributes before the count speaks for the rest. */
 export const PASSAGE_CAP = 3;
 
-/** Largest count a pattern's repeats may multiply to (see {@link repeatProduct}). */
+/** Most a pattern's repeat counts may add up to (see {@link repeatWeight}). */
 export const MAX_REPEAT = 100;
 
 export interface GrepMatcher {
@@ -42,18 +42,26 @@ export interface GrepMatcher {
 }
 
 /**
- * The largest count a pattern's repeats multiply to: `x{n}` is n, `(?:x{n}){m}` is n·m;
- * repeats side by side don't add. Read from the source, not RE2's parse, which `re2js`
- * doesn't expose. Escapes and character classes hold no repeats; `{n,m}` counts m, `{n,}` n.
+ * What a pattern's repeats add up to: `x{n}` is n, `(?:x{n}){m}` is n·m, and repeats side by
+ * side or in alternatives add (`[^z]{100}[^z]{100}` is 200): matching time over a long line
+ * grows with that sum, and a chain of ten `{100}` took 19 s on a 1M-character line where one
+ * takes 2 s. Read from the source, not RE2's parse, which `re2js` doesn't expose. Escapes and
+ * character classes hold no repeats; `{n,m}` counts m, `{n,}` n.
  */
-export function repeatProduct(pattern: string): number {
-  // Each open group keeps the largest product seen inside it and its last item's product.
-  const frames = [{ max: 1, last: 1 }];
-  const top = () => frames[frames.length - 1] as { max: number; last: number };
+export function repeatWeight(pattern: string): number {
+  // Per open group: the weight of its finished items, and of the item a quantifier may still scale.
+  const frames = [{ total: 0, last: 0 }];
+  const top = () => frames[frames.length - 1] as { total: number; last: number };
+  const item = () => {
+    const frame = top();
+    frame.total += frame.last;
+    frame.last = 0;
+  };
   const chars = Array.from(pattern);
   for (let i = 0; i < chars.length; i += 1) {
     const char = chars[i];
     if (char === "\\") {
+      item();
       const next = chars[i + 1];
       if (next === "Q") {
         const end = chars.indexOf("\\", i + 2);
@@ -63,8 +71,8 @@ export function repeatProduct(pattern: string): number {
       } else {
         i += 1;
       }
-      top().last = 1;
     } else if (char === "[") {
+      item();
       let j = i + 1;
       if (chars[j] === "^") j += 1;
       if (chars[j] === "]") j += 1;
@@ -75,9 +83,9 @@ export function repeatProduct(pattern: string): number {
         j += 1;
       }
       i = j;
-      top().last = 1;
     } else if (char === "(") {
-      frames.push({ max: 1, last: 1 });
+      item();
+      frames.push({ total: 0, last: 0 });
       // `(?:`, `(?i:`, `(?P<name>`: the group's own syntax, up to its first `:` or `>`.
       if (chars[i + 1] === "?") {
         let j = i + 2;
@@ -85,31 +93,32 @@ export function repeatProduct(pattern: string): number {
         i = chars[j] === ")" ? j - 1 : j;
       }
     } else if (char === ")" && frames.length > 1) {
-      const group = frames.pop() as { max: number };
-      const parent = top();
-      parent.last = group.max;
-      parent.max = Math.max(parent.max, group.max);
+      const group = frames.pop() as { total: number; last: number };
+      top().last = group.total + group.last;
     } else if (char === "{") {
       const bound = /^\{(\d+)(?:,(\d*))?\}/u.exec(chars.slice(i, i + 24).join(""));
-      if (!bound) continue;
+      if (!bound) {
+        item();
+        continue;
+      }
       const frame = top();
-      frame.last *= Math.max(Number(bound[2] || bound[1]), 1);
-      frame.max = Math.max(frame.max, frame.last);
+      frame.last = Math.max(Number(bound[2] || bound[1]), 1) * Math.max(frame.last, 1);
       i += (bound[0] as string).length - 1;
     } else {
-      top().last = 1;
+      item();
     }
   }
-  return frames[0]?.max ?? 1;
+  const root = top();
+  return root.total + root.last;
 }
 
 const REGEXP_SYNTAX = /[\\^$.*+?()[\]{}|]/gu;
 
 /** Compile once per call, at the trust boundary; the error is the parser's message. */
 export function compileGrep(pattern: string, ignoreCase: boolean): Result<GrepMatcher, string> {
-  const repeat = repeatProduct(pattern);
+  const repeat = repeatWeight(pattern);
   if (repeat > MAX_REPEAT)
-    return Err(`repeats multiply to ${repeat}, above the limit of ${MAX_REPEAT}`);
+    return Err(`repeat counts add up to ${repeat}, above the limit of ${MAX_REPEAT}`);
   const flags = ignoreCase ? RE2JS.CASE_INSENSITIVE : 0;
   try {
     const line = RE2JS.compile(pattern, flags);
