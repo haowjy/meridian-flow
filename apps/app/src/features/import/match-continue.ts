@@ -70,7 +70,11 @@ export function matchContinue(detail: ImportDetail, selection: Selection) {
         file: candidate.file,
         changed,
       });
-    } else if (changed || entry.reason === "changed_after_pick") {
+    } else if (
+      changed ||
+      entry.reason === "changed_after_pick" ||
+      entry.reason === "changed_after_upload"
+    ) {
       // Same size and time means the receipt still matches; anything else needs the hash.
       received.push({ entryId: entry.entryId, file: candidate.file });
     }

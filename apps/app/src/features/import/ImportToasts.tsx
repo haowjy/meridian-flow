@@ -1,7 +1,7 @@
 /** Import activity cards and their inline decisions, shared by desktop and the phone sheet. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ImportScheme } from "@meridian/contracts";
+import { IMPORT_NEEDS_LOOK_REASONS, type ImportScheme } from "@meridian/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
@@ -138,9 +138,7 @@ function ImportToast({
       detail?.entries.filter(
         (entry) =>
           entry.state === "failed" ||
-          ["unreadable", "not_found", "kept_as_file", "changed_after_pick", "upload_lost"].includes(
-            entry.reason ?? "",
-          ),
+          IMPORT_NEEDS_LOOK_REASONS.some((reason) => reason === entry.reason),
       ) ?? [];
     const skipped =
       detail?.entries

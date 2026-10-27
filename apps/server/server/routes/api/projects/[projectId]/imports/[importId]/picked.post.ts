@@ -1,4 +1,5 @@
 /** Continue's re-picked files whose entries are already received; hashes only, no bytes. */
+import { IMPORT_ADMISSION } from "@meridian/contracts";
 import { defineEventHandler } from "nitro/h3";
 import { z } from "zod";
 import { ImportError } from "../../../../../../domains/import/index.js";
@@ -15,10 +16,12 @@ export default defineEventHandler(async (event) => {
               .object({
                 entryId: z.number().int().nonnegative(),
                 sha256: z.string().regex(/^[0-9a-f]{64}$/),
+                size: z.number().int().nonnegative(),
+                modifiedAt: z.number().int().nonnegative(),
               })
               .strict(),
           )
-          .max(10_000),
+          .max(IMPORT_ADMISSION.files),
       })
       .strict()
       .safeParse(await readImportManifest(event));

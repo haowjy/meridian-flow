@@ -15,9 +15,11 @@ received entries by root name, kind and path. Size and modified time break ties
 between duplicate candidates; a changed awaiting file is sent as it is now and
 marked in `X-Import-Changed-Entries`. A received entry is never sent again:
 when its re-pick differs, or it is already marked changed, the browser hashes
-just that file and posts the hash, so an identical copy clears the mark and an
-edited file keeps it. Missing files stay awaiting until the writer chooses
-"Import without them". Starting an upload still never hashes or sniffs files.
+just that file and posts the hash with its size and time. A file edited after
+it uploaded is listed as `changed_after_upload` ("the imported copy is the
+earlier version"); equal bytes clear it, and clear a receive-time
+`changed_after_pick` only when the file also matches the recorded pick. Missing
+files stay awaiting until the writer chooses "Import without them". Starting an upload still never hashes or sniffs files.
 
 The browser mints the import id before reading; every create replay uses that id.
 Creation knowledge (`local`, `uncertain`, `created`), not the toast phase, decides

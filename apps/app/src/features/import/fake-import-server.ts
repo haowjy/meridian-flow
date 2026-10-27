@@ -1,17 +1,22 @@
 /** Instance-owned durable fake. Uploads complete into organize; tests explicitly advance the build. */
 import {
   IMPORT_ADMISSION,
+  IMPORT_NEEDS_LOOK_REASONS,
   type ImportDetail,
   type ImportSummary,
   importNodeId,
+  pickedReason,
 } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportApi } from "./import-api-port";
+import { sha256Hex } from "./sha256";
 export function fakeImportServer() {
   const records = new Map<string, ImportDetail>();
   const closed = new Set<string>();
   const revealed = new Set<string>();
   const sent: number[][] = [];
+  /** What the real server keeps in a receipt: the hash of the bytes a send carried. */
+  const receipts = new Map<string, string>();
   const read = (id: string) => {
     const detail = records.get(id);
     if (!detail) throw new ImportRequestError(404, "import_not_found", undefined, "Missing import");
@@ -36,9 +41,7 @@ export function fakeImportServer() {
       needsLook: entries.filter(
         (entry) =>
           entry.state === "failed" ||
-          ["unreadable", "not_found", "changed_after_pick", "kept_as_file"].includes(
-            entry.reason ?? "",
-          ),
+          IMPORT_NEEDS_LOOK_REASONS.some((reason) => reason === entry.reason),
       ).length,
     };
     if (detail.state === "uploading" && !entries.some((entry) => entry.state === "awaiting"))
@@ -87,6 +90,7 @@ export function fakeImportServer() {
         const entry = detail.entries.find((entry) => entry.entryId === part.entryId)!;
         if (entry.state === "awaiting" && detail.state === "uploading") {
           entry.state = "received";
+          receipts.set(`${id}:${part.entryId}`, await sha256Hex(await part.file.arrayBuffer()));
           if (part.changed) entry.reason = "changed_after_pick";
         }
       }
@@ -112,7 +116,9 @@ export function fakeImportServer() {
       const detail = read(id);
       for (const item of input.entries) {
         const entry = detail.entries.find((entry) => entry.entryId === item.entryId);
-        if (entry?.state === "received") entry.reason = null;
+        const receipt = receipts.get(`${id}:${item.entryId}`);
+        if (entry?.state === "received" && receipt)
+          entry.reason = pickedReason(entry.reason, entry, receipt, item);
       }
       return update(id);
     },

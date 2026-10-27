@@ -1,10 +1,12 @@
 /** Upload-first import commands: immutable selection, staged receipts, and short row-locked transitions. */
-import type {
-  ImportDetail,
-  ImportFilesResult,
-  ImportPickedInput,
-  ImportSkipsInput,
-  ImportSummary,
+import {
+  type ImportDetail,
+  type ImportEntryReason,
+  type ImportFilesResult,
+  type ImportPickedInput,
+  type ImportSkipsInput,
+  type ImportSummary,
+  pickedReason,
 } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ObjectStorePort } from "../../storage/index.js";
@@ -191,25 +193,24 @@ export function createImportUploadService(deps: {
       await repo.transaction(async () => {
         const record = await requireRecord(id, projectId, true);
         uploading(record);
-        const entries = new Map(
-          (
-            await repo.fileEntries(
-              id,
-              input.entries.map((item) => item.entryId),
-            )
-          ).map((entry) => [entry.entryId, entry]),
+        const entries = await repo.fileEntries(
+          id,
+          input.entries.map((item) => item.entryId),
         );
+        const known = new Set(entries.map((entry) => entry.entryId));
         for (const item of input.entries)
-          if (!entries.has(item.entryId)) throw new ImportError(404, "entry_not_found");
-        const hashes = new Map(input.entries.map((item) => [item.entryId, item.sha256]));
-        const patches: { id: string; patch: { reason: "changed_after_pick" | null } }[] = [];
-        for (const [entryId, sha256] of hashes) {
-          const entry = entries.get(entryId);
-          // Only a received entry has bytes to compare; a later pick cannot overwrite them.
-          if (!entry?.receipt) continue;
-          // Another reason (a kept DOCX) is not this command's to clear.
-          if (entry.reason !== null && entry.reason !== "changed_after_pick") continue;
-          const reason = entry.receipt.sha256 === sha256 ? null : "changed_after_pick";
+          if (!known.has(item.entryId)) throw new ImportError(404, "entry_not_found");
+        const picked = new Map(input.entries.map((item) => [item.entryId, item]));
+        const patches: { id: string; patch: { reason: ImportEntryReason | null } }[] = [];
+        for (const entry of entries) {
+          // Only a received entry has bytes to compare; a later pick cannot replace them.
+          if (!entry.receipt) continue;
+          const reason = pickedReason(
+            entry.reason,
+            entry.selection,
+            entry.receipt.sha256,
+            picked.get(entry.entryId)!,
+          );
           if (reason !== entry.reason) patches.push({ id: entry.id, patch: { reason } });
         }
         if (patches.length) await repo.updateEntries(id, patches);

@@ -9,6 +9,8 @@ export function failureSentence(reason: ImportEntryReason | null | undefined): s
       return t`Couldn't read this Word document. Kept as a file.`;
     case "changed_after_pick":
       return t`Changed after you picked it.`;
+    case "changed_after_upload":
+      return t`Edited after it uploaded. The imported copy is the earlier version.`;
     case "upload_lost":
       return t`The uploaded file is no longer available.`;
     case "not_found":

@@ -35,6 +35,7 @@ export type ImportEntryReason =
   | "too_large"
   | "kept_as_file"
   | "changed_after_pick"
+  | "changed_after_upload"
   | "upload_lost"
   | "server_error";
 /** Writer attention is shared by the detail list and the server's aggregate count. */
@@ -48,6 +49,7 @@ export const IMPORT_REASON_NEEDS_LOOK = {
   too_large: true,
   kept_as_file: true,
   changed_after_pick: true,
+  changed_after_upload: true,
   upload_lost: true,
   server_error: true,
 } as const satisfies Record<ImportEntryReason, boolean>;
@@ -117,12 +119,31 @@ export interface ImportSkipsInput {
 /**
  * POST /imports/:id/picked reports files Continue matched to entries that are
  * already received. The browser hashes only files whose size or modified time
- * differs from the entry's recorded pick, and entries already marked changed,
- * so an identical copy clears the mark and an edited file gains it. Received
- * bytes are never sent again.
+ * differs from the entry's recorded pick, and entries already marked changed.
+ * Each item carries the re-picked file's size and modified time so the server
+ * can tell the original pick from an edited or copied one. Received bytes are
+ * never sent again.
  */
 export interface ImportPickedInput {
-  entries: { entryId: number; sha256: string }[];
+  entries: { entryId: number; sha256: string; size: number; modifiedAt: number }[];
+}
+/**
+ * The reason an already-received entry holds after Continue re-picked its file.
+ * `changed_after_upload` says the disk differs from the receipt: the import holds
+ * the earlier text. It is the only reason this sets. `changed_after_pick` (the bytes
+ * sent differed from the pick) is dropped only on proof it was false: the file is
+ * the one originally picked (same size and time) and equals the receipt.
+ */
+export function pickedReason(
+  current: ImportEntryReason | null,
+  pick: { size: number; modifiedAt: number },
+  receiptSha256: string,
+  picked: ImportPickedInput["entries"][number],
+): ImportEntryReason | null {
+  if (picked.sha256 !== receiptSha256) return "changed_after_upload";
+  if (current === "changed_after_upload") return null;
+  const original = picked.size === pick.size && picked.modifiedAt === pick.modifiedAt;
+  return current === "changed_after_pick" && original ? null : current;
 }
 /** Stable refusal codes, with bounded numeric parameters carried separately. */
 export type ImportRefusalCode =

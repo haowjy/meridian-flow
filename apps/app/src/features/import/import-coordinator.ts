@@ -1,5 +1,10 @@
 /** Account-lifetime upload owner. Server summaries are truth; File handles stay private to this tab. */
-import type { ImportDetail, ImportSelection, ImportSummary } from "@meridian/contracts";
+import type {
+  ImportDetail,
+  ImportPickedInput,
+  ImportSelection,
+  ImportSummary,
+} from "@meridian/contracts";
 import { importNodeId } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportDestination } from "./destination";
@@ -9,6 +14,7 @@ import { matchContinue, type PickedReceived } from "./match-continue";
 import { type PendingRootMemory, pendingRoot } from "./pending-roots";
 import { refusalSentence } from "./reason-copy";
 import type { Selection } from "./selection";
+import { sha256Hex } from "./sha256";
 import { UploadQueue } from "./uploader";
 
 export type SelectionRead = (options: { signal: AbortSignal }) => Promise<Selection>;
@@ -436,18 +442,13 @@ export class ImportCoordinator {
   }
   /** Hash only the re-picked received files, then tell the server which receipts they match. */
   private async reconcilePicked(record: RecordState, files: readonly PickedReceived[]) {
-    const entries: { entryId: number; sha256: string }[] = [];
+    const entries: ImportPickedInput["entries"] = [];
     for (const { entryId, file } of files) {
       const signal = record.controller.signal;
       signal.throwIfAborted();
-      const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      const sha256 = await sha256Hex(await file.arrayBuffer());
       signal.throwIfAborted();
-      entries.push({
-        entryId,
-        sha256: [...new Uint8Array(digest)]
-          .map((byte) => byte.toString(16).padStart(2, "0"))
-          .join(""),
-      });
+      entries.push({ entryId, sha256, size: file.size, modifiedAt: file.lastModified });
     }
     if (!entries.length) return;
     this.install(

@@ -2496,6 +2496,10 @@ msgstr "Edited {count} documents"
 msgid "Edited 1 document"
 msgstr "Edited 1 document"
 
+#: src/features/import/reason-copy.ts
+msgid "Edited after it uploaded. The imported copy is the earlier version."
+msgstr "Edited after it uploaded. The imported copy is the earlier version."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Edited file"
 msgstr "Edited file"

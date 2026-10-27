@@ -54,10 +54,17 @@ checks around database waits roll back an expired receive's transaction.
 ## Commands and cleanup
 
 Continue reports its re-picked received entries at `POST .../picked` with a
-SHA-256 per entry. The server compares each hash with the receipt and sets or
-clears `changed_after_pick`; it never reads or stores those bytes again. Only a
-received entry is compared, and a reason other than `changed_after_pick` is left
-alone.
+SHA-256, size and modified time per entry. The server never reads or stores those
+bytes again; `pickedReason` in `@meridian/contracts` (shared with the app's fake)
+decides the entry's reason. Two reasons mean different things. `changed_after_pick`
+is set at receive: the bytes sent differed from the pick, so the import holds the
+newer text. `changed_after_upload` is set only by `picked`: the file on disk differs
+from the receipt, so the import holds the earlier text. A differing hash sets
+`changed_after_upload` (replacing a receive-time mark: the import now disagrees with
+the disk, which is the more useful fact); an equal hash clears it. A receive-time
+mark clears only when the file also matches the recorded pick, which proves the
+mark false (a copy of the folder was picked first, then the original). Only a
+received entry is compared.
 
 Stop cancels and acknowledges uploading, organizing, or failed imports before
 reveal. A non-null `revealed_at` refuses with `import_finished`; finished imports
