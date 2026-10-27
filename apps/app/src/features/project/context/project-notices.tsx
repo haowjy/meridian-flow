@@ -1,12 +1,12 @@
 /**
- * The notices a project's surfaces show after a delete or a move. Each surface
+ * The notices a project's surfaces show after a delete, a move or a copy. Each surface
  * has one notice place: a newer notice of either kind replaces the older, so
  * at most one of the two renders below.
  */
 import type { ReactNode } from "react";
 import { NoticeSlotsProvider, type NoticeSurface } from "../shell/SurfaceNotice";
 import { DocumentDeleteUndoNotice, DocumentDeleteUndoProvider } from "./document-delete-undo";
-import { MoveNotice, MoveNoticesProvider } from "./entry-drag/move-notice";
+import { OperationNotice, OperationNoticesProvider } from "./entry-drag/operation-notice";
 
 export function ProjectNoticesProvider({
   projectId,
@@ -18,7 +18,7 @@ export function ProjectNoticesProvider({
   return (
     <NoticeSlotsProvider>
       <DocumentDeleteUndoProvider projectId={projectId}>
-        <MoveNoticesProvider projectId={projectId}>{children}</MoveNoticesProvider>
+        <OperationNoticesProvider projectId={projectId}>{children}</OperationNoticesProvider>
       </DocumentDeleteUndoProvider>
     </NoticeSlotsProvider>
   );
@@ -34,7 +34,7 @@ export function SurfaceNotices({
   return (
     <>
       <DocumentDeleteUndoNotice surface={surface} className={className} />
-      <MoveNotice surface={surface} className={className} />
+      <OperationNotice surface={surface} className={className} />
     </>
   );
 }

@@ -14,10 +14,13 @@ export type EntryRef = LinkNoteSubject;
 /** A row's selection key. It has no scheme, so it survives a move. */
 export const entryKey = (ref: EntryRef): string => `${ref.kind}:${ref.id}`;
 
-/** A mounted row as a drag sees it: identity, what the preview and payload show, and whether its surface grants Move. */
-export type DragEntry = { ref: EntryRef; name: string; uri: string; movable: boolean };
+/** What a row's surface lets the writer do with it. An archived Work's Scratch can be copied from, not moved out of. */
+export type EntryGrant = { move: boolean; copy: boolean };
 
-export function dragEntry(node: CatalogNode, movable: boolean): DragEntry {
+/** A mounted row as a drag sees it: identity, what the preview and payload show, and what its surface grants. */
+export type DragEntry = { ref: EntryRef; name: string; uri: string; can: EntryGrant };
+
+export function dragEntry(node: CatalogNode, can: EntryGrant): DragEntry {
   return {
     ref:
       node.kind === "file"
@@ -25,7 +28,7 @@ export function dragEntry(node: CatalogNode, movable: boolean): DragEntry {
         : { kind: "folder", id: node.entryId },
     name: node.name,
     uri: node.uri,
-    movable,
+    can,
   };
 }
 

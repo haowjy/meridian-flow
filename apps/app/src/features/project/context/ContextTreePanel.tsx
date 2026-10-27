@@ -159,7 +159,7 @@ function useSchemeTree(
     surface: "sidebar",
     areas: schemes.flatMap((scheme) => {
       const catalog = catalogs[scheme]?.catalog;
-      return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, movable: true }] : [];
+      return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
     }),
   });
   const renderScheme = (scheme: ProjectContextTreeScheme, pane?: PaneState) => (
@@ -335,6 +335,7 @@ function SchemeSection({
             capabilities: [
               "rename",
               "move",
+              "copy",
               ...(scheme !== "uploads" ? (["delete"] as const) : []),
             ],
             activeScheme,

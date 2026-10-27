@@ -1,14 +1,21 @@
-/** Row-anchored folder placement using the same project tree as document paths. */
-import { t } from "@lingui/core/macro";
+/**
+ * Row-anchored folder placement using the same project tree as document paths. One picker for
+ * Move… and Copy to…: both offer the same destinations (a folder cannot go inside itself), and
+ * differ in what picking does. Move… takes one row and offers its position among the folder's
+ * siblings; Copy to… takes any rows (the refusal notice sends back all of a refused Copy's) and
+ * always adds.
+ */
+import { plural, t } from "@lingui/core/macro";
 import type {
   ContextSiblingPosition,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import type { ResourceDestination } from "@meridian/resource-replica";
+import type { ParentRef, ResourceDestination } from "@meridian/resource-replica";
 import {
   ArrowDownToLine,
   ArrowDownUp,
   ArrowUpToLine,
+  Copy,
   CornerDownRight,
   FolderInput,
   type LucideIcon,
@@ -21,69 +28,83 @@ import { Button } from "@/components/ui/button";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
+import { copyOperation } from "./entry-drag/copy-operation";
+import { describeRenames } from "./entry-drag/drop-choice";
+import { copyArrivals, copyRows } from "./entry-drag/execute-copy";
 import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
-import { describeRenames, usePublishMove } from "./entry-drag/move-notice";
-import { moveRefusal, parentOf, sameParent } from "./entry-drag/move-plan";
+import { moveOperation } from "./entry-drag/move-operation";
+import { moveRefusal, parentOf, type ReadyCopy, sameParent } from "./entry-drag/move-plan";
+import { useOperationFeedback } from "./entry-drag/operation-notice";
 import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
-type MoveEntry = { kind: "file" | "folder"; id: string; name: string; path: string };
+export type PickedEntry = { kind: "file" | "folder"; id: string; name: string; path: string };
 
-type EntryMovePickerProps = {
+type EntryDestinationPickerProps = {
   projectId: string;
-  scheme: ProjectContextTreeScheme;
-  owner: TabOwner;
-  entry: MoveEntry;
+  action: "move" | "copy";
+  /** The area the rows sit in, which the menu opens at; absent opens at the project's root. */
+  from?: { scheme: ProjectContextTreeScheme; owner: TabOwner };
+  /** Move… takes exactly one row. */
+  entries: readonly PickedEntry[];
   open: boolean;
   repairMove?: ResourceDestination;
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
 };
 
-export function EntryMovePicker({ children, ...props }: EntryMovePickerProps) {
+export function EntryDestinationPicker({ children, ...props }: EntryDestinationPickerProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   return (
     <div ref={rowRef} className="relative">
       {children}
-      {props.open ? <OpenMovePicker {...props} rowRef={rowRef} /> : null}
+      {props.open ? <OpenPicker {...props} rowRef={rowRef} /> : null}
     </div>
   );
 }
 
 /** Closed rows keep their anchor but do not subscribe to any project catalog. */
-function OpenMovePicker({
+function OpenPicker({
   projectId,
-  scheme,
-  owner,
-  entry,
+  action,
+  from,
+  entries,
   open,
   repairMove,
   onOpenChange,
   rowRef,
-}: Omit<EntryMovePickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
+}: Omit<EntryDestinationPickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const resources = useAccountResourceReplica();
-  const publishMove = usePublishMove();
+  const { surface, publish } = useOperationFeedback();
   const view = useAccountResourceProjection(projectId);
   const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const own = useMemo(() => ({ scheme, owner, heading: schemeLabel(scheme) }), [scheme, owner]);
+  const scheme = from?.scheme;
+  const owner = from?.owner;
+  const own = useMemo(
+    () => (scheme && owner ? { scheme, owner, heading: schemeLabel(scheme) } : null),
+    [scheme, owner],
+  );
   const scratch = useMemo(
-    () => (scheme === "scratch" ? { owner, heading: schemeLabel(scheme) } : null),
+    () => (scheme === "scratch" && owner ? { owner, heading: schemeLabel(scheme) } : null),
     [scheme, owner],
   );
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
-  const currentTrail = source.own.openAt(entry.path);
+  const [entry] = entries;
+  if (!entry) return null;
+  const currentTrail = own ? source.own.openAt(entry.path) : [];
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);
   // The caption names the row as the list shows it; a retry may carry a refused name.
   const rowName = entry.name;
-  const failedFolder = repairMove
-    ? repairMove.parent.kind === "root"
-      ? schemeLabel(repairMove.parent.scheme)
-      : (source.folderFor(repairMove.parent.folderId)?.path.split("/").at(-1) ?? t`that folder`)
-    : null;
+  const failedFolder =
+    action === "move" && repairMove
+      ? repairMove.parent.kind === "root"
+        ? schemeLabel(repairMove.parent.scheme)
+        : (source.folderFor(repairMove.parent.folderId)?.path.split("/").at(-1) ?? t`that folder`)
+      : null;
   const refusal = failedFolder
     ? t`Couldn't move to ${failedFolder}. Try again or pick another folder.`
     : null;
@@ -92,9 +113,19 @@ function OpenMovePicker({
   const ref = { kind: entry.kind, id: entry.id };
   const refusalAt = (destination: MoveDestination) => {
     const into = destinationParent(destination, works, noWork);
+    if (!into) return null;
+    // Copy adds beside what is there, so only a folder inside itself refuses.
+    if (action === "copy")
+      return entries.some(
+        (picked) =>
+          picked.kind === "folder" &&
+          moveRefusal(view, { kind: picked.kind, id: picked.id }, into) === "inside-itself",
+      )
+        ? "inside-itself"
+        : null;
     const position =
-      into && repairMove && sameParent(repairMove.parent, into) ? repairMove.position : undefined;
-    return into ? moveRefusal(view, ref, into, position) : null;
+      repairMove && sameParent(repairMove.parent, into) ? repairMove.position : undefined;
+    return moveRefusal(view, ref, into, position);
   };
 
   /**
@@ -172,7 +203,7 @@ function OpenMovePicker({
         { resources, projectId },
       );
       if (result.failed.length > 0) throw new Error(unavailable);
-      publishMove(result, folder.name);
+      publish(moveOperation(result, folder.name));
       onOpenChange(false);
     } catch {
       setError(unavailable);
@@ -180,6 +211,45 @@ function OpenMovePicker({
       setPending(false);
     }
   }
+
+  /** Copies every picked row into the folder at the end of `trail`, then reports like a drop does. */
+  async function copy(trail: readonly DrillNode[]) {
+    const folder = trail.at(-1);
+    const destination = folder && source.folderFor(folder.id);
+    const into = destination && destinationParent(destination, works, noWork);
+    if (!destination || !into || pending || refusalAt(destination)) return;
+    setPending(true);
+    setError(null);
+    try {
+      const result = await copyRows(
+        copyPlan(destination.scheme, into, folder.name),
+        { resources, projectId },
+        surface,
+      );
+      if (!result) throw new Error(unavailable);
+      publish(copyOperation(result));
+      onOpenChange(false);
+    } catch {
+      setError(unavailable);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const copyPlan = (
+    scheme: ProjectContextTreeScheme,
+    into: ParentRef,
+    destinationName: string,
+  ): ReadyCopy => ({
+    kind: "ready",
+    destinationName,
+    scheme,
+    into,
+    copies: entries.map((picked) => ({
+      entry: { kind: picked.kind, id: picked.id },
+      name: picked.name,
+    })),
+  });
 
   return (
     <DrillInMenu
@@ -199,7 +269,13 @@ function OpenMovePicker({
           ?.querySelector<HTMLElement>('button[data-slot="icon-button"], [role="button"]')
           ?.focus();
       }}
-      caption={t`Move ${rowName}`}
+      caption={
+        action === "copy"
+          ? entries.length === 1
+            ? t`Copy ${rowName}`
+            : plural(entries.length, { one: "Copy # item", other: "Copy # items" })
+          : t`Move ${rowName}`
+      }
       status={error ?? refusal}
       isDisabled={(node) => {
         if (!node.folder) return true;
@@ -213,6 +289,28 @@ function OpenMovePicker({
         const destination = source.folderFor(folder.id);
         const blocked = destination ? refusalAt(destination) : "inside-itself";
         if (blocked === "inside-itself") return [];
+        if (action === "copy") {
+          const into = destination && destinationParent(destination, works, noWork);
+          const renamed =
+            destination && into
+              ? renamesOnArrival(
+                  copyArrivals(copyPlan(destination.scheme, into, folder.name)),
+                  view,
+                )
+              : [];
+          return [
+            {
+              key: "copy",
+              icon: Copy,
+              label: t`Copy to ${folder.name}`,
+              disabled: pending,
+              note: describeRenames(renamed),
+              onSelect: () => {
+                void copy(trail);
+              },
+            },
+          ];
+        }
         const already = blocked === "already-there";
         const positions = already ? positionChoices(folder.name) : [];
         if (positions.length > 0)

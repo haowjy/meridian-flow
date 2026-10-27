@@ -125,7 +125,7 @@ export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewP
   const owner = useMemo(() => ({ workId: work.id }), [work.id]);
   const areas = useMemo(
     () =>
-      catalog ? [{ scheme: "scratch" as const, owner, catalog, movable: files.editable }] : [],
+      catalog ? [{ scheme: "scratch" as const, owner, catalog, accepts: files.editable }] : [],
     [catalog, owner, files.editable],
   );
   const list = useEntryList({ projectId, surface: "work-files", areas });
@@ -151,7 +151,7 @@ export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewP
                   owner,
                   scheme: "scratch",
                   catalog,
-                  capabilities: files.editable ? ["rename", "move", "delete"] : [],
+                  capabilities: files.editable ? ["rename", "move", "copy", "delete"] : ["copy"],
                   activeScheme: "scratch",
                   activePath: catalog.findDocument(docked ?? "")?.path ?? null,
                   visibleIds,
