@@ -3,7 +3,7 @@
 // The serializer escapes text that would otherwise parse as syntax: `LIVE_ONLY`
 // becomes `LIVE\_ONLY` and a leading space becomes `&#x20;`. A model types the
 // writer's words, or copies the escaped form from a `read`, so `find` and
-// `search` compare both sides in this view. Each view character maps to the
+// `grep` compare both sides in this view. Each view character maps to the
 // whole markdown unit it came from, so a match never splits an escape.
 
 /** One left-to-right unit: a backslash escape, a numeric character reference, or a character with its combining marks. */

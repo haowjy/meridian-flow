@@ -98,6 +98,9 @@ export function createEffectiveDocumentReader(input: {
         return null;
       }
     },
+    isStagedByResponse(responseId, documentId) {
+      return input.agentEdit.hasResponseDocument(responseId, documentId);
+    },
     flushDraftLivePull(documentId) {
       return input.draftPulls.flushLivePull(documentId);
     },

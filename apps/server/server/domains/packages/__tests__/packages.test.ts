@@ -76,11 +76,11 @@ __mergedSuite("agent-definition-compiler.test.ts", () => {
     it("applies Mars overlay replacement to the effective allowed and denied channels", () => {
       const result = compile(
         { model: "a", tools: ["read"], "disallowed-tools": ["spawn"] },
-        { model: "b", tools: { allowed: ["search"], disallowed: [] } },
+        { model: "b", tools: { allowed: ["grep"], disallowed: [] } },
       );
       expect(result.definition.metadata).toEqual({
         model: "b",
-        tools: ["search"],
+        tools: ["grep"],
         "disallowed-tools": [],
       });
     });

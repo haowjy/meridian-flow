@@ -1,23 +1,18 @@
 /**
- * The `ls` and `search` tools (file-access §6): rows the file policy lets the
+ * The `ls` tool (file-access §6): rows the file policy lets the
  * agent see, each marked read-only when it can't edit it. A `live` listing
  * reads no draft, so its rows are decided live. `ls` returns a typed listing
  * the model reads as plain text (D61).
  */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { ContextFileEntry, SearchResult } from "../../domains/context/index.js";
+import type { ContextFileEntry } from "../../domains/context/index.js";
 import {
   isSkillsUri,
   type LsEntry,
   type LsResult,
   type LsToolInput,
   listSkillDir,
-  refuseSkillSearch,
-  type SearchToolInput,
-  type ShownLinkShowing,
-  searchPassage,
   skillsRootEntries,
   sortLsEntries,
   type ToolHandlerContext,
@@ -33,7 +28,7 @@ import {
   toolError,
 } from "./tool-context.js";
 
-async function listingCall(
+export async function listingCall(
   deps: ToolWiringDeps,
   ctx: ToolHandlerContext,
   version: LsToolInput["version"],
@@ -118,54 +113,4 @@ function lsFile(entry: ContextFileEntry, verbose: boolean): Omit<LsEntry, "reado
     ...(verbose && !text && entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
     ...(verbose && entry.updatedAt ? { updatedAt: entry.updatedAt } : {}),
   };
-}
-
-export function createSearchHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, ctx: ToolHandlerContext) => {
-    const { pattern, scope, verbose = false, version } = input as SearchToolInput;
-    const skillRefusal = refuseSkillSearch(scope);
-    if (skillRefusal) return skillRefusal;
-    const call = await listingCall(deps, ctx, version);
-    if (isToolError(call)) return call;
-    const { context, principal } = call;
-    const result = await context.port.search(pattern, scope);
-    if (!result.ok) return contextToolError(result.error);
-    const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(result.value));
-    const hits = result.value.flatMap((hit) => {
-      const decision = hit.documentId ? access.get(hit.documentId as DocumentId) : undefined;
-      return decision ? [{ hit, readonly: decision.level !== "edit" }] : [];
-    });
-    return {
-      // Host-only facts never reach the model.
-      output: hits.map(
-        ({ hit: { documentId: _id, revision: _revision, shown: _shown, ...hit }, readonly }) => ({
-          ...hit,
-          readonly,
-        }),
-      ),
-      // Only returned, authorized hits were shown, and only the passages their text shows whole.
-      evidence: { shown: hits.flatMap(({ hit }) => shownPassages(hit, verbose)) },
-      metadata: {
-        documentRevisions: hits.map(
-          ({ hit: { documentId, uri, revision } }) =>
-            ({ documentId, uri, revision }) satisfies DocumentRevisionEvidence,
-        ),
-      },
-    };
-  };
-}
-
-/**
- * A hit's showing as the model receives it: a passage whose window cut its
- * block claims none of its links, since the window may have left one out or
- * split it. Whole passages keep theirs.
- */
-function shownPassages(hit: SearchResult, verbose: boolean): ShownLinkShowing[] {
-  const shown = hit.shown;
-  if (!shown) return [];
-  const links = hit.matches.flatMap((passage, index) =>
-    searchPassage(passage, verbose).whole ? (shown.passages[index] ?? []) : [],
-  );
-  if (links.length === 0) return [];
-  return [{ documentId: hit.documentId, holderUri: shown.holderUri, view: shown.view, links }];
 }

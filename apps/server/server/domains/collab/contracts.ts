@@ -472,6 +472,11 @@ export type DraftPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<string | null>;
   flushDraftLivePull(documentId: DocumentId): Promise<void>;
+  /**
+   * Whether the reply has staged writes to the document that no commit has reached yet: they
+   * leave no draft row, so only this says the persisted projection is behind the reply's view.
+   */
+  isStagedByResponse(responseId: string, documentId: DocumentId): boolean;
   readEffectiveMarkdown(
     input: {
       documentId: DocumentId;

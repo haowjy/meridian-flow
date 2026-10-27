@@ -119,7 +119,7 @@ __mergedSuite("tool-policy.test.ts", () => {
   const PRIMARY_DEFAULT = [
     "ls",
     "read",
-    "search",
+    "grep",
     "skill",
     "spawn",
     "thread_history",

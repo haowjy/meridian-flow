@@ -19,17 +19,17 @@ export type ToolResultRow =
   /** A folder in a listing. Never a door: folders are not documents. */
   | { kind: "folder"; uri: string };
 
-/** One passage a search matched. */
-export type SearchPassage = {
+/** One passage a grep matched. */
+export type GrepPassage = {
   excerpt: ExcerptSpan;
   passage?: ContextPassageAnchor;
 };
 
-/** One document a search matched. */
-export type SearchHitRow = {
+/** One document a grep matched. `output_mode` decides what it carries: passages, a count, or neither. */
+export type GrepHitRow = {
   uri: string;
-  passages: [SearchPassage, ...SearchPassage[]];
-  matchCount: number;
+  passages: GrepPassage[];
+  matchCount?: number;
 };
 
 export type CappedList<T> = {
@@ -39,8 +39,8 @@ export type CappedList<T> = {
 
 export type ToolResultRows = CappedList<ToolResultRow>;
 
-/** A capped list of documents plus what the search found across all of them. */
-export type SearchResultRows = CappedList<SearchHitRow> & { matches: number };
+/** A capped list of documents plus what the grep found across all of them. */
+export type GrepResultRows = CappedList<GrepHitRow> & { matches: number };
 
 export const LISTING_CAP = 8;
 
@@ -56,25 +56,22 @@ type RowSpec<T> = {
 };
 
 /** A section each (name, count, a passage or three), so fewer fit than a bare listing. */
-const SEARCH_CAP = 4;
+const GREP_CAP = 4;
 const LISTING: RowSpec<ToolResultRow> = { cap: LISTING_CAP, toRow: listingEntry };
 
-export function normalizeSearchHits(
-  output: JsonValue | undefined,
-  pattern?: string,
-): SearchResultRows {
-  const list = normalizeEntries(output, {
-    cap: SEARCH_CAP,
-    toRow: (row) => searchHit(row, pattern),
-  });
-  return { ...list, matches: totalMatches(output) };
+/** What `grep` returned (`{ files, totalFiles }`): the documents the model was shown. */
+export function normalizeGrepResult(output: JsonValue | undefined): GrepResultRows {
+  if (!isRecord(output)) return { rows: [], total: 0, matches: 0 };
+  const files = normalizeEntries(output.files, { cap: GREP_CAP, toRow: grepHit });
+  const total = typeof output.totalFiles === "number" ? output.totalFiles : files.total;
+  return { ...files, total: Math.max(total, files.total), matches: totalMatches(output.files) };
 }
 
-function totalMatches(output: JsonValue | undefined): number {
-  if (!Array.isArray(output)) return 0;
+function totalMatches(files: JsonValue | undefined): number {
+  if (!Array.isArray(files)) return 0;
   let total = 0;
-  for (const entry of output) {
-    if (!isRecord(entry) || typeof entry.matchCount !== "number" || entry.matchCount < 1) return 0;
+  for (const entry of files) {
+    if (!isRecord(entry) || typeof entry.matchCount !== "number") return 0;
     total += entry.matchCount;
   }
   return total;
@@ -106,32 +103,47 @@ function isRecord(value: JsonValue | undefined): value is Record<string, JsonVal
 }
 
 /** One document's section of the result card. */
-function searchHit(row: Record<string, JsonValue>, pattern?: string): SearchHitRow | null {
+function grepHit(row: Record<string, JsonValue>): GrepHitRow | null {
   if (typeof row.uri !== "string" || !Array.isArray(row.matches)) return null;
-  if (typeof row.matchCount !== "number" || row.matchCount < 1) return null;
-  const passages: SearchPassage[] = [];
+  const passages: GrepPassage[] = [];
   for (const match of row.matches) {
     if (!isRecord(match) || typeof match.excerpt !== "string") continue;
+    const anchor = matchAnchor(match);
     passages.push({
-      excerpt: excerptAround(match.excerpt, pattern),
-      ...(typeof match.blockHash === "string" && match.blockHash && pattern
-        ? { passage: { blockHash: match.blockHash, term: pattern } }
+      excerpt: excerptAround(match.excerpt, anchor),
+      ...(typeof match.blockHash === "string" && match.blockHash && anchor
+        ? {
+            passage: {
+              blockHash: match.blockHash,
+              term: match.excerpt.slice(anchor.start, anchor.end),
+            },
+          }
         : {}),
     });
   }
-  const [best, ...rest] = passages;
-  if (!best) return null;
-  return { uri: row.uri, passages: [best, ...rest], matchCount: row.matchCount };
+  return {
+    uri: row.uri,
+    passages,
+    ...(typeof row.matchCount === "number" ? { matchCount: row.matchCount } : {}),
+  };
+}
+
+/** Where the first match sits in the excerpt, as the server recorded it; results from before grep have none. */
+function matchAnchor(match: Record<string, JsonValue>): { start: number; end: number } | null {
+  const anchor = match.anchor;
+  if (!isRecord(anchor) || typeof anchor.start !== "number" || typeof anchor.end !== "number")
+    return null;
+  return anchor.end > anchor.start ? { start: anchor.start, end: anchor.end } : null;
 }
 
 /** How much run-up to a match the row keeps before it cuts and marks the cut. */
 const LEAD_BUDGET = 40;
 
-function excerptAround(text: string, pattern?: string): ExcerptSpan {
-  const index = pattern ? text.toLowerCase().indexOf(pattern.toLowerCase()) : -1;
-  if (index < 0 || !pattern) return { lead: text, match: "", trail: "", clipped: false };
+function excerptAround(text: string, anchor: { start: number; end: number } | null): ExcerptSpan {
+  if (!anchor || anchor.end > text.length)
+    return { lead: text, match: "", trail: "", clipped: false };
 
-  const fullLead = text.slice(0, index);
+  const fullLead = text.slice(0, anchor.start);
   const clipped = fullLead.length > LEAD_BUDGET;
   // Cut on a word boundary: a passage that opens mid-word reads as damage
   // rather than as an excerpt.
@@ -140,8 +152,8 @@ function excerptAround(text: string, pattern?: string): ExcerptSpan {
     : fullLead;
   return {
     lead,
-    match: text.slice(index, index + pattern.length),
-    trail: text.slice(index + pattern.length),
+    match: text.slice(anchor.start, anchor.end),
+    trail: text.slice(anchor.end),
     clipped,
   };
 }
@@ -160,8 +172,8 @@ export function boundLabel<T>({ rows, total }: CappedList<T>): string | null {
   return t`${shown} of ${total}`;
 }
 
-/** The card's header: what this search found, and nothing else. */
-export function searchCardSummary(results: SearchResultRows): string {
+/** The card's header: what this grep found, and nothing else. */
+export function grepCardSummary(results: GrepResultRows): string {
   const documents = results.total;
   if (results.matches <= documents) {
     return plural(documents, { one: "# document", other: "# documents" });

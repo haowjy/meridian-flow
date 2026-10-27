@@ -5,7 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import { markdownPlainText, splitHashline } from "@meridian/agent-edit";
+import { splitHashline } from "@meridian/agent-edit";
 import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   classifyFiletype,
@@ -41,14 +41,15 @@ import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
-import { compileGrep, escapeLiteral, type GrepBlock, grepBlocks } from "../../grep/matcher.js";
+import type { GrepBlock } from "../../grep/matcher.js";
 import type {
   AdapterDeleteResult,
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
+  AdapterGrepFile,
+  AdapterGrepResult,
   AdapterMoveResult,
-  AdapterSearchHit,
   ContextBranchTreeAdapter,
   ContextEnsureTrackedOptions,
   ContextSchemeAdapter,
@@ -68,6 +69,8 @@ import type {
   ContextScheme,
   ContextWriteBinaryOptions,
   ContextWriteOptions,
+  GrepQuery,
+  GrepShowing,
   ThreadContextView,
 } from "../../ports/context-port.js";
 import type {
@@ -88,6 +91,7 @@ import {
   OUTLIVED_PATH_FAULT,
 } from "./create-placement.js";
 import { resolveCreateTarget } from "./create-target.js";
+import { type GrepRead, scanDocuments } from "./grep-scan.js";
 import { LiveCreate } from "./live-create.js";
 
 /**
@@ -109,7 +113,10 @@ export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore &
-    Pick<DraftPeerShadowAccess, "readEffectiveHashlines" | "readEffectiveMarkdown">;
+    Pick<
+      DraftPeerShadowAccess,
+      "readEffectiveHashlines" | "readEffectiveMarkdown" | "isStagedByResponse"
+    >;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
@@ -697,77 +704,83 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok(entries);
   }
 
-  async search(
-    query: string,
-    pathPrefix?: string,
-  ): Promise<Result<AdapterSearchHit[], AdapterFault>> {
-    const matcher = compileGrep(escapeLiteral(markdownPlainText(query)), true);
-    if (!matcher.ok) return Ok([]);
-    const prefix = pathPrefix?.replace(/\/+$/, "") ?? "";
-    const documents = await this.collectDocuments(await this.readTreeView(), "", null);
-    const searchable = documents.filter(
-      ({ path, document }) =>
-        document.fileType === null && (!prefix || path === prefix || path.startsWith(`${prefix}/`)),
-    );
+  async grep(query: GrepQuery): Promise<Result<AdapterGrepResult, AdapterFault>> {
+    const prefix = query.path?.replace(/\/+$/, "") ?? "";
+    const { folders, documents } = await this.store.listTree(await this.readTreeView());
+    const folderPaths = new Map<string | null, string>([[null, ""]]);
+    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    const folderPath = (id: string | null): string => {
+      const known = folderPaths.get(id);
+      if (known !== undefined) return known;
+      const folder = byId.get(id as string);
+      const path = folder ? joinPath(folderPath(folder.parentId), folder.name) : "";
+      folderPaths.set(id, path);
+      return path;
+    };
+    const inScope = documents
+      .flatMap((document) => {
+        if (document.fileType !== null) return [];
+        const path = joinPath(
+          folderPath(document.folderId),
+          renderFilename(document.name, document.extension),
+        );
+        const inPrefix = !prefix || path === prefix || path.startsWith(`${prefix}/`);
+        return inPrefix && (!query.glob || query.glob(path)) ? [{ id: document.id, path }] : [];
+      })
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    // Access is decided before anything is matched or counted: neither the hits nor the total
+    // may reveal a document the caller can't read.
+    const access = await query.readable(inScope.map(({ id }) => id));
+    const searchable = inScope.filter(({ id }) => access.has(id));
     const first = searchable[0];
-    if (!first) return Ok([]);
+    if (!first) return Ok({ files: [], totalFiles: 0, exact: true });
+
+    const view = this.threadView();
+    const stored = await this.store.readGrepTexts(searchable.map(({ id }) => id));
+    // Writes this reply staged to a live document stay in memory until it commits and leave no
+    // draft row, so the stored text no longer describes what this reader sees.
+    if (view?.responseId) {
+      for (const id of [...stored.keys()]) {
+        if (this.documentSync.isStagedByResponse(view.responseId, id as DocumentId))
+          stored.delete(id);
+      }
+    }
     // One source has one project association, including personal and Work sources; its
     // chapters' reads join this snapshot, so it is read in their thread.
-    const threadId = this.threadView()?.threadId;
     return this.links.within(
       {
-        documentId: first.document.id,
-        documentIds: searchable.map(({ document }) => document.id),
-        ...(threadId ? { viewer: { threadId } } : {}),
+        documentId: first.id,
+        documentIds: searchable.map(({ id }) => id),
+        ...(view ? { viewer: { threadId: view.threadId } } : {}),
       },
       async () => {
-        const hits: AdapterSearchHit[] = [];
-        for (const row of searchable) {
-          const read = await this.searchableLines(row.document.id);
-          if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-          const blocks = read.value.entries.map((entry, index): GrepBlock => {
-            const parsed = read.value.hashlines ? splitHashline(entry) : null;
-            const body = parsed?.body ?? entry;
-            return {
-              body,
-              destinationFree: read.value.destinationFree[index] ?? body,
-              ...(parsed?.hash ? { hash: parsed.hash } : {}),
-            };
-          });
-          const found = grepBlocks(blocks, matcher.value);
-          if (!found) continue;
-          const { blocks: passageBlocks, ...match } = found;
-          // Only the returned passages can be shown, never the matches past the cap.
-          const passages = passageBlocks.map((block) => read.value.links[block] ?? []);
-          const { holder } = read.value;
-          hits.push({
-            path: row.path,
-            documentId: row.document.id,
-            revision: read.value.revision,
-            ...match,
-            ...(holder?.uri && passages.some((links) => links.length > 0)
-              ? { shown: { holderUri: holder.uri, view: holder.view, passages } }
-              : {}),
-          });
-        }
-        return Ok(hits);
+        const scanned = await scanDocuments({
+          documents: searchable,
+          stored,
+          matcher: query.matcher,
+          mode: query.mode,
+          headLimit: query.headLimit,
+          read: async (documentId) => {
+            const read = await this.readGrepBlocks(documentId);
+            return read.ok ? read : { ok: false, error: this.syncFault(read.error) };
+          },
+        });
+        if (!scanned.ok) return scanned;
+        const { hits, totalFiles, exact } = scanned.value;
+        const files = hits.map(
+          ({ document, match, matchCount, revision, shown }): AdapterGrepFile => ({
+            path: document.path,
+            documentId: document.id,
+            revision,
+            readonly: access.get(document.id) !== "edit",
+            matches: query.mode === "content" && match ? match.matches : [],
+            ...(query.mode === "files_with_matches" ? {} : { matchCount }),
+            ...(shown ? { shown } : {}),
+          }),
+        );
+        return Ok({ files, totalFiles, exact });
       },
     );
-  }
-
-  private async collectDocuments(
-    view: TreeView,
-    path: string,
-    folderId: string | null,
-  ): Promise<Array<{ path: string; document: ContextDocument }>> {
-    const out: Array<{ path: string; document: ContextDocument }> = [];
-    for (const doc of await this.store.listDocuments(view, folderId)) {
-      out.push({ path: joinPath(path, renderFilename(doc.name, doc.extension)), document: doc });
-    }
-    for (const folder of await this.store.listFolders(view, folderId)) {
-      out.push(...(await this.collectDocuments(view, joinPath(path, folder.name), folder.id)));
-    }
-    return out;
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */
@@ -797,54 +810,48 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * What a search scans, and whether its entries carry block hashes. Only the
-   * thread view serializes hashlines, so the flag travels with the text
-   * rather than being re-derived from the scheme name: a read outside a
-   * thread view falls back to plain markdown and would otherwise be parsed as
-   * hashlines it does not have.
+   * A document's blocks as grep matches them, and the link facts each spells. Only the thread
+   * view serializes hashlines; a read outside one falls back to plain markdown lines, where
+   * no model is shown anything, so no destination is hidden and no link recorded.
    */
-  private async searchableLines(documentId: string): Promise<
-    Result<
-      {
-        entries: string[];
-        /** Aligned with `entries`; empty outside a thread view, where destinations are not hidden. */
-        destinationFree: readonly string[];
-        hashlines: boolean;
-        revision: string | null;
-        links: readonly (readonly SpelledLinkFact[])[];
-        holder?: HashlineRead["holder"];
-      },
-      SyncError
-    >
-  > {
+  private async readGrepBlocks(
+    documentId: string,
+  ): Promise<{ ok: true; value: GrepRead<GrepShowing> } | { ok: false; error: SyncError }> {
     const view = this.threadView();
-    if (view) {
-      const hashlines = await this.documentSync.readEffectiveHashlines({
-        ...view,
-        documentId: documentId as DocumentId,
-      });
-      return hashlines.ok
-        ? Ok({
-            entries: hashlines.value.content,
-            destinationFree: hashlines.value.destinationFree,
-            hashlines: true,
-            revision: hashlines.value.revision,
-            links: hashlines.value.links,
-            holder: hashlines.value.holder,
-          })
-        : hashlines;
+    if (!view) {
+      const read = await this.documentSync.readVersionedMarkdown(documentId);
+      if (!read.ok) return read;
+      const blocks = read.value.content
+        .split("\n")
+        .map((line): GrepBlock => ({ body: line, destinationFree: line }));
+      return Ok({ blocks, revision: read.value.revision, shownOf: () => undefined });
     }
-    const read = await this.documentSync.readVersionedMarkdown(documentId);
-    return read.ok
-      ? Ok({
-          entries: read.value.content.split("\n"),
-          destinationFree: [],
-          hashlines: false,
-          revision: read.value.revision,
-          // Plain lines are not blocks; outside a thread no model is shown anything.
-          links: [],
-        })
-      : read;
+    const read = await this.documentSync.readEffectiveHashlines({
+      ...view,
+      documentId: documentId as DocumentId,
+    });
+    if (!read.ok) return read;
+    const { content, destinationFree, links, holder, revision } = read.value;
+    const blocks = content.map((entry, index): GrepBlock => {
+      const parsed = splitHashline(entry);
+      const body = parsed?.body ?? entry;
+      return {
+        body,
+        destinationFree: destinationFree[index] ?? body,
+        ...(parsed?.hash ? { hash: parsed.hash } : {}),
+      };
+    });
+    return Ok({
+      blocks,
+      revision,
+      shownOf: ({ blocks: passageBlocks }) => {
+        // Only the returned passages can be shown, never the matches past the cap.
+        const passages = passageBlocks.map((block) => links[block] ?? []);
+        return holder.uri && passages.some((facts) => facts.length > 0)
+          ? { holderUri: holder.uri, view: holder.view, passages }
+          : undefined;
+      },
+    });
   }
 
   private mutationFault(error: ContextTreeMutationError): AdapterFault {

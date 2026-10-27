@@ -556,11 +556,17 @@ head's generation-local retired-through sequence. A stale checkpoint returns
 Compaction exists but has no production caller, so live journal rows are never
 deleted.
 
-`domain/document-derivations.ts` is the sole projection pipeline for search,
+`domain/document-derivations.ts` is the sole projection pipeline for grep text,
 listings, sizes, and the link index. It derives from a journal-locked durable
 cut. Recovery
 sweeps stale rows and retries failures without advancing certification; a
-projection is never substituted for live Yjs when serving document content.
+projection is never substituted for live Yjs when serving document content,
+with one exception: `grep` matches a document's stored `grep_text` (the same
+`grepText` function the effective hashline read computes per block, pinned equal
+by `grep-text.db.test.ts`) when the derivation is current, no active
+`document_drafts` row names the document, and this reply has staged no write to it.
+Bump `DOCUMENT_EXTRACTOR_VERSION` when the text `grepText` produces changes.
+Certify moves `documents.updated_at` only when the projection's markdown changed.
 
 ## Links and tree changes
 
