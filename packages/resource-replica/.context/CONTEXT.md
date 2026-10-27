@@ -426,12 +426,17 @@ and shares their machinery.
 One Copy is one operation record holding a single `copy` intent (`CopyDesired`: the roots, each with
 its source identity, read view, optional state vector and predicted name, and one destination
 parent with an optional position). `planCopy` admits it with a root record per selected entry, in
-one transaction (`OperationWrite.roots.created`); the roots are the outermost selection only, so
-every `copyId` comes back in the receipt, and a missing one is a contract violation that throws.
+one transaction (`OperationWrite.roots.created`); the roots are the selection's outermost entries as
+this device sees them at the drop.
 
 - **Dispatch** (`prepareCopyAttempt`) finds every source and the destination by identity
   (`lookupIdentity`), never by a stored path, so a source renamed or moved since the drop still
-  copies. A source or destination that is gone is a refusal sent nowhere. The request carries the
+  copies. A source or destination that is gone is a refusal sent nowhere. The server copies a
+  selection through its outermost roots, judged by the places it holds now (`outermostRoots` in the
+  Copy command), and another peer can nest one selected row inside another between the drop and the
+  send. So dispatch applies that same rule to the looked-up places: the request names only the
+  outermost roots, and the roots it leaves out are dropped with their records in the write that
+  submits the attempt. Every `copyId` sent comes back in the receipt. The request carries the
   device's `copyId` per root and each document's state vector captured at the drop, so the server
   waits for the room to hold the writer's unsent edits and a resend after more typing is the same
   Copy.

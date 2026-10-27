@@ -47,6 +47,7 @@ import {
   type ResourceRecord,
   type RootPlace,
   SourceBehindError,
+  sameOwner,
 } from "./resource-records";
 import { moveOwnerFields } from "./resource-work-authority";
 
@@ -104,8 +105,8 @@ export function operationNeedsBackgroundReconciliation(record: OperationRecord):
 
 /**
  * A Copy as the writer asked for it: the operation, and a root record for every selected entry.
- * `roots` holds the outermost selection only (a root inside another is carried by it), so every id
- * minted here comes back in the receipt.
+ * `roots` holds the selection's outermost entries as this device sees them (a root inside another
+ * is carried by it); dispatch narrows it again by where the server holds each source.
  */
 export function planCopy(input: {
   projectId: string;
@@ -186,10 +187,41 @@ function pathParts(path: string): string {
   return path.replace(/^\/+/, "");
 }
 
+type PlacedRoot = { root: CopyRoot; place: ResourceLocation };
+
+/**
+ * The selected roots the server copies, by the places it holds them now: a root under another
+ * selected folder, or at the same place as an earlier one, is already in that copy. This is the
+ * Copy command's own `outermostRoots`. The selection was outermost in the tab that dropped it, but
+ * another peer (the LLM, another device) can nest one selected row inside another before the send;
+ * sent as it was, the server copies the folder with the row in it and names no copy of the row.
+ */
+function outermostPlaced(placed: readonly PlacedRoot[]): PlacedRoot[] {
+  const within = (place: ResourceLocation) => pathParts(place.path).replace(/\/+$/, "");
+  return placed.filter((item, index) => {
+    const path = within(item.place);
+    return !placed.some((other, otherIndex) => {
+      if (
+        otherIndex === index ||
+        other.place.scheme !== item.place.scheme ||
+        !sameOwner(other.place, item.place)
+      )
+        return false;
+      const outer = within(other.place);
+      return (
+        (other.root.kind === "folder" && path.startsWith(`${outer}/`)) ||
+        (outer === path && otherIndex < index)
+      );
+    });
+  });
+}
+
 /**
  * Persists the Copy's request before the transport sees it. Sources are found by identity, at the
  * place the server holds them now; a source or a destination that is gone is a refusal the writer
- * repairs, sent nowhere. Null while a source's place is not settled (a pending move of it).
+ * repairs, sent nowhere. A root the server would copy inside another is dropped here with its
+ * record, so the request names only roots whose copy the receipt will name. Null while a source's
+ * place is not settled (a pending move of it).
  */
 export async function prepareCopyAttempt(
   record: OperationRecord,
@@ -215,13 +247,19 @@ export async function prepareCopyAttempt(
     source.kind === "available" ? [source.location] : [],
   );
   if (!parentLocation || places.length !== sources.length) return refusal(record, intent, copy);
+  const placed = copy.roots.map(
+    (root, index): PlacedRoot => ({
+      root,
+      place: places[index] as ResourceLocation,
+    }),
+  );
+  const sent = outermostPlaced(placed);
   const request: Extract<NamespaceRequest, { kind: "copy" }> = {
     kind: "copy",
     owner: ownerOf(parentLocation),
     body: {
       operationId: record.operationId,
-      sources: copy.roots.map((root, index) => {
-        const source = places[index] as ResourceLocation;
+      sources: sent.map(({ root, place: source }) => {
         const { body: owners } = moveOwnerFields(source, parentLocation);
         return {
           scheme: source.scheme,
@@ -243,11 +281,17 @@ export async function prepareCopyAttempt(
       ...(position ? { position } : {}),
     },
   };
-  return replaceIntent(record, intent.intentId, (current) => ({
-    ...current,
-    state: "submitted",
-    attempts: [...current.attempts, { attemptId, request }],
-  }));
+  const collapsed = placed.filter((item) => !sent.includes(item));
+  return {
+    ...replaceIntent(record, intent.intentId, (current) => ({
+      ...current,
+      state: "submitted",
+      attempts: [...current.attempts, { attemptId, request }],
+    })),
+    ...(collapsed.length > 0
+      ? { roots: { dropped: collapsed.map(({ root }) => root.handle) } }
+      : {}),
+  };
 }
 
 /** Records transport evidence against the attempt it answers; the roots wait for `settleCopy`. */
@@ -290,8 +334,8 @@ export function copyReceipt(
 
 /**
  * Applies the recorded answer to the roots in the transaction that settles the operation: a
- * receipt gives each its place, anything else drops them. A root the receipt does not name is a
- * contract violation, not a refusal.
+ * receipt gives each root it was sent for its place, anything else drops them. A sent root the
+ * receipt does not name is a contract violation, not a refusal.
  */
 export function settleCopy(record: OperationRecord, settledAt = Date.now()): OperationWrite | null {
   const intent = activeNamespaceIntent(record);
@@ -320,23 +364,26 @@ export function settleCopy(record: OperationRecord, settledAt = Date.now()): Ope
   const receipt = copyReceipt(intent);
   if (!receipt) throw new Error("An accepted Copy answers with its receipt");
   const { entries } = receipt;
-  const places = copy.roots.map((root): RootPlace => {
-    const entry = entries.find((candidate) => candidate.id === root.copyId);
-    if (!entry || entry.kind !== root.kind)
-      throw new Error("A Copy receipt must name every root it was asked to copy");
-    return {
-      handle: root.handle,
-      kind: root.kind,
-      location: {
-        scheme: request.body.destinationScheme,
-        path: displayedPath(entry.path),
-        name: entry.name,
-        ...request.owner,
-      },
-      parent: copy.destination.parent,
-      observationVersion: receipt.observationVersion,
-    };
-  });
+  const sent = new Set(request.body.sources.map((source) => source.copyId));
+  const places = copy.roots
+    .filter((root) => sent.has(root.copyId))
+    .map((root): RootPlace => {
+      const entry = entries.find((candidate) => candidate.id === root.copyId);
+      if (!entry || entry.kind !== root.kind)
+        throw new Error("A Copy receipt must name every root it was asked to copy");
+      return {
+        handle: root.handle,
+        kind: root.kind,
+        location: {
+          scheme: request.body.destinationScheme,
+          path: displayedPath(entry.path),
+          name: entry.name,
+          ...request.owner,
+        },
+        parent: copy.destination.parent,
+        observationVersion: receipt.observationVersion,
+      };
+    });
   return { ...settled, roots: { placed: places } };
 }
 

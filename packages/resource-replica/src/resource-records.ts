@@ -338,7 +338,7 @@ export type CopyRoot = {
 /** Where a Copy's roots land: one parent, and where among its children. */
 export type CopyDesired = {
   kind: "copy";
-  /** Outermost roots only, in selection order. */
+  /** The selection's outermost roots as the device saw them at the drop, in selection order; the request names fewer when the server holds one inside another. */
   roots: readonly CopyRoot[];
   destination: Pick<ResourceDestination, "parent" | "position">;
   /** Where the writer started it (opaque to the replica): a refusal shows there when the destination is gone. */
