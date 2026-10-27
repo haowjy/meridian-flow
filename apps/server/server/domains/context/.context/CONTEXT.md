@@ -204,8 +204,11 @@ one source's tree contributes.
   folder is gone, `permission_denied` when the writer cannot edit it), then the destination
   adapter inserts the plan (`copyInto`).
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
-  against live occupants, hidden occupants (taken, never revealed) and the rest of the batch,
-  from a lock-free read of the destination parent. Only the roots meet existing occupants.
+  against live occupants and the rest of the batch, from a lock-free read of the destination
+  parent. A hidden draft node never takes a name from a copy ([naming conflicts never
+  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/naming/naming-conflicts-never-block.md)):
+  the insert normalizes the roots' names, so a hidden node on a root's name yields to the next
+  free one. Only the roots meet existing occupants.
   A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
   every descendant keeps a server-minted identity, so a replay or a replan keeps the roots
   the client already names. Any row already holding a `copyId` — live, hidden, deleted, in
@@ -264,8 +267,8 @@ one source's tree contributes.
   server has not received yet"): retryable and never recorded, so the replica's replay under
   the same operation ID reads the room again, and distinct from a transport failure so the
   replica can stop after a bounded wait. Recording it as `stale_source` would hand the first
-  answer to every replay. No real draft tab has sent a vector yet, so K2 should confirm the
-  draft room's vector against one first.
+  answer to every replay. A live document's vector from a real tab has been checked; no draft
+  tab has sent one yet, so confirm the draft room's vector against one first.
 - Lock hold grows with the statements, not with a round trip per document: 200 linked
   chapters of about 1,500 words hold the destination namespace for about 0.3 s in a fresh
   project. What is left is the catalog reconcile (`refreshSources`), which reads the whole

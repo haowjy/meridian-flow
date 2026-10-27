@@ -10,10 +10,10 @@ import type { CatalogContextView, CatalogFile } from "@/client/query/context-cat
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { EditableContextTab } from "../context/ContextDocumentHost";
 import { parentContextEntryPath } from "../context/context-entry-name";
-import { EntryMovePicker } from "../context/EntryMovePicker";
+import { EntryDestinationPicker } from "../context/EntryDestinationPicker";
 import { EntryNameField } from "../context/EntryNameField";
 import { EntryRefusalNotice } from "../context/EntryRefusalNotice";
-import { MoveFeedbackProvider } from "../context/entry-drag/move-notice";
+import { OperationFeedbackProvider } from "../context/entry-drag/operation-notice";
 import { useEntryInteraction } from "../context/use-entry-interaction";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 
@@ -73,10 +73,10 @@ function RefusedDocument({
     onRequestDelete: () => undefined,
     siblings: parent?.kind === "dir" ? catalog.children(parent.entryId) : [],
   });
-  // Move… publishes its result under the phone's surface, as the Files list does.
+  // Move… publishes its operation under the phone's surface, as the Files list does.
   return (
-    <MoveFeedbackProvider feedback={{ surface: "mobile" }}>
-      <EntryMovePicker {...interaction.movePicker}>
+    <OperationFeedbackProvider feedback={{ surface: "mobile" }}>
+      <EntryDestinationPicker {...interaction.picker}>
         <div className={className}>
           {interaction.renaming ? (
             <RenameField options={interaction.rename} />
@@ -89,8 +89,8 @@ function RefusedDocument({
             />
           ) : null}
         </div>
-      </EntryMovePicker>
-    </MoveFeedbackProvider>
+      </EntryDestinationPicker>
+    </OperationFeedbackProvider>
   );
 }
 

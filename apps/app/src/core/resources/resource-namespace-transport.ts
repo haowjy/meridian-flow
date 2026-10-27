@@ -7,9 +7,11 @@ import {
   type NamespaceRequest,
   namespaceRequestId,
   type ResourceNamespaceTransport,
+  SourceBehindError,
 } from "@meridian/resource-replica";
 import { httpErrorStatus, isMeridianApiError } from "@/client/api/http-client";
 import {
+  copyContextEntries,
   createContextFolder,
   createUntitledContextDocument,
   deleteContextEntry,
@@ -43,6 +45,15 @@ function withinDeadline<T>(
     }, NAMESPACE_REQUEST_DEADLINE_MS);
   });
   return Promise.race([run(signal), expired]).finally(() => clearTimeout(timer));
+}
+
+function isSourceBehind(details: unknown): boolean {
+  return (
+    typeof details === "object" &&
+    details !== null &&
+    "reason" in details &&
+    details.reason === "source_behind"
+  );
 }
 
 export function createResourceNamespaceTransport(
@@ -150,7 +161,9 @@ export function createResourceNamespaceTransport(
         requireOpen();
         return { kind: "create-folder" as const, result };
       }
-      if (request.kind === "move") {
+      if (request.kind === "copy") {
+        await copyContextEntries(projectId, request.body, { signal });
+      } else if (request.kind === "move") {
         await moveContextEntry(projectId, request.scheme, request.body, { signal });
       } else {
         await deleteContextEntry(
@@ -165,6 +178,10 @@ export function createResourceNamespaceTransport(
         );
       }
     } catch (error) {
+      // The source room has not received this device's edits: nothing was recorded, so there is no
+      // receipt to look for. The caller bounds how long it asks again.
+      if (isMeridianApiError(error) && isSourceBehind(error.details))
+        throw new SourceBehindError(error.envelope);
       // A typed final HTTP refusal proves rejection even before receipt intake.
       const status = httpErrorStatus(error);
       if (

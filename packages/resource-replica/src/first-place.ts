@@ -45,11 +45,12 @@ function acceptedAnswers(
   return answers;
 }
 
-/** Whether an accepted answer put `id` where the record stands: its own create's, or its operation's receipt naming it. */
+/** Whether an accepted answer put `id` where the record stands: its own create's, or its operation's receipt naming it as a `kind`. */
 export function firstPlaceWitnessed(
   origin: PlaceOrigin,
   operation: OperationRecord | null,
   id: string,
+  kind: "file" | "folder",
 ): boolean {
   return acceptedAnswers(origin, operation).some(
     ({ outcome }) =>
@@ -57,7 +58,9 @@ export function firstPlaceWitnessed(
       (outcome.kind === "operation" &&
         namespaceReceiptIs(outcome.receipt, "copy") &&
         outcome.receipt.result.ok &&
-        outcome.receipt.result.value.entries.some((entry) => entry.id === id)),
+        outcome.receipt.result.value.entries.some(
+          (entry) => entry.id === id && entry.kind === kind,
+        )),
   );
 }
 

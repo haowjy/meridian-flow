@@ -399,9 +399,11 @@ and shares their machinery.
   predecessor (`PlacementPredecessor.kind: "operation"`, `handle` = operation id) and wait on it.
 - **Replay.** `reconcileOperationNamespace` runs the generic `reconcileNamespaceJournal`. The account
   reconciler schedules it as a third `scheduleOnce` arm (a runner per operation after a reload,
-  `retryAll`, the wake set that reruns waiting placements). The loop sends nothing until an operation
-  kind supplies how it prepares its request and settles its answer.
-- **Roots.** A record an operation made carries `copiedBy: { operationId }`. It holds no create of its
+  `retryAll`, the wake set that reruns waiting placements). An operation is sent under its own
+  operation id and no other: the validator refuses an attempt whose request names another, and the
+  runner hands `prepare` only an attempt id. The one id keys the replay, the receipt, each root's
+  refresh barrier and retention.
+- **Roots.** A record an operation made carries `copiedBy: { operationId, projectId }`. It holds no create of its
   own (no `materialization`, no create eligibility; a folder may hold no intents), and it is born
   `uncertain`. The validators refuse `local` and `spent` for it and a change of operation, because
   `local` means the next placement is a create and a delete settles on this device: a missed dispatch
@@ -419,7 +421,46 @@ and shares their machinery.
   superseded one at once. Unresolved and `needs-repair` operations stay; a refusal outlives a reload
   until the writer dismisses it. The sweep runs on every projection emit and on `retryAll`.
 
-Not built yet: Copy's intent and request kinds (`validateNamespaceJournal` knows no `copy` attempt, and
-the resource, folder and operation validators do not yet refuse each other's intent kinds), the
-settlement that installs each root's place, and the projection that lists a pending operation's roots.
-Until then no product code writes an operation.
+### Copy (`copy-roots.ts`, `operation-journal.ts`)
+
+One Copy is one operation record holding a single `copy` intent (`CopyDesired`: the roots, each with
+its source identity, read view, optional state vector and predicted name, and one destination
+parent with an optional position). `planCopy` admits it with a root record per selected entry, in
+one transaction (`OperationWrite.roots.created`); the roots are the selection's outermost entries as
+this device sees them at the drop.
+
+- **Dispatch** (`prepareCopyAttempt`) finds every source and the destination by identity
+  (`lookupIdentity`), never by a stored path, so a source renamed or moved since the drop still
+  copies. A source or destination that is gone is a refusal sent nowhere. The server copies a
+  selection through its outermost roots, judged by the places it holds now (`outermostRoots` in the
+  Copy command), and another peer can nest one selected row inside another between the drop and the
+  send. So dispatch applies that same rule to the looked-up places: the request names only the
+  outermost roots, and the roots it leaves out are dropped with their records in the write that
+  submits the attempt. Every `copyId` sent comes back in the receipt. The request carries the
+  device's `copyId` per root and each document's state vector captured at the drop, so the server
+  waits for the room to hold the writer's unsent edits and a resend after more typing is the same
+  Copy.
+- **Answer.** `settleCopy` writes the operation's outcome and every root in one transaction. A
+  receipt places each root (`placeResourceRoot`, `placeFolderRoot`): `held`, `canonical` and
+  `canonicalParent` from the receipt and the request's owner, and a canonical refresh keyed to the
+  operation id so queued moves wait for a catalog read. A refusal of any kind (a typed 4xx, a
+  `conflict` receipt, `source_behind` past its bound) drops the roots and their intents; the
+  operation goes `needs-repair` and stays until the writer resolves it
+  (`resolveRefusedCopy`: `superseded`, for Dismiss and for Copy to…, which sends a new Copy).
+  An accepted answer the roots cannot take is a refusal too, not a throw: a receipt that leaves
+  out a root it was sent for (`settleCopy`), or a store that refuses a root's place
+  (`reconcileOperationNamespace` refuses the operation in a second commit). Nothing that fails
+  while settling may leave the operation `received`, because it holds its admission keys and
+  every later placement waits behind it. The refusal keeps the accepted outcome, so the
+  journal validator lets a `needs-repair` intent with one be superseded.
+- **`source_behind`** is resent under the same operation id for `SOURCE_BEHIND_BOUND_MS` from the
+  first one (`OperationRecord.behindSince`), then refused. The server recorded nothing, so
+  retrying is a new Copy.
+- **Projection.** `overlayCopyRoots` shows a root at its operation's destination under its predicted
+  name while the operation is unanswered, as if the root held one pending placement; the store
+  applies it to the projection stream and to nothing else, so admission and dispatch read the stored
+  records. Queued work on the root (a rename, a move, a delete) is newer than the overlay and
+  wins. A folder root shows no children until the catalog lists them.
+- **Admission scope** (`copyScopeKeys`): `entry:<copyId>` and `parent:folder:<copyId>` for every
+  root, `entry:<sourceId>` for every source, and the destination's. Later work on a copy waits for
+  the Copy; the Copy waits behind a pending move or create of its source.

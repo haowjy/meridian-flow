@@ -1,11 +1,11 @@
 /**
  * The compact menu a drop across systems asks with, hung at the pointer where
- * the writer let go: the items the list derived, then Cancel. No heading; the
+ * the writer let go: the items the list derived (Move, Copy), then Cancel. No heading; the
  * labels name the destination. Escape, Cancel and a click outside all close it
  * with nothing changed, and focus goes back to the list.
  */
 import { t } from "@lingui/core/macro";
-import { Fragment } from "react";
+import { Fragment, useId } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +24,7 @@ export type DropChoiceState = Pick<PendingChoice, "point" | "returnFocus"> & {
 };
 
 export function DropChoiceMenu({ point, items, returnFocus, choose, dismiss }: DropChoiceState) {
+  const reasons = useId();
   return (
     <DropdownMenu
       open
@@ -42,11 +43,20 @@ export function DropChoiceMenu({ point, items, returnFocus, choose, dismiss }: D
       >
         {items.map((item) => (
           <Fragment key={item.action}>
-            <DropdownMenuItem disabled={!item.enabled} onSelect={() => choose(item.action)}>
+            <DropdownMenuItem
+              disabled={!item.enabled}
+              aria-describedby={item.reason ? `${reasons}-${item.action}` : undefined}
+              onSelect={() => choose(item.action)}
+            >
               {item.label}
             </DropdownMenuItem>
             {item.reason ? (
-              <p className="px-2 pb-1 text-xs text-muted-foreground">{item.reason}</p>
+              <p
+                id={`${reasons}-${item.action}`}
+                className="px-2 pb-1 text-xs text-muted-foreground"
+              >
+                {item.reason}
+              </p>
             ) : null}
           </Fragment>
         ))}

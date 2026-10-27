@@ -139,7 +139,7 @@ export interface ContextCopyAdapter {
    * Plan `roots` under the scheme-relative folder `dir`: allocate every name and mint every
    * identity, writing nothing and holding no lock. A selected root that carries the device's
    * `copyId` takes it; every descendant is minted here. Names are allocated against live
-   * occupants, hidden occupants (never revealed), and the rest of the batch. A copied folder
+   * occupants and the rest of the batch; a hidden node on a root's name yields at the insert. A copied folder
    * keeps its source ordering policy, and its children arrive in source order.
    */
   planCopy(input: {

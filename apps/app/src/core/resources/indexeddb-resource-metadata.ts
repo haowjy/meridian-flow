@@ -1,6 +1,7 @@
 /** Account-qualified metadata transactions and one shared reactive projection stream. */
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import type {
+  CopyDesired,
   DocumentMaterialization,
   FolderNamespaceRecord,
   FolderNamespaceStore,
@@ -26,6 +27,9 @@ import {
   folderDeletionSettlement,
   holdAfterAttempt,
   originOperation,
+  overlayCopyRoots,
+  placeFolderRoot,
+  placeResourceRoot,
   planFolderDeletionResources,
   planFolderRemintDependents,
   resourceForDocumentIdentity,
@@ -50,7 +54,8 @@ type LegacyDesired =
     }
   | { kind: "set-location"; typedName: string; destination?: ResourceDestination }
   | { kind: "set-folder-location"; typedName: string; destination: ResourceDestination }
-  | { kind: "delete" };
+  | { kind: "delete" }
+  | CopyDesired;
 type LegacyIntent = Omit<NamespaceIntent, "desired"> & { desired: LegacyDesired };
 type AccountProjectionSnapshot = {
   records: readonly ResourceRecord[];
@@ -327,9 +332,14 @@ export class IndexedDbResourceMetadata
           this.folders.toArray(),
           this.operations.toArray(),
         ]);
-        return {
+        // A Copy's unanswered roots are listed at its destination (see `overlayCopyRoots`).
+        const placed = overlayCopyRoots({
           records: this.records(resources, intents),
           folders,
+          operations,
+        });
+        return {
+          ...placed,
           operations,
           catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
         };
@@ -645,18 +655,61 @@ export class IndexedDbResourceMetadata
     return this.run(async () => (await this.operations.get(operationId)) ?? null);
   }
 
+  /**
+   * An operation and its roots commit together. The operation is written first, so each root's
+   * validation reads the receipt that places it.
+   */
   async commitOperation(input: OperationWrite) {
     const write = structuredClone(input);
     return this.run(() =>
-      this.database.transaction("rw", this.operations, this.meta, async () => {
-        const current = (await this.operations.get(write.next.operationId)) ?? null;
-        if ((current?.revision ?? null) !== write.expectedRevision) return "stale" as const;
-        validateOperationRecordUpdate(current, write.next);
-        await this.operations.put(write.next);
-        await this.raiseHighWater(write.next.intents);
-        return "committed" as const;
-      }),
+      this.database.transaction(
+        "rw",
+        [this.operations, this.resources, this.intents, this.folders, this.meta],
+        async () => {
+          const current = (await this.operations.get(write.next.operationId)) ?? null;
+          if ((current?.revision ?? null) !== write.expectedRevision) return "stale" as const;
+          validateOperationRecordUpdate(current, write.next);
+          await this.operations.put(write.next);
+          await this.raiseHighWater(write.next.intents);
+          if (write.roots) await this.writeRoots(write.next.operationId, write.roots);
+          return "committed" as const;
+        },
+      ),
     );
+  }
+
+  private async writeRoots(operationId: string, roots: NonNullable<OperationWrite["roots"]>) {
+    const created = roots.created;
+    if (created) {
+      const resources = created.resources.map((next) => ({ expectedRevision: null, next }));
+      const folders = created.folders.map((next) => ({ expectedRevision: null, next }));
+      if (!(await this.isCurrent(resources)) || !(await this.foldersAreCurrent(folders)))
+        throw new Error("A Copy root's identity is already held");
+      await this.putResources(resources);
+      await this.folders.bulkPut([...created.folders]);
+    }
+    for (const place of roots.placed ?? []) {
+      // A root another context already dropped has nothing left to place.
+      if (place.kind === "folder") {
+        const current = await this.folders.get(place.handle);
+        if (!current) continue;
+        const next = placeFolderRoot(current, place, operationId);
+        await this.validateFolder(current, next);
+        await this.folders.put(next);
+        continue;
+      }
+      const resource = await this.resources.get(place.handle);
+      if (!resource) continue;
+      const current = await this.record(resource);
+      const next = placeResourceRoot(current, place, operationId);
+      await this.validateResource(current, next);
+      await this.resources.put(next.resource);
+    }
+    for (const handle of roots.dropped ?? []) {
+      await this.resources.delete(handle);
+      await this.intents.where("handle").equals(handle).delete();
+      await this.folders.delete(handle);
+    }
   }
 
   /** Drops an operation that nothing reads any more; stale when it changed since `revision` was read. */

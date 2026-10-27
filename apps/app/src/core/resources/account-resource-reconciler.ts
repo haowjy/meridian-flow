@@ -274,7 +274,7 @@ export class AccountResourceReconciler {
         metadata,
         transport,
         lock,
-        newAttemptIds,
+        newAttemptId: () => crypto.randomUUID(),
         gate: this.gate(key, () => this.scheduleOperation({ operationId: key.handle })),
       });
       if (result !== "progressed") return;

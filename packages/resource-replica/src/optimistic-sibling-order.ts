@@ -60,7 +60,7 @@ export function projectOptimisticSiblingOrder(input: {
 }): readonly CatalogEntry[] {
   const { projectId } = input;
   const entries = new Map(input.projected.map((entry) => [entry.entryId, entry]));
-  const ops = placementOps(input).filter(
+  const ops = placementOps({ ...input, operations: [] }).filter(
     (op) =>
       op.intent.projectId === projectId &&
       entries.has(op.subject) &&

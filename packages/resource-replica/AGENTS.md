@@ -31,7 +31,8 @@ is not one: it is one operation over several roots, journaled once as an `Operat
 - An operation over several records is the third journal kind beside a resource's and a folder's
   (`operation-journal.ts`): its own intents, attempts and admission, replayed by the same generic
   loop. The records it makes carry `copiedBy`, are born `uncertain`, and rest on the operation's
-  receipt for their first place and refresh. Ask `first-place.ts` which accepted answer placed a
+  receipt for their first place and refresh. The operation's answer moves them in its own
+  transaction: a receipt places each root, a refusal drops them. Ask `first-place.ts` which accepted answer placed a
   record; never read "its own attempt" to prove a place.
 - Namespace intents and receipts are immutable evidence. Accepted, refused,
   superseded, and terminal outcomes must not be confused with current

@@ -86,8 +86,12 @@ export function folderBaseLocation(
 ): ResourceLocation {
   if (record.canonical) return record.canonical;
   const placed = record.intents.filter((intent) => intent.desired.kind === "set-folder-location");
-  const newest = placed.reduce((a, b) => (b.sequence > a.sequence ? b : a));
-  const name = newest.desired.kind === "set-folder-location" ? newest.desired.typedName : "";
+  const newest = placed.reduce<NamespaceIntent | undefined>(
+    (a, b) => (a && a.sequence > b.sequence ? a : b),
+    undefined,
+  );
+  // A root an operation made has no place until the projection shows it at the destination.
+  const name = newest?.desired.kind === "set-folder-location" ? newest.desired.typedName : "";
   return { scheme: "unfiled", path: `/${name}`, name, workId: null };
 }
 
@@ -123,6 +127,9 @@ export function projectFolderNeedsRepair(record: FolderNamespaceRecord): {
  * installed from a catalog always carries that observation's version.
  */
 export function folderListedLocally(record: FolderNamespaceRecord): boolean {
+  // A root with no place and no placement shown over it (an operation's, read without the projection) has no row.
+  if (!record.canonical && !record.intents.some((i) => i.desired.kind === "set-folder-location"))
+    return false;
   return (
     projectFolderNeedsRepair(record) !== null ||
     record.serverHold !== "held" ||
@@ -430,7 +437,7 @@ export function validateFolderNamespaceUpdate(
   if (
     next.intents.some((intent) =>
       intent.attempts.some(({ request }) =>
-        request.kind === "create"
+        request.kind === "create" || request.kind === "copy"
           ? true
           : request.kind === "create-folder"
             ? !named(request.body.folderId)
@@ -492,7 +499,7 @@ export function validateFolderNamespaceUpdate(
     throw new Error("A folder the server placed is held");
   if (previous?.serverHold === "held" && next.serverHold !== "held")
     throw new Error("A held folder id never stops being held");
-  if (previous && JSON.stringify(previous.copiedBy) !== JSON.stringify(next.copiedBy))
+  if (previous && previous.copiedBy?.operationId !== next.copiedBy?.operationId)
     throw new Error("The operation that made a record never changes");
   // See `validateResourceRecordUpdate`: a root is never `local`, so a missed gate stalls, not writes.
   if (next.copiedBy && next.serverHold !== "uncertain" && next.serverHold !== "held")
@@ -515,7 +522,7 @@ export function validateFolderNamespaceUpdate(
     previous &&
     !previous.canonical &&
     next.canonical &&
-    !firstPlaceWitnessed(next, operation, next.folderId)
+    !firstPlaceWitnessed(next, operation, next.folderId, "folder")
   )
     throw new Error("A local folder gains a place only from its accepted create");
   if (next.canonicalRefresh && !refreshWitness(next, operation, next.canonicalRefresh.operationId))
@@ -924,7 +931,7 @@ export function reconcileFolderNamespace(input: {
     // outcome. The immutable request may be refused, but can never wait for a receipt forever.
     replayEligible: (record, _intent, attempt) => {
       const request = attempt.request;
-      if (request.kind === "create") return false;
+      if (request.kind === "create" || request.kind === "copy") return false;
       if (request.kind === "create-folder") return request.body.folderId === record.folderId;
       return (
         !record.canonicalRefresh &&

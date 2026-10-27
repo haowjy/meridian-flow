@@ -12,7 +12,12 @@ import { EntrySelectionProvider, useEntrySelection, useEntrySelectionRow } from 
 vi.mock("@/hooks/use-phone-shell", () => ({ usePhoneShell: () => false }));
 
 function entry(id: string): DragEntry {
-  return { ref: { kind: "file", id }, name: id, uri: `scratch://@w/${id}`, movable: true };
+  return {
+    ref: { kind: "file", id },
+    name: id,
+    uri: `scratch://@w/${id}`,
+    can: { move: true, copy: true },
+  };
 }
 
 function Row({ row, active }: { row: DragEntry; active: boolean }) {

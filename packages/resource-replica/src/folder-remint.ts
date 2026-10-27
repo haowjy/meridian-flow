@@ -90,7 +90,7 @@ function followedDestination(
 /** The same placement queued again under the new folder id; its admission keeps its place in order. */
 function followedIntent(intent: NamespaceIntent, from: string, to: string, sequence: number) {
   const { desired } = intent;
-  if (desired.kind === "delete") return intent;
+  if (desired.kind === "delete" || desired.kind === "copy") return intent;
   return {
     ...intent,
     intentId: `${intent.intentId}@${to}`,
@@ -105,6 +105,7 @@ function followsRemint(intent: NamespaceIntent, from: string): boolean {
     intent.state === "pending" &&
     intent.attempts.length === 0 &&
     intent.desired.kind !== "delete" &&
+    intent.desired.kind !== "copy" &&
     namesFolder(intent.desired.destination, from)
   );
 }

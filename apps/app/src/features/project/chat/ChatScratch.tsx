@@ -128,7 +128,7 @@ function useChatScratchList(
               scheme: "scratch" as const,
               owner: scratch.owner,
               catalog: primary.catalog,
-              movable: editable,
+              accepts: editable,
             },
           ]
         : []),
@@ -138,7 +138,7 @@ function useChatScratchList(
               scheme: "scratch" as const,
               owner: { rootThreadId: scratch.earlierRootThreadId },
               catalog: earlier.catalog,
-              movable: true,
+              accepts: true,
             },
           ]
         : []),
@@ -301,8 +301,9 @@ function ChatScratchTree({
 }
 
 const EARLIER_NOTES_ID = "earlier:scratch";
-const SCRATCH_ACTIONS: EntryCapabilities = ["rename", "move", "delete"];
-const READ_ONLY: EntryCapabilities = [];
+const SCRATCH_ACTIONS: EntryCapabilities = ["rename", "move", "copy", "delete"];
+// An archived Work's Scratch can be copied from, not changed.
+const READ_ONLY: EntryCapabilities = ["copy"];
 
 /** One real owner per tree; the Earlier notes disclosure is outside both catalogs. */
 function ScratchCatalog({

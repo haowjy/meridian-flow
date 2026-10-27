@@ -4,6 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
   ChevronRight,
+  Copy,
   FilePlus,
   Files,
   Folder,
@@ -43,6 +44,7 @@ export type EntryAction =
   | "import-files"
   | "rename"
   | "move"
+  | "copy"
   | "delete";
 
 type EntryActionSpec = {
@@ -73,6 +75,7 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   },
   { action: "rename", label: <Trans>Rename</Trans>, icon: Pencil, group: "manage" },
   { action: "move", label: <Trans>Move…</Trans>, icon: FolderInput, group: "manage" },
+  { action: "copy", label: <Trans>Copy to…</Trans>, icon: Copy, group: "manage" },
   {
     action: "delete",
     label: <Trans>Delete</Trans>,

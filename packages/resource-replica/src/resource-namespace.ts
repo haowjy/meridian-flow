@@ -288,6 +288,8 @@ function unrecordedAttempt(attemptId: string, request: NamespaceRequest): Namesp
       return { attemptId, request };
     case "delete":
       return { attemptId, request };
+    case "copy":
+      return { attemptId, request };
   }
 }
 
@@ -326,6 +328,20 @@ export function namespaceOutcomeMatches(
       source.value.path === normalizedPath(attempt.request.body.path) &&
       authorityMatches(attempt.request.scheme, source.value.authority, attempt.request) &&
       JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
+    );
+  }
+  if (attemptIs(attempt, "copy") && namespaceReceiptIs(receipt, "copy")) {
+    const { body } = attempt.request;
+    return (
+      receipt.command.sources.length === body.sources.length &&
+      body.sources.every(
+        (source, index) =>
+          source.copyId === receipt.command.sources[index]?.copyId &&
+          JSON.stringify(source.expected) ===
+            JSON.stringify(receipt.command.sources[index]?.expected),
+      ) &&
+      sameDestinationParent(receipt.command.destinationParent, body.destinationParent) &&
+      JSON.stringify(receipt.command.position) === JSON.stringify(body.position)
     );
   }
   if (attemptIs(attempt, "move") && namespaceReceiptIs(receipt, "move")) {
@@ -428,6 +444,16 @@ export function namespaceAttemptWithOutcome(
     attemptIs(attempt, "delete") &&
     outcome.kind === "operation" &&
     namespaceReceiptIs(outcome.receipt, "delete")
+  )
+    return {
+      attemptId: attempt.attemptId,
+      request: attempt.request,
+      outcome: { kind: "operation", receipt: outcome.receipt },
+    };
+  if (
+    attemptIs(attempt, "copy") &&
+    outcome.kind === "operation" &&
+    namespaceReceiptIs(outcome.receipt, "copy")
   )
     return {
       attemptId: attempt.attemptId,
@@ -702,9 +728,10 @@ function replayEligible(
       record.resource.aliases[attempt.request.body.documentId] !== undefined
     );
   if (intent.identityRevision !== record.resource.identity.revision) return false;
-  // A folder's request never rides a document's journal.
+  // A folder's or an operation's request never rides a document's journal.
   return (
     attempt.request.kind !== "create-folder" &&
+    attempt.request.kind !== "copy" &&
     sameSource(record.resource.canonical, attempt.request)
   );
 }

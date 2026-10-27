@@ -50,7 +50,7 @@ export type MoveResult = {
   failed: readonly { entry: EntryRef; name: string; action: "move" | "reorder" }[];
 };
 
-type Arrival = {
+export type Arrival = {
   entry: EntryRef;
   name: string;
   /** The name the writer asked for (a Move… retry keeps a refused rename); the row's own otherwise. */
@@ -83,7 +83,7 @@ async function placeEntry(
  * though the replica has not caught up (two `Notes` folders become
  * `Notes (2)` and `Notes (3)`), and a row that fails reserves nothing.
  */
-function arrivals(view: NamingView, rows: readonly Arrival[]) {
+export function arrivals(view: NamingView, rows: readonly Arrival[]) {
   const byParent = new Map<string, NameOccupancy>();
   const staying = new Map<string, Set<string>>();
   for (const row of rows) {
@@ -146,7 +146,7 @@ export function renamesOnArrival(
   });
 }
 
-async function currentView(context: MoveContext) {
+export async function currentView(context: MoveContext) {
   const snapshot = await context.resources.readProjection(context.projectId);
   return {
     records: snapshot.records,

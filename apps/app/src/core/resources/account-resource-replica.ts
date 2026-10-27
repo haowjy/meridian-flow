@@ -1,9 +1,16 @@
 /** Sole browser account owner for durable resource metadata, content, catalogs, and namespace work. */
-import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type {
+  CatalogScope,
+  ContextSiblingPosition,
+  CopyContextEntryView,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeResourceTerminalCleanup,
+  type CopyRoot,
   capturePlacementAdmission,
+  copyScopeKeys,
   deleteNeedsServer,
   type FolderNamespaceRecord,
   type FolderNamespaceWrite,
@@ -14,6 +21,7 @@ import {
   type PlacementAdmission,
   type PlacementSpec,
   planCachedSessionAdoption,
+  planCopy,
   planFolderCreate,
   planFolderDeletion,
   planFolderLocalDeletionUndo,
@@ -31,6 +39,7 @@ import {
   type ResourceRecord,
   recordAcquiredResourceContent,
   reserveResourceDocument,
+  resolveRefusedCopy,
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
   sameOwner,
@@ -718,6 +727,96 @@ export class AccountResourceReplica {
       this.reconciler.schedule(key);
     });
     return { isLatest, ...(admitted ? { operationId } : {}) };
+  }
+
+  /**
+   * Copy entries into one destination. The roots are listed there at once under their predicted
+   * names (`overlayCopyRoots`); the server's answer places them, or a refusal removes them. A
+   * document the device holds open sends its state vector, so the copy waits for edits the server
+   * has not received. `view` is what the copy reads: the live document, or the draft a tab shows.
+   */
+  async copyEntries(
+    projectId: string,
+    input: {
+      sources: readonly {
+        kind: "file" | "folder";
+        id: string;
+        predictedName: string;
+        view?: CopyContextEntryView;
+        /** A draft tab's room vector; a live document's comes from its open session. */
+        stateVector?: string;
+      }[];
+      /** The destination's scheme: an account-owned `user` folder belongs to no project. */
+      scheme: ProjectContextTreeScheme;
+      destination: { parent: ParentRef; position?: ContextSiblingPosition };
+      /** Where the writer started it; a refusal shows there when the destination is gone. */
+      origin?: string;
+    },
+  ): Promise<{ operationId: string; roots: readonly CopyRoot[] }> {
+    this.requireOpen();
+    const operationId = crypto.randomUUID();
+    const roots = await Promise.all(
+      input.sources.map(async (source) => {
+        const view = source.view ?? { kind: "live" as const };
+        const known =
+          source.kind === "file" ? await this.readKnownDocument(projectId, source.id) : null;
+        if (source.kind === "file" && !known) throw new Error("Document is not in the replica");
+        const stateVector =
+          source.stateVector ??
+          (source.kind === "file" && view.kind === "live"
+            ? this.content.stateVector(source.id)
+            : null);
+        return {
+          kind: source.kind,
+          handle: crypto.randomUUID(),
+          copyId: crypto.randomUUID(),
+          sourceId: source.id,
+          view,
+          ...(stateVector ? { stateVector } : {}),
+          predictedName: source.predictedName,
+          classification: known?.record.resource.classification ?? null,
+        };
+      }),
+    );
+    await this.admitPlacement(
+      projectId,
+      null,
+      () => ({
+        projectId,
+        subject: operationId,
+        source: null,
+        destination: input.destination.parent,
+        position: input.destination.position,
+        touches: copyScopeKeys(roots),
+      }),
+      async (admission) => {
+        const committed = await this.metadata.commitOperation(
+          planCopy({
+            projectId,
+            operationId,
+            intentId: crypto.randomUUID(),
+            admission,
+            scheme: input.scheme,
+            roots,
+            destination: input.destination,
+            origin: input.origin,
+          }),
+        );
+        if (committed !== "committed") throw new Error("Copy operation identity collided");
+      },
+    );
+    return { operationId, roots: roots.map(({ classification: _, ...root }) => root) };
+  }
+
+  /** The writer is done with a refused Copy: dismissed, or sent again as a new one. */
+  async resolveCopyRefusal(operationId: string): Promise<void> {
+    this.requireOpen();
+    for (;;) {
+      const current = await this.metadata.readOperation(operationId);
+      const write = current && resolveRefusedCopy(current);
+      if (!write) return;
+      if ((await this.metadata.commitOperation(write)) === "committed") return;
+    }
   }
 
   /**

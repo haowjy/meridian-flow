@@ -1,13 +1,13 @@
 # The server Copy command
 
 Named risks: a copy points a link or an image at the original when the target was
-copied with it, reveals a hidden draft document instead of naming around it, leaves
+copied with it, reveals a hidden draft document or lets one take its name, leaves
 a partial tree or a duplicated object behind when it fails, answers a retry with the
 first stale answer for ever, scatters the roots of one drop, copies a root twice when a
 selection nests, or holds a lock that stalls every writer of the destination while a big
 tree is written. This recipe drives
 the server with `./mf` (`doc copy` shares no client code; it is evidence of the
-server only). The browser's Copy is a later slice. It is not a current pass claim.
+server only). The browser's Copy has its own recipe, [Copy in the tree](copy-browser.md).
 
 ## Setup
 
@@ -39,8 +39,10 @@ server only). The browser's Copy is a later slice. It is not a current pass clai
 2. **Hidden occupant.** A draft-mode chat creates `kb://Hidden/Sheet` and
    `kb://Hidden/Vault/Note` (`./mf thread send <chat> go --mock @script.json`, a
    `write` create each). Copy a live `Sheet` and a live `Vault` folder into
-   `kb://Hidden`: the copies are `Sheet (2)` and `Vault (2)`, and the hidden rows
-   stay hidden and unchanged.
+   `kb://Hidden`: the copies take the names `Sheet` and `Vault` (a hidden node never
+   vetoes a visible one), and the hidden rows stay hidden and yield to `Sheet (2)` and
+   `Vault (2)` in the draft, still holding the draft's text. The same copy where the
+   name is held by a live document lands at `Sheet (2)`.
 3. **Draft source.** The same chat overwrites `manuscript://Outside/Sheet` in its
    draft. Copy it with `--draft-work w1 --draft-thread <chat>`: the copy holds the
    draft text and `metadata.copiedFrom.version` is `draft`. Copy without the flags:

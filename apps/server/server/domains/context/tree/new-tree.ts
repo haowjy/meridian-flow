@@ -3,11 +3,12 @@
  * batch of rows replaces one create per node (about fifteen statements each), so the time the
  * namespace lock is held grows with the bytes written, not with a round trip per document.
  *
- * The caller holds the namespace lock and has proven that no live or hidden node holds a
- * root's name. Everything below a root sits in a folder this call creates, so nothing else
- * can hold its name. That is what lets this skip, per node, what a single create does for an
- * occupied namespace: the occupancy check, the hidden-candidate pick and the yield of hidden
- * nodes that claim the same name (`createLive`, `normalizeNames`).
+ * The caller holds the namespace lock and has proven that no live node holds a root's name.
+ * A hidden node (a draft's) may hold it: a hidden node never vetoes a visible one, so the roots
+ * arrive and any hidden node on their names yields (`normalizeNames`, as `createLive` does).
+ * Everything below a root sits in a folder this call creates, so nothing else can hold its
+ * name. That is what lets this skip, per node, what a single create does for an occupied
+ * namespace: the occupancy check and the hidden-candidate pick.
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
@@ -17,6 +18,7 @@ import { generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type { BinaryNode, TrackedNode } from "./hidden-node-types.js";
+import { normalizeNames } from "./name-normalization.js";
 import { type ClaimedLocation, recordLocationHistory } from "./node-locations.js";
 import { documentRowValues, folderRowValues } from "./node-rows.js";
 import { arrivalRanks, placeLiveSibling } from "./sibling-order.js";
@@ -152,6 +154,8 @@ export async function insertNewTree(
   }
   // A path an old document vacated is claimed by the live one that now sits there.
   await recordLocationHistory(db, { vacated: [], claimed });
+  // Only a root can meet a hidden node on its name; the one it meets yields to the free name.
+  await normalizeNames(db, roots);
 
   let position = input.position;
   for (const root of roots) {
