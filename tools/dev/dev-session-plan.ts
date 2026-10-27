@@ -195,6 +195,7 @@ function portlessCommandBody({
 }
 
 function renderPortlessCommand({
+  repoRoot,
   mode,
   clientBuild,
   sharedPorts,
@@ -204,6 +205,7 @@ function renderPortlessCommand({
   worktreePrefix,
   force,
 }: {
+  repoRoot: string;
   mode: DevMode;
   clientBuild: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
@@ -213,7 +215,9 @@ function renderPortlessCommand({
   worktreePrefix?: string;
   force: boolean;
 }): string {
-  return `mkdir -p logs logs/events && ${envSourcePreamble(
+  // tmux ignores `new-session -c` once its server's cwd has been deleted, so the
+  // command anchors itself; every path below is relative to the checkout.
+  return `cd ${shellQuote(repoRoot)} && mkdir -p logs logs/events && ${envSourcePreamble(
     env,
     internalApiOrigin,
     redacted,
@@ -236,6 +240,7 @@ export function resolveInternalApiOrigin(
 }
 
 export function createDevSessionCommand({
+  repoRoot,
   mode,
   clientBuild = "development",
   sharedPorts,
@@ -243,6 +248,7 @@ export function createDevSessionCommand({
   worktreePrefix,
   force = false,
 }: {
+  repoRoot: string;
   mode: DevMode;
   clientBuild?: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
@@ -253,6 +259,7 @@ export function createDevSessionCommand({
   const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix, env);
   return {
     executable: renderPortlessCommand({
+      repoRoot,
       mode,
       clientBuild,
       sharedPorts,
@@ -263,6 +270,7 @@ export function createDevSessionCommand({
       force,
     }),
     display: renderPortlessCommand({
+      repoRoot,
       mode,
       clientBuild,
       sharedPorts,
@@ -306,6 +314,7 @@ export function createDevSessionPlan({
       sharedPorts.map((entry) => [entry.service, entry.appBackendPort]),
     ),
     command: createDevSessionCommand({
+      repoRoot,
       mode: session.mode,
       clientBuild: session.clientBuild,
       sharedPorts,

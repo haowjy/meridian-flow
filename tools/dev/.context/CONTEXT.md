@@ -94,6 +94,10 @@ and stopped. Startup, `./mf`, and browser discovery use that active
 identity, not current HEAD; Git derives only the next launch's identity. A
 single resolved `DevSessionPlan` supplies commands, ports and verification
 expectations. New/reused sessions share one readiness-and-publication pipeline.
+Each launch command begins with `cd <checkout> &&` and tmux clients run from
+`$HOME`: a session lands in its own checkout even when the server's cwd has been
+deleted (tmux then silently ignores `new-session -c`), and a newly started server
+never carries a worktree's cwd that cleanup can remove.
 
 Portless is the URL source of truth. `resolvePortlessProxyPort` reads the port the running proxy recorded in `proxy.port` under `PORTLESS_STATE_DIR` (default `~/.portless`), falling back to `PORTLESS_PORT` before a proxy has written one. Every route expectation, readiness probe, internal SSR origin and `./mf` discovery uses that one value. Hosts carry the port only when it is not Portless's default 443, so default-port URLs stay bare. `pnpm dev` reports `started` only after
 expected routes, real HTTP readiness probes, and (when enabled) verified
