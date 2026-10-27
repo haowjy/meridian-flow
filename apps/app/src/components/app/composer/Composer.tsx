@@ -63,6 +63,7 @@ import {
   serializeComposerDraft,
 } from "./composer-document";
 import { useComposerPlaceholder } from "./placeholders";
+import { type DroppedEntry, useFileDrop } from "./use-file-drop";
 import { useRestoredReferences } from "./useRestoredReferences";
 
 export type {
@@ -151,11 +152,15 @@ export type ComposerProps = {
   cards?: ReactNode;
   /** Strips joined to the box's top edge (the draft dock); the notes sit above them. */
   attached?: ReactNode;
+  /** A desktop file drag is over another part of the chat that attaches here; the box lights as its target. */
+  fileDropActive?: boolean;
 };
 export type ComposerHandle = {
   focus: () => void;
   /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
   insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
+  /** Attaches files to this chat's Uploads, as the paperclip does: one chip each at the caret. */
+  attachFiles: (entries: readonly DroppedEntry[]) => void;
   /** Drops every chip that references the document (a file the writer deleted elsewhere). */
   removeReferences: (documentId: string) => void;
   getDraft: () => string;
@@ -190,6 +195,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     commands = null,
     cards,
     attached,
+    fileDropActive = false,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
@@ -413,6 +419,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .insertContent(composerReferenceContent(pickedReferenceAttrs(reference, fileKind)))
           .run();
       },
+      attachFiles: (entries) => attachFilesRef.current(entries),
       removeReferences: (documentId) => {
         if (!editor || editor.isDestroyed) return;
         const ranges: { from: number; to: number }[] = [];
@@ -552,6 +559,37 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       setPending((n) => Math.max(0, n - 1));
     }
   }
+  /** The intake takes files only, so a folder is a failed chip that says so, where the writer dropped it. */
+  function refuseFolder(name: string) {
+    if (!editor) return;
+    const attrs: ComposerPendingUploadAttrs = {
+      intakeId: crypto.randomUUID(),
+      name,
+      state: "failed",
+      error: t`Folders can't be attached`,
+    };
+    editor
+      .chain()
+      .focus()
+      .insertContent({ type: "composerUpload", attrs: { upload: attrs } })
+      .run();
+  }
+
+  /** The one door for the paperclip and for drops: chips go in at the caret, in order, one space apart. */
+  function attachFiles(entries: readonly DroppedEntry[]) {
+    if (!editor || !resolvedUploadPort || !scopeRef.current) return;
+    entries.forEach((entry, index) => {
+      if (index > 0) editor.commands.insertContent(" ");
+      if (entry.kind === "folder") refuseFolder(entry.name);
+      else void attach(entry.file);
+    });
+  }
+  const attachFilesRef = useRef(attachFiles);
+  attachFilesRef.current = attachFiles;
+  const fileDrop = useFileDrop({
+    enabled: Boolean(resolvedUploadPort && uploadScope),
+    onDrop: attachFiles,
+  });
   const submitRef = useRef(submit);
   submitRef.current = submit;
   useEffect(() => {
@@ -613,9 +651,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       {attached}
       <div
         data-composer=""
+        {...fileDrop.dropProps}
         className={cn(
           "border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-border-focus",
           variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
+          (fileDrop.over || fileDropActive) && "border-border-focus bg-sidebar-accent",
         )}
         aria-busy={busy || pending > 0 || undefined}
       >
@@ -634,9 +674,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 ref={fileRef}
                 className="sr-only"
                 type="file"
+                multiple
                 onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void attach(file);
+                  attachFiles(
+                    Array.from(event.target.files ?? [], (file) => ({ kind: "file", file })),
+                  );
                   event.target.value = "";
                 }}
               />

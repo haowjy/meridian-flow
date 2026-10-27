@@ -14,7 +14,12 @@ function url(scope: Pick<ComposerUploadScope, "projectId" | "chatId">) {
   return `/api/projects/${encodeURIComponent(scope.projectId)}/context/uploads/upload?chatId=${encodeURIComponent(scope.chatId)}`;
 }
 async function response<T>(request: Promise<Response>): Promise<T> {
-  const value = await request;
+  const value = await request.catch((cause: unknown) => {
+    // `fetch` rejects with a bare TypeError ("Failed to fetch") when the network is down.
+    throw cause instanceof TypeError
+      ? new Error(t`Couldn't reach the server. Check your connection.`, { cause })
+      : cause;
+  });
   const payload = await readResponsePayload(value);
   if (!value.ok) {
     if (
