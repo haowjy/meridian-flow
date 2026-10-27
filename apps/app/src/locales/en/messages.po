@@ -1946,6 +1946,10 @@ msgstr "Couldn't open this folder."
 msgid "Couldn't queue the compaction."
 msgstr "Couldn't queue the compaction."
 
+#: src/client/api/upload-intake-api.ts
+msgid "Couldn't reach the server. Check your connection."
+msgstr "Couldn't reach the server. Check your connection."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
 msgstr "Couldn't read"
