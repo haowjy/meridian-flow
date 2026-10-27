@@ -27,6 +27,10 @@ directory never imports application packages. The `./mf` CLI lives in
   owner's live shells. Attach with
   `tmux -L meridian-dev attach -t <session>`. Cleanup readiness also lists panes
   on the default server, read-only, so a shell parked there still blocks removal.
+- A session must not trust its pane's cwd: tmux ignores `new-session -c` once the
+  server's cwd has been deleted, and the server outlives the worktree that
+  started it. The launch command begins with `cd <checkout> &&`, and tmux clients
+  run from `$HOME` so a new server never holds a worktree's cwd.
 - Stop and clean up by target. Never stop dev servers by pattern
   (`pkill -f "pnpm dev"`, `killall node` match every worktree's stack), never
   reset all Tailscale routes, and never infer staleness from a branch name.
