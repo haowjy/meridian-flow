@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { DEV_TMUX_SERVER } from "./lib/dev-tmux-server";
+import { DEV_TMUX_CLIENT_CWD, DEV_TMUX_SERVER } from "./lib/dev-tmux-server";
 
 export interface CommandResult {
   status: number | null;
@@ -41,7 +41,7 @@ export class TmuxSessionStore {
   }
 
   private tmux(args: string[]): CommandResult {
-    return this.run("tmux", ["-L", this.server, ...args]);
+    return run("tmux", ["-L", this.server, ...args], DEV_TMUX_CLIENT_CWD);
   }
 
   sessionExists(sessionName: string): boolean {

@@ -1,3 +1,5 @@
+import os from "node:os";
+
 /**
  * The one private tmux server that dev tooling may create or kill sessions on.
  *
@@ -5,6 +7,13 @@
  * there drops every attached shell, so dev stacks never start on it.
  */
 export const DEV_TMUX_SERVER = "meridian-dev";
+
+/**
+ * Where dev tmux clients run. A client that starts the server hands it this cwd,
+ * and the server outlives worktrees, so it must not be a checkout that cleanup
+ * can remove.
+ */
+export const DEV_TMUX_CLIENT_CWD = os.homedir();
 
 /**
  * tmux's built-in default socket name. Dev tooling only reads it, to stop
