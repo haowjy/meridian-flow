@@ -31,10 +31,13 @@ chat resources rather than ordinary Editor tabs.
   sibling, start, end), never a rank. Don't place entries anywhere else.
 - Selection and dragging (`entry-drag/`): one desktop list is one selection,
   one drop route and one drop scope (`useEntryList`/`EntryList`). They carry
-  identities, never placement; plans read placement from the replica at hover,
-  drop and Undo. A drop within one system moves at once; one across systems asks
-  first, at the pointer (`entry-drag/drop-choice.ts`; contract in
-  `.context/tree-interactions.md`). A writing surface may copy
+  identities, never placement or grants; plans read placement from the replica at hover,
+  drop and Undo. A list row dropped within one system moves at once; one across systems, and
+  every other source naming a document or folder (chips, tabs, crumbs, Recent rows, receipts,
+  Uploads entries, selected links) asks first, at the pointer (`entry-drag/drop-choice.ts`).
+  Those sources use `useReferenceDrag` and nothing else; what a drag may do (Move is refused out
+  of an archived Work's Scratch) is judged in `resolveDrop`. Contract in
+  `.context/tree-interactions.md`. A writing surface may copy
   those identities into references through its own drop extension; that drop
   never enters the tree's move route. Desktop only; phones publish Move… directly
   to their notice surface, and every move drop also has that menu path.
