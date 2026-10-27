@@ -3753,6 +3753,10 @@ msgid "Nothing to undo yet."
 msgstr ""
 
 #: src/features/import/toast-presentation.ts
+msgid "Nothing uploaded yet. Pick {name} again to continue."
+msgstr ""
+
+#: src/features/import/toast-presentation.ts
 msgid "Nothing was added. Your files are kept for 7 days so you can try again."
 msgstr ""
 

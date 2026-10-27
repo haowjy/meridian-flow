@@ -90,7 +90,10 @@ export function toastPresentation(summary: ImportSummary, local: LocalUpload) {
     elsewhere: { title: t`Uploading in another window`, detail: count, progress },
     paused: {
       title: t`Upload paused`,
-      detail: t`${count} uploaded. Pick ${name} again to continue.`,
+      // The server already holds the folder rows, which are not files: say "nothing" rather than "0 files".
+      detail: received
+        ? t`${count} uploaded. Pick ${name} again to continue.`
+        : t`Nothing uploaded yet. Pick ${name} again to continue.`,
       progress,
     },
     missing: {
