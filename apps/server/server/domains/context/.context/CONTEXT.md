@@ -267,8 +267,8 @@ one source's tree contributes.
   server has not received yet"): retryable and never recorded, so the replica's replay under
   the same operation ID reads the room again, and distinct from a transport failure so the
   replica can stop after a bounded wait. Recording it as `stale_source` would hand the first
-  answer to every replay. No real draft tab has sent a vector yet, so K2 should confirm the
-  draft room's vector against one first.
+  answer to every replay. A live document's vector from a real tab has been checked; no draft
+  tab has sent one yet, so confirm the draft room's vector against one first.
 - Lock hold grows with the statements, not with a round trip per document: 200 linked
   chapters of about 1,500 words hold the destination namespace for about 0.3 s in a fresh
   project. What is left is the catalog reconcile (`refreshSources`), which reads the whole

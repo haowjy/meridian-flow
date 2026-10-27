@@ -7,7 +7,7 @@ first stale answer for ever, scatters the roots of one drop, copies a root twice
 selection nests, or holds a lock that stalls every writer of the destination while a big
 tree is written. This recipe drives
 the server with `./mf` (`doc copy` shares no client code; it is evidence of the
-server only). The browser's Copy is a later slice. It is not a current pass claim.
+server only). The browser's Copy has its own recipe, [Copy in the tree](copy-browser.md).
 
 ## Setup
 

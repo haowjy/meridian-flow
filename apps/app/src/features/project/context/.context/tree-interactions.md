@@ -181,11 +181,18 @@ operations keep stable entry identity. Work selection is attached only to
 Scratch/Uploads, never project-owned Manuscript/KB/User paths.
 
 
-## Move picker and Scratch rows
+## Move and Copy picker, and Scratch rows
 
-Move… follows Rename in the shared action specification, including phone actions.
-`EntryMovePicker` mounts `useProjectMenuSource` and `DrillInMenu` only while open; closed rows keep only their stable row anchor. It starts inside
-the current parent for a new move. A retry opens at the refused destination
+Move… follows Rename in the shared action specification, including phone actions,
+and Copy to… follows Move…. They are one component:
+`EntryDestinationPicker` takes an `action` ("move" or "copy") and the rows to pick
+for (Move… takes one row; the refused-Copy notice sends back all of a Copy's).
+Both offer the same destinations, and a folder cannot go inside itself in either.
+They differ in what a pick does: Copy to… has no "Already in" refusal and no
+position choices (it always adds, and its copy takes the next free name in the
+parent the row is already in), and it calls `copyRows` where Move… calls `moveRows`.
+`EntryDestinationPicker` mounts `useProjectMenuSource` and `DrillInMenu` only while open; closed rows keep only their stable row anchor. It starts inside
+the current parent for a new move or copy (at the project's root when no area is given). A retry opens at the refused destination
 when it still resolves (matching owner and full path), otherwise at the
 current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
 commit at the area list. In the current parent the action is "Change position in <folder>", which
@@ -250,10 +257,12 @@ reports `aria-pressed` (rows are buttons, not tree items, so that is the state
 they can carry).
 
 Dragging a selected row carries the selection in screen order, minus rows inside
-a selected folder; dragging an unselected row carries only it. A row drags only
-when its surface grants Move (an archived Work's Scratch doesn't), and a
-selection that holds an unmovable row, or one that lost a row (a peer deleted it,
-or its parent isn't known yet), moves nowhere rather than silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
+a selected folder; dragging an unselected row carries only it. Each row carries
+what its surface grants (`EntryGrant`: `move`, `copy`; an archived Work's Scratch
+grants Copy, not Move), and a drag starts when the row has either. A selection
+that holds a row without the grant an action needs, or one that lost a row (a peer
+deleted it, or its parent isn't known yet), does nothing for that action rather
+than silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
 data until the drop). The transfer carries only Meridian's entries type, no
 `text/plain` or `text/uri-list` fallback. The composer and manuscript editor
 resolve selected row identities through their live `@` catalog and copy files and folders as mentions;
@@ -282,8 +291,10 @@ the end of the chat Files menu, and at the end of the phone folder browser. The
 notice is part of the surface's layout: it takes height from the tree's scroll
 area and never covers a control. It stays until the next move or delete on
 that surface, Dismiss, or the project changing, so Undo is never a race.
-`MoveNoticesProvider` keeps each surface's latest move, as data, whether or
-not the list that made it is still on screen. Undo shows only while it has
+`OperationNoticesProvider` keeps each surface's latest move or copy, as data, whether or
+not the list that made it is still on screen; a kind supplies its message, how it
+follows the server and how it is taken back (`move-operation.ts`,
+`copy-operation.ts`), and the phases below are the same for both. Undo shows only while it has
 something to put back: the provider watches the replica and retires Undo once
 every moved row was renamed, moved again, reordered or deleted (only after the move has
 shown in the replica, which can trail the placement by a moment); the message
@@ -291,7 +302,7 @@ stays until dismissed. A row the server refuses goes back with its failure mark,
 and the notice stops saying it moved: "Couldn't move chapter-3." without Undo,
 or "Moved 2 items to Act 2. Couldn't move chapter-3." when the rest landed.
 Refused means the replica settled that move's own operation (`MoveEffect.operationId`)
-as needs-repair (`moveSettlement`); a row the writer changed since supersedes that
+as needs-repair (`intentSettlement`); a row the writer changed since supersedes that
 intent, so it only loses Undo. A refusal names its row as it was (`entryNameNow`), so the
 notice drops that line once the row is renamed or gone, and the notice itself once nothing is left to say.
 Freshness uses the move receipt's per-entry `locationVersion` after its server observation fence,
@@ -302,7 +313,7 @@ Each surface's window is in one phase, and the phase decides what shows:
 
 | Phase | Shows | Watches |
 |---|---|---|
-| `moved` | "Moved …", Undo while `undoable` | forward moves the server hasn't settled (`unsettled`) |
+| `active` | "Moved …" or "Copying …"/"Copied …", Undo while `undoable` | what the kind follows: a move's unsettled operations, a Copy's operation record |
 | `undoing` | the same notice, Undo disabled | nothing; the replica is admitting the reverse moves |
 | `reversing` | nothing | reverse moves the server hasn't settled |
 | `undo-failed` | "Couldn't move chapter-3 back.", Dismiss only | the rest of the reverse moves, which can only add to the count |
@@ -313,11 +324,11 @@ back as `undo-failed`. `reversing` ends once every reverse move is accepted or
 superseded by the writer's next change; a newer notice on the surface or the project
 changing ends any phase. Only a settled state retires a tracked operation:
 the replica admits a move before its projection shows the intent, so an intent
-`moveSettlement` can't find yet counts as pending. Journals keep their intents, so
+`intentSettlement` can't find yet counts as pending. Journals keep their intents, so
 "not found" is never a pruned intent. A row whose record left the projection stays
 pending; its window ends with the next notice or the project.
 
-Move… publishes through the required surface supplied around its rows, whether
+Move… and Copy to… publish through the required surface supplied around their rows, whether
 or not a list is mounted. A desktop list optionally selects the moved row and
 restores focus after its notice closes; the phone browser needs neither list
 behavior nor a drop scope. Move… does not reveal a
@@ -349,38 +360,73 @@ never change.
 A drop within one system moves at once. A drop that crosses systems (the
 project's areas are one system; User and each Scratch or Uploads owner are their
 own, `entrySystem` in `entry.ts`) changes ownership, so the list asks first. The
-hover accepts with an ellipsis ("Move to Act 2…"); the drop opens a compact menu
-at the pointer, no heading, its items named for the destination ("Move to Act
-2"), then Cancel. Escape, Cancel and a click outside close it with nothing
-changed, and focus returns to the list. The whole selection takes one choice;
-the same-system subset never moves alone. Choosing Move goes through `moveRows`,
-the path Move… and a same-system drop use, and reports with the same notice and
-Undo. Phones have no drag, so no menu: they use Move…, which already crosses
-systems.
+hover accepts with the first thing the menu would offer and an ellipsis ("Move to
+Act 2…", or "Copy to Act 2…" when Move is disabled); the drop opens a compact menu
+at the pointer, no heading: "Move to Act 2", "Copy to Act 2", then Cancel. A
+disabled item says why, tied to it with `aria-describedby` ("Can't move these from
+here" for a surface that grants Copy only, "Already there", "Some of these items
+are no longer there", "Can't go inside itself"). Escape, Cancel and a click outside
+close it with nothing changed, and focus returns to the list. The whole selection
+takes one choice; the same-system subset never moves alone. A drop never asks when
+nothing it offers is enabled: a folder over its own subtree and a selection that
+lost a row refuse on hover instead. Choosing Move goes through `moveRows`, the path
+Move… and a same-system drop use, and reports with the same notice and Undo.
+Choosing Copy goes through `copyRows` (below). Phones have no drag, so no menu: they
+use Move… and Copy to…, which already cross systems.
 
-Three exported types are the contract a later action (Copy) plugs into without
-touching the menu's mechanics:
+The hover verdict, the decision to ask and the menu all come from `dropChoices`
+for a crossing drop (`planMove` alone serves a same-system drop), so a new action
+is a new item there and a branch in the list's `choose`. The contract:
 
 - `ResolvedDrop` (`move-plan.ts`, from `resolveDrop(view, entries, target)`):
   what a drop is now, before any action decides what to do with it. `sources` are
   the outermost placed rows (a row inside a carried folder rides with it),
-  `into`, `destinationName` (the catalog's current name), `position`,
+  `into`, `scheme`, `destinationName` (the catalog's current name), `position`,
   `crossing`, `insideItself`, `unavailable` (carried rows the replica can't place)
-  and `movable`. `resolveDrop` returns null when the target isn't a place a drop
-  can land. `planMove(view, resolved)` turns it into a Move plan; an action plans
-  from the resolution and never resolves identities again.
+  and `can` (what every carried row's surface grants). `resolveDrop` returns null
+  when the target isn't a place a drop can land. `planMove` and `planCopy` turn it
+  into a plan; an action plans from the resolution and never resolves identities
+  again.
 - `PendingChoice` (`drop-choice.ts`): a crossing drop waiting for its choice, held
   by the list. It carries the dragged entries, the target, the pointer point, the
   notice surface and the focus-return callback, captured at the drop because
   `dragend` clears `activeEntryDrag()` right after it. `EntriesRoute.drop`
   therefore receives the point.
 - `DropChoiceItem` (`drop-choice.ts`): `{ action, label, enabled, reason? }`. The
-  menu is `dropChoices(view, pending)`, derived from `resolveDrop` against the
-  replica as it is when the menu draws and again when the writer picks, so a
-  destination renamed or removed while it was open is judged by identity: the
-  label follows a rename, and a removed destination leaves the item disabled
-  with its reason. `DropChoiceMenu.tsx` renders the items and knows no action.
-  Copy joins by adding a `DropAction` and its plan to `dropChoices`.
+  menu is `dropChoices(view, resolved, target)`, derived from `resolveDrop`
+  against the replica as it is when the menu draws and again when the writer
+  picks, so a destination renamed or removed while it was open is judged by
+  identity: the label follows a rename, and a removed destination leaves the item
+  disabled with its reason. `DropChoiceMenu.tsx` renders the items and knows no
+  action.
+
+### Copy
+
+Copy duplicates the carried rows into the destination and leaves the sources where
+they are (`planCopy`, `copyRows` in `execute-copy.ts`). Every carried row is
+copied, the one already in the destination's parent included (its copy takes the
+next free name), and an edge drop may anchor on a carried row. The copies are
+listed at once under predicted names (`arrivals`, as for Move): the replica holds
+one operation with one root per row, and the answer places every root or refuses
+the whole Copy (see `packages/resource-replica/.context/CONTEXT.md`, "Copy"). A
+document the device holds open sends its pending edits with the Copy; the server
+waits for them, and the replica resends for up to two minutes before refusing.
+
+The notice says "Copying chapter-3 to Vault…" while the server has not answered
+and "Copied chapter-3 to Vault." (or "… as chapter-3 (2).") once it has, with Undo
+in both. The `copy-operation.ts` adapter takes the receipt's entries into the
+window's own state when it first sees the operation settled (the record retires a
+while later), and a record that is gone after it was seen is a Copy that settled.
+Undo (`undoCopy`) is ordinary deletes of every copy still listed, except the ones
+inside another (a copy moved out of its folder is still found, because the receipt
+names every identity); edits and additions made since go with a folder. Before the
+answer the deletes queue behind the Copy. A refused Copy removes its rows, closes
+the window, and the journal keeps the refusal: `CopyRefusalNotices` shows "Couldn't
+copy chapter-3 to Vault. A source or the destination is no longer there." with
+Copy to… (the same rows, picked afresh) and Dismiss, on the destination list's
+surface, or on the surface that started it when the destination is gone, until the
+writer resolves it. A draft tab's copy of the draft is a later surface; the
+replica already carries a source view for it.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the
