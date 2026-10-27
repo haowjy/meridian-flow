@@ -8,10 +8,16 @@ routed exports have no pending rows. Documents are born complete.
 `ImportsProvider` at the authenticated root owns one account-lifetime coordinator;
 project `ImportProvider` owns only pick/drop doors. Navigation never stops an
 upload. File handles are private and ephemeral. The open list is server truth;
-BroadcastChannel nudges refresh and carries upload-holder presence, so a tab
+BroadcastChannel only nudges a refresh. Upload presence is the Web Lock
+`import-upload:<id>`, which a tab holds exactly while it reads, sends or hashes
+that import's files. Every refresh reads `navigator.locks.query()`, so a tab
 without File handles says "Uploading in another window" only while another tab
-announces it holds them. Continue reads fresh detail and pairs awaiting and
-received entries by root name, kind and path. Size and modified time break ties
+holds the lock, and offers Continue once that tab closes, crashes or pauses. A
+stalled or missing-files tab releases the lock; a timer heartbeat cannot do this
+because background tabs throttle timers.
+
+Continue reads fresh detail and pairs awaiting and received entries by root
+name, kind and path. Size and modified time break ties
 between duplicate candidates; a changed awaiting file is sent as it is now and
 marked in `X-Import-Changed-Entries`. A received entry is never sent again:
 when its re-pick differs, or it is already marked changed, the browser hashes

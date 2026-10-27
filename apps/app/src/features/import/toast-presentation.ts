@@ -21,7 +21,7 @@ export type ToastState =
   | "failed"
   | "refused"
   | "expired";
-export function toastState(summary: ImportSummary, local: LocalUpload, now: number): ToastState {
+export function toastState(summary: ImportSummary, local: LocalUpload): ToastState {
   if (local.stopAsked) return "stop";
   if (local.phase === "reading" || local.phase === "creating") return "reading";
   if (local.phase === "refused") return "refused";
@@ -42,8 +42,8 @@ export function toastState(summary: ImportSummary, local: LocalUpload, now: numb
   if (local.phase === "missing" || local.phase === "wrong-root" || local.phase === "stalled")
     return local.phase;
   if (local.phase === "uploading") return "uploading";
-  // With no File handles here, a live holder in another tab is the only reason to say so.
-  return local.remoteUntil !== undefined && now < local.remoteUntil ? "elsewhere" : "paused";
+  // With no File handles here, a tab holding the import's lock is the only reason to say so.
+  return local.elsewhere ? "elsewhere" : "paused";
 }
 /** What a deleted destination means for this card, in the tense of its state. */
 function fallbackNote(state: ToastState): string | undefined {
@@ -61,8 +61,8 @@ function fallbackNote(state: ToastState): string | undefined {
       return t`The destination was deleted. It will be added at the area root.`;
   }
 }
-export function toastPresentation(summary: ImportSummary, local: LocalUpload, now: number) {
-  const state = toastState(summary, local, now);
+export function toastPresentation(summary: ImportSummary, local: LocalUpload) {
+  const state = toastState(summary, local);
   const { files, received, receivedBytes, bytes, prepared, skipped, failed, organized, needsLook } =
     summary.counts;
   const name =

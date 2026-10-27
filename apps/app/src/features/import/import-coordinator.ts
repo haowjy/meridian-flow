@@ -27,8 +27,8 @@ export type LocalUpload = {
   stopAsked?: boolean;
   busy?: boolean;
   stopLost?: boolean;
-  /** Another tab holds the remaining files and announced itself within the presence window. */
-  remoteUntil?: number;
+  /** Another tab holds this import's upload lock: it is sending the files this tab lacks. */
+  elsewhere?: boolean;
 };
 export type TrackedImport = {
   importId: string;
@@ -58,6 +58,8 @@ type RecordState = {
   checking?: number;
 };
 const stamp = (file: File) => `${file.size}:${file.lastModified}`;
+/** A tab holds this Web Lock while it works on an import's files; its release is the only "tab gone" signal. */
+const LOCK_PREFIX = "import-upload:";
 
 export class ImportCoordinator {
   private records = new Map<string, RecordState>();
@@ -65,9 +67,10 @@ export class ImportCoordinator {
   private snapshot: ImportsSnapshot = { imports: [] };
   private timer?: ReturnType<typeof setTimeout>;
   private channel?: BroadcastChannel;
-  /** Import ids another tab announced it is uploading, with the end of their presence window. */
-  private holders = new Map<string, number>();
-  private presenceTimer?: ReturnType<typeof setInterval>;
+  /** Releases for the upload locks this tab holds or has queued, by import id. */
+  private locks = new Map<string, () => void>();
+  /** Import ids whose upload lock any tab held at the last refresh. */
+  private uploading = new Set<string>();
   private lifetime = new AbortController();
   private polling: AbortSignal | null = null;
   private mutations = 0;
@@ -92,24 +95,62 @@ export class ImportCoordinator {
   };
   getSnapshot = () => this.snapshot;
   private publish() {
+    this.syncLocks();
     this.snapshot = { imports: [...this.records.values()].map((record) => record.view) };
     for (const listener of this.listeners) listener();
   }
-  /** Upload presence lives with the File handles; the server's activity cannot tell tabs apart. */
-  private postHolders() {
-    if (!this.channel || !this.records.size) return;
-    const importIds = [...this.records.values()]
-      .filter((record) => record.held.size > 0)
-      .map((record) => record.view.importId);
-    this.channel.postMessage({ holders: importIds });
+  /** This tab is reading, creating, sending or hashing files of the import. */
+  private working(record: RecordState) {
+    return (
+      ["reading", "creating"].includes(record.view.local.phase ?? "") ||
+      record.checking !== undefined ||
+      (record.queue !== undefined && !record.queue.cancelled && !record.queue.idle)
+    );
   }
-  private syncHolders() {
-    const now = Date.now();
-    for (const [id, until] of this.holders) if (until <= now) this.holders.delete(id);
+  /**
+   * Hold an import's lock exactly while this tab is working on it. A paused, stalled or
+   * missing-files tab holds nothing, so other tabs offer Continue instead of a dead end.
+   */
+  private syncLocks() {
+    const holding = new Set<string>();
+    for (const record of this.records.values())
+      if (this.working(record) || (record.view.local.busy && record.held.size > 0))
+        holding.add(record.view.importId);
+    for (const [id, release] of this.locks)
+      if (!holding.has(id)) {
+        this.locks.delete(id);
+        release();
+      }
+    for (const id of holding) if (!this.locks.has(id)) this.hold(id);
+  }
+  private hold(importId: string) {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.locks.set(importId, release);
+    // Web Locks need a secure context; without them other tabs simply offer Continue.
+    void navigator.locks
+      ?.request(`${LOCK_PREFIX}${importId}`, () => {
+        this.channel?.postMessage(null);
+        return released;
+      })
+      .then(() => this.channel?.postMessage(null));
+  }
+  private async heldUploads() {
+    const snapshot = await navigator.locks?.query();
+    return new Set(
+      (snapshot?.held ?? []).flatMap(({ name }) =>
+        name?.startsWith(LOCK_PREFIX) ? [name.slice(LOCK_PREFIX.length)] : [],
+      ),
+    );
+  }
+  private syncElsewhere() {
     for (const record of this.records.values()) {
-      const until = record.held.size > 0 ? undefined : this.holders.get(record.view.importId);
-      if (record.view.local.remoteUntil !== until)
-        record.view = { ...record.view, local: { ...record.view.local, remoteUntil: until } };
+      const elsewhere =
+        this.uploading.has(record.view.importId) && !this.locks.has(record.view.importId);
+      if (!!record.view.local.elsewhere !== elsewhere)
+        record.view = { ...record.view, local: { ...record.view.local, elsewhere } };
     }
   }
   private local(record: RecordState, patch: Partial<LocalUpload>) {
@@ -144,11 +185,12 @@ export class ImportCoordinator {
     this.publish();
   }
   private make(summary: ImportSummary): RecordState {
-    const holderUntil = this.holders.get(summary.importId);
-    const remoteUntil =
-      holderUntil !== undefined && holderUntil > Date.now() ? holderUntil : undefined;
     return {
-      view: { importId: summary.importId, summary, local: remoteUntil ? { remoteUntil } : {} },
+      view: {
+        importId: summary.importId,
+        summary,
+        local: this.uploading.has(summary.importId) ? { elsewhere: true } : {},
+      },
       controller: new AbortController(),
       held: new Map(),
       revision: 0,
@@ -161,28 +203,20 @@ export class ImportCoordinator {
   start() {
     this.lifetime = new AbortController();
     this.channel = new BroadcastChannel("meridian-imports");
-    this.channel.onmessage = (event) => {
-      const holders = event.data?.holders;
-      if (Array.isArray(holders)) {
-        for (const id of holders)
-          if (typeof id === "string") this.holders.set(id, Date.now() + 6000);
-        this.syncHolders();
-        this.publish();
-        return;
-      }
+    // A message only says some tab's state changed; the lock table and server are the truth.
+    this.channel.onmessage = () => {
       void this.refresh();
     };
     const focus = () => {
       void this.refresh();
     };
     window.addEventListener("focus", focus);
-    this.channel.postMessage({ holders: [] });
-    this.presenceTimer = setInterval(() => this.postHolders(), 2000);
     void this.refresh();
     return () => {
       this.lifetime.abort();
       clearTimeout(this.timer);
-      clearInterval(this.presenceTimer);
+      for (const release of this.locks.values()) release();
+      this.locks.clear();
       this.channel?.close();
       this.channel = undefined;
       window.removeEventListener("focus", focus);
@@ -206,8 +240,12 @@ export class ImportCoordinator {
     const mutation = this.mutations;
     const revisions = new Map([...this.records].map(([id, record]) => [id, record.revision]));
     try {
-      const summaries = await this.api.listOpen(signal);
+      const [summaries, uploading] = await Promise.all([
+        this.api.listOpen(signal),
+        this.heldUploads(),
+      ]);
       if (signal.aborted || mutation !== this.mutations) return;
+      this.uploading = uploading;
       const ids = new Set(summaries.map((summary) => summary.importId));
       for (const summary of summaries) {
         const record = this.records.get(summary.importId);
@@ -240,7 +278,7 @@ export class ImportCoordinator {
         record.queue?.cancel();
         this.records.delete(id);
       }
-      this.syncHolders();
+      this.syncElsewhere();
       this.publish();
     } catch {
       /* A failed background read cannot erase the last durable summary. */
@@ -264,12 +302,7 @@ export class ImportCoordinator {
     }
   }
   isWorking() {
-    return [...this.records.values()].some(
-      (record) =>
-        ["reading", "creating"].includes(record.view.local.phase ?? "") ||
-        record.checking !== undefined ||
-        (record.queue && !record.queue.cancelled && !record.queue.idle),
-    );
+    return [...this.records.values()].some((record) => this.working(record));
   }
   private cancelUpload(record: RecordState) {
     record.attempt++;

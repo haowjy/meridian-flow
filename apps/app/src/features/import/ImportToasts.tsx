@@ -42,7 +42,7 @@ function ImportToast({
     summary.label.kind === "export" ? "manuscript" : summary.destination.folderUri.split(":")[0]
   ) as ImportScheme;
   const { catalog } = useContextCatalogView(summary.projectId, scheme, {});
-  const presentation = toastPresentation(summary, local, Date.now());
+  const presentation = toastPresentation(summary, local);
   const { state } = presentation;
   useImportMilestone(state, presentation.title);
   useEffect(() => {

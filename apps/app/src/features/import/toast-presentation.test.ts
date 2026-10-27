@@ -28,29 +28,24 @@ const summary: ImportSummary = {
   reason: null,
   lastActivityAt: new Date(0).toISOString(),
 };
-it("presents age, local ownership, preparation and all five root rules without drawing staged children", () => {
-  const rows: [Partial<ImportSummary>, LocalUpload, number, string][] = [
-    [{}, {}, 59999, "paused"],
-    [{}, { remoteUntil: 60000 }, 59999, "elsewhere"],
-    [{}, { remoteUntil: 60000 }, 60000, "paused"],
-    [{}, { phase: "uploading" }, 90000, "uploading"],
-    [{}, { phase: "stalled" }, 1, "stalled"],
-    [{ state: "organizing" }, {}, 0, "organizing"],
-    [{ state: "organizing", waiting: true }, {}, 0, "waiting"],
-    [
-      { state: "organizing", counts: { ...summary.counts, prepared: 2, failed: 1 } },
-      {},
-      0,
-      "adding",
-    ],
-    [{ state: "organizing", counts: { ...summary.counts, organized: 3 } }, {}, 0, "adding"],
-    [{ state: "failed" }, {}, 0, "failed"],
-    [{ state: "organizing" }, { stopAsked: true }, 0, "stop"],
-    [{ state: "finished" }, {}, 0, "done"],
-    [{ state: "finished", counts: { ...summary.counts, needsLook: 1 } }, {}, 0, "needs-look"],
+it("presents local ownership, preparation and all five root rules without drawing staged children", () => {
+  const rows: [Partial<ImportSummary>, LocalUpload, string][] = [
+    [{}, {}, "paused"],
+    [{}, { elsewhere: true }, "elsewhere"],
+    [{}, { elsewhere: false }, "paused"],
+    [{}, { phase: "uploading" }, "uploading"],
+    [{}, { phase: "stalled", elsewhere: true }, "stalled"],
+    [{ state: "organizing" }, {}, "organizing"],
+    [{ state: "organizing", waiting: true }, {}, "waiting"],
+    [{ state: "organizing", counts: { ...summary.counts, prepared: 2, failed: 1 } }, {}, "adding"],
+    [{ state: "organizing", counts: { ...summary.counts, organized: 3 } }, {}, "adding"],
+    [{ state: "failed" }, {}, "failed"],
+    [{ state: "organizing" }, { stopAsked: true }, "stop"],
+    [{ state: "finished" }, {}, "done"],
+    [{ state: "finished", counts: { ...summary.counts, needsLook: 1 } }, {}, "needs-look"],
   ];
-  for (const [patch, local, now, expected] of rows)
-    expect(toastState({ ...summary, ...patch }, local, now)).toBe(expected);
+  for (const [patch, local, expected] of rows)
+    expect(toastState({ ...summary, ...patch }, local)).toBe(expected);
   const fresh = { seen: false, drawn: false };
   const drawn = pendingRoot(summary, fresh, false, 0);
   expect(drawn.draw).toBe(true);
