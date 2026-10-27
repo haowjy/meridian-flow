@@ -15,7 +15,9 @@ atomically commits the received checkpoint and only those resource observations
 whose captured revision is still current. A late response cannot regress a newer
 canonical location. Scope disappearance and invalidation change projection
 membership only; they never imply global deletion. Resource aliases are obsolete
-local identities after remint, not catalog identity aliases.
+local identities after remint, not catalog identity aliases. A folder's `aliases` are the
+same thing: the record keeps its handle (`folder:<first id>`), its `folderId` is the current
+id, and requests are matched against the current id or an alias.
 A join (`resource-join.ts`) is the same re-identification triggered by a `joined`
 create answer or a catalog entry's `joinedFrom`: a create that carries its
 destination landed on a document that already existed (a branch's, hidden live until
@@ -109,16 +111,17 @@ document id, classification or content database. The browser account owner
 implements `FolderNamespaceStore` alongside its file metadata; it must observe
 folder commits through that same projection owner, not a second cache writer.
 
-A folder made here is local until the server accepts it, as a new document is: its record has no
-`canonical` place (`canonical: null`) and its first intention is a `set-folder-location` placed
-under a device-minted folder id (`planFolderCreate`). Dispatch (`prepareFolderNamespaceAttempt`) turns
-a placement over a record with no canonical place into a `create-folder` request carrying the folder
-id and destination; `namespaceRequestId` is that folder id, so a replay is the same request. An accepted
+A folder made here is local until the server accepts it, as a new document is: its record is
+`serverHold: "local"` (see "What the server holds" below), has no `canonical` place
+(`canonical: null`), and its first intention is a `set-folder-location` placed under a
+device-minted folder id (`planFolderCreate`). Dispatch (`prepareFolderNamespaceAttempt`) turns a
+placement over a `local` record into a `create-folder` request carrying the folder id and
+destination; `namespaceRequestId` is that folder id, so a replay is the same request. An accepted
 answer sets `canonical` from the answered path; a typed refusal leaves the record needing repair
 (`create`), listed in Unfiled under the name last typed, as a refused document is. Later intentions
 queue behind the create like any placement, and its admission makes the folder a predecessor of
-whatever is put inside or after it. Deleting a folder the server never accepted
-(`folderNeverAccepted`: nothing it answered took it) settles locally with the same Undo
+whatever is put inside or after it. Deleting a folder the server may not hold
+(`!deleteNeedsServer`: `local` or `spent`) settles locally with the same Undo
 window a document gets (`localDeletion.notBefore`); the replica settles every local
 folder and document under it under that one operation, so one Undo restores the subtree.
 `folderListedLocally` keeps a row in the projection beside the catalog's until a catalog
@@ -300,29 +303,59 @@ Bare HTTP or network failures still need receipt evidence and stay replayable.
 The journal accepts a refusal on every request kind, so a request kind added later
 (folder create, Copy) settles the same way and only has to say what its identity is.
 
+### What the server holds (`serverHold`)
+
+One state per id, on `ResourceDescriptor` and `FolderNamespaceRecord`, written once and set only
+by what the server answered (`server-hold.ts`, `holdAfterAttempt`). Nothing derives it from
+`canonical`, `lifecycle` or the shape of an attempt's outcome, so a document and a folder cannot
+disagree about it.
+
+| `serverHold` | Means | Next placement | Delete |
+| --- | --- | --- | --- |
+| `local` | no answer shows the server holds the id: never sent, or every create sent was refused | `create` | settles on this device |
+| `uncertain` | a create was sent and not answered; it may have landed | waits (replays the same create) | goes to the server |
+| `held` | the server accepted the id, or a catalog lists it | a move | goes to the server |
+| `spent` | the server holds the id where the writer cannot reach it (deleted, hidden, archived or deleted Work, lost grant, another kind) | none: the id is replaced | settles on this device |
+
+Only a create attempt changes it: sending one makes it `uncertain`; a typed refusal frees the id
+(`local`: the create routes answer a held id before any refusal); an accepted answer makes it
+`held`; a `conflict` answer makes it `spent`. A refused move leaves a held id held. Held never
+leaves held (`resource-records-policy.ts`).
+
+A `spent` id never succeeds again, so its work moves to a new one (`awaitsRemint`: spent and a
+placement is `needs-repair` or queued unsent). The runner does it, not the writer: it mints an id
+and calls `remintResource` or `remintFolder`, which share `remintJournal` (the failed placement is
+superseded, a retry carries the same admission order, unsent dependents are cancelled and queued
+again). The writer's repair after a refusal is an ordinary placement over a `local` id. A folder
+remint keeps the record and its handle, takes a new `folderId`, and rewrites the unsent
+placements in other records that named the old folder (destination parent or sibling) in the
+same IndexedDB transaction (`planFolderRemintDependents`, applied by `commitFolder`), so work
+queued inside the folder lands wherever the folder does. A journal that `awaitsRemint` is a
+predecessor the app gate waits on, not one it releases into a refusal. `joined` is not a hold:
+the id was taken by a document that already existed, the join re-identifies the record
+(`resource-join.ts`) and it is `held`.
+
 A refused first placement is the first placement refused. How the server materializes a
 document identity is a property of the resource (`ResourceDescriptor.materialization`: an
 untitled document the server names, with `unnamed` for the editor's create), and the placement
 is always `set-location` / `set-folder-location`, naming its destination. Copy is one operation
 over several roots and does not ride this seam; its client journal is a separate decision.
-A document the server holds no row for sends a `create`; once it holds one, the same
-intent sends a move (`prepareNamespaceAttempt`). The intent is `needs-repair`, never
+A `local` document sends a `create`; once `held`, the same intent sends a move
+(`prepareNamespaceAttempt`). The intent is `needs-repair`, never
 resent and not woken by the 30-second retry; the document stays local (lifecycle
 `local`, no canonical place), shown in Unfiled at its provisional name with its text and
 exact content. Queued moves behind it are cancelled (`resolveRefusedLocationChain`) and the
 newest one is offered back as the repair destination (`namespaceRepairDestination`). The
 writer repairs it by placing it: `planResourceLocation` supersedes the refused intent
 and files the same `set-location` again at the picked destination, with its sibling
-`position` (no remint: the create route answers an id it holds before it checks
-authority, so a final refusal means the server holds none; an id held where the writer can
-no longer edit answers `conflict`). Deleting it settles locally (`resourceNeverAccepted`:
-local, unplaced, every answered request refused), including a delete queued behind the
+`position` (a refusal frees the id: the create route answers an id it holds before it checks
+authority, so a refused create means the server holds none; an id held where the writer can
+no longer edit answers `conflict`, which is `spent`). Deleting it settles locally
+(`!deleteNeedsServer`), including a delete queued behind the
 in-flight create when the refusal arrives (`prepareNamespaceAttempt`). The local deletion keeps
 the exact content for `LOCAL_DELETION_UNDO_MS` (`cleanup.notBefore`); `planLocalDeletionUndo`
-supersedes it and files the last placement again inside the window. A failed placement has
-one decision, `namespaceRepairOwner`: a materialization the server answered `conflict` or
-`joined` is reminted under a new id and its queued work moves with it, and every other
-failure waits for the writer.
+supersedes it and files the last placement again inside the window. A refusal is the writer's
+to repair; a `conflict` is the runner's to replace (above).
 
 Folder deletion shares the folder namespace journal. Only a delete receipt's exact
 document IDs authorize atomic descendant terminalization with the folder

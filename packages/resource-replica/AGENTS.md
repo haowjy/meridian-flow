@@ -43,11 +43,17 @@ materialization arm, not a placement kind.
   against the request's identity (`namespaceRequestId`: a move's or delete's
   operation id, a create's document id, a folder create's folder id). Network
   failures remain replayable until receipt evidence exists. A refused create
-  leaves the document or folder local and repairable, never deleted. Deleting a
-  document or folder the server never accepted keeps its content and place until
-  an Undo window closes (`cleanup.notBefore`, `localDeletion.notBefore`). A folder
-  the server never accepted has `canonical: null`; read its place through
-  `folderBaseLocation`, never `canonical` directly.
+  leaves the document or folder local and repairable, never deleted.
+- What the server holds under an id is `serverHold` (`local | uncertain | held |
+  spent`, `server-hold.ts`), on documents and folders alike. It is set only by
+  server answers, through `holdAfterAttempt`; read it, never rederive it from
+  `canonical`, `lifecycle` or an outcome's shape. It decides create vs move, whether
+  a delete needs the server, and whether the id is replaced (`awaitsRemint`).
+  Deleting a document or folder the server may not hold (`!deleteNeedsServer`) keeps
+  its content and place until an Undo window closes (`cleanup.notBefore`,
+  `localDeletion.notBefore`). A folder the server never accepted has
+  `canonical: null`; read its place through `folderBaseLocation`, never `canonical`
+  directly.
 - A confirmed deletion is versioned. Only strictly newer evidence can restore;
   stale catalog pages, exact-ID presence where disallowed, and scoped absence
   never revive or authorize purge.

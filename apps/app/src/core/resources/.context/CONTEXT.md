@@ -18,8 +18,12 @@ checks every resource before an outer transaction writes anything.
 Folder placement lives in the same database (`folders` table, keyed by handle) and
 the same projection stream: `IndexedDbResourceMetadata` implements
 `FolderNamespaceStore`, and `ResourceProjectionSnapshot.folders` carries every
-folder record beside the file records. A folder's handle is `folder:<folder id>`, so
-it can never collide with a document's. `setFolderLocation` admits a
+folder record beside the file records. A folder's handle is `folder:<first folder id>`,
+so it can never collide with a document's, and it does not change when the server holds
+the id out of reach: the record takes a new `folderId` and keeps the old one in `aliases`
+(`remintFolder`). Resolve a folder by the id a caller holds with `readFolderById` (handle first,
+alias-aware scan after a remint), never by rebuilding `folder:${id}`. `commitFolder` rewrites the
+unsent placements in other records that named the old id in the same transaction as the remint. `setFolderLocation` admits a
 rename or move from the installed catalog's location (never the optimistic
 projection) and the runner dispatches it like a file's. `createFolder` mints the
 folder id on this device and admits the create the way `reserveDocument` admits a
@@ -78,8 +82,8 @@ document on this device with its text, listed in Unfiled with a failure mark
 [replica contract](../../../../../../packages/resource-replica/.context/CONTEXT.md)).
 A refused folder create does the same: the folder, and anything the writer put in it,
 is listed in Unfiled with a mark until each is placed or deleted. Deleting a folder
-the server never accepted settles on this device inside the same Undo window a
-document gets (`localDeletion.notBefore`), taking its local children with it; one
+the server may not hold (`serverHold` `local` or `spent`) settles on this device inside the
+same Undo window a document gets (`localDeletion.notBefore`), taking its local children with it; one
 Undo restores the subtree.
 
 Folder deletion is another folder namespace intent (`planFolderDeletion`,
