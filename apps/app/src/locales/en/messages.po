@@ -995,6 +995,10 @@ msgstr "Assistant is thinking"
 msgid "Attach file"
 msgstr "Attach file"
 
+#: src/components/app/composer/use-file-drop.ts
+msgid "Attach to this chat"
+msgstr "Attach to this chat"
+
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Auto-apply"
 msgstr "Auto-apply"
@@ -2738,6 +2742,10 @@ msgstr "Folder name"
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Folder…"
 msgstr "Folder…"
+
+#: src/components/app/composer/Composer.tsx
+msgid "Folders can't be attached"
+msgstr "Folders can't be attached"
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Fork from here"
