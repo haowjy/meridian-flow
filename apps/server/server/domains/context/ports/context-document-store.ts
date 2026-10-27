@@ -11,11 +11,13 @@
 import type { ProjectId } from "@meridian/contracts";
 import type {
   ContextParentOrderPolicy,
+  ContextSiblingPosition,
   DocumentFileType,
   Filetype,
 } from "@meridian/contracts/protocol";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { LiveClaim, LiveCreateCandidate } from "../tree/hidden-node-types.js";
+import type { NewTreeNode } from "../tree/new-tree.js";
 import type { PathResolution, TreeView } from "../tree/tree-view.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
@@ -138,6 +140,18 @@ export interface ContextDocumentStore {
    * throws {@link ContextEntryConflictError} when a document holds a segment's path.
    */
   ensureFolderPath(dir: readonly string[]): Promise<string | null>;
+  /**
+   * Insert a tree of new live nodes under `parentId`, in the caller's transaction and namespace
+   * lock, in set-based statements: a Copy's result, minted before it is written. The caller has
+   * proven that no live or hidden node holds a root's name, so nothing is checked per node. The
+   * roots arrive as a run by the parent's ordinary rule, then move to `position` when one is
+   * given (`stale-anchor` when the sibling it names is gone).
+   */
+  insertNewTree(input: {
+    parentId: string | null;
+    roots: readonly NewTreeNode[];
+    position?: ContextSiblingPosition;
+  }): Promise<"inserted" | "stale-anchor">;
   /** What a live create at this path would reveal, holding nothing (§6.3 step 1). */
   findLiveCreateCandidate(
     dir: readonly string[],

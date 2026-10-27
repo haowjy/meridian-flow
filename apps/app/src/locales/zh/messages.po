@@ -1525,6 +1525,10 @@ msgstr ""
 msgid "Copied {source} to"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Copied {source} to {place}"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Copied file"
 msgstr ""

@@ -123,7 +123,10 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   codec; `doc put` reports the canonical URI creation returns. `doc put
   --overwrite` deletes and recreates (new id, drafts and history gone), reports
   `previousDocumentId`, and says the old document was already deleted if the
-  create then fails. Seed scenario names use writer spelling.
+  create then fails. Seed scenario names use writer spelling. `doc copy` sends one
+  Copy command per run under a fresh operation ID, with each source's identity read from
+  the catalog lookup and no state vector (it holds nothing open); `--draft-work` with
+  `--draft-thread` reads every source through that draft view.
 - **Usage refusals** are current pending state, not terminal run events. Send
   exits 1 (`failed`, reason `credits_exhausted`) only when its confirming snapshot's
   `messageFate` is waiting and blocked; an already recovered reply wins.

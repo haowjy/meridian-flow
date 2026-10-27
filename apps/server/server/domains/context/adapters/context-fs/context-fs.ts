@@ -56,6 +56,7 @@ import type {
 } from "../../ports/context-adapter.js";
 import { schemeCapabilities } from "../../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../../ports/context-command-transaction.js";
+import type { ContextCopyAdapter } from "../../ports/context-copy.js";
 import {
   type ContextDocument,
   type ContextDocumentStore,
@@ -79,6 +80,7 @@ import type {
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
 import { BoundWrites, binaryTrackedWriteFault, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
+import { createContextFsCopyAdapter } from "./copy-adapter.js";
 import {
   AMBIGUOUS_PATH_FAULT,
   type ContextPlacement,
@@ -213,6 +215,8 @@ export class ContextFS implements ContextSchemeAdapter {
     commitRecursiveDelete: (command) => this.commitRecursiveDelete(command),
   };
   readonly branchTree?: ContextBranchTreeAdapter;
+  /** Copy's read and insert halves (`context/copy/` decides what to copy). */
+  readonly copy: ContextCopyAdapter;
 
   constructor(deps: ContextFSDeps) {
     this.links = deps.links;
@@ -272,6 +276,13 @@ export class ContextFS implements ContextSchemeAdapter {
       executor: this.commandExecutor,
       documentSync: deps.documentSync,
       liveCreate: this.liveCreate,
+    });
+    this.copy = createContextFsCopyAdapter({
+      store: deps.store,
+      documentCreation,
+      documentSync: deps.documentSync,
+      holderUri: (path) => this.holderUri(path),
+      refuseReceive: () => this.placement.refuse("receive a copy"),
     });
     const branchTree = this.placement.branchTree;
     if (branchTree) {

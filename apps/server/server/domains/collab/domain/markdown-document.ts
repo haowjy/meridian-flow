@@ -162,6 +162,20 @@ export type MarkdownDocumentEngine = {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
+  /**
+   * The first state of fresh bound content, built in memory with no database or document in
+   * reach: a bulk create encodes it before its transaction and installs it inside.
+   */
+  encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
+  /**
+   * Installs the first states of documents the caller's transaction just created, from
+   * `encodeSeed` (null for a document with no text): a bulk create's content, in a fixed
+   * number of statements. Rooms hear of it after commit. It derives nothing: the caller
+   * refreshes the projections once its transaction commits.
+   */
+  installSeeds(
+    seeds: readonly { documentId: DocumentId; state: Uint8Array | null }[],
+  ): Promise<void>;
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;
@@ -461,6 +475,34 @@ export function createMarkdownDocumentEngine(
     if (!deps.deferUntilCommit?.(deliver)) await deliver();
   }
 
+  /** What a document with no text starts from: no structs, the placeholder a first checkpoint replaces. */
+  function emptySeedState(): Uint8Array {
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      return Y.encodeStateAsUpdate(doc);
+    } finally {
+      doc.destroy();
+    }
+  }
+
+  /** A document holding fresh bound content as its first state, written with the seed's origin. */
+  function seedDocOf(content: BoundWrite, origin: DocumentSeedOrigin): Y.Doc {
+    const doc = createCollabYDoc({ gc: false });
+    doc.transact(() => {
+      deps.model.insertBlocks(toDocHandle(doc), null, { blocks: [...content.blocks] });
+    }, yjsTransactionOrigin(origin));
+    return doc;
+  }
+
+  async function installSeed(documentId: DocumentId, state: Uint8Array): Promise<boolean> {
+    const seeded = await deps.initialDocumentSeeds.seedInitialDocument(documentId, state);
+    const deliver = () => deps.coordinator.deliver(documentId);
+    // An enclosing aggregate may still roll back after the checkpoint is written. Deliver to the
+    // rooms only after that durable boundary.
+    if (!deps.deferUntilCommit?.(deliver)) await deliver();
+    return seeded;
+  }
+
   async function repairDocumentAuthority(documentId: DocumentId): Promise<void> {
     const projection = await deps.initialDocumentSeeds.missingAuthorityProjection(documentId);
     if (projection === null) return;
@@ -550,28 +592,38 @@ export function createMarkdownDocumentEngine(
       if (!bound.value.fresh) {
         throw new Error("A seed takes a fresh write; this one was bound against a document");
       }
-      const seededDoc = createCollabYDoc({ gc: false });
-      seededDoc.transact(() => {
-        deps.model.insertBlocks(toDocHandle(seededDoc), null, { blocks: [...bound.value.blocks] });
-      }, yjsTransactionOrigin(origin));
+      const seededDoc = seedDocOf(bound.value, origin);
       const canonicalMarkdown = serializeForSchema(
         typedDocumentId,
         seededDoc,
         format.value.schemaType,
         await spelling(typedDocumentId, [seededDoc]),
       );
-      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
-        typedDocumentId,
-        Y.encodeStateAsUpdate(seededDoc),
-      );
-      const deliver = () => deps.coordinator.deliver(typedDocumentId);
-      // An enclosing aggregate may still roll back after the checkpoint is
-      // written. Deliver to the rooms only after that durable boundary.
-      if (!deps.deferUntilCommit?.(deliver)) await deliver();
+      const seeded = await installSeed(typedDocumentId, Y.encodeStateAsUpdate(seededDoc));
       if (seeded) {
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
       }
       return Ok(null);
+    },
+
+    encodeSeed(content, origin) {
+      const doc = seedDocOf(content, origin);
+      try {
+        return Y.encodeStateAsUpdate(doc);
+      } finally {
+        doc.destroy();
+      }
+    },
+
+    async installSeeds(seeds) {
+      const empty = emptySeedState();
+      await deps.initialDocumentSeeds.seedInitialDocuments(
+        seeds.map(({ documentId, state }) => ({ documentId, state: state ?? empty })),
+      );
+      const deliver = async () => {
+        await Promise.all(seeds.map(({ documentId }) => deps.coordinator.deliver(documentId)));
+      };
+      if (!deps.deferUntilCommit?.(deliver)) await deliver();
     },
 
     async writeDocument(input) {

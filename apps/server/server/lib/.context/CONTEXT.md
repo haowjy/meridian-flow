@@ -98,6 +98,14 @@ transaction. The hidden system update is appended after the next writer message
 and makes the new Work context authoritative on later requests; choosing the
 previous Work is an ordinary reverse rebind.
 
+A Copy request (`/context/copy`, not per scheme) carries ordered sources, each with the
+identity it expects and an optional read view, plus one destination. `lib/context-copy-route.ts`
+resolves the locators, requires read on every source root and edit on the destination (a
+folder-identity destination is rechecked under the command's locks), and hands the port
+canonical addresses; `domains/context/copy/` owns everything that writes. Like move, the route
+runs inside `withDurableIntentInterruptBoundary`, because the app's durable queue replays a
+copy under its operation ID and must settle a deterministic refusal from the typed envelope.
+
 Move requests carry `destinationParent` when they use destination identity.
 The route passes that identity into the domain command and receipt, maps typed
 `destination_missing` to non-retryable repair, and rechecks edit authority on
