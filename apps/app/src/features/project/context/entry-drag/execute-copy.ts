@@ -5,7 +5,7 @@
  * Results are data; wording, selection and the notice belong to the caller.
  */
 import type { EntryRef } from "./entry";
-import { arrivals, currentView, type MoveContext } from "./execute-move";
+import { arrivals, currentView, type ReplicaContext } from "./execute-move";
 import { outermostEntries, type ReadyCopy } from "./move-plan";
 
 /** One copy as the replica listed it: the copy's identity, and the row it came from. */
@@ -37,7 +37,7 @@ export const copyArrivals = (copy: ReadyCopy) =>
  */
 export async function copyRows(
   copy: ReadyCopy,
-  context: MoveContext,
+  context: ReplicaContext,
   origin: string,
 ): Promise<CopyResult | null> {
   const rows = copyArrivals(copy);
@@ -84,7 +84,7 @@ export type CopyUndoResult = {
  */
 export async function undoCopy(
   entries: readonly EntryRef[],
-  context: MoveContext,
+  context: ReplicaContext,
 ): Promise<CopyUndoResult> {
   const { resources, projectId } = context;
   const deleted: CopyUndoResult["deleted"][number][] = [];
