@@ -265,6 +265,20 @@ fixed ports. It logs each remaining holder by PID and command, sends SIGTERM,
 waits briefly, and sends SIGKILL to stragglers. An uninspectable bound port still
 aborts startup with diagnostics.
 
+### After a reboot
+
+The HTTPS proxy and Postgres must both be running before `pnpm dev`. Set each
+up once per machine and both start at boot:
+
+- **Proxy:** `pnpm exec portless service install` installs `portless.service`,
+  which serves 443 on loopback (`127.0.0.1`, `::1`) only, so a Tailscale Serve
+  entry on 443 (on the tailnet address) can run beside it. If `pnpm dev` reports
+  a missing proxy or missing routes, read `journalctl -u portless -b`. Don't stop
+  the service's proxy with `portless proxy stop`: it exits cleanly, so systemd
+  doesn't restart it; use `sudo systemctl restart portless`.
+- **Postgres:** the container restarts with Docker (`restart: unless-stopped`).
+  If it is missing, run `pnpm dev:infra`.
+
 ## Workstation: wrapped ripgrep
 
 On the maintainer's workstation, `rg` is a memory-capped wrapper; run
