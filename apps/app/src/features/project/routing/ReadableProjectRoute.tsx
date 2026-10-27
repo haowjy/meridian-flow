@@ -426,28 +426,6 @@ function ReadableProjectDestination({
     if (closingRef && documentLookup.data?.kind === "unavailable") void closeMetadata?.refetch();
   }, [closingRef?.itemKey, documentLookup.dataUpdatedAt]);
   const { selection } = useContextRemovalProject(projectId);
-  useLayoutEffect(() => {
-    if (
-      documentLookup.data?.kind !== "unavailable" ||
-      destination.kind !== "document" ||
-      !workId ||
-      selection.status !== "candidate" ||
-      selection.locator.scheme !== destination.scheme ||
-      canonicalDocumentPath(selection.locator.path) !== canonicalDocumentPath(destination.path) ||
-      selection.locator.workId !== workId ||
-      selection.locator.rootThreadId !== address.lineage
-    )
-      return;
-    contextRemoval.rejectRouteCandidate(projectId, selection.revision);
-  }, [
-    address.lineage,
-    contextRemoval,
-    destination,
-    documentLookup.data,
-    projectId,
-    selection,
-    workId,
-  ]);
   const boundDocumentId = routeContinuityDocumentId({
     selection,
     admittedDocumentId: admission?.documentId ?? null,
@@ -477,6 +455,32 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
+  // The server not having a path rejects a route candidate only when this device holds no
+  // document there either: a document the server never accepted is listed here and opens.
+  useLayoutEffect(() => {
+    if (
+      documentLookup.data?.kind !== "unavailable" ||
+      localDocumentAddress ||
+      destination.kind !== "document" ||
+      !workId ||
+      selection.status !== "candidate" ||
+      selection.locator.scheme !== destination.scheme ||
+      canonicalDocumentPath(selection.locator.path) !== canonicalDocumentPath(destination.path) ||
+      selection.locator.workId !== workId ||
+      selection.locator.rootThreadId !== address.lineage
+    )
+      return;
+    contextRemoval.rejectRouteCandidate(projectId, selection.revision);
+  }, [
+    address.lineage,
+    contextRemoval,
+    destination,
+    documentLookup.data,
+    localDocumentAddress,
+    projectId,
+    selection,
+    workId,
+  ]);
   const listedDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
   // The list omits an active draft with no effect; the addressed item's own metadata still
   // says whether live holds its document, so a held no-effect draft keeps its draft-only host.
