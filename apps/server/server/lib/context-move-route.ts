@@ -3,10 +3,8 @@
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { MoveContextEntryRequest, MoveContextEntryResult } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
+import type { UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
 import {
   type ContextPort,
   contextPortForProjectAuthorities,
@@ -15,11 +13,7 @@ import {
   type UnifiedContextPortFactory,
   type WorkScopedContextFsScheme,
 } from "../domains/context/index.js";
-import {
-  type FileAccess,
-  type FileTarget,
-  isFileAccessDenied,
-} from "../domains/file-policy/index.js";
+import { type FileAccess, isFileAccessDenied } from "../domains/file-policy/index.js";
 import {
   type ProjectRepository,
   type ProjectWorkAuthorityResolver,
@@ -27,6 +21,12 @@ import {
   type WorkRepository,
 } from "../domains/projects/index.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
+import {
+  type ContextLocator,
+  containerOf,
+  locatorUri,
+  type ResolvedContextLocator,
+} from "./context-locator.js";
 import {
   parseContextMutationName,
   parseContextMutationPath,
@@ -42,27 +42,7 @@ export interface ContextMoveRouteDeps {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
-type ProjectLocator = {
-  scope: "project";
-  scheme: ProjectContextFsScheme;
-  path: string;
-};
-
-type WorkLocator = {
-  scope: "work";
-  scheme: WorkScopedContextFsScheme;
-  workId: string;
-  path: string;
-};
-
-type NoWorkLocator = {
-  scope: "none";
-  scheme: WorkScopedContextFsScheme;
-  path: string;
-};
-
-type LineageLocator = { scope: "lineage"; scheme: "scratch"; rootThreadId: string; path: string };
-export type ContextMoveLocator = ProjectLocator | NoWorkLocator | WorkLocator | LineageLocator;
+export type ContextMoveLocator = ContextLocator;
 
 export interface ParsedContextMove {
   operationId: string;
@@ -74,14 +54,7 @@ export interface ParsedContextMove {
   name?: string;
 }
 
-type ResolvedWorkLocator = Omit<WorkLocator, "workId"> & { authority: ResolvedWorkAuthority };
-type ResolvedLineageLocator = LineageLocator & {
-  authority: { kind: "lineage"; rootThreadRef: string };
-};
-export type ResolvedContextMoveLocator =
-  | ProjectLocator
-  | ResolvedWorkLocator
-  | ResolvedLineageLocator;
+export type ResolvedContextMoveLocator = ResolvedContextLocator;
 export type ResolvedContextMove = {
   operationId: string;
   expected: MoveContextEntryRequest["expected"];
@@ -287,12 +260,6 @@ function joinPath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
 }
 
-function locatorUri(locator: ResolvedContextMoveLocator, path = locator.path): string {
-  return locator.scope !== "project"
-    ? projectBrowseContextUri(locator.scheme, path, locator.authority)
-    : projectBrowseContextUri(locator.scheme, path);
-}
-
 export async function commitContextMove(input: {
   port: ContextPort;
   userId: string;
@@ -459,28 +426,8 @@ export async function handleContextMoveRequest(
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
   // Move and rename need edit on what moves and on the folder it lands in (file-access §2).
-  const containerOf = (locator: ResolvedContextMoveLocator): FileTarget =>
-    locator.scope === "project"
-      ? {
-          kind: "container",
-          scheme: locator.scheme,
-          owner: { scope: "project", projectId: input.projectId as ProjectId },
-        }
-      : locator.scope === "lineage"
-        ? {
-            kind: "container",
-            scheme: "scratch",
-            owner: {
-              scope: "lineage",
-              projectId: input.projectId,
-              rootThreadId: locator.rootThreadId,
-            },
-          }
-        : {
-            kind: "container",
-            scheme: locator.scheme,
-            owner: { scope: "work", workId: locator.authority.workId as WorkId },
-          };
+  const containerFor = (locator: ResolvedContextMoveLocator) =>
+    containerOf(locator, input.projectId);
   async function resolveDestinationLocator(uri: string): Promise<ResolvedContextMoveLocator> {
     const parsed = parseUnifiedContextUri(uri);
     if (!parsed.ok) contextErrorToHttp(parsed.error);
@@ -518,7 +465,7 @@ export async function handleContextMoveRequest(
   const moved =
     resolvedMove.expected.kind === "file"
       ? documentTarget(resolvedMove.expected.nodeId)
-      : containerOf(resolvedMove.source);
+      : containerFor(resolvedMove.source);
   const grants = [
     await requireFileGrant(deps.fileAccess, input.userId, moved, "edit"),
     ...(resolvedMove.destinationParent?.kind === "folder"
@@ -527,7 +474,7 @@ export async function handleContextMoveRequest(
           await requireFileGrant(
             deps.fileAccess,
             input.userId,
-            containerOf(resolvedMove.destination),
+            containerFor(resolvedMove.destination),
             "edit",
           ),
         ]),
@@ -543,7 +490,7 @@ export async function handleContextMoveRequest(
             const destination = await resolveDestinationLocator(uri);
             const grant = await deps.fileAccess.authorize(
               { accountId: input.userId as UserId },
-              containerOf(destination),
+              containerFor(destination),
               "edit",
             );
             return (

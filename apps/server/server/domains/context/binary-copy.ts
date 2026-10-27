@@ -5,6 +5,10 @@
  * with `metadata.copiedFrom` through the copier's own port: in a draft-mode chat
  * that is a hidden row holding the branch's object, never shared (12b-Q2).
  * Tracked documents copy through agent-edit instead.
+ *
+ * Copying is two steps so a copy command can put every object before it writes any row:
+ * `prepareBinaryCopy` duplicates the bytes, and `copyBinaryDocument` prepares and then
+ * creates the destination in one go for callers with nothing to join.
  */
 
 import {
@@ -23,6 +27,41 @@ import type {
   ContextPort,
   WriteProvenance,
 } from "./ports/context-port.js";
+
+/** A duplicated destination object, unreferenced until the row that names it commits. */
+export interface PreparedBinaryCopy {
+  /** The `object://` URL the destination row stores. */
+  storageUrl: string;
+  /** The put object's key, for releasing it if no row commits. */
+  key: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+/** Duplicate a binary's stored bytes for a destination that does not exist yet (D24). */
+export async function prepareBinaryCopy(input: {
+  objectStore: ObjectStorePort;
+  source: Pick<BinaryFileRef, "uri" | "storageUrl" | "mimeType">;
+}): Promise<Result<PreparedBinaryCopy, ContextError>> {
+  const sourceKey = objectStoreKeyFromStorageUrl(input.source.storageUrl);
+  if (!sourceKey) return ioError(input.source.uri, "The source file has no stored object.");
+  const object = await input.objectStore.get(sourceKey);
+  if (!object.ok) return ioError(input.source.uri, object.error.message);
+
+  const key = `copies/${crypto.randomUUID()}`;
+  const mimeType = input.source.mimeType ?? object.value.mimeType;
+  const put = await input.objectStore.put(key, object.value.bytes, mimeType);
+  if (!put.ok) return ioError(input.source.uri, put.error.message);
+  return {
+    ok: true,
+    value: {
+      storageUrl: put.value.storageUrl,
+      key,
+      mimeType,
+      sizeBytes: object.value.bytes.byteLength,
+    },
+  };
+}
 
 interface BinaryCopyInput {
   /** The copier's own port: where the destination path must be free and the file is created. */
@@ -70,25 +109,21 @@ export async function copyBinaryDocument(
   }
   if (existing.error.code !== "not_found") return existing;
 
-  const sourceKey = objectStoreKeyFromStorageUrl(input.source.storageUrl);
-  if (!sourceKey) return ioError(input.source.uri, "The source file has no stored object.");
-  const object = await input.objectStore.get(sourceKey);
-  if (!object.ok) return ioError(input.source.uri, object.error.message);
-
-  const key = `copies/${crypto.randomUUID()}`;
-  const mimeType = input.source.mimeType ?? object.value.mimeType;
-  const put = await input.objectStore.put(key, object.value.bytes, mimeType);
-  if (!put.ok) return ioError(input.destinationUri, put.error.message);
+  const prepared = await prepareBinaryCopy({
+    objectStore: input.objectStore,
+    source: input.source,
+  });
+  if (!prepared.ok) return prepared;
 
   const written = await input.port.writeBinary(destinationUri, {
     fileType: input.source.fileType,
-    storageUrl: put.value.storageUrl,
-    mimeType,
-    sizeBytes: object.value.bytes.byteLength,
+    storageUrl: prepared.value.storageUrl,
+    mimeType: prepared.value.mimeType,
+    sizeBytes: prepared.value.sizeBytes,
     metadata: { copiedFrom: input.copiedFrom },
     ...(input.origin ? { origin: input.origin } : {}),
   });
-  if (!written.ok) await input.objectStore.delete(key);
+  if (!written.ok) await input.objectStore.delete(prepared.value.key);
   return written;
 }
 

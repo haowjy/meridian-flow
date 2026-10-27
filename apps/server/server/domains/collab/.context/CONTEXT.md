@@ -571,6 +571,19 @@ therefore write no document bytes. Link extraction and revision hashing use
 the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
+A copy reads one document's frozen cut (`readEffectiveBlocks`): its projected blocks, the
+revision that version reports, the holder its links spell from, its Yjs state vector, and
+where each `ahead:` ref in the cut settles now. `bindCopiedBlocks` turns those blocks into a
+fresh `BoundWrite` for a new holder through `domain/copied-blocks.ts`: identities inside the
+copied set (a settled ahead ref included) name the copy, a ref-less internal spelling is read
+from the source holder and either remapped or written absolute, an unsettled ahead ref whose
+address now holds a copied folder names that folder (an ahead ref settles only on documents),
+and everything else keeps its target. It resolves no catalog and mints no ahead ref, so it is
+safe inside the copy's transaction — the one whole-document door that binds there rather than
+before it. The
+model's `copy` tool runs the same `remapCopiedBlocks` over its own read's blocks, with the
+settlements from the same cut.
+
 A result's concurrent attribution reads only the room journal interval after its
 stored observation position through the rendered cut. A read uses the resolved
 Work-draft identity directly, so a chat that has never written needs no thread peer.

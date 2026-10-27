@@ -37,7 +37,10 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
-    // Neither spells a link: the repair reads its projection with links unbound.
+    // None spells a link: a seed is encoded from bound blocks, and the repair reads its
+    // projection with links unbound.
+    encodeSeed: engine.encodeSeed,
+    installSeeds: engine.installSeeds,
     initializeEmptyDocument: engine.initializeEmptyDocument,
     repairDocumentAuthority: engine.repairDocumentAuthority,
     // The lease spells nothing; the held write spells as the document it admits.
@@ -120,6 +123,8 @@ export function scopeDraftPeer(
     flushDraftLivePull: access.flushDraftLivePull,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
+    readEffectiveBlocks: (command) =>
+      scopes.within(by(command), () => access.readEffectiveBlocks(command)),
     ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,
     retractCreatedDocumentDraft: access.retractCreatedDocumentDraft,
     readEffectiveHashlines: (command) =>

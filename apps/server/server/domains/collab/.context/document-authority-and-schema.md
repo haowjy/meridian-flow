@@ -46,6 +46,15 @@ Everything else requires an existing head and creates nothing. Draft creation
 lock. A miss answers `DocumentNotFoundError`, carrying the removal record
 (`removal`) when the document was removed.
 
+A bulk create (Copy) installs the first states of documents its own transaction just
+inserted through `InitialDocumentSeeds.seedInitialDocuments`: checkpoints, then heads that
+already name them, one statement per batch of 500. It takes no mutation lock and proves no
+liveness, because nothing else can reach those ids yet; the unique keys on the head and on
+the seed checkpoint refuse a document that already has one. The state is encoded earlier by
+`encodeSeed` (the same insertion `seedFromMarkdown` makes) and installed through
+`installSeeds`, which derives nothing: the caller refreshes projections after its
+transaction commits.
+
 `allocateAdmission` is the one live-write boundary (journal): a
 removal that won the mutation lock refuses every later frame, staged save
 install and Apply member there.

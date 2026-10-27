@@ -8,6 +8,11 @@ export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js"
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export type { Branches } from "./domain/branches.js";
+export {
+  type CopyIdentityMap,
+  createCopyIdentityMap,
+  remapCopiedBlocks,
+} from "./domain/copied-blocks.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
 export { DraftPrefixMissingError, DraftStaleUpdateError } from "./domain/draft-store.js";
 export {

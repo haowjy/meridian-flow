@@ -1,4 +1,5 @@
 // Mutating and query write command handlers.
+import { type HolderLinkScope, settledAheads } from "@meridian/markup/links";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
@@ -148,7 +149,7 @@ export function createWriteCommands(deps: {
             ),
           ),
           revision: options.links.revision(room.doc, links.scope),
-          ...(context.includeNodes ? { nodes: selectedNodes(room.doc, selection.blocks) } : {}),
+          ...(context.includeNodes ? selectedCut(room.doc, selection.blocks, links.scope) : {}),
         });
       },
     );
@@ -191,6 +192,15 @@ export function createWriteCommands(deps: {
     } finally {
       view?.destroy();
     }
+  }
+
+  /**
+   * What a copy takes from this read: the selected blocks and where their settled ahead refs
+   * point, both from the scope that spelled the read, so they describe one cut.
+   */
+  function selectedCut(doc: Y.Doc, selected: readonly BlockRef[], scope: HolderLinkScope) {
+    const nodes = selectedNodes(doc, selected);
+    return { nodes, aheadSettlements: settledAheads(nodes, scope) };
   }
 
   /** The selected blocks as nodes, in document order; a copy gets fresh identity when inserted. */

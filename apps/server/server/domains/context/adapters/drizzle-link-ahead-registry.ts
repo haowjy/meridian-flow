@@ -15,7 +15,7 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   isInDrizzleTransaction,
@@ -37,11 +37,10 @@ import {
   RegistrationInsideTransactionError,
   UnregistrableAheadRefError,
 } from "../ports/link-ahead-registry.js";
-import type { DocumentCoordinates } from "../tree/tree-addresses.js";
+import { type DocumentCoordinates, loadDocumentAddresses } from "../tree/tree-addresses.js";
 import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
-  currentDocumentAddress,
   resolveCanonicalAddress,
   sameCoordinates,
   UnresolvableAddressError,
@@ -50,6 +49,28 @@ import {
 /** The registry key: a decoded canonical address resolved to storage coordinates. */
 type Address = DocumentCoordinates;
 export type LinkAheadRegistryDeps = { eventSink?: EventSink };
+
+/** Addresses per statement when a bulk arrival looks for waiting refs. */
+const ADDRESS_BATCH = 100;
+
+/** One address's coordinates as a map key; the path is compared exactly, as `atAddress` does. */
+function coordinateKey(address: {
+  projectId: string;
+  scheme: string;
+  workId: string | null;
+  rootThreadId?: string | null;
+  chatThreadId?: string | null;
+  path: string;
+}): string {
+  return JSON.stringify([
+    address.projectId,
+    address.scheme,
+    address.workId,
+    address.rootThreadId ?? null,
+    address.chatThreadId ?? null,
+    address.path,
+  ]);
+}
 
 /** Registry rows at exactly this address. */
 function atAddress(address: Address) {
@@ -160,16 +181,14 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
   }
 
   async settleArrivals(documentIds: readonly DocumentId[]): Promise<number> {
+    const addresses = (
+      await loadDocumentAddresses(this.db, { ids: [...new Set(documentIds)] })
+    ).filter((address) => !address.deleted);
+    // Every arrival calls this; the visibility read is paid only where a ref waits.
     let settled = 0;
-    for (const documentId of new Set(documentIds)) {
-      const address = await currentDocumentAddress(this.db, documentId);
-      // Every arrival calls this; the visibility read is paid only when a ref waits here.
-      if (
-        address &&
-        (await this.hasUnsettled(address)) &&
-        (await this.isLive(address, documentId))
-      ) {
-        settled += await this.settle(address, documentId);
+    for (const address of await this.withUnsettledRefs(addresses)) {
+      if (await this.isLive(address, address.documentId)) {
+        settled += await this.settle(address, address.documentId);
       }
     }
     return settled;
@@ -246,13 +265,29 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return ids.length === 1 ? (ids[0] ?? null) : null;
   }
 
-  private async hasUnsettled(address: Address): Promise<boolean> {
-    const [row] = await currentDrizzleDb(this.db)
-      .select({ id: linkAheadRefs.aheadId })
-      .from(linkAheadRefs)
-      .where(and(atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
-      .limit(1);
-    return Boolean(row);
+  /** The addresses, of those given, where some ref still waits: a bulk arrival's one look. */
+  private async withUnsettledRefs<A extends Address>(addresses: readonly A[]): Promise<A[]> {
+    const waiting = new Set<string>();
+    for (let offset = 0; offset < addresses.length; offset += ADDRESS_BATCH) {
+      const rows = await currentDrizzleDb(this.db)
+        .select({
+          projectId: linkAheadRefs.projectId,
+          scheme: linkAheadRefs.scheme,
+          workId: linkAheadRefs.workId,
+          rootThreadId: linkAheadRefs.rootThreadId,
+          chatThreadId: linkAheadRefs.chatThreadId,
+          path: linkAheadRefs.path,
+        })
+        .from(linkAheadRefs)
+        .where(
+          and(
+            isNull(linkAheadRefs.settledDocumentId),
+            or(...addresses.slice(offset, offset + ADDRESS_BATCH).map(atAddress)),
+          ),
+        );
+      for (const row of rows) waiting.add(coordinateKey(row));
+    }
+    return addresses.filter((address) => waiting.has(coordinateKey(address)));
   }
 
   /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */

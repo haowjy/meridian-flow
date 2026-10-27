@@ -22,6 +22,7 @@ import {
   type LiveDocumentCreation,
 } from "../../ports/context-document-store.js";
 import type { LiveCreateCandidate } from "../../tree/hidden-node-types.js";
+import type { NewTreeNode } from "../../tree/new-tree.js";
 import type { PathResolution, TreeView } from "../../tree/tree-view.js";
 
 export type FolderRow = ContextFolder & {
@@ -278,6 +279,69 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     let parentId: string | null = null;
     for (const name of dir) parentId = (await this.createFolder(parentId, name)).id;
     return parentId;
+  }
+
+  async insertNewTree(input: {
+    parentId: string | null;
+    roots: readonly NewTreeNode[];
+  }): Promise<"inserted"> {
+    // A client-minted root id is unusable when any row already holds it.
+    for (const root of input.roots) {
+      const heldFolder = this.backing.folders.has(root.id);
+      if (heldFolder || this.backing.documents.has(root.id)) {
+        throw new ContextEntryConflictError(heldFolder ? "folder" : "file");
+      }
+    }
+    // The in-memory backing has no sibling ranks: a copy's position is a live-tree concern.
+    const insert = async (parentId: string | null, nodes: readonly NewTreeNode[]) => {
+      for (const node of nodes) {
+        if (node.kind === "folder") {
+          if (
+            hasOppositeEntry(this.backing, this.sourceId, parentId, node.name, "folder") ||
+            this.findFolderRecord(parentId, node.name) ||
+            this.backing.folders.has(node.id)
+          ) {
+            throw new ContextEntryConflictError("folder");
+          }
+          const folder: FolderRow = {
+            id: node.id,
+            contextSourceId: this.sourceId,
+            parentId,
+            name: node.name,
+            deletedAt: null,
+            updatedAt: this.nextTimestamp(),
+          };
+          this.backing.folders.set(folder.id, folder);
+          claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
+          await insert(folder.id, node.children);
+        } else if (node.node.kind === "tracked") {
+          const created = await this.createDocumentRecordIfAbsent({
+            id: node.id,
+            folderId: parentId,
+            name: node.name,
+            extension: node.extension,
+            markdown: "",
+            filetype: node.node.filetype,
+            ...(node.node.metadata ? { metadata: node.node.metadata } : {}),
+          });
+          if (!created) throw new ContextEntryConflictError("file");
+        } else {
+          await this.createBinaryDocument({
+            id: node.id,
+            folderId: parentId,
+            name: node.name,
+            extension: node.extension,
+            fileType: node.node.fileType,
+            storageUrl: node.node.storageUrl,
+            mimeType: node.node.mimeType,
+            sizeBytes: node.node.sizeBytes,
+            ...(node.node.metadata ? { metadata: node.node.metadata } : {}),
+          });
+        }
+      }
+    };
+    await insert(input.parentId, input.roots);
+    return "inserted";
   }
 
   private async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {

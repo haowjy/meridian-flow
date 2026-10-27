@@ -42,6 +42,15 @@ type CopySource = { path: string; in?: ReadSelection["in"]; version?: DocumentVe
 /** A tracked source read for a copy: its blocks and what `metadata.copiedFrom` records. */
 export interface CopiedSource {
   nodes: NonNullable<WriteOutcome["nodes"]>;
+  /** The source's identity, so a whole-document copy can point its own links at the copy. */
+  sourceDocumentId: string;
+  /**
+   * Whether the read took the whole document (no `in`, no `#fragment`). Only then is the
+   * source part of "the copied set"; a part of it leaves a link to the whole outside it.
+   */
+  wholeDocument: boolean;
+  /** Where each `ahead:` ref in the source now settles; the remap reads it like a writer's Copy. */
+  aheadSettlements: ReadonlyMap<string, string>;
   copiedFrom: CopiedFrom;
 }
 
@@ -150,6 +159,10 @@ export async function readTrackedCopySource(
   const version = outcome.result.read?.version ?? grant.destination.kind;
   return {
     nodes: [...(outcome.nodes ?? [])],
+    sourceDocumentId: address.documentId,
+    wholeDocument: source.in === undefined && address.fragment === undefined,
+    // The read's own scope settled these, so they describe the cut `nodes` came from.
+    aheadSettlements: outcome.aheadSettlements ?? new Map(),
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }

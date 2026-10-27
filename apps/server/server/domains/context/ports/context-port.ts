@@ -10,9 +10,13 @@ import type {
   WorkScopedContextUriScheme,
 } from "@meridian/contracts/context-uri";
 import type {
+  ContextDestinationParent,
   ContextError,
   ContextMoveResult,
   ContextOperationReceipt,
+  ContextSiblingPosition,
+  CopyContextEntriesResult,
+  CopyContextEntryView,
   DeleteContextEntryRequest,
   DeleteContextEntryResult,
   DocumentFileType,
@@ -275,6 +279,31 @@ export interface SearchResult {
   shown?: SearchShowing;
 }
 
+/**
+ * One Copy as a port takes it: canonical addresses the route resolved from the writer's
+ * locators, one ordered root per selection entry, and the destination parent's address.
+ */
+export interface ContextCopyRequest {
+  operationId: string;
+  sources: readonly {
+    /** Canonical address of the root (a free path or a folder path). */
+    uri: string;
+    view?: CopyContextEntryView;
+    expected: { kind: "file" | "folder"; nodeId: string };
+    /** The device-minted identity for this root's copy; descendants are server-minted. */
+    copyId?: string;
+    /** The client's own Yjs state vector for a file it holds open, decoded by the route. */
+    stateVector?: Uint8Array;
+  }[];
+  /** Canonical address of the destination parent folder. */
+  destinationUri: string;
+  /** The identity-based destination, for the receipt and the in-transaction recheck. */
+  destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
+  /** Recheck edit authority on a re-resolved identity destination, under the copy's locks. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
+}
+
 export type WriteProvenance =
   | { type: "agent"; agentSlug: string | null; threadId: string; turnId: string }
   | { type: "human"; userId: string; threadId?: string }
@@ -354,6 +383,17 @@ export interface ContextWriteBinaryOptions extends ContextWriteOptions {
  */
 export interface ContextPort {
   lookupOperation(operationId: string): Promise<ContextOperationReceipt | null>;
+
+  /**
+   * One Copy: the request's roots are read through this port's sources (an explicit per-source
+   * read view), and the destination's adapter inserts the tree, all in one transaction with a
+   * durable receipt. File policy is the caller's: this only moves context.
+   */
+  copy(request: ContextCopyRequest): Promise<Result<CopyContextEntriesResult, ContextError>>;
+
+  /** The canonical address a folder identity has now; `destination_missing` when it is gone. */
+  resolveFolderUri(uri: string): Promise<Result<{ uri: string }, ContextError>>;
+
   /** Resolve metadata for one file by URI. `not_found` if it does not exist or names a directory. */
   stat(uri: string): Promise<Result<FileRef, ContextError>>;
 

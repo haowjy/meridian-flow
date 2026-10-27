@@ -52,6 +52,7 @@ import {
   createWorkContextDocumentStore,
   findNoWorkId,
 } from "./context-source-provisioning.js";
+import type { ContextCopyCommandDeps } from "./copy/copy-command.js";
 import { bindOwners, emptyOwnerLookup, type OwnerLookup } from "./owner-lookup.js";
 import type { BranchTreePort } from "./ports/branch-tree.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
@@ -274,6 +275,7 @@ function buildUnifiedContextPort(input: {
   moveLinks?: ConstructorParameters<
     typeof import("./context/context-tree-mover.js").ContextTreeMover
   >[2];
+  copy?: ContextCopyCommandDeps;
 }): ContextPort {
   const { scope, storeResolvers, commandTransaction } = input;
   const assembly: AdapterAssembly = {
@@ -392,6 +394,7 @@ function buildUnifiedContextPort(input: {
     ...(input.resolveForward ? { resolveForward: input.resolveForward } : {}),
     operationReceipts: input.operationReceipts,
     moveLinks: input.moveLinks,
+    ...(input.copy ? { copy: input.copy } : {}),
   });
 }
 
@@ -617,6 +620,8 @@ export function createProductionUnifiedContextPortFactory(options: {
   hiddenNodeRepair?: HiddenNodeRepair;
   /** The one branches resolver: draft placements read and write through it (§2.3). */
   branches: Branches;
+  /** Copy's collab cut/bind and the object store its binaries duplicate into. */
+  copy?: ContextCopyCommandDeps;
   /**
    * The Work mutation boundary (decision D17): a branch command locks its branch's Work first
    * and touches the Work's projection after it (§13.2, S3).
@@ -734,6 +739,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         ),
         commandTransaction: commandTransaction(projectId, userId),
         placements,
+        ...(options.copy ? { copy: options.copy } : {}),
       });
     },
     forWork(authority, projectId, userId, workAuthorities, thread) {
@@ -751,6 +757,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         ),
         commandTransaction: commandTransaction(projectId, userId),
         placements,
+        ...(options.copy ? { copy: options.copy } : {}),
       });
     },
   };
