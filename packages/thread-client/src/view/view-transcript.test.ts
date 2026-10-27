@@ -272,8 +272,8 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
   });
   expect(seedLatest([agentMessage])).toMatchObject({ latest: false });
 
-  // Risk (F1): a failed reply that kept its content still offers Retry after an agent's message, which
-  // closes the chat on the server but draws no row. The reply stays, its failure ends, and an empty one goes.
+  // Risk (F1): an agent message closes the chat and ends the failed reply, while its delivery row
+  // remains visible even when the reply itself had no content.
   const afterAgent = (reply: Turn) =>
     viewTranscript({
       turns: [turn("u", "user", null), reply, { ...agentMessage, prevTurnId: reply.id }],
@@ -283,9 +283,9 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     turn: { id: "k" },
     movedPast: true,
   });
-  expect(ids(afterAgent(turn("e", "assistant", "u", { status: "error", blocks: [] })))).toEqual([
-    "u",
-  ]);
+  const empty = afterAgent(turn("e", "assistant", "u", { status: "error", blocks: [] }));
+  expect(ids(empty)).toEqual(["u", "e"]);
+  expect(empty.rows[1]?.deliveries[0]?.events[0]?.message).toBe("m words");
 });
 
 it("leaves a handed-back message out and keeps history and later sends", () => {
@@ -387,4 +387,62 @@ it("keeps delivery-group identity across tail growth but refreshes invocation-de
   });
   expect(renamed.rows[0]).not.toBe(first.rows[0]);
   expect(renamed.rows[0]?.deliveries[0]?.events[0]?.title).toBe("Changed title");
+
+  // A directed message with no earlier assistant row still has a writer-visible place.
+  const leadingMessage = turn("m1", "user", null, {
+    origin: "system",
+    metadata: {
+      kind: "inbox_message",
+      agentRequestKind: "foreground_message",
+      sender: { threadId: "sender-1", ref: "c1", title: "Planning" },
+    },
+  });
+  const leading = viewTranscript({
+    turns: [leadingMessage, turn("a3", "assistant", "m1")],
+    activity: { awaitingSubagents: false },
+  });
+  expect(leading.rows[0]).toMatchObject({
+    kind: "delivery",
+    deliveries: [
+      {
+        events: [
+          {
+            message: "m1 words",
+            sender: { threadId: "sender-1", ref: "c1", title: "Planning" },
+          },
+        ],
+      },
+    ],
+  });
+  const groupedMessage = { ...leadingMessage, prevTurnId: reply.id };
+  const grouped = viewTranscript({
+    turns: [reply, groupedMessage, turn("a4", "assistant", "m1")],
+    activity: { awaitingSubagents: false },
+  });
+  expect(grouped.rows.map((row) => row.kind)).toEqual(["turn", "turn"]);
+  expect(grouped.rows[0]?.deliveries[0]?.events[0]).toMatchObject({
+    message: "m1 words",
+    sender: { threadId: "sender-1", ref: "c1", title: "Planning" },
+  });
+
+  // Membership comes from causal placement, not sender attribution. A foreground delivery after a
+  // compaction gets its own row, while the initial child seed remains hidden.
+  const compact = turn("compact", "compaction", reply.id, { blocks: [] });
+  const unattributedForeground = turn("m2", "user", compact.id, {
+    origin: "system",
+    metadata: { kind: "inbox_message", agentRequestKind: "foreground_message" },
+  });
+  const childSeed = turn("seed", "user", unattributedForeground.id, {
+    origin: "system",
+    metadata: { kind: "inbox_message", agentRequestKind: "child_seed" },
+  });
+  const afterCompaction = viewTranscript({
+    turns: [reply, compact, unattributedForeground, childSeed],
+    activity: { awaitingSubagents: false },
+  });
+  expect(afterCompaction.rows.map((row) => [row.kind, row.turn.id])).toEqual([
+    ["turn", "a1"],
+    ["compaction", "compact"],
+    ["delivery", "m2"],
+  ]);
 });

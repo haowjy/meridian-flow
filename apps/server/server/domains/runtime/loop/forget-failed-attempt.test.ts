@@ -346,15 +346,18 @@ describe("loadForgettingFacts", () => {
       cutoffTurnId: "y",
     },
   });
-  const childSeed = turn("c", "user", { origin: "system", metadata: { kind: "inbox_message" } });
+  const childSeed = turn("c", "user", {
+    origin: "system",
+    metadata: { kind: "inbox_message", agentRequestKind: "child_seed" },
+  });
   const reference = block("c", "custom", {
     content: { kind: "thread-reference", props: { threadId: "x" } },
   });
   const walks: Array<[string, Turn[], string[], boolean]> = [
     [
-      "an agent message draws no row, so the report is still under the reply",
+      "an agent message is delivered under the reply alongside its report",
       [agentMessage, report],
-      ["r"],
+      ["m", "r"],
       true,
     ],
     ["a handoff seed is a row, so the walk stops at it", [handoffSeed, report], [], true],
@@ -364,7 +367,7 @@ describe("loadForgettingFacts", () => {
       [],
       true,
     ],
-    ["a child seed without references is not a row", [childSeed, report], ["r"], false],
+    ["a child seed without references stays hidden", [childSeed, report], ["r"], false],
   ];
   it.each(
     walks,
