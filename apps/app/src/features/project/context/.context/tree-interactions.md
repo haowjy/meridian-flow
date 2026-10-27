@@ -391,8 +391,9 @@ is a new item there and a branch in the list's `choose`. The contract:
   views, `into`, `scheme`, `destinationName` (the catalog's current name), `position`,
   `asks` (a reference, or a source in another system than the target), `insideItself`,
   `unavailable` (carried entries the replica can't place) and `canMove`. Copy has no
-  condition; Move is refused for a row in an archived Work's Scratch, judged here from
-  each source's placement so a new drag source never says it. `resolveDrop` returns null
+  condition; Move is refused for a row in the Scratch of an archived Work or of one the project
+  doesn't list (it fails closed), judged here from each source's placement so a new drag
+  source never says it. `resolveDrop` returns null
   when the target isn't a place a drop can land. `planMove` and `planCopy` turn it
   into a plan; an action plans from the resolution and never resolves identities
   again.

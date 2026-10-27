@@ -36,7 +36,7 @@ chat resources rather than ordinary Editor tabs.
   every other source naming a document or folder (chips, tabs, crumbs, Recent rows, receipts,
   Uploads entries, selected links) asks first, at the pointer (`entry-drag/drop-choice.ts`).
   Those sources use `useReferenceDrag` and nothing else; what a drag may do (Move is refused out
-  of an archived Work's Scratch) is judged in `resolveDrop`. Contract in
+  of an archived or unlisted Work's Scratch) is judged in `resolveDrop`. Contract in
   `.context/tree-interactions.md`. A writing surface may copy
   those identities into references through its own drop extension; that drop
   never enters the tree's move route. Desktop only; phones publish Move… directly

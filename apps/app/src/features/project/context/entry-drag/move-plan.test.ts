@@ -85,7 +85,8 @@ const area = (
 
 const view = (areas: MoveArea[]): MoveView => ({
   records: [record("ch1", ["local-ch1"]), record("note")],
-  works: [],
+  // The Work `note` sits in must be listed: a Scratch row of an unlisted Work may not Move.
+  works: [{ id: "w1", handle: null, archivedAt: null }],
   noWork: null,
   placement: {
     resourceLocation: (r: ResourceRecord) =>

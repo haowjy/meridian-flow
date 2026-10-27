@@ -288,19 +288,23 @@ export type ResolvedDrop = {
   /** The target's scheme, for the records a Copy makes there. */
   scheme: ProjectContextTreeScheme;
   /**
-   * Every carried row may Move. A row in an archived Work's Scratch is frozen: it can be copied
-   * from, not moved out of. Judged here from where the replica places each row, so a drag source
-   * never has to say.
+   * Every carried row may Move. A row in the Scratch of an archived Work, or of a Work the project
+   * doesn't list, is frozen: it can be copied from, not moved out of. Judged here from where the
+   * replica places each row, so a drag source never has to say.
    */
   canMove: boolean;
 };
 
+/**
+ * Fails closed, as the rule the row menus used to carry did: a row in a Work's Scratch may Move
+ * only when that Work is found and not archived (No Work is never archived). A Work the project
+ * doesn't list (deleted, or the list not loaded) freezes its Scratch rather than opening it.
+ */
 function movable(view: MoveView, { location }: PlacedEntry): boolean {
-  const work =
-    location.scheme === "scratch" && location.workId
-      ? view.works?.find((candidate) => candidate.id === location.workId)
-      : null;
-  return !(work && isWorkArchived(work));
+  if (location.scheme !== "scratch" || !location.workId) return true;
+  if (location.workId === view.noWork?.id) return true;
+  const work = view.works?.find((candidate) => candidate.id === location.workId);
+  return Boolean(work && !isWorkArchived(work));
 }
 
 /**
