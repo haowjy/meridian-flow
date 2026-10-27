@@ -22,7 +22,8 @@ export function scopeMarkdownEngine(
 ): MarkdownDocumentEngine {
   const by = (documentId: string) => ({ documentId });
   return {
-    grepTextOfDocument: engine.grepTextOfDocument,
+    projectDocument: (documentId, doc) =>
+      scopes.within(by(documentId), () => engine.projectDocument(documentId, doc)),
     serializeDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
     serializeVersionedDocument: (documentId, doc, view) =>

@@ -260,8 +260,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const derivations = createDocumentDerivationService({
     store: derivationStore,
     serializer: {
-      serializeDocument: (...args) => runtime.markdownDocuments.serializeDocument(...args),
-      grepTextOfDocument: (...args) => runtime.markdownDocuments.grepTextOfDocument(...args),
+      projectDocument: (...args) => runtime.markdownDocuments.projectDocument(...args),
     },
     outsideTransaction: runOutsideDrizzleTransaction,
     deferred: (documentId) => {

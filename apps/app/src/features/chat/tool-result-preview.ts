@@ -63,8 +63,13 @@ const LISTING: RowSpec<ToolResultRow> = { cap: LISTING_CAP, toRow: listingEntry 
 export function normalizeGrepResult(output: JsonValue | undefined): GrepResultRows {
   if (!isRecord(output)) return { rows: [], total: 0, matches: 0 };
   const files = normalizeEntries(output.files, { cap: GREP_CAP, toRow: grepHit });
-  const total = typeof output.totalFiles === "number" ? output.totalFiles : files.total;
-  return { ...files, total: Math.max(total, files.total), matches: totalMatches(output.files) };
+  const total = Math.max(
+    typeof output.totalFiles === "number" ? output.totalFiles : files.total,
+    files.total,
+  );
+  // The model is sent at most `head_limit` files, so their match counts add up to a part of the
+  // total; the header may state a match count only when the files sent are every file that matched.
+  return { ...files, total, matches: total > files.total ? 0 : totalMatches(output.files) };
 }
 
 function totalMatches(files: JsonValue | undefined): number {
@@ -115,7 +120,7 @@ function grepHit(row: Record<string, JsonValue>): GrepHitRow | null {
         ? {
             passage: {
               blockHash: match.blockHash,
-              term: match.excerpt.slice(anchor.start, anchor.end),
+              term: typeof match.term === "string" ? match.term : "",
             },
           }
         : {}),

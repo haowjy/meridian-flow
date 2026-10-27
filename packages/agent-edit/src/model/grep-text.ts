@@ -10,7 +10,7 @@
 // a destination took. The grep text is that markdown decoded to the writer's
 // text view, blocks joined with `\n`.
 import type { DocumentLinkScope, MarkupCodec, PMNode } from "@meridian/markup";
-import { markdownTextView } from "./markdown-text-view.js";
+import { markdownPlainText } from "./markdown-text-view.js";
 
 const DESTINATION_FREE_LINKS: DocumentLinkScope = {
   spellLink: () => ({ href: "", address: null }),
@@ -24,5 +24,5 @@ export function destinationFreeBlocks(markup: MarkupCodec, blocks: readonly PMNo
 
 /** The grep text of blocks already serialized by {@link destinationFreeBlocks}. */
 export function grepText(destinationFree: readonly string[]): string {
-  return destinationFree.map((markdown) => markdownTextView(markdown).text).join("\n");
+  return destinationFree.map((markdown) => markdownPlainText(markdown)).join("\n");
 }

@@ -119,18 +119,13 @@ export async function certifyDocumentDerivation(
   )
     return true;
   // A re-derivation that changed no text (an extractor bump) is not an edit: `ls` shows
-  // `updatedAt` to the model and the writer.
-  const [previous] = await tx
-    .select({ markdown: documentMarkdownProjections.markdown })
-    .from(documentMarkdownProjections)
-    .where(eq(documentMarkdownProjections.documentId, cut.documentId))
-    .limit(1);
-  const edited = previous?.markdown !== outputs.markdown;
+  // `updatedAt` to the model and the writer. Postgres compares, so the old markdown never travels.
+  const unchanged = sql`exists (select 1 from ${documentMarkdownProjections} where ${documentMarkdownProjections.documentId} = ${cut.documentId} and ${documentMarkdownProjections.markdown} = ${outputs.markdown})`;
   const [updated] = await tx
     .update(documents)
     .set({
       sizeBytes: Buffer.byteLength(outputs.markdown, "utf8"),
-      ...(edited ? { updatedAt: at } : {}),
+      updatedAt: sql`case when ${unchanged} then ${documents.updatedAt} else ${sql.param(at, documents.updatedAt)} end`,
     })
     .where(and(eq(documents.id, cut.documentId), eq(documents.locationVersion, w.locationVersion)))
     .returning({ id: documents.id });

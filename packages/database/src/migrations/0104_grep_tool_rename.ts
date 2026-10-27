@@ -4,15 +4,39 @@
  * definition and the text decoding `search` applied to a query) instead of importing code
  * that later changes.
  *
- * Runs outside a transaction, in batches by primary key, and every step is re-runnable.
- * `prompt_bakes` is insert-only by trigger; the trigger is never disabled. While the session
- * setting below is on, its function lets an UPDATE through, and the original function is
- * restored last, so a crash leaves only a bypass nothing turns on.
+ * Runs outside a transaction and every step is re-runnable. Each table is walked in one pass
+ * that collects the ids of rows to change, then in batches of ids, each batch written back in
+ * one statement. `prompt_bakes` is insert-only by trigger; the trigger is never disabled.
+ * While the session setting below is on, its function lets an UPDATE through, and the function
+ * as migration 0015 created it is restored last, so a crash leaves only a bypass nothing
+ * turns on, and a re-run restores the same original.
  */
 import type postgres from "postgres";
 
 const BATCH = 500;
 const BAKE_REWRITE_SETTING = "meridian.prompt_bake_rewrite";
+
+/** `enforce_prompt_bake_insert_only()` as migration 0015 created it, with the optional bypass. */
+const bakeTriggerFunction = (
+  bypass: boolean,
+) => `CREATE OR REPLACE FUNCTION enforce_prompt_bake_insert_only() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN${
+  bypass
+    ? `
+  IF TG_OP = 'UPDATE' AND current_setting('${BAKE_REWRITE_SETTING}', true) = 'on' THEN
+    RETURN NEW;
+  END IF;`
+    : ""
+}
+  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1
+    AND NOT EXISTS (SELECT 1 FROM threads WHERE id = OLD.owner_thread_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'Prompt bakes are insert-only'
+    USING ERRCODE = '23514', CONSTRAINT = 'prompt_bakes_insert_only';
+END;
+$$`;
 
 /** The `grep` definition as the registry publishes it at this migration. */
 const GREP_DEFINITION =
@@ -80,20 +104,26 @@ function rewriteBlock(content: JsonObject): boolean {
   return true;
 }
 
-/** Visit rows `after` a key, `BATCH` at a time, until none are left. */
-async function eachBatch<Row extends { id: string }>(
-  fetch: (after: string | null) => Promise<Row[]>,
-  update: (row: Row) => Promise<void>,
+/**
+ * Rewrite the rows `ids` name, `BATCH` at a time: `fetch` reads a batch, `change` returns a row's
+ * new values (or null when it needs none), and `write` stores a batch's changes in one statement.
+ */
+async function rewrite<Row extends { id: string }, Change>(
+  ids: string[],
+  fetch: (batch: string[]) => Promise<Row[]>,
+  change: (row: Row) => Change | null,
+  write: (changes: Change[]) => Promise<unknown>,
 ): Promise<void> {
-  let after: string | null = null;
-  for (;;) {
-    const rows = await fetch(after);
-    for (const row of rows) await update(row);
-    const last = rows.at(-1);
-    if (!last || rows.length < BATCH) return;
-    after = last.id;
+  for (let at = 0; at < ids.length; at += BATCH) {
+    const changes = (await fetch(ids.slice(at, at + BATCH))).flatMap((row) => {
+      const changed = change(row);
+      return changed ? [changed] : [];
+    });
+    if (changes.length > 0) await write(changes);
   }
 }
+
+const idsOf = (rows: { id: string }[]) => rows.map(({ id }) => id);
 
 export async function migrate(sql: postgres.ReservedSql): Promise<void> {
   await renameBlocks(sql);
@@ -103,14 +133,14 @@ export async function migrate(sql: postgres.ReservedSql): Promise<void> {
 
 async function renameBlocks(sql: postgres.ReservedSql): Promise<void> {
   type Row = { id: string; content: JsonObject };
-  await eachBatch<Row>(
-    (after) => sql<Row[]>`SELECT id, content FROM turn_blocks
-      WHERE content->>'toolName' = 'search' AND (${after}::uuid IS NULL OR id > ${after}::uuid)
-      ORDER BY id LIMIT ${BATCH}`,
-    async (row) => {
-      if (rewriteBlock(row.content))
-        await sql`UPDATE turn_blocks SET content = ${sql.json(row.content)} WHERE id = ${row.id}`;
-    },
+  await rewrite(
+    idsOf(
+      await sql<{ id: string }[]>`SELECT id FROM turn_blocks WHERE content->>'toolName' = 'search'`,
+    ),
+    (batch) => sql<Row[]>`SELECT id, content FROM turn_blocks WHERE id = ANY(${batch}::uuid[])`,
+    ({ id, content }) => (rewriteBlock(content) ? { id, content } : null),
+    (rows) => sql`UPDATE turn_blocks AS t SET content = v.content
+      FROM jsonb_to_recordset(${sql.json(rows)}) AS v(id uuid, content jsonb) WHERE t.id = v.id`,
   );
   // A run live across the deploy names its current tool.
   await sql`UPDATE thread_run_leases
@@ -120,70 +150,72 @@ async function renameBlocks(sql: postgres.ReservedSql): Promise<void> {
 
 async function renameLists(sql: postgres.ReservedSql): Promise<void> {
   type Row = { id: string; value: JsonObject };
-  await eachBatch<Row>(
-    (after) => sql<Row[]>`SELECT id, definition AS value FROM agent_definition_revisions
-      WHERE definition::text LIKE '%"search"%' AND (${after}::uuid IS NULL OR id > ${after}::uuid)
-      ORDER BY id LIMIT ${BATCH}`,
-    async ({ id, value }) => {
+  await rewrite(
+    idsOf(
+      await sql<{ id: string }[]>`SELECT id FROM agent_definition_revisions
+        WHERE definition::text LIKE '%"search"%'`,
+    ),
+    (batch) => sql<Row[]>`SELECT id, definition AS value FROM agent_definition_revisions
+      WHERE id = ANY(${batch}::uuid[])`,
+    ({ id, value }) => {
       const metadata = value.metadata;
-      if (isObject(metadata) && renameInObject(metadata, ["tools", "disallowed-tools"]))
-        await sql`UPDATE agent_definition_revisions SET definition = ${sql.json(value)} WHERE id = ${id}`;
+      return isObject(metadata) && renameInObject(metadata, ["tools", "disallowed-tools"])
+        ? { id, value }
+        : null;
     },
+    (rows) => sql`UPDATE agent_definition_revisions AS t SET definition = v.value
+      FROM jsonb_to_recordset(${sql.json(rows)}) AS v(id uuid, value jsonb) WHERE t.id = v.id`,
   );
   type Binding = { id: string; configuration: JsonObject; overlay: JsonObject | null };
-  await eachBatch<Binding>(
-    (after) => sql<Binding[]>`SELECT thread_id AS id, configuration, invocation_overlay AS overlay
-      FROM thread_agent_bindings
-      WHERE (configuration::text LIKE '%"search"%' OR invocation_overlay::text LIKE '%"search"%')
-        AND (${after}::uuid IS NULL OR thread_id > ${after}::uuid)
-      ORDER BY thread_id LIMIT ${BATCH}`,
-    async ({ id, configuration, overlay }) => {
+  await rewrite(
+    idsOf(
+      await sql<{ id: string }[]>`SELECT thread_id AS id FROM thread_agent_bindings
+        WHERE configuration::text LIKE '%"search"%' OR invocation_overlay::text LIKE '%"search"%'`,
+    ),
+    (batch) => sql<Binding[]>`SELECT thread_id AS id, configuration, invocation_overlay AS overlay
+      FROM thread_agent_bindings WHERE thread_id = ANY(${batch}::uuid[])`,
+    ({ id, configuration, overlay }) => {
       const config = renameInObject(configuration, ["tools", "disallowed-tools"]);
       const overrides = overlay?.overrides;
       const overridden = isObject(overrides) && renameInObject(overrides, ["disallowed-tools"]);
-      if (config || overridden)
-        await sql`UPDATE thread_agent_bindings
-          SET configuration = ${sql.json(configuration)}, invocation_overlay = ${overlay ? sql.json(overlay) : null}
-          WHERE thread_id = ${id}`;
+      return config || overridden ? { id, configuration, overlay } : null;
     },
+    (rows) => sql`UPDATE thread_agent_bindings AS t
+      SET configuration = v.configuration, invocation_overlay = v.overlay
+      FROM jsonb_to_recordset(${sql.json(rows)}) AS v(id uuid, configuration jsonb, overlay jsonb)
+      WHERE t.thread_id = v.id`,
   );
 }
 
 async function renameBakedTools(sql: postgres.ReservedSql): Promise<void> {
-  const [original] = await sql<{ definition: string }[]>`
-    SELECT pg_get_functiondef('enforce_prompt_bake_insert_only()'::regprocedure) AS definition`;
-  if (!original) throw new Error("enforce_prompt_bake_insert_only() is missing");
   try {
-    await sql.unsafe(
-      original.definition.replace(
-        "BEGIN",
-        `BEGIN
-  IF TG_OP = 'UPDATE' AND current_setting('${BAKE_REWRITE_SETTING}', true) = 'on' THEN
-    RETURN NEW;
-  END IF;`,
-      ),
-    );
+    await sql.unsafe(bakeTriggerFunction(true));
     await sql`SELECT set_config(${BAKE_REWRITE_SETTING}, 'on', false)`;
     type Row = { id: string; tools: Json };
-    await eachBatch<Row>(
-      (after) => sql<Row[]>`SELECT id, baked_tools AS tools FROM prompt_bakes
-        WHERE baked_tools::text LIKE '%search%' AND (${after}::uuid IS NULL OR id > ${after}::uuid)
-        ORDER BY id LIMIT ${BATCH}`,
-      async ({ id, tools }) => {
-        if (!Array.isArray(tools)) return;
+    await rewrite(
+      idsOf(
+        await sql<{ id: string }[]>`SELECT id FROM prompt_bakes
+          WHERE baked_tools @> '[{"name": "search"}]'::jsonb`,
+      ),
+      (batch) => sql<Row[]>`SELECT id, baked_tools AS tools FROM prompt_bakes
+        WHERE id = ANY(${batch}::uuid[])`,
+      ({ id, tools }) => {
+        if (!Array.isArray(tools)) return null;
         // The old tool's definition becomes the new one; other descriptions name it in prose.
-        const renamed = JSON.parse(
+        const renamed: Json = JSON.parse(
           JSON.stringify(
             tools.map((tool) =>
               isObject(tool) && tool.name === "search" ? JSON.parse(GREP_DEFINITION) : tool,
             ),
           ).replaceAll("`search`", "`grep`"),
         );
-        await sql`UPDATE prompt_bakes SET baked_tools = ${sql.json(renamed)} WHERE id = ${id}`;
+        return JSON.stringify(renamed) === JSON.stringify(tools) ? null : { id, tools: renamed };
       },
+      (rows) => sql`UPDATE prompt_bakes AS t SET baked_tools = v.tools
+        FROM jsonb_to_recordset(${sql.json(rows)}) AS v(id uuid, tools jsonb) WHERE t.id = v.id`,
     );
   } finally {
     await sql`SELECT set_config(${BAKE_REWRITE_SETTING}, 'off', false)`;
-    await sql.unsafe(original.definition);
+    await sql.unsafe(bakeTriggerFunction(false));
   }
 }

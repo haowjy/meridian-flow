@@ -74,15 +74,20 @@ authoritative URI.
 `ContextFS.grep` (scan in `adapters/context-fs/grep-scan.ts`, matching in
 `grep/matcher.ts`) lists a source's documents once, asks the caller's `readable`
 before matching or counting anything, and walks them in path order until
-`headLimit` files have matched. Patterns are RE2 (`re2js`, linear time) matched
-per line of the document's grep text: markdown as `read` shows it, link
-destinations spelled empty, decoded to the text view. A document with usable
-stored text is matched from it, and read only when its passages are wanted;
-every hit is confirmed per line, because the whole-text prefilter can match
-across a line break. Past the limit, fast-path documents are still counted and
-documents that need a read are not, so the total becomes "at least N".
-The first match's offsets in the shown excerpt are stored on the passage
-(`anchor`), and the model-facing window cuts there.
+`headLimit` files have matched. Patterns are RE2 (`re2js`, no backtracking, but
+time still grows with text times program size, so repeat counts above 100 are
+refused) matched per line of the document's grep text: markdown as `read` shows it,
+link destinations spelled empty, decoded to the text view. A document with usable
+stored text (fetched 50 at a time) is matched from it, and read only when its
+passages are wanted; a case-insensitive pattern first needs its required literal
+(`grep/required-literals.ts`) to appear. Past the limit, fast-path documents are
+still counted and documents that need a read are not, so the total becomes
+"at least N". The scan yields to the event loop every 10 ms and stops on the
+handler's abort signal (the caller leaving, or a 20 s budget), returning what it
+found with `exact: false`. A passage stores its first match's offsets in the
+shown excerpt (`anchor`; the model-facing window cuts there) and the matched
+writer text (`term`; the app's door finds the passage again with it).
+
 
 ## Views, identity, and revisions
 

@@ -13,6 +13,8 @@ export interface GrepPassage {
   excerpt: string;
   blockHash?: string;
   anchor?: { start: number; end: number };
+  /** The writer's text of that match, for the app's door; never shown to the model. */
+  term?: string;
 }
 
 export interface GrepHit {
@@ -28,7 +30,7 @@ export interface GrepHit {
 export interface GrepToolResult {
   files: GrepHit[];
   totalFiles: number;
-  /** False when `totalFiles` is a lower bound. */
+  /** False when `totalFiles` is a lower bound, or the scan stopped before the last document. */
   exact: boolean;
 }
 
@@ -72,7 +74,10 @@ export function renderGrepFiles(
   input: JsonObject,
   cleared: (hit: GrepHit) => boolean = () => false,
 ): string {
-  if (files.length === 0) return "No matches.";
+  if (files.length === 0)
+    return exact
+      ? "No matches."
+      : "No matches found before the search stopped. Narrow with path or glob.";
   const verbose = input.verbose === true;
   const mode = input.output_mode;
   const lines = files.map((hit) => {
@@ -95,7 +100,7 @@ export function renderGrepFiles(
     return [head, ...passages].join("\n");
   });
   const body = lines.join(mode === "files_with_matches" || mode === "count" ? "\n" : "\n\n");
-  return totalFiles > files.length
+  return totalFiles > files.length || !exact
     ? `${body}\n\n${files.length} of ${exact ? "" : "at least "}${totalFiles} files. Narrow with path or glob, or raise head_limit.`
     : body;
 }
