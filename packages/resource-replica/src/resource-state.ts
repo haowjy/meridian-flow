@@ -212,6 +212,8 @@ export function remintResource(input: {
     intents: record.intents,
     from: record.resource.identity.revision,
     to: identityRevision,
+    fromId: oldDocumentId,
+    toId: input.documentId,
     retryIntentId: input.retryIntentId,
     rebasedIntentIds: input.rebasedIntentIds,
   });

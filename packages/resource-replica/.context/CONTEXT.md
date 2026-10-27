@@ -328,7 +328,9 @@ A `spent` id never succeeds again, so its work moves to a new one (`awaitsRemint
 placement is `needs-repair` or queued unsent). The runner does it, not the writer: it mints an id
 and calls `remintResource` or `remintFolder`, which share `remintJournal` (the failed placement is
 superseded, a retry carries the same admission order, unsent dependents are cancelled and queued
-again). The writer's repair after a refusal is an ordinary placement over a `local` id. A folder
+again, and every copy's admission scope names the new id, so a placement admitted into the
+replacement waits on it; admission also resolves an id a remint retired to its replacement,
+`currentSpec`). The writer's repair after a refusal is an ordinary placement over a `local` id. A folder
 remint keeps the record and its handle, takes a new `folderId`, and rewrites the unsent
 placements in other records that named the old folder (destination parent or sibling) in the
 same IndexedDB transaction (`planFolderRemintDependents`, applied by `commitFolder`), so work

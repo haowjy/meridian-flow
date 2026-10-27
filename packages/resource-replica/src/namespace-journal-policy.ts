@@ -7,6 +7,7 @@ import {
 import {
   type NamespaceIntent,
   namespaceRequestId,
+  type PlacementAdmission,
   type ResourceDestination,
 } from "./resource-records";
 import type { ServerHold } from "./server-hold";
@@ -94,16 +95,39 @@ export function resolveRefusedLocationChain(
 }
 
 /**
+ * An admission after the entry it names has a new id: its order and predecessors stay, and its
+ * scope (the keys later placements overlap with) names the new id wherever it named the old.
+ */
+export function renamedAdmission(
+  admission: PlacementAdmission,
+  from: string,
+  to: string,
+): PlacementAdmission {
+  const rename = (key: string) =>
+    key === `entry:${from}`
+      ? `entry:${to}`
+      : key === `parent:folder:${from}`
+        ? `parent:folder:${to}`
+        : key;
+  return { ...admission, scope: admission.scope.map(rename).sort() };
+}
+
+/**
  * The journal side of replacing a spent id, shared by documents and folders. The failed placement
  * is superseded and sent again as a new intent, and the unsent intents queued behind it are
- * cancelled and queued again after it. Each copy keeps its admission, so a placement that waited on
- * the original keeps waiting on its replacement. `from` is the identity revision of the work being
- * replaced and `to` the one its copies carry. Null when nothing is left to send.
+ * cancelled and queued again after it. Each copy keeps its place in the order and its
+ * predecessors, so a placement that waited on the original keeps waiting on its replacement, and
+ * its scope names the new id (`renamedAdmission`), so a placement admitted into the replacement
+ * waits on it too. `from` is the identity revision of the work being replaced and `to` the one its
+ * copies carry; `fromId` and `toId` are the entry ids they replace. Null when nothing is left to
+ * send.
  */
 export function remintJournal(input: {
   intents: readonly NamespaceIntent[];
   from: number;
   to: number;
+  fromId: string;
+  toId: string;
   retryIntentId: string;
   rebasedIntentIds: Readonly<Record<string, string>>;
 }): NamespaceIntent[] | null {
@@ -139,7 +163,9 @@ export function remintJournal(input: {
           identityRevision: input.to,
           desired: failed.desired,
           // The retry stands where the failed placement stood in the account's causal order.
-          ...(failed.admission ? { admission: failed.admission } : {}),
+          ...(failed.admission
+            ? { admission: renamedAdmission(failed.admission, input.fromId, input.toId) }
+            : {}),
           attempts: [],
           state: "pending",
         },
@@ -151,6 +177,9 @@ export function remintJournal(input: {
       intentId: input.rebasedIntentIds[intent.intentId] as string,
       sequence: ++sequence,
       identityRevision: input.to,
+      ...(intent.admission
+        ? { admission: renamedAdmission(intent.admission, input.fromId, input.toId) }
+        : {}),
     }),
   );
   return [

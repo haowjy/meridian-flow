@@ -4,7 +4,7 @@
  * id becomes an alias. Placements that named the old folder as their destination follow the new
  * id (`planFolderRemintDependents`), so work queued inside a folder lands wherever the folder does.
  */
-import { remintJournal } from "./namespace-journal-policy";
+import { remintJournal, renamedAdmission } from "./namespace-journal-policy";
 import { awaitsRemint } from "./resource-intent-policy";
 import type {
   FolderNamespaceRecord,
@@ -29,6 +29,8 @@ export function remintFolder(input: {
     intents: record.intents,
     from: 1,
     to: 1,
+    fromId: record.folderId,
+    toId: input.folderId,
     retryIntentId: input.retryIntentId,
     rebasedIntentIds: input.rebasedIntentIds,
   });
@@ -89,16 +91,12 @@ function followedDestination(
 function followedIntent(intent: NamespaceIntent, from: string, to: string, sequence: number) {
   const { desired } = intent;
   if (desired.kind === "delete") return intent;
-  const rename = (key: string) =>
-    key === `entry:${from}` || key === `parent:folder:${from}` ? key.replace(from, to) : key;
   return {
     ...intent,
     intentId: `${intent.intentId}@${to}`,
     sequence,
     desired: { ...desired, destination: followedDestination(desired.destination, from, to) },
-    ...(intent.admission
-      ? { admission: { ...intent.admission, scope: intent.admission.scope.map(rename).sort() } }
-      : {}),
+    ...(intent.admission ? { admission: renamedAdmission(intent.admission, from, to) } : {}),
   } satisfies NamespaceIntent;
 }
 
