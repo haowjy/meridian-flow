@@ -17,6 +17,11 @@ A case that takes more than twice its prediction is explained before merge.
    node tools/mf/fixtures/grep-scale.mjs > /tmp/grep-scale.json
    ./mf seed /tmp/grep-scale.json --json | tail -1   # threadId; seeding takes about a minute
    ```
+
+   The slow-pattern cases need two more documents in that JSON's `docs`: `kb://probe/long`, one
+   paragraph of 1,000,000 letters with no spaces (`loremipsumdolorsitamet` repeated), and
+   `kb://probe/sentences`, 50 paragraphs of "He drew the sword from the stone and the mountain shook
+   beneath his feet. Lin Feng nodded to Elder Mo at the Jade Pavilion <n>".
 3. `T=<threadId>`. Drive one call per reply, scripting the model's `grep`:
 
    ```bash
@@ -71,15 +76,17 @@ chapter; `LIVE\_ONLY` (escaped) is in chapter-001 only. Seeding `basic.json` ear
 | Glob, address | `Lin Feng`, `path` `kb://`, `glob` `lore/**`, `count`, `head_limit` 2 | `kb://lore/…`, "2 of 100 files" | n/a | 65, 66, 44 |
 | One document | `Azure`, `path` `manuscript://book/chapter-007` | that chapter | n/a | 76, 85, 75 |
 | Escaped form | `LIVE_ONLY` | chapter-001 (stored `LIVE\_ONLY`) | n/a | 149, 150, 143 |
-| Repeat at the limit | `.{100}[a-q]`, `count` | counts | n/a | 241, 228, 230 |
-| Slowest allowed pattern | `[^z]{100}x`, `-i`, `count` | `No matches.` | n/a | 8848, 9155, 8819 |
-| Pathological | `(a+)+$`, `count`, `path` `kb://probe/aaa` (10,000 `a`) | one match | under 50 beyond the floor | 54, 44, 60 |
+| Repeat at the limit | `.{100}[a-q]`, `count` | counts | n/a | 362, 322, 327 |
+| Slow, under the budget | `[^z]{100}x`, `-i`, `count` | `No matches.` | n/a | 14743, 14744, 14755 |
+| Sentence-long pattern | a 72-character sentence from the fixture's `kb://probe/sentences` | that document | n/a | 269 |
+| Name alternation | `Lin Feng\|Azure Dragon\|Heavenly Sword Sect\|Elder Mo\|Jade Pavilion`, `count`, `path` `kb://probe/sentences` | 150 matches | n/a | 60 |
+| Pathological | `(a+)+$`, `count`, `path` `kb://probe/sentences` | `No matches.` | under 50 beyond the floor | 52, 51, 45 |
 
-Refusals (`isError`), each in about 30–50 ms: repeat counts that add up past 100 (`.{101}x`:
-"repeat counts add up to 101, above the limit of 100"; also `(?:\pL{100}){10}x`, 1000, and
-`[^z]{100}[^z]{100}x`, 200; `[x{200}]` is a class and passes), `(?<=a)b` and `[` ("Invalid pattern: error parsing
+Refusals (`isError`), each in about 30–50 ms: `(?<=a)b` and `[` ("Invalid pattern: error parsing
 regexp…"), `(a)\1`, a 513-character pattern ("Invalid arguments for grep: pattern: must be at
-most 512 characters") and `path` `skills://` ("grep doesn't cover skills://").
+most 512 characters") and `path` `skills://` ("grep doesn't cover skills://"). RE2's own
+limits apply (repeat counts up to 1000). Nothing else is refused for cost: a slow pattern runs
+until the 20 s budget ends it.
 
 State cases (mock script with a `write` step before the `grep`):
 
@@ -96,11 +103,14 @@ State cases (mock script with a `write` step before the `grep`):
 
 ## Measured against predicted
 
-Run on the round-2 commit (its hash is in the PR), 2026-10-27, the shared dev machine,
-Postgres 16 in the local container, `MODEL_PROVIDER=mock`. Every row is warm. Rows not
-re-run after the round-2 change (the glob, one-document, escaped-form and pathological rows) are
-from the review-fix commit. Every case is inside its
-prediction; the notes below explain the slow and the fast.
+Run on the worker-thread commit (its hash is in the PR), 2026-10-27, the shared dev machine
+(about 1.5–2× slower that day than for the earlier rows: the same cases on the previous
+commit measured 190–200 ms for a files-only grep that had read 100 before),
+Postgres 16 in the local container, `MODEL_PROVIDER=mock`. Rows from the literal through the
+count-everywhere cases were re-run on it and match the previous commit's timings on that
+day, so the worker adds nothing visible (1,000 request round trips to a warm thread
+take 53 ms; the first request starts a thread, about 125 ms). The glob, one-document and
+escaped-form rows are from the review-fix commit. The notes below explain the slow and the fast.
 
 - `\bLin\b`, `^#` and `\ALin` (content, everywhere), 1.05–1.1 s: 50 reads and passages. The
   prediction is 1–1.5 s.
@@ -109,20 +119,19 @@ prediction; the notes below explain the slow and the fast.
 - `-i` literal and `-i` no-match are 310 and 110 ms: a case-insensitive pattern first needs the
   literal it requires (`azure dragon seal`, `zzqxv`) to appear in the document, a plain
   substring test, before `re2js` reads it. Without a required literal (`[^z]{100}x`) every line
-  goes through `re2js`: the slowest allowed pattern takes about 10 s over 8.2M characters.
+  goes through `re2js`: that pattern takes about 15 s over 8.2M characters.
 - "of at least N files": documents with an active draft row (here chapter-006) or a stale
   derivation take the slow path, and past the limit they are not read to be counted.
 
 Limits, checked live:
 
-- **Program size**: a pattern whose compiled RE2 program passes 64 instructions is refused
-  ("pattern is too complex"). The size covers `{n}`, nesting, and the same repeat written out
-  longhand. It also bounds one long line, which the budget cannot interrupt: one `re2js` call on a
-  1M-character single line took 2.6 s for 60 `\pL` under `-i` (63 instructions, the slowest shape
-  found) and about 1.2 s for 60 `.`. Without the cap, 509 `.` took 9.8 s, 170 `\pL` under `-i` 6 s,
-  and `(?:\pL{100}){10}x` 29 s. `\d{4}-\d{2}-\d{2}` is 12 instructions.
-- **Event loop.** A scan of a pattern with no literal yields every 10 ms between lines. While
-  `[^z]{100}[^y]{100}x` (`-i`) ran for 12 s, `GET /health` took about 240 ms; with the yield
-  between documents it took 3 s.
+- **Slow patterns.** Matching runs in worker threads (`grep/match-pool.ts`) that the budget
+  terminates. Sentences and alternations a writer would search for pass (a 72-character
+  sentence, `Lin Feng|Azure Dragon|Heavenly Sword Sect|Elder Mo|Jade Pavilion`, `Lin.{0,50}sword`).
+  `(?:\pL{100}){10}\d` on a 1,000,000-letter line (`kb://probe/long`, seed it beside the fixture)
+  ends at the 20 s budget with "No matches found before the search stopped"; `GET /healthz` stays at
+  4–5 ms throughout, and so does it with two such greps at once, while an ordinary grep in a third
+  chat takes its usual time plus the thread's start (about 0.1 s).
+- **Concurrency.** Up to 4 threads run at once; a fifth caller waits for a free thread for at most its own budget.
 - **Budget.** The scan stops after 20 s and returns what it found; the result then reads
   "No matches found before the search stopped" or "N of at least M files".

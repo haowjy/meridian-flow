@@ -1,14 +1,14 @@
 /**
- * `grep` matching: one compiled RE2 pattern that filters, counts and locates.
+ * `grep` matching: one RE2 pattern that filters, counts and locates.
  *
  * RE2 syntax (ripgrep's dialect: no lookaround, no backreferences) run by
  * `re2js`, which never backtracks: V8's own `RegExp` took 20 s on `(a+)+$`
  * against 29 characters. Linear is not free, though: time grows with text length
- * times the compiled program's size, and a bounded repeat multiplies that
- * size, so patterns whose compiled program passes {@link MAX_PROGRAM} are refused here. The scan
- * adds the other bound, an abort signal it polls between lines. The unit of
- * matching is a line of the document's **grep text** (see `@meridian/agent-edit`'s
- * `grepText`): `^` and `$` anchor lines.
+ * times the compiled program's size, and one `re2js` call can't be interrupted. So the
+ * matching runs in a worker thread (`match-pool.ts`) that the caller's abort signal
+ * terminates, and no static limit on the pattern is needed beyond RE2's own refusals
+ * and the pattern's length. The unit of matching is a line of the document's **grep
+ * text** (see `@meridian/agent-edit`'s `grepText`): `^` and `$` anchor lines.
  *
  * **A document reports several passages, not one.** The list is capped because
  * a result is a way in, not the document itself; the count beside it stays
@@ -20,66 +20,63 @@ import { markdownTextView } from "@meridian/agent-edit";
 import { RE2JS } from "re2js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { GrepPassage } from "../ports/context-port.js";
+import { runMatch } from "./match-pool.js";
 import { requiredLiterals } from "./required-literals.js";
+
+export { GrepStopped } from "./match-pool.js";
 
 /** How many passages one document contributes before the count speaks for the rest. */
 export const PASSAGE_CAP = 3;
 
 /**
- * Largest compiled RE2 program a pattern may have. Matching time over a long line is the program's
- * size times the line's length, wherever the size comes from (`{n}`, longhand repeats, big classes,
- * nesting). Measured per 1M-character line with the program at 63 instructions: 2.6 s for 60 `\pL`
- * under `-i` (the slowest shape found), about 1.2 s for 60 `.`. `\d{4}-\d{2}-\d{2}` is 12.
+ * A compiled pattern. Matching methods run off the event loop and reject with `GrepStopped` when
+ * `signal` aborts; the work in flight is then abandoned, never finished.
  */
-export const MAX_PROGRAM = 64;
-
 export interface GrepMatcher {
-  /** Match spans in one line of grep text. */
-  spans(line: string): Array<[start: number, end: number]>;
-  /** Whether one line of grep text matches. */
-  matchesLine(line: string): boolean;
+  /** Matches in `text`; with `all` false, 1 at the first matching line or 0. */
+  count(text: string, all: boolean, signal?: AbortSignal): Promise<number>;
+  /** Indices of the first `limit` texts that have a matching line. */
+  firstHits(texts: readonly string[], limit: number, signal?: AbortSignal): Promise<number[]>;
+  /** Each text's first match as offsets into that text, null when it has none. */
+  firstSpans(
+    texts: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<Array<[start: number, end: number] | null>>;
   /**
    * Cheap whole-text prefilter: false only if no line can match. Present when a
    * case-insensitive pattern requires a literal. It only skips documents; every
-   * hit is confirmed per line.
+   * hit is confirmed by the worker.
    */
   test?(text: string): boolean;
 }
 
 const REGEXP_SYNTAX = /[\\^$.*+?()[\]{}|]/gu;
 
-/** Compile once per call, at the trust boundary; the error is the parser's message. */
+/**
+ * Checks the pattern at the trust boundary (the error is the parser's message). The worker
+ * compiles it again, once per thread, and caches it.
+ */
 export function compileGrep(pattern: string, ignoreCase: boolean): Result<GrepMatcher, string> {
-  const flags = ignoreCase ? RE2JS.CASE_INSENSITIVE : 0;
   try {
-    const line = RE2JS.compile(pattern, flags);
-    // `prog` is re2js internal (hence the exact version pin); a build that hides it refuses every pattern.
-    const size = (line as unknown as { re2Input?: { prog?: { inst?: { length: number } } } })
-      .re2Input?.prog?.inst?.length;
-    if (size === undefined || size > MAX_PROGRAM) return Err("pattern is too complex");
-    // Without a literal, re2js loses its literal fast path under CASE_INSENSITIVE, so a
-    // case-insensitive pattern prefilters with a V8 RegExp over the literal it requires.
-    // An escaped literal cannot backtrack. `iu` folds case the way RE2 does.
-    const literals = ignoreCase ? requiredLiterals(pattern) : undefined;
-    const prefilter = literals
-      ? new RegExp(
-          literals.map((literal) => literal.replace(REGEXP_SYNTAX, "\\$&")).join("|"),
-          "iu",
-        )
-      : undefined;
-    return Ok({
-      spans(text) {
-        const spans: Array<[number, number]> = [];
-        const matcher = line.matcher(text);
-        while (matcher.find()) spans.push([matcher.start(), matcher.end()]);
-        return spans;
-      },
-      matchesLine: (text) => line.matcher(text).find(),
-      ...(prefilter ? { test: (text: string) => prefilter.test(text) } : {}),
-    });
+    RE2JS.compile(pattern, ignoreCase ? RE2JS.CASE_INSENSITIVE : 0);
   } catch (cause) {
     return Err(cause instanceof Error ? cause.message : String(cause));
   }
+  // Without a literal, re2js loses its literal fast path under CASE_INSENSITIVE, so a
+  // case-insensitive pattern prefilters with a V8 RegExp over the literal it requires.
+  // An escaped literal cannot backtrack. `iu` folds case the way RE2 does.
+  const literals = ignoreCase ? requiredLiterals(pattern) : undefined;
+  const prefilter = literals
+    ? new RegExp(literals.map((literal) => literal.replace(REGEXP_SYNTAX, "\\$&")).join("|"), "iu")
+    : undefined;
+  return Ok({
+    count: (text, all, signal) => runMatch({ op: "count", pattern, ignoreCase, text, all }, signal),
+    firstHits: (texts, limit, signal) =>
+      runMatch({ op: "firstHits", pattern, ignoreCase, texts, limit }, signal),
+    firstSpans: (texts, signal) =>
+      runMatch({ op: "firstSpans", pattern, ignoreCase, texts }, signal),
+    ...(prefilter ? { test: (text: string) => prefilter.test(text) } : {}),
+  });
 }
 
 /** One block of a document as the scan sees it. */
@@ -107,51 +104,38 @@ export interface DocumentMatch {
 
 /**
  * The first {@link PASSAGE_CAP} blocks the matcher hits, as passages. `texts` holds each
- * block's grep text, aligned with `blocks`; `pace` is awaited between lines, so the caller can
- * yield or stop. The match count is not this function's: the caller already counted.
+ * block's grep text, aligned with `blocks`. The match count is not this function's: the caller
+ * already counted.
  */
 export async function grepBlocks(
   blocks: readonly GrepBlock[],
   texts: readonly string[],
   matcher: GrepMatcher,
   locate: GrepLocate,
-  pace: () => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<DocumentMatch> {
-  const matches: GrepPassage[] = [];
-  const returned: number[] = [];
-  for (const [index, block] of blocks.entries()) {
-    if (matches.length === PASSAGE_CAP) break;
-    let hit = false;
-    for (const line of (texts[index] as string).split("\n")) {
-      await pace();
-      if (matcher.matchesLine(line)) {
-        hit = true;
-        break;
-      }
-    }
-    if (!hit) continue;
-    // Offsets into the plain text map back to the markdown only for blocks that are returned.
-    const view = markdownTextView(block.destinationFree);
-    let first: [number, number] = [0, 0];
-    let lineStart = 0;
-    for (const line of view.text.split("\n")) {
-      const span = matcher.spans(line)[0];
-      if (span) {
-        first = [lineStart + span[0], lineStart + span[1]];
-        break;
-      }
-      lineStart += line.length + 1;
-    }
+  const returned = await matcher.firstHits(texts, PASSAGE_CAP, signal);
+  // Offsets into the plain text map back to the markdown only for blocks that are returned.
+  const views = returned.map((index) =>
+    markdownTextView((blocks[index] as GrepBlock).destinationFree),
+  );
+  const spans = await matcher.firstSpans(
+    views.map((view) => view.text),
+    signal,
+  );
+  const matches = returned.map((index, at): GrepPassage => {
+    const block = blocks[index] as GrepBlock;
+    const view = views[at] as ReturnType<typeof markdownTextView>;
+    const first = spans[at] ?? [0, 0];
     const start = view.start[first[0]] ?? 0;
     const end = view.end[Math.max(first[1], first[0] + 1) - 1] ?? start;
     const anchor = locate(block, { start, end });
-    matches.push({
+    return {
       excerpt: block.body,
       ...(block.hash ? { blockHash: block.hash } : {}),
       ...(anchor ? { anchor } : {}),
       term: view.text.slice(first[0], first[1]),
-    });
-    returned.push(index);
-  }
+    };
+  });
   return { matches, blocks: returned };
 }

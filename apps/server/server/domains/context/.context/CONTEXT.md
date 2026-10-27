@@ -71,12 +71,20 @@ authoritative URI.
 
 ## Grep
 
-`ContextFS.grep` (scan in `adapters/context-fs/grep-scan.ts`, matching in
-`grep/matcher.ts`) lists a source's documents once, asks the caller's `readable`
+`ContextFS.grep` (scan in `adapters/context-fs/grep-scan.ts`, the pattern and
+passages in `grep/matcher.ts`, the threads in `grep/match-pool.ts` and
+`grep/match-worker.ts`) lists a source's documents once, asks the caller's `readable`
 before matching or counting anything, and walks them in path order until
 `headLimit` files have matched. Patterns are RE2 (`re2js`, no backtracking, but
-time still grows with text times program size, so a pattern whose compiled program passes 64
-instructions is refused, read from `re2js`'s internals, hence the exact version pin) matched per line of the document's
+time still grows with text times program size, and one call can't be interrupted) matched per line of the document's
+grep text, in worker threads, so a slow pattern ends by termination at the deadline and never blocks the
+event loop. `compileGrep` only validates on the main thread (RE2's own refusals, 512 characters); there is no
+static size limit, since program size doesn't measure cost. The pool starts threads on demand up to 4
+and keeps them; each serves one request at a time and compiles the pattern it is sent (cached by it), so a
+terminated thread loses only the request that ran there. With all four busy, further requests queue, each
+for no longer than its own signal. The built server emits the worker as `workers/match-worker.mjs`
+(`bundleWorkerEntries` in `apps/server/nitro.config.ts` rewrites `new URL("./x.ts", import.meta.url)`);
+vitest and `tsx` run the `.ts` file directly. Matching is per line of the document's
 grep text: markdown as `read` shows it, link destinations spelled empty, decoded to
 the text view. Each document's text comes first: collab's `readStoredGrepTexts`
 answers which of a slice of 50 documents have stored text matching what this reader
@@ -86,9 +94,9 @@ match and count; the read is repeated only for `content` mode's passages. A
 case-insensitive pattern first needs its required literal
 (`grep/required-literals.ts`) to appear. Past the limit, documents with stored text
 are still counted and documents that need a read are not, so the total becomes
-"at least N" (`exact: false`). The scan yields to the event loop every 10 ms and stops
-on the handler's abort signal (the caller leaving, or a 20 s budget), returning what it
-found with `exact: false, stopped: true`. A passage stores its first match's offsets in
+"at least N" (`exact: false`). The scan stops
+on the handler's abort signal (the caller leaving, or a 20 s budget), which also terminates
+the matching thread mid-call, returning what it found with `exact: false, stopped: true`. A passage stores its first match's offsets in
 the shown excerpt (`anchor`; the model-facing window cuts there) and the matched
 writer text (`term`; the app's door finds the passage again with it).
 
