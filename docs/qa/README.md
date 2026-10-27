@@ -54,6 +54,8 @@ stack.
 - [Text-derived draft disposition](draft-disposition.md): inverse policy, historical Apply evidence and whole-Work close, with an isolated PostgreSQL runner.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Row selection and drag](row-drag.md): multi-select, dragging rows into folders and areas, reordering on row edges and through Move…, refusals, Undo, Scratch and Work Files.
+- [Refused document creates](refused-create.md): a create the server refuses settles once, keeps the document and its text in Unfiled with a mark, and files again from the row or the identity bar; network drops still retry.
+- [New folder](folder-create.md): a folder listed at once and settled in the background: offline and reload, documents and reorders put in a pending folder, a refused create with contents, deleting before it lands, rename, and two tabs.
 - [The server Copy command](copy-server.md): rich folder, hidden occupants, draft sources, fifty documents, a failure on the last child, replay, a source not yet caught up, positions, refusals, other owners and the model's copy, driven with `./mf`.
 - [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as word-snapped `@` references, with refusals and drop-regression checks.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.

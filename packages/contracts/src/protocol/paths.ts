@@ -204,6 +204,14 @@ export function apiProjectContextCreateUntitledPath(
   return `${apiProjectPath(projectId)}/context/${scheme}/create-untitled${projectContextQuery(scheme, opts)}`;
 }
 
+export function apiProjectContextCreateFolderPath(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
+): string {
+  return `${apiProjectPath(projectId)}/context/${scheme}/create-folder${projectContextQuery(scheme, opts)}`;
+}
+
 export function apiProjectContextReadPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,

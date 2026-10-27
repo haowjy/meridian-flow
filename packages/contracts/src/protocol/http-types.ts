@@ -105,20 +105,52 @@ export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 export type ProjectContextTreeScheme = ContextUriScheme;
 
 /**
- * Where the writer's create lands, the same identity-based address a move carries. The
- * server joins a branch's hidden document waiting there; omitted, the create is nameless
- * and lands in `folderPath` as `Untitled N`.
+ * Where the writer's create lands (a document or a folder), the same identity-based address a
+ * move carries. For a document the server joins a branch's hidden document waiting there;
+ * omitted, a document create is nameless and lands in `folderPath` as `Untitled N`.
  */
-export type CreateUntitledDestination = {
+export type ContextCreateDestination = {
   parent: ContextDestinationParent;
-  /** The leaf filename as the writer typed it. */
+  /** The leaf name as the writer typed it. */
   name: string;
+  /**
+   * Where among the parent's children the new document goes; the server resolves it under the
+   * namespace lock a move uses. An anchor it can't find leaves the document at the parent's end.
+   */
+  position?: ContextSiblingPosition;
 };
+
+/**
+ * A folder under an id the device minted, so the writer's next command can name it before the
+ * server has answered. A visible name taken at the destination leaves the folder at the first
+ * free name; a hidden folder a branch holds there is absorbed into it.
+ */
+export type CreateContextFolderRequest = {
+  folderId: string;
+  destination: ContextCreateDestination;
+};
+
+/**
+ * The folder at its address. `already-exists` answers a replay: the id is the identity.
+ * `conflict` means the id is held where this create cannot use it (deleted, hidden, foreign,
+ * or a document's): the device's folder stays local and needs repair.
+ */
+export type CreateContextFolderResponse =
+  | {
+      status: "created" | "already-exists";
+      folderId: string;
+      scheme: ProjectContextTreeScheme;
+      path: string;
+      name: string;
+      /** Present only when the canonical location is Work-scoped. */
+      workId?: string | null;
+    }
+  | { status: "conflict" };
 
 export type CreateUntitledContextDocumentRequest = {
   documentId: string;
   folderPath?: string;
-  destination?: CreateUntitledDestination;
+  destination?: ContextCreateDestination;
 };
 
 /** A document's current canonical address. */

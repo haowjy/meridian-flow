@@ -4,7 +4,11 @@
  * - rename feedback and settlement lifecycle
  */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
-import type { NamespaceIntent, ResourceProjectionSnapshot } from "@meridian/resource-replica";
+import type {
+  FolderNamespaceRecord,
+  NamespaceIntent,
+  ResourceProjectionSnapshot,
+} from "@meridian/resource-replica";
 import { afterEach, expect, it, vi } from "vitest";
 import { operationLifecycle, RenameOperationLifecycle } from "./rename-operation-lifecycle";
 
@@ -90,6 +94,8 @@ function harness() {
       key: { handle: "handle" },
       record: projection([]).records[0] as ResourceProjectionSnapshot["records"][number],
     }),
+    readKnownFolder: async (folderId) =>
+      ({ handle: "folder-handle", folderId, intents: [] }) as unknown as FolderNamespaceRecord,
     observeProjection: (_project, listener) => {
       emit = listener;
       return stop;
@@ -178,18 +184,22 @@ it("retires feedback immediately when the resource is deleted before its deadlin
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("keeps a folder watch until its folder is seen, and ends it once the folder is gone", async () => {
+it("keeps a folder watch until its folder is seen, through a remint, and ends it once the folder is gone", async () => {
   const { store, emit, stop } = harness();
   const folder = { kind: "folder" as const, id: "folder" };
-  const withFolder = (present: boolean) =>
+  const withFolder = (present: boolean, folderId = "folder", aliases: string[] = []) =>
     ({
       ...projection([]),
-      folders: present ? [{ folderId: "folder", intents: [intent()] }] : [],
+      folders: present ? [{ handle: "folder-handle", folderId, aliases, intents: [intent()] }] : [],
     }) as unknown as ResourceProjectionSnapshot;
   await store.remember("project", folder, "move");
   emit(withFolder(false));
   expect(store.get("project", folder)?.operationId).toBe("move");
   emit(withFolder(true));
+  // A remint changes the id and keeps the handle: both ids still find the watch.
+  emit(withFolder(true, "replacement", ["folder"]));
+  expect(store.get("project", folder)?.operationId).toBe("move");
+  expect(store.get("project", { kind: "folder", id: "replacement" })?.operationId).toBe("move");
   emit(withFolder(false));
   expect(store.get("project", folder)).toBeNull();
   expect(stop).toHaveBeenCalledOnce();

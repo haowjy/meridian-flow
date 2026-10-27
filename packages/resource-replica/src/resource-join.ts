@@ -40,21 +40,16 @@ type JoinedCreate = {
   requestedId: string;
 };
 
-function activeCreate(record: ResourceRecord): NamespaceIntent | null {
-  return (
-    [...record.intents]
-      .sort((left, right) => right.sequence - left.sequence)
-      .find(
-        (intent) =>
-          intent.desired.kind === "create" &&
-          intent.state !== "cancelled" &&
-          intent.state !== "superseded",
-      ) ?? null
-  );
-}
-
+/** The latest placement whose submitted request was the document's materialization. */
 function submittedCreate(record: ResourceRecord): JoinedCreate | null {
-  const intent = activeCreate(record);
+  const intent = [...record.intents]
+    .sort((left, right) => right.sequence - left.sequence)
+    .find(
+      (candidate) =>
+        candidate.attempts.at(-1)?.request.kind === "create" &&
+        candidate.state !== "cancelled" &&
+        candidate.state !== "superseded",
+    );
   const attempt = intent?.attempts.at(-1);
   if (!intent || !attempt || attempt.request.kind !== "create") return null;
   const outcome = attempt.outcome;
@@ -95,6 +90,11 @@ export function pendingJoinTarget(record: ResourceRecord): JoinTarget | null {
           workId: null,
         },
   };
+}
+
+/** The project whose records own the pending join (the create intent's project). */
+export function pendingJoinProject(record: ResourceRecord): string | null {
+  return submittedCreate(record)?.intent.projectId ?? null;
 }
 
 /** Whether this record's create already followed a join to `documentId`. */
@@ -155,7 +155,7 @@ export function joinReservation(input: {
     }),
   );
   const settled = answered
-    ? settleNamespaceIntent(record.intents, create.intent, "accepted", input.settledAt)
+    ? settleNamespaceIntent(record.intents, create.intent, "accepted", input.settledAt, "held")
     : record.intents;
   return {
     expectedRevision: resource.revision,
@@ -168,6 +168,7 @@ export function joinReservation(input: {
           ...resource.aliases,
           [resource.identity.documentId]: { introducedAtIdentityRevision: identityRevision },
         },
+        serverHold: "held",
         lifecycle: { kind: "acknowledged", availabilityGeneration: null },
         ...(target.classification ? { classification: target.classification } : {}),
         canonical: target.location,

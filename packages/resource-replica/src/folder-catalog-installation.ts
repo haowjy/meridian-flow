@@ -74,10 +74,13 @@ export function planFolderCatalogInstallation(input: {
     writes.push({
       expectedRevision: null,
       next: {
-        handle: `folder:${entry.entryId}`,
+        // A handle never derives from an id: a remint changes a record's id and keeps its handle,
+        // so a spent id can come back in a catalog as a second folder beside the reminted record.
+        handle: `catalog-folder:${entry.entryId}`,
         folderId: entry.entryId,
         projectId: location.scheme === "user" ? null : input.projectId,
         revision: 1,
+        serverHold: "held",
         canonical: location,
         observationVersion: entry.observationVersion,
         canonicalParent: catalogEntryParent(entry, location),
@@ -92,6 +95,8 @@ export function planFolderCatalogInstallation(input: {
     if (record.projectId !== null && record.projectId !== input.projectId) continue;
     const entry = input.view.entries.get(record.folderId);
     const observed = input.fence.folders?.get(record.handle);
+    // A local folder gains its place from its own create's answer, never from a catalog read.
+    if (!record.canonical) continue;
     if (entry?.kind !== "folder" || !observed || observed.revision !== record.revision) continue;
     const location = catalogEntryLocation(input.view, entry);
     if (record.canonicalRefresh) {

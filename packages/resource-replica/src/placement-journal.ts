@@ -152,6 +152,36 @@ function scopeOf(
 }
 
 /**
+ * The spec with every id it names resolved to the identity that replaced it. A remint retires an
+ * id (`aliases`), and a view that still shows it (a tab that has not caught up) must wait on the
+ * replacement's journal, whose admissions are keyed by the new id.
+ */
+function currentSpec(
+  spec: PlacementSpec,
+  snapshot: { records: readonly ResourceRecord[]; folders: readonly FolderNamespaceRecord[] },
+): PlacementSpec {
+  const replacedBy = new Map<string, string>();
+  for (const record of snapshot.records)
+    for (const alias of Object.keys(record.resource.aliases))
+      replacedBy.set(alias, record.resource.identity.documentId);
+  for (const folder of snapshot.folders)
+    for (const alias of folder.aliases ?? []) replacedBy.set(alias, folder.folderId);
+  const current = (id: string) => replacedBy.get(id) ?? id;
+  const { destination, position } = spec;
+  return {
+    ...spec,
+    subject: current(spec.subject),
+    destination:
+      destination?.kind === "folder"
+        ? { kind: "folder", folderId: current(destination.folderId) }
+        : destination,
+    ...(position && "siblingId" in position
+      ? { position: { ...position, siblingId: current(position.siblingId) } }
+      : {}),
+  };
+}
+
+/**
  * The admission record for a new placement. Call it under the account's admission lock with a
  * snapshot read inside that lock: the order is one past the high-water mark, and the
  * predecessors are every unresolved intent whose scope overlaps (less those another predecessor
@@ -165,9 +195,10 @@ export function capturePlacementAdmission(input: {
   placement: Pick<ResourcePlacement, "parentForFolder">;
   spec: PlacementSpec;
 }): PlacementAdmission {
-  const scope = scopeOf(input.spec, input.placement.parentForFolder);
+  const spec = currentSpec(input.spec, input.snapshot);
+  const scope = scopeOf(spec, input.placement.parentForFolder);
   const mine = new Set(scope);
-  const anchor = anchorOf(input.spec.position);
+  const anchor = anchorOf(spec.position);
   const ops = placementOps(input.snapshot);
   const overlapping = ops.filter(
     (op) =>

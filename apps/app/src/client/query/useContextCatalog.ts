@@ -294,17 +294,16 @@ export function projectCatalogView(
                 ...(record.resource.content.initialization === "reserved"
                   ? {}
                   : { localContent: true as const }),
-                ...(record.intents.some((intent) => intent.desired.kind === "create")
-                  ? { resourceOrigin: "local" as const }
-                  : {}),
+                ...(record.resource.materialization ? { resourceOrigin: "local" as const } : {}),
               }
             : {}),
           ...(repair?.kind === "delete"
             ? { namespaceFailure: "delete" as const }
-            : repair?.kind === "set-location"
+            : repair
               ? {
                   namespaceFailure: repair.kind,
-                  namespaceRepairName: repair.name,
+                  // A nameless create has no name of the writer's to offer back.
+                  ...(repair.name ? { namespaceRepairName: repair.name } : {}),
                   namespaceRepairMove: effective
                     ? refusedMoveDestination(
                         repair.destination,

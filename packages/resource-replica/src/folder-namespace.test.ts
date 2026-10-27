@@ -559,6 +559,7 @@ it.each([
         },
         canonical: loc("w1", "B/doc.md"),
         canonicalParent: { kind: "folder" as const, folderId: "B" },
+        serverHold: "held" as const,
         lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "1" },
         aliases: {},
         obligations: {},

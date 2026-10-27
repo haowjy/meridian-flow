@@ -1,13 +1,13 @@
 /**
- * The mark a document or folder row carries when the server refused its delete
- * or rename/move and reconciliation put the row back. The Editor tree shows it as an
- * icon with a tooltip; the Work Files tab has room to say it in words.
+ * The mark a document or folder row carries when the server refused its delete,
+ * rename/move or first creation and reconciliation put the row back. The Editor tree shows it as an
+ * icon with a tooltip; the identity bar says it in words.
  */
 import { t } from "@lingui/core/macro";
 import { TriangleAlert } from "lucide-react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 
-type NamespaceFailure = NonNullable<
+export type NamespaceFailure = NonNullable<
   CatalogFile["namespaceFailure"] | CatalogDirectory["namespaceFailure"]
 >;
 
@@ -16,6 +16,10 @@ function namespaceFailureMessage(
   folder: boolean,
   move: boolean,
 ): string {
+  if (failure === "create")
+    return folder
+      ? t`Couldn't create this folder. Try another place.`
+      : t`Couldn't create this document. Try another place.`;
   if (failure === "delete")
     return folder
       ? t`Couldn't delete this folder. Try again.`
@@ -50,9 +54,9 @@ export function NamespaceFailureMark({
 function FailureMark({ message, labelled }: { message: string; labelled?: boolean }) {
   if (labelled)
     return (
-      <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">
-        <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
-        <span className="min-w-0 truncate">{message}</span>
+      <span className="flex min-w-0 items-start gap-1 text-xs text-destructive">
+        <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+        <span className="min-w-0">{message}</span>
       </span>
     );
   return (

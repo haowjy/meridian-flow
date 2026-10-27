@@ -111,7 +111,13 @@ function harness(
       resolutions: resolutions as never,
     }),
   );
-  const availability = { lookup: availabilityLookup } as ProjectContextAvailabilityPort;
+  const availability: ProjectContextAvailabilityPort = {
+    lookup: availabilityLookup,
+    async held() {
+      return null;
+    },
+    serializeCreate: (_entryId, create) => create(),
+  };
   const threadProject = vi.fn(async () => projectId);
   const runClaim = createInMemoryRunClaim();
   const service = createUserTurnAdmission({

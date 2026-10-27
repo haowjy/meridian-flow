@@ -62,8 +62,9 @@ it("projects only the requesting project's durable location intention", () => {
   // Lowest-level contract: naming remains complete after placement ownership retires.
   const settled = placed.next;
   settled.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  settled.resource.serverHold = "held";
   settled.intents = settled.intents.map((intent) =>
-    intent.desired.kind === "create" ? { ...intent, state: "settled" } : intent,
+    intent.intentId === "create" ? { ...intent, state: "settled" } : intent,
   );
   const submitted = prepareNamespaceAttempt(
     settled,
@@ -373,4 +374,34 @@ it("projects link-created suffix folders once per home, following the anchor unt
     "part",
     "part",
   ]);
+});
+
+it("never calls a server-held document provisional, whatever its journal says", () => {
+  const reserved = reserveResourceDocument({
+    projectId: "project-a",
+    handle: "resource",
+    documentId: "document",
+    databaseName: "content",
+    schema: "schema",
+    intentId: "create",
+    provisionalName: "Chapter 1",
+  }).next;
+  // The editor's nameless create has not been placed: it invites a home.
+  expect(projectResourceLocation("project-a", reserved)?.provisional).toBe(true);
+  // The server holds it, and the catalog it installed carries its own provisional name.
+  reserved.resource.canonical = {
+    scheme: "manuscript",
+    path: "/Chapter 1",
+    name: "Chapter 1",
+    workId: null,
+  };
+  reserved.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  reserved.resource.serverHold = "held";
+  reserved.intents = [];
+  expect(projectResourceLocation("project-a", reserved)).toMatchObject({
+    scheme: "manuscript",
+    path: "/Chapter 1",
+    name: "Chapter 1",
+    provisional: false,
+  });
 });

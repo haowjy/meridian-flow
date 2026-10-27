@@ -67,7 +67,13 @@ type PresentedDeleteWindow = DeleteWindow & {
   shown: boolean;
 };
 
-type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally";
+/**
+ * `local`: settled on this device because the server never held the entry, and its content and
+ * place still wait out the Undo window. `closed`: refused, superseded (an Undo included), or expired.
+ */
+type DeleteOperationState = "pending" | "landed" | "local" | "closed";
+
+type DeleteOperation = { intent: NamespaceIntent; restorable: boolean; notBefore?: number };
 
 type ProviderLifetime = {
   controller: AbortController;
@@ -99,34 +105,64 @@ const DeleteUndoContext = createContext<DeleteUndoContextValue | null>(null);
 
 function deleteOperationIndex(
   snapshot: ResourceProjectionSnapshot | null,
-): ReadonlyMap<string, NamespaceIntent> {
-  const index = new Map<string, NamespaceIntent>();
+  now: number,
+): ReadonlyMap<string, DeleteOperation> {
+  const index = new Map<string, DeleteOperation>();
   if (!snapshot) return index;
-  for (const intent of [
-    ...snapshot.records.flatMap((record) => record.intents),
-    ...snapshot.folders.flatMap((folder) => folder.intents),
-  ]) {
-    if (intent.operationId && intent.desired.kind === "delete")
-      index.set(intent.operationId, intent);
+  const add = (operation: DeleteOperation) => {
+    const operationId = operation.intent.operationId;
+    if (!operationId) return;
+    const previous = index.get(operationId);
+    index.set(operationId, {
+      ...operation,
+      // A local folder delete settles one operation over its subtree: one restorable child is
+      // enough for the window's Undo to bring the whole subtree back.
+      restorable: operation.restorable || Boolean(previous?.restorable),
+      ...(previous?.notBefore !== undefined && operation.notBefore === undefined
+        ? { notBefore: previous.notBefore }
+        : {}),
+    });
+  };
+  for (const record of snapshot.records) {
+    for (const intent of record.intents) {
+      if (!intent.operationId || intent.desired.kind !== "delete") continue;
+      const cleanup = record.resource.obligations.cleanup;
+      const restorable =
+        cleanup?.obligationId === intent.intentId &&
+        (cleanup.notBefore === undefined || cleanup.notBefore > now);
+      add({
+        intent,
+        restorable,
+        ...(cleanup?.notBefore !== undefined ? { notBefore: cleanup.notBefore } : {}),
+      });
+    }
+  }
+  for (const folder of snapshot.folders) {
+    for (const intent of folder.intents) {
+      if (!intent.operationId || intent.desired.kind !== "delete") continue;
+      const window = folder.localDeletion;
+      const restorable = window?.obligationId === intent.intentId && window.notBefore > now;
+      add({ intent, restorable, ...(window ? { notBefore: window.notBefore } : {}) });
+    }
   }
   return index;
 }
 
 function deleteOperationState(
-  intents: ReadonlyMap<string, NamespaceIntent>,
+  operations: ReadonlyMap<string, DeleteOperation>,
   operationId: string,
 ): DeleteOperationState {
-  const intent = intents.get(operationId);
-  switch (intent?.state) {
+  const operation = operations.get(operationId);
+  switch (operation?.intent.state) {
     case "settled":
       return "landed";
     case "settled-locally":
-      return "settled-locally";
+      return operation.restorable ? "local" : "closed";
     case "needs-repair":
     case "cancelled":
     case "superseded":
     case "unexecutable-after-terminal":
-      return "refused";
+      return "closed";
     default:
       return "pending";
   }
@@ -279,7 +315,25 @@ export function DocumentDeleteUndoProvider({
   const queryClient = useQueryClient();
   const slots = useNoticeSlot();
   const { snapshot } = useAccountResourceProjection(projectId);
-  const deleteIntents = useMemo(() => deleteOperationIndex(snapshot), [snapshot]);
+  // The local Undo window is time-bounded, so the index is read against a clock that the
+  // nearest expiry wakes; otherwise a closed window would keep its notice until a replica change.
+  const [clock, setClock] = useState(0);
+  const deleteOperations = useMemo(
+    () => deleteOperationIndex(snapshot, Date.now()),
+    [snapshot, clock],
+  );
+  useEffect(() => {
+    const expiries = [...deleteOperations.values()].flatMap((operation) =>
+      operation.notBefore === undefined ? [] : [operation.notBefore],
+    );
+    if (expiries.length === 0) return;
+    const next = Math.min(...expiries);
+    const timer = setTimeout(
+      () => setClock((current) => current + 1),
+      Math.max(0, next - Date.now()) + 1,
+    );
+    return () => clearTimeout(timer);
+  }, [deleteOperations]);
   // By operation: a notice replaced on its surface while its Undo runs stays here, unshown,
   // until the restore finishes.
   const [windows, setWindows] = useState<ReadonlyMap<string, PresentedDeleteWindow>>(
@@ -489,8 +543,39 @@ export function DocumentDeleteUndoProvider({
     [dismiss, projectId, queryClient, resources, updateFeedback],
   );
 
-  // Delete progress is read from the replica, never copied: a refused or local-only delete
-  // closes its notice, a requested Undo restores once its delete has landed, and a landed
+  /** An entry only this device held comes back from the replica itself; there is no Trash to read. */
+  const runLocalRestore = useCallback(
+    (window: PresentedDeleteWindow, owner: ProviderLifetime) => {
+      const { operationId } = window;
+      restores.current.add(operationId);
+      void (async () => {
+        try {
+          // On success the superseded deletion closes the notice through the replica.
+          if (await resources.restoreLocalDeletion(projectId, operationId)) return;
+          if (!isActive(owner)) return;
+          updateFeedback(operationId, {
+            kind: "failed",
+            retryable: false,
+            message: t`Couldn't restore ${window.label}.`,
+          });
+        } catch {
+          if (!isActive(owner)) return;
+          updateFeedback(operationId, {
+            kind: "failed",
+            retryable: true,
+            message: t`Couldn't restore ${window.label}. Try again.`,
+          });
+        } finally {
+          restores.current.delete(operationId);
+        }
+      })();
+    },
+    [projectId, resources, updateFeedback],
+  );
+
+  // Delete progress is read from the replica, never copied: a refused delete closes its notice,
+  // a requested Undo restores once its delete has landed (or, for an entry only this device
+  // held, at once while its content and place are kept), and a landed
   // delete whose removals are all back (an empty folder, or restored from Trash) has
   // nothing left for Undo. That check reruns on every replica change, so a receipt that
   // failed to load is read again rather than leaving Undo offered.
@@ -499,9 +584,14 @@ export function DocumentDeleteUndoProvider({
     if (!owner) return;
     for (const window of windows.values()) {
       const { operationId } = window;
-      const state = deleteOperationState(deleteIntents, operationId);
-      if (state === "refused" || state === "settled-locally") {
+      const state = deleteOperationState(deleteOperations, operationId);
+      if (state === "closed") {
         dismiss(operationId);
+        continue;
+      }
+      if (state === "local") {
+        if (window.feedback?.kind === "restoring" && !restores.current.has(operationId))
+          runLocalRestore(window, owner);
         continue;
       }
       if (state !== "landed") continue;
@@ -522,7 +612,16 @@ export function DocumentDeleteUndoProvider({
         );
       }
     }
-  }, [deleteIntents, dismiss, windows, restored, projectId, queryClient, runRestore]);
+  }, [
+    deleteOperations,
+    dismiss,
+    windows,
+    restored,
+    projectId,
+    queryClient,
+    runRestore,
+    runLocalRestore,
+  ]);
 
   useEffect(() => {
     if (windows.size === 0 && restored.size > 0) setRestored(new Set());

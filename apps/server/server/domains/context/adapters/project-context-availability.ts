@@ -1,7 +1,7 @@
 /** Drizzle project-final identity lookup and global availability watermarks. */
 
 import { randomUUID } from "node:crypto";
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, ProjectId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
   canonicalContextUri,
@@ -13,7 +13,7 @@ import type {
   ProjectContextFolderResolution,
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
-import { PROJECT_CONTEXT_AVAILABILITY_MAX_IDS } from "@meridian/contracts/protocol";
+import { PROJECT_CONTEXT_AVAILABILITY_MAX_IDS, renderFilename } from "@meridian/contracts/protocol";
 import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
@@ -34,11 +34,14 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { isUuid } from "../../../shared/uuid.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import type {
+  HeldContextNode,
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
+import { findForward } from "../tree/forwards.js";
 import { survivingDraftDocuments } from "../tree/living-document.js";
 import { readRemovalRecords } from "../tree/removal.js";
 import {
@@ -52,6 +55,7 @@ import {
   visibleDocuments,
   visibleFolders,
 } from "../tree/tree-view.js";
+import { loadDocumentIdentityRows, loadFolderIdentityRows } from "../tree/tree-view-sql.js";
 import {
   type CatalogFileRow,
   catalogSourceAuthority,
@@ -736,6 +740,25 @@ export function createDrizzleProjectContextAvailability(
         { isolationLevel: "repeatable read", accessMode: "read only" },
       );
     },
+
+    held(input, actor) {
+      return resolveHeldContextNode({
+        db,
+        projectId: input.projectId,
+        userId: actor.userId,
+        node: input.node,
+      });
+    },
+
+    serializeCreate(entryId, create) {
+      // The transaction ends with the create, so the lock outlives its claim's commit.
+      return runInDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db).execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`create-entry:${entryId}`}, 0::bigint))`,
+        );
+        return create();
+      });
+    },
   };
 }
 
@@ -801,4 +824,157 @@ export async function resolveActiveFolderUri(
       row.source.scope === "chat",
     ),
   );
+}
+
+/** Any row this project holds under an id, whatever its visibility, and the source that owns it. */
+type HeldRow = {
+  /** The row's name as the catalog spells it (a document's filename, a folder's name). */
+  name: string;
+  parentId: string | null;
+  heldOutOfReach: boolean;
+  source: typeof contextSources.$inferSelect;
+  sourceProject: typeof projects.$inferSelect | null;
+  work: typeof works.$inferSelect | null;
+  ownerThreadRef: string | null;
+};
+
+/** The source and owners that spell a node's address, read without any Work authority. */
+async function heldSource(tx: Database, contextSourceId: string) {
+  const [row] = await tx
+    .select({
+      source: contextSources,
+      sourceProject: projects,
+      work: works,
+      ownerThreadRef: threads.ref,
+    })
+    .from(contextSources)
+    .leftJoin(projects, eq(contextSources.projectId, projects.id))
+    .leftJoin(works, eq(contextSources.workId, works.id))
+    .leftJoin(
+      threads,
+      eq(threads.id, sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`),
+    )
+    .where(eq(contextSources.id, contextSourceId))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Any row under this id, whatever its visibility: a replay must answer for deleted and hidden
+ * ones. Reads the tree's own by-id row readers, so the hidden predicate has one owner.
+ */
+async function heldRow(
+  tx: Database,
+  node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string },
+): Promise<HeldRow | null> {
+  if (node.kind === "document") {
+    const [row] = await loadDocumentIdentityRows(tx, [node.id]);
+    if (!row) return null;
+    const source = await heldSource(tx, row.contextSourceId);
+    if (!source) return null;
+    return {
+      name: renderFilename(row.name, row.extension),
+      parentId: row.folderId,
+      heldOutOfReach: row.hidden || row.deleted,
+      ...source,
+    };
+  }
+  const [row] = await loadFolderIdentityRows(tx, [node.id]);
+  if (!row) return null;
+  const source = await heldSource(tx, row.contextSourceId);
+  if (!source) return null;
+  return {
+    name: row.name,
+    parentId: row.parentId,
+    heldOutOfReach: row.hidden || row.deleted,
+    ...source,
+  };
+}
+
+/** Whether this project (or the writer's own User area) holds the row's source. */
+function heldInProject(row: HeldRow, projectId: string, userId: string): boolean {
+  return (
+    row.source.projectId === projectId ||
+    row.work?.projectId === projectId ||
+    (row.source.slug === "user" &&
+      row.sourceProject?.isPersonal === true &&
+      row.sourceProject.userId === userId)
+  );
+}
+
+/**
+ * The address this project holds `id` at, read from the row and its source rather than through a
+ * Work authority: a deleted Work's tree is exactly what a route can no longer resolve, and a
+ * create's replay must still answer for it. Null when the project holds no such row;
+ * `unreachable` when it holds one no live address can name (deleted, hidden, or an inconsistent
+ * identity), which a create answers as a conflict.
+ */
+async function resolveHeldContextNode(input: {
+  db: Database;
+  projectId: ProjectId;
+  userId: string;
+  node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
+}): Promise<HeldContextNode | null> {
+  // An id that cannot name a row is held by no one; the create answers its own typed refusal.
+  if (!isUuid(input.node.id)) return null;
+  const tx = currentDrizzleDb(input.db) as Database;
+  // A joined create's id is spent on the document it forwarded to; answer as that document.
+  const forwardedTo =
+    input.node.kind === "document" ? await findForward(tx, input.node.id, input.projectId) : null;
+  const node = forwardedTo
+    ? { kind: "document" as const, id: forwardedTo as DocumentId }
+    : input.node;
+  const row = await heldRow(tx, node);
+  if (!row) return forwardedTo ? { kind: "unreachable" } : null;
+  // Another project holding the id is not this project's row: the create proceeds and the
+  // catalog's global entry-id space answers it.
+  if (!heldInProject(row, input.projectId, input.userId)) return null;
+  if (row.heldOutOfReach) return { kind: "unreachable" };
+  if (row.source.deletedAt || row.sourceProject?.deletedAt || row.work?.deletedAt)
+    return { kind: "unreachable" };
+  const foldersById = new Map(
+    (await loadIdentityFolderClosure(tx, LIVE_TREE, row.parentId ? [row.parentId] : [])).map(
+      (folder) => [folder.id, folder],
+    ),
+  );
+  const classification = classifySourceIdentity({
+    row: {
+      source: row.source,
+      sourceProject: row.sourceProject,
+      work: row.work,
+      ownerThreadRef: row.ownerThreadRef,
+      node: { parentId: row.parentId, deletedAt: null },
+    },
+    requestProjectId: input.projectId,
+    actorUserId: input.userId,
+    projectGeneration: "0",
+    checkedGeneration: "0",
+    foldersById,
+  });
+  if (classification.kind === "not-visible") return null;
+  if (classification.kind !== "valid") return { kind: "unreachable" };
+  const { scheme, parentPath } = classification.identity;
+  const path = [...parentPath, row.name].join("/");
+  return {
+    kind: "held",
+    forwarded: forwardedTo !== null,
+    address: {
+      id: node.id,
+      scheme,
+      path,
+      name: row.name,
+      workId: row.work?.id ?? null,
+      uri: canonicalContextUri(
+        scheme,
+        path,
+        catalogSourceAuthority(
+          scheme,
+          row.work?.id ?? null,
+          row.work && !row.work.isNoWork ? row.work.handle : null,
+          row.ownerThreadRef,
+          row.source.scope === "chat",
+        ),
+      ),
+    },
+  };
 }

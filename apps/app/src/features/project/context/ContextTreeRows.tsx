@@ -38,6 +38,7 @@ import {
   contextTreeSelectedRowClassName,
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
+import { EntryRefusalNotice } from "./EntryRefusalNotice";
 import { dragEntry } from "./entry-drag/entry";
 import { useEntryRow } from "./entry-drag/use-entry-row";
 import { LinkUpdateNote } from "./LinkUpdateNote";
@@ -81,6 +82,8 @@ export type TreeEnv = {
   tree?: ImportedTree;
   visibleIds?: ReadonlySet<string>;
   rename?: { path: string; done: () => void };
+  /** Rows say a refusal in words with its repair, where nothing can hover (the phone). */
+  refusalNotice?: true;
 };
 
 const TreeEnvContext = createContext<TreeEnv | null>(null);
@@ -297,8 +300,17 @@ function DirRow({
               operationId={interaction.operationId}
               layout="stacked"
             />
+            {dir.namespaceFailure && env.refusalNotice ? (
+              <EntryRefusalNotice
+                failure={dir.namespaceFailure}
+                move={Boolean(dir.namespaceRepairMove)}
+                folder
+                actions={interaction.actions}
+                onAction={interaction.onAction}
+              />
+            ) : null}
           </span>
-          {dir.namespaceFailure ? (
+          {dir.namespaceFailure && !env.refusalNotice ? (
             <NamespaceFailureMark
               failure={dir.namespaceFailure}
               move={Boolean(dir.namespaceRepairMove)}
@@ -417,8 +429,16 @@ function FileRow({
             operationId={interaction.operationId}
             layout="stacked"
           />
+          {file.namespaceFailure && env.refusalNotice ? (
+            <EntryRefusalNotice
+              failure={file.namespaceFailure}
+              move={Boolean(file.namespaceRepairMove)}
+              actions={interaction.actions}
+              onAction={interaction.onAction}
+            />
+          ) : null}
         </span>
-        {file.namespaceFailure ? (
+        {file.namespaceFailure && !env.refusalNotice ? (
           <NamespaceFailureMark
             failure={file.namespaceFailure}
             move={Boolean(file.namespaceRepairMove)}

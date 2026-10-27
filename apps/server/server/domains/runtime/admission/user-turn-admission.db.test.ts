@@ -516,6 +516,12 @@ if (!RUN) {
           async lookup() {
             throw new Error("Recovery entered reference effects");
           },
+          async held() {
+            throw new Error("Recovery entered held-id effects");
+          },
+          async serializeCreate() {
+            throw new Error("Recovery entered create effects");
+          },
         },
         async threadProject() {
           throw new Error("Recovery entered project resolution");

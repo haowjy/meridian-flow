@@ -125,6 +125,42 @@ export async function ensureLiveFolderPath(
   return Ok({ folderId: walk.folderId, placed: created });
 }
 
+/**
+ * A live folder under a device-minted id, at `name` or the first free name beside it (a
+ * conflict never refuses: the folder that arrives second yields). A hidden folder a branch
+ * holds at that path is absorbed into it, so the id stays the folder's identity. The caller
+ * holds the source's namespace lock and has resolved `parentId` to a live folder.
+ */
+export async function createLiveFolder(
+  db: Database,
+  input: {
+    contextSourceId: ContextSourceId;
+    parentId: FolderId | null;
+    name: string;
+    id: FolderId;
+  },
+): Promise<{ name: string }> {
+  const { contextSourceId, parentId } = input;
+  const tree = createTreeReader(db);
+  const name = await allocateFilename(
+    { kind: "folder", name: input.name },
+    async ({ filename }) => {
+      const occupant = await tree.childAt(LIVE_TREE, {
+        contextSourceId,
+        parentId,
+        filename,
+        as: "folder",
+      });
+      return occupant.kind !== "not_found";
+    },
+  );
+  await insertFolder(db, { contextSourceId, parentId, name }, { hidden: false, id: input.id });
+  await claimDocumentLocation(db, contextSourceId, parentId, name);
+  await absorbAt(db, input.id);
+  await normalizeNames(db, [{ kind: "folder", id: input.id }]);
+  return { name };
+}
+
 export type LiveLocation = {
   contextSourceId: ContextSourceId;
   parentFolderId: FolderId | null;

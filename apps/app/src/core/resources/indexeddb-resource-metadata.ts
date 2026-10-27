@@ -1,25 +1,31 @@
 /** Account-qualified metadata transactions and one shared reactive projection stream. */
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import type {
+  DocumentMaterialization,
   FolderNamespaceRecord,
   FolderNamespaceStore,
   FolderNamespaceWrite,
   NamespaceIntent,
   ResourceCatalogCheckpoint,
   ResourceDescriptor,
+  ResourceDestination,
   ResourceKey,
   ResourceMetadataStore,
   ResourceProjectionSnapshot,
   ResourceRecord,
   ResourceWrite,
+  ServerHold,
 } from "@meridian/resource-replica";
 import {
   catalogProjectionKey,
   catalogScopeBelongsToProject,
   folderDeletionSettlement,
+  holdAfterAttempt,
   planFolderDeletionResources,
+  planFolderRemintDependents,
   resourceForDocumentIdentity,
   resourceVisibleInProject,
+  untitledDestination,
   validateFolderNamespaceUpdate,
   validateResourceRecordUpdate,
 } from "@meridian/resource-replica";
@@ -28,6 +34,18 @@ import Dexie, { liveQuery, type Table } from "dexie";
 type StoredCatalog = ResourceCatalogCheckpoint & { key: string };
 /** Account-wide counters kept beside the journals; `placementHighWater` is the highest admission order assigned. */
 type StoredMeta = { key: "placementHighWater"; value: number };
+/** The `create` intent kind, and a placement destination that could be absent, removed by the model change. */
+type LegacyDesired =
+  | {
+      kind: "create";
+      folderPath: string;
+      provisionalName?: string;
+      destination?: ResourceDestination;
+    }
+  | { kind: "set-location"; typedName: string; destination?: ResourceDestination }
+  | { kind: "set-folder-location"; typedName: string; destination: ResourceDestination }
+  | { kind: "delete" };
+type LegacyIntent = Omit<NamespaceIntent, "desired"> & { desired: LegacyDesired };
 type AccountProjectionSnapshot = {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
@@ -38,6 +56,96 @@ type ProjectionListener = {
   listener(snapshot: ResourceProjectionSnapshot): void;
   onError(error: unknown): void;
 };
+
+/**
+ * What the server holds under the id an older build's record now has, replayed from the create
+ * attempts it recorded for that id: the same fold the journal now keeps current
+ * (`holdAfterAttempt`), run once. Attempts of an earlier identity revision named an id the record
+ * no longer has; what they proved (a `conflict`, say) says nothing about this one.
+ */
+function replayedServerHold(
+  neverPlaced: boolean,
+  intents: readonly LegacyIntent[],
+  identityRevision: number,
+): ServerHold {
+  if (!neverPlaced) return "held";
+  return intents
+    .filter((intent) => intent.identityRevision === identityRevision)
+    .sort((left, right) => left.sequence - right.sequence)
+    .flatMap((intent) => intent.attempts)
+    .reduce<ServerHold>((hold, attempt) => holdAfterAttempt(hold, attempt), "local");
+}
+
+/**
+ * A pre-`materialization` document: the materialization its create intent recorded, and the
+ * rewrite that gives each of its placements a destination. Null when nothing needs rewriting.
+ */
+function upgradedMaterialization(
+  resource: ResourceDescriptor,
+  held: readonly LegacyIntent[],
+): {
+  materialization: DocumentMaterialization;
+  place: (intent: LegacyIntent) => NamespaceIntent;
+} | null {
+  const creates = held
+    .filter((intent) => intent.desired.kind === "create")
+    .sort((left, right) => left.sequence - right.sequence);
+  const placements = held.filter(
+    (intent): intent is LegacyIntent & { desired: { kind: "set-location" } } =>
+      intent.desired.kind === "set-location",
+  );
+  if (creates.length === 0 && !placements.some((intent) => !intent.desired.destination))
+    return null;
+  const first = creates[0]?.desired;
+  const base =
+    first?.kind === "create"
+      ? {
+          kind: "untitled" as const,
+          folderPath: first.folderPath,
+          provisionalName: first.provisionalName ?? "Untitled",
+        }
+      : resource.materialization;
+  if (!base) return null;
+  // A record is unnamed only while no placement names it: the writer's first placement
+  // (a filed create) means the local row no longer invites a home.
+  const names = [
+    ...creates.flatMap((intent) =>
+      intent.desired.kind === "create" ? [intent.desired.destination] : [],
+    ),
+    ...placements.map((intent) => intent.desired.destination),
+  ];
+  const unnamed = names.length > 0 && names.every((destination) => !destination);
+  return {
+    materialization: {
+      kind: "untitled",
+      folderPath: base.folderPath,
+      provisionalName: base.provisionalName,
+      ...(unnamed ? { unnamed: true as const } : {}),
+    },
+    place: (intent) => {
+      if (intent.desired.kind === "create")
+        return {
+          ...intent,
+          desired: {
+            kind: "set-location",
+            typedName: base.provisionalName,
+            destination:
+              intent.desired.destination ??
+              untitledDestination(base.folderPath, base.provisionalName),
+          },
+        };
+      if (intent.desired.kind === "set-location" && !intent.desired.destination)
+        return {
+          ...intent,
+          desired: {
+            ...intent.desired,
+            destination: untitledDestination(base.folderPath, intent.desired.typedName),
+          },
+        };
+      return intent as NamespaceIntent;
+    },
+  };
+}
 
 /**
  * Expected revisions belong to the caller's immutable snapshot; stale writes never partly apply.
@@ -102,6 +210,41 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
             highest = Math.max(highest, intent.admission?.order ?? 0);
         });
         await transaction.table("meta").put({ key: "placementHighWater", value: highest });
+      });
+    // A document's first placement is a `set-location` that always names its destination, and its
+    // home comes from `materialization`. A journal written before that keeps its pending work: a
+    // create intent becomes the placement it now is, and a placement with no destination (the
+    // editor's nameless create) names the home its materialization records. Every document and
+    // folder also gains `serverHold`, replayed from the create attempts it already recorded.
+    // `folderId` and `aliases` (multi-entry) find a folder by its current or a former id.
+    this.database
+      .version(5)
+      .stores({ folders: "handle,projectId,canonicalRefresh.operationId,folderId,*aliases" })
+      .upgrade(async (transaction) => {
+        const resources = transaction.table<ResourceDescriptor, string>("resources");
+        const intents = transaction.table<LegacyIntent, string>("intents");
+        const folders = transaction.table<FolderNamespaceRecord, string>("folders");
+        for (const stored of await resources.toArray()) {
+          const held = await intents.where("handle").equals(stored.handle).toArray();
+          const serverHold = replayedServerHold(
+            stored.lifecycle.kind === "local" && stored.canonical === null,
+            held,
+            stored.identity.revision,
+          );
+          const upgraded = upgradedMaterialization(stored, held);
+          await resources.put({
+            ...stored,
+            serverHold,
+            ...(upgraded ? { materialization: upgraded.materialization } : {}),
+          });
+          if (upgraded) for (const intent of held) await intents.put(upgraded.place(intent));
+        }
+        for (const folder of await folders.toArray())
+          await folders.put({
+            ...folder,
+            // A folder's intents all carry identity revision 1.
+            serverHold: replayedServerHold(folder.canonical === null, folder.intents, 1),
+          });
       });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
@@ -357,6 +500,16 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     return this.run(async () => (await this.folders.get(key.handle)) ?? null);
   }
 
+  /** The record a folder id names: the folder with that current id, else the one reminted from it (`folderForId`). */
+  readFolderById(folderId: string): Promise<FolderNamespaceRecord | null> {
+    return this.run(
+      async () =>
+        (await this.folders.where("folderId").equals(folderId).first()) ??
+        (await this.folders.where("aliases").equals(folderId).first()) ??
+        null,
+    );
+  }
+
   readFolders(projectId: string): Promise<readonly FolderNamespaceRecord[]> {
     return this.run(() =>
       this.folders
@@ -405,12 +558,44 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
             }
             await this.resources.bulkPut(descendants.map((write) => write.next.resource));
           }
+          if (previous && previous.folderId !== write.next.folderId)
+            await this.followRemintedFolder(previous.folderId, write.next);
           await this.folders.put(write.next);
           await this.raiseHighWater(write.next.intents);
           return "committed" as const;
         },
       ),
     );
+  }
+
+  /**
+   * A folder's remint commits with the placements that named its old id: each unsent one is queued
+   * again under the new id, so a child never reaches the server naming a folder it cannot use.
+   */
+  private async followRemintedFolder(
+    previousId: string,
+    reminted: FolderNamespaceRecord,
+  ): Promise<void> {
+    const records = this.records(await this.resources.toArray(), await this.intents.toArray());
+    const folders = (await this.folders.toArray()).filter(
+      (folder) => folder.handle !== reminted.handle,
+    );
+    const { resources, folders: followers } = planFolderRemintDependents({
+      previousFolderId: previousId,
+      folderId: reminted.folderId,
+      records,
+      folders,
+    });
+    const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
+    for (const write of resources)
+      validateResourceRecordUpdate(byHandle.get(write.next.resource.handle) ?? null, write.next);
+    for (const write of followers)
+      validateFolderNamespaceUpdate(
+        folders.find((folder) => folder.handle === write.next.handle) ?? null,
+        write.next,
+      );
+    await this.putResources(resources);
+    await this.folders.bulkPut(followers.map(({ next }) => next));
   }
 
   readCatalog(projectId: string, scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null> {

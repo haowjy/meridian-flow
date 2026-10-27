@@ -283,6 +283,7 @@ describe("evidence at or below the deletion's version never resurrects it", () =
       content: { kind: "unacquired" },
       canonical: { scheme: "manuscript", path: "/doc", name: "doc", workId: null },
       observationVersion: "99",
+      serverHold: "held",
       lifecycle: { kind: "acknowledged", availabilityGeneration: null },
       revivedFrom: { generation: "9", transitionId: "editor-purge" },
     };

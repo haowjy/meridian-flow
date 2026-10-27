@@ -1,4 +1,8 @@
-import type { ResourceProjectionSnapshot, ResourceRecord } from "@meridian/resource-replica";
+import {
+  type ResourceProjectionSnapshot,
+  type ResourceRecord,
+  untitledDestination,
+} from "@meridian/resource-replica";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type ContextTab, useContextTabsStore } from "@/client/stores";
 import { validateEditorWorkspaceTabs } from "./browser-editor-tab-validation";
@@ -91,6 +95,7 @@ describe("device-local tab validation", () => {
           name: "Foreign.md",
           workId: null,
         },
+        serverHold: "held",
         lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
       },
       intents: source.intents.map((intent) => ({ ...intent, projectId: "other-project" })),
@@ -140,6 +145,8 @@ describe("device-local tab validation", () => {
           handle: "folder:chapters",
           folderId: "chapters",
           revision: 1,
+          serverHold: "held",
+          observationVersion: "0",
           canonical: { scheme: "manuscript", path: "/chapters", name: "chapters", workId: null },
           intents: [],
         },
@@ -174,7 +181,9 @@ function localPlacement(): ResourceRecord {
       identity: { documentId: "local-id", revision: 1 },
       content: { kind: "exact", databaseName: "exact", schema: null },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: 1 } },
@@ -186,7 +195,11 @@ function localPlacement(): ResourceRecord {
         intentId: "create",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "create", folderPath: "" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },

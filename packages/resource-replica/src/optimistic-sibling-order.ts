@@ -65,8 +65,7 @@ export function projectOptimisticSiblingOrder(input: {
       op.intent.projectId === projectId &&
       entries.has(op.subject) &&
       (op.intent.desired.kind === "set-location" ||
-        op.intent.desired.kind === "set-folder-location" ||
-        (op.intent.desired.kind === "create" && op.intent.desired.destination)),
+        op.intent.desired.kind === "set-folder-location"),
   );
   if (ops.length === 0) return input.projected;
 

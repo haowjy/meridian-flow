@@ -291,6 +291,7 @@ function acknowledgedFile(): ResourceRecord {
       content: { kind: "unacquired" },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: loc("P/A/doc.md"),
+      serverHold: "held",
       lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
       aliases: {},
       obligations: {},

@@ -8,7 +8,8 @@
  * notice of either kind replaces it. It stays until then, Dismiss, or leaving
  * the project: Undo is not a race. After Undo the notice leaves at once but
  * its surface keeps watching the reverse moves, off screen, until the server
- * answers each, so a refused Undo comes back as "Couldn't move X back.".
+ * answers each, so a refused Undo comes back as "Couldn't move X back.". A
+ * refusal names the row as it was, so it leaves once that row is renamed or gone.
  */
 import { plural, t } from "@lingui/core/macro";
 import {
@@ -27,7 +28,7 @@ import {
   useAccountResourceReplica,
 } from "../account-feature-context";
 import { type MoveResult, undoMove } from "./execute-move";
-import { type MoveEffect, moveSettlement, planUndo } from "./move-plan";
+import { entryNameNow, type MoveEffect, moveSettlement, planUndo } from "./move-plan";
 
 type Failure = MoveResult["failed"][number];
 
@@ -167,6 +168,33 @@ export function MoveNoticesProvider({
     for (const [surface, window] of windows) {
       if (window.phase === "moved") watchMove(surface, window);
       else if (window.phase !== "undoing") watchReverse(surface, window);
+      if (window.phase === "moved" || window.phase === "undo-failed")
+        retireStaleRefusals(surface, window);
+    }
+
+    // "Couldn't move X." says what the writer did to X; once X is renamed or deleted it
+    // describes a row that no longer exists under that name.
+    function retireStaleRefusals(
+      surface: NoticeSurface,
+      window: MovedWindow | Extract<MoveWindow, { phase: "undo-failed" }>,
+    ) {
+      const failed = window.phase === "moved" ? window.result.failed : window.failed;
+      const stale = failed.filter((item) => entryNameNow(projection, item.entry) !== item.name);
+      if (stale.length === 0) return;
+      settle(surface, window.id, (now) => {
+        if (now.phase === "moved") {
+          const left = now.result.failed.filter((item) => !stale.includes(item));
+          return left.length === 0 && now.result.moved.length === 0
+            ? null
+            : { ...now, result: { ...now.result, failed: left } };
+        }
+        if (now.phase !== "undo-failed") return now;
+        const left = now.failed.filter((item) => !stale.includes(item));
+        if (left.length > 0) return { ...now, failed: left };
+        return now.pending.length > 0
+          ? { phase: "reversing", id: now.id, pending: now.pending, refocus: now.refocus }
+          : null;
+      });
     }
 
     // A row the server refused went back to its source with its failure mark; the notice

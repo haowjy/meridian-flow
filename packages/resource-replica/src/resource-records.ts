@@ -6,6 +6,8 @@ import type {
   ContextOperationReceipt,
   ContextParentOrderPolicy,
   ContextSiblingPosition,
+  CreateContextFolderRequest,
+  CreateContextFolderResponse,
   CreateUntitledContextDocumentAnswer,
   CreateUntitledContextDocumentRequest,
   DeleteContextEntryRequest,
@@ -14,6 +16,7 @@ import type {
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import type { CatalogCacheView } from "./catalog";
+import type { ServerHold } from "./server-hold";
 
 /** Account-global identity. Project access belongs to catalogs and namespace intentions. */
 export type ResourceKey = Readonly<{ handle: string }>;
@@ -78,6 +81,37 @@ export type ResourceDestination = Readonly<{
 }>;
 export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
 
+/**
+ * How the server first makes a document identity it does not hold yet, while the writer's first
+ * placement of that one document carries the request. Placement says where it goes; this says
+ * what the server makes there, so a new kind of single-document materialization adds an arm here
+ * and nowhere else. Copy is not one: one Copy names several roots and answers with an operation
+ * receipt, so its client journal is a separate decision (see `design-e2-folder-create.md`).
+ */
+export type DocumentMaterialization = {
+  kind: "untitled";
+  /** Where an unnamed create lands; empty is Unfiled's root. */
+  folderPath: string;
+  /** The row's name until the server names the document. */
+  provisionalName: string;
+  /**
+   * The editor's nameless create: the writer has not chosen a name or place, so the document
+   * keeps inviting a home until the catalog publishes the server's `provisionalName`. A writer
+   * placement clears it; the server chooses where this create lands.
+   */
+  unnamed?: true;
+};
+
+/** The home a document the writer has not placed lands at, as its first placement names it. */
+export function untitledDestination(folderPath: string, name: string): ResourceDestination {
+  const createFolders = folderPath.split("/").filter(Boolean);
+  return {
+    parent: { kind: "root", scheme: "unfiled", owner: { workId: null } },
+    ...(createFolders.length ? { createFolders } : {}),
+    name,
+  };
+}
+
 /** Resolve only canonical observations when preparing immutable transport evidence. */
 export function destinationParentLocation(
   parent: ParentRef,
@@ -120,6 +154,15 @@ export type ResourceDescriptor = ResourceKey & {
     | { kind: "unacquired" };
   /** Stable editor/viewer classification retained when no catalog checkpoint is available. */
   classification: CatalogFileClassification;
+  /**
+   * How the server first materializes this identity, while it holds no such document: an untitled
+   * document. Placement is separate and always a location intent, so a refused first placement is
+   * repaired by placing it again, not by a new request kind. Absent for a document installed from
+   * the catalog.
+   */
+  materialization?: DocumentMaterialization;
+  /** What the server holds under this document id, as its answers prove (`server-hold.ts`). */
+  serverHold: ServerHold;
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
@@ -160,13 +203,24 @@ export type ResourceDescriptor = ResourceKey & {
       identityRevision: number;
       exactDatabaseName: string;
     };
-    cleanup?: { obligationId: string; exactDatabaseName: string };
+    cleanup?: {
+      obligationId: string;
+      exactDatabaseName: string;
+      /** A local deletion's Undo window: the content is kept until then (epoch ms). */
+      notBefore?: number;
+    };
   };
 };
 
 /** The endpoint's authority is part of the submitted request, not inferred from current UI state. */
 export type NamespaceRequest =
   | { kind: "create"; body: CreateUntitledContextDocumentRequest }
+  | {
+      kind: "create-folder";
+      /** Owner of the destination parent when sent, so the answer's path becomes a full location. */
+      owner: ResourceOwner;
+      body: CreateContextFolderRequest;
+    }
   | {
       kind: "move";
       scheme: ProjectContextTreeScheme;
@@ -187,18 +241,35 @@ export type NamespaceRequest =
       body: DeleteContextEntryRequest;
     };
 
+/**
+ * The identity a request is replayed under: a move's or delete's operation id, a create's document
+ * or folder id (the server dedupes a create by it). A refusal names it, so a request kind added
+ * later must state its own identity here.
+ */
+export function namespaceRequestId(request: NamespaceRequest): string {
+  switch (request.kind) {
+    case "create":
+      return request.body.documentId;
+    case "create-folder":
+      return request.body.folderId;
+    default:
+      return request.body.operationId;
+  }
+}
+
+/** Every request kind can be refused; only its accepted answer differs. */
 export type NamespaceAttempt = {
   [Kind in NamespaceRequest["kind"]]: {
     attemptId: string;
     request: Extract<NamespaceRequest, { kind: Kind }>;
-    outcome?: Kind extends "create"
-      ? Extract<NamespaceOutcome, { kind: "create" }>
-      :
-          | Extract<NamespaceOutcome, { kind: "refusal" }>
-          | {
+    outcome?:
+      | Extract<NamespaceOutcome, { kind: "refusal" }>
+      | (Kind extends "create" | "create-folder"
+          ? Extract<NamespaceOutcome, { kind: Kind }>
+          : {
               kind: "operation";
               receipt: Extract<ContextOperationReceipt, { command: { kind: Kind } }>;
-            };
+            });
   };
 }[NamespaceRequest["kind"]];
 
@@ -239,19 +310,13 @@ export type NamespaceIntent = ResourceKey & {
   identityRevision: number;
   desired:
     | {
-        kind: "create";
-        folderPath: string;
-        provisionalName?: string;
-        /**
-         * Where the writer put the document, sent with the create so the server can join a
-         * branch's document waiting there. Absent for a nameless create (the editor's New document).
-         */
-        destination?: ResourceDestination;
-      }
-    | {
         kind: "set-location";
         /** Original input; canonical destination is only for display and comparison. */
         typedName: string;
+        /**
+         * Where the writer put the document. The editor's nameless create names its materialized
+         * home (`untitledDestination`) until the writer places it somewhere else.
+         */
         destination: ResourceDestination;
       }
     | {
@@ -281,13 +346,21 @@ export type ResourceRecord = {
   intents: readonly NamespaceIntent[];
 };
 
-/** A folder is namespace identity only: it never owns a document id, content or classification. */
+/**
+ * A folder is namespace identity only: it never owns a document id, content or classification.
+ * A folder the server has not accepted yet is local: no canonical place, only its create.
+ */
 export type FolderNamespaceRecord = ResourceKey & {
   /** Null for account-owned personal folders; command projects live on the intents. */
   projectId: string | null;
   folderId: string;
+  /** Ids this folder was minted under before a remint (`folder-remint.ts`); attempts name them. A list so the store can index it. */
+  aliases?: readonly string[];
   revision: number;
-  canonical: ResourceLocation;
+  /** What the server holds under `folderId`, as its answers prove (`server-hold.ts`). */
+  serverHold: ServerHold;
+  /** Null while the folder is local: its first placement has not been accepted. */
+  canonical: ResourceLocation | null;
   /** Parent identity installed atomically with the canonical location. */
   canonicalParent?: ParentRef;
   /** This folder's rank and child-order policy from the same canonical observation. */
@@ -297,6 +370,8 @@ export type FolderNamespaceRecord = ResourceKey & {
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   canonicalRefresh?: { operationId: string; observationVersion?: string };
+  /** A local deletion's Undo window: the folder, its place and its children stay recoverable until then (epoch ms). */
+  localDeletion?: { obligationId: string; notBefore: number };
   /** Exact-ID availability proves this folder is gone, never descendant document deletion. */
   terminal?: { generation: string };
   intents: readonly NamespaceIntent[];
@@ -358,7 +433,9 @@ export interface ResourceMetadataStore {
 /** Transport evidence is matched to its recorded attempt by journal policy before installation. */
 export type NamespaceOutcome =
   | { kind: "create"; result: CreateUntitledContextDocumentAnswer }
+  | { kind: "create-folder"; result: CreateContextFolderResponse }
   | { kind: "operation"; receipt: ContextOperationReceipt }
+  /** A typed, non-retryable 4xx answering the request `operationId` names (`namespaceRequestId`). */
   | { kind: "refusal"; operationId: string; error: MeridianError };
 
 export type NamespaceIdentityAvailability =

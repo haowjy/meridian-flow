@@ -88,6 +88,7 @@ export function move(
     handle: record?.handle ?? id,
     folderId: id,
     source: loc(path),
+    sourceObservationVersion: "0",
     intentId: `i${++counter}`,
     operationId: `o${counter}`,
     destination: {
@@ -125,6 +126,7 @@ export function del(id: string, path: string, record: FolderNamespaceRecord | nu
     handle: record?.handle ?? id,
     folderId: id,
     source: loc(path),
+    sourceObservationVersion: "0",
     intentId: `i${++counter}`,
     operationId: `o${counter}`,
   });
@@ -151,7 +153,7 @@ export function evidence(
   receiptless = true,
 ): NamespaceOutcome {
   const request = attempt.request;
-  assert(request.kind !== "create");
+  assert(request.kind === "move" || request.kind === "delete");
   if (refused && receiptless)
     return {
       kind: "refusal",

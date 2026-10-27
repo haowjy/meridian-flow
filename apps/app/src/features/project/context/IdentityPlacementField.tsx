@@ -42,7 +42,12 @@ import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity
 import { ValidationNote } from "./validation-note";
 
 type ExitReason = "escape" | "blur" | "commit";
-export type QueuedIdentityFailure = { kind: "error"; name: string };
+export type QueuedIdentityFailure = {
+  kind: "error";
+  name: string;
+  /** The server refused the document's creation, not a rename. */
+  created: boolean;
+};
 
 type IdentityNote = { kind: "error"; message: string } | null;
 
@@ -85,7 +90,11 @@ export function IdentityPlacementField({
   const [ghost, setGhost] = useState("");
   const [noteValue, setNoteValue] = useState(value);
   const [requestError, setRequestError] = useState<string | null>(() =>
-    failure ? t`Couldn't rename this document. Try another name.` : null,
+    failure
+      ? failure.created
+        ? t`Couldn't create this document. Try another place.`
+        : t`Couldn't rename this document. Try another name.`
+      : null,
   );
   const [commitReason, setCommitReason] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

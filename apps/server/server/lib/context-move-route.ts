@@ -1,7 +1,11 @@
 /** Plain-data orchestration for committing a writer-visible context identity. */
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import type { MoveContextEntryRequest, MoveContextEntryResult } from "@meridian/contracts/protocol";
+import type {
+  ContextSiblingPosition,
+  MoveContextEntryRequest,
+  MoveContextEntryResult,
+} from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
@@ -77,7 +81,7 @@ function parseWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") 
   if (typeof raw !== "string" || raw.trim() === "") {
     throw createError({ statusCode: 400, message: `\`${field}\` must be a non-empty string` });
   }
-  return raw.trim();
+  return requireRequestId(raw.trim(), field);
 }
 
 function parseLocator(input: {
@@ -175,6 +179,20 @@ export function parseDestinationParent(
   return destinationParent;
 }
 
+/** A sibling position as a move or a create carries it. */
+export function parseSiblingPosition(raw: unknown): ContextSiblingPosition {
+  if (!raw || typeof raw !== "object")
+    throw createError({ statusCode: 400, message: "Position is invalid" });
+  const position = raw as Record<string, unknown>;
+  if (position.kind === "start" || position.kind === "end") return { kind: position.kind };
+  if (position.kind === "before" || position.kind === "after")
+    return {
+      kind: position.kind,
+      siblingId: requireRequestId(position.siblingId, "position.siblingId"),
+    };
+  throw createError({ statusCode: 400, message: "Position is invalid" });
+}
+
 export function parseContextMove(input: {
   sourceScheme: unknown;
   body: unknown;
@@ -183,19 +201,7 @@ export function parseContextMove(input: {
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   }
   const body = input.body as Record<string, unknown>;
-  let position: MoveContextEntryRequest["position"];
-  if (body.position !== undefined) {
-    if (!body.position || typeof body.position !== "object")
-      throw createError({ statusCode: 400, message: "Position is invalid" });
-    const raw = body.position as Record<string, unknown>;
-    if (raw.kind === "start" || raw.kind === "end") position = { kind: raw.kind };
-    else if (raw.kind === "before" || raw.kind === "after")
-      position = {
-        kind: raw.kind,
-        siblingId: requireRequestId(raw.siblingId, "position.siblingId"),
-      };
-    else throw createError({ statusCode: 400, message: "Position is invalid" });
-  }
+  const position = body.position === undefined ? undefined : parseSiblingPosition(body.position);
   const expected = body.expected as Record<string, unknown> | undefined;
   if (
     !expected ||

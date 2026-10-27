@@ -71,7 +71,7 @@ export function MobileProject(props: MobileProjectProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}`;
   useEffect(() => setCreating(null), [contextLocation]);
-  const crumbs = contextBreadcrumbSegments(props);
+  const crumbs = contextBreadcrumbSegments(props, localTab?.name);
   const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
   const work = useWorkChrome(
     props.projectId,
@@ -305,7 +305,10 @@ function renderActiveView(
   }
 }
 
-function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(
+  props: ReviewScopedProjectProps,
+  localName?: string,
+): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
   // `t` resolves at render time (this runs per render), matching how
   // schemeLabel localizes — both produce plain strings for the segment.
@@ -313,7 +316,7 @@ function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBread
   if (props.activeLocalDocumentId)
     return [
       { label: filesLabel, onSelect: () => props.onExitContextScheme() },
-      { label: t`Untitled` },
+      { label: localName ?? t`Untitled` },
     ];
   if (!props.activeContextScheme) {
     // Files root: nothing is drilled in, so "Files" is the current location.

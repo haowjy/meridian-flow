@@ -111,6 +111,7 @@ describe("a create that joins a branch's document", () => {
       identity: { documentId: "branch-document", revision: 2 },
       content: { kind: "exact", databaseName: "typed-content" },
       aliases: { reserved: { introducedAtIdentityRevision: 2 } },
+      serverHold: "held",
       lifecycle: { kind: "acknowledged" },
       obligations: {
         sessionAdoption: {

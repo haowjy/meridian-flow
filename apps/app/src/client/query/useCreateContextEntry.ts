@@ -7,8 +7,8 @@ import { contextRequestOptionsForScheme } from "./context-request-options";
 import { projectQueryKeys } from "./project-query-keys";
 
 /**
- * Mutation hook for creating a file or folder inside a context tree. The
- * target scheme travels with each mutation (not the hook) so one instance can
+ * Mutation hook for creating a file inside a context tree (a folder is a replica create intent,
+ * not a mutation). The target scheme travels with each mutation (not the hook) so one instance can
  * serve saves whose destination the writer picks at submit time.
  *
  * On success, invalidates the cached context tree for that scheme so the new
@@ -19,7 +19,7 @@ export function useCreateContextEntry(projectId: string) {
   return useMutation({
     mutationFn: (args: {
       scheme: ProjectContextTreeScheme;
-      type: "file" | "folder";
+      type: "file";
       path: string;
       content?: string;
       workId: string | null;

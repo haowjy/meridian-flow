@@ -18,10 +18,20 @@ checks every resource before an outer transaction writes anything.
 Folder placement lives in the same database (`folders` table, keyed by handle) and
 the same projection stream: `IndexedDbResourceMetadata` implements
 `FolderNamespaceStore`, and `ResourceProjectionSnapshot.folders` carries every
-folder record beside the file records. A folder's handle is `folder:<catalog folder
-id>`, so it can never collide with a document's. `setFolderLocation` admits a
+folder record beside the file records. A folder's handle is opaque (a random id for a folder
+this device creates, `catalog-folder:<entry id>` for one a catalog lists), and it does not change
+when the server holds the id out of reach: the record takes a new `folderId` and keeps the old one
+in `aliases` (`remintFolder`). Resolve a folder by the id a caller holds with `readFolderById`
+(the `folderId` and multi-entry `aliases` indexes) or `folderForId` over a snapshot, never by
+rebuilding a handle from an id. `commitFolder` rewrites the
+unsent placements in other records that named the old id in the same transaction as the remint. `setFolderLocation` admits a
 rename or move from the installed catalog's location (never the optimistic
-projection) and the runner dispatches it like a file's. A catalog commit may carry
+projection) and the runner dispatches it like a file's. `createFolder` mints the
+folder id on this device and admits the create the way `reserveDocument` admits a
+document's: the row is listed at once and the `create-folder` request goes out in the
+background. A folder only this device holds is a parent like any other
+(`findParentAtLocation`), so documents and folders can be put in it before the server
+has answered; those later intents wait for the create. A catalog commit may carry
 folder writes; they apply or fail with the checkpoint. Namespace refresh also uses
 the existing exact-ID availability endpoint, including folder IDs: available identity
 installs canonical location through CAS, unavailable identity exposes queued work
@@ -53,20 +63,29 @@ the runner records server attempts and outcomes later. Shutdown unsubscribes the
 sources, fences new delivery and drains active runners before metadata closes.
 
 The namespace transport uses existing create/move/delete, receipt and exact-ID
-availability APIs. Shared package reconciliation owns refresh progress for both
+availability APIs, plus `create-folder` (a replay is the same request under the same folder id).
+Shared package reconciliation owns refresh progress for both
 files and folders; the account owner has no separate folder refresh loop. The
 Web Lock adapter serializes only short account/resource reconciliation sections;
 missing lock support blocks dispatch. Neither adapter owns retry scheduling or UI
 cache invalidation.
 
-A typed, non-retryable 4xx settles a failed move or delete as refused at once.
-Any other HTTP failure settles only through the operation receipt read after it;
-a bare 4xx with no receipt stays uncertain and replays, so a 401 from an expired
-session or a proxy error never discards the writer's change. The server routes
+A typed, non-retryable 4xx settles a failed move, delete or create as refused at once.
+Any other HTTP failure settles only through the operation receipt read after it
+(a create has none, so it replays under its document id); a bare 4xx with no receipt
+stays uncertain and replays, so a 401 from an expired session or a proxy error never
+discards the writer's change. The server routes
 therefore send deterministic refusals typed
 ([route contract](../../../../../server/server/lib/.context/CONTEXT.md)): fix an
-untyped refusal there, not by settling bare 4xx here. A refused create does not
-settle yet ([#1071](https://github.com/haowjy/meridian-flow/issues/1071)).
+untyped refusal there, not by settling bare 4xx here. A refused create leaves the
+document on this device with its text, listed in Unfiled with a failure mark
+(`namespaceFailure: "create"`); placing or deleting it repairs it (see the
+[replica contract](../../../../../../packages/resource-replica/.context/CONTEXT.md)).
+A refused folder create does the same: the folder, and anything the writer put in it,
+is listed in Unfiled with a mark until each is placed or deleted. Deleting a folder
+the server may not hold (`serverHold` `local` or `spent`) settles on this device inside the
+same Undo window a document gets (`localDeletion.notBefore`), taking its local children with it; one
+Undo restores the subtree.
 
 Folder deletion is another folder namespace intent (`planFolderDeletion`,
 `AccountResourceReplica.deleteFolder`), admitted by stable folder ID. Its delete

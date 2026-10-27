@@ -200,9 +200,10 @@ export function contextTabEligibleForRemoval(
 }
 
 export function workingSetRouteForTab(tab: ContextTab) {
-  return tab.kind === "new"
-    ? null
-    : buildWorkingSetRoute(tab.documentId, tab.scheme, tab.path, tab);
+  // A route names a document the server holds: it answers the whole snapshot with a 400 when
+  // one is missing, so a local-only document's route waits for its materialization.
+  if (tab.kind === "new" || (tab.kind === "tracked" && tab.localOnly)) return null;
+  return buildWorkingSetRoute(tab.documentId, tab.scheme, tab.path, tab);
 }
 
 export function routeTargetForTab(tab: ContextTab, activeWorkId: string): ContextRouteTarget {

@@ -1,41 +1,86 @@
 /** Latest writer commands supersede repair blockers and safe queued namespace work. */
 import { newerCanonicalObservation } from "./canonical-observation";
-import type { NamespaceIntent, ResourceDestination, ResourceRecord } from "./resource-records";
+import type {
+  NamespaceIntent,
+  NamespaceOutcome,
+  ResourceDestination,
+  ResourceRecord,
+} from "./resource-records";
+import type { ServerHold } from "./server-hold";
+
+/** Semantic settlement is distinct from immutable transport evidence. Terminal always absorbs it. */
+export type NamespaceIntentOutcome =
+  | "accepted"
+  | "refused"
+  | "superseded"
+  | "unexecutable-after-terminal";
+
+export function namespaceIntentOutcome(
+  outcome: NamespaceOutcome,
+  terminal = false,
+): NamespaceIntentOutcome {
+  if (terminal) return "unexecutable-after-terminal";
+  switch (outcome.kind) {
+    case "operation":
+      return outcome.receipt.result.ok ? "accepted" : "refused";
+    case "create":
+      return outcome.result.status === "conflict" ? "refused" : "accepted";
+    case "create-folder":
+      return outcome.result.status === "conflict" ? "refused" : "accepted";
+    case "refusal":
+      return "refused";
+  }
+}
+
+/**
+ * An id the server holds out of reach with work still to send: a failed placement to try again, or
+ * unsent ones queued behind it. That work moves to a new id (`remintJournal`); until it does, the
+ * journal is mid-transition, not waiting for the writer, and a placement that depends on it waits.
+ */
+export function awaitsRemint(journal: {
+  serverHold: ServerHold;
+  intents: readonly NamespaceIntent[];
+}): boolean {
+  return (
+    journal.serverHold === "spent" &&
+    journal.intents.some(
+      (intent) =>
+        (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+        (intent.state === "needs-repair" ||
+          (intent.state === "pending" && intent.attempts.length === 0)),
+    )
+  );
+}
 
 /** Work that can make progress without a new metadata revision. */
 export function resourceNeedsBackgroundReconciliation(record: ResourceRecord): boolean {
   if (record.resource.obligations.sessionAdoption || record.resource.obligations.cleanup)
     return true;
-  return record.intents.some(
-    (intent) =>
-      intent.state === "pending" ||
-      intent.state === "submitted" ||
-      intent.state === "received" ||
-      (intent.state === "needs-repair" && intent.desired.kind === "create"),
+  return (
+    awaitsRemint({ serverHold: record.resource.serverHold, intents: record.intents }) ||
+    record.intents.some(
+      (intent) =>
+        intent.state === "pending" || intent.state === "submitted" || intent.state === "received",
+    )
   );
 }
 
+/**
+ * The writer's next placement or delete retires what failed before it: each failed intent
+ * is superseded and unsent work queued behind it is cancelled.
+ */
 export function supersedeRepairableNamespaceWork(
   record: Pick<ResourceRecord, "intents">,
   projectId: string | null,
 ): { intents: NamespaceIntent[]; repaired: boolean } {
-  const repaired = record.intents.some(
-    (intent) =>
-      (projectId === null || intent.projectId === projectId) &&
-      intent.desired.kind !== "create" &&
-      intent.state === "needs-repair",
-  );
-  if (!repaired) return { intents: [...record.intents], repaired: false };
+  const inScope = (intent: NamespaceIntent) => projectId === null || intent.projectId === projectId;
+  const failed = (intent: NamespaceIntent) => inScope(intent) && intent.state === "needs-repair";
+  if (!record.intents.some(failed)) return { intents: [...record.intents], repaired: false };
   return {
     repaired: true,
     intents: record.intents.map((intent) => {
-      if (
-        (projectId !== null && intent.projectId !== projectId) ||
-        intent.desired.kind === "create"
-      )
-        return intent;
-      if (intent.state === "needs-repair") return { ...intent, state: "superseded" };
-      if (intent.state === "pending" && intent.attempts.length === 0)
+      if (failed(intent)) return { ...intent, state: "superseded" };
+      if (inScope(intent) && intent.state === "pending" && intent.attempts.length === 0)
         return { ...intent, state: "cancelled" };
       return intent;
     }),
@@ -91,8 +136,9 @@ export function intentOwnsLocation(intent: NamespaceIntent): boolean {
 }
 
 /**
- * Where the writer put the document and the record still shows it: an owning move's
- * destination, else the destination its create carries until the create settles.
+ * Where the writer put the document and the record still shows it: an owning placement's
+ * destination. A document the server has not materialized yet may have no destination (the
+ * editor's nameless create), so this answers undefined and the projection's base location shows.
  */
 export function placementDestination(
   projectId: string | null,
@@ -103,17 +149,7 @@ export function placementDestination(
     record.intents,
     Boolean(record.resource.obligations.canonicalRefresh),
   )?.desired;
-  if (owner?.kind === "set-location") return owner.destination;
-  if (record.resource.canonical) return undefined;
-  for (const intent of record.intents) {
-    if (
-      (projectId === null || intent.projectId === projectId) &&
-      intent.desired.kind === "create" &&
-      (intent.state === "pending" || intent.state === "submitted" || intent.state === "received")
-    )
-      return intent.desired.destination;
-  }
-  return undefined;
+  return owner?.kind === "set-location" ? owner.destination : undefined;
 }
 
 /**

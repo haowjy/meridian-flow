@@ -31,6 +31,7 @@ import { useContextRemovalProject } from "../context/use-context-removal-project
 import { useDockArchivedWork } from "../dock/DockDocumentIdentity";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { MobileDocumentReview } from "./MobileDocumentReview";
+import { MobileRefusalNotice } from "./MobileRefusalNotice";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
@@ -115,13 +116,9 @@ function MobileLocalDocumentHost({
   const state = useContextRemovalProject(projectId);
   useLayoutEffect(() => {
     const selected = state.selection;
-    if (
-      selected.status === "none" ||
-      selected.locator.scheme !== "unfiled" ||
-      selected.locator.path !== "" ||
-      selected.locator.workId !== workId
-    )
-      return;
+    // The pointer route (`unfiled`, no path) and a path route the pointer holds: both bind to
+    // the local document, so a move of it carries the route instead of rejecting its old path.
+    if (selected.status === "none" || selected.locator.workId !== workId) return;
     const workspace = resolveWorkspaceRoute({
       tabs: [tab],
       selectedDocumentId: tab.documentId,
@@ -184,6 +181,8 @@ function PhoneDocument({
       {archived ? (
         <ArchivedWorkNotice projectId={projectId} work={archived} className="shrink-0 px-2 pt-2" />
       ) : null}
+      {/* There is no identity bar on a phone: a refused create or move is said here. */}
+      <MobileRefusalNotice projectId={projectId} tab={tab} className="shrink-0 px-4" />
       <div className="relative min-h-0 flex-1">
         {children}
         <ContextDocumentHost
