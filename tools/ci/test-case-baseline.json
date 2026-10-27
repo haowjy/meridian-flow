@@ -187,6 +187,7 @@
     "apps/server/server/domains/collab/draft-frame-races.db.test.ts": 8,
     "apps/server/server/domains/collab/draft-journal-edit-kind.db.test.ts": 1,
     "apps/server/server/domains/collab/draft-peer-pool.db.test.ts": 1,
+    "apps/server/server/domains/collab/grep-text.db.test.ts": 1,
     "apps/server/server/domains/collab/hocuspocus-persistence.test.ts": 15,
     "apps/server/server/domains/collab/inverse-actions.db.test.ts": 4,
     "apps/server/server/domains/collab/inverse-attribution.db.test.ts": 1,

@@ -4,7 +4,7 @@ import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime"
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
 // Changing the extractor must bump this version to invalidate older output.
-export const DOCUMENT_EXTRACTOR_VERSION = 3;
+export const DOCUMENT_EXTRACTOR_VERSION = 4;
 export type DerivationScope = { projectId: ProjectId; personalOwnerId?: UserId };
 export type DerivationWatermark = {
   generation: bigint;
@@ -22,7 +22,7 @@ export type DocumentDerivationStore = {
   capture(documentId: DocumentId): Promise<DocumentDerivationCut | null>;
   certify(
     cut: DocumentDerivationCut,
-    outputs: { markdown: string; links: DocumentLinkRow[] },
+    outputs: { markdown: string; grepText: string; links: DocumentLinkRow[] },
     at: Date,
   ): Promise<boolean>;
   stale(

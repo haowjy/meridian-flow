@@ -7,6 +7,7 @@
  */
 
 import type { TransactionOrigin } from "@hocuspocus/server";
+import { destinationFreeBlocks, grepText } from "@meridian/agent-edit";
 import {
   createAgentEditCodecFactory,
   fragmentOf,
@@ -121,6 +122,8 @@ type DraftMutation = (
 export type MarkdownDocumentEngine = {
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
+  /** What `grep` matches in `doc`: spells no link, so it needs no view. */
+  grepTextOfDocument(documentId: DocumentId, doc: Y.Doc): string;
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeVersionedDocument(
     documentId: DocumentId,
@@ -475,6 +478,11 @@ export function createMarkdownDocumentEngine(
   }
 
   const engine: MarkdownDocumentEngine = {
+    grepTextOfDocument: (documentId, doc) =>
+      projectBlocks(documentId, doc, (blocks) =>
+        grepText(destinationFreeBlocks(deps.codec, blocks)),
+      ),
+
     async serializeDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);

@@ -247,6 +247,8 @@ export type VersionedDocumentRead<T> = { content: T; revision: string | null };
 export type HashlineRead = VersionedDocumentRead<string[]> & {
   /** Aligned with `content`: the ref-bearing links each block spells. */
   links: readonly (readonly SpelledLinkFact[])[];
+  /** Aligned with `content`: each block's markdown with link destinations spelled empty (what grep matches). */
+  destinationFree: readonly string[];
   /** The holder `links` were spelled from, as the read's own binding named it. */
   holder: { uri: string | null; view: LinkView };
 };

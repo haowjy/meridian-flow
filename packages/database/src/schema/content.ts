@@ -400,6 +400,8 @@ export const documentMarkdownProjections = pgTable(
       .primaryKey()
       .references(() => documents.id, { onDelete: "cascade" }),
     markdown: text("markdown").notNull().default(""),
+    /** What `grep` matches (`grepText` in agent-edit); null until the derivation sweep fills it. */
+    grepText: text("grep_text"),
     updatedAt: updatedAt(),
   },
   (t) => [
