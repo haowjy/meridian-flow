@@ -7,7 +7,7 @@ import { t } from "@lingui/core/macro";
 import { TriangleAlert } from "lucide-react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 
-type NamespaceFailure = NonNullable<
+export type NamespaceFailure = NonNullable<
   CatalogFile["namespaceFailure"] | CatalogDirectory["namespaceFailure"]
 >;
 

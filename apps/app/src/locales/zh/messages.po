@@ -3165,6 +3165,7 @@ msgid "Move up"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/context/EntryRefusalNotice.tsx
 msgid "Move…"
 msgstr ""
 
@@ -3931,6 +3932,8 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
+#: src/features/project/context/EntryRefusalNotice.tsx
+#: src/features/project/mobile/MobileRefusalNotice.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
 msgstr ""

@@ -31,6 +31,7 @@ import { useContextRemovalProject } from "../context/use-context-removal-project
 import { useDockArchivedWork } from "../dock/DockDocumentIdentity";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { MobileDocumentReview } from "./MobileDocumentReview";
+import { MobileRefusalNotice } from "./MobileRefusalNotice";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
@@ -184,6 +185,8 @@ function PhoneDocument({
       {archived ? (
         <ArchivedWorkNotice projectId={projectId} work={archived} className="shrink-0 px-2 pt-2" />
       ) : null}
+      {/* There is no identity bar on a phone: a refused create or move is said here. */}
+      <MobileRefusalNotice projectId={projectId} tab={tab} className="shrink-0 px-4" />
       <div className="relative min-h-0 flex-1">
         {children}
         <ContextDocumentHost
