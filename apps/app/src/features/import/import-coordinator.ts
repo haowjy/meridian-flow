@@ -5,6 +5,7 @@ import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportDestination } from "./destination";
 import { hashPicked } from "./hash-picked";
 import type { ImportApi } from "./import-api-port";
+import { probeReadable } from "./local-read";
 import { buildSelection, type HeldFile } from "./manifest";
 import { matchContinue, type PickedReceived } from "./match-continue";
 import { type PendingRootMemory, pendingRoot } from "./pending-roots";
@@ -499,16 +500,18 @@ export class ImportCoordinator {
       signal: attempt.signal,
       gate: reported,
       send: async (parts, signal) => {
-        // Reading here detects a file removed since picking, before the multipart request.
-        const readable: (HeldFile & { bytes: ArrayBuffer })[] = [];
-        const unreadable: number[] = [];
-        for (const part of parts) {
-          try {
-            readable.push({ ...part, bytes: await part.file.arrayBuffer() });
-          } catch {
-            unreadable.push(part.entryId);
-          }
-        }
+        // A one-byte read detects a file removed since picking, before the multipart request;
+        // the request then streams the file itself instead of a copy of the batch in memory.
+        const probes = await Promise.all(
+          parts.map((part) =>
+            probeReadable(part.file).then(
+              () => true,
+              () => false,
+            ),
+          ),
+        );
+        const readable = parts.filter((_, index) => probes[index]);
+        const unreadable = parts.filter((_, index) => !probes[index]).map((part) => part.entryId);
         if (!live() || signal.aborted) throw new DOMException("Aborted", "AbortError");
         if (unreadable.length) {
           const summary = await this.api.skip(
@@ -533,7 +536,7 @@ export class ImportCoordinator {
             detail.importId,
             readable.map((part) => ({
               entryId: part.entryId,
-              file: new Blob([part.bytes], { type: part.file.type }),
+              file: part.file,
               name: part.file.name,
               changed: part.changed,
             })),

@@ -4,4 +4,6 @@ export const IMPORT_SCHEDULING = {
   concurrentRequests: 3,
   /** Re-picked files hashed at once; each is read whole, up to the 50 MiB file limit. */
   concurrentHashes: 4,
+  /** A local read that has not answered by then (a stalled network or FUSE mount) is unreadable. */
+  readTimeoutMs: 30_000,
 } as const;
