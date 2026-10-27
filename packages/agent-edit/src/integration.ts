@@ -35,7 +35,7 @@ export {
   subtractLineageRanges,
 } from "./lineage/range-set.js";
 export type { AssignInput, AssignResult } from "./links/assign-refs.js";
-export { assignLinkRefs } from "./links/assign-refs.js";
+export { assignLinkRefs, assignOccurrences } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
 export type { OccurrenceAttrs } from "./links/occurrences.js";
 export { rebuildOccurrences, sameAttrs } from "./links/occurrences.js";

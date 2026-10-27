@@ -78,6 +78,7 @@ it("hides a pending folder descendant, restores refusal, and refetches after acc
             filetype: "markdown",
             schemaType: "document",
             aliases: [],
+            hasProperties: false,
             provisionalName: false,
           },
         ],

@@ -79,6 +79,15 @@ export function createInMemoryCollabDomain(): CollabDomain {
     coordinator,
     agentCoordinator: coordinator,
     initialDocumentSeeds: {
+      async stageInitialStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      async commitStagedStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      async discardStagedStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
       async seedInitialDocuments(seeds) {
         for (const { documentId, state } of seeds)
@@ -164,6 +173,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 
   return createCollabFacade({
+    importBinder: runtime.importBinder,
     lifecycle: { dispose: async () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
@@ -200,11 +210,22 @@ export function createInMemoryCollabDomain(): CollabDomain {
       reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
+      readForExport: runtime.markdownDocuments.readForExport,
       initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
       repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
+      prepareSeed: runtime.markdownDocuments.prepareSeed,
+      async stageInitialStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      async commitStagedStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      async discardStagedStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
       encodeSeed: runtime.markdownDocuments.encodeSeed,
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,

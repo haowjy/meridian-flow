@@ -16,6 +16,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import {
   agentEditWidCounters,
+  collabStagedStates,
   documentMarkdownProjections,
   documentYjsCheckpoints,
   documentYjsHeads,
@@ -27,6 +28,7 @@ import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   createCollabYDoc,
+  packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
@@ -921,6 +923,61 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
 function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
   return {
+    async stageInitialStates(stagingId, projectId, generation, seeds) {
+      if (seeds.length === 0) return;
+      await currentDrizzleDb(db as Database)
+        .insert(collabStagedStates)
+        .values(
+          seeds.map((seed) => ({
+            ...seed,
+            stagingId,
+            projectId,
+            generation,
+            state: Buffer.from(seed.state),
+            stateVector: Buffer.from(seed.stateVector),
+          })),
+        );
+    },
+    async commitStagedStates(stagingId) {
+      const tx = currentDrizzleDb(db as Database);
+      // Staged identities have never been live. Never adopt another authority head.
+      await tx.execute(sql`
+        insert into document_yjs_heads (document_id, schema_version)
+        select document_id, ${packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)}
+        from collab_staged_states where staging_id = ${stagingId}`);
+      await tx.execute(sql`
+        insert into document_yjs_checkpoints
+          (document_id, authority_id, authority_generation, state, state_vector, attribution_manifest, up_to_seq, reason)
+        select s.document_id, h.authority_id, h.authority_generation,
+          s.state, s.state_vector, s.attribution_manifest, 0, 'seed'
+        from collab_staged_states s join document_yjs_heads h on h.document_id = s.document_id
+        where s.staging_id = ${stagingId}`);
+      await tx.execute(sql`
+        update document_yjs_heads h set latest_checkpoint_id = c.id,
+          latest_state_vector = c.state_vector, latest_update_seq = 0, updated_at = now()
+        from document_yjs_checkpoints c, collab_staged_states s
+        where s.staging_id = ${stagingId} and c.document_id = s.document_id
+          and h.document_id = s.document_id and c.up_to_seq = 0
+          and c.authority_id = h.authority_id and c.authority_generation = h.authority_generation`);
+      return tx
+        .delete(collabStagedStates)
+        .where(eq(collabStagedStates.stagingId, stagingId))
+        .returning({
+          documentId: collabStagedStates.documentId,
+          markdown: collabStagedStates.markdown,
+        });
+    },
+    async discardStagedStates(stagingId, limit) {
+      const tx = currentDrizzleDb(db as Database);
+      await tx.execute(sql`delete from collab_staged_states where staging_id = ${stagingId}
+        and document_id in (select document_id from collab_staged_states where staging_id = ${stagingId} order by document_id ${limit === undefined ? sql`` : sql`limit ${limit}`})`);
+      const [row] = await tx
+        .select({ id: collabStagedStates.documentId })
+        .from(collabStagedStates)
+        .where(eq(collabStagedStates.stagingId, stagingId))
+        .limit(1);
+      return { remaining: !!row };
+    },
     async seedInitialDocument(docId, state) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;

@@ -3,6 +3,7 @@
  * Exact app routes run in TanStack Start; server route families are proxied to
  * `apps/server`. Rules are ordered so an exact app route may live inside a
  * server-owned family without broadening app ownership to sibling routes.
+ * New server API families must be listed here; unlisted paths stay with the app in dev.
  */
 
 export type ApiRouteOwner = "app" | "server";
@@ -24,6 +25,7 @@ const API_ROUTE_OWNERSHIP = [
   { owner: "server", path: "/api/packages", match: "family" },
   { owner: "server", path: "/api/threads", match: "family" },
   { owner: "server", path: "/api/projects", match: "family" },
+  { owner: "server", path: "/api/imports", match: "family" },
   { owner: "server", path: "/api/works", match: "family" },
   { owner: "server", path: "/api/documents", match: "family" },
   { owner: "server", path: "/api/debug", match: "family" },

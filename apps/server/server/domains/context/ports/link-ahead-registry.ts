@@ -62,6 +62,8 @@ export interface LinkAheadRegistry {
    * there, whether or not the id was registered before.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
+  /** Caller transaction already holds every canonical target namespace key. */
+  registerWithinTransaction(registrations: readonly AheadRegistration[]): Promise<void>;
   /**
    * Inside the caller's transaction, which already holds each arrival's namespace key. Takes no
    * lock; skips deleted documents and draft-only membership. Returns rows settled.

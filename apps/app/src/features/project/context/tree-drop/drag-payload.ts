@@ -4,7 +4,7 @@ export { MERIDIAN_ENTRIES_MIME } from "@/core/editor/extensions/reference-drop";
 
 import { MERIDIAN_ENTRIES_MIME } from "@/core/editor/extensions/reference-drop";
 
-type DragPayloadKind = "entries" | "files" | "none";
+export type DragPayloadKind = "entries" | "files" | "none";
 
 /** Entries first: an internal drag wins even if it ever carries Files too. */
 export function dragPayloadKind(types: readonly string[]): DragPayloadKind {

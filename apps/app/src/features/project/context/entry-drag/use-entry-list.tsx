@@ -18,6 +18,7 @@ import {
 import {
   type EntriesRoute,
   type EntriesVerdict,
+  type FilesRoute,
   TreeDropScope,
   treeDropTargetKey,
 } from "../tree-drop/tree-drop";
@@ -135,9 +136,18 @@ export function useEntryList({
 }
 
 /** Gives a list's rows and targets its selection and drop scope. */
-export function EntryList({ list, children }: { list: EntryListController; children: ReactNode }) {
+export function EntryList({
+  list,
+  files,
+  children,
+}: {
+  list: EntryListController;
+  files?: FilesRoute;
+  children: ReactNode;
+}) {
+  const routes = useMemo(() => ({ entries: list.route, files }), [list.route, files]);
   return (
-    <TreeDropScope route={list.route}>
+    <TreeDropScope routes={routes}>
       <EntrySelectionProvider selection={list.selection}>
         <MoveFeedbackProvider feedback={list.feedback}>{children}</MoveFeedbackProvider>
       </EntrySelectionProvider>

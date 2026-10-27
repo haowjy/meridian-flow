@@ -576,6 +576,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
   return createCollabFacade({
+    importBinder: runtime.importBinder,
     lifecycle: {
       dispose: async () => {
         await Promise.all([draftAheads.shutdown(), draftPulls.shutdown(), draftEffects.dispose()]);
@@ -616,11 +617,19 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     reversal: turnReversal,
     documents: {
+      readForExport: runtime.markdownDocuments.readForExport,
       initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
       repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
+      prepareSeed: runtime.markdownDocuments.prepareSeed,
+      stageInitialStates: persistence.seeds.stageInitialStates,
+      async commitStagedStates(stagingId) {
+        const seeds = await persistence.seeds.commitStagedStates(stagingId);
+        deferUntilDrizzleCommit(() => runtime.markdownDocuments.announceSeeds(seeds));
+      },
+      discardStagedStates: persistence.seeds.discardStagedStates,
       encodeSeed: runtime.markdownDocuments.encodeSeed,
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,

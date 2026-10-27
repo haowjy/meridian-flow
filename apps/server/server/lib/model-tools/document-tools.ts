@@ -434,7 +434,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         ctx,
       );
       if (isToolError(read)) return read;
-      copied = read;
+      const { properties, aliases } = source.ref;
+      copied = {
+        ...read,
+        inherited: { ...(properties ? { properties } : {}), ...(aliases ? { aliases } : {}) },
+      };
     } else if ((parsed.command === "insert" || parsed.command === "replace") && parsed.from) {
       const read = await readCopySource(deps, principal, parsed.command, parsed.from, ctx);
       if (isToolError(read)) return read;
@@ -453,7 +457,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             },
             ...(parsed.command === "copy" && copied
               ? {
-                  metadata: { copiedFrom: copied.copiedFrom },
+                  metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
                   sourceExtension: sourceExtension(copied.copiedFrom.uri),
                 }
               : {}),

@@ -36,6 +36,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import type {
   ContextCatalog,
+  ContextCatalogFileMutationPort,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
   ProjectCatalogLifecyclePort,
@@ -44,11 +45,18 @@ import type {
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
 import type { ProjectContextAvailabilityMutationPort } from "../ports/project-context-availability.js";
 import { loadJoinedFrom } from "../tree/forwards.js";
-import { LIVE_TREE, visibleDocuments, visibleFolders } from "../tree/tree-view.js";
+import {
+  createTreeReader,
+  LIVE_TREE,
+  visibleDocuments,
+  visibleFolders,
+} from "../tree/tree-view.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
+/** Postgres binds at most 65,534 parameters per statement; an entry row binds three. */
+const ENTRY_INSERT_ROWS = 10_000;
 
 type CatalogDb = Pick<Database, "delete" | "insert" | "select" | "update">;
 
@@ -455,6 +463,7 @@ export function createDrizzleContextCatalog(
   } = {},
 ): ContextCatalog &
   ContextCatalogMutationPort &
+  ContextCatalogFileMutationPort &
   ProjectCatalogLifecyclePort &
   WorkAuthorityCatalogMutationPort {
   const availabilityMutations =
@@ -550,9 +559,9 @@ export function createDrizzleContextCatalog(
     if (changes.length === 0) return;
     const revision = head.headRevision + 1;
     await tx.delete(contextCatalogEntries).where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
-    if (authoritative.length > 0) {
+    for (let offset = 0; offset < authoritative.length; offset += ENTRY_INSERT_ROWS) {
       await tx.insert(contextCatalogEntries).values(
-        authoritative.map((entry) => ({
+        authoritative.slice(offset, offset + ENTRY_INSERT_ROWS).map((entry) => ({
           scopeKey: head.scopeKey,
           entryId: entry.entryId,
           entry,
@@ -760,6 +769,17 @@ export function createDrizzleContextCatalog(
           : "uri" in candidate && candidate.uri === input.uri,
       );
       return { entry: entry ?? null, headRevision: snapshot.headRevision };
+    },
+    async refreshFiles(documentIds) {
+      if (documentIds.length === 0) return;
+      const rows = await Promise.all(
+        documentIds.map((id) => createTreeReader(db).findById(LIVE_TREE, id as DocumentId)),
+      );
+      await this.refreshSources([
+        ...new Set(
+          rows.flatMap((row) => (row.kind === "found" ? [row.document.contextSourceId] : [])),
+        ),
+      ]);
     },
     async refreshSources(sourceIds, invalidatedRootIds = []) {
       const tx = currentDrizzleDb(db) as Database;

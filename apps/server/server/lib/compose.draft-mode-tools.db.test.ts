@@ -446,6 +446,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(duel).not.toContain("Quiet.");
     });
 
+    // I1: imported frontmatter travels with a model copy, so the copy is not a lesser document.
+    it("carries the source's properties and aliases to a text copy", async () => {
+      await db
+        .update(schema.works)
+        .set({ defaultAiWriteMode: "direct" })
+        .where(eq(schema.works.id, WORK_ID));
+      const properties = {
+        format: "yaml",
+        text: "# kept as written\naliases: [Gate]\nstatus: revised\n",
+      };
+      await db
+        .update(schema.documents)
+        .set({ metadata: { properties, aliases: ["Gate"] } })
+        .where(eq(schema.documents.id, DOC_ID));
+      const script = await startWithChapter("Writer live content.");
+      const { call } = await script.begin();
+
+      // v1: the model never sees properties; it only copies them along.
+      for (const seen of [
+        await call("read", { path: CHAPTER }),
+        await call("ls", { path: "manuscript://" }),
+        await call("search", { pattern: "revised" }),
+      ]) {
+        expect(text(seen)).not.toContain("status: revised");
+        expect(text(seen)).not.toContain("kept as written");
+      }
+
+      const copied = await call("write", {
+        command: "copy",
+        from: { path: CHAPTER },
+        path: "manuscript://gate-copy",
+      });
+
+      expect(copied.isError).toBeFalsy();
+      const [copy] = await db
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.name, "gate-copy"));
+      expect(copy?.metadata).toMatchObject({
+        properties,
+        aliases: ["Gate"],
+        copiedFrom: { uri: CHAPTER },
+      });
+    });
+
     it("rolls a copy back with its reply", async () => {
       await db
         .update(schema.threads)

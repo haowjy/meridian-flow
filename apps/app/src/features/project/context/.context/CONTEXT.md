@@ -112,7 +112,10 @@ ContextPaneController
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DocumentPaneChrome (shared with the dock's document)
               │     ├─ PassageNotice, ArchivedWorkNotice
-              │     └─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
+              │     ├─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
+              │     └─ DocumentProperties (read-only frontmatter; mounts when the catalog entry
+              │        has `hasProperties`, then fetches by document id; open/closed is one
+              │        device preference in the surface-prefs store)
               ├─ ContextEditorMountHost (warm-set LRU)
               │     └─ ContextDocumentHost per tab (session boundary + EditorView;
               │        the dock's document renders the same host)
@@ -209,3 +212,9 @@ from a picker-provided label. The remount registry retains only operation
 selection until settlement plus the receipt note TTL; admission age never
 expires a pending/offline move. Same-folder renames without changed links do
 not claim a placement.
+
+## External-file drops and pending imports
+
+A context tree mounts one drop scope for both catalog-entry moves and external files. The entry route keeps the canonical folder target and move verdicts; the file route captures that same target for import admission. Window-level drop prevention remains active while either route can accept the drag.
+
+Imports add only a temporary root row until reveal. Pending roots have no catalog identity or URI and reserve no namespace names; every revealed node comes from the catalog.

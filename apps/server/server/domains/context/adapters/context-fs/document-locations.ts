@@ -4,7 +4,11 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, works } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  getDrizzleTransactionLocal,
+  setDrizzleTransactionLocal,
+} from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
 import { ContextEntryConflictError } from "../../ports/context-document-store.js";
@@ -134,11 +138,28 @@ async function sourceNamespaces(
   }));
 }
 
+const namespaceLocks = {};
+export function assertNamespaceKeysHeld(namespaces: readonly ContextNamespace[]): void {
+  const held = getDrizzleTransactionLocal<ReadonlySet<string>>(namespaceLocks);
+  for (const namespace of namespaces) {
+    const key = contextNamespaceKey(namespace);
+    if (!held?.has(key)) throw new Error(`Namespace not locked: ${key}`);
+  }
+}
+
 async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<void> {
-  for (const key of [...new Set(keys)].sort())
-    await currentDrizzleDb(db).execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`,
-    );
+  const ordered = [...new Set(keys)].sort();
+  if (!ordered.length) return;
+  await currentDrizzleDb(db).execute(sql`
+    select pg_advisory_xact_lock(hashtextextended(key, 0::bigint))
+    from (select value as key from jsonb_array_elements_text(${JSON.stringify(ordered)}::jsonb) order by value) ordered`);
+  setDrizzleTransactionLocal(
+    namespaceLocks,
+    new Set([
+      ...(getDrizzleTransactionLocal<ReadonlySet<string>>(namespaceLocks) ?? []),
+      ...ordered,
+    ]),
+  );
 }
 
 /**

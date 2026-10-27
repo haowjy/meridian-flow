@@ -33,6 +33,7 @@ import {
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
+  type ContextCatalogFileMutationPort,
   type ContextCatalogMutationPort,
   type ContextCatalogWakeHub,
   createContextCatalogWakeHub,
@@ -48,6 +49,7 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
+  createDrizzleDocumentPropertiesReader,
   createDrizzleDocumentTrash,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
@@ -67,7 +69,9 @@ import {
   createRestoreRemovedDocuments,
   createUploadIntake,
   type DocumentAddressResolver,
+  type DocumentArrivals,
   type DocumentLinkResolver,
+  type DocumentPropertiesReader,
   type DocumentRemovals,
   type DocumentTrash,
   type FigureAssetService,
@@ -82,6 +86,13 @@ import {
   type UploadIntake,
 } from "../domains/context/index.js";
 import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
+import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
+import {
+  createProjectExport,
+  type ProjectExport,
+} from "../domains/export/domain/project-export.js";
+import type { ExportDocumentReader } from "../domains/export/ports/export-documents.js";
+import type { ExportSnapshotStore } from "../domains/export/ports/export-snapshot.js";
 import {
   type AgentChain,
   createAllowAllFileAccess,
@@ -94,6 +105,15 @@ import {
   type FileAccessChanges,
   type PgFileAccessChanges,
 } from "../domains/file-policy/index.js";
+import {
+  createOrganizeWakeHub,
+  createProductionImportOrganizer,
+  createProductionImportService,
+  type ImportOrganizer,
+  type ImportService,
+  listOpenImports,
+  type OrganizeWakeHub,
+} from "../domains/import/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -276,6 +296,11 @@ import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
 export type AppServices = {
+  projectExport: ProjectExport;
+  imports(projectId: string, userId: string): ImportService;
+  openImports(userId: string): Promise<import("@meridian/contracts").ImportSummary[]>;
+  importOrganizer: ImportOrganizer;
+  organizeWake: OrganizeWakeHub;
   liveDocuments: Pick<TreeReader, "findById">;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
@@ -344,6 +369,7 @@ export type AppServices = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
+  documentProperties: DocumentPropertiesReader;
   /** The file policy every route and model call asks (file-access §1). */
   fileAccess: FileAccess;
   /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
@@ -377,7 +403,10 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog & ContextCatalogMutationPort & ProjectCatalogLifecyclePort;
+  contextCatalog: ContextCatalog &
+    ContextCatalogMutationPort &
+    ContextCatalogFileMutationPort &
+    ProjectCatalogLifecyclePort;
   restoreRemovedDocuments: RestoreRemovedDocuments;
   documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
@@ -389,7 +418,10 @@ export type ProductionAppPorts = {
    * through them and the resolver endpoint answers ref links from one.
    */
   linkScopes: DocumentLinkScopes;
+  exportSnapshot: ExportSnapshotStore;
   linkAheadRegistry: LinkAheadRegistry;
+  documentArrivals: DocumentArrivals;
+  organizeWake: OrganizeWakeHub;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -413,6 +445,7 @@ export type ProductionAppPorts = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
+  documentProperties: DocumentPropertiesReader;
   promotionService: PromotionService;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
@@ -496,6 +529,7 @@ export async function createProductionAppPorts(input: {
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
   const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, { eventSink });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
+  const organizeWake = createOrganizeWakeHub();
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
     db,
@@ -558,7 +592,6 @@ export async function createProductionAppPorts(input: {
     removal: documentRemoval,
     eventSink,
     objects: objectRelease,
-    backgroundTasks,
   });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
@@ -695,6 +728,8 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
+    documentArrivals: arrivals,
+    organizeWake,
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
@@ -724,6 +759,7 @@ export async function createProductionAppPorts(input: {
       lineages: createDrizzleScratchLineages(db),
       chats: createDrizzleChatUploadsOwners(db),
     }),
+    exportSnapshot: createDrizzleExportSnapshotStore(db),
     linkScopes: documentLinks,
     projects,
     works: workRepo,
@@ -748,6 +784,7 @@ export async function createProductionAppPorts(input: {
     uploadIntake,
     uploadIdentity,
     figureAssets,
+    documentProperties: createDrizzleDocumentPropertiesReader(db),
     promotionService,
     notices,
     activeDocuments,
@@ -789,6 +826,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
+  });
+  const importOrganizer = createProductionImportOrganizer({
+    db: ports.db,
+    objects: ports.objectStore,
+    eventSink: ports.eventSink,
+    documents: ports.documentSync,
+    ahead: ports.linkAheadRegistry,
+    arrivals: ports.documentArrivals,
+    catalog: ports.contextCatalog,
   });
   const interruptRegistry = createInterruptRegistry();
   const workContext = createWorkContextReader({
@@ -1133,6 +1179,22 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
 
   return {
+    projectExport: createProjectExport({
+      snapshot: ports.exportSnapshot,
+      pendingDrafts: {
+        async count(projectId) {
+          const works = await ports.workRepo.listByProject(projectId, { lifecycle: "all" });
+          const noWork = await ports.workRepo.findNoWork(projectId);
+          return [...works, ...(noWork ? [noWork] : [])].reduce(
+            (sum, work) => sum + work.pendingDocumentCount,
+            0,
+          );
+        },
+      },
+      documents: exportDocumentsFrom(ports.documentSync),
+      files: ports.fileAccess,
+      objects: ports.objectStore,
+    }),
     gateway: ports.gateway,
     threadRepos: ports.threadRepos,
     journalReader: ports.journalReader,
@@ -1149,6 +1211,19 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
+    openImports: (userId) => listOpenImports(ports.db, userId),
+    importOrganizer,
+    organizeWake: ports.organizeWake,
+    imports: (projectId, _userId) =>
+      createProductionImportService(
+        {
+          db: ports.db,
+          objects: ports.objectStore,
+          eventSink: ports.eventSink,
+          wake: ports.organizeWake,
+        },
+        projectId,
+      ),
     contextCatalog: ports.contextCatalog,
     restoreRemovedDocuments: ports.restoreRemovedDocuments,
     documentTrash: ports.documentTrash,
@@ -1201,6 +1276,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIntake: ports.uploadIntake,
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
+    documentProperties: ports.documentProperties,
     fileAccess: ports.fileAccess,
     fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
@@ -1373,6 +1449,9 @@ export function createInMemoryAppServices(): AppServices {
     throw new Error("Ahead-ref registry is unsupported in the in-memory composition");
   };
   const linkAheadRegistry: LinkAheadRegistry = {
+    registerWithinTransaction: async () => {
+      throw new Error("Ahead registration requires Postgres");
+    },
     register: async () => unsupported(),
     settleArrivals: async () => unsupported(),
     registerUnregistered: async () => unsupported(),
@@ -1468,6 +1547,16 @@ export function createInMemoryAppServices(): AppServices {
     },
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
+    openImports: async () => [],
+    importOrganizer: {
+      async runPass() {
+        return 0;
+      },
+    },
+    organizeWake: createOrganizeWakeHub(),
+    imports: () => {
+      throw new Error("Import requires durable persistence");
+    },
     contextCatalog,
     async restoreRemovedDocuments() {
       throw new Error("Document restore is unavailable in memory");
@@ -1512,6 +1601,25 @@ export function createInMemoryAppServices(): AppServices {
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    projectExport: createProjectExport({
+      pendingDrafts: {
+        async count() {
+          return 0;
+        },
+      },
+      snapshot: {
+        async read() {
+          return { documents: [], sources: [], settlements: new Map() };
+        },
+      },
+      documents: exportDocumentsFrom(documentSync),
+      files: createAllowAllFileAccess(),
+      objects: {
+        async get() {
+          throw new Error("No export objects in memory");
+        },
+      },
+    }),
     linkScopes: createStaticDocumentLinkScopes(),
     projects: {
       async ensureDefaultBootstrapReady() {
@@ -1794,6 +1902,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory figure assets are not implemented");
       },
     },
+    documentProperties: { findStored: async () => null },
     fileAccess: createAllowAllFileAccess(),
     fileAccessChanges: createLocalFileAccessChanges(),
     notices,
@@ -1845,3 +1954,10 @@ function createInMemoryNoticePort(): NoticePort {
 }
 
 export type { ThreadRepositories } from "../domains/threads/ports/index.js";
+
+/** Adapts Collab's export read door and live membership to the port Export owns. */
+function exportDocumentsFrom(documents: Pick<CollabDomain, "readForExport">): ExportDocumentReader {
+  return {
+    readForExport: (documentId, scope) => documents.readForExport(documentId, scope),
+  };
+}

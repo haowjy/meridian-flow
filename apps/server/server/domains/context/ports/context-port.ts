@@ -3,7 +3,7 @@
  * contract over context URI schemes plus file-entry, result, and error types.
  */
 
-import type { LinkView } from "@meridian/contracts";
+import type { LinkView, StoredDocumentProperties } from "@meridian/contracts";
 import type {
   ContextUriScheme,
   ProjectScopedContextUriScheme,
@@ -210,6 +210,14 @@ interface BaseFileRef {
   updatedAt?: string;
   /** True when the file's scheme is read-only. */
   readonly?: boolean;
+  /**
+   * Imported frontmatter stored with the document; `copy` carries it to the copy.
+   * Host-only: the model never sees properties in v1 (ruling I6, #778). Copy
+   * inheriting metadata is not model visibility; no tool output may render this.
+   */
+  properties?: StoredDocumentProperties;
+  /** Alternate names stored with the document; `copy` carries them. Host-only, like `properties`. */
+  aliases?: string[];
 }
 
 /** A Yjs/projected text file ref returned by {@link ContextPort.stat}. */

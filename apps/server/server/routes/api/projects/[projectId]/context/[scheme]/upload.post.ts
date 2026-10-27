@@ -24,6 +24,8 @@ export default defineEventHandler(async (event): Promise<UploadIntakeResult> => 
   if (scheme !== "uploads")
     throw createError({ statusCode: 400, message: "Upload intake requires uploads" });
   const parts = await readMultipartFormData(event);
+  if ((parts?.filter((part) => part.name === "file").length ?? 0) > 1)
+    throw createError({ statusCode: 400, message: "Only one file part is allowed" });
   const file = parts?.find((part) => part.name === "file" && part.filename);
   if (!file?.filename)
     throw createError({ statusCode: 400, message: "multipart field 'file' is required" });

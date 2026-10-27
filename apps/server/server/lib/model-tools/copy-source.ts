@@ -17,7 +17,10 @@ import {
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
-import type { CopiedFrom } from "../../domains/context/document-metadata.js";
+import type {
+  CopiedFrom,
+  DocumentCreationMetadata,
+} from "../../domains/context/document-metadata.js";
 import type { BinaryFileRef, FileRef } from "../../domains/context/ports/context-port.js";
 import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -52,6 +55,8 @@ export interface CopiedSource {
   /** Where each `ahead:` ref in the source now settles; the remap reads it like a writer's Copy. */
   aheadSettlements: ReadonlyMap<string, string>;
   copiedFrom: CopiedFrom;
+  /** A `copy` also carries the source's imported properties and aliases to the new document. */
+  inherited?: Pick<DocumentCreationMetadata, "properties" | "aliases">;
 }
 
 /**

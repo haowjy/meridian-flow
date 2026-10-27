@@ -1,14 +1,31 @@
 /** Direct-child rows and inline actions for one context catalog scheme. */
 
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronRight, Folder, FolderOpen } from "lucide-react";
-import { createContext, type KeyboardEvent, type ReactNode, useContext, useMemo } from "react";
+import { ChevronRight, Folder, FolderOpen, LoaderCircle } from "lucide-react";
+import {
+  createContext,
+  type KeyboardEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import type {
   CatalogContextView,
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
+import { useToastRegistry } from "@/components/app/toast-registry";
+import {
+  type ImportedTree,
+  type PendingRow,
+  plainTree,
+  rowId,
+  siblingsOf,
+} from "@/features/import/tree-rows";
 import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -51,9 +68,17 @@ export type TreeEnv = {
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   onRequestDelete: (target: DeleteTarget) => void;
+  importHere?: {
+    folders: boolean;
+    start: (
+      folder: { entryId: string; path: string; uri: string; name: string } | null,
+      kind: "folder" | "files",
+    ) => void;
+  };
   isExpanded: (entryId: string) => boolean;
   toggleEntry: (entryId: string) => void;
   catalog: CatalogContextView;
+  tree?: ImportedTree;
   visibleIds?: ReadonlySet<string>;
   rename?: { path: string; done: () => void };
 };
@@ -98,8 +123,9 @@ export function TreeChildren({
   parent?: DropFolder | null;
 }) {
   const env = useTreeEnv();
-  const children = env.catalog.children(parentId);
-  const siblings = children;
+  const tree = useMemo(() => env.tree ?? plainTree(env.catalog), [env.tree, env.catalog]);
+  const children = tree.rows(parentId);
+  const siblings = useMemo(() => siblingsOf(children), [children]);
   return (
     <>
       {env.creation?.creating?.parentPath === parentPath ? (
@@ -111,20 +137,25 @@ export function TreeChildren({
         />
       ) : null}
       {children
-        .filter((child) => !env.visibleIds || env.visibleIds.has(child.entryId))
+        .filter(
+          (child) =>
+            child.origin === "import" || !env.visibleIds || env.visibleIds.has(child.node.entryId),
+        )
         .map((child) =>
-          child.kind === "dir" ? (
+          child.origin === "import" ? (
+            <PendingTreeRow key={child.id} row={child} depth={depth} />
+          ) : child.node.kind === "dir" ? (
             <DirRow
-              key={child.entryId}
-              dir={child}
+              key={rowId(child)}
+              dir={child.node}
               depth={depth}
               siblings={siblings}
               parent={parent}
             />
           ) : (
             <FileRow
-              key={child.entryId}
-              file={child}
+              key={rowId(child)}
+              file={child.node}
               depth={depth}
               siblings={siblings}
               parent={parent}
@@ -190,6 +221,12 @@ function DirRow({
   parent: DropFolder | null;
 }) {
   const env = useTreeEnv();
+  const folder: DropFolder = {
+    entryId: dir.entryId,
+    path: dir.path,
+    uri: dir.uri,
+    name: dir.name,
+  };
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: dir,
@@ -198,10 +235,15 @@ function DirRow({
     capabilities: env.capabilities,
     create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
+    importHere: env.importHere
+      ? {
+          folders: env.importHere.folders,
+          start: (kind) => env.importHere?.start(folder, kind),
+        }
+      : undefined,
     siblings,
   });
   const isOpen = env.isExpanded(dir.entryId);
-  const folder: DropFolder = { entryId: dir.entryId, path: dir.path, name: dir.name };
   // An open folder's bottom borders its first child, so "after" it is the next sibling's top edge.
   const drop = useTreeDropTarget(
     { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder },
@@ -277,6 +319,39 @@ function DirRow({
         </TreeGroup>
       ) : null}
     </DropRegion>
+  );
+}
+
+/** A folder root shown while its import is still being built out of sight. */
+function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
+  const registry = useToastRegistry();
+  const element = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    element.current?.scrollIntoView({ block: "nearest" });
+  }, []);
+  return (
+    <button
+      type="button"
+      ref={element}
+      data-import-root={row.id}
+      onClick={() => registry.reveal(row.importId)}
+      className={cn(
+        "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left text-sm text-ink-muted hover:bg-sidebar-accent/50",
+        contextTreeRowGrowClassName,
+      )}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+    >
+      <span className="w-4 shrink-0" aria-hidden />
+      <RowIcon icon={Folder} />
+      <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
+      <LoaderCircle
+        aria-hidden
+        className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+      />
+      <span className="sr-only">
+        <Trans>Import in progress. Show activity</Trans>
+      </span>
+    </button>
   );
 }
 

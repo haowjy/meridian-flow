@@ -18,6 +18,7 @@ export type RequestOptions = {
   maxResponseBytes?: number;
   /** Closes the request when aborted, so a read left running cannot hold the process open. */
   signal?: AbortSignal;
+  rawBody?: { bytes: Uint8Array; contentType: string };
 };
 
 /** A decoder owns the entire response body and returns only the evidence it checked. */
@@ -78,7 +79,7 @@ export function rawRequest(input: {
   url: string;
   method: HttpMethod;
   headers?: Record<string, string>;
-  body?: string;
+  body?: string | Uint8Array;
   ca?: string[];
   timeoutMs: number;
   maxResponseBytes: number;
@@ -203,8 +204,15 @@ export function createSession(input: {
     const response = await rawRequest({
       url: new URL(requestPath, input.serverUrl).toString(),
       method,
-      headers: input.cookie ? { cookie: input.cookie } : {},
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      headers: {
+        ...(input.cookie ? { cookie: input.cookie } : {}),
+        ...(options.rawBody ? { "content-type": options.rawBody.contentType } : {}),
+      },
+      ...(options.rawBody
+        ? { body: options.rawBody.bytes }
+        : body !== undefined
+          ? { body: JSON.stringify(body) }
+          : {}),
       ca: input.ca,
       timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       maxResponseBytes: options?.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,

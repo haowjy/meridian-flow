@@ -38,6 +38,8 @@ export default defineEventHandler(async (event) => {
   const documentId = requireRequestId(getRouterParam(event, "documentId"), "documentId");
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const parts = await readMultipartFormData(event);
+  if ((parts?.filter((part) => part.name === "file").length ?? 0) > 1)
+    throw createError({ statusCode: 400, message: "Only one file part is allowed" });
   const file = parts?.find((part) => part.name === "file" && part.filename);
   if (!file) throw createError({ statusCode: 400, message: "multipart field 'file' is required" });
   // Figures land in manuscript://assets, so the upload edits the host and that folder (§2).

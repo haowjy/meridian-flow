@@ -24,12 +24,15 @@
  */
 
 import {
+  type AheadMint,
   assignLinkRefs,
+  assignOccurrences,
   isDocumentNotFoundError,
+  rebuildOccurrences,
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import { documentRef, type LinkView, parseLinkRef } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, PMNode } from "@meridian/markup";
@@ -268,6 +271,8 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
   return {
     async bindMarkdown(input) {
       if (deps.inTransaction()) throw new LinkBindingInsideTransactionError();
+      if ("targets" in input || "hrefs" in input || "plannedHolderId" in input)
+        throw new Error("Planned targets require the import binder");
       const key =
         "documentId" in input.holder
           ? { documentId: input.holder.documentId }
@@ -302,6 +307,177 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
         throw new Error("Static content names a link or source; bind it with bindMarkdown");
       }
       return boundWrite({ holder: { kind: "static" }, fresh: true, blocks, markdown, schemaType });
+    },
+  };
+}
+
+/** Identity overrides are an import-only capability, never on the model/editor binder. */
+export interface ImportLinkBinder {
+  bindPlannedCode(documentId: DocumentId, filetype: string, text: string): BoundWrite;
+  bindMarkdown(input: ImportBindInput): Promise<BoundWrite>;
+  bindPlannedMarkdown(
+    input: PlannedMarkdownInput,
+  ): Promise<{ content: BoundWrite; aheadMints: AheadMint[] }>;
+}
+
+export type ImportBindInput = Omit<BindMarkdownInput, "against"> & {
+  targets?: ReadonlyMap<number, DocumentId>;
+  hrefs?: ReadonlyMap<number, string>;
+};
+
+export type PlannedMarkdownInput = Pick<ImportBindInput, "markdown" | "targets" | "hrefs"> & {
+  holder: { documentId: DocumentId; uri: string; projectId: string; filetype: string | null };
+  planned: ReadonlySet<DocumentId>;
+};
+
+export type ImportLinkBinderDeps = Omit<LinkBinderDeps, "coordinator" | "model">;
+
+export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBinder {
+  const makeBound = (input: Omit<BoundWrite, typeof boundBrand>) => input as BoundWrite;
+
+  function code(documentId: DocumentId, filetype: string, text: string): BoundWrite {
+    const classification = classifyFiletype(filetype);
+    if (classification.kind !== "tracked" || classification.schemaType !== "code")
+      throw new Error("Planned code binding requires a code filetype");
+    return makeBound({
+      holder: { kind: "document", documentId },
+      fresh: true,
+      blocks: [
+        deps.schema.nodes.code_block.create(
+          { language: filetype },
+          text.length > 0 ? deps.schema.text(text) : undefined,
+        ),
+      ],
+      markdown: text,
+      schemaType: "code",
+    });
+  }
+
+  async function bindFresh(
+    input: ImportBindInput & {
+      planned?: ReadonlySet<DocumentId>;
+      plannedHolderId?: DocumentId;
+      returnAhead?: true;
+    },
+  ): Promise<{ content: BoundWrite; aheadMints: AheadMint[] }> {
+    if (deps.inTransaction()) throw new LinkBindingInsideTransactionError();
+    if (input.view && input.view.kind !== "live")
+      throw new Error("Import binding requires a live view");
+    const holder = input.holder;
+    const documentId = "documentId" in holder ? holder.documentId : null;
+    const holderUri = "documentId" in holder ? null : holder.uri;
+    const filetype =
+      "documentId" in holder ? await deps.resolveFiletype(holder.documentId) : holder.filetype;
+    const classification = classifyFiletype(filetype);
+    const schemaType =
+      classification.kind === "tracked"
+        ? classification.schemaType
+        : classification.kind === "unknown"
+          ? "document"
+          : null;
+    if (!schemaType)
+      throw new Error(`Cannot bind ${classification.kind} content as a tracked document`);
+    if (schemaType === "code") {
+      const holderId = input.plannedHolderId ?? documentId;
+      if (!holderId) throw new Error("Planned code requires its document identity");
+      return {
+        content: code(holderId, filetype ?? "text", input.markdown),
+        aheadMints: [],
+      };
+    }
+
+    const key =
+      "documentId" in holder ? { documentId: holder.documentId } : { projectId: holder.projectId };
+    return deps.links.within(key, async () => {
+      const parsed = deps.codec.parse(input.markdown).blocks;
+      const spelled = walkLinkOccurrences(parsed);
+      for (const occurrence of [...(input.targets?.keys() ?? []), ...(input.hrefs?.keys() ?? [])]) {
+        if (!Number.isInteger(occurrence) || occurrence < 0 || occurrence >= spelled.length)
+          throw new RangeError(`Invalid link occurrence: ${occurrence}`);
+      }
+      const occurrences = spelled.map((occurrence, index) => {
+        const href = input.hrefs?.get(index);
+        return href === undefined
+          ? occurrence
+          : { ...occurrence, attrs: { ...occurrence.attrs, href } };
+      });
+      const written = input.hrefs?.size
+        ? rebuildOccurrences(
+            parsed,
+            spelled,
+            occurrences.map(({ attrs }) => attrs),
+          )
+        : parsed;
+      const writtenTargets = documentId ? [] : writtenAddresses(written, holderUri);
+      await deps.links.prepare({
+        holders: documentId ? [{ documentId, view: LIVE_VIEW }] : [],
+        refs: [...(input.targets?.values() ?? [])]
+          .filter((id) => !input.planned?.has(id) && parseLinkRef(`doc:${id}`)?.kind === "doc")
+          .map(documentRef),
+        stored: [],
+        written,
+        addresses: writtenTargets
+          .filter((target) => target.kind === "document")
+          .map((target) => target.uri),
+        folderAddresses: writtenTargets
+          .filter((target) => target.kind === "folder")
+          .map((target) => target.uri),
+        ...(documentId ? {} : { views: [LIVE_VIEW] }),
+      });
+      const scope = documentId
+        ? deps.links.holder({ documentId, view: LIVE_VIEW })
+        : deps.links.reader({ uri: holderUri, view: LIVE_VIEW });
+      const assigned = assignOccurrences({ old: [], written: occurrences, scope, shown: [] });
+      const attrs = occurrences.map((occurrence, index) => {
+        const target = input.targets?.get(index);
+        if (!input.targets?.has(index)) return assigned.attrs[index];
+        const parsedRef = parseLinkRef(`doc:${target ?? ""}`);
+        const ref = parsedRef?.kind === "doc" ? documentRef(parsedRef.documentId) : null;
+        if (ref && input.planned?.has(target as DocumentId)) return { ...occurrence.attrs, ref };
+        const resolved = ref ? scope.resolve({ ref, href: occurrence.attrs.href }) : null;
+        if (
+          resolved?.kind !== "document" ||
+          resolved.document.projectId !== scope.holder.projectId ||
+          resolved.document.presence !== "live"
+        )
+          return { ...occurrence.attrs, ref: null, href: "" };
+        return { ...occurrence.attrs, ref };
+      });
+      const nodes = rebuildOccurrences(parsed, spelled, attrs);
+      const keptRefs = new Set(walkLinkOccurrences(nodes).map(({ attrs }) => attrs.ref));
+      const aheadMints = assigned.minted.filter(({ ref }) => keptRefs.has(ref));
+      if (!input.returnAhead && aheadMints.length > 0)
+        await deps.registrar.register(aheadRegistrations(aheadMints));
+      return {
+        content: makeBound({
+          holder: input.plannedHolderId
+            ? { kind: "document", documentId: input.plannedHolderId }
+            : documentId
+              ? { kind: "document", documentId }
+              : { kind: "new", uri: holderUri ?? "" },
+          fresh: true,
+          blocks: nodes,
+          markdown: input.markdown,
+          schemaType,
+        }),
+        aheadMints,
+      };
+    });
+  }
+
+  return {
+    bindPlannedCode: code,
+    async bindMarkdown(input) {
+      return (await bindFresh(input)).content;
+    },
+    async bindPlannedMarkdown({ holder, ...input }) {
+      const { documentId, ...address } = holder;
+      return bindFresh({
+        ...input,
+        holder: address,
+        plannedHolderId: documentId,
+        returnAhead: true,
+      });
     },
   };
 }

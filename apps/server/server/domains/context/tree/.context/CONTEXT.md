@@ -133,6 +133,7 @@ namespace lock is held. Draft-Work placement carries the same position fact, so 
 Apply, Discard, and inverse operations cannot erase a reorder. Settlement reconciles only the
 parents the document left or entered. If an inverse restores a ranked fact after its parent baseline
 was cleaned up, it rebuilds that baseline before reinstalling the saved rank.
+A batch that arrives together (an import's reveal) is placed in one allocation (`placeArrivedBatch`); export walks each source depth first, children in this order (`export-inventory.ts`), so the archive follows the tree.
 
 ## Removal facts
 

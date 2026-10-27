@@ -9,16 +9,16 @@ import type {
   UploadIntakeResult,
   UploadOwner,
 } from "@meridian/contracts/protocol";
+import { classifyFiletype, type ParsedDocumentFilename } from "@meridian/contracts/protocol";
 import {
-  classifyFiletype,
-  documentFileTypeFor,
-  filenameForBinary,
-  filetypeForKnownMimeType,
-  filetypeForKnownPath,
-  type ParsedDocumentFilename,
-  parseDocumentFilename,
-  registeredExtensionForFiletype,
-} from "@meridian/contracts/protocol";
+  classifyUpload,
+  intakeFilename,
+  normalizeFilename,
+  normalizeMime,
+} from "../../file-intake/index.js";
+
+export { classifyUpload } from "../../file-intake/index.js";
+
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
@@ -128,64 +128,6 @@ export interface UploadIntake {
   consume(documentIds: readonly string[], chatId: string): Promise<void>;
 }
 
-const TEXT_MIMES = new Set([
-  "application/json",
-  "application/ld+json",
-  "application/markdown",
-  "application/toml",
-  "application/x-yaml",
-  "application/yaml",
-  "application/xml",
-]);
-
-function normalizeMime(mimeType: string): string {
-  return mimeType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
-}
-
-function normalizeFilename(filename: string): string {
-  const basename = filename.split(/[\\/]/).pop()?.normalize("NFKC").trim() || "upload";
-  const safe = [...basename]
-    .filter((character) => {
-      const codePoint = character.codePointAt(0) ?? 0;
-      return codePoint > 31 && codePoint !== 127;
-    })
-    .join("")
-    .replace(/^@+/, "")
-    .trim();
-  return !safe || safe === "." || safe === ".." ? "upload" : safe;
-}
-
-export function classifyUpload(input: {
-  filename: string;
-  mimeType: string;
-  bytes: Uint8Array;
-}): Filetype {
-  const mime = normalizeMime(input.mimeType);
-  const byMime = filetypeForKnownMimeType(mime);
-  const byPath = filetypeForKnownPath(input.filename);
-  const textLike =
-    mime.startsWith("text/") ||
-    TEXT_MIMES.has(mime) ||
-    mime.endsWith("+json") ||
-    mime.endsWith("+xml") ||
-    (!input.bytes.includes(0) && mime === "application/octet-stream" && byPath !== null);
-  if (textLike) {
-    const candidate = byPath ?? byMime ?? "text";
-    const classification = classifyFiletype(candidate);
-    if (classification.kind === "tracked")
-      return candidate === "text" && byPath === null ? "markdown" : candidate;
-    return classification.kind === "unknown" ? "text" : classification.fileType;
-  }
-  const candidate = byMime ?? byPath;
-  if (candidate) {
-    const classification = classifyFiletype(candidate);
-    if (classification.kind === "binary" || classification.kind === "custom") {
-      return classification.fileType;
-    }
-  }
-  return documentFileTypeFor({ filetype: null, mimeType: mime }) ?? "binary";
-}
-
 function fingerprint(input: {
   actorUserId: string;
   owner: UploadOwner;
@@ -246,15 +188,8 @@ export function createUploadIntake<Bound>(deps: {
       const actualDigest = createHash("sha256").update(raw.bytes).digest("hex");
       if (actualDigest !== byteDigest)
         return { ok: false, error: { code: "idempotency_conflict" } };
-      const fileType = classifyUpload({ filename, mimeType, bytes: raw.bytes });
-      const tracked = classifyFiletype(fileType).kind === "tracked";
-      const inferredExtension = registeredExtensionForFiletype(fileType) ?? undefined;
-      let parsed = parseDocumentFilename(filename, {
-        sourceExtension: tracked ? inferredExtension : undefined,
-      });
-      if (parsed.ok && !tracked) {
-        parsed = { ok: true, value: filenameForBinary(parsed.value, fileType, mimeType) };
-      }
+      const fileType = await classifyUpload({ filename, mimeType, bytes: raw.bytes });
+      const parsed = intakeFilename(filename, fileType, mimeType);
       if (!parsed.ok)
         return { ok: false, error: { code: "invalid_filename", reason: "name/reserved" } };
       const canonicalFingerprint = fingerprint({

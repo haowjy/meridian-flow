@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useCallback, useEffect } from "react";
+import { lazy, Suspense, useCallback, useEffect, useSyncExternalStore } from "react";
 import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
@@ -22,12 +22,15 @@ import {
   ThreadStoreProvider,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { ToastRegion } from "@/components/app/ToastRegion";
+import { ToastRegistryProvider } from "@/components/app/toast-registry";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
+import { ImportsProvider } from "@/features/import/ImportsProvider";
 import {
   AccountFeatureComposition,
   useOptionalAccountResourceReplica,
@@ -53,6 +56,23 @@ const DebugOverlay =
   import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1"
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
     : null;
+
+// The query devtools launcher floats over the bottom-right corner: the bottom-left holds the
+// import activity cards, the top-right the dock's header, and a narrow window's top bar keeps its
+// context toggle and its bottom the composer. Narrow by width, not pointer: a desktop browser
+// resized to phone width gets the same layout as a phone, so the launcher is dropped there.
+const NARROW_QUERY = "(max-width: 767px)";
+function useNarrowViewport(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      const query = window.matchMedia(NARROW_QUERY);
+      query.addEventListener("change", notify);
+      return () => query.removeEventListener("change", notify);
+    },
+    () => window.matchMedia(NARROW_QUERY).matches,
+    () => true,
+  );
+}
 
 const ReactQueryDevtools = import.meta.env.DEV
   ? lazy(() =>
@@ -197,6 +217,7 @@ function AuthenticatedProviderTree({
   };
 }) {
   const resources = useOptionalAccountResourceReplica();
+  const narrow = useNarrowViewport();
 
   // Browser persistence is initialized only after the Query composition root
   // exists. Constructing these services during SSR crashes the authenticated shell.
@@ -214,24 +235,29 @@ function AuthenticatedProviderTree({
           <TransportProvider>
             <MeridianCopilotProvider>
               <DensityPopoverCollisionProvider>
-                <div className="app-frame flex flex-col">
-                  <ConnectionBanner />
-                  <div className="min-h-0 flex-1 overflow-hidden">
-                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                    <Outlet />
-                  </div>
-                </div>
-                <SettingsDialog />
-                {DebugOverlay ? (
-                  <Suspense fallback={null}>
-                    <DebugOverlay />
-                  </Suspense>
-                ) : null}
-                {ReactQueryDevtools ? (
-                  <Suspense fallback={null}>
-                    <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-                  </Suspense>
-                ) : null}
+                <ToastRegistryProvider>
+                  <ImportsProvider key={user.userId}>
+                    <div className="app-frame flex flex-col">
+                      <ConnectionBanner />
+                      <div className="min-h-0 flex-1 overflow-hidden">
+                        {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                        <Outlet />
+                      </div>
+                    </div>
+                    <SettingsDialog />
+                    <ToastRegion />
+                    {DebugOverlay ? (
+                      <Suspense fallback={null}>
+                        <DebugOverlay />
+                      </Suspense>
+                    ) : null}
+                    {ReactQueryDevtools && !narrow ? (
+                      <Suspense fallback={null}>
+                        <ReactQueryDevtools buttonPosition="bottom-right" initialIsOpen={false} />
+                      </Suspense>
+                    ) : null}
+                  </ImportsProvider>
+                </ToastRegistryProvider>
               </DensityPopoverCollisionProvider>
             </MeridianCopilotProvider>
           </TransportProvider>

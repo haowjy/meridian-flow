@@ -3,8 +3,10 @@
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
+  type JournalBatchAppendEntry,
   type PersistedUpdate,
   type UpdateJournal,
+  type UpdateMeta,
 } from "@meridian/agent-edit/integration";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -48,6 +50,23 @@ export type InMemoryJournal = CheckpointJournal &
   };
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
+  private readonly admissionLock = new KeyedMutex();
+
+  override async append(docId: string, update: Uint8Array, meta: UpdateMeta) {
+    return this.admissionLock.run(docId, () => super.append(docId, update, meta));
+  }
+
+  override async appendBatch(entries: readonly JournalBatchAppendEntry[]) {
+    const ids = [...new Set(entries.map(({ docId }) => docId))].sort();
+    const append = async (
+      index: number,
+    ): Promise<Awaited<ReturnType<UpdateJournal["appendBatch"]>>> => {
+      if (index < ids.length) return this.admissionLock.run(ids[index], () => append(index + 1));
+      return super.appendBatch(entries);
+    };
+    return append(0);
+  }
+
   override async read(docId: string, opts?: Parameters<UpdateJournal["read"]>[1]) {
     return {
       ...(await super.read(docId, opts)),
