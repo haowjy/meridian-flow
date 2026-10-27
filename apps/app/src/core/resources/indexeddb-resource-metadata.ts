@@ -58,12 +58,19 @@ type ProjectionListener = {
 };
 
 /**
- * What the server holds under an id, replayed from the create attempts an older build recorded:
- * the same fold the journal now keeps current (`holdAfterAttempt`), run once.
+ * What the server holds under the id an older build's record now has, replayed from the create
+ * attempts it recorded for that id: the same fold the journal now keeps current
+ * (`holdAfterAttempt`), run once. Attempts of an earlier identity revision named an id the record
+ * no longer has; what they proved (a `conflict`, say) says nothing about this one.
  */
-function replayedServerHold(neverPlaced: boolean, intents: readonly LegacyIntent[]): ServerHold {
+function replayedServerHold(
+  neverPlaced: boolean,
+  intents: readonly LegacyIntent[],
+  identityRevision: number,
+): ServerHold {
   if (!neverPlaced) return "held";
-  return [...intents]
+  return intents
+    .filter((intent) => intent.identityRevision === identityRevision)
     .sort((left, right) => left.sequence - right.sequence)
     .flatMap((intent) => intent.attempts)
     .reduce<ServerHold>((hold, attempt) => holdAfterAttempt(hold, attempt), "local");
@@ -222,6 +229,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
           const serverHold = replayedServerHold(
             stored.lifecycle.kind === "local" && stored.canonical === null,
             held,
+            stored.identity.revision,
           );
           const upgraded = upgradedMaterialization(stored, held);
           await resources.put({
@@ -234,7 +242,8 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
         for (const folder of await folders.toArray())
           await folders.put({
             ...folder,
-            serverHold: replayedServerHold(folder.canonical === null, folder.intents),
+            // A folder's intents all carry identity revision 1.
+            serverHold: replayedServerHold(folder.canonical === null, folder.intents, 1),
           });
       });
     this.resources = this.database.table("resources");
