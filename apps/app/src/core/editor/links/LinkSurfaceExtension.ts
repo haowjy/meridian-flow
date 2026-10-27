@@ -18,6 +18,7 @@
  * deeper owner than a mark on its text.
  */
 
+import { parseLinkRef } from "@meridian/contracts";
 import { type Editor, Extension } from "@tiptap/core";
 import {
   type EditorState,
@@ -342,12 +343,48 @@ export const LinkSurfaceExtension = Extension.create({
               if (event.button !== MIDDLE_BUTTON) return false;
               return handleLinkPress(view, event, event.button);
             },
+
+            /**
+             * A selection that is one internal link's text drags as the entry the link names,
+             * handed to the app; the text stays where it is. Nothing else changes: an unselected
+             * press still sweeps a selection (law 7), a selection that is more than the link, an
+             * image or a block drags as ProseMirror drags it, and with no app registered the
+             * link's text drags as text. Returning true keeps ProseMirror from starting its own
+             * drag, so `view.dragging` stays empty and the source text is never moved or removed.
+             */
+            dragstart(view, event) {
+              const dragged = selectedLinkEntry(view, event);
+              if (!dragged || !surface.dragSource) return false;
+              surface.dragSource({ ...dragged, event });
+              return true;
+            },
           },
         },
       }),
     ];
   },
 });
+
+/**
+ * The entry a drag names when the pointer starts it inside a selection that lies within one
+ * internal link: a document or folder link, never an address with nothing behind it yet.
+ */
+function selectedLinkEntry(
+  view: EditorView,
+  event: DragEvent,
+): { entry: { kind: "file" | "folder"; id: string }; name: string } | null {
+  const { from, to, empty } = view.state.selection;
+  if (empty) return null;
+  const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+  if (at === undefined || at < from || at > to) return null;
+  const link = linkAt(view.state, from + 1) ?? linkAt(view.state, from);
+  if (!link || link.from > from || link.to < to) return null;
+  const ref = parseLinkRef(linkKeyOfMark(link.attributes).ref);
+  const name = view.state.doc.textBetween(link.from, link.to);
+  if (ref?.kind === "doc") return { entry: { kind: "file", id: ref.documentId }, name };
+  if (ref?.kind === "folder") return { entry: { kind: "folder", id: ref.folderId }, name };
+  return null;
+}
 
 /** The anchor element under a DOM node, when it belongs to this editor. */
 function anchorIn(view: EditorView, node: EventTarget | null): HTMLElement | null {

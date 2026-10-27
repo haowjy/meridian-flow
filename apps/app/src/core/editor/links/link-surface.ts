@@ -158,6 +158,13 @@ export type LinkSurface = {
   readonly navigator: InternalLinkNavigator | null;
   registerNavigator: (navigate: InternalLinkNavigator) => () => void;
 
+  /**
+   * Where a drag of a link's entry goes. Absent where the app takes no drags: the link's text then
+   * drags as text, as it always did.
+   */
+  readonly dragSource: LinkDragSource | null;
+  registerDragSource: (source: LinkDragSource) => () => void;
+
   destroy: () => void;
 };
 
@@ -169,10 +176,22 @@ const EMPTY_STATE: LinkSurfaceState = {
   follow: null,
 };
 
+/**
+ * What the editor hands the app when the writer drags a selected internal link: the entry the link
+ * names, by identity, and the label it shows. The app decides what a drag carries and where it can
+ * land; the editor core knows no more than the identity.
+ */
+export type LinkDragSource = (request: {
+  entry: { kind: "file" | "folder"; id: string };
+  name: string;
+  event: DragEvent;
+}) => void;
+
 export function createLinkSurface(): LinkSurface {
   const listeners = new Set<() => void>();
   let state = EMPTY_STATE;
   let navigator: InternalLinkNavigator | null = null;
+  let dragSource: LinkDragSource | null = null;
   let followHandlers: FollowHandlers | null = null;
   let sequence = 0;
 
@@ -266,9 +285,20 @@ export function createLinkSurface(): LinkSurface {
       };
     },
 
+    get dragSource() {
+      return dragSource;
+    },
+    registerDragSource(source) {
+      dragSource = source;
+      return () => {
+        if (dragSource === source) dragSource = null;
+      };
+    },
+
     destroy() {
       listeners.clear();
       navigator = null;
+      dragSource = null;
       followHandlers = null;
       state = EMPTY_STATE;
     },

@@ -37,6 +37,8 @@ import {
   type LinkResolutionScope,
   useLinkFollower,
 } from "@/features/links";
+import { startEntryDrag } from "@/features/project/context/entry-drag/drag-session";
+import { LIVE_VIEW } from "@/features/project/context/entry-drag/entry";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
 
@@ -122,6 +124,10 @@ export function ProjectLinkRuntime({
       follower.follow(target, disposition, ref);
     };
     const unregisterNavigator = surface.registerNavigator(navigate);
+    // A selected link drags as the entry it names, whatever draft the holder shows.
+    const unregisterDragSource = surface.registerDragSource(({ entry, name, event }) =>
+      startEntryDrag(event, [{ ref: entry, name, view: LIVE_VIEW }], "reference"),
+    );
     // What the outcome dialog's Close, Cancel, and Try again mean is the
     // follower's: it knows which follow owns what is shown.
     const unregisterHandlers = surface.registerFollowHandlers({
@@ -130,6 +136,7 @@ export function ProjectLinkRuntime({
     });
     return () => {
       unregisterNavigator();
+      unregisterDragSource();
       unregisterHandlers();
     };
   }, [active, follower, projectId, surface]);
