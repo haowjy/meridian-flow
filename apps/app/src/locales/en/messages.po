@@ -5218,6 +5218,10 @@ msgstr "That Work is no longer available. Choose another Work."
 msgid "That Work isn't available."
 msgstr "That Work isn't available."
 
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "That Work no longer has a draft of it."
+msgstr "That Work no longer has a draft of it."
+
 #: src/features/import/selection-limits.ts
 msgid "That's {count} files. Import up to {limit} at a time."
 msgstr "That's {count} files. Import up to {limit} at a time."
