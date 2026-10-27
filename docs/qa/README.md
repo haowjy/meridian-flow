@@ -149,13 +149,14 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    Reading appears immediately. Only the pending folder root appears in the
    tree/Files listing; tapping it opens the activity card. On phone the activity
    bar must not cover the first row. On desktop the card fits the rail above its account/navigation footer; View
-   projects remains clickable. Devtools is top-right on desktop and absent on phone.
-7. Pause upload by reloading before all bytes arrive. After 60 seconds Continue
-   asks for the original folder. Repick with one changed file and one missing
-   file: only awaiting files send, the changed file is marked, and the missing
-   choice stays inline. Navigate to another project during upload and confirm
-   activity continues with the source project title. Stop in Reading, Uploading,
-   Organizing, and Adding uses one confirmation and discards everything before
+   projects remains clickable. Devtools is bottom-right on desktop and absent on phone.
+7. Pause upload by reloading before all bytes arrive. The reloaded tab reads Upload
+   paused with Continue… at once, not Uploading in another window: it holds no upload
+   lock and no other tab does. Continue asks for the original folder. Repick with one
+   changed file and one missing file: only awaiting files send, the changed file is
+   marked, and the missing choice stays inline. Navigate to another project during
+   upload and confirm activity continues with the source project title. Stop in Reading,
+   Uploading, Organizing, and Adding uses one confirmation and discards everything before
    reveal. Cancelling that confirmation resumes the same activity.
 8. Let the real organizer finish. The whole staged tree and catalog appear together
    with Done; no imported child is visible beforehand. A lost Stop race says it
@@ -180,6 +181,35 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    folder's order survives. Drag a desktop file onto a row's edge and onto a folder: both
    light the whole folder, the hint says "Import into <folder>", no insertion line draws,
    and the file lands by the folder's rule, not at the edge.
+12. Reconcile a re-picked folder. To stop mid-upload at a known point, wrap
+   `XMLHttpRequest.prototype.send` in the page so `POST …/imports/<id>/files` fails
+   after N requests, then reload. Check each case with the done card's See files list
+   and the entry rows (`reason`):
+   - Edit a received file and Continue with the same folder. It lists as "Edited after
+     it uploaded. The imported copy is the earlier version." (`changed_after_upload`),
+     and the landed document keeps the old text: received bytes are never sent again.
+   - Edit an awaiting file and let one Continue send it, then pause again and Continue
+     with the same folder. It still lists "Changed after you picked it."
+     (`changed_after_pick`): the second Continue must not clear a mark that was true.
+   - Pick a copy of the folder with later modified times and some files removed, then
+     Pick again with the original after editing two files that landed from the copy. The
+     copy's marks clear; only the two edits list, with the "Edited after it uploaded"
+     sentence. Pick again must send the files the copy lacked.
+   - `chmod 000` a received file and touch it, then Continue. Everything else still
+     sends; the file keeps its reason and is not listed.
+   - Fail the first `POST …/picked` (the same wrapper on `fetch`). The card stalls with
+     Retry and the import stays uploading with one file held back; Retry repeats the
+     report and the import then completes.
+   - During a Continue that has received files to hash, the card reads Uploading, never
+     Upload paused.
+13. Two tabs. Start an upload in tab A with slow sends, then open the project in tab B:
+   B's first render reads Uploading in another window, with no Continue (check with a
+   MutationObserver registered at document start; the card must never read Upload paused
+   first). `navigator.locks.query()` lists `import-upload:<id>` while A works. Close A:
+   within one refresh (two seconds while the import is uploading) B reads Upload paused
+   with Continue…. Make A's sends fail until its queue stalls: A shows Retry and releases
+   the lock, and B offers Continue… rather than Uploading in another window. A background
+   tab's slow timers must not change this; presence is the lock, not a heartbeat.
 
 For the large gate, generate a 3,219-file/1,207-folder vault with
 `pnpm --filter @meridian/server exec tsx scripts/build-import-performance-fixture.ts <output-dir>`.
