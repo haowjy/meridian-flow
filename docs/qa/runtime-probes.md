@@ -436,7 +436,7 @@ restart smoke check.
      Typed `[Next](ch9.md)` must also read back `[Next](ch9)`. Create prose
      `outline` beside `outline.json`: `[Outline](outline)` must prefer the prose
      document. Delete the prose document: that path must reach the JSON file.
-     Inspect `ls` (prose, JSON and a folder), `search`, and a missing-name `read`;
+     Inspect `ls` (prose, JSON and a folder), `grep`, and a missing-name `read`;
      their paths, receipts and errors show no prose extension. Load a skill from
      a source `SKILL.md`: the header and `ls` show `SKILL`, and either typed
      spelling loads it. Published path descriptions teach `Chapter 13`, not a

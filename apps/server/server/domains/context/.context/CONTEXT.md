@@ -69,10 +69,25 @@ or `ensureTrackedDocument`. The free-name command owns allocation, identity and
 initial content together; callers supply only batch reservations and use its
 authoritative URI.
 
+## Grep
+
+`ContextFS.grep` (scan in `adapters/context-fs/grep-scan.ts`, matching in
+`grep/matcher.ts`) lists a source's documents once, asks the caller's `readable`
+before matching or counting anything, and walks them in path order until
+`headLimit` files have matched. Patterns are RE2 (`re2js`, linear time) matched
+per line of the document's grep text: markdown as `read` shows it, link
+destinations spelled empty, decoded to the text view. A document with usable
+stored text is matched from it, and read only when its passages are wanted;
+every hit is confirmed per line, because the whole-text prefilter can match
+across a line break. Past the limit, fast-path documents are still counted and
+documents that need a read are not, so the total becomes "at least N".
+The first match's offsets in the shown excerpt are stored on the passage
+(`anchor`), and the model-facing window cuts there.
+
 ## Views, identity, and revisions
 
 The tree module supplies `LIVE_TREE` and `{ kind: "branch", branchId }`. ContextFS
-uses that view for `stat`, `read`, `list`, `search`, and `locate`; a branch's
+uses that view for `stat`, `read`, `list`, `grep`, and `locate`; a branch's
 hidden document or folder appears only in that branch. A draft create has an
 empty live Y.Doc and text in its draft until Apply. The hidden predicate has
 one owner in [tree](../tree/AGENTS.md); callers never inspect hidden columns.

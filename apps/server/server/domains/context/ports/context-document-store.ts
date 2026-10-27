@@ -123,6 +123,14 @@ export interface ContextDocumentStore {
     documentId: string,
   ): Promise<{ path: string; name: string; deleted: boolean } | null>;
   readProjections(ids: string[]): Promise<Map<string, string>>;
+  /**
+   * The grep text of each id whose stored text can stand in for a read: the derivation is
+   * current and no active draft row names the document (a Work's draft, or a reply's staged
+   * draft writes, may hold different text). Ids without usable text are absent.
+   */
+  readGrepTexts(ids: string[]): Promise<Map<string, string>>;
+  /** Every folder and document the view shows in this source, in one pass. */
+  listTree(view: TreeView): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }>;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]>;
   /**

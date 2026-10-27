@@ -172,7 +172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(stale.isError).toBe(true);
 
-      const loreHits = await call("search", { pattern: "lore needle" });
+      const loreHits = await call("grep", { pattern: "lore needle" });
       expect(text(loreHits)).toContain("kb://lore");
       const listedLive = await call("ls", { path: "kb://", version: "live" });
       expect(text(listedLive)).toMatch(/^kb:\/\//);

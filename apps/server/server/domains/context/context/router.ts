@@ -38,11 +38,13 @@ import type {
   ContextWriteOptions,
   ContextWriteResult,
   FileRef,
-  SearchResult,
+  GrepFile,
+  GrepQuery,
+  GrepResult,
   WriteProvenance,
 } from "../ports/context-port.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
-import { callAdapter, toFileEntry, toFileRef, toSearchResult } from "./router-adapter-results.js";
+import { callAdapter, toFileEntry, toFileRef, toGrepFile } from "./router-adapter-results.js";
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
 export interface ContextSourceBinding {
@@ -911,26 +913,34 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       });
     },
 
-    async search(query: string, uri?: string): Promise<Result<SearchResult[], ContextError>> {
-      if (uri) {
-        const r = await resolve(uri);
+    async grep(query: GrepQuery): Promise<Result<GrepResult, ContextError>> {
+      if (query.path) {
+        const r = await resolve(query.path);
         if (!r.ok) return r;
         const { adapter, scheme, authority, path, canonical } = r.value;
-        if (!adapter.capabilities.searchable) return Ok([]);
-
-        const result = await callAdapter(canonical, () => adapter.search(query, path));
+        if (!adapter.capabilities.searchable) return Ok({ files: [], totalFiles: 0, exact: true });
+        const result = await callAdapter(canonical, () => adapter.grep({ ...query, path }));
         if (!result.ok) return result;
-        return Ok(result.value.map((hit) => toSearchResult(scheme, authority, hit)));
+        const { files, ...rest } = result.value;
+        return Ok({ files: files.map((file) => toGrepFile(scheme, authority, file)), ...rest });
       }
 
-      const hits: SearchResult[] = [];
+      // Each source gets what the limit has left; a source reached after it still counts its
+      // files, which costs no reads.
+      const found: GrepFile[] = [];
+      let totalFiles = 0;
+      let exact = true;
       for (const [scheme, { adapter, authority }] of await contextualSources()) {
         if (!adapter.capabilities.searchable) continue;
-        const result = await callAdapter(`${scheme}://`, () => adapter.search(query));
+        const result = await callAdapter(`${scheme}://`, () =>
+          adapter.grep({ ...query, headLimit: query.headLimit - found.length }),
+        );
         if (!result.ok) continue;
-        for (const hit of result.value) hits.push(toSearchResult(scheme, authority, hit));
+        for (const file of result.value.files) found.push(toGrepFile(scheme, authority, file));
+        totalFiles += result.value.totalFiles;
+        exact &&= result.value.exact;
       }
-      return Ok(hits);
+      return Ok({ files: found, totalFiles, exact });
     },
   };
 }

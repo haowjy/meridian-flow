@@ -5,7 +5,7 @@ import type {
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
-  AdapterSearchHit,
+  AdapterGrepFile,
 } from "../ports/context-adapter.js";
 import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type {
@@ -13,24 +13,17 @@ import type {
   ContextScheme,
   FileEntry,
   FileRef,
-  SearchResult,
+  GrepFile,
 } from "../ports/context-port.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
 import { toCanonical } from "./uri.js";
 
-export function toSearchResult(
+export function toGrepFile(
   scheme: ContextScheme,
   authority: CanonicalContextAuthority,
-  hit: AdapterSearchHit,
-): SearchResult {
-  return {
-    uri: toCanonical(scheme, hit.path, authority),
-    documentId: hit.documentId,
-    revision: hit.revision,
-    matches: hit.matches,
-    matchCount: hit.matchCount,
-    ...(hit.shown ? { shown: hit.shown } : {}),
-  };
+  { path, ...file }: AdapterGrepFile,
+): GrepFile {
+  return { uri: toCanonical(scheme, path, authority), ...file };
 }
 
 export function toFileRef(

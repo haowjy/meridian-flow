@@ -160,6 +160,3 @@ function nextUnescaped(text: string, char: string, from: number): number {
   }
   return -1;
 }
-
-/** The pattern that matches `text` literally, for callers holding a literal. */
-export const escapeLiteral = RE2JS.quote;

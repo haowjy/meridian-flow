@@ -170,6 +170,9 @@ async function harness(
       ok: true,
       value: {
         content: options.search?.entries ?? searchEntries,
+        destinationFree: (options.search?.entries ?? searchEntries).map((entry) =>
+          entry.slice(entry.indexOf("|") + 1),
+        ),
         revision: "r1",
         links: options.search?.links ?? searchLinks,
         holder: { uri: `user://${names[documentId]}`, view: { kind: "live" } },
@@ -416,11 +419,11 @@ const rows: Array<{
     },
   },
   {
-    name: "search records returned passages, not matches past the cap or unauthorized hits",
+    name: "grep records returned passages, not matches past the cap or unauthorized hits",
     async act(check) {
       const h = await harness();
-      const { threadId, results } = await runTurn(h, [toolCall("search", { pattern: "needle" })]);
-      check(JSON.stringify(results), "search output carries no host facts").not.toMatch(HOST_FACTS);
+      const { threadId, results } = await runTurn(h, [toolCall("grep", { pattern: "needle" })]);
+      check(JSON.stringify(results), "grep output carries no host facts").not.toMatch(HOST_FACTS);
       const passages = expected([fact(0), fact(1), fact(2)]);
       return {
         store: h.store,
@@ -430,7 +433,7 @@ const rows: Array<{
     },
   },
   {
-    name: "a search window records neither a link it left out nor one it cut through; verbose shows both",
+    name: "a grep window records neither a link it left out nor one it cut through; verbose shows both",
     async act(check) {
       // The window keeps about 120 characters either side of the match.
       const filler = "filler ".repeat(100);
@@ -442,7 +445,7 @@ const rows: Array<{
         links: [[fact(80)], [fact(81)]],
       };
       const windowed = await harness({ search });
-      const plain = await runTurn(windowed, [toolCall("search", { pattern: "needle" })]);
+      const plain = await runTurn(windowed, [toolCall("grep", { pattern: "needle" })]);
       // What the model reads: the rendered text, not the typed hits beside it.
       const output = plain.results
         .map((result) => String((result as { output?: unknown }).output))
@@ -453,7 +456,7 @@ const rows: Array<{
       check(await shown(windowed.store, plain.threadId, SOURCE), "windowed").toEqual([]);
       const whole = await harness({ search });
       const verbose = await runTurn(whole, [
-        toolCall("search", { pattern: "needle", verbose: true }),
+        toolCall("grep", { pattern: "needle", verbose: true }),
       ]);
       return {
         store: whole.store,

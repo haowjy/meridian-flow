@@ -11,9 +11,9 @@ import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
 import { WorkCommandSchema } from "../tools/core-tools.js";
 import {
+  grepDocumentText,
   historyDocumentText,
   readDocumentText,
-  searchDocumentText,
   writeDocumentText,
 } from "../tools/document-text.js";
 import {
@@ -56,7 +56,7 @@ export function defineThreadHistoryContract(
     for (const [name, documentText, historySummary, historyKind, schema] of [
       ["read", readDocumentText, documentHistorySummary, "routine", ReadToolInputSchema],
       ["write", writeDocumentText, documentHistorySummary, undefined, WriteToolInputSchema],
-      ["search", searchDocumentText, undefined, "routine", undefined],
+      ["grep", grepDocumentText, undefined, "routine", undefined],
       ["ls", undefined, undefined, "routine", undefined],
       ["work", undefined, workHistorySummary, workKind, WorkCommandSchema],
       ["thread_history", historyDocumentText, threadHistorySummary, "routine", undefined],
@@ -318,7 +318,7 @@ export function defineThreadHistoryContract(
         const t = await f.turn();
         await f.tool(t, "read", { path: `manuscript://a${turn}.md` }, "copy");
         await f.text(t, `reply ${turn}`);
-        await f.tool(t, "search", { pattern: "x" }, []);
+        await f.tool(t, "grep", { pattern: "x" }, []);
       }
       const seen: number[] = [];
       let hidden = 0;
@@ -451,13 +451,22 @@ export function defineThreadHistoryContract(
       const f = await fixture();
       const t = await f.turn();
       await f.tool(t, "read", { path: "manuscript://chapter.md" }, "COPY SENTINEL");
-      await f.tool(t, "search", { pattern: "Dragon" }, [
+      await f.tool(
+        t,
+        "grep",
+        { pattern: "Dragon" },
         {
-          uri: "manuscript://chapter.md",
-          matches: [{ excerpt: "COPY SENTINEL", line: 1 }],
-          matchCount: 1,
+          files: [
+            {
+              uri: "manuscript://chapter.md",
+              matches: [{ excerpt: "COPY SENTINEL", line: 1 }],
+              matchCount: 1,
+            },
+          ],
+          totalFiles: 1,
+          exact: true,
         },
-      ]);
+      );
       await f.tool(
         t,
         "write",
@@ -495,7 +504,7 @@ export function defineThreadHistoryContract(
         metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
       });
       if (input.include?.includes("tool_results")) {
-        expect(text).toContain("[search passages omitted; read a file for its current text]");
+        expect(text).toContain("[grep passages omitted; read a file for its current text]");
         expect(text).toContain("manuscript://chapter.md (1 match)");
       }
       for (const handle of ["1.1", "1.2", "1.3"])

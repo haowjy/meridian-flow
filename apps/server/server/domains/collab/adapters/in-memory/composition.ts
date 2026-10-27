@@ -284,6 +284,7 @@ function createInMemoryDraftPeerStub(
       return read.ok ? read.value.revision : null;
     },
     async flushDraftLivePull() {},
+    isStagedByResponse: () => false,
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
