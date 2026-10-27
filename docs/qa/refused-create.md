@@ -144,7 +144,15 @@ names the first id.
     page; Rename opens the name field in place of the notice, Escape restores it; Move…
     opens the picker, and Manuscript → Move to Manuscript lands the document and the notice
     goes. In the Files list, Unfiled → each refused row says the sentence with Move… and
-    Rename under its name (documents and folders), and Move… there lands it.
+    Rename under its name (documents and folders), and Move… there lands it. Tapping a refused
+    document row opens it and the screen stays: a named one holds `/editor/unfiled/<name>`
+    (a reload there holds it too), a nameless one `/editor`, the breadcrumb names it, its text
+    shows, and Move… → Manuscript leaves the document on screen. Drive both shells from one
+    browser profile: the refused rows live in that profile's IndexedDB, so a phone script
+    attached to another profile lists documents only. A narrow viewport also collapses the
+    desktop sidebar and keeps it collapsed (`Expand sidebar`), which hides the tree and its
+    New file and New folder buttons; they appear only while their section is expanded, and a
+    new tab starts with every section collapsed.
 
 ## Server refusals a create can get
 
