@@ -1,8 +1,9 @@
 /**
  * A drop is planned from where the replica places each dragged row now, not
  * from what the drag recorded: rows are found by identity in any catalog, a
- * selection that spans systems moves nowhere, a folder carries what's inside
- * it, and a folder never lands inside itself.
+ * selection that spans systems is flagged as crossing (the list asks before
+ * moving it), a folder carries what's inside it, and a folder never lands
+ * inside itself.
  */
 import type { ParentRef, ResourceLocation, ResourceRecord } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
@@ -132,13 +133,15 @@ it("finds a dragged row by identity in a catalog the destination list doesn't sh
   });
 });
 
-it("moves nowhere when the dragged rows span systems", () => {
-  const plan = planDrop(
-    view([area("kb", "kb-root", { characters: "characters" })]),
-    drag(file("ch1"), file("note")),
-    into("kb-root", "kb", "characters", "characters"),
-  );
-  expect(plan.kind).toBe("none");
+it("flags a selection that spans systems as crossing and still plans every row", () => {
+  const kb = view([area("kb", "kb-root", { characters: "characters" })]);
+  const target = into("kb-root", "kb", "characters", "characters");
+  const rows = drag(file("ch1"), file("note"));
+  expect(resolveDrop(kb, rows, target)).toMatchObject({ crossing: true });
+  expect(planDrop(kb, rows, target)).toMatchObject({
+    kind: "ready",
+    moves: [{ entry: file("ch1") }, { entry: file("note") }],
+  });
 });
 
 it("carries a folder's contents with it and refuses it inside itself", () => {

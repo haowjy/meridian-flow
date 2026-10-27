@@ -110,7 +110,7 @@ export type MoveRow = {
   position?: ContextSiblingPosition;
 };
 
-type MovePlan =
+export type MovePlan =
   | { kind: "none" }
   /** A folder over its own subtree; the only drop that refuses rather than doing nothing. */
   | { kind: "inside-itself" }
@@ -299,14 +299,16 @@ export function resolveDrop(
   };
 }
 
-/** What a resolved drop would do as a Move: move, refuse with a reason, or nothing. */
+/**
+ * What a resolved drop would do as a Move: move, refuse with a reason, or
+ * nothing. A drop across systems plans like any other; whether to move at once
+ * or ask first is the list's call (`resolved.crossing`).
+ */
 export function planMove(view: PlacementView, resolved: ResolvedDrop | null): MovePlan {
   if (!resolved) return NONE;
   const { sources, into, destinationName, position } = resolved;
   // A selection holding a row without Move, or one that lost a row, moves nowhere rather than silently leaving rows behind.
   if (!resolved.movable || resolved.unavailable.length > 0) return NONE;
-  // The project areas are one system, each owner's Scratch its own; crossing is Move or Copy.
-  if (resolved.crossing) return NONE;
   if (resolved.insideItself) return { kind: "inside-itself" };
   if (position) return planPositioned(view, sources, into, destinationName, position);
   // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
