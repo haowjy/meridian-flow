@@ -180,6 +180,7 @@ async function harness(
           };
         }),
         revision: "r1",
+        locate: (_block: unknown, range: { start: number; end: number }) => range,
         holder: { uri: `user://${names[documentId]}`, view: { kind: "live" } },
       },
     }),
