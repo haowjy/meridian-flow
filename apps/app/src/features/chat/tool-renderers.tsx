@@ -103,7 +103,12 @@ function ResultRows({ results }: { results: GrepResultRows }) {
   const bound = boundLabel(results);
   return (
     <div className="chat-card bg-result-card">
-      <p className="border-border-subtle border-b pb-2 text-meta text-ink-subtle">
+      <p
+        className={cn(
+          "text-meta text-ink-subtle",
+          results.rows.length > 0 && "border-border-subtle border-b pb-2",
+        )}
+      >
         {grepCardSummary(results)}
       </p>
       {results.rows.length > 0 ? (
