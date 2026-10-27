@@ -694,6 +694,13 @@
       "when": 1793131424510,
       "tag": "0104_grep_tool_rename",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1793131552986,
+      "tag": "0105_drop_projection_text_indexes",
+      "breakpoints": true
     }
   ]
 }
