@@ -21,6 +21,7 @@ import { RE2JS } from "re2js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { GrepPassage } from "../ports/context-port.js";
 import { runMatch } from "./match-pool.js";
+import type { Passage } from "./match-worker.js";
 import { requiredLiterals } from "./required-literals.js";
 
 export { GrepStopped } from "./match-pool.js";
@@ -34,14 +35,12 @@ export const PASSAGE_CAP = 3;
  */
 export interface GrepMatcher {
   /** Matches in `text`; with `all` false, 1 at the first matching line or 0. */
-  count(text: string, all: boolean, signal?: AbortSignal): Promise<number>;
-  /** Indices of the first `limit` texts that have a matching line. */
-  firstHits(texts: readonly string[], limit: number, signal?: AbortSignal): Promise<number[]>;
-  /** Each text's first match as offsets into that text, null when it has none. */
-  firstSpans(
-    texts: readonly string[],
-    signal?: AbortSignal,
-  ): Promise<Array<[start: number, end: number] | null>>;
+  count(text: string, all: boolean, signal: AbortSignal): Promise<number>;
+  /**
+   * The first `limit` texts that have a matching line, each with its first match as offsets
+   * into that text.
+   */
+  passages(texts: readonly string[], limit: number, signal: AbortSignal): Promise<Passage[]>;
   /**
    * Cheap whole-text prefilter: false only if no line can match. Present when a
    * case-insensitive pattern requires a literal. It only skips documents; every
@@ -71,10 +70,8 @@ export function compileGrep(pattern: string, ignoreCase: boolean): Result<GrepMa
     : undefined;
   return Ok({
     count: (text, all, signal) => runMatch({ op: "count", pattern, ignoreCase, text, all }, signal),
-    firstHits: (texts, limit, signal) =>
-      runMatch({ op: "firstHits", pattern, ignoreCase, texts, limit }, signal),
-    firstSpans: (texts, signal) =>
-      runMatch({ op: "firstSpans", pattern, ignoreCase, texts }, signal),
+    passages: (texts, limit, signal) =>
+      runMatch({ op: "passages", pattern, ignoreCase, texts, limit }, signal),
     ...(prefilter ? { test: (text: string) => prefilter.test(text) } : {}),
   });
 }
@@ -112,30 +109,22 @@ export async function grepBlocks(
   texts: readonly string[],
   matcher: GrepMatcher,
   locate: GrepLocate,
-  signal?: AbortSignal,
+  signal: AbortSignal,
 ): Promise<DocumentMatch> {
-  const returned = await matcher.firstHits(texts, PASSAGE_CAP, signal);
+  const found = await matcher.passages(texts, PASSAGE_CAP, signal);
   // Offsets into the plain text map back to the markdown only for blocks that are returned.
-  const views = returned.map((index) =>
-    markdownTextView((blocks[index] as GrepBlock).destinationFree),
-  );
-  const spans = await matcher.firstSpans(
-    views.map((view) => view.text),
-    signal,
-  );
-  const matches = returned.map((index, at): GrepPassage => {
+  const matches = found.map(([index, from, to]): GrepPassage => {
     const block = blocks[index] as GrepBlock;
-    const view = views[at] as ReturnType<typeof markdownTextView>;
-    const first = spans[at] ?? [0, 0];
-    const start = view.start[first[0]] ?? 0;
-    const end = view.end[Math.max(first[1], first[0] + 1) - 1] ?? start;
+    const view = markdownTextView(block.destinationFree);
+    const start = view.start[from] ?? 0;
+    const end = view.end[Math.max(to, from + 1) - 1] ?? start;
     const anchor = locate(block, { start, end });
     return {
       excerpt: block.body,
       ...(block.hash ? { blockHash: block.hash } : {}),
       ...(anchor ? { anchor } : {}),
-      term: view.text.slice(first[0], first[1]),
+      term: view.text.slice(from, to),
     };
   });
-  return { matches, blocks: returned };
+  return { matches, blocks: found.map(([index]) => index) };
 }

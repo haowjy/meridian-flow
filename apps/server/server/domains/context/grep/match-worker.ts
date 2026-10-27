@@ -12,14 +12,23 @@ import { parentPort } from "node:worker_threads";
 import { RE2JS } from "re2js";
 
 type Span = [start: number, end: number];
+/** A block's index among the texts sent, and its first match as offsets into that text. */
+export type Passage = [index: number, start: number, end: number];
 
 export type MatchRequest = { pattern: string; ignoreCase: boolean } & (
   | { op: "count"; text: string; all: boolean }
-  | { op: "firstHits"; texts: readonly string[]; limit: number }
-  | { op: "firstSpans"; texts: readonly string[] }
+  | { op: "passages"; texts: readonly string[]; limit: number }
 );
 
-export type MatchReply = { ok: true; value: unknown } | { ok: false; error: string };
+/** What each op replies with. */
+export interface MatchValue {
+  count: number;
+  passages: Passage[];
+}
+
+export type MatchReply<Op extends keyof MatchValue = keyof MatchValue> =
+  | { ok: true; value: MatchValue[Op] }
+  | { ok: false; error: string };
 
 const CACHE_SIZE = 8;
 const compiled = new Map<string, RE2JS>();
@@ -45,31 +54,31 @@ function firstSpan(program: RE2JS, text: string): Span | null {
   return null;
 }
 
-function run(request: MatchRequest): unknown {
+function countAll(program: RE2JS, text: string): number {
+  let count = 0;
+  for (const line of text.split("\n")) {
+    const matcher = program.matcher(line);
+    while (matcher.find()) count += 1;
+  }
+  return count;
+}
+
+function run(request: MatchRequest): MatchValue[keyof MatchValue] {
   const program = compile(request);
   switch (request.op) {
-    case "count": {
-      let count = 0;
-      for (const line of request.text.split("\n")) {
-        const matcher = program.matcher(line);
-        if (!request.all) {
-          if (matcher.find()) return 1;
-          continue;
-        }
-        while (matcher.find()) count += 1;
-      }
-      return count;
-    }
-    case "firstHits": {
-      const hits: number[] = [];
+    case "count":
+      return request.all
+        ? countAll(program, request.text)
+        : Number(firstSpan(program, request.text) !== null);
+    case "passages": {
+      const passages: Passage[] = [];
       for (const [index, text] of request.texts.entries()) {
-        if (hits.length === request.limit) break;
-        if (text.split("\n").some((line) => program.matcher(line).find())) hits.push(index);
+        if (passages.length === request.limit) break;
+        const span = firstSpan(program, text);
+        if (span) passages.push([index, span[0], span[1]]);
       }
-      return hits;
+      return passages;
     }
-    case "firstSpans":
-      return request.texts.map((text) => firstSpan(program, text));
   }
 }
 

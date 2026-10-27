@@ -76,16 +76,17 @@ passages in `grep/matcher.ts`, the threads in `grep/match-pool.ts` and
 `grep/match-worker.ts`) lists a source's documents once, asks the caller's `readable`
 before matching or counting anything, and walks them in path order until
 `headLimit` files have matched. Patterns are RE2 (`re2js`, no backtracking, but
-time still grows with text times program size, and one call can't be interrupted) matched per line of the document's
-grep text, in worker threads, so a slow pattern ends by termination at the deadline and never blocks the
+time still grows with text times program size, and one call can't be interrupted) matched in worker threads, so a slow pattern ends by termination at the deadline and never blocks the
 event loop. `compileGrep` only validates on the main thread (RE2's own refusals, 512 characters); there is no
 static size limit, since program size doesn't measure cost. The pool starts threads on demand up to 4
 and keeps them; each serves one request at a time and compiles the pattern it is sent (cached by it), so a
 terminated thread loses only the request that ran there. With all four busy, further requests queue, each
 for no longer than its own signal. The built server emits the worker as `workers/match-worker.mjs`
 (`bundleWorkerEntries` in `apps/server/nitro.config.ts` rewrites `new URL("./x.ts", import.meta.url)`);
-vitest and `tsx` run the `.ts` file directly. Matching is per line of the document's
-grep text: markdown as `read` shows it, link destinations spelled empty, decoded to
+vitest and `tsx` run the `.ts` file directly. The pool is shared by the process, so four concurrent
+slow greps (one user's four chats, say) hold every thread for up to 20 s; anyone else's grep queues,
+spends its own budget waiting, and returns stopped and empty. No per-user cap exists yet.
+Matching is per line of the document's grep text: markdown as `read` shows it, link destinations spelled empty, decoded to
 the text view. Each document's text comes first: collab's `readStoredGrepTexts`
 answers which of a slice of 50 documents have stored text matching what this reader
 sees (current derivation, no active draft for a draft reader, no staged writes of the

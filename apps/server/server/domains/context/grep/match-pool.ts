@@ -9,7 +9,7 @@
  * thread can serve any of them and a terminated thread loses nothing but the request that ran there.
  */
 import { Worker } from "node:worker_threads";
-import type { MatchReply, MatchRequest } from "./match-worker.js";
+import type { MatchReply, MatchRequest, MatchValue } from "./match-worker.js";
 
 /** Matching threads alive at once. Each costs memory, and the cap bounds the CPU that grep may take. */
 const MAX_WORKERS = 4;
@@ -30,7 +30,7 @@ function spawn(): Worker {
   return new Worker(new URL("./match-worker.ts", import.meta.url));
 }
 
-function acquire(signal: AbortSignal | undefined): Promise<Worker> {
+function acquire(signal: AbortSignal): Promise<Worker> {
   const worker = idle.pop() ?? (live < MAX_WORKERS ? spawn() : undefined);
   if (worker) {
     worker.ref();
@@ -38,7 +38,7 @@ function acquire(signal: AbortSignal | undefined): Promise<Worker> {
   }
   return new Promise((resolve, reject) => {
     const turn = (next: Worker) => {
-      signal?.removeEventListener("abort", leave);
+      signal.removeEventListener("abort", leave);
       next.ref();
       resolve(next);
     };
@@ -47,7 +47,7 @@ function acquire(signal: AbortSignal | undefined): Promise<Worker> {
       reject(new GrepStopped());
     };
     waiting.push(turn);
-    signal?.addEventListener("abort", leave, { once: true });
+    signal.addEventListener("abort", leave, { once: true });
   });
 }
 
@@ -70,22 +70,22 @@ function discard(worker: Worker): void {
 }
 
 /** One request on a free thread. Rejects with {@link GrepStopped} when `signal` aborts first. */
-export async function runMatch<Value>(
-  request: MatchRequest,
-  signal: AbortSignal | undefined,
-): Promise<Value> {
-  if (signal?.aborted) throw new GrepStopped();
+export async function runMatch<Op extends MatchRequest["op"]>(
+  request: Extract<MatchRequest, { op: Op }>,
+  signal: AbortSignal,
+): Promise<MatchValue[Op]> {
+  if (signal.aborted) throw new GrepStopped();
   const worker = await acquire(signal);
-  let reply: MatchReply;
+  let reply: MatchReply<Op>;
   try {
-    reply = await new Promise<MatchReply>((resolve, reject) => {
+    reply = await new Promise<MatchReply<Op>>((resolve, reject) => {
       const settle = () => {
         worker.off("message", onMessage);
         worker.off("error", onError);
         worker.off("exit", onExit);
-        signal?.removeEventListener("abort", onAbort);
+        signal.removeEventListener("abort", onAbort);
       };
-      const onMessage = (message: MatchReply) => {
+      const onMessage = (message: MatchReply<Op>) => {
         settle();
         resolve(message);
       };
@@ -98,7 +98,9 @@ export async function runMatch<Value>(
       worker.on("message", onMessage);
       worker.on("error", onError);
       worker.on("exit", onExit);
-      signal?.addEventListener("abort", onAbort, { once: true });
+      signal.addEventListener("abort", onAbort, { once: true });
+      // An abort between the entry check and this listener never fires the listener.
+      if (signal.aborted) return onAbort();
       worker.postMessage(request);
     });
   } catch (cause) {
@@ -107,5 +109,5 @@ export async function runMatch<Value>(
   }
   release(worker);
   if (!reply.ok) throw new Error(reply.error);
-  return reply.value as Value;
+  return reply.value;
 }

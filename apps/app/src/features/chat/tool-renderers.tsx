@@ -106,19 +106,21 @@ function ResultRows({ results }: { results: GrepResultRows }) {
       <p className="border-border-subtle border-b pb-2 text-meta text-ink-subtle">
         {grepCardSummary(results)}
       </p>
-      <ul>
-        {results.rows.map((row, index) => (
-          <li
-            key={`${index}:${row.uri}`}
-            className={cn(
-              "py-[var(--chat-card-pad-y)]",
-              index > 0 && "border-border-subtle border-t",
-            )}
-          >
-            <GrepHit row={row} />
-          </li>
-        ))}
-      </ul>
+      {results.rows.length > 0 ? (
+        <ul>
+          {results.rows.map((row, index) => (
+            <li
+              key={`${index}:${row.uri}`}
+              className={cn(
+                "py-[var(--chat-card-pad-y)]",
+                index > 0 && "border-border-subtle border-t",
+              )}
+            >
+              <GrepHit row={row} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {bound ? <BoundLine>{bound}</BoundLine> : null}
     </div>
   );
@@ -544,10 +546,12 @@ function resultRowsOrNothing(tool: ToolView): ToolExpand | null {
   // `files` IS content. That lets the closed row answer "is there anything
   // here?" by looking at the array, and leaves every section — and the totals
   // scan — for the writer who actually opens it. A settled turn holds a dozen
-  // closed rows; none of them should be parsing grep results.
+  // closed rows; none of them should be parsing grep results. A search that stopped
+  // before it finished opens too, even with no files: its card says it stopped.
   const result = tool.result;
   if (typeof result !== "object" || result === null || Array.isArray(result)) return null;
-  if (!Array.isArray(result.files) || result.files.length === 0) return null;
+  const hasFiles = Array.isArray(result.files) && result.files.length > 0;
+  if (!hasFiles && result.stopped !== true) return null;
   return () => <ResultRows results={normalizeGrepResult(result)} />;
 }
 

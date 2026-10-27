@@ -754,7 +754,7 @@ export class ContextFS implements ContextSchemeAdapter {
           matcher: query.matcher,
           mode: query.mode,
           headLimit: query.headLimit,
-          ...(query.signal ? { signal: query.signal } : {}),
+          signal: query.signal,
           read: async (documentId) => {
             const read = await this.readGrepBlocks(documentId);
             return read.ok ? read : { ok: false, error: this.syncFault(read.error) };
