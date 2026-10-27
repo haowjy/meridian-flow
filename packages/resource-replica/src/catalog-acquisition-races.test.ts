@@ -98,6 +98,7 @@ class MemoryMetadata implements ResourceMetadataStore {
     return structuredClone({
       records: [...this.records.values()],
       folders: [],
+      operations: [],
       catalogs: [...this.catalogs.values()].filter((catalog) => catalog.projectId === project),
     });
   }

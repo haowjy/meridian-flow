@@ -49,6 +49,7 @@ export class ReplicaHarness {
     return structuredClone({
       records: [...this.records.values()],
       folders: [...this.folders.values()],
+      operations: [],
       catalogs: this.checkpoint ? [this.checkpoint] : [],
     });
   }

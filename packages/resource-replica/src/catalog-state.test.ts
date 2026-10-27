@@ -646,6 +646,7 @@ describe("catalog cache reducer", () => {
     let state: ResourceProjectionSnapshot = {
       records: [],
       folders,
+      operations: [],
       catalogs: [planCatalogInstallation({ projectId, records: [], view }).checkpoint],
     };
     const metadata = {
@@ -655,7 +656,12 @@ describe("catalog cache reducer", () => {
         expect(state.catalogs[0]!.revision).toBe(input.expectedRevision);
         const byId = new Map(state.folders.map((f) => [f.handle, f]));
         for (const w of input.folders) byId.set(w.next.handle, w.next);
-        state = { records: [], folders: [...byId.values()], catalogs: [input.next] };
+        state = {
+          records: [],
+          folders: [...byId.values()],
+          operations: [],
+          catalogs: [input.next],
+        };
         return "committed" as const;
       },
     } as unknown as ResourceMetadataStore;

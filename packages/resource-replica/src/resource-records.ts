@@ -275,11 +275,12 @@ export type NamespaceAttempt = {
 
 /**
  * A placement a later one waits on, named by its admission `order` in the journal of `kind` under
- * `handle`. The order is the placement's logical identity: a remint replaces its intent but the
- * replacement inherits the admission, so the reference follows it (`latestAdmittedPlacement`).
+ * `handle` (an operation's handle is its operation id). The order is the placement's logical
+ * identity: a remint replaces its intent but the replacement inherits the admission, so the
+ * reference follows it (`latestAdmittedPlacement`).
  */
 export type PlacementPredecessor = {
-  kind: "resource" | "folder";
+  kind: "resource" | "folder" | "operation";
   handle: string;
   order: number;
   /** The later intent's position names this predecessor's subject, so a failure changes its premise. */
@@ -382,6 +383,24 @@ export type FolderNamespaceWrite = {
   next: FolderNamespaceRecord;
 };
 
+/**
+ * One writer action over several records (a Copy), journaled once under its operation id: the
+ * operation's own intents and attempts, apart from the records it creates. Every intent's `handle`
+ * is the `operationId`, so the generic journal, placement admission and predecessors address an
+ * operation as they do a resource or a folder.
+ */
+export type OperationRecord = {
+  operationId: string;
+  projectId: string;
+  revision: number;
+  intents: readonly NamespaceIntent[];
+};
+
+export type OperationWrite = {
+  expectedRevision: number | null;
+  next: OperationRecord;
+};
+
 /** Persist only checkpoint data; indexes are derived by the catalog reducer. */
 export type ResourceCatalogCheckpoint = Pick<
   CatalogCacheView,
@@ -402,6 +421,7 @@ export type MetadataCommitResult = "committed" | "stale";
 export type ResourceProjectionSnapshot = {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
+  operations: readonly OperationRecord[];
   catalogs: readonly ResourceCatalogCheckpoint[];
 };
 
