@@ -307,8 +307,10 @@ export interface GrepResult {
   files: GrepFile[];
   /** Files that matched, past the limit too. */
   totalFiles: number;
-  /** False when files that need a read went uncounted past the limit: `totalFiles` is a lower bound. */
+  /** False when files that need a read went uncounted past the limit, or the scan stopped: `totalFiles` is a lower bound. */
   exact: boolean;
+  /** True when the signal stopped the scan before the last document; absent otherwise. */
+  stopped?: true;
 }
 
 export type WriteProvenance =

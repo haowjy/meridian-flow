@@ -1,18 +1,19 @@
 /**
  * The scan behind `ContextFS.grep`: in path order, until `headLimit` files have matched.
  *
- * A document with usable stored grep text is matched from that text: a literal prefilter (for
- * case-insensitive patterns) skips it unread when no line can match, and every hit is confirmed
- * line by line. Anything else, and any document whose passages are wanted, is
- * read through the effective hashline reader. Fast-path documents keep being counted past the
- * limit, which costs no reads; slow-path documents past the limit are not read, so the total
- * becomes a lower bound. Past the limit a document is only checked for a match, and the matches
- * are counted only for `count` mode: `content` mode takes its count from the read.
+ * Each document's grep text comes first: the stored text when the caller has a current one,
+ * else the effective read's blocks. One loop over that text decides whether the document
+ * matches and how often. A literal prefilter (for case-insensitive patterns) skips a document
+ * unread when no line can match. Documents past the limit are only checked for a match, and
+ * counted: that costs no read when stored text answers, so a document that needs a read is not
+ * read, and the total becomes a lower bound. `content` mode reads the document to find passages.
  *
  * The scan stops when `signal` aborts (the caller left, or the time budget ran out) and returns
- * what it found with `exact: false`. It yields to the event loop and checks the signal between
- * lines; one line's match can't be interrupted, which the pattern's repeat limit keeps short.
+ * what it found with `exact: false` and `stopped: true`. It yields to the event loop and checks
+ * the signal between lines; one line's match can't be interrupted, which the pattern's repeat
+ * limit keeps short.
  */
+import { grepText } from "@meridian/agent-edit";
 import {
   type DocumentMatch,
   type GrepBlock,
@@ -33,7 +34,7 @@ const STORED_SLICE = 50;
 
 /** A document read through the effective reader. */
 export interface GrepRead<Shown> {
-  blocks: GrepBlock[];
+  blocks: readonly GrepBlock[];
   revision: string | null;
   /** The host-only link facts of the passages `match` returned. */
   shownOf(match: DocumentMatch): Shown | undefined;
@@ -57,8 +58,10 @@ export interface ScanResult<Shown> {
   hits: ScanHit<Shown>[];
   /** Files that matched, past the limit too. */
   totalFiles: number;
-  /** False when documents that need a read went uncounted past the limit. */
+  /** False when documents that need a read went uncounted past the limit, or the scan stopped. */
   exact: boolean;
+  /** True when the signal aborted the scan before the last document. */
+  stopped: boolean;
 }
 
 export type ScanOutcome<Value, Fault> = { ok: true; value: Value } | { ok: false; error: Fault };
@@ -79,6 +82,7 @@ export async function scanDocuments<Shown, Fault>(input: {
   const hits: ScanHit<Shown>[] = [];
   let totalFiles = 0;
   let exact = true;
+  let stopped = false;
   let sliceStart = performance.now();
   const pace = async () => {
     if (performance.now() - sliceStart < YIELD_AFTER_MS) return;
@@ -86,18 +90,13 @@ export async function scanDocuments<Shown, Fault>(input: {
     sliceStart = performance.now();
     if (input.signal?.aborted) throw new ScanStopped();
   };
-  const hasMatch = async (text: string) => {
-    for (const line of text.split("\n")) {
-      await pace();
-      if (input.matcher.matchesLine(line)) return true;
-    }
-    return false;
-  };
-  const countMatches = async (text: string) => {
+  /** Matches in the text; with `all` false it stops at the first, which is all a hit needs. */
+  const countMatches = async (text: string, all: boolean) => {
     let count = 0;
     for (const line of text.split("\n")) {
       await pace();
-      count += input.matcher.spans(line).length;
+      if (all) count += input.matcher.spans(line).length;
+      else if (input.matcher.matchesLine(line)) return 1;
     }
     return count;
   };
@@ -111,42 +110,60 @@ export async function scanDocuments<Shown, Fault>(input: {
           input.documents.slice(index, index + STORED_SLICE).map(({ id }) => id),
         );
       const full = hits.length >= input.headLimit;
-      const text = stored.get(document.id);
-      if (text !== undefined) {
-        if (input.matcher.test && !input.matcher.test(text)) continue;
-        if (!(await hasMatch(text))) continue;
-        totalFiles += 1;
-        if (full) continue;
-        if (input.mode !== "content") {
-          const matchCount = input.mode === "count" ? await countMatches(text) : 0;
-          hits.push({ document, match: null, matchCount, revision: null });
+      // A document's read, once, with the grep text of each of its blocks.
+      const loaded: { value?: { read: GrepRead<Shown>; texts: string[] } } = {};
+      const load = async (): Promise<ScanOutcome<NonNullable<typeof loaded.value>, Fault>> => {
+        if (loaded.value) return { ok: true, value: loaded.value };
+        const result = await input.read(document.id);
+        if (!result.ok) return result;
+        loaded.value = {
+          read: result.value,
+          texts: result.value.blocks.map((block) => grepText([block.destinationFree])),
+        };
+        return { ok: true, value: loaded.value };
+      };
+      let text = stored.get(document.id);
+      if (text === undefined) {
+        if (full) {
+          // Counting it would take a read.
+          exact = false;
           continue;
         }
-      } else if (full) {
-        // Counting it would take a read.
-        exact = false;
+        const result = await load();
+        if (!result.ok) return result;
+        text = result.value.texts.join("\n");
+      }
+      if (input.matcher.test && !input.matcher.test(text)) continue;
+      const matchCount = await countMatches(text, !full && input.mode !== "files_with_matches");
+      if (matchCount === 0) continue;
+      totalFiles += 1;
+      if (full) continue;
+      if (input.mode !== "content") {
+        hits.push({
+          document,
+          match: null,
+          matchCount: input.mode === "count" ? matchCount : 0,
+          revision: loaded.value?.read.revision ?? null,
+        });
         continue;
       }
-      const read = await input.read(document.id);
-      if (!read.ok) return read;
-      const match = await grepBlocks(read.value.blocks, input.matcher, pace);
-      if (!match) {
-        if (text !== undefined) totalFiles -= 1;
-        continue;
-      }
-      if (text === undefined) totalFiles += 1;
-      const shown = input.mode === "content" ? read.value.shownOf(match) : undefined;
+      const result = await load();
+      if (!result.ok) return result;
+      const { read, texts } = result.value;
+      const match = await grepBlocks(read.blocks, texts, input.matcher, pace);
+      const shown = read.shownOf(match);
       hits.push({
         document,
         match,
-        matchCount: match.matchCount,
-        revision: read.value.revision,
+        matchCount,
+        revision: read.revision,
         ...(shown ? { shown } : {}),
       });
     }
   } catch (cause) {
     if (!(cause instanceof ScanStopped)) throw cause;
     exact = false;
+    stopped = true;
   }
-  return { ok: true, value: { hits, totalFiles, exact } };
+  return { ok: true, value: { hits, totalFiles, exact, stopped } };
 }

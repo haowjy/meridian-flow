@@ -5,7 +5,6 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import { splitHashline } from "@meridian/agent-edit";
 import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   classifyFiletype,
@@ -39,7 +38,6 @@ import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
-import type { GrepBlock } from "../../grep/matcher.js";
 import type {
   AdapterDeleteResult,
   AdapterFault,
@@ -113,7 +111,7 @@ export interface ContextFSDeps {
   documentSync: MarkdownDocumentStore &
     Pick<
       DraftPeerShadowAccess,
-      "readEffectiveHashlines" | "readEffectiveMarkdown" | "isStagedByResponse"
+      "readEffectiveHashlines" | "readEffectiveMarkdown" | "readStoredGrepTexts"
     >;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
@@ -734,17 +732,12 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!first) return Ok({ files: [], totalFiles: 0, exact: true });
 
     const view = this.threadView();
-    // Writes this reply staged to a live document stay in memory until it commits and leave no
-    // draft row, so the stored text no longer describes what this reader sees.
-    const stagedBy = view?.responseId;
     const stored = async (ids: string[]) => {
-      const texts = await this.store.readGrepTexts(ids);
-      if (stagedBy) {
-        for (const id of ids) {
-          if (this.documentSync.isStagedByResponse(stagedBy, id as DocumentId)) texts.delete(id);
-        }
-      }
-      return texts;
+      const texts = await this.documentSync.readStoredGrepTexts({
+        ...(view ?? { destination: "live" as const }),
+        documentIds: ids as DocumentId[],
+      });
+      return new Map<string, string>(texts);
     };
     // One source has one project association, including personal and Work sources; its
     // chapters' reads join this snapshot, so it is read in their thread.
@@ -768,7 +761,7 @@ export class ContextFS implements ContextSchemeAdapter {
           },
         });
         if (!scanned.ok) return scanned;
-        const { hits, totalFiles, exact } = scanned.value;
+        const { hits, totalFiles, exact, stopped } = scanned.value;
         const files = hits.map(
           ({ document, match, matchCount, revision, shown }): AdapterGrepFile => ({
             path: document.path,
@@ -780,7 +773,7 @@ export class ContextFS implements ContextSchemeAdapter {
             ...(shown ? { shown } : {}),
           }),
         );
-        return Ok({ files, totalFiles, exact });
+        return Ok({ files, totalFiles, exact, ...(stopped ? { stopped } : {}) });
       },
     );
   }
@@ -824,22 +817,13 @@ export class ContextFS implements ContextSchemeAdapter {
       documentId: documentId as DocumentId,
     });
     if (!read.ok) return read;
-    const { content, destinationFree, links, holder, revision } = read.value;
-    const blocks = content.map((entry, index): GrepBlock => {
-      const parsed = splitHashline(entry);
-      const body = parsed?.body ?? entry;
-      return {
-        body,
-        destinationFree: destinationFree[index] ?? body,
-        ...(parsed?.hash ? { hash: parsed.hash } : {}),
-      };
-    });
+    const { blocks, holder, revision } = read.value;
     return Ok({
       blocks,
       revision,
       shownOf: ({ blocks: passageBlocks }) => {
         // Only the returned passages can be shown, never the matches past the cap.
-        const passages = passageBlocks.map((block) => links[block] ?? []);
+        const passages = passageBlocks.map((block) => blocks[block]?.links ?? []);
         return holder.uri && passages.some((facts) => facts.length > 0)
           ? { holderUri: holder.uri, view: holder.view, passages }
           : undefined;

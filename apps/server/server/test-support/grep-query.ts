@@ -1,6 +1,5 @@
 /** A grep query for tests: one literal-or-regex pattern, every document readable. */
-import { compileGrep } from "../domains/context/grep/matcher.js";
-import type { GrepQuery } from "../domains/context/index.js";
+import { compileGrep, type GrepQuery } from "../domains/context/index.js";
 
 export function grepQuery(
   pattern: string,

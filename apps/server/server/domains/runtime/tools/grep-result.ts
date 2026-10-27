@@ -7,15 +7,7 @@
  */
 import { toHashline } from "@meridian/agent-edit";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
-
-/** One passage of a hit. `anchor` is where its first match sits in `excerpt`. */
-export interface GrepPassage {
-  excerpt: string;
-  blockHash?: string;
-  anchor?: { start: number; end: number };
-  /** The writer's text of that match, for the app's door; never shown to the model. */
-  term?: string;
-}
+import type { GrepPassage } from "../../context/index.js";
 
 export interface GrepHit {
   uri: string;
@@ -32,6 +24,8 @@ export interface GrepToolResult {
   totalFiles: number;
   /** False when `totalFiles` is a lower bound, or the scan stopped before the last document. */
   exact: boolean;
+  /** True when the time budget or the caller ended the scan early. */
+  stopped?: true;
 }
 
 /** Characters kept either side of the match. */
@@ -70,7 +64,7 @@ export function renderGrepResult(value: JsonValue, input: JsonObject): string {
  * for compaction (the planner decides which changed).
  */
 export function renderGrepFiles(
-  { files, totalFiles, exact }: GrepToolResult,
+  { files, totalFiles, exact, stopped }: GrepToolResult,
   input: JsonObject,
   cleared: (hit: GrepHit) => boolean = () => false,
 ): string {
@@ -100,6 +94,8 @@ export function renderGrepFiles(
     return [head, ...passages].join("\n");
   });
   const body = lines.join(mode === "files_with_matches" || mode === "count" ? "\n" : "\n\n");
+  if (stopped)
+    return `${body}\n\nThe search stopped before it finished, so these may not be all the matches. Narrow with path or glob.`;
   return totalFiles > files.length || !exact
     ? `${body}\n\n${files.length} of ${exact ? "" : "at least "}${totalFiles} files. Narrow with path or glob, or raise head_limit.`
     : body;

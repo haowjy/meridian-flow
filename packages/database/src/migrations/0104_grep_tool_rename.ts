@@ -82,8 +82,21 @@ function renameInObject(object: JsonObject | undefined, keys: readonly string[])
   return changed;
 }
 
-/** One tool call or result block of the old tool, in the new tool's terms. */
-function rewriteBlock(content: JsonObject): boolean {
+/** Results were the array of files; they are now the files with their total. */
+function rewriteResult(content: JsonObject): boolean {
+  let changed = false;
+  for (const key of ["output", "result"]) {
+    const value = content[key];
+    if (Array.isArray(value)) {
+      content[key] = { files: value, totalFiles: value.length, exact: true };
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** A call of the old tool, in the new tool's terms. */
+function rewriteCall(content: JsonObject): boolean {
   if (content.toolName !== "search") return false;
   content.toolName = "grep";
   if (isObject(content.input)) {
@@ -94,12 +107,6 @@ function rewriteBlock(content: JsonObject): boolean {
       ...(scope === undefined ? {} : { path: scope }),
       "-i": true,
     };
-  }
-  // Results were the array of files; they are now the files with their total.
-  for (const key of ["output", "result"]) {
-    const value = content[key];
-    if (Array.isArray(value))
-      content[key] = { files: value, totalFiles: value.length, exact: true };
   }
   return true;
 }
@@ -133,14 +140,35 @@ export async function migrate(sql: postgres.ReservedSql): Promise<void> {
 
 async function renameBlocks(sql: postgres.ReservedSql): Promise<void> {
   type Row = { id: string; content: JsonObject };
+  const write = (rows: Row[]) => sql`UPDATE turn_blocks AS t SET content = v.content
+      FROM jsonb_to_recordset(${sql.json(rows)}) AS v(id uuid, content jsonb) WHERE t.id = v.id`;
+  const fetch = (batch: string[]) =>
+    sql<Row[]>`SELECT id, content FROM turn_blocks WHERE id = ANY(${batch}::uuid[])`;
+  // A result block names its call by id only, so its rows are found through the call, which
+  // `grep` also covers: a crash after the calls were renamed still finds their results, and a
+  // result of `grep` that is already an object is left alone.
+  await rewrite(
+    idsOf(
+      await sql<{ id: string }[]>`SELECT r.id FROM turn_blocks r
+        WHERE r.block_type = 'tool_result'
+          AND (jsonb_typeof(r.content->'result') = 'array' OR jsonb_typeof(r.content->'output') = 'array')
+          AND EXISTS (
+            SELECT 1 FROM turn_blocks u
+            WHERE u.turn_id = r.turn_id AND u.block_type = 'tool_use'
+              AND u.content->>'toolName' IN ('search', 'grep')
+              AND u.content->>'toolCallId' = r.content->>'toolCallId')`,
+    ),
+    fetch,
+    ({ id, content }) => (rewriteResult(content) ? { id, content } : null),
+    write,
+  );
   await rewrite(
     idsOf(
       await sql<{ id: string }[]>`SELECT id FROM turn_blocks WHERE content->>'toolName' = 'search'`,
     ),
-    (batch) => sql<Row[]>`SELECT id, content FROM turn_blocks WHERE id = ANY(${batch}::uuid[])`,
-    ({ id, content }) => (rewriteBlock(content) ? { id, content } : null),
-    (rows) => sql`UPDATE turn_blocks AS t SET content = v.content
-      FROM jsonb_to_recordset(${sql.json(rows)}) AS v(id uuid, content jsonb) WHERE t.id = v.id`,
+    fetch,
+    ({ id, content }) => (rewriteCall(content) ? { id, content } : null),
+    write,
   );
   // A run live across the deploy names its current tool.
   await sql`UPDATE thread_run_leases

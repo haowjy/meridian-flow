@@ -930,6 +930,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const found: GrepFile[] = [];
       let totalFiles = 0;
       let exact = true;
+      let stopped = false;
       for (const [scheme, { adapter, authority }] of await contextualSources()) {
         if (!adapter.capabilities.searchable) continue;
         const result = await callAdapter(`${scheme}://`, () =>
@@ -939,8 +940,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         for (const file of result.value.files) found.push(toGrepFile(scheme, authority, file));
         totalFiles += result.value.totalFiles;
         exact &&= result.value.exact;
+        stopped ||= result.value.stopped === true;
       }
-      return Ok({ files: found, totalFiles, exact });
+      return Ok({ files: found, totalFiles, exact, ...(stopped ? { stopped } : {}) });
     },
   };
 }

@@ -166,15 +166,20 @@ async function harness(
   // Each plain read shows a fact of its own, so a retried read is told apart.
   let plainReads = 0;
   const documentSync = {
+    readStoredGrepTexts: async () => new Map(),
     readEffectiveHashlines: async ({ documentId }: { documentId: string }) => ({
       ok: true,
       value: {
-        content: options.search?.entries ?? searchEntries,
-        destinationFree: (options.search?.entries ?? searchEntries).map((entry) =>
-          entry.slice(entry.indexOf("|") + 1),
-        ),
+        blocks: (options.search?.entries ?? searchEntries).map((entry, index) => {
+          const body = entry.slice(entry.indexOf("|") + 1);
+          return {
+            hash: entry.slice(0, entry.indexOf("|")),
+            body,
+            destinationFree: body,
+            links: (options.search?.links ?? searchLinks)[index] ?? [],
+          };
+        }),
         revision: "r1",
-        links: options.search?.links ?? searchLinks,
         holder: { uri: `user://${names[documentId]}`, view: { kind: "live" } },
       },
     }),

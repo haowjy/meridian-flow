@@ -30,6 +30,12 @@ export type DocumentDerivationStore = {
     page?: { after?: DocumentId; limit: number },
   ): Promise<DocumentId[]>;
   /**
+   * Stored grep text of the documents whose derived outputs are current. With `ignoreDrafts`
+   * false, a document with an active draft is left out too: a draft reader sees the draft, not
+   * the live text.
+   */
+  grepTexts(ids: DocumentId[], view: { ignoreDrafts: boolean }): Promise<Map<DocumentId, string>>;
+  /**
    * Registers the client-minted ahead refs of this holder's certified rows (contract §11.3):
    * awaited outside a transaction, after commit inside one. Failures are logged, never thrown;
    * the sweep picks them up.

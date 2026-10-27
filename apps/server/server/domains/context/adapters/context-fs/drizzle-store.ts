@@ -7,19 +7,12 @@
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import {
-  documentDerivations,
-  documentDrafts,
-  documentMarkdownProjections,
-  documents,
-  documentYjsHeads,
-} from "@meridian/database/schema";
-import { and, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
+import { documentMarkdownProjections } from "@meridian/database/schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
-import { DOCUMENT_EXTRACTOR_VERSION } from "../../../collab/domain/ports/document-derivations.js";
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
@@ -324,46 +317,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       .from(documentMarkdownProjections)
       .where(inArray(documentMarkdownProjections.documentId, ids as DocumentId[]));
     return new Map(rows.map((row) => [row.documentId, row.markdown]));
-  }
-
-  async readGrepTexts(ids: string[]): Promise<Map<string, string>> {
-    if (!ids.length) return new Map();
-    const rows = await this.db
-      .select({
-        id: documentMarkdownProjections.documentId,
-        text: documentMarkdownProjections.grepText,
-      })
-      .from(documentMarkdownProjections)
-      .innerJoin(documents, eq(documents.id, documentMarkdownProjections.documentId))
-      .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
-      .innerJoin(documentDerivations, eq(documentDerivations.documentId, documents.id))
-      .where(
-        and(
-          inArray(documentMarkdownProjections.documentId, ids as DocumentId[]),
-          sql`${documentMarkdownProjections.grepText} is not null`,
-          // `stale` in drizzle-document-derivations.ts, negated: the projection describes the
-          // document as it is now.
-          eq(documentDerivations.projectionGeneration, documentYjsHeads.authorityGeneration),
-          eq(
-            documentDerivations.projectionAdmissionSequence,
-            documentYjsHeads.nextAdmissionSequence,
-          ),
-          eq(documentDerivations.projectionLocationVersion, documents.locationVersion),
-          eq(documentDerivations.projectionExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-          notExists(
-            this.db
-              .select({ one: sql`1` })
-              .from(documentDrafts)
-              .where(
-                and(
-                  eq(documentDrafts.documentId, documents.id),
-                  eq(documentDrafts.status, "active"),
-                ),
-              ),
-          ),
-        ),
-      );
-    return new Map(rows.flatMap((row) => (row.text === null ? [] : [[row.id, row.text] as const])));
   }
 
   async listTree(
