@@ -192,7 +192,7 @@ else
       // A pending switch is the writer's mode: the fork starts in it, the source stays applied.
       await fixture.runtime.delivery.enqueueControl({
         threadId: fixture.source.id as never,
-        actorId: ids.userId,
+        provenance: { kind: "writer", actorId: ids.userId },
         id: crypto.randomUUID(),
         control: { kind: "write_mode", mode: "draft" },
       });

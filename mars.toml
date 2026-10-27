@@ -5,8 +5,8 @@ url = "https://github.com/haowjy/meridian-dev-workflow"
 targets = [
     ".opencode",
     ".pi",
-    ".codex",
     ".claude",
+    ".codex",
 ]
 models_cache_ttl_hours = 24
 
@@ -19,5 +19,5 @@ agents = [
     "reviewer",
     "prober",
     "coder",
-    "subagent"
+    "subagent",
 ]

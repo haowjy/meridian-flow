@@ -135,6 +135,10 @@ const commonRowFields = {
   queued: "value",
 } as const;
 const turnRowFields = commonRowFields satisfies Record<keyof RowOf<"turn">, RowComparison>;
+const deliveryRowFields = {
+  ...commonRowFields,
+  event: "reference",
+} satisfies Record<keyof RowOf<"delivery">, RowComparison>;
 const compactionRowFields = commonRowFields satisfies Record<
   keyof RowOf<"compaction">,
   RowComparison
@@ -177,6 +181,8 @@ function sameViewRow(left: ViewRow, right: ViewRow): boolean {
   switch (left.kind) {
     case "turn":
       return right.kind === "turn" && sameRowFields(left, right, turnRowFields);
+    case "delivery":
+      return right.kind === "delivery" && sameRowFields(left, right, deliveryRowFields);
     case "compaction":
       return right.kind === "compaction" && sameRowFields(left, right, compactionRowFields);
     case "write-mode":
@@ -261,7 +267,10 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
           occurrence,
         },
         renderKey: turn.id,
-        deliveries: groupsOf(model.deliveryEventsByAssistantTurnId.get(turn.id)),
+        deliveries:
+          row.kind === "delivery"
+            ? groupsOf([row.event])
+            : groupsOf(model.deliveryEventsByAssistantTurnId.get(turn.id)),
         continuing: model.continuing[index] ?? false,
         movedPast: model.movedPast(turn),
         response: row.kind === "turn" && turn.role !== "user" ? responseOf(parts ?? [turn]) : null,
