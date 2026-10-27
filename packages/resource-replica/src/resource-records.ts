@@ -140,6 +140,12 @@ export function destinationLocation(
     : null;
 }
 
+/**
+ * The operation that made a record: the record is one root of it (a Copy), and the operation's
+ * receipt, not a create of the record's own, gives it its first place (`first-place.ts`).
+ */
+export type CopiedBy = { operationId: string };
+
 export type ResourceDescriptor = ResourceKey & {
   revision: number;
   identity: { documentId: string; revision: number };
@@ -163,6 +169,8 @@ export type ResourceDescriptor = ResourceKey & {
   materialization?: DocumentMaterialization;
   /** What the server holds under this document id, as its answers prove (`server-hold.ts`). */
   serverHold: ServerHold;
+  /** Set when an operation made this document; absent for one that holds its own create. */
+  copiedBy?: CopiedBy;
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
@@ -360,6 +368,8 @@ export type FolderNamespaceRecord = ResourceKey & {
   revision: number;
   /** What the server holds under `folderId`, as its answers prove (`server-hold.ts`). */
   serverHold: ServerHold;
+  /** Set when an operation made this folder; absent for one that holds its own create. */
+  copiedBy?: CopiedBy;
   /** Null while the folder is local: its first placement has not been accepted. */
   canonical: ResourceLocation | null;
   /** Parent identity installed atomically with the canonical location. */
@@ -401,6 +411,11 @@ export type OperationWrite = {
   next: OperationRecord;
 };
 
+/** What the replica needs of an operation from a record's side: its journal, by id. */
+export interface OperationReader {
+  readOperation(operationId: string): Promise<OperationRecord | null>;
+}
+
 /** Persist only checkpoint data; indexes are derived by the catalog reducer. */
 export type ResourceCatalogCheckpoint = Pick<
   CatalogCacheView,
@@ -426,7 +441,7 @@ export type ResourceProjectionSnapshot = {
 };
 
 /** All mutation results mean outer commit. Network, locks and Yjs work stay outside these calls. */
-export interface ResourceMetadataStore {
+export interface ResourceMetadataStore extends OperationReader {
   readonly accountId: string;
   readResource(key: ResourceKey): Promise<ResourceRecord | null>;
   /** Reads one resource only when this project's intents or catalog expose it. */

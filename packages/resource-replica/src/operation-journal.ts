@@ -15,6 +15,7 @@ import {
 import type {
   FolderNamespaceRecord,
   MetadataCommitResult,
+  OperationReader,
   OperationRecord,
   OperationWrite,
   ResourceNamespaceLock,
@@ -23,9 +24,8 @@ import type {
 } from "./resource-records";
 
 /** Browser persistence implements this beside its file and folder journals, in the same account owner. */
-export interface OperationStore {
+export interface OperationStore extends OperationReader {
   readonly accountId: string;
-  readOperation(operationId: string): Promise<OperationRecord | null>;
   commitOperation(write: OperationWrite): Promise<MetadataCommitResult>;
   /** Drops a retired operation; stale when it changed since `revision` was read. */
   retireOperation(operationId: string, revision: number): Promise<MetadataCommitResult>;

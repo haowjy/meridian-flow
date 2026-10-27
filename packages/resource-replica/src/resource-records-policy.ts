@@ -1,12 +1,18 @@
 /** Journal invariants shared by storage adapters; attempts are immutable once submitted. */
 import { newerCanonicalObservation } from "./canonical-observation";
+import { refreshWitness } from "./first-place";
 import { validateNamespaceJournal } from "./namespace-journal-policy";
-import type { ResourceRecord } from "./resource-records";
+import type { OperationRecord, ResourceRecord } from "./resource-records";
 import { deleteNeedsServer } from "./server-hold";
 
+/**
+ * `operation` is the journal of the operation `next.resource.copiedBy` names, which the caller
+ * reads inside its transaction: its receipt can refresh a document that holds no create of its own.
+ */
 export function validateResourceRecordUpdate(
   previous: ResourceRecord | null,
   next: ResourceRecord,
+  operation: OperationRecord | null = null,
 ): void {
   const resource = next.resource;
   if (next.intents.some((intent) => intent.desired.kind === "set-folder-location"))
@@ -94,7 +100,8 @@ export function validateResourceRecordUpdate(
         intent.state !== "superseded" &&
         intent.state !== "settled-locally",
     );
-  if (executableCreate && resource.lifecycle.kind === "local" && !eligibility)
+  // A document an operation made has no create of its own to be eligible for.
+  if (executableCreate && resource.lifecycle.kind === "local" && !eligibility && !resource.copiedBy)
     throw new Error("Local creation requires an explicit eligibility witness");
   const previousEligibility = previous?.resource.obligations.createEligibility;
   if (
@@ -162,19 +169,15 @@ export function validateResourceRecordUpdate(
     if (!createdLocalContent && !acknowledgedExactCache)
       throw new Error("Session adoption requires created or acquired exact content");
   }
-  if (resource.obligations.canonicalRefresh) {
-    const operationId = resource.obligations.canonicalRefresh.operationId;
-    const source = next.intents.some((intent) =>
-      intent.attempts.some(
-        (attempt) =>
-          attempt.request.kind === "move" &&
-          attempt.outcome?.kind === "operation" &&
-          attempt.outcome.receipt.operationId === operationId &&
-          attempt.outcome.receipt.result.ok,
-      ),
-    );
-    if (!source) throw new Error("Canonical refresh requires a successful move receipt");
-  }
+  if (
+    resource.obligations.canonicalRefresh &&
+    !refreshWitness(
+      { intents: next.intents, copiedBy: resource.copiedBy },
+      operation,
+      resource.obligations.canonicalRefresh.operationId,
+    )
+  )
+    throw new Error("Canonical refresh requires a successful move receipt");
   validateNamespaceJournal({
     terminal: resource.lifecycle.kind === "terminal",
     previous: previous ? { handle: previous.resource.handle, intents: previous.intents } : null,

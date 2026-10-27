@@ -149,6 +149,7 @@ it.each<NamespaceIdentityAvailability>([
       accountId: "account",
       readFolder: async () => record,
       readFolders: async () => [record],
+      readOperation: async () => null,
       commitFolder: commit,
     },
     transport: {

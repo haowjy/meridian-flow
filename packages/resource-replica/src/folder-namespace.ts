@@ -6,6 +6,7 @@ import type {
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation, newerCanonicalObservation } from "./canonical-observation";
+import { firstPlaceWitnessed, originOperation, refreshWitness } from "./first-place";
 import {
   namespaceRepairDestination,
   resolveUnavailableNamespace,
@@ -13,6 +14,7 @@ import {
   undoLocalDeletion,
   validateNamespaceJournal,
 } from "./namespace-journal-policy";
+import { namespaceReceiptIs } from "./namespace-receipts";
 import { committedResourceDeletion, LOCAL_DELETION_UNDO_MS } from "./resource-deletion";
 import {
   awaitsRemint,
@@ -30,7 +32,6 @@ import {
   type NamespaceReconcileResult,
   namespaceAttemptWithOutcome,
   namespaceOutcomeMatches,
-  namespaceReceiptIs,
   reconcileNamespaceJournal,
 } from "./resource-namespace";
 import type {
@@ -43,6 +44,8 @@ import type {
   NamespaceIntent,
   NamespaceOutcome,
   NamespaceRequest,
+  OperationReader,
+  OperationRecord,
   ParentRef,
   PlacementAdmission,
   ResourceDestination,
@@ -63,7 +66,7 @@ import { moveOwnerFields, resourceContextAuthority } from "./resource-work-autho
 import { deleteNeedsServer, holdAfterAttempt } from "./server-hold";
 
 /** Browser persistence implements this alongside its file journal, in the same account owner. */
-export interface FolderNamespaceStore {
+export interface FolderNamespaceStore extends OperationReader {
   readonly accountId: string;
   readFolder(key: ResourceKey): Promise<FolderNamespaceRecord | null>;
   readFolders(projectId: string): Promise<readonly FolderNamespaceRecord[]>;
@@ -391,9 +394,14 @@ export function planFolderLocation(input: {
   };
 }
 
+/**
+ * `operation` is the journal of the operation `next.copiedBy` names, which the caller reads inside
+ * its transaction: its receipt can place or refresh a folder that holds no create of its own.
+ */
 export function validateFolderNamespaceUpdate(
   previous: FolderNamespaceRecord | null,
   next: FolderNamespaceRecord,
+  operation: OperationRecord | null = null,
 ): void {
   if (next.revision !== (previous?.revision ?? 0) + 1)
     throw new Error("Invalid folder namespace revision");
@@ -490,31 +498,22 @@ export function validateFolderNamespaceUpdate(
     next.observationVersion !== undefined ||
     next.canonicalRefresh ||
     next.terminal ||
-    !next.intents.some((intent) => intent.desired.kind === "set-folder-location")
+    // A folder with no place holds its own create, or is the root of an operation that will place it.
+    (!next.copiedBy &&
+      !next.intents.some((intent) => intent.desired.kind === "set-folder-location"))
   )
     throw new Error("A local folder holds its create and no server observation");
-  // A folder the server holds has a place; it gains one only from its accepted create.
+  // A folder the server holds has a place; it gains one only from its accepted answer.
   if (previous?.canonical && !next.canonical)
     throw new Error("A folder cannot lose its canonical place");
   if (
     previous &&
     !previous.canonical &&
     next.canonical &&
-    !next.intents.some((intent) => intent.attempts.some((a) => a.outcome?.kind === "create-folder"))
+    !firstPlaceWitnessed(next, operation, next.folderId)
   )
     throw new Error("A local folder gains a place only from its accepted create");
-  if (
-    next.canonicalRefresh &&
-    !next.intents.some((intent) =>
-      intent.attempts.some(
-        (attempt) =>
-          attempt.outcome?.kind === "operation" &&
-          attempt.outcome.receipt.operationId === next.canonicalRefresh?.operationId &&
-          attempt.outcome.receipt.command.kind === "move" &&
-          attempt.outcome.receipt.result.ok,
-      ),
-    )
-  )
+  if (next.canonicalRefresh && !refreshWitness(next, operation, next.canonicalRefresh.operationId))
     throw new Error("Folder refresh requires a successful move receipt");
 }
 
@@ -882,18 +881,16 @@ export function reconcileFolderNamespace(input: {
     refresh: async (record) => {
       const barrier = record.canonicalRefresh;
       if (!barrier) return null;
-      const intent = record.intents.find((i) =>
-        i.attempts.some(
-          (a) =>
-            (a.request.kind === "move" || a.request.kind === "delete") &&
-            a.request.body.operationId === barrier.operationId,
-        ),
+      const witness = refreshWitness(
+        record,
+        await originOperation(record, input.metadata),
+        barrier.operationId,
       );
-      if (!intent) return null;
+      if (!witness) return null;
       return installFolderNamespaceAvailability(
         record,
         barrier.operationId,
-        await input.transport.lookupIdentity(intent.projectId, {
+        await input.transport.lookupIdentity(witness.projectId, {
           kind: "folder",
           id: record.folderId,
         }),

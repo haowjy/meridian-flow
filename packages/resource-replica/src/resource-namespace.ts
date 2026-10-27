@@ -6,12 +6,13 @@ import {
 } from "@meridian/contracts/context-uri";
 import type {
   ContextCreateDestination,
-  ContextOperationReceipt,
   CreateUntitledContextDocumentResponse,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation } from "./canonical-observation";
+import { originOperation, refreshWitness } from "./first-place";
 import { resolveUnavailableNamespace, settleNamespaceIntent } from "./namespace-journal-policy";
+import { namespaceReceiptIs } from "./namespace-receipts";
 import type { PlacementVerdict } from "./placement-journal";
 import { committedResourceDeletion, settleDeletionLocally } from "./resource-deletion";
 import { namespaceIntentOutcome } from "./resource-intent-policy";
@@ -39,10 +40,6 @@ import { deleteNeedsServer, holdAfterAttempt } from "./server-hold";
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
   NamespaceAttempt,
   { request: { kind: Kind } }
->;
-type ReceiptOf<Kind extends ContextOperationReceipt["command"]["kind"]> = Extract<
-  ContextOperationReceipt,
-  { command: { kind: Kind } }
 >;
 
 export type NamespaceAttemptIds = Readonly<{ attemptId: string; operationId: string }>;
@@ -407,13 +404,6 @@ function attemptIs<Kind extends NamespaceRequest["kind"]>(
   return attempt.request.kind === kind;
 }
 
-export function namespaceReceiptIs<Kind extends ContextOperationReceipt["command"]["kind"]>(
-  receipt: ContextOperationReceipt,
-  kind: Kind,
-): receipt is ReceiptOf<Kind> {
-  return receipt.command.kind === kind;
-}
-
 export function namespaceAttemptWithOutcome(
   attempt: NamespaceAttempt,
   outcome: NamespaceOutcome,
@@ -761,18 +751,17 @@ export function reconcileResourceNamespace(input: {
     refresh: async (record) => {
       const barrier = record.resource.obligations.canonicalRefresh;
       if (!barrier) return null;
-      const intent = record.intents.find((i) =>
-        i.attempts.some(
-          (a) =>
-            (a.request.kind === "move" || a.request.kind === "delete") &&
-            a.request.body.operationId === barrier.operationId,
-        ),
+      const origin = { intents: record.intents, copiedBy: record.resource.copiedBy };
+      const witness = refreshWitness(
+        origin,
+        await originOperation(origin, input.metadata),
+        barrier.operationId,
       );
-      if (!intent) return null;
+      if (!witness) return null;
       return installNamespaceAvailability(
         record,
         barrier.operationId,
-        await input.transport.lookupIdentity(intent.projectId, {
+        await input.transport.lookupIdentity(witness.projectId, {
           kind: "file",
           id: record.resource.identity.documentId,
         }),

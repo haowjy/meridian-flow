@@ -6,6 +6,7 @@ import type {
   FolderNamespaceStore,
   FolderNamespaceWrite,
   NamespaceIntent,
+  OperationReader,
   OperationRecord,
   OperationStore,
   OperationWrite,
@@ -24,6 +25,7 @@ import {
   catalogScopeBelongsToProject,
   folderDeletionSettlement,
   holdAfterAttempt,
+  originOperation,
   planFolderDeletionResources,
   planFolderRemintDependents,
   resourceForDocumentIdentity,
@@ -168,6 +170,10 @@ export class IndexedDbResourceMetadata
   private readonly meta: Table<StoredMeta, string>;
   private readonly inFlight = new Set<Promise<unknown>>();
   private readonly projectionListeners = new Map<symbol, ProjectionListener>();
+  /** Reads an operation inside the caller's transaction, for the record validators. */
+  private readonly operationReader: OperationReader = {
+    readOperation: async (operationId) => (await this.operations.get(operationId)) ?? null,
+  };
   private projectionStop: (() => void) | null = null;
   private projectionRetry: ReturnType<typeof setTimeout> | null = null;
   private projectionSnapshot: AccountProjectionSnapshot | null = null;
@@ -461,6 +467,27 @@ export class IndexedDbResourceMetadata
       await this.meta.put({ key: "placementHighWater", value: highest });
   }
 
+  /** A record's update is checked with the journal of the operation that made it, when one did. */
+  private async validateResource(previous: ResourceRecord | null, next: ResourceRecord) {
+    const origin = { intents: next.intents, copiedBy: next.resource.copiedBy };
+    validateResourceRecordUpdate(
+      previous,
+      next,
+      await originOperation(origin, this.operationReader),
+    );
+  }
+
+  private async validateFolder(
+    previous: FolderNamespaceRecord | null,
+    next: FolderNamespaceRecord,
+  ) {
+    validateFolderNamespaceUpdate(
+      previous,
+      next,
+      await originOperation(next, this.operationReader),
+    );
+  }
+
   private async isCurrent(writes: readonly ResourceWrite[]): Promise<boolean> {
     const keys = new Set<string>();
     const intentKeys = new Set<string>();
@@ -471,7 +498,7 @@ export class IndexedDbResourceMetadata
       keys.add(key);
       const current = await this.resources.get(resource.handle);
       if ((current?.revision ?? null) !== expectedRevision) return false;
-      validateResourceRecordUpdate(current ? await this.record(current) : null, next);
+      await this.validateResource(current ? await this.record(current) : null, next);
       for (const intent of next.intents) {
         const key = intent.intentId;
         const existing = await this.intents.get(intent.intentId);
@@ -503,11 +530,15 @@ export class IndexedDbResourceMetadata
   async commitResource(input: ResourceWrite) {
     const write = structuredClone(input);
     return this.run(() =>
-      this.database.transaction("rw", this.resources, this.intents, this.meta, async () => {
-        if (!(await this.isCurrent([write]))) return "stale" as const;
-        await this.putResources([write]);
-        return "committed" as const;
-      }),
+      this.database.transaction(
+        "rw",
+        [this.resources, this.intents, this.operations, this.meta],
+        async () => {
+          if (!(await this.isCurrent([write]))) return "stale" as const;
+          await this.putResources([write]);
+          return "committed" as const;
+        },
+      ),
     );
   }
 
@@ -540,7 +571,7 @@ export class IndexedDbResourceMetadata
       handles.add(next.handle);
       const current = (await this.folders.get(next.handle)) ?? null;
       if ((current?.revision ?? null) !== expectedRevision) return false;
-      validateFolderNamespaceUpdate(current, next);
+      await this.validateFolder(current, next);
     }
     return true;
   }
@@ -550,10 +581,7 @@ export class IndexedDbResourceMetadata
     return this.run(() =>
       this.database.transaction(
         "rw",
-        this.folders,
-        this.resources,
-        this.intents,
-        this.meta,
+        [this.folders, this.resources, this.intents, this.operations, this.meta],
         async () => {
           if (!(await this.foldersAreCurrent([write]))) return "stale" as const;
           const previous = (await this.folders.get(write.next.handle)) ?? null;
@@ -566,7 +594,7 @@ export class IndexedDbResourceMetadata
             const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
             const descendants = planFolderDeletionResources(receipt, records);
             for (const descendant of descendants) {
-              validateResourceRecordUpdate(
+              await this.validateResource(
                 byHandle.get(descendant.next.resource.handle) ?? null,
                 descendant.next,
               );
@@ -603,9 +631,9 @@ export class IndexedDbResourceMetadata
     });
     const byHandle = new Map(records.map((record) => [record.resource.handle, record]));
     for (const write of resources)
-      validateResourceRecordUpdate(byHandle.get(write.next.resource.handle) ?? null, write.next);
+      await this.validateResource(byHandle.get(write.next.resource.handle) ?? null, write.next);
     for (const write of followers)
-      validateFolderNamespaceUpdate(
+      await this.validateFolder(
         folders.find((folder) => folder.handle === write.next.handle) ?? null,
         write.next,
       );
@@ -658,11 +686,7 @@ export class IndexedDbResourceMetadata
     return this.run(() =>
       this.database.transaction(
         "rw",
-        this.catalogs,
-        this.resources,
-        this.intents,
-        this.folders,
-        this.meta,
+        [this.catalogs, this.resources, this.intents, this.folders, this.operations, this.meta],
         async () => {
           if (!catalogScopeBelongsToProject(input.next.projectId, input.next.scope))
             throw new Error("Catalog scope belongs to another project");
