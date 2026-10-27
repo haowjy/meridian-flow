@@ -42,9 +42,10 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     ).toBe(0);
   }
 
-  // `-f /dev/null` keeps the owner's tmux.conf out: `remain-on-exit on` leaves dead panes with no cwd.
+  // The owner's tmux.conf stays out, but its `remain-on-exit on` is kept: an exited pane stays
+  // listed with no process or cwd, and every case here must sweep and recheck through it.
   function isolatedTmux(args: string[]) {
-    return run("tmux", ["-f", "/dev/null", ...args]);
+    return run("tmux", ["-f", path.join(temp, "tmux.conf"), ...args]);
   }
 
   // Dev stacks live on the private server; the default one is the owner's and must stay untouched.
@@ -134,6 +135,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
       PATH: `${bin}:${process.env.PATH}`,
       LC_ALL: "C",
     };
+    fs.writeFileSync(path.join(temp, "tmux.conf"), "set -g remain-on-exit on\n");
     initRepo(repo);
     fs.mkdirSync(`${repo}.worktrees`);
   });

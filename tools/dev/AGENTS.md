@@ -40,7 +40,9 @@ directory never imports application packages. The `./mf` CLI lives in
   before start/reuse, but never for `--print` or `--stop`, and the sweep never
   touches the default tmux server. Inspect them with
   `pnpm dev:prune-worktrees -- --orphans --dry-run`. Orphan teardown requires
-  path/pane ownership and process identity, never cwd or a name prefix alone.
+  path/pane ownership and process identity, never cwd or a name prefix alone. A
+  dead pane (`remain-on-exit`) has no process or cwd to check: skip it, never
+  signal its PID.
 - `tools/mf` and `apps/app/e2e` import the Portless helpers
   (`portless-prefix.ts`, `portless-routes.ts`, `dev-readiness.ts`,
   `dev-session-state.ts`). Keep those free of import-time side effects, with

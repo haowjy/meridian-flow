@@ -18,8 +18,11 @@ interface Pane {
   readonly sessionId: string;
   readonly sessionName: string;
   readonly worktreePath: string;
-  readonly pid: number;
-  readonly cwd: string;
+  /**
+   * Absent for a dead pane, which `remain-on-exit` keeps listed: it has no
+   * process or cwd, and its PID may already belong to someone else.
+   */
+  readonly process?: { readonly pid: number; readonly cwd: string };
 }
 
 export interface OrphanDevSession {
@@ -86,7 +89,7 @@ function listPanes(): Pane[] {
       "list-panes",
       "-a",
       "-F",
-      "#{session_id}\t#{session_name}\t#{session_path}\t#{pane_pid}\t#{pane_current_path}",
+      "#{session_id}\t#{session_name}\t#{session_path}\t#{pane_dead}\t#{pane_pid}\t#{pane_current_path}",
     ]);
   } catch (error) {
     const failure = error as NodeJS.ErrnoException & { stderr?: string | Buffer };
@@ -100,30 +103,26 @@ function listPanes(): Pane[] {
       return [];
     throw error;
   }
+  // No trim(): a dead pane's empty cwd is the line's last field.
   return output
-    .trim()
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
-      const [sessionId, sessionName, worktreePath, pidText, paneCwd] = line.split("\t");
-      const pid = Number(pidText);
-      if (
-        !sessionId ||
-        !sessionName ||
-        !worktreePath ||
-        !paneCwd ||
-        !Number.isSafeInteger(pid) ||
-        pid <= 1
-      ) {
+      const [sessionId, sessionName, worktreePath, dead, pidText, paneCwd] = line.split("\t");
+      if (!sessionId || !sessionName || !worktreePath || (dead !== "0" && dead !== "1")) {
         throw new Error("Could not inspect tmux pane ownership");
       }
-      return {
+      const session = {
         sessionId,
         sessionName,
         worktreePath: withoutDeletedMarker(worktreePath),
-        pid,
-        cwd: withoutDeletedMarker(paneCwd),
       };
+      if (dead === "1") return session;
+      const pid = Number(pidText);
+      if (!paneCwd || !Number.isSafeInteger(pid) || pid <= 1) {
+        throw new Error("Could not inspect tmux pane ownership");
+      }
+      return { ...session, process: { pid, cwd: withoutDeletedMarker(paneCwd) } };
     });
 }
 
@@ -153,13 +152,21 @@ function orphanSession(
   const root = path.resolve(first.worktreePath);
   const hash = resolveSessionIdentity({ branchName: "", repoRootRealpath: root }).worktreeHash;
   if (!new RegExp(`^meridian-[a-z0-9-]+-${hash}$`).test(first.sessionName)) return;
-  if (panes.some((pane) => pane.worktreePath !== root || !within(pane.cwd, root))) return;
+  // A dead pane proves nothing about where work happens and holds nothing to
+  // kill, so only live panes need to sit inside the missing checkout. A session
+  // of dead panes is reaped on its name, path and checkout evidence alone.
+  if (
+    panes.some(
+      (pane) => pane.worktreePath !== root || (pane.process && !within(pane.process.cwd, root)),
+    )
+  )
+    return;
   if (!orphanCheckout(root, repository)) return;
   return {
     sessionId: first.sessionId,
     sessionName: first.sessionName,
     worktreePath: root,
-    panePids: panes.map((pane) => pane.pid),
+    panePids: panes.flatMap((pane) => (pane.process ? [pane.process.pid] : [])),
   };
 }
 
