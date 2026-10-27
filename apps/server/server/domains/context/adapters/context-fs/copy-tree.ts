@@ -2,8 +2,9 @@
  * Copy's destination half in one ContextFS source: naming and identity, planned without a
  * lock, and the insertion of a plan inside the caller's command transaction.
  *
- * Names are this namespace's, so allocation happens here, against live occupants, hidden
- * occupants (which are taken, never revealed) and the rest of the batch. Only the roots meet
+ * Names are this namespace's, so allocation happens here, against live occupants and the rest
+ * of the batch. A hidden node (a draft's document) never takes a name from a visible one: a root
+ * takes its name, and the hidden node yields in the insert (`insertNewTree`). Only the roots meet
  * occupants that already exist: a copied folder is new, so nothing live or hidden can sit
  * inside it, and the batch's own names are its whole namespace. Planning therefore reads the
  * destination parent once and holds nothing; the insert re-reads the parent under the lock
@@ -379,15 +380,14 @@ function splitAllocatedFilename(
     : { name: filename, extension: "" };
 }
 
-/** Every name this parent already holds: live folders, live documents, hidden occupants. */
+/** Every name this parent holds for a reader: live folders and live documents. */
 async function occupantClaims(
   deps: CopyTreeDeps,
   parentId: string | null,
 ): Promise<NamespaceNameClaim[]> {
-  const [folders, documents, hidden] = await Promise.all([
+  const [folders, documents] = await Promise.all([
     deps.store.listFolders(LIVE_TREE, parentId),
     deps.store.listDocuments(LIVE_TREE, parentId),
-    deps.store.listHiddenNames(parentId),
   ]);
   return [
     ...folders.map((folder) => ({ kind: "folder" as const, filename: folder.name })),
@@ -395,8 +395,5 @@ async function occupantClaims(
       kind: "document" as const,
       filename: renderFilename(document.name, document.extension),
     })),
-    // A hidden occupant's rendered filename is taken. Its kind only picks the comparison:
-    // a hidden folder's rendered name and a hidden document's alias both compare as names.
-    ...hidden.map((filename) => ({ kind: "document" as const, filename })),
   ];
 }

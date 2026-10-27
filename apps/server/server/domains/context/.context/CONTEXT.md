@@ -204,8 +204,11 @@ one source's tree contributes.
   folder is gone, `permission_denied` when the writer cannot edit it), then the destination
   adapter inserts the plan (`copyInto`).
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
-  against live occupants, hidden occupants (taken, never revealed) and the rest of the batch,
-  from a lock-free read of the destination parent. Only the roots meet existing occupants.
+  against live occupants and the rest of the batch, from a lock-free read of the destination
+  parent. A hidden draft node never takes a name from a copy ([naming conflicts never
+  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/naming/naming-conflicts-never-block.md)):
+  the insert normalizes the roots' names, so a hidden node on a root's name yields to the next
+  free one. Only the roots meet existing occupants.
   A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
   every descendant keeps a server-minted identity, so a replay or a replan keeps the roots
   the client already names. Any row already holding a `copyId` — live, hidden, deleted, in
