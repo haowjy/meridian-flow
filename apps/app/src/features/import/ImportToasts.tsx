@@ -1,7 +1,7 @@
 /** Import activity cards and their inline decisions, shared by desktop and the phone sheet. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { IMPORT_NEEDS_LOOK_REASONS, type ImportScheme } from "@meridian/contracts";
+import { entryNeedsLook, type ImportScheme } from "@meridian/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
@@ -13,7 +13,7 @@ import { useImportsSnapshot } from "./ImportsProvider";
 import type { ImportCoordinator, TrackedImport } from "./import-coordinator";
 import { useImportMilestone } from "./milestones";
 import { readPicked } from "./read-picked";
-import { failureSentence } from "./reason-copy";
+import { problemSentences } from "./reason-copy";
 import { PickInputs } from "./SelectionPicker";
 import { toastPresentation } from "./toast-presentation";
 
@@ -134,12 +134,7 @@ function ImportToast({
           ) : null}
         </>
       );
-    const problems =
-      detail?.entries.filter(
-        (entry) =>
-          entry.state === "failed" ||
-          IMPORT_NEEDS_LOOK_REASONS.some((reason) => reason === entry.reason),
-      ) ?? [];
+    const problems = detail?.entries.filter(entryNeedsLook) ?? [];
     const skipped =
       detail?.entries
         .filter((entry) => entry.state === "skipped" && !problems.includes(entry))
@@ -188,7 +183,7 @@ function ImportToast({
                       {entry.path ||
                         detail?.roots.find((root) => root.rootId === entry.rootId)?.name}
                     </span>
-                    {failureSentence(entry.reason)}
+                    {problemSentences(entry).join(" ")}
                   </li>
                 ))}
               </ul>

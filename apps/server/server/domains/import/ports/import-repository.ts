@@ -51,6 +51,7 @@ interface ImportEntryBase {
   selection: ImportEntrySelection;
   state: ImportEntryState;
   reason: ImportEntryReason | null;
+  changedAfterUpload: boolean;
   convertedKey: string | null;
 }
 export type ImportEntry = ImportEntryBase &
@@ -63,7 +64,7 @@ export type ImportPatch = Partial<
   Omit<ImportRecord, "id" | "projectId" | "userId" | "fingerprint" | "createdAt">
 >;
 export type ImportEntryPatch = Partial<
-  Pick<ImportEntry, "state" | "reason" | "convertedKey" | "receipt">
+  Pick<ImportEntry, "state" | "reason" | "changedAfterUpload" | "convertedKey" | "receipt">
 >;
 export interface ImportRepository {
   organizeTransaction<T>(

@@ -1,7 +1,13 @@
 /** Server codes become writer-facing sentences here, never raw error messages. */
 import { t } from "@lingui/core/macro";
-import type { ImportEntryReason, ImportRefusalCode } from "@meridian/contracts";
-export function failureSentence(reason: ImportEntryReason | null | undefined): string {
+import {
+  IMPORT_REASON_NEEDS_LOOK,
+  type ImportEntryReason,
+  type ImportEntryStatus,
+  type ImportRefusalCode,
+} from "@meridian/contracts";
+
+function failureSentence(reason: ImportEntryReason | null | undefined): string {
   switch (reason) {
     case "too_large":
       return t`It's over the import size limit.`;
@@ -9,8 +15,6 @@ export function failureSentence(reason: ImportEntryReason | null | undefined): s
       return t`Couldn't read this Word document. Kept as a file.`;
     case "changed_after_pick":
       return t`Changed after you picked it.`;
-    case "changed_after_upload":
-      return t`Edited after it uploaded. The imported copy is the earlier version.`;
     case "upload_lost":
       return t`The uploaded file is no longer available.`;
     case "not_found":
@@ -28,6 +32,17 @@ export function failureSentence(reason: ImportEntryReason | null | undefined): s
     default:
       return t`Something went wrong on our side. Try again.`;
   }
+}
+/** Every fact that puts a file on the need-a-look list; two can hold at once. */
+export function problemSentences(
+  entry: Pick<ImportEntryStatus, "state" | "reason" | "changedAfterUpload">,
+): string[] {
+  const sentences: string[] = [];
+  if (entry.state === "failed" || (entry.reason && IMPORT_REASON_NEEDS_LOOK[entry.reason]))
+    sentences.push(failureSentence(entry.reason));
+  if (entry.changedAfterUpload)
+    sentences.push(t`Edited after it uploaded. The imported copy is the earlier version.`);
+  return sentences;
 }
 export function refusalSentence(code: ImportRefusalCode | null): string {
   switch (code) {

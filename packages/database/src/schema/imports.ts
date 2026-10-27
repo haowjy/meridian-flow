@@ -64,6 +64,8 @@ export const importEntries = pgTable(
     entryId: integer("entry_id"),
     state: text("state").notNull(),
     reason: text("reason"),
+    /** The file on disk differed from the receipt when Continue last re-picked it. Only `picked` writes it. */
+    changedAfterUpload: boolean("changed_after_upload").notNull().default(false),
     storageUrl: text("storage_url"),
     objectKey: text("object_key"),
     convertedKey: text("converted_key"),

@@ -52,6 +52,7 @@ export function selectionRows(
               ? "received"
               : "awaiting",
       reason,
+      changedAfterUpload: false,
       receipt: null,
       convertedKey: null,
     } as ImportEntry;

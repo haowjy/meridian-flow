@@ -35,7 +35,6 @@ export type ImportEntryReason =
   | "too_large"
   | "kept_as_file"
   | "changed_after_pick"
-  | "changed_after_upload"
   | "upload_lost"
   | "server_error";
 /** Writer attention is shared by the detail list and the server's aggregate count. */
@@ -49,13 +48,22 @@ export const IMPORT_REASON_NEEDS_LOOK = {
   too_large: true,
   kept_as_file: true,
   changed_after_pick: true,
-  changed_after_upload: true,
   upload_lost: true,
   server_error: true,
 } as const satisfies Record<ImportEntryReason, boolean>;
 export const IMPORT_NEEDS_LOOK_REASONS = (
   Object.keys(IMPORT_REASON_NEEDS_LOOK) as ImportEntryReason[]
 ).filter((reason) => IMPORT_REASON_NEEDS_LOOK[reason]);
+/** A failed entry, one with a needs-look reason, or one whose file changed after it uploaded. */
+export function entryNeedsLook(
+  entry: Pick<ImportEntryStatus, "state" | "reason" | "changedAfterUpload">,
+): boolean {
+  return (
+    entry.state === "failed" ||
+    entry.changedAfterUpload ||
+    IMPORT_NEEDS_LOOK_REASONS.some((reason) => reason === entry.reason)
+  );
+}
 
 export type ImportUnreadableReason =
   | "unreadable"
@@ -94,6 +102,12 @@ export interface ImportEntryStatus {
   modifiedAt: number;
   state: ImportEntryState;
   reason: ImportEntryReason | null;
+  /**
+   * The file on disk differs from the bytes this entry received: a Continue re-picked it and
+   * its hash disagreed with the receipt. Only `POST .../picked` sets or clears it, and it is
+   * independent of `reason`, which keeps what happened at receive time.
+   */
+  changedAfterUpload: boolean;
   reasonParams?: { readReason: ImportUnreadableReason };
   documentId: string;
 }
@@ -126,24 +140,6 @@ export interface ImportSkipsInput {
  */
 export interface ImportPickedInput {
   entries: { entryId: number; sha256: string; size: number; modifiedAt: number }[];
-}
-/**
- * The reason an already-received entry holds after Continue re-picked its file.
- * `changed_after_upload` says the disk differs from the receipt: the import holds
- * the earlier text. It is the only reason this sets. `changed_after_pick` (the bytes
- * sent differed from the pick) is dropped only on proof it was false: the file is
- * the one originally picked (same size and time) and equals the receipt.
- */
-export function pickedReason(
-  current: ImportEntryReason | null,
-  pick: { size: number; modifiedAt: number },
-  receiptSha256: string,
-  picked: ImportPickedInput["entries"][number],
-): ImportEntryReason | null {
-  if (picked.sha256 !== receiptSha256) return "changed_after_upload";
-  if (current === "changed_after_upload") return null;
-  const original = picked.size === pick.size && picked.modifiedAt === pick.modifiedAt;
-  return current === "changed_after_pick" && original ? null : current;
 }
 /** Stable refusal codes, with bounded numeric parameters carried separately. */
 export type ImportRefusalCode =

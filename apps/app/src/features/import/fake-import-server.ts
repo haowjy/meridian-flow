@@ -1,22 +1,22 @@
-/** Instance-owned durable fake. Uploads complete into organize; tests explicitly advance the build. */
+/**
+ * Instance-owned durable fake, the presentation harness for organize states (see
+ * `scripts/probe-import-states.js`). It holds receipts only as state changes: it does not hash,
+ * keep bytes, or apply the server's `picked` and `skip` rules. Uploads complete into organize;
+ * tests explicitly advance the build.
+ */
 import {
+  entryNeedsLook,
   IMPORT_ADMISSION,
-  IMPORT_NEEDS_LOOK_REASONS,
   type ImportDetail,
   type ImportSummary,
   importNodeId,
-  pickedReason,
 } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportApi } from "./import-api-port";
-import { sha256Hex } from "./sha256";
 export function fakeImportServer() {
   const records = new Map<string, ImportDetail>();
   const closed = new Set<string>();
   const revealed = new Set<string>();
-  const sent: number[][] = [];
-  /** What the real server keeps in a receipt: the hash of the bytes a send carried. */
-  const receipts = new Map<string, string>();
   const read = (id: string) => {
     const detail = records.get(id);
     if (!detail) throw new ImportRequestError(404, "import_not_found", undefined, "Missing import");
@@ -38,11 +38,7 @@ export function fakeImportServer() {
       organized: entries.filter((entry) => entry.state === "organized").length,
       skipped: entries.filter((entry) => entry.state === "skipped").length,
       failed: entries.filter((entry) => entry.state === "failed").length,
-      needsLook: entries.filter(
-        (entry) =>
-          entry.state === "failed" ||
-          IMPORT_NEEDS_LOOK_REASONS.some((reason) => reason === entry.reason),
-      ).length,
+      needsLook: entries.filter(entryNeedsLook).length,
     };
     if (detail.state === "uploading" && !entries.some((entry) => entry.state === "awaiting"))
       detail.state = "organizing";
@@ -78,6 +74,7 @@ export function fakeImportServer() {
           ...entry,
           state: entry.size > IMPORT_ADMISSION.fileBytes ? "failed" : "awaiting",
           reason: entry.size > IMPORT_ADMISSION.fileBytes ? "too_large" : null,
+          changedAfterUpload: false,
           documentId: id(entry.rootId, entry.path, "entry"),
         })),
       });
@@ -85,12 +82,10 @@ export function fakeImportServer() {
     },
     async send(_project, id, parts) {
       const detail = read(id);
-      sent.push(parts.map((part) => part.entryId));
       for (const part of parts) {
         const entry = detail.entries.find((entry) => entry.entryId === part.entryId)!;
         if (entry.state === "awaiting" && detail.state === "uploading") {
           entry.state = "received";
-          receipts.set(`${id}:${part.entryId}`, await sha256Hex(await part.file.arrayBuffer()));
           if (part.changed) entry.reason = "changed_after_pick";
         }
       }
@@ -101,25 +96,10 @@ export function fakeImportServer() {
         summary: update(id),
       };
     },
-    async skip(_project, id, input) {
-      const detail = read(id);
-      for (const skip of input.entries) {
-        const entry = detail.entries.find((entry) => entry.entryId === skip.entryId)!;
-        if (entry.state === "awaiting") {
-          entry.state = "skipped";
-          entry.reason = skip.reason;
-        }
-      }
+    async skip(_project, id) {
       return update(id);
     },
-    async picked(_project, id, input) {
-      const detail = read(id);
-      for (const item of input.entries) {
-        const entry = detail.entries.find((entry) => entry.entryId === item.entryId);
-        const receipt = receipts.get(`${id}:${item.entryId}`);
-        if (entry?.state === "received" && receipt)
-          entry.reason = pickedReason(entry.reason, entry, receipt, item);
-      }
+    async picked(_project, id) {
       return update(id);
     },
     async stop(_project, id) {
@@ -148,7 +128,6 @@ export function fakeImportServer() {
   };
   return {
     api,
-    sent,
     fail(id: string) {
       const detail = read(id);
       detail.state = "failed";

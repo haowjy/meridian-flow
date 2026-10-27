@@ -1,12 +1,10 @@
 /** Upload-first import commands: immutable selection, staged receipts, and short row-locked transitions. */
-import {
-  type ImportDetail,
-  type ImportEntryReason,
-  type ImportFilesResult,
-  type ImportPickedInput,
-  type ImportSkipsInput,
-  type ImportSummary,
-  pickedReason,
+import type {
+  ImportDetail,
+  ImportFilesResult,
+  ImportPickedInput,
+  ImportSkipsInput,
+  ImportSummary,
 } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ObjectStorePort } from "../../storage/index.js";
@@ -14,6 +12,7 @@ import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/impor
 import type { ImportDestination } from "../ports/import-tree-writer.js";
 import type { OrganizeWake } from "../ports/organize-wake.js";
 import { IMPORT_LIMITS, ImportError, selectionFingerprint, validateSelection } from "./manifest.js";
+import { pickedPatches } from "./picked.js";
 import { type ImportPart, prepareReceipts, receiptPatches } from "./receipt.js";
 import { type ImportAdmission, inReceiveScope } from "./receive-admission.js";
 import { selectionRows } from "./selection.js";
@@ -200,19 +199,10 @@ export function createImportUploadService(deps: {
         const known = new Set(entries.map((entry) => entry.entryId));
         for (const item of input.entries)
           if (!known.has(item.entryId)) throw new ImportError(404, "entry_not_found");
-        const picked = new Map(input.entries.map((item) => [item.entryId, item]));
-        const patches: { id: string; patch: { reason: ImportEntryReason | null } }[] = [];
-        for (const entry of entries) {
-          // Only a received entry has bytes to compare; a later pick cannot replace them.
-          if (!entry.receipt) continue;
-          const reason = pickedReason(
-            entry.reason,
-            entry.selection,
-            entry.receipt.sha256,
-            picked.get(entry.entryId)!,
-          );
-          if (reason !== entry.reason) patches.push({ id: entry.id, patch: { reason } });
-        }
+        const patches = pickedPatches(
+          entries,
+          new Map(input.entries.map((item) => [item.entryId, item])),
+        );
         if (patches.length) await repo.updateEntries(id, patches);
         await complete(record);
       });
@@ -282,6 +272,7 @@ export function createImportUploadService(deps: {
               modifiedAt: e.selection.modifiedAt,
               state: e.state,
               reason: e.reason,
+              changedAfterUpload: e.changedAfterUpload,
               reasonParams: e.selection.reasonParams,
               documentId: e.id,
             })),

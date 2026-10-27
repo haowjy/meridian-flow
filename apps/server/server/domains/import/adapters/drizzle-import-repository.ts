@@ -55,6 +55,7 @@ function projectEntry(row: EntryRow): ImportEntry {
     receipt,
     state: row.state,
     reason: row.reason,
+    changedAfterUpload: row.changedAfterUpload,
     convertedKey: row.convertedKey,
   } as ImportEntry;
 }
@@ -170,13 +171,20 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         ["facts", "spec", "jsonb"],
         ["state", "state", "text"],
         ["reason", "reason", "text"],
+        ["changedAfterUpload", "changed_after_upload", "boolean"],
         ["storageUrl", "storage_url", "text"],
         ["objectKey", "object_key", "text"],
         ["convertedKey", "converted_key", "text"],
         ["receivedSize", "received_size", "bigint"],
         ["sha256", "sha256", "text"],
       ] as const satisfies readonly (readonly [
-        keyof ReturnType<typeof receiptColumns> | "state" | "reason" | "convertedKey",
+        (
+          | keyof ReturnType<typeof receiptColumns>
+          | "state"
+          | "reason"
+          | "changedAfterUpload"
+          | "convertedKey"
+        ),
         string,
         string,
       ])[];
@@ -238,7 +246,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
           organized: sql<number>`count(*) FILTER (WHERE ${importEntries.state} = 'organized')::int`,
           skipped: sql<number>`count(*) FILTER (WHERE ${importEntries.state} = 'skipped')::int`,
           failed: sql<number>`count(*) FILTER (WHERE ${importEntries.state} = 'failed')::int`,
-          needsLook: sql<number>`count(*) FILTER (WHERE ${inArray(importEntries.reason, IMPORT_NEEDS_LOOK_REASONS)})::int`,
+          needsLook: sql<number>`count(*) FILTER (WHERE ${inArray(importEntries.reason, IMPORT_NEEDS_LOOK_REASONS)} OR ${importEntries.changedAfterUpload})::int`,
         })
         .from(importEntries)
         .where(and(eq(importEntries.importId, id), ne(importEntries.kind, "folder")));

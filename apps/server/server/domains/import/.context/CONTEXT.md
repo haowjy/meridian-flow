@@ -55,16 +55,20 @@ checks around database waits roll back an expired receive's transaction.
 
 Continue reports its re-picked received entries at `POST .../picked` with a
 SHA-256, size and modified time per entry. The server never reads or stores those
-bytes again; `pickedReason` in `@meridian/contracts` (shared with the app's fake)
-decides the entry's reason. Two reasons mean different things. `changed_after_pick`
-is set at receive: the bytes sent differed from the pick, so the import holds the
-newer text. `changed_after_upload` is set only by `picked`: the file on disk differs
-from the receipt, so the import holds the earlier text. A differing hash sets
-`changed_after_upload` (replacing a receive-time mark: the import now disagrees with
-the disk, which is the more useful fact); an equal hash clears it. A receive-time
-mark clears only when the file also matches the recorded pick, which proves the
-mark false (a copy of the folder was picked first, then the original). Only a
-received entry is compared.
+bytes again. `picked` (`domain/picked.ts`) compares each hash with the receipt and
+only touches received entries. Two facts, kept apart:
+
+- `import_entries.changed_after_upload` says the file on disk differs from the
+  receipt, so the import holds the earlier text. Only `picked` writes it, from the
+  report alone: a differing hash sets it, an equal hash clears it. A reverted edit
+  therefore clears it.
+- `reason = changed_after_pick` is set at receive: the bytes sent differed from the
+  pick. `picked` clears it only on proof it was false: the re-picked file has the
+  recorded size and time (it is the file originally picked) and equals the receipt.
+  Picking a copy first and then the original is the case this serves. A reverted
+  edit or a matching copy proves nothing about the pick, so the mark stays.
+
+An entry needs a look when either holds, and the aggregate count includes both.
 
 Stop cancels and acknowledges uploading, organizing, or failed imports before
 reveal. A non-null `revealed_at` refuses with `import_finished`; finished imports
