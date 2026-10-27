@@ -69,7 +69,7 @@ export async function scanDocuments<Shown, Fault>(input: {
   matcher: GrepMatcher;
   mode: GrepMode;
   headLimit: number;
-  signal?: AbortSignal;
+  signal: AbortSignal;
   read(documentId: string): Promise<ScanOutcome<GrepRead<Shown>, Fault>>;
 }): Promise<ScanOutcome<ScanResult<Shown>, Fault>> {
   const hits: ScanHit<Shown>[] = [];
@@ -79,7 +79,7 @@ export async function scanDocuments<Shown, Fault>(input: {
   let stored: ReadonlyMap<string, string> = new Map();
   try {
     for (const [index, document] of input.documents.entries()) {
-      if (input.signal?.aborted) throw new GrepStopped();
+      if (input.signal.aborted) throw new GrepStopped();
       // Text for a slice at a time bounds what a scan holds, however many documents it covers.
       if (index % STORED_SLICE === 0)
         stored = await input.stored(

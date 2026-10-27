@@ -297,7 +297,7 @@ export interface GrepQuery {
   /** Most files returned. */
   headLimit: number;
   /** Stops the scan early; the result is then not exact. */
-  signal?: AbortSignal;
+  signal: AbortSignal;
   /** The documents the caller may read, asked before anything is matched or counted. */
   readable(ids: readonly string[]): Promise<ReadonlyMap<string, "read" | "edit">>;
 }

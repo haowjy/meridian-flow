@@ -10,6 +10,7 @@ export function grepQuery(
   return {
     matcher: matcher.value,
     ...(options.path ? { path: options.path } : {}),
+    signal: AbortSignal.timeout(20_000),
     mode: "content",
     headLimit: 50,
     readable: async (ids) => new Map(ids.map((id) => [id, "edit" as const])),
