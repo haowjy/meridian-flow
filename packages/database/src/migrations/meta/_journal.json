@@ -687,6 +687,13 @@
       "when": 1793130216657,
       "tag": "0103_document_grep_text",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1793131424510,
+      "tag": "0104_grep_tool_rename",
+      "breakpoints": true
     }
   ]
 }

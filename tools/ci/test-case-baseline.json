@@ -401,6 +401,7 @@
     "packages/contracts/src/protocol/wire-contracts.test.ts": 13,
     "packages/database/src/consume-credit-lots-fifo.db.test.ts": 4,
     "packages/database/src/fresh-migrations.db.test.ts": 4,
+    "packages/database/src/migrations/0104_grep_tool_rename.db.test.ts": 1,
     "packages/markup/src/codec-hard-break.test.ts": 10,
     "packages/markup/src/codec-image-size.test.ts": 15,
     "packages/markup/src/codec-markdown.test.ts": 18,
