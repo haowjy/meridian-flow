@@ -9,7 +9,6 @@ import {
   type AgentRevisionStore,
   buildMarsPackageZip,
   exportMarsPackage,
-  findOwnedInstallation,
   PackageInstallationNotFoundError,
 } from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
@@ -35,22 +34,17 @@ export async function handleExportPackageRequest(
   input: ProjectPackageExportRouteInput,
 ): Promise<ProjectPackageExportResult> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  const install = await findOwnedInstallation(
-    deps.agentRevisions,
-    input.userId,
-    input.installId,
-  ).catch((error: unknown) => {
+  const { coordinate, exported } = await exportMarsPackage({
+    userId: input.userId,
+    installId: input.installId,
+    store: deps.agentRevisions,
+  }).catch((error: unknown) => {
     if (error instanceof PackageInstallationNotFoundError)
       throw createError({ statusCode: 404, message: error.message });
     throw error;
   });
-  const exported = await exportMarsPackage({
-    userId: input.userId,
-    installId: install.id,
-    store: deps.agentRevisions,
-  });
   return {
-    filename: `${install.coordinate.replace(/[^a-zA-Z0-9_-]/g, "-")}.zip`,
+    filename: `${coordinate.replace(/[^a-zA-Z0-9_-]/g, "-")}.zip`,
     body: buildMarsPackageZip(exported),
   };
 }

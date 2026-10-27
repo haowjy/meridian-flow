@@ -19,7 +19,7 @@ composeAppServices(ports)
 `app.ts` wires the concrete production graph:
 
 - **Concrete adapters**: Drizzle repositories, context/collab stores, package
-  store, project repositories, credit ledger, package fetcher/seeder, and
+  store, project repositories, credit ledger, package seeder, and
   provider gateway.
 - **Pure service wiring**: event hub, checkpoint registry, tool
   registry/executor, late-bound turn runner, child-run coordination,
@@ -64,7 +64,7 @@ The shipped route surface covers:
   distinct. The claim is released before ordinary post-commit context delivery.
 - Project document-link resolution for wikilinks, `manuscript://`/`work://`
   scheme links, and paths relative to a containing document.
-- First-party package catalog, builtin agent catalog, readiness, and unknown
+- Builtin agent catalog, readiness, and unknown
   route handling.
 
 Project-scoped handlers gate through `requireProjectOwner`

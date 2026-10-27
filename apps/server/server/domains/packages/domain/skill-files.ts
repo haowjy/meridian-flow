@@ -5,7 +5,7 @@
  * Non-UTF-8 payloads are base64-armed as `{ encoding: "base64", data }` so
  * SkillRecord.files round-trips through JSONB without corruption.
  */
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 
 export type SkillFileEntry =
   | string
@@ -33,8 +33,4 @@ export function skillFileEntryToBuffer(entry: SkillFileEntry): Buffer {
 
 export async function readSkillFileFromDisk(filePath: string): Promise<SkillFileEntry> {
   return bufferToSkillFileEntry(await readFile(filePath));
-}
-
-export async function writeSkillFileToDisk(filePath: string, entry: SkillFileEntry): Promise<void> {
-  await writeFile(filePath, skillFileEntryToBuffer(entry));
 }

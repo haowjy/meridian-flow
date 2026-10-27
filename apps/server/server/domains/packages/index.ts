@@ -44,10 +44,6 @@ export {
   seedLaunchAgentPackage,
 } from "./domain/default-package-seeding.js";
 export {
-  FIRST_PARTY_CATALOG,
-  listFirstPartyCatalog,
-} from "./domain/first-party-catalog.js";
-export {
   canonicalizeJsonObject,
   parseMarkdownDefinition,
   parseMarsToml,
@@ -55,16 +51,13 @@ export {
 } from "./domain/mars-source.js";
 export {
   exportMarsPackage,
-  findOwnedInstallation,
   PackageInstallationNotFoundError,
-  writeExportedMarsDirectory,
 } from "./domain/package-export.js";
 export { buildMarsPackageZip } from "./domain/package-zip.js";
 export {
   bufferToSkillFileEntry,
   readSkillFileFromDisk,
   skillFileEntryToBuffer,
-  writeSkillFileToDisk,
 } from "./domain/skill-files.js";
 export { type SkillListing, skillListingFromMarkdown } from "./domain/skill-listing.js";
 export type {

@@ -33,7 +33,7 @@ its exact revision. Removal hides selection but leaves bound revisions
 readable; explicit restore names the retained revision.
 
 `source-publication.ts` is the atomic owner for publishing a source and for
-system provisioning. It validates the complete retained graph, advances
+system provisioning. It validates one source, advances
 future-chat pointers, and commits installation history under one owner lock. A
 source collision (found from file paths alone) refuses the publication rather
 than silently renaming or partially applying it. Startup seeds the built-in

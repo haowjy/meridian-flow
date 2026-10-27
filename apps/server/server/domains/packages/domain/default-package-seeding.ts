@@ -12,7 +12,6 @@ import type { AgentSourceSnapshot } from "./agent-source-revision.js";
 import { installSystemAgentSource } from "./bound-agent-catalog.js";
 import { parseMarsToml, serializeMarkdownDefinition } from "./mars-source.js";
 import { readSkillFileFromDisk, type SkillFiles } from "./skill-files.js";
-import { publishAgentSource } from "./source-publication.js";
 
 const LAUNCH_AGENT_PACKAGE_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -24,20 +23,7 @@ const SOURCE_LAUNCH_AGENT_PACKAGE_RELATIVE_PATH =
 let materializedLaunchAgentPackageDir: Promise<string> | null = null;
 
 export async function seedLaunchAgentPackage(store: AgentRevisionStore): Promise<void> {
-  const source = await readPackageDir(await resolveLaunchAgentPackageDir());
-  await store.withCatalogTransaction(null, async () => {
-    const head = (await store.listInstallations(null)).find(
-      (item) => item.coordinate === source.coordinate,
-    );
-    const installed = await store.installSource(source);
-    await publishAgentSource({
-      store,
-      ownerUserId: null,
-      source,
-      upstreamRevisionId: installed.packageRevisionId,
-      expectedRevisionId: head?.currentRevisionId,
-    });
-  });
+  await installSystemAgentSource(store, await readPackageDir(await resolveLaunchAgentPackageDir()));
 }
 
 async function readPackageDir(dir: string): Promise<AgentSourceSnapshot> {

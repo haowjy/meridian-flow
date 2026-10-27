@@ -1,8 +1,5 @@
 /** Atomic source publication: management provenance and future-chat pointers share one owner. */
-import type {
-  AgentPackageInstallation,
-  AgentRevisionStore,
-} from "../ports/agent-revision-store.js";
+import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
 import { resolveAgentDependencies } from "./agent-configuration.js";
 import type { AgentSourceSnapshot } from "./agent-source-revision.js";
 
@@ -28,7 +25,6 @@ export async function publishAgentSource(input: {
   source: AgentSourceSnapshot;
   expectedRevisionId?: string;
   upstreamRevisionId?: string;
-  origin?: AgentPackageInstallation["origin"];
 }) {
   const { store, ownerUserId, source } = input;
   return store.withCatalogTransaction(ownerUserId, async () => {
@@ -97,7 +93,7 @@ export async function publishAgentSource(input: {
       currentRevisionId: installed.packageRevisionId,
       upstreamRevisionId:
         input.upstreamRevisionId ?? existing?.upstreamRevisionId ?? installed.packageRevisionId,
-      origin: input.origin === undefined ? (existing?.origin ?? null) : input.origin,
+      origin: existing?.origin ?? null,
       ...(existing ? { expectedRevisionId: existing.currentRevisionId } : {}),
     });
     if (!installation)
