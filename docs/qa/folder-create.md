@@ -28,14 +28,22 @@ resend, which looks like a stuck create.
     const url = String((u && u.url) || u);
     if (url.includes('/create-folder') && i && i.method === 'POST' && typeof i.body === 'string') {
       const log = JSON.parse(localStorage.getItem('__cf') || '[]');
-      log.push(new Date().toISOString().slice(11, 19));
+      const body = JSON.parse(i.body);
+      log.push({ t: new Date().toISOString().slice(11, 19), id: body.folderId });
       localStorage.setItem('__cf', JSON.stringify(log));
+      if (localStorage.getItem('__hold')) throw new TypeError('Failed to fetch');
       const delay = Number(localStorage.getItem('__delay') || 0);
       if (delay) await new Promise((r) => setTimeout(r, delay));
-      if (localStorage.getItem('__refuse')) {
-        const body = JSON.parse(i.body);
+      const replaced = localStorage.getItem('__refuse2') && log.length > 1 && log[0].id !== body.folderId;
+      if (localStorage.getItem('__refuse') || replaced) {
         body.folderId = 'nope';
         return o.call(this, u, { ...i, body: JSON.stringify(body) });
+      }
+      if (localStorage.getItem('__lose')) {
+        localStorage.removeItem('__lose');
+        localStorage.setItem('__hold', '1');
+        await o.apply(this, arguments);
+        throw new TypeError('Failed to fetch');
       }
     }
     return o.apply(this, arguments);
@@ -91,6 +99,25 @@ stays until dismissed and covers the lowest tree rows; dismiss it before the nex
 10. Two tabs on the project, the harness in both. Hold, create a folder in one. The other
     lists it within a second; `__cf` (shared) shows one POST; the server has one folder,
     with no `(2)` twin.
+
+11. A folder id the server holds out of reach is replaced, and the work queued inside it
+    follows. Use the harness's `__lose`, `__hold` and `__refuse2` (see
+    [refused-create](refused-create.md); here the log is `__cf` and the id field is
+    `folderId`). Reset `__cf`, set `__lose`, create `Outer`; `Outer`'s record is
+    `serverHold: "uncertain"`. Create `Inner` inside it: a `pending` intent whose destination
+    parent is `Outer`'s id and whose predecessor is `Outer`. Delete `Outer` on the server
+    (`expected: {kind: "folder", nodeId}`), set `__refuse2`, clear `__hold`. After the replay:
+    `Outer` has a new `folderId` (its handle is unchanged, the old id is in `aliases`),
+    `serverHold: "local"`; the conflict create is `superseded` and the retry `needs-repair`;
+    `Inner`'s original intent is `cancelled` and a new one (`<id>@<new folder id>`) names the
+    new parent. Both rows are in Unfiled with marks. Clear `__refuse2`, Move… `Outer` to
+    Manuscript: it lands under the new id. Move… `Inner`: the picker opens inside `Outer` and
+    `Inner` lands under it (`Outer/Inner` on the server). Repeat to the refusal and Delete
+    `Outer` instead: `settled-locally`, no `/delete` request.
+12. Phone: a refused folder row in Files → Unfiled says "Couldn't create this folder. Try
+    another place." with Move… and Rename under it (drive the phone over CDP as in
+    [refused-create](refused-create.md) step 14). Move… opens at the refused destination;
+    Move to Manuscript lands the folder and the notice "Moved … to Manuscript." appears.
 
 ## Server refusals a folder create can get
 
