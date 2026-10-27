@@ -5,9 +5,22 @@ import type {
 } from "../ports/agent-revision-store.js";
 import { resolveAgentDependencies } from "./agent-configuration.js";
 import type { AgentSourceSnapshot } from "./agent-source-revision.js";
-import { sourceEntities } from "./package-reconciliation.js";
 
 export class AgentPublicationConflictError extends Error {}
+
+/** Agents and skills a source defines, by path alone: the collision check needs identities, not content. */
+function sourceEntities(
+  source: AgentSourceSnapshot,
+): Array<{ kind: "agent" | "skill"; slug: string }> {
+  const entities: Array<{ kind: "agent" | "skill"; slug: string }> = [];
+  for (const name of Object.keys(source.files).sort()) {
+    const agent = /^agents\/([^/]+)\.md$/.exec(name);
+    if (agent) entities.push({ kind: "agent", slug: agent[1] });
+    const skill = /^skills\/([^/]+)\/SKILL\.md$/.exec(name);
+    if (skill) entities.push({ kind: "skill", slug: skill[1] });
+  }
+  return entities;
+}
 
 export async function publishAgentSource(input: {
   store: AgentRevisionStore;

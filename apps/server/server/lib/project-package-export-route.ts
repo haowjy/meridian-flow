@@ -4,11 +4,13 @@
  *
  */
 
+import { createError } from "nitro/h3";
 import {
   type AgentRevisionStore,
   buildMarsPackageZip,
   exportMarsPackage,
-  findOwnedPackageInstall,
+  findOwnedInstallation,
+  PackageInstallationNotFoundError,
 } from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 
@@ -33,7 +35,15 @@ export async function handleExportPackageRequest(
   input: ProjectPackageExportRouteInput,
 ): Promise<ProjectPackageExportResult> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  const install = await findOwnedPackageInstall(deps.agentRevisions, input.userId, input.installId);
+  const install = await findOwnedInstallation(
+    deps.agentRevisions,
+    input.userId,
+    input.installId,
+  ).catch((error: unknown) => {
+    if (error instanceof PackageInstallationNotFoundError)
+      throw createError({ statusCode: 404, message: error.message });
+    throw error;
+  });
   const exported = await exportMarsPackage({
     userId: input.userId,
     installId: install.id,

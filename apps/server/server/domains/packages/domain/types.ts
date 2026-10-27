@@ -14,19 +14,10 @@ export interface MarsPackageMetadata {
   visibility?: PackageVisibility;
 }
 
-export interface MarsDependency {
-  name: string;
-  path?: string;
-  url?: string;
-  version?: string;
-  local: boolean;
-}
-
 export type AgentConfigOverlay = JsonObject;
 
 export interface ParsedMarsToml {
   package: MarsPackageMetadata;
-  dependencies: MarsDependency[];
   agentOverlays: Record<string, AgentConfigOverlay>;
 }
 

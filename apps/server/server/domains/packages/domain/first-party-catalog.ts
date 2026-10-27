@@ -1,14 +1,14 @@
 /**
- * Canonical first-party package catalog for the install gallery.
+ * Canonical first-party package catalog for the gallery.
  *
  * Names and descriptions only. TODO(catalog-consumer): the app should fetch
  * `GET /api/packages/catalog` when a real gallery exists.
  */
 import type { FirstPartyCatalogEntry } from "@meridian/contracts/agents";
 
-/** Promoted gallery entries. `sourceUrl` resolves catalog installs when set. */
+/** Promoted gallery entries. */
 export interface FirstPartyCatalogRecord extends FirstPartyCatalogEntry {
-  /** GitHub repo URL for install; null while the package is gallery-only. */
+  /** GitHub repo URL of the package; null while the package is gallery-only. */
   sourceUrl: string | null;
 }
 
@@ -46,10 +46,4 @@ export function listFirstPartyCatalog(): FirstPartyCatalogEntry[] {
     description,
     sourceUrl,
   }));
-}
-
-export function resolveCatalogSource(catalogId: string): { url: string; ref?: string } | undefined {
-  const entry = FIRST_PARTY_CATALOG.find((pkg) => pkg.id === catalogId);
-  if (!entry?.sourceUrl) return undefined;
-  return { url: entry.sourceUrl };
 }

@@ -6,13 +6,7 @@ import { parse as parseToml } from "smol-toml";
 import YAML from "yaml";
 
 import { objectAt, stringAt } from "./helpers.js";
-import type {
-  AgentConfigOverlay,
-  JsonObject,
-  MarsDependency,
-  PackageVisibility,
-  ParsedMarsToml,
-} from "./types.js";
+import type { AgentConfigOverlay, JsonObject, PackageVisibility, ParsedMarsToml } from "./types.js";
 
 export function parseMarsToml(
   source: string,
@@ -39,10 +33,6 @@ export function parseMarsToml(
       ...(description ? { description } : {}),
       ...(visibility ? { visibility } : {}),
     },
-    dependencies: [
-      ...readDependencies(parsed.dependencies, false),
-      ...readDependencies(parsed["local-dependencies"], true),
-    ],
     agentOverlays: readAgentOverlays(parsed.agents),
   };
 }
@@ -96,19 +86,6 @@ function packageVisibilityAt(value: unknown): PackageVisibility | undefined {
   const visibility = stringAt(value);
   if (visibility === "public" || visibility === "private") return visibility;
   return undefined;
-}
-
-function readDependencies(value: unknown, local: boolean): MarsDependency[] {
-  return Object.entries(objectAt(value)).map(([name, raw]) => {
-    const dependency = objectAt(raw);
-    return {
-      name,
-      ...(stringAt(dependency.path) ? { path: stringAt(dependency.path) } : {}),
-      ...(stringAt(dependency.url) ? { url: stringAt(dependency.url) } : {}),
-      ...(stringAt(dependency.version) ? { version: stringAt(dependency.version) } : {}),
-      local,
-    };
-  });
 }
 
 function readAgentOverlays(value: unknown): Record<string, AgentConfigOverlay> {
