@@ -35,7 +35,7 @@ chat resources rather than ordinary Editor tabs.
   drop and Undo. A list row dropped within one system moves at once; one across systems, and
   every other source naming a document or folder (chips, tabs, crumbs, Recent rows, receipts,
   Uploads entries, selected links) asks first, at the pointer (`entry-drag/drop-choice.ts`).
-  Those sources use `useReferenceDrag` and nothing else; what a drag may do (Move is refused out
+  Those sources start their drag through `entry-drag/reference-source.ts` and nothing else; what a drag may do (Move is refused out
   of an archived or unlisted Work's Scratch) is judged in `resolveDrop`. Contract in
   `.context/tree-interactions.md`. A writing surface may copy
   those identities into references through its own drop extension; that drop

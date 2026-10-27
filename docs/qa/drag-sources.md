@@ -2,7 +2,7 @@
 
 Named risks: a source that drags but doesn't ask (a same-system drop that moves at once), a
 drag that also navigates, selects text, opens its menu or moves the text it came from, a draft
-tab or receipt that copies the live document, an Uploads entry that can't leave or accepts a drop,
+tab, crumb, receipt or change row that copies the live document or another Work's draft, an Uploads entry that can't leave or accepts a drop,
 a Cancel that changes something, and a same-system row drag that stopped moving at once. The
 tree's own drag is [Row selection and drag](row-drag.md); the menu's Copy is
 [Copy in the tree](copy-browser.md).
@@ -37,12 +37,20 @@ tree's own drag is [Row selection and drag](row-drag.md); the menu's Copy is
    and the first stays.
 5. **Transcript chip.** Send that message. Drag a sent chip to a folder: it asks and no tab opens.
 6. **Editor link.** Open `Links`. Press on the link and sweep: the text selects (nothing drags). With
-   the link's whole text selected, drag it to a folder: it asks, the text stays in the document and no
-   selection moves. A selection that is only part of the paragraph, an image and a block drag as before.
-7. **Draft tab.** Open `Draftdoc` and press Review: the tab now shows the draft. Drag the tab to
-   Templates, Copy: `./mf doc read user://Templates/Draftdoc` reads the draft text, and the live
-   document is unchanged. A receipt row ("Edited 1 document" › Draftdoc, in the chat) and the Work page's
-   Changes to review row do the same.
+   the link's whole text selected, drag it to the end of the paragraph: the text moves there as text
+   (`./mf doc read` shows the link after "for context." and nothing duplicated, no reference
+   inserted). Select it again and drag it to a folder: it asks, and Copy copies the document the link
+   names; the link's text stays in the document. A selection that is only part of the paragraph, an
+   image and a block drag as before.
+7. **Draft tab, receipt and change row.** Open `Draftdoc` and press Review: the tab now shows the draft.
+   Drag the tab to Templates, Copy: `./mf doc read user://Templates/Draftdoc` reads the draft text, and the
+   live document is unchanged. The leaf crumb (the filename) does the same. A receipt row ("Edited 1
+   document" › Draftdoc, in the chat) and the Work page's Changes to review row copy that Work's draft
+   too. Then rebind the chat to another Work (`./mf api PUT /api/threads/<chat>/work --data
+   '{"workId":"<other>"}'`) and copy all three again: each still holds the first Work's draft, never the
+   chat's current Work's or the live text. With the ask menu open on the change row, Discard the Work's
+   draft (`POST …/works/<w>/branches/discard`) and choose Copy: nothing is copied and the notice says
+   "That Work no longer has a draft of it."
 8. **Uploads.** Open the chat's Files menu and drag `notes` to a folder: it asks; Copy leaves the upload in
    the menu. Drag it onto the Uploads heading: no drop, and the hint says files move or copy out of Uploads,
    not in.

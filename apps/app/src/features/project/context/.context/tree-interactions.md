@@ -412,13 +412,14 @@ is a new item there and a branch in the list's `choose`. The contract:
 
 #### Reference sources
 
-Every non-row source uses one adapter, `useReferenceDrag` (`entry-drag/reference-source.ts`):
-the source supplies what it names (a document or folder by identity, the name to show, and
-the view it shows) and spreads the returned props on its element. The props are `draggable`
-and an `onDragStart` that publishes the drag with `source: "reference"`; the phone shell and a
-source that names nothing yet get none. A source never reads the replica or decides what a
-drop does: `resolveDrop` finds the entry by identity, so a renamed or moved document drags
-as itself and a gone one answers "Some of these items are no longer there".
+Every non-row source starts its drag through one adapter, `entry-drag/reference-source.ts`: the
+source supplies what it names (a document or folder by identity, the name to show, and the view it
+shows). An element spreads the props `useReferenceDrag` returns: `draggable` and an `onDragStart`
+that publishes the drag with `source: "reference"`. A source that isn't an element (the Editor's
+link) takes `useReferenceDragStart()` and calls the start it returns; both give nothing on the
+phone shell, and a source that names nothing yet gets no props. A source never reads the replica
+or decides what a drop does: `resolveDrop` finds the entry by identity, so a renamed or moved
+document drags as itself and a gone one answers "Some of these items are no longer there".
 
 | Source | Names | View |
 |---|---|---|
@@ -433,12 +434,15 @@ as itself and a gone one answers "Some of these items are no longer there".
 
 Nothing a source does after a drag follows or navigates: browsers fire no `click` after a drag.
 What a source must still handle is what it carries and what its host does on press.
-`startEntryDrag` clears the native drag data (an `<a>` otherwise carries its URL). In the Editor an
-unselected press on a link still sweeps text selection (law 7), so a link drags only once its text is
-the selection, through `LinkSurface.registerDragSource` (core knows an identity and a label; the app
-decides what a drag carries); the plugin returns true from `dragstart` so ProseMirror starts no drag
-of its own and the source text is never moved. A composer chip is a TipTap node view, whose
-`stopEvent` already leaves a drag that starts inside it alone.
+`startEntryDrag` clears the native drag data (an `<a>` otherwise carries its URL), and the session
+is the data: the drag carries only Meridian's own MIME type, empty. In the Editor an unselected
+press on a link still sweeps text selection (law 7), so a link drags only once its text is the
+selection. ProseMirror starts that drag as it starts any selection's (its `dragstart` runs first),
+and `LinkSurface.registerDragSource` is told afterwards (core knows an identity and a label; the app
+decides what a drag carries). A drop back into the same editor therefore stays an ordinary text move
+(the reference-drop extension defers to the view's own drag); only a drop elsewhere, on a tree
+container or the composer, is the entry. A composer chip is a TipTap node view, whose `stopEvent`
+already leaves a drag that starts inside it alone.
 
 ### Copy
 
