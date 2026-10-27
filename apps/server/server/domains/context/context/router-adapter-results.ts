@@ -29,7 +29,6 @@ export function toSearchResult(
     revision: hit.revision,
     matches: hit.matches,
     matchCount: hit.matchCount,
-    score: hit.score,
     ...(hit.shown ? { shown: hit.shown } : {}),
   };
 }

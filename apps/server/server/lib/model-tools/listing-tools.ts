@@ -144,7 +144,7 @@ export function createSearchHandler(deps: ToolWiringDeps) {
         }),
       ),
       // Only returned, authorized hits were shown, and only the passages their text shows whole.
-      evidence: { shown: hits.flatMap(({ hit }) => shownPassages(hit, pattern, verbose)) },
+      evidence: { shown: hits.flatMap(({ hit }) => shownPassages(hit, verbose)) },
       metadata: {
         documentRevisions: hits.map(
           ({ hit: { documentId, uri, revision } }) =>
@@ -160,11 +160,11 @@ export function createSearchHandler(deps: ToolWiringDeps) {
  * block claims none of its links, since the window may have left one out or
  * split it. Whole passages keep theirs.
  */
-function shownPassages(hit: SearchResult, pattern: string, verbose: boolean): ShownLinkShowing[] {
+function shownPassages(hit: SearchResult, verbose: boolean): ShownLinkShowing[] {
   const shown = hit.shown;
   if (!shown) return [];
-  const links = hit.matches.flatMap(({ excerpt }, index) =>
-    searchPassage(excerpt, pattern, verbose).whole ? (shown.passages[index] ?? []) : [],
+  const links = hit.matches.flatMap((passage, index) =>
+    searchPassage(passage, verbose).whole ? (shown.passages[index] ?? []) : [],
   );
   if (links.length === 0) return [];
   return [{ documentId: hit.documentId, holderUri: shown.holderUri, view: shown.view, links }];

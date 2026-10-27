@@ -238,6 +238,12 @@ export interface SearchMatch {
    * through a thread view); its absence elsewhere is the contract, not an error.
    */
   blockHash?: string;
+  /**
+   * Where the first match sits in `excerpt`, fixed when the match was found, so
+   * the model-facing window and compaction cut there without matching again.
+   * Absent on results stored before grep.
+   */
+  anchor?: { start: number; end: number };
 }
 
 /** What a search hit's passages spell, from the read binding that spelled them. */
@@ -262,8 +268,6 @@ export interface SearchResult {
    * the passage cap. This is what stays honest about what was left out.
    */
   matchCount: number;
-  /** Relevance score, 0-1. Adapter-dependent. */
-  score?: number;
   /**
    * Host-only: each ref-bearing link the returned passages spell, aligned with
    * `matches`, and the holder URI and view the read's binding spelled them

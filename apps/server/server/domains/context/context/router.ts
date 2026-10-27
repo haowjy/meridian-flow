@@ -930,7 +930,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         if (!result.ok) continue;
         for (const hit of result.value) hits.push(toSearchResult(scheme, authority, hit));
       }
-      hits.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
       return Ok(hits);
     },
   };

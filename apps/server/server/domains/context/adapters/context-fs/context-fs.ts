@@ -5,6 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
+import { markdownPlainText, splitHashline } from "@meridian/agent-edit";
 import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   classifyFiletype,
@@ -40,6 +41,7 @@ import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
+import { compileGrep, escapeLiteral, type GrepBlock, grepBlocks } from "../../grep/matcher.js";
 import type {
   AdapterDeleteResult,
   AdapterFault,
@@ -87,7 +89,6 @@ import {
 } from "./create-placement.js";
 import { resolveCreateTarget } from "./create-target.js";
 import { LiveCreate } from "./live-create.js";
-import { matchDocument } from "./match.js";
 
 /**
  * A document path's leaf through the name codec: its folders and canonical parts, null for
@@ -700,6 +701,8 @@ export class ContextFS implements ContextSchemeAdapter {
     query: string,
     pathPrefix?: string,
   ): Promise<Result<AdapterSearchHit[], AdapterFault>> {
+    const matcher = compileGrep(escapeLiteral(markdownPlainText(query)), true);
+    if (!matcher.ok) return Ok([]);
     const prefix = pathPrefix?.replace(/\/+$/, "") ?? "";
     const documents = await this.collectDocuments(await this.readTreeView(), "", null);
     const searchable = documents.filter(
@@ -722,13 +725,16 @@ export class ContextFS implements ContextSchemeAdapter {
         for (const row of searchable) {
           const read = await this.searchableLines(row.document.id);
           if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-          const found = matchDocument(read.value.entries, query, {
-            hashlines: read.value.hashlines,
+          const blocks = read.value.entries.map((entry): GrepBlock => {
+            const parsed = read.value.hashlines ? splitHashline(entry) : null;
+            const body = parsed?.body ?? entry;
+            return { body, destinationFree: body, ...(parsed?.hash ? { hash: parsed.hash } : {}) };
           });
+          const found = grepBlocks(blocks, matcher.value);
           if (!found) continue;
-          const { entries: passageEntries, ...match } = found;
+          const { blocks: passageBlocks, ...match } = found;
           // Only the returned passages can be shown, never the matches past the cap.
-          const passages = passageEntries.map((entry) => read.value.links[entry] ?? []);
+          const passages = passageBlocks.map((block) => read.value.links[block] ?? []);
           const { holder } = read.value;
           hits.push({
             path: row.path,
