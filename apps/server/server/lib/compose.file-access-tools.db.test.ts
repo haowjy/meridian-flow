@@ -168,8 +168,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(missing.output).not.toContain(".md");
     });
 
-    // D37, D51: a switch that couldn't happen says why instead of asking for approval.
-    it("resolves a switch's target before asking for the user's approval", async () => {
+    // D51: a switch that couldn't happen says why before action policy or mutation.
+    it("resolves a switch's target, then moves the running chat", async () => {
       await db.insert(schema.works).values([
         { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Other", handle: "w2" },
         {
@@ -191,13 +191,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "Work w3 is archived. Ask the user to unarchive it before switching. (work_archived)",
       );
       expect(await switchTo("@w1")).toBe("This chat is already in w1.");
-      expect(await switchTo("w2")).toBe(
-        "Ask the user to switch this chat to Work w2. (permission_denied)",
-      );
+      expect(await switchTo("w2")).toBe("This chat is now in w2 (Other).");
+      const target = await script.runtime.ports.workRepo.findByHandle(PROJECT_ID, "w2");
+      expect(
+        (await script.runtime.ports.threadRepos.threadWorks.findPrimary(THREAD.threadId))?.workId,
+      ).toBe(target?.id);
     });
 
     it("gives a read agent write, refuses the manuscript and Work changes, and lets it write its own scratch", async () => {
       const script = await start();
+      await db.insert(schema.works).values({
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Other",
+        handle: "w2",
+      });
       await script.runtime.ports.agentRevisions.bindThread(
         THREAD.threadId,
         null,
@@ -229,6 +237,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "This agent can read but can't change Works. Ask the user to make this change. (permission_denied)",
       );
       expect(archive.result).toMatchObject({ details: { reason: "action_denied" } });
+
+      const switchWork = await call("work", { command: "switch", work: "w2" });
+      expect(switchWork.isError).toBe(true);
+      expect(switchWork.output).toBe(
+        "This agent can read but can't change Works. Ask the user to make this change. (permission_denied)",
+      );
+      const writeMode = await call("work", { command: "write_mode", mode: "draft" });
+      expect(writeMode.isError).toBe(true);
+      expect(writeMode.result).toMatchObject({ details: { reason: "action_denied" } });
 
       const root = listed(await call("ls", {}));
       expect(root).toEqual(

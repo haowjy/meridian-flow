@@ -16,7 +16,7 @@ process.once("message", async (message: { databaseUrl: string; workerCount: numb
       throw new Error("Refusing cleanup: managed database is not owned by the sending parent.");
     }
     // `<template>-worker-` is unique to this run (the template name carries its pid and start time), so
-    // the prefix also finds a suite's disposable clone (`openAuditedDatabase`) that its own drop left.
+    // the prefix also finds suite-owned disposable databases intentionally left for this collector.
     const clones = await listDatabasesWithPrefixForUrl(message.databaseUrl, `${targetDb}-worker-`);
     const urls = [
       ...new Set([

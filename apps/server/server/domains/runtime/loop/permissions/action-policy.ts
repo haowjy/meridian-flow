@@ -13,8 +13,6 @@ type AgentAction = `work.${WorkCommand["command"]}`;
 
 const WORK_CHANGE = { edit: "allow", read: "deny" } as const;
 const ALWAYS = { edit: "allow", read: "allow" } as const;
-// The model's switch waits on the writer prompt (#601); until then `ask` is refused (D37).
-const ASK = { edit: "ask", read: "ask" } as const;
 
 const ACTIONS: Readonly<Record<AgentAction, Readonly<Record<AgentPermission, ActionDecision>>>> = {
   "work.create": WORK_CHANGE,
@@ -22,7 +20,8 @@ const ACTIONS: Readonly<Record<AgentAction, Readonly<Record<AgentPermission, Act
   "work.archive": WORK_CHANGE,
   "work.unarchive": WORK_CHANGE,
   "work.delete": WORK_CHANGE,
-  "work.switch": ASK,
+  "work.switch": WORK_CHANGE,
+  "work.write_mode": WORK_CHANGE,
   "work.list": ALWAYS,
   "work.show": ALWAYS,
 };
@@ -42,13 +41,9 @@ export function mayChangeWorks(permission: AgentPermission): boolean {
 }
 
 /** What the model reads when the policy refused a `work` command. */
-export function workActionRefusal(
-  command: WorkCommand,
-  decision: Exclude<ActionDecision, "allow">,
-): string {
+export function workActionRefusal(decision: Exclude<ActionDecision, "allow">): string {
   if (decision === "deny") {
     return "This agent can read but can't change Works. Ask the user to make this change.";
   }
-  const target = command.command === "switch" && command.work ? command.work : "No Work";
-  return `Ask the user to switch this chat to Work ${target}.`;
+  return "This action needs the user's permission.";
 }

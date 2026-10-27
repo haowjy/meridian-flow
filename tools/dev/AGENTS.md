@@ -36,6 +36,13 @@ directory never imports application packages. The `./mf` CLI lives in
   reset all Tailscale routes, and never infer staleness from a branch name.
   Cleanup removes only what it can prove is merged; when it refuses a branch
   you believe is safe, follow [`WORKTREE-CLEANUP.md`](WORKTREE-CLEANUP.md).
+- `pnpm dev` sweeps managed sessions on `meridian-dev` for missing checkouts
+  before start/reuse, but never for `--print` or `--stop`, and the sweep never
+  touches the default tmux server. Inspect them with
+  `pnpm dev:prune-worktrees -- --orphans --dry-run`. Orphan teardown requires
+  path/pane ownership and process identity, never cwd or a name prefix alone. A
+  dead pane (`remain-on-exit`) has no process or cwd to check: skip it, never
+  signal its PID.
 - `tools/mf` and `apps/app/e2e` import the Portless helpers
   (`portless-prefix.ts`, `portless-routes.ts`, `dev-readiness.ts`,
   `dev-session-state.ts`). Keep those free of import-time side effects, with

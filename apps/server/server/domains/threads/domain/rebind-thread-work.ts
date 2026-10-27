@@ -1,4 +1,5 @@
 /** Canonical thread Work-rebind command shared by model and writer adapters. */
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   type RebindThreadWorkResult,
@@ -6,6 +7,7 @@ import {
   type WorkBindingState,
   workLifecycleState,
 } from "@meridian/contracts/works";
+import { createWriterWorkSwitchedNotice, type NoticePort } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import { WorkLifecycleUnavailableError, type WorkRepository } from "../../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../ports/repositories.js";
@@ -35,6 +37,11 @@ interface RebindThreadWorkDeps {
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   works: Pick<WorkRepository, "findById" | "findNoWork">;
   workContextNotices: Pick<WorkContextNotices, "threadChanged">;
+}
+
+interface SwitchThreadWorkDeps extends RebindThreadWorkDeps {
+  threads: Pick<ThreadRepository, "findById" | "findByIdIncludingDeleted">;
+  notices: Pick<NoticePort, "record">;
 }
 
 export interface RebindThreadWorkInput {
@@ -107,4 +114,37 @@ export async function rebindThreadWork(
     after,
     changed: rebound.changed,
   };
+}
+
+/** Rebinds a chat and records its causally paired switch notice in the caller's transaction. */
+export async function switchThreadWork(
+  deps: SwitchThreadWorkDeps,
+  input: RebindThreadWorkInput,
+): Promise<RebindThreadWorkResult> {
+  const transition = await rebindThreadWork(deps, input);
+  if (!transition.changed) return transition;
+
+  const thread = await deps.threads.findById(input.threadId);
+  if (!thread) throw new RebindThreadWorkError("thread_unavailable", input.threadId);
+  const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
+  if (transition.before.handle === null && !root?.ref)
+    throw new Error("Scratch requires the first chat's assigned handle");
+  const previousScratchUri = formatParsedContextUri(
+    "scratch",
+    "",
+    transition.before.handle === null
+      ? { kind: "lineage", rootThreadRef: root?.ref ?? "" }
+      : { kind: "work", workHandle: transition.before.handle },
+  );
+  await deps.notices.record(
+    createWriterWorkSwitchedNotice({
+      threadId: transition.threadId,
+      previousWorkId: transition.before.workId,
+      previousWorkName: transition.before.name,
+      workId: transition.after.workId,
+      workName: transition.after.name,
+      previousScratchUri,
+    }),
+  );
+  return transition;
 }
