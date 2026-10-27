@@ -88,15 +88,8 @@ export function placementOps(snapshot: {
       folder.canonicalRefresh?.operationId,
     );
   if (snapshot.operations?.length) {
-    // An operation's roots wait on its receipt for their canonical refresh, so it shapes the list
-    // until no root's barrier names it.
-    const refreshing = new Set<string>();
-    for (const { resource } of snapshot.records) {
-      const operationId = resource.obligations.canonicalRefresh?.operationId;
-      if (operationId) refreshing.add(operationId);
-    }
-    for (const folder of snapshot.folders)
-      if (folder.canonicalRefresh) refreshing.add(folder.canonicalRefresh.operationId);
+    // An operation shapes the list until no root's refresh barrier names it.
+    const refreshing = refreshBarrierOperationIds(snapshot);
     for (const { operationId, intents } of snapshot.operations)
       add(
         "operation",
@@ -107,6 +100,24 @@ export function placementOps(snapshot: {
       );
   }
   return ops.sort((left, right) => left.intent.admission.order - right.intent.admission.order);
+}
+
+/**
+ * The operations a record's canonical refresh waits on. A record that an operation placed rests on
+ * that operation's receipt until the barrier clears, so the operation's journal must outlive it.
+ */
+export function refreshBarrierOperationIds(snapshot: {
+  records: readonly ResourceRecord[];
+  folders: readonly FolderNamespaceRecord[];
+}): Set<string> {
+  const ids = new Set<string>();
+  for (const { resource } of snapshot.records) {
+    const operationId = resource.obligations.canonicalRefresh?.operationId;
+    if (operationId) ids.add(operationId);
+  }
+  for (const folder of snapshot.folders)
+    if (folder.canonicalRefresh) ids.add(folder.canonicalRefresh.operationId);
+  return ids;
 }
 
 /** Work the server has not finished with: it still shapes what later placements read. */

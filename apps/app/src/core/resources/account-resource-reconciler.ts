@@ -32,6 +32,7 @@ import {
   remintResource,
   resourceIdentityIndex,
   resourceNeedsBackgroundReconciliation,
+  retiredOperations,
   settleNamespaceOutcome,
 } from "@meridian/resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
@@ -176,6 +177,13 @@ export class AccountResourceReconciler {
     // A change from any tab may resolve a predecessor; only its waiters look again.
     for (const { rerun, on } of [...this.waiting.values()])
       if ([...on].some((handle) => changed.has(handle))) rerun();
+    this.retireOperations({ records, folders, operations });
+  }
+
+  /** Drops the operations nothing reads any more. Another tab may win the race; its drop is the same. */
+  private retireOperations(snapshot: Parameters<typeof retiredOperations>[0]): void {
+    for (const { operationId, revision } of retiredOperations(snapshot, Date.now()))
+      void this.ports.metadata.retireOperation(operationId, revision).catch(() => undefined);
   }
 
   schedule(key: ResourceKey): void {
@@ -214,6 +222,8 @@ export class AccountResourceReconciler {
           if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
         for (const operation of operations)
           if (operationNeedsBackgroundReconciliation(operation)) this.scheduleOperation(operation);
+        // A notice window closes with no projection change, so the sweep also runs here.
+        this.retireOperations({ records, folders, operations });
       })
       .catch(() => undefined);
   };

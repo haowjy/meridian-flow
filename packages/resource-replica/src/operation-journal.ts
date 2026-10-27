@@ -5,18 +5,21 @@
  * placement admission and predecessor gate.
  */
 import { validateNamespaceJournal } from "./namespace-journal-policy";
-import { placementUnresolved } from "./placement-journal";
+import { NAMESPACE_RECEIPT_NOTE_TTL_MS } from "./namespace-receipts";
+import { placementUnresolved, refreshBarrierOperationIds } from "./placement-journal";
 import {
   type NamespaceGate,
   type NamespaceReconcileResult,
   reconcileNamespaceJournal,
 } from "./resource-namespace";
 import type {
+  FolderNamespaceRecord,
   MetadataCommitResult,
   OperationRecord,
   OperationWrite,
   ResourceNamespaceLock,
   ResourceNamespaceTransport,
+  ResourceRecord,
 } from "./resource-records";
 
 /** Browser persistence implements this beside its file and folder journals, in the same account owner. */
@@ -24,6 +27,8 @@ export interface OperationStore {
   readonly accountId: string;
   readOperation(operationId: string): Promise<OperationRecord | null>;
   commitOperation(write: OperationWrite): Promise<MetadataCommitResult>;
+  /** Drops a retired operation; stale when it changed since `revision` was read. */
+  retireOperation(operationId: string, revision: number): Promise<MetadataCommitResult>;
 }
 
 export function validateOperationRecordUpdate(
@@ -92,4 +97,39 @@ export function reconcileOperationNamespace(input: {
     refresh: async () => null,
     replayEligible: () => false,
   });
+}
+
+/**
+ * The operations whose records have nothing left to say, for the caller to drop. Every projection
+ * emit reads the whole store, so a record that is never dropped makes each emit slower as history
+ * grows. An operation stays while it has unresolved work, while it `needs-repair` (a refusal
+ * outlives a reload until the writer dismisses it), through the notice window of a settled
+ * answer, and while a root's refresh barrier names it. A cancelled or superseded one has no
+ * window: nothing shows it.
+ */
+export function retiredOperations(
+  snapshot: {
+    records: readonly ResourceRecord[];
+    folders: readonly FolderNamespaceRecord[];
+    operations: readonly OperationRecord[];
+  },
+  now: number,
+): OperationRecord[] {
+  if (snapshot.operations.length === 0) return [];
+  const refreshing = refreshBarrierOperationIds(snapshot);
+  return snapshot.operations.filter(
+    (operation) =>
+      !refreshing.has(operation.operationId) &&
+      operation.intents.every((intent) => {
+        switch (intent.state) {
+          case "settled":
+            return now >= (intent.settledAt ?? 0) + NAMESPACE_RECEIPT_NOTE_TTL_MS;
+          case "cancelled":
+          case "superseded":
+            return true;
+          default:
+            return false;
+        }
+      }),
+  );
 }
