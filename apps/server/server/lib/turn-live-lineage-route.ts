@@ -118,7 +118,9 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
     documentId: document.documentId,
     uri: parsed.value.normalized,
     path: `/${parsed.value.path}`,
-    scope: document.scope,
+    ...(document.scope === "draft"
+      ? { scope: "draft" as const, workId: document.work.id }
+      : { scope: "live" as const }),
     ...(document.tree ? { tree: document.tree } : {}),
   };
 }

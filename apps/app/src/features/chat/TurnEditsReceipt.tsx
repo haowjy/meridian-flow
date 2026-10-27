@@ -6,8 +6,8 @@ import type {
   TreeReversalLanding,
   Turn,
   TurnInverseSkip,
+  TurnLiveLineageDocumentItem,
   TurnReceiptChip,
-  TurnTreeLine,
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
@@ -16,7 +16,6 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
-import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
@@ -48,14 +47,8 @@ import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 import { workReceiptLine } from "./work-receipt-copy";
 
-export type TurnEditDocument = {
-  documentId: string;
-  path: string;
-  uri: string;
-  scope: "live" | "draft";
-  /** The turn moved or deleted it: the row says so instead of only naming it. */
-  tree?: TurnTreeLine;
-};
+/** One document a turn edited: where the edit landed (a draft names its Work), and what it did to the document's place. */
+export type TurnEditDocument = TurnLiveLineageDocumentItem;
 
 function hasTurnEditsReceiptDocuments(
   documents: TurnEditDocument[],
@@ -394,7 +387,6 @@ export function TurnEditsReceipt({
                 <li key={doc.uri}>
                   <DocumentRow
                     document={doc}
-                    threadId={threadId}
                     onOpenContextUri={openContextUri}
                     canOpenContextUri={canOpenContextUri}
                   />
@@ -492,7 +484,6 @@ function ChangeViewDetail({
         {editedDocument ? (
           <DocumentRow
             document={editedDocument}
-            threadId={threadId}
             onOpenContextUri={onOpenContextUri}
             canOpenContextUri={canOpenContextUri}
           />
@@ -539,16 +530,14 @@ function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
  */
 function DocumentRow({
   document,
-  threadId,
   onOpenContextUri,
   canOpenContextUri,
 }: {
   document: TurnEditDocument;
-  threadId: string;
   onOpenContextUri: ((uri: string) => void) | null;
   canOpenContextUri: ((uri: string) => boolean) | null;
 }) {
-  const drag = useDocumentRowDrag(document, threadId);
+  const drag = useDocumentRowDrag(document);
   const openable =
     document.tree?.op !== "delete" && onOpenContextUri && canOpenContextUri?.(document.uri);
   if (!openable) {
@@ -575,24 +564,19 @@ function DocumentRow({
 
 /**
  * Dragging a row drags the document it represents, never the receipt or the pathname the turn
- * wrote. A draft row copies the draft that chat wrote (the chat's Work and the chat name it); a
- * document the turn deleted names nothing a drop could act on.
+ * wrote. A draft row copies the draft of the Work the turn wrote in, even after the chat moved
+ * to another Work; a document the turn deleted names nothing a drop could act on.
  */
-function useDocumentRowDrag(document: TurnEditDocument, threadId: string) {
-  const projectId = useProjectDocumentNavigationProjectId();
-  const workId = useDisplayedThread(projectId ?? "", projectId ? threadId : null)?.workId;
-  const view =
-    document.scope === "draft"
-      ? workId
-        ? ({ kind: "draft", workId, threadId } as const)
-        : null
-      : ({ kind: "live" } as const);
+function useDocumentRowDrag(document: TurnEditDocument) {
   return useReferenceDrag(
-    view && document.tree?.op !== "delete"
+    document.tree?.op !== "delete"
       ? {
           ref: { kind: "file", id: document.documentId },
           name: documentDisplayName(document.uri),
-          view,
+          view:
+            document.scope === "draft"
+              ? { kind: "draft", workId: document.workId }
+              : { kind: "live" },
         }
       : null,
   );

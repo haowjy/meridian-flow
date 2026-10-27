@@ -16,6 +16,7 @@ import { useProject } from "@/client/query/useProjectList";
 import { type ContextTab, isDraftOnly, tabContextOwner } from "@/client/stores";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
+import { useReviewCopy } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
 import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
@@ -24,6 +25,7 @@ import { schemeIcon, schemeLabel } from "./context-schemes";
 import { folderChain } from "./entry-drag/move-plan";
 import { type ReferenceSubject, useReferenceDrag } from "./entry-drag/reference-source";
 import type { TabLocation } from "./identity-location";
+import { tabSubject } from "./tab-subject";
 import { useOwnAreaHeading, useProjectMenuSource } from "./use-project-menu-source";
 
 export function DocumentPath({
@@ -116,11 +118,14 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
 function useCrumbSubjects(browse: Browse, location: TabLocation) {
   const projection = useAccountResourceProjection(browse.projectId);
   const { tab } = browse;
+  const review = useReviewCopy(tab.documentId);
   if (tab.kind === "new" || isDraftOnly(tab)) return NO_SUBJECTS;
   const ref = { kind: "file", id: tab.documentId } as const;
   const chain = folderChain(projection, ref);
+  const tabNames = tabSubject(tab, review);
   return {
-    leaf: { ref, name: location.leaf },
+    // The filename names the document the tab shows: the draft while the tab is under review.
+    leaf: tabNames && { ...tabNames, name: location.leaf },
     folders: location.folders.map((name, index) =>
       chain?.length === location.folders.length && chain[index]
         ? ({ ref: { kind: "folder", id: chain[index] }, name } as const)

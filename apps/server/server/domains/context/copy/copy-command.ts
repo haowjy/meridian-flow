@@ -373,7 +373,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const command = draft
       ? {
           documentId: file.documentId as DocumentId,
-          threadId: draft.threadId,
           destination: "draft" as const,
           workId: draft.workId,
         }
@@ -383,9 +382,19 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     for (;;) {
       const read = await deps.documentSync.readEffectiveBlocks(command);
       if (!read.ok) {
-        return read.error.code === "not_found"
-          ? Err({ code: "not_found", uri: source.uri })
-          : Err({ code: "io_error", uri: source.uri, message: read.error.code });
+        switch (read.error.code) {
+          case "not_found":
+            return Err({ code: "not_found", uri: source.uri });
+          case "draft_not_found":
+            return Err({
+              code: "invalid_operation",
+              uri: source.uri,
+              message: "That Work has no draft of this document to copy",
+              reason: "no_draft",
+            });
+          default:
+            return Err({ code: "io_error", uri: source.uri, message: read.error.code });
+        }
       }
       if (client && behind(client, read.value.stateVector)) {
         if (Date.now() < deadline) {

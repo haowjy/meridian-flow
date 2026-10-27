@@ -7,6 +7,7 @@ import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import { draftCopyView } from "@/features/draft-review/copy-view";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
@@ -53,17 +54,9 @@ export function WorkChangeFile({
   const wholeDocument = shown && isWholeDocumentChange(view);
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
-  // The draft is read as the chat that wrote it reads it. A document the draft created is no
-  // placed entry yet, and a tree-only change has no draft text to copy.
-  const writer = file.draft.actorThreads[0]?.threadId;
+  const copyView = draftCopyView(file, workId);
   const drag = useReferenceDrag(
-    writer && file.draft.hasDraft && !file.draftOnly
-      ? {
-          ref: { kind: "file", id: file.documentId },
-          name,
-          view: { kind: "draft", workId, threadId: writer },
-        }
-      : null,
+    copyView ? { ref: { kind: "file", id: file.documentId }, name, view: copyView } : null,
   );
 
   const review = (focus?: ReviewFocus) => {

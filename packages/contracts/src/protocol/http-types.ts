@@ -364,8 +364,11 @@ export type MoveContextEntryResult =
 export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */
   | { kind: "live" }
-  /** The draft a tab shows, read in the Work's branch as the given chat would read it. */
-  | { kind: "draft"; workId: WorkId; threadId: string };
+  /**
+   * The Work's draft of the document, the one its active branch holds. A Work with no draft of
+   * it refuses the Copy; it never reads the live document instead.
+   */
+  | { kind: "draft"; workId: WorkId };
 
 /** One selected root: what Copy copies, where it comes from, and how to read it. */
 export type CopyContextEntrySource = {

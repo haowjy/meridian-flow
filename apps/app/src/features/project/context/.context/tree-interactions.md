@@ -421,12 +421,12 @@ as itself and a gone one answers "Some of these items are no longer there".
 
 | Source | Names | View |
 |---|---|---|
-| Editor tab (`ContextTabBar`) | the tab's document | the draft while the tab is under review (read as the chat that wrote it, unless the review has one); local and draft-only tabs don't drag |
-| Path crumb (`DocumentPath`) | the document (filename) or the folder (read up the placement graph, so no catalog is acquired); the area crumb navigates | live |
+| Editor tab (`ContextTabBar`) | the tab's document | the draft of the Work under review while the tab is under review (`draftCopyView`, owned by draft review); local and draft-only tabs don't drag |
+| Path crumb (`DocumentPath`) | the document (filename) or the folder (read up the placement graph, so no catalog is acquired); the area crumb navigates | the filename follows its tab (the draft while under review); folders live |
 | Recent row | the document by id, never the path it was opened at | live |
 | Transcript chip (`TranscriptReference`) | an exact reference the host still resolves; syntax links name no entry | live |
 | Composer chip (`ComposerReferenceMenu`) | its document or folder | live |
-| Receipt row (`TurnEditsReceipt`), Work change row (`WorkChangeFile`) | the document the row represents | `draft` for a draft row (the chat's Work and the chat that wrote it); a row the turn deleted doesn't drag |
+| Receipt row (`TurnEditsReceipt`), Work change row (`WorkChangeFile`) | the document the row represents | `draft` for a draft row: the Work the turn wrote in (the receipt's lineage names it) or the Work the row lists (`draftCopyView`); a row the turn deleted, or a change with no draft text, doesn't drag |
 | Uploads entry (`ChatFilesMenu`) | the upload's document | live; the section is a drop target that refuses |
 | Editor link (`LinkSurfaceExtension`) | the entry a link names, once the link's text is the selection | live |
 
@@ -446,7 +446,8 @@ they are (`planCopy`, `copyRows` in `execute-copy.ts`). Every carried row is
 copied, the one already in the destination's parent included (its copy takes the
 next free name), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
 server with its root: a tree row copies the live document, a draft tab or receipt row the draft it
-shows. The copies are
+shows. A draft view names its Work and no chat; the server reads that Work's active branch's draft
+of the document, and a Work with no draft of it refuses the Copy (it never reads live text). The copies are
 listed at once under predicted names (`arrivals`, as for Move): the replica holds
 one operation with one root per row, and the answer places every root or refuses
 the whole Copy (see `packages/resource-replica/.context/CONTEXT.md`, "Copy"). A
@@ -466,8 +467,7 @@ the window, and the journal keeps the refusal: `CopyRefusalNotices` shows "Could
 copy chapter-3 to Vault. A source or the destination is no longer there." with
 Copy to… (the same rows, picked afresh) and Dismiss, on the destination list's
 surface, or on the surface that started it when the destination is gone, until the
-writer resolves it. A draft tab's copy of the draft is a later surface; the
-replica already carries a source view for it.
+writer resolves it.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the

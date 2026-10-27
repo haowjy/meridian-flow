@@ -1,7 +1,6 @@
 /** ContextTabBar — the tab strip above the context main pane. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { CopyContextEntryView } from "@meridian/contracts/protocol";
 import {
   Code2,
   File,
@@ -14,21 +13,20 @@ import {
   X,
 } from "lucide-react";
 import { type HTMLAttributes, type ReactNode, useEffect, useRef } from "react";
-import { type ContextTab, isDraftOnly } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useReviewCopy } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "./context-file-icon";
 import type { OptimisticContextTab } from "./context-pane-state";
-import { type ReferenceSubject, useReferenceDrag } from "./entry-drag/reference-source";
+import { useReferenceDrag } from "./entry-drag/reference-source";
 import { RemovedNoticeSlot } from "./RemovedDocumentNotice";
+import { tabSubject } from "./tab-subject";
 
 export type ContextTabBarProps = {
   tabs: ContextTab[];
   activeTabId: string | null;
   activeTabInstanceId?: string;
-  reviewingTabId?: string | null;
-  /** The draft the reviewing tab shows, which a Copy of that tab reads; null when no chat can read it. */
-  reviewView?: CopyContextEntryView | null;
   optimisticTab?: OptimisticContextTab | null;
   onSelect: (tab: ContextTab) => void;
   onClose: (tab: ContextTab) => void;
@@ -50,8 +48,6 @@ export function ContextTabBar({
   tabs,
   activeTabId,
   activeTabInstanceId,
-  reviewingTabId,
-  reviewView = null,
   optimisticTab,
   onSelect,
   onClose,
@@ -117,8 +113,6 @@ export function ContextTabBar({
               key={tab.tabInstanceId ?? tab.documentId}
               tab={tab}
               active={active}
-              reviewing={active && tab.documentId === reviewingTabId}
-              reviewView={reviewView}
               // Divider only between two adjacent inactive tabs — the active
               // tab's canvas shape provides its own separation.
               divider={!active && previous !== undefined && !isActive(previous)}
@@ -188,42 +182,25 @@ function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
   );
 }
 
-/**
- * What dragging a tab names: its document, read as the tab shows it (the draft while the tab is
- * under review). A local or draft-only document is no placed entry a drop could act on.
- */
-function tabSubject(
-  tab: ContextTab,
-  reviewing: boolean,
-  reviewView: CopyContextEntryView | null,
-): ReferenceSubject | null {
-  if (tab.kind === "new" || isDraftOnly(tab)) return null;
-  if (reviewing && !reviewView) return null;
-  return {
-    ref: { kind: "file", id: tab.documentId },
-    name: tab.name,
-    ...(reviewing && reviewView ? { view: reviewView } : {}),
-  };
-}
+const NOT_REVIEWING = { reviewing: false, view: null } as const;
 
 function TabChip({
   tab,
   active,
-  reviewing,
-  reviewView,
   divider,
   onSelect,
   onClose,
 }: {
   tab: ContextTab;
   active: boolean;
-  reviewing: boolean;
-  reviewView: CopyContextEntryView | null;
   divider: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
-  const drag = useReferenceDrag(tabSubject(tab, reviewing, reviewView));
+  // The review is in the active tab; another tab of the same document shows it live.
+  const review = useReviewCopy(tab.documentId);
+  const reviewing = active && review.reviewing;
+  const drag = useReferenceDrag(tabSubject(tab, reviewing ? review : NOT_REVIEWING));
   return (
     <TabChipFrame active={active} reviewing={reviewing} divider={divider} tabProps={drag}>
       <button
