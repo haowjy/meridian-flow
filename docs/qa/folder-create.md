@@ -114,6 +114,15 @@ stays until dismissed and covers the lowest tree rows; dismiss it before the nex
     Manuscript: it lands under the new id. Move… `Inner`: the picker opens inside `Outer` and
     `Inner` lands under it (`Outer/Inner` on the server). Repeat to the refusal and Delete
     `Outer` instead: `settled-locally`, no `/delete` request.
+    Two more checks on the same run. A folder's handle is opaque (a random id; the journal
+    keeps it through the remint, while a catalog-listed folder's is `catalog-folder:<id>`):
+    put a document in `Outer` on the server (`./mf doc put manuscript://Outer/Doc`) before
+    deleting the folder, and after the remint restore that document from Trash. The spent id
+    is back in the catalog, so the tree lists a second `Outer` (record
+    `catalog-folder:<id>`) beside the reminted one, and a document created on the server
+    afterwards still appears. And with `__delay2` holding only the replacement's create, a
+    New file inside the reminted folder before that answer has the reminted folder's create
+    as its predecessor, is sent only after it, and lands in the folder.
 12. Phone: a refused folder row in Files → Unfiled says "Couldn't create this folder. Try
     another place." with Move… and Rename under it (drive the phone over CDP as in
     [refused-create](refused-create.md) step 14). Move… opens at the refused destination;

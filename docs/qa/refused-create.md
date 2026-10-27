@@ -31,8 +31,9 @@ on a create-untitled POST (the server answers a typed 400 `bad_request`,
 network error a lost response is), then sets `__hold`, which fails every later create at
 the client without sending it. Clear `__hold` to let the replay out. `__refuse2 = '1'`
 refuses every create under an id other than the first one logged, so a replaced id's retry
-is refused while the original id still reaches the server. Reset `__cu` before a run: it
-names the first id.
+is refused while the original id still reaches the server; `__delay2 = '12000'` holds only
+that replaced id's create (keep it under the client's ~20 s timeout). Reset `__cu` before a
+run: it names the first id.
 
 ```js
 (() => {
@@ -45,10 +46,11 @@ names the first id.
       log.push({ t: new Date().toISOString().slice(11, 19), id: body.documentId });
       localStorage.setItem('__cu', JSON.stringify(log));
       if (localStorage.getItem('__hold')) throw new TypeError('Failed to fetch');
-      const delay = Number(localStorage.getItem('__delay') || 0);
+      const replaced = log.length > 1 && log[0].id !== body.documentId;
+      const delay = Number(localStorage.getItem('__delay') || 0) ||
+        (replaced ? Number(localStorage.getItem('__delay2') || 0) : 0);
       if (delay) await new Promise((r) => setTimeout(r, delay));
-      const replaced = localStorage.getItem('__refuse2') && log.length > 1 && log[0].id !== body.documentId;
-      if (localStorage.getItem('__refuse') || replaced) {
+      if (localStorage.getItem('__refuse') || (localStorage.getItem('__refuse2') && replaced)) {
         body.documentId = '';
         return o.call(this, u, { ...i, body: JSON.stringify(body) });
       }
