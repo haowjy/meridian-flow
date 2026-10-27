@@ -21,7 +21,7 @@ import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import { documentRevision, versioned } from "./document-revision.js";
 import type { DraftPullService } from "./draft-pulls.js";
-import { hashlineBlocks } from "./hashline-blocks.js";
+import { hashlineBlocks, locateInBody } from "./hashline-blocks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { DocumentDerivationStore } from "./ports/document-derivations.js";
@@ -135,7 +135,12 @@ export function createEffectiveDocumentReader(input: {
             doc: toDocHandle(doc),
           }),
         );
-        return { blocks, revision, holder: { uri: scope.holder.uri, view: scope.holder.view } };
+        return {
+          blocks,
+          revision,
+          holder: { uri: scope.holder.uri, view: scope.holder.view },
+          locate: locateInBody(input.codec.markup),
+        };
       });
     },
     ensureCreatedDocumentDraft(command) {

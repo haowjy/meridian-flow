@@ -17,6 +17,7 @@ import { grepText } from "@meridian/agent-edit";
 import {
   type DocumentMatch,
   type GrepBlock,
+  type GrepLocate,
   type GrepMatcher,
   grepBlocks,
 } from "../../grep/matcher.js";
@@ -36,6 +37,8 @@ const STORED_SLICE = 50;
 export interface GrepRead<Shown> {
   blocks: readonly GrepBlock[];
   revision: string | null;
+  /** Places a range of a block's destination-free markdown in its body. */
+  locate: GrepLocate;
   /** The host-only link facts of the passages `match` returned. */
   shownOf(match: DocumentMatch): Shown | undefined;
 }
@@ -150,7 +153,7 @@ export async function scanDocuments<Shown, Fault>(input: {
       const result = await load();
       if (!result.ok) return result;
       const { read, texts } = result.value;
-      const match = await grepBlocks(read.blocks, texts, input.matcher, pace);
+      const match = await grepBlocks(read.blocks, texts, input.matcher, read.locate, pace);
       const shown = read.shownOf(match);
       hits.push({
         document,

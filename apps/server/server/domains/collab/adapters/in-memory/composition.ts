@@ -28,7 +28,7 @@ import { createDocumentCreationAggregate } from "../../domain/document-creation.
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
 import { DraftNotFoundError } from "../../domain/draft-resolver.js";
-import { hashlineBlocks } from "../../domain/hashline-blocks.js";
+import { hashlineBlocks, locateInBody } from "../../domain/hashline-blocks.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createReplySaveFences } from "../../domain/reply-save-fences.js";
@@ -298,7 +298,12 @@ function createInMemoryDraftPeerStub(
             doc: toDocHandle(doc),
           }),
         );
-        return Ok({ blocks, revision, holder: { uri: scope.holder.uri, view: LIVE_VIEW } });
+        return Ok({
+          blocks,
+          revision,
+          holder: { uri: scope.holder.uri, view: LIVE_VIEW },
+          locate: locateInBody(codec.markup),
+        });
       }),
     async ensureCreatedDocumentDraft() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");

@@ -5,7 +5,7 @@
  * `re2js`, which never backtracks: V8's own `RegExp` took 20 s on `(a+)+$`
  * against 29 characters. Linear is not free, though: time grows with text length
  * times the compiled program's size, and a bounded repeat multiplies that
- * size, so patterns whose repeat counts add up past {@link MAX_REPEAT} are refused here. The scan
+ * size, so patterns whose compiled program passes {@link MAX_PROGRAM} are refused here. The scan
  * adds the other bound, an abort signal it polls between lines. The unit of
  * matching is a line of the document's **grep text** (see `@meridian/agent-edit`'s
  * `grepText`): `^` and `$` anchor lines.
@@ -25,8 +25,13 @@ import { requiredLiterals } from "./required-literals.js";
 /** How many passages one document contributes before the count speaks for the rest. */
 export const PASSAGE_CAP = 3;
 
-/** Most a pattern's repeat counts may add up to (see {@link repeatWeight}). */
-export const MAX_REPEAT = 100;
+/**
+ * Largest compiled RE2 program a pattern may have. Matching time over a long line is the program's
+ * size times the line's length, wherever the size comes from (`{n}`, longhand repeats, big classes,
+ * nesting). Measured per 1M-character line with the program at 63 instructions: 2.6 s for 60 `\pL`
+ * under `-i` (the slowest shape found), about 1.2 s for 60 `.`. `\d{4}-\d{2}-\d{2}` is 12.
+ */
+export const MAX_PROGRAM = 64;
 
 export interface GrepMatcher {
   /** Match spans in one line of grep text. */
@@ -41,87 +46,17 @@ export interface GrepMatcher {
   test?(text: string): boolean;
 }
 
-/**
- * What a pattern's repeats add up to: `x{n}` is n, `(?:x{n}){m}` is n·m, and repeats side by
- * side or in alternatives add (`[^z]{100}[^z]{100}` is 200): matching time over a long line
- * grows with that sum, and a chain of ten `{100}` took 19 s on a 1M-character line where one
- * takes 2 s. Read from the source, not RE2's parse, which `re2js` doesn't expose. Escapes and
- * character classes hold no repeats; `{n,m}` counts m, `{n,}` n.
- */
-export function repeatWeight(pattern: string): number {
-  // Per open group: the weight of its finished items, and of the item a quantifier may still scale.
-  const frames = [{ total: 0, last: 0 }];
-  const top = () => frames[frames.length - 1] as { total: number; last: number };
-  const item = () => {
-    const frame = top();
-    frame.total += frame.last;
-    frame.last = 0;
-  };
-  const chars = Array.from(pattern);
-  for (let i = 0; i < chars.length; i += 1) {
-    const char = chars[i];
-    if (char === "\\") {
-      item();
-      const next = chars[i + 1];
-      if (next === "Q") {
-        const end = chars.indexOf("\\", i + 2);
-        i = end < 0 ? chars.length : end + 1;
-      } else if ((next === "p" || next === "P" || next === "x") && chars[i + 2] === "{") {
-        i = Math.max(chars.indexOf("}", i + 2), i + 2);
-      } else {
-        i += 1;
-      }
-    } else if (char === "[") {
-      item();
-      let j = i + 1;
-      if (chars[j] === "^") j += 1;
-      if (chars[j] === "]") j += 1;
-      while (j < chars.length && chars[j] !== "]") {
-        if (chars[j] === "\\") j += 1;
-        else if (chars[j] === "[" && chars[j + 1] === ":")
-          j = Math.max(chars.indexOf("]", j + 2), j);
-        j += 1;
-      }
-      i = j;
-    } else if (char === "(") {
-      item();
-      frames.push({ total: 0, last: 0 });
-      // `(?:`, `(?i:`, `(?P<name>`: the group's own syntax, up to its first `:` or `>`.
-      if (chars[i + 1] === "?") {
-        let j = i + 2;
-        while (j < chars.length && !":>)".includes(chars[j] as string)) j += 1;
-        i = chars[j] === ")" ? j - 1 : j;
-      }
-    } else if (char === ")" && frames.length > 1) {
-      const group = frames.pop() as { total: number; last: number };
-      top().last = group.total + group.last;
-    } else if (char === "{") {
-      const bound = /^\{(\d+)(?:,(\d*))?\}/u.exec(chars.slice(i, i + 24).join(""));
-      if (!bound) {
-        item();
-        continue;
-      }
-      const frame = top();
-      frame.last = Math.max(Number(bound[2] || bound[1]), 1) * Math.max(frame.last, 1);
-      i += (bound[0] as string).length - 1;
-    } else {
-      item();
-    }
-  }
-  const root = top();
-  return root.total + root.last;
-}
-
 const REGEXP_SYNTAX = /[\\^$.*+?()[\]{}|]/gu;
 
 /** Compile once per call, at the trust boundary; the error is the parser's message. */
 export function compileGrep(pattern: string, ignoreCase: boolean): Result<GrepMatcher, string> {
-  const repeat = repeatWeight(pattern);
-  if (repeat > MAX_REPEAT)
-    return Err(`repeat counts add up to ${repeat}, above the limit of ${MAX_REPEAT}`);
   const flags = ignoreCase ? RE2JS.CASE_INSENSITIVE : 0;
   try {
     const line = RE2JS.compile(pattern, flags);
+    // `prog` is re2js internal (hence the exact version pin); a build that hides it refuses every pattern.
+    const size = (line as unknown as { re2Input?: { prog?: { inst?: { length: number } } } })
+      .re2Input?.prog?.inst?.length;
+    if (size === undefined || size > MAX_PROGRAM) return Err("pattern is too complex");
     // Without a literal, re2js loses its literal fast path under CASE_INSENSITIVE, so a
     // case-insensitive pattern prefilters with a V8 RegExp over the literal it requires.
     // An escaped literal cannot backtrack. `iu` folds case the way RE2 does.
@@ -156,6 +91,12 @@ export interface GrepBlock {
   destinationFree: string;
 }
 
+/** Places a range of a block's `destinationFree` markdown in its `body`; null when it can't. */
+export type GrepLocate = (
+  block: Pick<GrepBlock, "body" | "destinationFree">,
+  range: { start: number; end: number },
+) => { start: number; end: number } | null;
+
 /** What one document contributed to a content-mode grep. */
 export interface DocumentMatch {
   /** Matching passages in document order, at most {@link PASSAGE_CAP}. */
@@ -173,6 +114,7 @@ export async function grepBlocks(
   blocks: readonly GrepBlock[],
   texts: readonly string[],
   matcher: GrepMatcher,
+  locate: GrepLocate,
   pace: () => Promise<void>,
 ): Promise<DocumentMatch> {
   const matches: GrepPassage[] = [];
@@ -190,66 +132,26 @@ export async function grepBlocks(
     if (!hit) continue;
     // Offsets into the plain text map back to the markdown only for blocks that are returned.
     const view = markdownTextView(block.destinationFree);
-    let first: [number, number] | undefined;
+    let first: [number, number] = [0, 0];
     let lineStart = 0;
     for (const line of view.text.split("\n")) {
-      first ??= matcher.spans(line)[0]?.map((at) => lineStart + at) as [number, number] | undefined;
+      const span = matcher.spans(line)[0];
+      if (span) {
+        first = [lineStart + span[0], lineStart + span[1]];
+        break;
+      }
       lineStart += line.length + 1;
     }
-    if (!first) continue;
     const start = view.start[first[0]] ?? 0;
     const end = view.end[Math.max(first[1], first[0] + 1) - 1] ?? start;
+    const anchor = locate(block, { start, end });
     matches.push({
       excerpt: block.body,
       ...(block.hash ? { blockHash: block.hash } : {}),
-      anchor: {
-        start: toExcerptOffset(block.destinationFree, block.body, start),
-        end: toExcerptOffset(block.destinationFree, block.body, end),
-      },
+      ...(anchor ? { anchor } : {}),
       term: view.text.slice(first[0], first[1]),
     });
     returned.push(index);
   }
   return { matches, blocks: returned };
-}
-
-/**
- * Where offset `at` of the destination-free markdown sits in the real body.
- * The two differ only by link and image destinations, which the first lacks: where the
- * real body has a destination, the destination-free text is up to the character after it
- * (`)` or the space before a title).
- */
-function toExcerptOffset(destinationFree: string, body: string, at: number): number {
-  if (destinationFree === body) return at;
-  let i = 0;
-  let j = 0;
-  while (i < at && i < destinationFree.length && j < body.length) {
-    if (destinationFree[i] !== body[j]) j = endOfDestination(body, j);
-    i += 1;
-    j += 1;
-  }
-  return j;
-}
-
-/** Index just past the link destination starting at `from`: `<…>`, or bare with balanced parentheses. */
-function endOfDestination(text: string, from: number): number {
-  if (text[from] === "<") {
-    for (let index = from + 1; index < text.length; index += 1) {
-      if (text[index] === "\\") index += 1;
-      else if (text[index] === ">") return index + 1;
-    }
-    return text.length;
-  }
-  let depth = 0;
-  for (let index = from; index < text.length; index += 1) {
-    const char = text[index] as string;
-    if (char === "\\") index += 1;
-    else if (/\s/u.test(char)) return index;
-    else if (char === "(") depth += 1;
-    else if (char === ")") {
-      if (depth === 0) return index;
-      depth -= 1;
-    }
-  }
-  return text.length;
 }
