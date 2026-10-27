@@ -333,9 +333,41 @@ export function copyReceipt(
 }
 
 /**
+ * Where an accepted receipt put each root the request was sent for; null when it leaves one out or
+ * names it as another kind, which is not an answer the roots can take.
+ */
+function receiptPlaces(
+  copy: CopyDesired,
+  request: Extract<NamespaceRequest, { kind: "copy" }>,
+  receipt: NonNullable<ReturnType<typeof copyReceipt>>,
+): RootPlace[] | null {
+  const sent = new Set(request.body.sources.map((source) => source.copyId));
+  const places: RootPlace[] = [];
+  for (const root of copy.roots) {
+    if (!sent.has(root.copyId)) continue;
+    const entry = receipt.entries.find((candidate) => candidate.id === root.copyId);
+    if (!entry || entry.kind !== root.kind) return null;
+    places.push({
+      handle: root.handle,
+      kind: root.kind,
+      location: {
+        scheme: request.body.destinationScheme,
+        path: displayedPath(entry.path),
+        name: entry.name,
+        ...request.owner,
+      },
+      parent: copy.destination.parent,
+      observationVersion: receipt.observationVersion,
+    });
+  }
+  return places;
+}
+
+/**
  * Applies the recorded answer to the roots in the transaction that settles the operation: a
- * receipt gives each root it was sent for its place, anything else drops them. A sent root the
- * receipt does not name is a contract violation, not a refusal.
+ * receipt gives each root it was sent for its place, anything else drops them. An accepted answer
+ * the roots cannot take (no receipt, or one that leaves out a root it was sent) is a refusal too:
+ * a throw here would leave the operation `received` for good, holding its admission keys.
  */
 export function settleCopy(record: OperationRecord, settledAt = Date.now()): OperationWrite | null {
   const intent = activeNamespaceIntent(record);
@@ -360,31 +392,9 @@ export function settleCopy(record: OperationRecord, settledAt = Date.now()): Ope
   };
   if (disposition !== "accepted")
     return { ...settled, roots: { dropped: copy.roots.map((root) => root.handle) } };
-  const { request } = attempt;
   const receipt = copyReceipt(intent);
-  if (!receipt) throw new Error("An accepted Copy answers with its receipt");
-  const { entries } = receipt;
-  const sent = new Set(request.body.sources.map((source) => source.copyId));
-  const places = copy.roots
-    .filter((root) => sent.has(root.copyId))
-    .map((root): RootPlace => {
-      const entry = entries.find((candidate) => candidate.id === root.copyId);
-      if (!entry || entry.kind !== root.kind)
-        throw new Error("A Copy receipt must name every root it was asked to copy");
-      return {
-        handle: root.handle,
-        kind: root.kind,
-        location: {
-          scheme: request.body.destinationScheme,
-          path: displayedPath(entry.path),
-          name: entry.name,
-          ...request.owner,
-        },
-        parent: copy.destination.parent,
-        observationVersion: receipt.observationVersion,
-      };
-    });
-  return { ...settled, roots: { placed: places } };
+  const places = receipt && receiptPlaces(copy, attempt.request, receipt);
+  return places ? { ...settled, roots: { placed: places } } : refusal(record, intent, copy);
 }
 
 /**
@@ -441,7 +451,19 @@ export function reconcileOperationNamespace(input: {
     // An operation is sent under its own id, whatever id the loop would mint.
     newAttemptIds: () => ({ attemptId: input.newAttemptId(), operationId: key.handle }),
     read: () => metadata.readOperation(key.handle),
-    commit: (write: OperationWrite) => metadata.commitOperation(write),
+    commit: async (write: OperationWrite) => {
+      try {
+        return await metadata.commitOperation(write);
+      } catch (error) {
+        // Placing the roots is the one part of a write that can fail after the server has answered
+        // (a root's invariants, checked in the store). That answer is then one the roots cannot
+        // take, and it is refused like any other; leaving it `received` holds the destination.
+        const record = write.roots?.placed ? await metadata.readOperation(key.handle) : null;
+        const intent = record && activeNamespaceIntent(record);
+        if (!record || intent?.state !== "received" || intent.desired.kind !== "copy") throw error;
+        return metadata.commitOperation(refusal(record, intent, intent.desired));
+      }
+    },
     prepare: (record, ids) => prepareCopyAttempt(record, ids.attemptId, transport),
     repair: (record, intentId) => {
       const intent = record.intents.find((candidate) => candidate.intentId === intentId);

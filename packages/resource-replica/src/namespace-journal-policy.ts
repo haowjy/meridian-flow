@@ -444,7 +444,8 @@ export function validateNamespaceJournal(input: {
     if (
       intent.state === "superseded" &&
       ((intent.attempts.length > 0 && !outcome) ||
-        accepted ||
+        // An accepted answer the replica could not apply is `needs-repair` and ends superseded.
+        (accepted && previousIntent?.state !== "needs-repair") ||
         (previousIntent &&
           previousIntent.state !== "needs-repair" &&
           previousIntent.state !== "received" &&

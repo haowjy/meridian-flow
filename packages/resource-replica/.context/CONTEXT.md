@@ -447,6 +447,12 @@ this device sees them at the drop.
   `conflict` receipt, `source_behind` past its bound) drops the roots and their intents; the
   operation goes `needs-repair` and stays until the writer resolves it
   (`resolveRefusedCopy`: `superseded`, for Dismiss and for Copy to…, which sends a new Copy).
+  An accepted answer the roots cannot take is a refusal too, not a throw: a receipt that leaves
+  out a root it was sent for (`settleCopy`), or a store that refuses a root's place
+  (`reconcileOperationNamespace` refuses the operation in a second commit). Nothing that fails
+  while settling may leave the operation `received`, because it holds its admission keys and
+  every later placement waits behind it. The refusal keeps the accepted outcome, so the
+  journal validator lets a `needs-repair` intent with one be superseded.
 - **`source_behind`** is resent under the same operation id for `SOURCE_BEHIND_BOUND_MS` from the
   first one (`OperationRecord.behindSince`), then refused. The server recorded nothing, so
   retrying is a new Copy.
