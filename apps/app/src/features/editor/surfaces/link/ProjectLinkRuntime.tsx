@@ -37,8 +37,7 @@ import {
   type LinkResolutionScope,
   useLinkFollower,
 } from "@/features/links";
-import { startEntryDrag } from "@/features/project/context/entry-drag/drag-session";
-import { LIVE_VIEW } from "@/features/project/context/entry-drag/entry";
+import { useReferenceDragStart } from "@/features/project/context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
 
@@ -89,6 +88,7 @@ export function ProjectLinkRuntime({
   const resolution = useMemo(() => getLinkAnswerCache(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
   const open = useEditorLinkDestination();
+  const startDrag = useReferenceDragStart();
 
   // The holder's Work arrives with its resource record. Until then the scope is
   // pending, so a click waits for the real scope instead of being dropped.
@@ -125,9 +125,11 @@ export function ProjectLinkRuntime({
     };
     const unregisterNavigator = surface.registerNavigator(navigate);
     // A selected link drags as the entry it names, whatever draft the holder shows.
-    const unregisterDragSource = surface.registerDragSource(({ entry, name, event }) =>
-      startEntryDrag(event, [{ ref: entry, name, view: LIVE_VIEW }], "reference"),
-    );
+    const unregisterDragSource = startDrag
+      ? surface.registerDragSource(({ entry, name, event }) =>
+          startDrag(event, { ref: entry, name }),
+        )
+      : () => {};
     // What the outcome dialog's Close, Cancel, and Try again mean is the
     // follower's: it knows which follow owns what is shown.
     const unregisterHandlers = surface.registerFollowHandlers({
@@ -139,7 +141,7 @@ export function ProjectLinkRuntime({
       unregisterDragSource();
       unregisterHandlers();
     };
-  }, [active, follower, projectId, surface]);
+  }, [active, follower, projectId, startDrag, surface]);
 
   return null;
 }
