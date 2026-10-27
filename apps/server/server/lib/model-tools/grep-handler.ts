@@ -20,6 +20,8 @@ import { listingCall } from "./listing-tools.js";
 import { contextToolError, isToolError, type ToolWiringDeps, toolError } from "./tool-context.js";
 
 const DEFAULT_HEAD_LIMIT = 50;
+/** How long a scan may run before it returns what it has; under the tool timeout. */
+const SCAN_BUDGET_MS = 20_000;
 
 export function createGrepHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
@@ -54,6 +56,7 @@ export function createGrepHandler(deps: ToolWiringDeps) {
       ...(addressGlob ? { glob: addressGlob.value } : {}),
       mode,
       headLimit,
+      signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(SCAN_BUDGET_MS)]),
       readable: async (ids) => {
         const access = await deps.fileAccess.listAccess(principal, ids as DocumentId[]);
         return new Map(

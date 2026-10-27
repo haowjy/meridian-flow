@@ -64,11 +64,11 @@ describe("durable document derivations", () => {
     deferred: () => {},
     store,
     serializer: {
-      async serializeDocument(_id, doc) {
+      async projectDocument(_id, doc) {
         if (fail) throw new Error("serializer unavailable");
-        return doc.getText("prose").toString();
+        const text = doc.getText("prose").toString();
+        return { markdown: text, grepText: text };
       },
-      grepTextOfDocument: (_id, doc) => doc.getText("prose").toString(),
     },
     outsideTransaction: (operation) => operation(),
     failed: () => {},
@@ -827,8 +827,10 @@ describe("durable document derivations", () => {
       deferred: () => {},
       store: aheadStore,
       serializer: {
-        serializeDocument: async (_id, doc) => doc.getText("prose").toString(),
-        grepTextOfDocument: (_id, doc) => doc.getText("prose").toString(),
+        projectDocument: async (_id, doc) => {
+          const text = doc.getText("prose").toString();
+          return { markdown: text, grepText: text };
+        },
       },
       outsideTransaction: (operation) => operation(),
       failed: () => {},

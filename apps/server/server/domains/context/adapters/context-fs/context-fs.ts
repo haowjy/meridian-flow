@@ -19,7 +19,6 @@ import {
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { SpelledLinkFact } from "@meridian/markup/links";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
@@ -28,7 +27,6 @@ import type {
   DocumentLinkScopes,
   DraftPeerShadowAccess,
   EffectiveReadVersion,
-  HashlineRead,
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
@@ -736,15 +734,18 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!first) return Ok({ files: [], totalFiles: 0, exact: true });
 
     const view = this.threadView();
-    const stored = await this.store.readGrepTexts(searchable.map(({ id }) => id));
     // Writes this reply staged to a live document stay in memory until it commits and leave no
     // draft row, so the stored text no longer describes what this reader sees.
-    if (view?.responseId) {
-      for (const id of [...stored.keys()]) {
-        if (this.documentSync.isStagedByResponse(view.responseId, id as DocumentId))
-          stored.delete(id);
+    const stagedBy = view?.responseId;
+    const stored = async (ids: string[]) => {
+      const texts = await this.store.readGrepTexts(ids);
+      if (stagedBy) {
+        for (const id of ids) {
+          if (this.documentSync.isStagedByResponse(stagedBy, id as DocumentId)) texts.delete(id);
+        }
       }
-    }
+      return texts;
+    };
     // One source has one project association, including personal and Work sources; its
     // chapters' reads join this snapshot, so it is read in their thread.
     return this.links.within(
@@ -760,6 +761,7 @@ export class ContextFS implements ContextSchemeAdapter {
           matcher: query.matcher,
           mode: query.mode,
           headLimit: query.headLimit,
+          ...(query.signal ? { signal: query.signal } : {}),
           read: async (documentId) => {
             const read = await this.readGrepBlocks(documentId);
             return read.ok ? read : { ok: false, error: this.syncFault(read.error) };
@@ -810,22 +812,13 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * A document's blocks as grep matches them, and the link facts each spells. Only the thread
-   * view serializes hashlines; a read outside one falls back to plain markdown lines, where
-   * no model is shown anything, so no destination is hidden and no link recorded.
+   * A document's blocks as grep matches them, and the link facts each spells. Outside a thread
+   * the live document is read, through the same reader.
    */
   private async readGrepBlocks(
     documentId: string,
   ): Promise<{ ok: true; value: GrepRead<GrepShowing> } | { ok: false; error: SyncError }> {
-    const view = this.threadView();
-    if (!view) {
-      const read = await this.documentSync.readVersionedMarkdown(documentId);
-      if (!read.ok) return read;
-      const blocks = read.value.content
-        .split("\n")
-        .map((line): GrepBlock => ({ body: line, destinationFree: line }));
-      return Ok({ blocks, revision: read.value.revision, shownOf: () => undefined });
-    }
+    const view = this.threadView() ?? { destination: "live" as const };
     const read = await this.documentSync.readEffectiveHashlines({
       ...view,
       documentId: documentId as DocumentId,

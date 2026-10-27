@@ -12,7 +12,6 @@ import type {
   DocumentDerivationService,
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
-import { LIVE_VIEW } from "./ports/document-link-scope.js";
 import type { DurableProjectionSerializer } from "./ports/durable-projection.js";
 
 export function createDocumentDerivationService(input: {
@@ -151,8 +150,7 @@ export async function deriveDocumentOutputs(
   serializer: DurableProjectionSerializer,
 ) {
   return {
-    markdown: await serializer.serializeDocument(cut.documentId, doc, LIVE_VIEW),
-    grepText: serializer.grepTextOfDocument(cut.documentId, doc),
+    ...(await serializer.projectDocument(cut.documentId, doc)),
     links: !cut.holderUri
       ? []
       : deriveDocumentLinkRows({

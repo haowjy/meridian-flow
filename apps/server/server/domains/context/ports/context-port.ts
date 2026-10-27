@@ -246,6 +246,11 @@ export interface GrepPassage {
    * Absent on results stored before grep.
    */
   anchor?: { start: number; end: number };
+  /**
+   * The writer's text the first match covers (`excerpt` is markdown, which spells it
+   * escaped), for the app's door to find the passage again. Absent on results stored before grep.
+   */
+  term?: string;
 }
 
 /** What a grep hit's passages spell, from the read binding that spelled them. */
@@ -291,6 +296,8 @@ export interface GrepQuery {
   mode: GrepMode;
   /** Most files returned. */
   headLimit: number;
+  /** Stops the scan early; the result is then not exact. */
+  signal?: AbortSignal;
   /** The documents the caller may read, asked before anything is matched or counted. */
   readable(ids: readonly string[]): Promise<ReadonlyMap<string, "read" | "edit">>;
 }

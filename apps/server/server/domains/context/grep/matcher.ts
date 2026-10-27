@@ -2,9 +2,12 @@
  * `grep` matching: one compiled RE2 pattern that filters, counts and locates.
  *
  * RE2 syntax (ripgrep's dialect: no lookaround, no backreferences) run by
- * `re2js` in linear time, so no pattern can stall the event loop; V8's own
- * `RegExp` took 20 s on `(a+)+$` against 29 characters. The unit of matching is
- * a line of the document's **grep text** (see `@meridian/agent-edit`'s
+ * `re2js`, which never backtracks: V8's own `RegExp` took 20 s on `(a+)+$`
+ * against 29 characters. Linear is not free, though: time grows with text length
+ * times the compiled program's size, and a bounded repeat multiplies that
+ * size, so repeat counts above {@link MAX_REPEAT} are refused here. The scan
+ * adds the other bound, an abort signal it polls between lines. The unit of
+ * matching is a line of the document's **grep text** (see `@meridian/agent-edit`'s
  * `grepText`): `^` and `$` anchor lines.
  *
  * **A document reports several passages, not one.** The list is capped because
@@ -16,32 +19,59 @@
 import { markdownTextView } from "@meridian/agent-edit";
 import { RE2JS } from "re2js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { requiredLiterals } from "./required-literals.js";
 
 /** How many passages one document contributes before the count speaks for the rest. */
 export const PASSAGE_CAP = 3;
 
+/** Largest bounded repeat (`x{n}`, `x{n,m}`) a pattern may use; see the module header. */
+export const MAX_REPEAT = 100;
+
 export interface GrepMatcher {
   /** Match spans in one line of grep text. */
   spans(line: string): Array<[start: number, end: number]>;
+  /** Whether one line of grep text matches. */
+  matchesLine(line: string): boolean;
   /**
-   * Whole-text prefilter in multiline mode: false only if no line can match.
-   * Absent when the pattern has `\A`, `\z` or a flag group, whose meaning
-   * changes on whole text. It only skips documents; every hit is confirmed per line.
+   * Cheap whole-text prefilter: false only if no line can match. Present when a
+   * case-insensitive pattern requires a literal. It only skips documents; every
+   * hit is confirmed per line.
    */
   test?(text: string): boolean;
 }
 
-/** `\A`, `\z`, or a flag group such as `(?i)`, `(?-m)` or `(?s:`. Lexical and conservative. */
-const WHOLE_TEXT_SENSITIVE = /\\[Az]|\(\?(?!:|P?<[A-Za-z_])/u;
+/** An escape (skipped, so `\{300}` is not a repeat) or a repeat count `{n}`, `{n,}`, `{n,m}`. */
+const REPEAT = /\\.|\{(\d+)(?:,(\d*))?\}/gu;
+
+function oversizedRepeat(pattern: string): number | undefined {
+  for (const [, low, high] of pattern.matchAll(REPEAT)) {
+    for (const bound of [low, high]) {
+      if (bound && Number(bound) > MAX_REPEAT) return Number(bound);
+    }
+  }
+  return undefined;
+}
+
+const REGEXP_SYNTAX = /[\\^$.*+?()[\]{}|]/gu;
 
 /** Compile once per call, at the trust boundary; the error is the parser's message. */
 export function compileGrep(pattern: string, ignoreCase: boolean): Result<GrepMatcher, string> {
+  const repeat = oversizedRepeat(pattern);
+  if (repeat !== undefined)
+    return Err(`repeat count ${repeat} is above the limit of ${MAX_REPEAT}`);
   const flags = ignoreCase ? RE2JS.CASE_INSENSITIVE : 0;
   try {
     const line = RE2JS.compile(pattern, flags);
-    const whole = WHOLE_TEXT_SENSITIVE.test(pattern)
-      ? undefined
-      : RE2JS.compile(pattern, flags | RE2JS.MULTILINE);
+    // Without a literal, re2js loses its literal fast path under CASE_INSENSITIVE, so a
+    // case-insensitive pattern prefilters with a V8 RegExp over the literal it requires.
+    // An escaped literal cannot backtrack. `iu` folds case the way RE2 does.
+    const literals = ignoreCase ? requiredLiterals(pattern) : undefined;
+    const prefilter = literals
+      ? new RegExp(
+          literals.map((literal) => literal.replace(REGEXP_SYNTAX, "\\$&")).join("|"),
+          "iu",
+        )
+      : undefined;
     return Ok({
       spans(text) {
         const spans: Array<[number, number]> = [];
@@ -49,7 +79,8 @@ export function compileGrep(pattern: string, ignoreCase: boolean): Result<GrepMa
         while (matcher.find()) spans.push([matcher.start(), matcher.end()]);
         return spans;
       },
-      ...(whole ? { test: (text: string) => whole.matcher(text).find() } : {}),
+      matchesLine: (text) => line.matcher(text).find(),
+      ...(prefilter ? { test: (text: string) => prefilter.test(text) } : {}),
     });
   } catch (cause) {
     return Err(cause instanceof Error ? cause.message : String(cause));
@@ -78,6 +109,8 @@ export interface MatchedPassage {
   excerpt: string;
   blockHash?: string;
   anchor?: PassageAnchor;
+  /** The writer's text the first match covers: `excerpt` is markdown, which escapes it. */
+  term?: string;
 }
 
 /** What one document contributed to a grep. */
@@ -90,11 +123,15 @@ export interface DocumentMatch {
   blocks: number[];
 }
 
-/** Collect the first passages of `blocks` the matcher hits and count every match. Null when none. */
-export function grepBlocks(
+/**
+ * Collect the first passages of `blocks` the matcher hits and count every match. Null when none.
+ * `pace` is awaited between lines, so the caller can yield or stop.
+ */
+export async function grepBlocks(
   blocks: readonly GrepBlock[],
   matcher: GrepMatcher,
-): DocumentMatch | null {
+  pace: () => Promise<void>,
+): Promise<DocumentMatch | null> {
   const matches: MatchedPassage[] = [];
   const returned: number[] = [];
   let matchCount = 0;
@@ -104,6 +141,7 @@ export function grepBlocks(
     let found = 0;
     let lineStart = 0;
     for (const line of view.text.split("\n")) {
+      await pace();
       for (const span of matcher.spans(line)) {
         found += 1;
         first ??= [lineStart + span[0], lineStart + span[1]];
@@ -124,6 +162,7 @@ export function grepBlocks(
           start: toExcerptOffset(block.destinationFree, block.body, start),
           end: toExcerptOffset(block.destinationFree, block.body, end),
         },
+        term: view.text.slice(first[0], first[1]),
       });
       returned.push(index);
     }
