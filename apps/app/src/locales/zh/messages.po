@@ -2806,6 +2806,10 @@ msgstr ""
 msgid "Files attached in chat, grouped by Work."
 msgstr ""
 
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "Files move or copy out of Uploads; they can't be dropped into it"
+msgstr ""
+
 #: src/features/import/ImportMenuItems.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Files…"
