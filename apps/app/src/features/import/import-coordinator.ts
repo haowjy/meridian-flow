@@ -1,21 +1,17 @@
 /** Account-lifetime upload owner. Server summaries are truth; File handles stay private to this tab. */
-import type {
-  ImportDetail,
-  ImportPickedInput,
-  ImportSelection,
-  ImportSummary,
-} from "@meridian/contracts";
+import type { ImportDetail, ImportSelection, ImportSummary } from "@meridian/contracts";
 import { importNodeId } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportDestination } from "./destination";
+import { hashPicked } from "./hash-picked";
 import type { ImportApi } from "./import-api-port";
-import { IMPORT_SCHEDULING } from "./limits";
 import { buildSelection, type HeldFile } from "./manifest";
 import { matchContinue, type PickedReceived } from "./match-continue";
 import { type PendingRootMemory, pendingRoot } from "./pending-roots";
 import { refusalSentence } from "./reason-copy";
 import type { Selection } from "./selection";
-import { sha256Hex } from "./sha256";
+import { UploadAttempt } from "./upload-attempt";
+import { UploadPresence } from "./upload-presence";
 import { UploadQueue } from "./uploader";
 
 export type SelectionRead = (options: { signal: AbortSignal }) => Promise<Selection>;
@@ -27,7 +23,7 @@ export type LocalUpload = {
   stopAsked?: boolean;
   busy?: boolean;
   stopLost?: boolean;
-  /** Another tab holds this import's upload lock: it is sending the files this tab lacks. */
+  /** Another tab holds this import's upload lock: it is sending the files this tab lacks. Set only by `publish`. */
   elsewhere?: boolean;
 };
 export type TrackedImport = {
@@ -43,23 +39,16 @@ type RecordState = {
   controller: AbortController;
   held: Map<number, HeldFile>;
   command?: ImportSelection;
-  queue?: UploadQueue;
   read?: SelectionRead;
   destination?: ImportDestination;
   revision: number;
   creation: "local" | "uncertain" | "created";
-  attempt: number;
+  /** The tab's current work on this import; it holds the import's presence lock until it ends. */
+  attempt?: UploadAttempt;
   retiredUntil?: number;
   /** Re-picked received files still owed a hash report. Kept when the report fails, so Retry repeats it. */
   picked: PickedReceived[];
-  /** Size and time of each file already reported, so an unchanged re-pick is not hashed again. */
-  reported: Map<number, string>;
-  /** The attempt whose hash pass is running. */
-  checking?: number;
 };
-const stamp = (file: File) => `${file.size}:${file.lastModified}`;
-/** A tab holds this Web Lock while it works on an import's files; its release is the only "tab gone" signal. */
-const LOCK_PREFIX = "import-upload:";
 
 export class ImportCoordinator {
   private records = new Map<string, RecordState>();
@@ -67,10 +56,9 @@ export class ImportCoordinator {
   private snapshot: ImportsSnapshot = { imports: [] };
   private timer?: ReturnType<typeof setTimeout>;
   private channel?: BroadcastChannel;
-  /** Releases for the upload locks this tab holds or has queued, by import id. */
-  private locks = new Map<string, () => void>();
-  /** Import ids whose upload lock any tab held at the last refresh. */
-  private uploading = new Set<string>();
+  private presence = new UploadPresence(() => this.channel?.postMessage(null));
+  /** Import ids whose upload lock another tab held at the last refresh. */
+  private others = new Set<string>();
   private lifetime = new AbortController();
   private polling: AbortSignal | null = null;
   private mutations = 0;
@@ -95,63 +83,14 @@ export class ImportCoordinator {
   };
   getSnapshot = () => this.snapshot;
   private publish() {
-    this.syncLocks();
+    for (const record of this.records.values()) {
+      const { importId, local } = record.view;
+      const elsewhere = this.others.has(importId) && !this.presence.holds(importId);
+      if (!!local.elsewhere !== elsewhere)
+        record.view = { ...record.view, local: { ...local, elsewhere } };
+    }
     this.snapshot = { imports: [...this.records.values()].map((record) => record.view) };
     for (const listener of this.listeners) listener();
-  }
-  /** This tab is reading, creating, sending or hashing files of the import. */
-  private working(record: RecordState) {
-    return (
-      ["reading", "creating"].includes(record.view.local.phase ?? "") ||
-      record.checking !== undefined ||
-      (record.queue !== undefined && !record.queue.cancelled && !record.queue.idle)
-    );
-  }
-  /**
-   * Hold an import's lock exactly while this tab is working on it. A paused, stalled or
-   * missing-files tab holds nothing, so other tabs offer Continue instead of a dead end.
-   */
-  private syncLocks() {
-    const holding = new Set<string>();
-    for (const record of this.records.values())
-      if (this.working(record) || (record.view.local.busy && record.held.size > 0))
-        holding.add(record.view.importId);
-    for (const [id, release] of this.locks)
-      if (!holding.has(id)) {
-        this.locks.delete(id);
-        release();
-      }
-    for (const id of holding) if (!this.locks.has(id)) this.hold(id);
-  }
-  private hold(importId: string) {
-    let release!: () => void;
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.locks.set(importId, release);
-    // Web Locks need a secure context; without them other tabs simply offer Continue.
-    void navigator.locks
-      ?.request(`${LOCK_PREFIX}${importId}`, () => {
-        this.channel?.postMessage(null);
-        return released;
-      })
-      .then(() => this.channel?.postMessage(null));
-  }
-  private async heldUploads() {
-    const snapshot = await navigator.locks?.query();
-    return new Set(
-      (snapshot?.held ?? []).flatMap(({ name }) =>
-        name?.startsWith(LOCK_PREFIX) ? [name.slice(LOCK_PREFIX.length)] : [],
-      ),
-    );
-  }
-  private syncElsewhere() {
-    for (const record of this.records.values()) {
-      const elsewhere =
-        this.uploading.has(record.view.importId) && !this.locks.has(record.view.importId);
-      if (!!record.view.local.elsewhere !== elsewhere)
-        record.view = { ...record.view, local: { ...record.view.local, elsewhere } };
-    }
   }
   private local(record: RecordState, patch: Partial<LocalUpload>) {
     record.view = { ...record.view, local: { ...record.view.local, ...patch } };
@@ -160,8 +99,39 @@ export class ImportCoordinator {
   private current(record: RecordState) {
     return !record.controller.signal.aborted && this.records.get(record.view.importId) === record;
   }
+  private live(record: RecordState, attempt: UploadAttempt) {
+    return !attempt.ended && this.current(record);
+  }
+  /** Start the record's next attempt. Its lease is requested before the one it replaces is released, so presence never lapses between them. */
+  private open(record: RecordState) {
+    const attempt = new UploadAttempt(this.presence.hold(record.view.importId));
+    record.attempt?.end();
+    record.attempt = attempt;
+    return attempt;
+  }
+  /** Run work as the record's next attempt; the attempt ends with the work unless it handed some off. */
+  private async run(record: RecordState, body: (attempt: UploadAttempt) => Promise<void>) {
+    const attempt = this.open(record);
+    try {
+      await body(attempt);
+    } finally {
+      attempt.release();
+    }
+  }
+  private retire(record: RecordState) {
+    record.controller.abort();
+    record.attempt?.end();
+  }
   private install(record: RecordState, summary: ImportSummary) {
     if (!this.current(record)) return;
+    // Concurrent answers can arrive out of order: an uploading summary never replaces a later
+    // state, and receipts only accumulate.
+    if (
+      summary.state === "uploading" &&
+      (record.view.summary.state !== "uploading" ||
+        summary.counts.received < record.view.summary.counts.received)
+    )
+      return;
     record.revision++;
     record.creation = "created";
     const memory = this.rootMemory.get(summary.importId);
@@ -173,7 +143,7 @@ export class ImportCoordinator {
     if (doneUpload) {
       record.held.clear();
       record.picked = [];
-      this.cancelUpload(record);
+      record.attempt?.end();
     }
     record.view = {
       ...record.view,
@@ -189,15 +159,13 @@ export class ImportCoordinator {
       view: {
         importId: summary.importId,
         summary,
-        local: this.uploading.has(summary.importId) ? { elsewhere: true } : {},
+        local: {},
       },
       controller: new AbortController(),
       held: new Map(),
       revision: 0,
       creation: "created",
-      attempt: 0,
       picked: [],
-      reported: new Map(),
     };
   }
   start() {
@@ -215,15 +183,10 @@ export class ImportCoordinator {
     return () => {
       this.lifetime.abort();
       clearTimeout(this.timer);
-      for (const release of this.locks.values()) release();
-      this.locks.clear();
       this.channel?.close();
       this.channel = undefined;
       window.removeEventListener("focus", focus);
-      for (const record of this.records.values()) {
-        record.controller.abort();
-        record.queue?.cancel();
-      }
+      for (const record of this.records.values()) this.retire(record);
       this.records.clear();
       this.publish();
     };
@@ -240,12 +203,12 @@ export class ImportCoordinator {
     const mutation = this.mutations;
     const revisions = new Map([...this.records].map(([id, record]) => [id, record.revision]));
     try {
-      const [summaries, uploading] = await Promise.all([
+      const [summaries, others] = await Promise.all([
         this.api.listOpen(signal),
-        this.heldUploads(),
+        this.presence.othersHolding(),
       ]);
       if (signal.aborted || mutation !== this.mutations) return;
-      this.uploading = uploading;
+      this.others = others;
       const ids = new Set(summaries.map((summary) => summary.importId));
       for (const summary of summaries) {
         const record = this.records.get(summary.importId);
@@ -274,11 +237,9 @@ export class ImportCoordinator {
           record.view = { ...record.view, dismissed: true };
           if (Date.now() < record.retiredUntil) continue;
         }
-        record.controller.abort();
-        record.queue?.cancel();
+        this.retire(record);
         this.records.delete(id);
       }
-      this.syncElsewhere();
       this.publish();
     } catch {
       /* A failed background read cannot erase the last durable summary. */
@@ -301,12 +262,9 @@ export class ImportCoordinator {
       }
     }
   }
+  /** This tab is reading, creating, sending or hashing files of some import. */
   isWorking() {
-    return [...this.records.values()].some((record) => this.working(record));
-  }
-  private cancelUpload(record: RecordState) {
-    record.attempt++;
-    record.queue?.cancel();
+    return this.presence.working;
   }
   begin(
     projectId: string,
@@ -350,13 +308,13 @@ export class ImportCoordinator {
     record.view.local.phase = "reading";
     this.records.set(importId, record);
     this.publish();
-    void this.prepare(record);
+    void this.run(record, (attempt) => this.prepare(record, attempt));
     return importId;
   }
-  private async prepare(record: RecordState) {
+  private async prepare(record: RecordState, attempt: UploadAttempt) {
     try {
-      const selection = await record.read!({ signal: record.controller.signal });
-      if (!this.current(record)) return;
+      const selection = await record.read!({ signal: attempt.signal });
+      if (!this.live(record, attempt)) return;
       const { command, held } = buildSelection(
         selection,
         record.view.importId,
@@ -389,17 +347,17 @@ export class ImportCoordinator {
             : null,
         },
       };
-      if (!this.current(record)) return;
-      await this.create(record);
+      if (!this.live(record, attempt)) return;
+      await this.create(record, attempt);
     } catch (error) {
-      if (this.current(record))
+      if (this.live(record, attempt))
         this.local(record, {
           phase: "refused",
           error: error instanceof Error ? error.message : refusalSentence(null),
         });
     }
   }
-  private async create(record: RecordState) {
+  private async create(record: RecordState, attempt: UploadAttempt) {
     const command = record.command;
     if (!command) return;
     const previousCreation = record.creation;
@@ -407,16 +365,12 @@ export class ImportCoordinator {
     record.creation = "uncertain";
     this.local(record, { phase: "creating", error: undefined });
     try {
-      const summary = await this.api.create(
-        record.view.summary.projectId,
-        command,
-        record.controller.signal,
-      );
-      if (!this.current(record)) return;
+      const summary = await this.api.create(record.view.summary.projectId, command, attempt.signal);
+      if (!this.live(record, attempt)) return;
       this.install(record, summary);
       this.nudge();
     } catch (error) {
-      if (this.current(record)) {
+      if (this.live(record, attempt)) {
         // A refused replay cannot disprove an earlier unanswered create.
         if (
           previousCreation === "local" &&
@@ -434,9 +388,9 @@ export class ImportCoordinator {
       return;
     }
     try {
-      await this.sendAwaiting(record);
+      await this.sendAwaiting(record, attempt);
     } catch (error) {
-      if (this.current(record))
+      if (this.live(record, attempt))
         this.local(record, {
           phase: "stalled",
           error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
@@ -486,90 +440,64 @@ export class ImportCoordinator {
     }
   }
   /**
-   * Hash the re-picked received files a few at a time and report which receipts they match.
-   * A file that cannot be read is missing evidence: its reason stays, and Continue never stalls on it.
-   * Returns false when a newer attempt superseded this one.
+   * Hash the re-picked received files and tell the server which receipts they match. The server
+   * takes the report only while the import is uploading, so whatever can end the upload waits for
+   * it. Resolves true once nothing is owed. A failure keeps the report owed and shows its error,
+   * for Retry to repeat; a refusal drops it, since the marks are advisory.
    */
-  private async reconcilePicked(record: RecordState, current: () => boolean) {
-    const files = record.picked;
-    const entries: ImportPickedInput["entries"] = [];
-    const hashed: PickedReceived[] = [];
-    let next = 0;
-    const worker = async () => {
-      while (current() && next < files.length) {
-        const item = files[next++];
-        let bytes: ArrayBuffer;
-        try {
-          bytes = await item.file.arrayBuffer();
-        } catch {
-          continue;
-        }
-        entries.push({
-          entryId: item.entryId,
-          sha256: await sha256Hex(bytes),
-          size: item.file.size,
-          modifiedAt: item.file.lastModified,
+  private report(record: RecordState, attempt: UploadAttempt): Promise<boolean> {
+    attempt.reporting ??= this.sendReport(record, attempt);
+    return attempt.reporting;
+  }
+  private async sendReport(record: RecordState, attempt: UploadAttempt) {
+    const entries = await hashPicked(record.picked, attempt.signal);
+    if (!this.live(record, attempt)) return false;
+    try {
+      if (entries.length)
+        this.install(
+          record,
+          await this.api.picked(
+            record.view.summary.projectId,
+            record.view.importId,
+            { entries },
+            attempt.signal,
+          ),
+        );
+    } catch (error) {
+      if (!this.live(record, attempt)) return false;
+      if (!(error instanceof ImportRequestError && error.status >= 400 && error.status < 500)) {
+        this.local(record, {
+          error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
         });
-        hashed.push(item);
+        return false;
       }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(IMPORT_SCHEDULING.concurrentHashes, files.length) }, worker),
-    );
-    if (!current()) return false;
-    if (entries.length) {
-      const summary = await this.api.picked(
-        record.view.summary.projectId,
-        record.view.importId,
-        { entries },
-        record.controller.signal,
-      );
-      if (!current()) return false;
-      // Receives run alongside this report; never regress a receipt count.
-      if (
-        record.view.summary.state === "uploading" &&
-        summary.counts.received >= record.view.summary.counts.received
-      )
-        this.install(record, summary);
-      for (const { entryId, file } of hashed) record.reported.set(entryId, stamp(file));
     }
     record.picked = [];
     return true;
   }
-  private async sendAwaiting(record: RecordState) {
-    this.cancelUpload(record);
+  private async sendAwaiting(record: RecordState, attempt: UploadAttempt) {
     const detail = await this.fresh(record);
-    if (detail?.state !== "uploading") return;
+    if (detail?.state !== "uploading" || attempt.ended) return;
     const awaiting = new Set(
       detail.entries.filter((entry) => entry.state === "awaiting").map((entry) => entry.entryId),
     );
     for (const id of record.held.keys()) if (!awaiting.has(id)) record.held.delete(id);
-    const checks = record.picked.length > 0;
-    if (!record.held.size && !checks) {
-      this.local(record, { phase: record.view.local.missing?.length ? "missing" : undefined });
+    const owed = record.picked.length > 0;
+    const missing = record.view.local.missing;
+    if (!record.held.size && !owed) {
+      this.local(record, { phase: missing?.length ? "missing" : undefined });
       return;
     }
-    const missing = record.view.local.missing;
     this.local(record, { phase: missing?.length ? "missing" : "uploading", error: undefined });
-    const attempt = record.attempt;
-    const current = () => this.current(record) && record.attempt === attempt;
-    const sending = new Map<number, number>();
-    const progress = (id: number, bytes: number) => {
-      sending.set(id, bytes);
-      if (current() && record.view.summary.state === "uploading")
-        this.local(record, { sendingBytes: [...sending.values()].reduce((a, b) => a + b, 0) });
-    };
-    const settle = () => {
-      if (!current() || record.checking === attempt || !queue.idle) return;
-      this.local(record, {
-        phase: missing?.length
-          ? "missing"
-          : record.held.size || record.picked.length
-            ? "stalled"
-            : undefined,
-      });
-    };
+    const live = () => this.live(record, attempt);
+    const reported = owed ? this.report(record, attempt) : undefined;
+    let drained!: () => void;
+    const sent = new Promise<void>((resolve) => {
+      drained = resolve;
+    });
     const queue = new UploadQueue({
+      signal: attempt.signal,
+      gate: reported,
       send: async (parts, signal) => {
         // Reading here detects a file removed since picking, before the multipart request.
         const readable: (HeldFile & { bytes: ArrayBuffer })[] = [];
@@ -581,7 +509,7 @@ export class ImportCoordinator {
             unreadable.push(part.entryId);
           }
         }
-        if (!current() || signal.aborted) throw new DOMException("Aborted", "AbortError");
+        if (!live() || signal.aborted) throw new DOMException("Aborted", "AbortError");
         if (unreadable.length) {
           const summary = await this.api.skip(
             detail.projectId,
@@ -589,15 +517,16 @@ export class ImportCoordinator {
             { entries: unreadable.map((entryId) => ({ entryId, reason: "unreadable" })) },
             signal,
           );
-          if (!current()) throw new DOMException("Aborted", "AbortError");
-          if (
-            record.view.summary.state === "uploading" &&
-            summary.counts.received >= record.view.summary.counts.received
-          )
-            this.install(record, summary);
+          if (!live()) throw new DOMException("Aborted", "AbortError");
+          this.install(record, summary);
           for (const id of unreadable) record.held.delete(id);
         }
         if (!readable.length) return { entries: [] };
+        const progress = (bytes: number) => {
+          const total = attempt.progress(parts[0].entryId, bytes);
+          if (live() && record.view.summary.state === "uploading")
+            this.local(record, { sendingBytes: total });
+        };
         try {
           const answer = await this.api.send(
             detail.projectId,
@@ -609,95 +538,84 @@ export class ImportCoordinator {
               changed: part.changed,
             })),
             signal,
-            (bytes) => progress(parts[0].entryId, bytes),
+            progress,
           );
-          // Concurrent receives may answer out of order; never regress a receipt count or a later phase.
-          if (
-            current() &&
-            record.view.summary.state === "uploading" &&
-            answer.summary.counts.received >= record.view.summary.counts.received
-          )
-            this.install(record, answer.summary);
+          if (live()) this.install(record, answer.summary);
           return answer;
         } finally {
-          progress(parts[0].entryId, 0);
+          progress(0);
         }
       },
       onOutcome: (outcomes) => {
-        if (!current()) return;
+        if (!live()) return;
         for (const outcome of outcomes)
           if (outcome.kind === "answered" && outcome.entry.state !== "awaiting")
             record.held.delete(outcome.entry.entryId);
       },
-      onIdle: settle,
+      onIdle: drained,
     });
-    record.queue = queue;
-    const files = [...record.held.values()];
-    // The server takes hashes only while the import is uploading, so the receive that
-    // completes it waits until they are reported.
-    const last = checks ? files.pop() : undefined;
-    queue.add(files);
-    if (!checks) return;
-    record.checking = attempt;
-    void this.reconcilePicked(record, current)
-      .then((done) => {
-        if (done && last) queue.add([last]);
-      })
-      .catch((error) => {
-        if (current())
+    if (record.held.size) queue.add([...record.held.values()]);
+    else drained();
+    attempt.holdUntil(
+      Promise.all([sent, reported]).then(() => {
+        if (live())
           this.local(record, {
-            phase: "stalled",
-            error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+            phase: missing?.length
+              ? "missing"
+              : record.held.size || record.picked.length
+                ? "stalled"
+                : undefined,
           });
-      })
-      .finally(() => {
-        if (record.checking === attempt) record.checking = undefined;
-        settle();
-      });
+      }),
+    );
   }
   async continue(id: string, selection: Selection) {
     const record = this.records.get(id);
     if (!record) return;
-    await this.command(record, async () => {
-      this.cancelUpload(record);
-      const detail = await this.fresh(record);
-      if (detail?.state !== "uploading") return;
-      const match = matchContinue(detail, selection);
-      record.held = match.held;
-      record.picked = match.received.filter(
-        ({ entryId, file }) => record.reported.get(entryId) !== stamp(file),
-      );
-      if (match.wrongRoot) this.local(record, { phase: "wrong-root" });
-      else {
+    await this.command(record, () =>
+      this.run(record, async (attempt) => {
+        const detail = await this.fresh(record);
+        if (detail?.state !== "uploading") return;
+        const match = matchContinue(detail, selection);
+        record.held = match.held;
+        record.picked = match.received;
+        if (match.wrongRoot) {
+          this.local(record, { phase: "wrong-root" });
+          return;
+        }
         this.local(record, {
           missing: match.missing,
           phase: match.missing.length ? "missing" : undefined,
         });
-        await this.sendAwaiting(record);
-      }
-    });
+        await this.sendAwaiting(record, attempt);
+      }),
+    );
   }
   async withoutMissing(id: string) {
     const record = this.records.get(id);
     if (!record) return;
     await this.command(record, async () => {
-      this.cancelUpload(record);
-      this.install(
-        record,
-        await this.api.skip(
-          record.view.summary.projectId,
-          id,
-          {
-            entries: (record.view.local.missing ?? []).map((entryId) => ({
-              entryId,
-              reason: "not_found",
-            })),
-          },
-          record.controller.signal,
-        ),
-      );
-      this.local(record, { missing: undefined });
-      await this.sendAwaiting(record);
+      // The skip can end the upload, so the hash report it would pre-empt goes first.
+      await record.attempt?.reporting;
+      await this.run(record, async (attempt) => {
+        if (record.picked.length && !(await this.report(record, attempt))) return;
+        this.install(
+          record,
+          await this.api.skip(
+            record.view.summary.projectId,
+            id,
+            {
+              entries: (record.view.local.missing ?? []).map((entryId) => ({
+                entryId,
+                reason: "not_found",
+              })),
+            },
+            attempt.signal,
+          ),
+        );
+        this.local(record, { missing: undefined });
+        await this.sendAwaiting(record, attempt);
+      });
     });
   }
   askStop(id: string, stopAsked: boolean) {
@@ -708,7 +626,7 @@ export class ImportCoordinator {
     const record = this.records.get(id);
     if (!record) return;
     await this.command(record, async () => {
-      this.cancelUpload(record);
+      record.attempt?.end();
       const refused = record.creation === "local" && record.view.local.phase === "refused";
       if (record.command && !refused) {
         // A lost create answer may already have created the import. Replay before stopping it.
@@ -730,8 +648,7 @@ export class ImportCoordinator {
           return;
         }
       }
-      record.controller.abort();
-      record.queue?.cancel();
+      this.retire(record);
       this.records.delete(id);
       this.publish();
       this.nudge();
@@ -741,15 +658,19 @@ export class ImportCoordinator {
     const record = this.records.get(id);
     if (!record) return;
     await this.command(record, async () => {
-      if (record.creation !== "created") {
-        if (record.command) await this.create(record);
-        else await this.prepare(record);
-      } else if (record.view.summary.state === "failed")
+      if (record.creation === "created" && record.view.summary.state === "failed")
         this.install(
           record,
           await this.api.retry(record.view.summary.projectId, id, record.controller.signal),
         );
-      else await this.sendAwaiting(record);
+      else
+        await this.run(record, (attempt) =>
+          record.creation !== "created"
+            ? record.command
+              ? this.create(record, attempt)
+              : this.prepare(record, attempt)
+            : this.sendAwaiting(record, attempt),
+        );
       this.nudge();
     });
   }

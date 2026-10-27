@@ -21,6 +21,7 @@ describe("UploadQueue", () => {
     const outcomes: UploadOutcome[] = [];
     await drained((onIdle) => {
       const queue = new UploadQueue({
+        signal: new AbortController().signal,
         send: async (parts) => {
           if (parts.some((part) => part.entryId === 2)) throw new Error("injected 500");
           return { entries: parts.map((part) => answer(part.entryId)) };
@@ -42,12 +43,14 @@ describe("UploadQueue", () => {
     ).toEqual([2]);
   });
 
-  it("sends nothing more once cancelled", async () => {
+  it("sends nothing more once its signal aborts", async () => {
     const sent: number[] = [];
+    const controller = new AbortController();
     const queue = new UploadQueue({
+      signal: controller.signal,
       send: async (parts) => {
         sent.push(...parts.map((part) => part.entryId));
-        queue.cancel();
+        controller.abort();
         return { entries: parts.map((part) => answer(part.entryId)) };
       },
       onOutcome: () => {},

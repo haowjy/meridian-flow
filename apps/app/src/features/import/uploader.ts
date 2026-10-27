@@ -1,8 +1,7 @@
 /**
- * One import's sends: a queue of files, batched, a few requests at a time. Retry
- * adds to the same queue, so retries share the import's request budget and a
- * file already queued or in flight is never sent twice. A failed batch is retried
- * one file at a time so a single bad file fails alone and the rest land.
+ * One attempt's sends: a queue of files, batched, a few requests at a time. A file already
+ * queued or in flight is never sent twice. A failed batch is retried one file at a time so a
+ * single bad file fails alone and the rest land. The queue ends when its attempt's signal aborts.
  */
 import type { ImportFilesResult } from "@meridian/contracts";
 import { planBatches } from "./batching";
@@ -49,7 +48,6 @@ async function sendWithBackoff(send: SendFiles, parts: readonly HeldFile[], sign
 }
 
 export class UploadQueue {
-  private readonly controller = new AbortController();
   private pending: HeldFile[] = [];
   /** Entry ids queued or in flight. */
   private readonly busy = new Set<number>();
@@ -57,19 +55,22 @@ export class UploadQueue {
 
   constructor(
     private readonly options: {
+      /** Aborting it stops every request in flight and sends nothing more. */
+      signal: AbortSignal;
       send: SendFiles;
       onOutcome: (outcomes: UploadOutcome[]) => void;
-      /** Every queued file has an answer or a failure; not called after `cancel`. */
+      /**
+       * Whatever must happen before the import can complete. The batch that takes the last queued
+       * file waits for it, and stays unsent when it resolves `false`.
+       */
+      gate?: Promise<boolean>;
+      /** Every queued file has an answer or a failure; not called once the signal aborts. */
       onIdle: () => void;
     },
   ) {}
 
-  get cancelled(): boolean {
-    return this.controller.signal.aborted;
-  }
-
-  get idle(): boolean {
-    return this.workers === 0;
+  private get cancelled(): boolean {
+    return this.options.signal.aborted;
   }
 
   /** Queue files to send. Returns how many were not already queued or in flight. */
@@ -82,17 +83,15 @@ export class UploadQueue {
       this.pending.push(file);
       added += 1;
     }
-    while (this.workers < IMPORT_SCHEDULING.concurrentRequests && this.pending.length > 0) {
+    while (
+      !this.cancelled &&
+      this.workers < IMPORT_SCHEDULING.concurrentRequests &&
+      this.pending.length > 0
+    ) {
       this.workers += 1;
       void this.work();
     }
     return added;
-  }
-
-  /** Abort every request in flight and send nothing more. */
-  cancel() {
-    this.controller.abort();
-    this.pending = [];
   }
 
   private takeBatch(): HeldFile[] {
@@ -109,7 +108,8 @@ export class UploadQueue {
     try {
       while (this.pending.length > 0 && !this.cancelled) {
         const parts = this.takeBatch();
-        await this.sendBatch(parts);
+        const gate = this.pending.length === 0 ? this.options.gate : undefined;
+        if (!gate || (await gate)) await this.sendBatch(parts);
         for (const part of parts) this.busy.delete(part.entryId);
       }
     } catch (error) {
@@ -122,7 +122,7 @@ export class UploadQueue {
 
   private async sendBatch(parts: readonly HeldFile[]): Promise<void> {
     try {
-      const answer = await sendWithBackoff(this.options.send, parts, this.controller.signal);
+      const answer = await sendWithBackoff(this.options.send, parts, this.options.signal);
       this.options.onOutcome(answer.entries.map((entry) => ({ kind: "answered", entry })));
     } catch (cause) {
       if (cause instanceof UploadAborted) throw cause;
