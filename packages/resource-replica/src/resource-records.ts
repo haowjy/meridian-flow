@@ -86,7 +86,8 @@ export type DestinationParentLookup = (folderId: string) => ResourceLocation | n
  * placement of that one document carries the request. Placement says where it goes; this says
  * what the server makes there, so a new kind of single-document materialization adds an arm here
  * and nowhere else. Copy is not one: one Copy names several roots and answers with an operation
- * receipt, so its client journal is a separate decision (see `design-e2-folder-create.md`).
+ * receipt, so it is an `OperationRecord`, and each root it makes carries `copiedBy` instead of a
+ * materialization.
  */
 export type DocumentMaterialization = {
   kind: "untitled";
@@ -140,6 +141,12 @@ export function destinationLocation(
     : null;
 }
 
+/**
+ * The operation that made a record: the record is one root of it (a Copy), and the operation's
+ * receipt, not a create of the record's own, gives it its first place (`first-place.ts`).
+ */
+export type CopiedBy = { operationId: string };
+
 export type ResourceDescriptor = ResourceKey & {
   revision: number;
   identity: { documentId: string; revision: number };
@@ -163,6 +170,8 @@ export type ResourceDescriptor = ResourceKey & {
   materialization?: DocumentMaterialization;
   /** What the server holds under this document id, as its answers prove (`server-hold.ts`). */
   serverHold: ServerHold;
+  /** Set when an operation made this document; absent for one that holds its own create. */
+  copiedBy?: CopiedBy;
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
@@ -275,11 +284,12 @@ export type NamespaceAttempt = {
 
 /**
  * A placement a later one waits on, named by its admission `order` in the journal of `kind` under
- * `handle`. The order is the placement's logical identity: a remint replaces its intent but the
- * replacement inherits the admission, so the reference follows it (`latestAdmittedPlacement`).
+ * `handle` (an operation's handle is its operation id). The order is the placement's logical
+ * identity: a remint replaces its intent but the replacement inherits the admission, so the
+ * reference follows it (`latestAdmittedPlacement`).
  */
 export type PlacementPredecessor = {
-  kind: "resource" | "folder";
+  kind: "resource" | "folder" | "operation";
   handle: string;
   order: number;
   /** The later intent's position names this predecessor's subject, so a failure changes its premise. */
@@ -359,6 +369,8 @@ export type FolderNamespaceRecord = ResourceKey & {
   revision: number;
   /** What the server holds under `folderId`, as its answers prove (`server-hold.ts`). */
   serverHold: ServerHold;
+  /** Set when an operation made this folder; absent for one that holds its own create. */
+  copiedBy?: CopiedBy;
   /** Null while the folder is local: its first placement has not been accepted. */
   canonical: ResourceLocation | null;
   /** Parent identity installed atomically with the canonical location. */
@@ -382,6 +394,29 @@ export type FolderNamespaceWrite = {
   next: FolderNamespaceRecord;
 };
 
+/**
+ * One writer action over several records (a Copy), journaled once under its operation id: the
+ * operation's own intents and attempts, apart from the records it creates. Every intent's `handle`
+ * is the `operationId`, so the generic journal, placement admission and predecessors address an
+ * operation as they do a resource or a folder.
+ */
+export type OperationRecord = {
+  operationId: string;
+  projectId: string;
+  revision: number;
+  intents: readonly NamespaceIntent[];
+};
+
+export type OperationWrite = {
+  expectedRevision: number | null;
+  next: OperationRecord;
+};
+
+/** What the replica needs of an operation from a record's side: its journal, by id. */
+export interface OperationReader {
+  readOperation(operationId: string): Promise<OperationRecord | null>;
+}
+
 /** Persist only checkpoint data; indexes are derived by the catalog reducer. */
 export type ResourceCatalogCheckpoint = Pick<
   CatalogCacheView,
@@ -402,11 +437,12 @@ export type MetadataCommitResult = "committed" | "stale";
 export type ResourceProjectionSnapshot = {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
+  operations: readonly OperationRecord[];
   catalogs: readonly ResourceCatalogCheckpoint[];
 };
 
 /** All mutation results mean outer commit. Network, locks and Yjs work stay outside these calls. */
-export interface ResourceMetadataStore {
+export interface ResourceMetadataStore extends OperationReader {
   readonly accountId: string;
   readResource(key: ResourceKey): Promise<ResourceRecord | null>;
   /** Reads one resource only when this project's intents or catalog expose it. */

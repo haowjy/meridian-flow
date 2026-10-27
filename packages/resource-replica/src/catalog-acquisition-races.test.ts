@@ -94,10 +94,15 @@ class MemoryMetadata implements ResourceMetadataStore {
     return this.readResource(key);
   }
 
+  async readOperation() {
+    return null;
+  }
+
   async readProjection(project: string): Promise<ResourceProjectionSnapshot> {
     return structuredClone({
       records: [...this.records.values()],
       folders: [],
+      operations: [],
       catalogs: [...this.catalogs.values()].filter((catalog) => catalog.projectId === project),
     });
   }

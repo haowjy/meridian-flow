@@ -347,7 +347,7 @@ A refused first placement is the first placement refused. How the server materia
 document identity is a property of the resource (`ResourceDescriptor.materialization`: an
 untitled document the server names, with `unnamed` for the editor's create), and the placement
 is always `set-location` / `set-folder-location`, naming its destination. Copy is one operation
-over several roots and does not ride this seam; its client journal is a separate decision.
+over several roots and does not ride this seam: it is an operation journal (see "Operations").
 A `local` document sends a `create`; once `held`, the same intent sends a move
 (`prepareNamespaceAttempt`). The intent is `needs-repair`, never
 resent and not woken by the 30-second retry; the document stays local (lifecycle
@@ -385,3 +385,41 @@ authoritative upserts. Entries absent after replay are absent from that scope.
 The server republishes all surviving affected identities, even if another
 repair already published them. Checkpoints contain only the resulting complete
 tree; there is no hidden-entry set or subtree-refetch lifecycle.
+
+### Operations (`operation-journal.ts`, `first-place.ts`)
+
+An action that spans several records (Copy) is journaled once, in an `OperationRecord`:
+`operationId`, `projectId`, `revision` and ordinary `NamespaceIntent`s (attempts, admission, state)
+whose `handle` is the operation id. It is the third journal kind beside a resource's and a folder's
+and shares their machinery.
+
+- **Store and stream.** The browser store keeps operations in the `operations` table (Dexie version 6,
+  keyed by `operationId`, indexed by `projectId`). `ResourceProjectionSnapshot.operations`, the one
+  `liveQuery` and the placement admission view carry them, so a placement can name an operation as a
+  predecessor (`PlacementPredecessor.kind: "operation"`, `handle` = operation id) and wait on it.
+- **Replay.** `reconcileOperationNamespace` runs the generic `reconcileNamespaceJournal`. The account
+  reconciler schedules it as a third `scheduleOnce` arm (a runner per operation after a reload,
+  `retryAll`, the wake set that reruns waiting placements). The loop sends nothing until an operation
+  kind supplies how it prepares its request and settles its answer.
+- **Roots.** A record an operation made carries `copiedBy: { operationId }`. It holds no create of its
+  own (no `materialization`, no create eligibility; a folder may hold no intents), and it is born
+  `uncertain`. The validators refuse `local` and `spent` for it and a change of operation, because
+  `local` means the next placement is a create and a delete settles on this device: a missed dispatch
+  gate would send a create under the operation's id, or settle a delete while the operation may still
+  land. Only the operation's receipt moves a root to `held`.
+- **First place.** `first-place.ts` answers which accepted answer stands behind a record's place
+  (`firstPlaceWitnessed`) and behind a canonical-refresh barrier (`refreshWitness`): its own create or
+  move, or the Copy receipt of the operation `copiedBy` names. The folder and document validators and
+  both refresh hooks ask it. The store reads the operation inside the transaction that validates a
+  record, so an install the receipt does not support is refused. The refresh hooks take the project
+  for the exact-ID lookup from the witness, which is the operation's project for a root.
+- **Retention.** Every projection emit reads the whole store, so `retiredOperations` names what to drop
+  (`retireOperation`, a revision-checked delete): a settled operation after its notice window
+  (`NAMESPACE_RECEIPT_NOTE_TTL_MS`) and once no root's refresh barrier names it, a cancelled or
+  superseded one at once. Unresolved and `needs-repair` operations stay; a refusal outlives a reload
+  until the writer dismisses it. The sweep runs on every projection emit and on `retryAll`.
+
+Not built yet: Copy's intent and request kinds (`validateNamespaceJournal` knows no `copy` attempt, and
+the resource, folder and operation validators do not yet refuse each other's intent kinds), the
+settlement that installs each root's place, and the projection that lists a pending operation's roots.
+Until then no product code writes an operation.

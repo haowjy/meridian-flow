@@ -40,6 +40,9 @@ class MemoryFolders implements FolderNamespaceStore {
   async readFolders(): Promise<readonly FolderNamespaceRecord[]> {
     throw new Error("Not used by reconciliation");
   }
+  async readOperation() {
+    return null;
+  }
   async commitFolder(write: FolderNamespaceWrite) {
     if (write.expectedRevision !== (this.record?.revision ?? null)) return "stale" as const;
     validateFolderNamespaceUpdate(this.record, write.next);

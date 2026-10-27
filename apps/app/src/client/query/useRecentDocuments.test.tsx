@@ -33,6 +33,7 @@ it("hides a pending folder descendant, restores refusal, and refetches after acc
   if (!deletion) throw new Error("Missing deletion");
   observation.snapshot = {
     records: [],
+    operations: [],
     folders: [deletion.next],
     catalogs: [
       {
@@ -151,6 +152,7 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
   if (!deletion) throw new Error("Missing deletion");
   const snapshot: ResourceProjectionSnapshot = {
     records: [],
+    operations: [],
     folders: [
       deletion.next,
       {
@@ -246,6 +248,7 @@ it("marks a pending file delete suppressed even without a loaded catalog", () =>
   deletion.next.resource.aliases = { "old-doc": { introducedAtIdentityRevision: 2 } };
   const snapshot: ResourceProjectionSnapshot = {
     records: [deletion.next],
+    operations: [],
     folders: [],
     catalogs: [],
   };
@@ -286,6 +289,7 @@ it.each([
   const scope = { kind: "project" as const, projectId: "project" };
   const snapshot: ResourceProjectionSnapshot = {
     records: [record],
+    operations: [],
     folders: [
       deletion.next,
       {

@@ -86,7 +86,12 @@ const renamedAvailability = {
     },
   ],
 };
-const empty: ResourceProjectionSnapshot = { records: [], folders: [], catalogs: [] };
+const empty: ResourceProjectionSnapshot = {
+  records: [],
+  folders: [],
+  operations: [],
+  catalogs: [],
+};
 function resources(snapshot = empty) {
   return {
     admitReview: vi.fn(
