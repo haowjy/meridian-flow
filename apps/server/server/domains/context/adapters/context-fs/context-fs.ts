@@ -725,10 +725,14 @@ export class ContextFS implements ContextSchemeAdapter {
         for (const row of searchable) {
           const read = await this.searchableLines(row.document.id);
           if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-          const blocks = read.value.entries.map((entry): GrepBlock => {
+          const blocks = read.value.entries.map((entry, index): GrepBlock => {
             const parsed = read.value.hashlines ? splitHashline(entry) : null;
             const body = parsed?.body ?? entry;
-            return { body, destinationFree: body, ...(parsed?.hash ? { hash: parsed.hash } : {}) };
+            return {
+              body,
+              destinationFree: read.value.destinationFree[index] ?? body,
+              ...(parsed?.hash ? { hash: parsed.hash } : {}),
+            };
           });
           const found = grepBlocks(blocks, matcher.value);
           if (!found) continue;
@@ -803,6 +807,8 @@ export class ContextFS implements ContextSchemeAdapter {
     Result<
       {
         entries: string[];
+        /** Aligned with `entries`; empty outside a thread view, where destinations are not hidden. */
+        destinationFree: readonly string[];
         hashlines: boolean;
         revision: string | null;
         links: readonly (readonly SpelledLinkFact[])[];
@@ -820,6 +826,7 @@ export class ContextFS implements ContextSchemeAdapter {
       return hashlines.ok
         ? Ok({
             entries: hashlines.value.content,
+            destinationFree: hashlines.value.destinationFree,
             hashlines: true,
             revision: hashlines.value.revision,
             links: hashlines.value.links,
@@ -831,6 +838,7 @@ export class ContextFS implements ContextSchemeAdapter {
     return read.ok
       ? Ok({
           entries: read.value.content.split("\n"),
+          destinationFree: [],
           hashlines: false,
           revision: read.value.revision,
           // Plain lines are not blocks; outside a thread no model is shown anything.

@@ -1,4 +1,5 @@
 /** Effective document reads for non-tool callers: the same room copy a model call would read. */
+import { destinationFreeBlocks } from "@meridian/agent-edit";
 import {
   type AgentEditCodecFactory,
   type DocHandle,
@@ -117,10 +118,15 @@ export function createEffectiveDocumentReader(input: {
         const read = versioned(doc, scope, (doc) =>
           input.model.serializeBlockLines(toDocHandle(doc), codec),
         );
-        const links = input.model
-          .projectBlocks(toDocHandle(doc))
-          .map((block) => spelledLinks([block], scope));
-        return { ...read, links, holder: { uri: scope.holder.uri, view: scope.holder.view } };
+        const blocks = input.model.projectBlocks(toDocHandle(doc));
+        const links = blocks.map((block) => spelledLinks([block], scope));
+        const destinationFree = destinationFreeBlocks(input.codec.markup, blocks);
+        return {
+          ...read,
+          links,
+          destinationFree,
+          holder: { uri: scope.holder.uri, view: scope.holder.view },
+        };
       });
     },
     ensureCreatedDocumentDraft(command) {

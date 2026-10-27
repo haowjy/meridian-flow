@@ -164,7 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       });
-      const hits = await context.search("map.png");
+      const hits = await context.search("Map");
       expect(hits.ok).toBe(true);
       if (!hits.ok) throw new Error(JSON.stringify(hits.error));
       expect(hits.value).toHaveLength(2);
@@ -178,7 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           address: "manuscript://assets/map.png",
         });
       }
-      const next = await context.search("map.png");
+      const next = await context.search("Map");
       expect(next.ok).toBe(true);
       if (!next.ok) throw new Error(JSON.stringify(next.error));
       expect(next.value).toHaveLength(2);

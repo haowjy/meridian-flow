@@ -152,6 +152,7 @@ export async function deriveDocumentOutputs(
 ) {
   return {
     markdown: await serializer.serializeDocument(cut.documentId, doc, LIVE_VIEW),
+    grepText: serializer.grepTextOfDocument(cut.documentId, doc),
     links: !cut.holderUri
       ? []
       : deriveDocumentLinkRows({

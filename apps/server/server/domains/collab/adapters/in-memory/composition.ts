@@ -1,5 +1,6 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
 
+import { destinationFreeBlocks } from "@meridian/agent-edit";
 import {
   type AgentEditCodecFactory,
   toDocHandle,
@@ -291,12 +292,11 @@ function createInMemoryDraftPeerStub(
         const read = versioned(doc, scope, (doc) =>
           model.serializeBlockLines(toDocHandle(doc), bound),
         );
-        const blockLinks = model
-          .projectBlocks(toDocHandle(doc))
-          .map((block) => spelledLinks([block], scope));
+        const blocks = model.projectBlocks(toDocHandle(doc));
         return Ok({
           ...read,
-          links: blockLinks,
+          links: blocks.map((block) => spelledLinks([block], scope)),
+          destinationFree: destinationFreeBlocks(codec.markup, blocks),
           holder: { uri: scope.holder.uri, view: LIVE_VIEW },
         });
       }),
