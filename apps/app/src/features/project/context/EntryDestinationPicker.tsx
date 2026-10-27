@@ -51,6 +51,8 @@ type EntryDestinationPickerProps = {
   open: boolean;
   repairMove?: ResourceDestination;
   onOpenChange: (open: boolean) => void;
+  /** A Copy was admitted from this pick. */
+  onPicked?: () => void;
   children: ReactNode;
 };
 
@@ -73,6 +75,7 @@ function OpenPicker({
   open,
   repairMove,
   onOpenChange,
+  onPicked,
   rowRef,
 }: Omit<EntryDestinationPickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const resources = useAccountResourceReplica();
@@ -228,6 +231,7 @@ function OpenPicker({
       );
       if (!result) throw new Error(unavailable);
       publish(copyOperation(result));
+      onPicked?.();
       onOpenChange(false);
     } catch {
       setError(unavailable);

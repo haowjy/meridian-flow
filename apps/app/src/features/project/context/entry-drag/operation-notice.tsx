@@ -34,6 +34,7 @@ import {
   useAccountResourceProjection,
   useAccountResourceReplica,
 } from "../account-feature-context";
+import { type CopyRefusal, copyRefusals } from "./copy-refusal";
 import type { EntryRef } from "./entry";
 import type { MoveContext } from "./execute-move";
 import { entryNameNow, intentSettlement, type PlacementView } from "./move-plan";
@@ -111,7 +112,10 @@ type NoticeWindow =
     };
 
 type OperationNotices = {
+  projectId: string;
   windows: ReadonlyMap<NoticeSurface, NoticeWindow>;
+  /** Refused Copies in the journal, which outlive any window (a reload, another tab). */
+  refusals: readonly CopyRefusal[];
   publish: (surface: NoticeSurface, operation: Operation, refocus?: () => void) => void;
   /**
    * Resolves true once the replica took every row back and the notice closed;
@@ -292,9 +296,10 @@ export function OperationNoticesProvider({
     [windows, settle, resources, projectId],
   );
 
+  const refusals = useMemo(() => copyRefusals(view, projectId), [view, projectId]);
   const value = useMemo(
-    () => ({ windows, publish, undo, dismiss }),
-    [windows, publish, undo, dismiss],
+    () => ({ projectId, windows, refusals, publish, undo, dismiss }),
+    [projectId, windows, refusals, publish, undo, dismiss],
   );
   return (
     <OperationNoticesContext.Provider value={value}>{children}</OperationNoticesContext.Provider>
