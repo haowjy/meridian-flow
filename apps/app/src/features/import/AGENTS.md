@@ -18,8 +18,13 @@ when its re-pick differs, or it is already marked changed, the browser hashes
 just that file and posts the hash with its size and time. A file edited after
 it uploaded is listed as `changed_after_upload` ("the imported copy is the
 earlier version"); equal bytes clear it, and clear a receive-time
-`changed_after_pick` only when the file also matches the recorded pick. Missing
-files stay awaiting until the writer chooses "Import without them". Starting an upload still never hashes or sniffs files.
+`changed_after_pick` only when the file also matches the recorded pick. Hashing
+runs a few files at a time beside the upload queue, and the receive that would
+complete the upload waits for the report, because the server takes hashes only
+while the import is uploading. A file that cannot be read is skipped with its
+reason untouched; a failed report stays owed (`record.picked`) so Retry repeats
+it; a file already reported at the same size and time is not hashed again.
+Missing files stay awaiting until the writer chooses "Import without them". Starting an upload still never hashes or sniffs files.
 
 The browser mints the import id before reading; every create replay uses that id.
 Creation knowledge (`local`, `uncertain`, `created`), not the toast phase, decides

@@ -18,7 +18,7 @@ const selection = (name: string, files: File[]): Selection => ({
   ],
   leftOut: [],
 });
-it("pairs only awaiting files, marks changes, and leaves missing or wrong-root files undecided", async () => {
+it("sends awaiting files, hashes only received files that differ, and leaves missing or wrong-root files undecided", async () => {
   const original = selection("Book", [
     new File(["a"], "a.md", { lastModified: 10 }),
     new File(["b"], "b.md", { lastModified: 10 }),
@@ -39,6 +39,13 @@ it("pairs only awaiting files, marks changes, and leaves missing or wrong-root f
   const match = matchContinue(detail, picked);
   expect([...match.held.keys()]).toEqual([1]);
   expect(match.held.get(1)?.changed).toBe(true);
+  // a.md is received and re-picked unchanged: its receipt still matches, nothing to hash.
+  expect(match.received).toEqual([]);
+  const edited = matchContinue(
+    detail,
+    selection("Book", [new File(["edited"], "a.md", { lastModified: 99 })]),
+  );
+  expect(edited.received.map((item) => item.entryId)).toEqual([0]);
   expect(match.missing).toEqual([2]);
   expect((await server.api.detail("p", "i")).entries[2].state).toBe("awaiting");
   expect(

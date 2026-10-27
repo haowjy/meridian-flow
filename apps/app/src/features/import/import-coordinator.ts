@@ -9,6 +9,7 @@ import { importNodeId } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportDestination } from "./destination";
 import type { ImportApi } from "./import-api-port";
+import { IMPORT_SCHEDULING } from "./limits";
 import { buildSelection, type HeldFile } from "./manifest";
 import { matchContinue, type PickedReceived } from "./match-continue";
 import { type PendingRootMemory, pendingRoot } from "./pending-roots";
@@ -49,7 +50,14 @@ type RecordState = {
   creation: "local" | "uncertain" | "created";
   attempt: number;
   retiredUntil?: number;
+  /** Re-picked received files still owed a hash report. Kept when the report fails, so Retry repeats it. */
+  picked: PickedReceived[];
+  /** Size and time of each file already reported, so an unchanged re-pick is not hashed again. */
+  reported: Map<number, string>;
+  /** The attempt whose hash pass is running. */
+  checking?: number;
 };
+const stamp = (file: File) => `${file.size}:${file.lastModified}`;
 
 export class ImportCoordinator {
   private records = new Map<string, RecordState>();
@@ -123,6 +131,7 @@ export class ImportCoordinator {
       record.view = { ...record.view, local: { ...record.view.local, phase: "stalled" } };
     if (doneUpload) {
       record.held.clear();
+      record.picked = [];
       this.cancelUpload(record);
     }
     record.view = {
@@ -145,6 +154,8 @@ export class ImportCoordinator {
       revision: 0,
       creation: "created",
       attempt: 0,
+      picked: [],
+      reported: new Map(),
     };
   }
   start() {
@@ -256,6 +267,7 @@ export class ImportCoordinator {
     return [...this.records.values()].some(
       (record) =>
         ["reading", "creating"].includes(record.view.local.phase ?? "") ||
+        record.checking !== undefined ||
         (record.queue && !record.queue.cancelled && !record.queue.idle),
     );
   }
@@ -440,37 +452,67 @@ export class ImportCoordinator {
       if (this.current(record)) this.local(record, { busy: false });
     }
   }
-  /** Hash only the re-picked received files, then tell the server which receipts they match. */
-  private async reconcilePicked(record: RecordState, files: readonly PickedReceived[]) {
+  /**
+   * Hash the re-picked received files a few at a time and report which receipts they match.
+   * A file that cannot be read is missing evidence: its reason stays, and Continue never stalls on it.
+   * Returns false when a newer attempt superseded this one.
+   */
+  private async reconcilePicked(record: RecordState, current: () => boolean) {
+    const files = record.picked;
     const entries: ImportPickedInput["entries"] = [];
-    for (const { entryId, file } of files) {
-      const signal = record.controller.signal;
-      signal.throwIfAborted();
-      const sha256 = await sha256Hex(await file.arrayBuffer());
-      signal.throwIfAborted();
-      entries.push({ entryId, sha256, size: file.size, modifiedAt: file.lastModified });
-    }
-    if (!entries.length) return;
-    this.install(
-      record,
-      await this.api.picked(
+    const hashed: PickedReceived[] = [];
+    let next = 0;
+    const worker = async () => {
+      while (current() && next < files.length) {
+        const item = files[next++];
+        let bytes: ArrayBuffer;
+        try {
+          bytes = await item.file.arrayBuffer();
+        } catch {
+          continue;
+        }
+        entries.push({
+          entryId: item.entryId,
+          sha256: await sha256Hex(bytes),
+          size: item.file.size,
+          modifiedAt: item.file.lastModified,
+        });
+        hashed.push(item);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(IMPORT_SCHEDULING.concurrentHashes, files.length) }, worker),
+    );
+    if (!current()) return false;
+    if (entries.length) {
+      const summary = await this.api.picked(
         record.view.summary.projectId,
         record.view.importId,
         { entries },
         record.controller.signal,
-      ),
-    );
+      );
+      if (!current()) return false;
+      // Receives run alongside this report; never regress a receipt count.
+      if (
+        record.view.summary.state === "uploading" &&
+        summary.counts.received >= record.view.summary.counts.received
+      )
+        this.install(record, summary);
+      for (const { entryId, file } of hashed) record.reported.set(entryId, stamp(file));
+    }
+    record.picked = [];
+    return true;
   }
-  private async sendAwaiting(record: RecordState, picked: readonly PickedReceived[] = []) {
+  private async sendAwaiting(record: RecordState) {
     this.cancelUpload(record);
     const detail = await this.fresh(record);
     if (detail?.state !== "uploading") return;
-    if (picked.length) await this.reconcilePicked(record, picked);
     const awaiting = new Set(
       detail.entries.filter((entry) => entry.state === "awaiting").map((entry) => entry.entryId),
     );
     for (const id of record.held.keys()) if (!awaiting.has(id)) record.held.delete(id);
-    if (!record.held.size) {
+    const checks = record.picked.length > 0;
+    if (!record.held.size && !checks) {
       this.local(record, { phase: record.view.local.missing?.length ? "missing" : undefined });
       return;
     }
@@ -484,7 +526,17 @@ export class ImportCoordinator {
       if (current() && record.view.summary.state === "uploading")
         this.local(record, { sendingBytes: [...sending.values()].reduce((a, b) => a + b, 0) });
     };
-    record.queue = new UploadQueue({
+    const settle = () => {
+      if (!current() || record.checking === attempt || !queue.idle) return;
+      this.local(record, {
+        phase: missing?.length
+          ? "missing"
+          : record.held.size || record.picked.length
+            ? "stalled"
+            : undefined,
+      });
+    };
+    const queue = new UploadQueue({
       send: async (parts, signal) => {
         // Reading here detects a file removed since picking, before the multipart request.
         const readable: (HeldFile & { bytes: ArrayBuffer })[] = [];
@@ -544,14 +596,31 @@ export class ImportCoordinator {
           if (outcome.kind === "answered" && outcome.entry.state !== "awaiting")
             record.held.delete(outcome.entry.entryId);
       },
-      onIdle: () => {
+      onIdle: settle,
+    });
+    record.queue = queue;
+    const files = [...record.held.values()];
+    // The server takes hashes only while the import is uploading, so the receive that
+    // completes it waits until they are reported.
+    const last = checks ? files.pop() : undefined;
+    queue.add(files);
+    if (!checks) return;
+    record.checking = attempt;
+    void this.reconcilePicked(record, current)
+      .then((done) => {
+        if (done && last) queue.add([last]);
+      })
+      .catch((error) => {
         if (current())
           this.local(record, {
-            phase: missing?.length ? "missing" : record.held.size ? "stalled" : undefined,
+            phase: "stalled",
+            error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
           });
-      },
-    });
-    record.queue.add([...record.held.values()]);
+      })
+      .finally(() => {
+        if (record.checking === attempt) record.checking = undefined;
+        settle();
+      });
   }
   async continue(id: string, selection: Selection) {
     const record = this.records.get(id);
@@ -562,13 +631,16 @@ export class ImportCoordinator {
       if (detail?.state !== "uploading") return;
       const match = matchContinue(detail, selection);
       record.held = match.held;
+      record.picked = match.received.filter(
+        ({ entryId, file }) => record.reported.get(entryId) !== stamp(file),
+      );
       if (match.wrongRoot) this.local(record, { phase: "wrong-root" });
       else {
         this.local(record, {
           missing: match.missing,
           phase: match.missing.length ? "missing" : undefined,
         });
-        await this.sendAwaiting(record, match.received);
+        await this.sendAwaiting(record);
       }
     });
   }
