@@ -238,7 +238,7 @@
     "apps/server/server/domains/observability/safe-event.test.ts": 20,
     "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts": 1,
     "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts": 11,
-    "apps/server/server/domains/packages/__tests__/packages.test.ts": 22,
+    "apps/server/server/domains/packages/__tests__/packages.test.ts": 21,
     "apps/server/server/domains/preferences/adapters/drizzle/account-settings-repository.db.test.ts": 2,
     "apps/server/server/domains/projects/project-bootstrap-readiness.db.test.ts": 2,
     "apps/server/server/domains/projects/project-bootstrap.db.test.ts": 4,

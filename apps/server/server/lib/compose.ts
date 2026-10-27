@@ -109,13 +109,10 @@ import {
   createBoundAgentCatalog,
   createDrizzleAccountSkillInstallStore,
   createDrizzleAgentRevisionStore,
-  createGitHubMarsPackageFetcher,
   createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
-  defaultPackageSeedConfigFromEnv,
-  type MarsPackageFetcher,
-  seedDefaultAgentPackages,
   seedGeneralAgent,
+  seedLaunchAgentPackage,
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
@@ -312,7 +309,6 @@ export type AppServices = {
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   eventQuery?: EventQuery;
-  marsPackageFetcher: MarsPackageFetcher;
   preferences: ProjectPreferencesRepository;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
@@ -401,7 +397,6 @@ export type ProductionAppPorts = {
   billingUsage: BillingUsagePolicy;
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
-  marsPackageFetcher: MarsPackageFetcher;
   preferences: ProjectPreferencesRepository;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
@@ -632,14 +627,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
   });
   await seedGeneralAgent(agentRevisions, defaultModel);
-  const marsPackageFetcher = createGitHubMarsPackageFetcher({
-    githubToken: environment.GITHUB_TOKEN,
-  });
-  await seedDefaultAgentPackages({
-    store: agentRevisions,
-    fetcher: marsPackageFetcher,
-    config: defaultPackageSeedConfigFromEnv(environment),
-  });
+  await seedLaunchAgentPackage(agentRevisions);
   const users = createDrizzleUserRepository({ db });
   const accountSkillInstalls = createDrizzleAccountSkillInstallStore(db);
   const projects = createDrizzleProjectBootstrapRepository({
@@ -735,7 +723,6 @@ export async function createProductionAppPorts(input: {
     billingUsage: billingDomain.usagePolicy,
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
-    marsPackageFetcher,
     preferences,
     accountSettings,
     workingSet,
@@ -1180,7 +1167,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     interruptRegistry,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
-    marsPackageFetcher: ports.marsPackageFetcher,
     preferences: ports.preferences,
     accountSettings: ports.accountSettings,
     workingSet: ports.workingSet,
@@ -1672,11 +1658,6 @@ export function createInMemoryAppServices(): AppServices {
     }),
     interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),
-    marsPackageFetcher: {
-      async fetch() {
-        throw new Error("in-memory Mars package fetcher is not implemented");
-      },
-    },
     preferences,
     accountSettings,
     workingSet,

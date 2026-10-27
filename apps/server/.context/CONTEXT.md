@@ -19,7 +19,7 @@ composeAppServices(ports)
 `app.ts` wires the concrete production graph:
 
 - **Concrete adapters**: Drizzle repositories, context/collab stores, package
-  store, project repositories, credit ledger, package fetcher/seeder, and
+  store, project repositories, credit ledger, package seeder, and
   provider gateway.
 - **Pure service wiring**: event hub, checkpoint registry, tool
   registry/executor, late-bound turn runner, child-run coordination,
@@ -49,9 +49,7 @@ The shipped route surface covers:
   threads, project thread list/create, and the flat project chat feed;
   account settings expose the
   working-set sync toggle.
-- Agent and skill definition reads, saves, revision lists, revision restores,
-  restore-original, and agent skill-link patching.
-- Package preview/apply, update check/apply, and export.
+- Package export.
 - Global thread list/create, snapshot, delete/restore, turn cancel, model-request debug,
   turn-context preview, and owner-gated favorite/read desired-state mutation.
 - Writer-message routes authenticate and delegate replay, exact block/reference
@@ -66,7 +64,7 @@ The shipped route surface covers:
   distinct. The claim is released before ordinary post-commit context delivery.
 - Project document-link resolution for wikilinks, `manuscript://`/`work://`
   scheme links, and paths relative to a containing document.
-- First-party package catalog, builtin agent catalog, readiness, and unknown
+- Builtin agent catalog, readiness, and unknown
   route handling.
 
 Project-scoped handlers gate through `requireProjectOwner`
@@ -211,9 +209,8 @@ The Nitro file under `server/routes/api/...` should authenticate, extract params
 and body, delegate to the route-core, then serialize the response.
 
 Route-core functions take a `Deps` interface and plain-data input. They should
-not depend on Nitro event objects. This keeps owner gates, validation, package
-install/update logic, model-request debug projection, and definition editing
-testable with Vitest without booting Nitro.
+not depend on Nitro event objects. This keeps owner gates, validation, and
+model-request debug projection testable with Vitest without booting Nitro.
 
 ### Adding a command route
 
