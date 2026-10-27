@@ -884,6 +884,10 @@ msgstr "Already in {0}"
 msgid "Already redone"
 msgstr "Already redone"
 
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Already there"
+msgstr "Already there"
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Already undone"
 msgstr "Already undone"
@@ -1106,6 +1110,7 @@ msgstr "Can't delete {source} from this location."
 msgid "Can't delete {source}: it changed during the delete."
 msgstr "Can't delete {source}: it changed during the delete."
 
+#: src/features/project/context/entry-drag/drop-choice.ts
 #: src/features/project/context/entry-drag/use-entry-list.tsx
 msgid "Can't go inside itself"
 msgstr "Can't go inside itself"
@@ -1196,6 +1201,7 @@ msgstr "Can't undo: the folder it would return to is gone."
 #: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
+#: src/features/project/context/entry-drag/DropChoiceMenu.tsx
 #: src/features/project/work/WorkChanges.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
@@ -3356,12 +3362,12 @@ msgstr "More composer controls"
 msgid "Move {rowName}"
 msgstr "Move {rowName}"
 
-#: src/features/project/context/entry-drag/use-entry-list.tsx
+#: src/features/project/context/entry-drag/drop-choice.ts
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Move after {sibling}"
 msgstr "Move after {sibling}"
 
-#: src/features/project/context/entry-drag/use-entry-list.tsx
+#: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Move before {sibling}"
 msgstr "Move before {sibling}"
 
@@ -3394,7 +3400,7 @@ msgstr "Move row up"
 msgid "Move to {0}"
 msgstr "Move to {0}"
 
-#: src/features/project/context/entry-drag/use-entry-list.tsx
+#: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Move to {destinationName}"
 msgstr "Move to {destinationName}"
 
@@ -4726,6 +4732,10 @@ msgstr "Some changes couldn't be completed."
 msgid "Some changes to {name} couldn't be completed."
 msgstr "Some changes to {name} couldn't be completed."
 
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "Some of these items are no longer there"
+msgstr "Some of these items are no longer there"
+
 #: src/features/editor/SchemaNotices.tsx
 msgid "Some text was removed"
 msgstr "Some text was removed"
@@ -5080,6 +5090,10 @@ msgstr "That passage changed after this search."
 #: src/core/editor/images/image-uploads.ts
 msgid "That picture is no longer in the document."
 msgstr "That picture is no longer in the document."
+
+#: src/features/project/context/entry-drag/drop-choice.ts
+msgid "That place is no longer available"
+msgstr "That place is no longer available"
 
 #: src/features/project/context/use-rename-entry-form.ts
 msgid "That rename couldn't be completed. Choose another name or try again."

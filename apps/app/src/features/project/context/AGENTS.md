@@ -32,7 +32,9 @@ chat resources rather than ordinary Editor tabs.
 - Selection and dragging (`entry-drag/`): one desktop list is one selection,
   one drop route and one drop scope (`useEntryList`/`EntryList`). They carry
   identities, never placement; plans read placement from the replica at hover,
-  drop and Undo. Rows move within one system only. A writing surface may copy
+  drop and Undo. A drop within one system moves at once; one across systems asks
+  first, at the pointer (`entry-drag/drop-choice.ts`; contract in
+  `.context/tree-interactions.md`). A writing surface may copy
   those identities into references through its own drop extension; that drop
   never enters the tree's move route. Desktop only; phones publish Move… directly
   to their notice surface, and every move drop also has that menu path.

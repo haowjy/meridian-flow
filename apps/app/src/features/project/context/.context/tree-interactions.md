@@ -252,8 +252,8 @@ they can carry).
 Dragging a selected row carries the selection in screen order, minus rows inside
 a selected folder; dragging an unselected row carries only it. A row drags only
 when its surface grants Move (an archived Work's Scratch doesn't), and a
-selection that spans systems or holds an unmovable row moves nowhere rather than
-silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
+selection that holds an unmovable row, or one that lost a row (a peer deleted it,
+or its parent isn't known yet), moves nowhere rather than silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
 data until the drop). The transfer carries only Meridian's entries type, no
 `text/plain` or `text/uri-list` fallback. The composer and manuscript editor
 resolve selected row identities through their live `@` catalog and copy files and folders as mentions;
@@ -262,10 +262,10 @@ half-made link. A writing drop stops before the tree's move route, so it never
 moves a selected row.
 
 Each list has a `TreeDropScope` whose entries route (`use-entry-list.tsx`,
-planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside
+planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2"; "Move to Act 2…"
+when the drop will ask, see below), refuse ("Can't go inside
 itself", a folder over its own subtree), or nothing (the row is already there, the target is a
-navigation-only folder, or the drag comes from another system, which Move or
-Copy will handle). A taken name never refuses: each row arrives at the next free
+navigation-only folder, or the selection holds a row that can't move or has gone). A taken name never refuses: each row arrives at the next free
 name (`chapter-2 (2)`), predicted (`arrivals` in `execute-move.ts`) against the destination's
 rows plus the rows placed before it in the same drop; the server decides the
 final name. The hover shows that prediction before the drop: an accept whose
@@ -343,6 +343,44 @@ dragged included), so a peer's rename or move during the drag can't slip a
 folder inside itself. A lone moved row stays selected on its own (an explicit
 selection of one), not the open row, and Undo needs no reselect because keys
 never change.
+
+### Dropping across systems
+
+A drop within one system moves at once. A drop that crosses systems (the
+project's areas are one system; User and each Scratch or Uploads owner are their
+own, `entrySystem` in `entry.ts`) changes ownership, so the list asks first. The
+hover accepts with an ellipsis ("Move to Act 2…"); the drop opens a compact menu
+at the pointer, no heading, its items named for the destination ("Move to Act
+2"), then Cancel. Escape, Cancel and a click outside close it with nothing
+changed, and focus returns to the list. The whole selection takes one choice;
+the same-system subset never moves alone. Choosing Move goes through `moveRows`,
+the path Move… and a same-system drop use, and reports with the same notice and
+Undo. Phones have no drag, so no menu: they use Move…, which already crosses
+systems.
+
+Three exported types are the contract a later action (Copy) plugs into without
+touching the menu's mechanics:
+
+- `ResolvedDrop` (`move-plan.ts`, from `resolveDrop(view, entries, target)`):
+  what a drop is now, before any action decides what to do with it. `sources` are
+  the outermost placed rows (a row inside a carried folder rides with it),
+  `into`, `destinationName` (the catalog's current name), `position`,
+  `crossing`, `insideItself`, `unavailable` (carried rows the replica can't place)
+  and `movable`. `resolveDrop` returns null when the target isn't a place a drop
+  can land. `planMove(view, resolved)` turns it into a Move plan; an action plans
+  from the resolution and never resolves identities again.
+- `PendingChoice` (`drop-choice.ts`): a crossing drop waiting for its choice, held
+  by the list. It carries the dragged entries, the target, the pointer point, the
+  notice surface and the focus-return callback, captured at the drop because
+  `dragend` clears `activeEntryDrag()` right after it. `EntriesRoute.drop`
+  therefore receives the point.
+- `DropChoiceItem` (`drop-choice.ts`): `{ action, label, enabled, reason? }`. The
+  menu is `dropChoices(view, pending)`, derived from `resolveDrop` against the
+  replica as it is when the menu draws and again when the writer picks, so a
+  destination renamed or removed while it was open is judged by identity: the
+  label follows a rename, and a removed destination leaves the item disabled
+  with its reason. `DropChoiceMenu.tsx` renders the items and knows no action.
+  Copy joins by adding a `DropAction` and its plan to `dropChoices`.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the

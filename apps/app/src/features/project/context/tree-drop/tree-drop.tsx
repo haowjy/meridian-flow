@@ -48,7 +48,8 @@ export type EntriesVerdict =
 
 export type EntriesRoute = {
   verdict(target: TreeDropTarget): EntriesVerdict | null;
-  drop(target: TreeDropTarget): void;
+  /** `point` is where the pointer let go, in client coordinates, for a route that asks at the drop. */
+  drop(target: TreeDropTarget, point: { x: number; y: number }): void;
 };
 
 /** Desktop files: the verdict is `EntriesVerdict`'s shape too, so the hint says what the drop will do. */
@@ -345,7 +346,8 @@ export function useTreeDropTarget(
         event.preventDefault();
         event.stopPropagation();
         const routes = latest.current.scope?.routes;
-        if (kind === "entries") routes?.entries?.drop(dropped);
+        if (kind === "entries")
+          routes?.entries?.drop(dropped, { x: event.clientX, y: event.clientY });
         else routes?.files?.drop(dropped, captureDrop(event.dataTransfer));
         if (!dropped.position) latest.current.reveal?.();
       },
