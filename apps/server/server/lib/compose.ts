@@ -1512,6 +1512,7 @@ export function createInMemoryAppServices(): AppServices {
         // The in-memory app has no rows; its creates answer replays from their own store.
         return null;
       },
+      serializeCreate: (_entryId, create) => create(),
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),

@@ -127,8 +127,13 @@ such id and the device may place the same id again. That lookup is an authority-
 of the project's documents or folders table by id, and of `document_forwards` for a joined
 document, so it also finds a tree under a deleted Work that the route itself can no longer
 resolve. An id held where the writer can no longer edit (an archived or deleted Work, a
-hidden or deleted row, a lost grant) answers `409 {status:"conflict"}`; for a document the
-device mints a new identity, for a folder it settles the refusal and repairs the folder. Domain failures go through `contextErrorToHttp`, which types every code;
+hidden or deleted row, a lost grant) answers `409 {status:"conflict"}`: the id is spent, and
+the device replaces it with a new one, for a document or a folder alike
+(`packages/resource-replica` `ServerHold`). The read and the refusals that follow it run under
+`ProjectContextAvailabilityPort.serializeCreate`, one transaction holding a per-id advisory lock
+until the claim commits or rolls back: a replay queues behind a first send still in its
+transaction instead of reading "not held" and being refused for an id that send then commits.
+Domain failures go through `contextErrorToHttp`, which types every code;
 `stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401
 final, and app code on other routes branches on the untyped `HttpResponseError`. Identity conflicts may name a renamed or relocated destination;

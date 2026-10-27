@@ -58,6 +58,14 @@ export interface ProjectContextAvailabilityPort {
     },
     actor: { userId: string },
   ): Promise<HeldContextNode | null>;
+  /**
+   * Runs a create's whole decision for one entry id alone: the held read, every refusal, and the
+   * claim. Creates of the same id queue, so a replay reads what an earlier send committed or
+   * rolled back, and a refusal means no such id is held. Without it the read precedes the claim,
+   * and a replay refused for an authority that changed meanwhile can be answered "free" for an
+   * id the first send then commits.
+   */
+  serializeCreate<T>(entryId: string, create: () => Promise<T>): Promise<T>;
 }
 
 export interface ProjectContextAvailabilityMutationPort {

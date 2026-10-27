@@ -114,6 +114,7 @@ function harness(
     async held() {
       return null;
     },
+    serializeCreate: (_entryId, create) => create(),
   };
   const threadProject = vi.fn(async () => projectId);
   const runClaim = createInMemoryRunClaim();

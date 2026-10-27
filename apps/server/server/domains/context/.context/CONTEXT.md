@@ -131,8 +131,8 @@ rooms retire.
 
 A device-minted folder ID is idempotent the same way (`createFolderIfAbsent`, the
 `create-folder` route): a replay finds the folder under its ID and answers
-`already-exists`. The route reads the ID first (`heldFolder`), before any authority over
-the destination, so an ID held out of reach (deleted, hidden, foreign, a document's) is a
+`already-exists`. The route reads the ID first (`answerHeldFolder`), before any authority
+over the destination, so an ID held out of reach (deleted, hidden, foreign, a document's) is a
 final `409 conflict` even when the destination's Work is archived. The folder takes the
 first free name at the destination and absorbs a hidden branch folder already there, so a
 create is never refused for a name. A destination that is gone is `destination_missing`.

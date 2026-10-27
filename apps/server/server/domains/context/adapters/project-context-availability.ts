@@ -749,6 +749,16 @@ export function createDrizzleProjectContextAvailability(
         node: input.node,
       });
     },
+
+    serializeCreate(entryId, create) {
+      // The transaction ends with the create, so the lock outlives its claim's commit.
+      return runInDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db).execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`create-entry:${entryId}`}, 0::bigint))`,
+        );
+        return create();
+      });
+    },
   };
 }
 
