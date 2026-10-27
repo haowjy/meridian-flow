@@ -6,6 +6,8 @@ name: meridian-dev
 services:
   postgres:
     image: postgres:16
+    # Come back after a reboot: every dev stack and DB test run needs this server.
+    restart: unless-stopped
     # Every worktree's dev stack and managed DB test run share this server. One full
     # `pnpm test:db` holds about 20 connections at peak, so the default of 100 runs out
     # with a fifth concurrent run. Host memory, not connections, should be the limit.
