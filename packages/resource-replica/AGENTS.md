@@ -24,9 +24,10 @@ exports rather than implementation modules.
   scheduler queue.
 - Where a placement goes and what the server first makes there are separate. A placement is
 always `set-location` / `set-folder-location`; `ResourceDescriptor.materialization` says
-whether the server materializes an untitled document or (Copy) a copy, and dispatch derives
-`create` from it while `canonical` is null. A new kind of first materialization is a new
-materialization arm, not a placement kind.
+what the server makes of a document identity it does not hold (today an untitled document it
+names), and dispatch derives `create` from it while `canonical` is null. A new kind of
+single-document first materialization is a new materialization arm, not a placement kind. Copy
+is not one: it is one operation over several roots, so its client journal is a separate decision.
 - Namespace intents and receipts are immutable evidence. Accepted, refused,
   superseded, and terminal outcomes must not be confused with current
   placement or deletion ownership.
