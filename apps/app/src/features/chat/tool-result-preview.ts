@@ -187,12 +187,17 @@ export function boundLabel<T>({ rows, total }: CappedList<T>): string | null {
 }
 
 /** The card's header: what this grep found, and nothing else. */
-export function grepCardSummary(results: GrepResultRows): string {
-  const documents = results.total;
+export function grepCardSummary({ exact, matches, total: documents }: GrepResultRows): string {
+  // A scan that stopped early can only say it found at least this many.
+  if (!exact && documents === 0) return t`No matches found before the search stopped`;
   const inDocuments = plural(documents, { one: "# document", other: "# documents" });
-  const matches = results.matches;
-  const found = matches <= documents ? inDocuments : t`${matches} results in ${inDocuments}`;
-  return results.exact ? found : t`At least ${found}`;
+  if (matches <= documents)
+    return exact
+      ? inDocuments
+      : plural(documents, { one: "At least # document", other: "At least # documents" });
+  return exact
+    ? t`${matches} results in ${inDocuments}`
+    : t`At least ${matches} results in ${inDocuments}`;
 }
 
 export function matchCountLabel(count: number): string {

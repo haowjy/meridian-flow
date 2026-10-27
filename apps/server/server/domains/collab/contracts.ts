@@ -260,6 +260,11 @@ export type HashlineRead = {
   revision: string | null;
   /** The holder `links` were spelled from, as the read's own binding named it. */
   holder: { uri: string | null; view: LinkView };
+  /** A range of a block's `destinationFree` markdown, placed in its `body`; null when it can't be. */
+  locate(
+    block: Pick<HashlineBlock, "body" | "destinationFree">,
+    range: { start: number; end: number },
+  ): { start: number; end: number } | null;
 };
 
 /**

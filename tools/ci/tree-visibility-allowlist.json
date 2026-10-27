@@ -6,11 +6,6 @@
       "reason": "The tree view and hidden-node lifecycle: the one owner of the hidden predicate"
     },
     {
-      "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts",
-      "forms": ["read"],
-      "reason": "readGrepTexts: reads the derivation watermark of ids the caller already took from the view; it names no document the view did not list"
-    },
-    {
       "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.ts",
       "forms": ["read", "write"],
       "reason": "Live mover: CAS-inspects through the view, moves and deletes rows, enumerates subtrees including hidden contents (they move with their folder; absorb and split need them)"

@@ -12,7 +12,20 @@ import {
   projects,
   works,
 } from "@meridian/database";
-import { and, asc, eq, gt, inArray, isNull, ne, not, notExists, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  ne,
+  not,
+  notExists,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -194,7 +207,7 @@ const staleDerivation = or(
   ne(documentDerivations.linksAdmissionSequence, documentYjsHeads.nextAdmissionSequence),
   ne(documentDerivations.linksLocationVersion, documents.locationVersion),
   ne(documentDerivations.linksExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-);
+) as SQL;
 
 export function createDrizzleDocumentDerivationStore(
   db: Database,
@@ -273,7 +286,7 @@ export function createDrizzleDocumentDerivationStore(
           and(
             inArray(documentMarkdownProjections.documentId, ids),
             sql`${documentMarkdownProjections.grepText} is not null`,
-            not(staleDerivation as NonNullable<typeof staleDerivation>),
+            not(staleDerivation),
             // A draft reader sees the draft, which the projection of the live document doesn't.
             ignoreDrafts
               ? undefined
@@ -284,6 +297,7 @@ export function createDrizzleDocumentDerivationStore(
                     .where(
                       and(
                         eq(documentDrafts.documentId, documents.id),
+                        eq(documentDrafts.kind, "work_draft"),
                         eq(documentDrafts.status, "active"),
                       ),
                     ),

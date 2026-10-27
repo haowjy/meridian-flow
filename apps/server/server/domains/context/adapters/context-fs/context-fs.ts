@@ -817,10 +817,11 @@ export class ContextFS implements ContextSchemeAdapter {
       documentId: documentId as DocumentId,
     });
     if (!read.ok) return read;
-    const { blocks, holder, revision } = read.value;
+    const { blocks, holder, revision, locate } = read.value;
     return Ok({
       blocks,
       revision,
+      locate,
       shownOf: ({ blocks: passageBlocks }) => {
         // Only the returned passages can be shown, never the matches past the cap.
         const passages = passageBlocks.map((block) => blocks[block]?.links ?? []);

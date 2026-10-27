@@ -115,12 +115,12 @@ prediction; the notes below explain the slow and the fast.
 
 Limits, checked live:
 
-- **Repeat counts** that add up past 100 are refused. At 250 the same `-i` pattern took 19 s over
-  this project, at 100 about 9 s, inside the scan's 20 s budget. The bound also covers one long
-  line, which the budget cannot interrupt: one `re2js` call on a 1M-character single line took
-  at most 2.0 s at weight 100 (`[^z]{100}x` over text of all `a`; 0.6 s over prose). Chains the
-  old per-repeat cap allowed took 3.8 s (two), 9.4 s (five) and 18.9 s (ten), and
-  `(?:\pL{100}){10}x` 29 s.
+- **Program size**: a pattern whose compiled RE2 program passes 64 instructions is refused
+  ("pattern is too complex"). The size covers `{n}`, nesting, and the same repeat written out
+  longhand. It also bounds one long line, which the budget cannot interrupt: one `re2js` call on a
+  1M-character single line took 2.6 s for 60 `\pL` under `-i` (63 instructions, the slowest shape
+  found) and about 1.2 s for 60 `.`. Without the cap, 509 `.` took 9.8 s, 170 `\pL` under `-i` 6 s,
+  and `(?:\pL{100}){10}x` 29 s. `\d{4}-\d{2}-\d{2}` is 12 instructions.
 - **Event loop.** A scan of a pattern with no literal yields every 10 ms between lines. While
   `[^z]{100}[^y]{100}x` (`-i`) ran for 12 s, `GET /health` took about 240 ms; with the yield
   between documents it took 3 s.
