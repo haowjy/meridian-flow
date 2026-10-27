@@ -4,11 +4,12 @@
  *
  */
 
+import { createError } from "nitro/h3";
 import {
   type AgentRevisionStore,
   buildMarsPackageZip,
   exportMarsPackage,
-  findOwnedPackageInstall,
+  PackageInstallationNotFoundError,
 } from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 
@@ -33,14 +34,17 @@ export async function handleExportPackageRequest(
   input: ProjectPackageExportRouteInput,
 ): Promise<ProjectPackageExportResult> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  const install = await findOwnedPackageInstall(deps.agentRevisions, input.userId, input.installId);
-  const exported = await exportMarsPackage({
+  const { coordinate, exported } = await exportMarsPackage({
     userId: input.userId,
-    installId: install.id,
+    installId: input.installId,
     store: deps.agentRevisions,
+  }).catch((error: unknown) => {
+    if (error instanceof PackageInstallationNotFoundError)
+      throw createError({ statusCode: 404, message: error.message });
+    throw error;
   });
   return {
-    filename: `${install.coordinate.replace(/[^a-zA-Z0-9_-]/g, "-")}.zip`,
+    filename: `${coordinate.replace(/[^a-zA-Z0-9_-]/g, "-")}.zip`,
     body: buildMarsPackageZip(exported),
   };
 }

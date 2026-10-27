@@ -75,15 +75,6 @@ export function prepareAgentSourceRevision(
       : undefined;
     const overlays = manifest?.agentOverlays ?? {};
     const dependencies = { ...input.dependencies };
-    const declared = new Set(manifest?.dependencies.map((item) => item.name) ?? []);
-    if (
-      Object.keys(dependencies).length !== declared.size ||
-      [...declared].some((name) => !Object.hasOwn(dependencies, name) || !dependencies[name])
-    ) {
-      throw new AgentSourceError(
-        "Every manifest dependency must reference an exact retained package revision",
-      );
-    }
     const definitions: PreparedAgentSourceRevision["definitions"] = [];
     for (const name of Object.keys(files).sort()) {
       const match = /^agents\/([^/]+)\.md$/.exec(name);
