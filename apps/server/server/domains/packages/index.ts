@@ -31,7 +31,6 @@ export {
   compileAgentDefinition,
   type NormalizedAgentMetadata,
 } from "./domain/agent-definition-compiler.js";
-export { normalizeAgentMetaFields } from "./domain/agent-gateway-meta.js";
 export {
   AgentSourceError,
   type AgentSourceSnapshot,
@@ -69,17 +68,9 @@ export {
   resolveCatalogSource,
 } from "./domain/first-party-catalog.js";
 export {
-  agentDefinitionContentChecksum,
   canonicalizeJsonObject,
-  definitionContentChecksum,
-  loadAgentDefinitions,
-  loadSkillDefinitions,
-  normalizeAgentMeta,
-  parseAgentDefinitionFile,
   parseMarkdownDefinition,
-  parseMarsPackageSource,
   parseMarsToml,
-  parseSkillDefinitionFile,
   serializeMarkdownDefinition,
 } from "./domain/mars-source.js";
 export { exportMarsPackage, writeExportedMarsDirectory } from "./domain/package-export.js";
@@ -99,7 +90,6 @@ export {
 export { buildMarsPackageZip } from "./domain/package-zip.js";
 export {
   bufferToSkillFileEntry,
-  normalizeSkillFilesForChecksum,
   readSkillFileFromDisk,
   skillFileEntryToBuffer,
   writeSkillFileToDisk,
@@ -112,10 +102,7 @@ export type {
   MarsDependency,
   MarsPackageMetadata,
   PackageVisibility,
-  ParsedAgentDefinition,
-  ParsedMarsPackageSource,
   ParsedMarsToml,
-  ParsedSkillDefinition,
 } from "./domain/types.js";
 export {
   type AccountSkillInstall,

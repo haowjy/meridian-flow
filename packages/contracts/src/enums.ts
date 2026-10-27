@@ -52,9 +52,6 @@ export type AgentMode = z.infer<typeof AgentMode>;
 export const SourceType = z.enum(["builtin", "package", "user"]);
 export type SourceType = z.infer<typeof SourceType>;
 
-export const SkillType = z.enum(["principle", "guardrail", "reference"]);
-export type SkillType = z.infer<typeof SkillType>;
-
 export const LoadingMode = z.enum(["preloaded", "available"]);
 export type LoadingMode = z.infer<typeof LoadingMode>;
 

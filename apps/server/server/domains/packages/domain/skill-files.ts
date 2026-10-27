@@ -38,9 +38,3 @@ export async function readSkillFileFromDisk(filePath: string): Promise<SkillFile
 export async function writeSkillFileToDisk(filePath: string, entry: SkillFileEntry): Promise<void> {
   await writeFile(filePath, skillFileEntryToBuffer(entry));
 }
-
-export function normalizeSkillFilesForChecksum(files: SkillFiles): SkillFiles {
-  return Object.fromEntries(
-    Object.entries(files).sort(([left], [right]) => left.localeCompare(right)),
-  );
-}
