@@ -6,18 +6,30 @@
  */
 import type { DragEvent } from "react";
 import { MERIDIAN_ENTRIES_MIME } from "../tree-drop/drag-payload";
-import type { DragEntry } from "./entry";
+import type { DragEntry, DragSource, EntryDrag } from "./entry";
 
-let active: readonly DragEntry[] | null = null;
+let active: EntryDrag | null = null;
 
+/** What a writing surface may turn into mentions: the dragged identities, whatever started the drag. */
 export function activeEntryDrag(): readonly DragEntry[] | null {
+  return active?.entries ?? null;
+}
+
+/** The drag with where it came from, for a drop target deciding between moving at once and asking. */
+export function activeDragSession(): EntryDrag | null {
   return active;
 }
 
-export function startEntryDrag(event: DragEvent, entries: readonly DragEntry[]) {
+export function startEntryDrag(
+  event: DragEvent,
+  entries: readonly DragEntry[],
+  source: DragSource,
+) {
   if (entries.length === 0) return;
-  active = entries;
+  active = { entries, source };
   const transfer = event.dataTransfer;
+  // An `<a>` carries its URL, and a drop on the window would navigate to it.
+  transfer.clearData();
   transfer.effectAllowed = "copyMove";
   transfer.setData(MERIDIAN_ENTRIES_MIME, JSON.stringify(entries.map((entry) => entry.uri)));
   setPreview(transfer, entries);

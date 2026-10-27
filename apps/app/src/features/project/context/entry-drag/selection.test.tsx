@@ -6,7 +6,7 @@
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { type DragEntry, entryKey } from "./entry";
+import { type DragEntry, entryKey, LIVE_VIEW } from "./entry";
 import { EntrySelectionProvider, useEntrySelection, useEntrySelectionRow } from "./selection";
 
 vi.mock("@/hooks/use-phone-shell", () => ({ usePhoneShell: () => false }));
@@ -16,6 +16,7 @@ function entry(id: string): DragEntry {
     ref: { kind: "file", id },
     name: id,
     uri: `scratch://@w/${id}`,
+    view: LIVE_VIEW,
   };
 }
 

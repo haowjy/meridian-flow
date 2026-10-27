@@ -4,9 +4,10 @@
  * one, a chat's Scratch one over the current and Earlier notes, and a Work's
  * Files one over its Scratch.
  * Shells declare the catalogs they show; this owns the rest: what a hovered
- * target would do and what a drop does. A drop within one system moves at once;
- * one across systems waits for the writer's choice at the drop point, Move or
- * Copy (see `drop-choice.ts`). It also offers optional selection and focus
+ * target would do and what a drop does. A list row dropped within one system
+ * moves at once; a drop across systems, and any other source (a chip, tab,
+ * crumb, Recent row, receipt or Uploads entry), waits for the writer's choice
+ * at the drop point, Move or Copy (see `drop-choice.ts`). It also offers optional selection and focus
  * effects to Move… and Copy to…; the project-owned notice does not depend on a list.
  */
 import { t } from "@lingui/core/macro";
@@ -27,7 +28,7 @@ import {
 } from "../tree-drop/tree-drop";
 import { copyOperation } from "./copy-operation";
 import { DropChoiceMenu, type DropChoiceState } from "./DropChoiceMenu";
-import { activeEntryDrag } from "./drag-session";
+import { activeDragSession } from "./drag-session";
 import {
   askLabel,
   type DropAction,
@@ -135,10 +136,10 @@ export function useEntryList({
 
   const route = useMemo<EntriesRoute>(() => {
     const resolve = (target: Parameters<EntriesRoute["verdict"]>[0]) => {
-      const entries = activeEntryDrag();
-      if (!entries) return null;
+      const drag = activeDragSession();
+      if (!drag) return null;
       const view = moveView(latest.current);
-      return { entries, view, resolved: resolveDrop(view, entries, target) };
+      return { drag, view, resolved: resolveDrop(view, drag, target) };
     };
     const judge = (target: Parameters<EntriesRoute["verdict"]>[0]): EntriesVerdict | null => {
       const drop = resolve(target);
@@ -147,8 +148,8 @@ export function useEntryList({
       if (resolved.unavailable.length > 0) return { kind: "refuse", label: noLongerThere() };
       if (resolved.insideItself) return { kind: "refuse", label: insideItself() };
       const { view } = drop;
-      // A crossing drop offers what the menu would; the hint is the first thing it offers.
-      if (resolved.crossing) {
+      // A drop that asks offers what the menu would; the hint is the first thing it offers.
+      if (resolved.asks) {
         const { items, plans } = dropChoices(view, resolved, target);
         const first = items.find((item) => item.enabled);
         if (!first) return null;
@@ -180,7 +181,7 @@ export function useEntryList({
       verdict(target) {
         const { areas, projection, works, noWork } = latest.current;
         const key = treeDropTargetKey(target);
-        const inputs = [activeEntryDrag(), areas, projection, works, noWork];
+        const inputs = [activeDragSession(), areas, projection, works, noWork];
         if (last?.key === key && last.inputs.every((input, index) => input === inputs[index]))
           return last.verdict;
         const verdict = judge(target);
@@ -192,10 +193,10 @@ export function useEntryList({
         const resolved = drop?.resolved;
         if (!drop || !resolved) return;
         const to = { surface, returnFocus: listEffects.refocus };
-        if (resolved.crossing) {
+        if (resolved.asks) {
           if (dropChoices(drop.view, resolved, target).items.some((item) => item.enabled))
-            // `dragend` clears the drag session after this, so the choice keeps the entries.
-            setPending({ entries: drop.entries, target, point, ...to });
+            // `dragend` clears the drag session after this, so the choice keeps the drag.
+            setPending({ drag: drop.drag, target, point, ...to });
           return;
         }
         const planned = planMove(drop.view, resolved);
@@ -207,7 +208,7 @@ export function useEntryList({
   const choice = useMemo<DropChoiceState | null>(() => {
     if (!pending) return null;
     const choicesNow = (view: MoveView) =>
-      dropChoices(view, resolveDrop(view, pending.entries, pending.target), pending.target);
+      dropChoices(view, resolveDrop(view, pending.drag, pending.target), pending.target);
     return {
       point: pending.point,
       returnFocus: pending.returnFocus,

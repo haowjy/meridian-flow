@@ -45,7 +45,13 @@ export async function copyRows(
   const sources = rows.map((row) => {
     const predictedName = names.name(row);
     names.reserve(row, predictedName);
-    return { kind: row.entry.kind, id: row.entry.id, predictedName, sourceName: row.name };
+    return {
+      kind: row.entry.kind,
+      id: row.entry.id,
+      predictedName,
+      sourceName: row.name,
+      view: row.view,
+    };
   });
   try {
     const { operationId, roots } = await context.resources.copyEntries(context.projectId, {

@@ -8,6 +8,7 @@ import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextOwner,
   ContextSiblingPosition,
+  CopyContextEntryView,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
@@ -26,7 +27,7 @@ import { schemeLabel } from "../context-schemes";
 import { menuEntryFor } from "../menu-tree";
 import { destinationParent, type MoveDestination } from "../move-entry";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
-import { type DragEntry, type EntryRef, entrySystem } from "./entry";
+import { type EntryDrag, type EntryRef, entrySystem } from "./entry";
 
 /** A catalog a list shows, and so a place a drop can land. */
 export type MoveArea = {
@@ -245,21 +246,28 @@ export function sameParent(a: ParentRef, b: ParentRef): boolean {
   );
 }
 
+/** A carried entry as the replica places it now, with what a Copy of it reads. */
+export type PlacedSource = PlacedEntry & { view: CopyContextEntryView };
+
 /**
  * A drop, resolved: what the carried rows and the target are now, before any
  * action decides what to do with them. Move and Copy both plan from it, so
  * neither resolves identities again.
  */
 export type ResolvedDrop = {
-  /** The carried rows as the replica places them; a row inside a carried folder rides with it and is left out. */
-  sources: readonly PlacedEntry[];
+  /** The carried entries as the replica places them; one inside a carried folder rides with it and is left out. */
+  sources: readonly PlacedSource[];
   /** The target's parent: a folder by ID, or an area's root with its authority. */
   into: ParentRef;
   destinationName: string;
   /** A sibling edge in `into`; absent when the folder or area itself is the target. */
   position?: ContextSiblingPosition;
-  /** Some source sits in another system than the target (the project's areas are one; User and each Scratch or Uploads owner are their own). */
-  crossing: boolean;
+  /**
+   * The drop asks Move, Copy or Cancel instead of moving at once: some source sits in another
+   * system than the target (the project's areas are one; User and each Scratch or Uploads owner
+   * are their own), or the drag is a reference, which only a list row within one system outranks.
+   */
+  asks: boolean;
   /** A carried folder would land on itself or below itself. */
   insideItself: boolean;
   /** Carried rows the replica can't place now (gone, or their parent isn't known yet). Nothing acts on a selection that has lost rows. */
@@ -283,13 +291,13 @@ function movable(view: MoveView, { location }: PlacedEntry): boolean {
 }
 
 /**
- * Resolves dropping `entries` on `target` from the replica as it is now; null
+ * Resolves dropping `drag` on `target` from the replica as it is now; null
  * when the target isn't a place a drop can land (no such area, an owner that
  * accepts no arrivals, a navigation-only folder, a parent not known yet).
  */
 export function resolveDrop(
   view: MoveView,
-  entries: readonly DragEntry[],
+  drag: EntryDrag,
   target: TreeDropTarget,
 ): ResolvedDrop | null {
   const area = view.areas.find(
@@ -307,8 +315,12 @@ export function resolveDrop(
   };
   const into = destinationParent(destination, view.works, view.noWork);
   if (!into) return null;
-  const looked = entries.map((entry) => ({ ref: entry.ref, now: placeEntryRef(view, entry.ref) }));
-  const placed = looked.flatMap(({ now }) => (now ? [now] : []));
+  const looked = drag.entries.map((entry) => ({
+    ref: entry.ref,
+    view: entry.view,
+    now: placeEntryRef(view, entry.ref),
+  }));
+  const placed = looked.flatMap(({ now, view: read }) => (now ? [{ ...now, view: read }] : []));
   const sources = dropNested(view, placed, (source) => source.parent);
   const system = entrySystem(scheme, owner);
   return {
@@ -316,9 +328,9 @@ export function resolveDrop(
     into,
     destinationName: folder?.name ?? schemeLabel(scheme),
     ...(target.position ? { position: target.position } : {}),
-    crossing: sources.some(
-      (source) => entrySystem(source.location.scheme, source.location) !== system,
-    ),
+    asks:
+      drag.source === "reference" ||
+      sources.some((source) => entrySystem(source.location.scheme, source.location) !== system),
     insideItself: sources.some((source) => insideItself(view, source, into)),
     unavailable: looked.flatMap(({ ref, now }) => (now ? [] : [ref])),
     scheme,
@@ -328,8 +340,8 @@ export function resolveDrop(
 
 /**
  * What a resolved drop would do as a Move: move, refuse with a reason, or
- * nothing. A drop across systems plans like any other; whether to move at once
- * or ask first is the list's call (`resolved.crossing`).
+ * nothing. A drop that asks plans like any other; whether to move at once
+ * or ask first is the list's call (`resolved.asks`).
  */
 export function planMove(view: PlacementView, resolved: ResolvedDrop | null): MovePlan {
   if (!resolved) return NONE;
@@ -347,8 +359,8 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
   return moves.length === 0 ? NONE : { kind: "ready", destinationName, moves };
 }
 
-/** One row a Copy duplicates: the row as it is named now. */
-export type CopyRow = { entry: EntryRef; name: string };
+/** One row a Copy duplicates: the row as it is named now, and the view it reads. */
+export type CopyRow = { entry: EntryRef; name: string; view: CopyContextEntryView };
 
 export type CopyPlan =
   | { kind: "none" }
@@ -376,7 +388,11 @@ export function planCopy(view: PlacementView, resolved: ResolvedDrop | null): Co
     return NONE_COPY;
   if (resolved.insideItself) return { kind: "inside-itself" };
   const { sources, into, destinationName, position, scheme } = resolved;
-  const copies = sources.map((source) => ({ entry: source.ref, name: source.name }));
+  const copies = sources.map((source) => ({
+    entry: source.ref,
+    name: source.name,
+    view: source.view,
+  }));
   if (!position) return { kind: "ready", destinationName, scheme, into, copies };
   if (!("siblingId" in position)) return NONE_COPY;
   const anchor = view.placement

@@ -4,7 +4,7 @@
  * peer moved) is still the same row.
  */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { CopyContextEntryView, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { LinkNoteSubject } from "../rename-operation-lifecycle";
 
@@ -14,8 +14,23 @@ export type EntryRef = LinkNoteSubject;
 /** A row's selection key. It has no scheme, so it survives a move. */
 export const entryKey = (ref: EntryRef): string => `${ref.kind}:${ref.id}`;
 
-/** A dragged entry: identity, and what the preview and payload show. */
-export type DragEntry = { ref: EntryRef; name: string; uri: string };
+/**
+ * A dragged entry: identity, what the preview and payload show, and what a Copy of it reads: the
+ * live document (a tree row), or the draft the source shows (a draft tab).
+ */
+export type DragEntry = { ref: EntryRef; name: string; uri: string; view: CopyContextEntryView };
+
+/**
+ * A list row dragged in its list's selection, or any other source naming a document or folder (a
+ * chip, tab, crumb, Recent row, receipt or Uploads entry). Only a list row within one system moves
+ * at once; a reference always asks.
+ */
+export type DragSource = "list-row" | "reference";
+
+/** The entries being dragged and where they came from. */
+export type EntryDrag = { entries: readonly DragEntry[]; source: DragSource };
+
+export const LIVE_VIEW: CopyContextEntryView = { kind: "live" };
 
 export function dragEntry(node: CatalogNode): DragEntry {
   return {
@@ -25,6 +40,7 @@ export function dragEntry(node: CatalogNode): DragEntry {
         : { kind: "folder", id: node.entryId },
     name: node.name,
     uri: node.uri,
+    view: LIVE_VIEW,
   };
 }
 

@@ -14,7 +14,7 @@ export function useEntryRow(entry: DragEntry, active: boolean, draggable = true)
       draggable: Boolean(selection?.draggable && draggable),
       onDragStart: (event: DragEvent) => {
         event.stopPropagation();
-        startEntryDrag(event, selection ? selection.dragged(entry) : [entry]);
+        startEntryDrag(event, selection ? selection.dragged(entry) : [entry], "list-row");
       },
     },
     /** A selection gesture (Ctrl/Cmd or Shift) selects instead of opening or toggling. */
