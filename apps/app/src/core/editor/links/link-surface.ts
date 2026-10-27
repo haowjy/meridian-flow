@@ -159,8 +159,9 @@ export type LinkSurface = {
   registerNavigator: (navigate: InternalLinkNavigator) => () => void;
 
   /**
-   * Where a drag of a link's entry goes. Absent where the app takes no drags: the link's text then
-   * drags as text, as it always did.
+   * Where a drag of a link's entry goes, once ProseMirror has started the link's text as an
+   * ordinary text drag. Absent where the app takes no drags: the link's text then drags as text,
+   * as it always did.
    */
   readonly dragSource: LinkDragSource | null;
   registerDragSource: (source: LinkDragSource) => () => void;

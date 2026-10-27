@@ -32,7 +32,7 @@ import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
 import { ReferenceDropExtension } from "@/core/editor/extensions/reference-drop";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
-import { activeEntryDrag } from "@/features/project/context/entry-drag/drag-session";
+import { activeDragSession } from "@/features/project/context/entry-drag/drag-session";
 import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
@@ -256,7 +256,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
       }),
       ReferenceDropExtension.configure({
-        activeDrag: activeEntryDrag,
+        activeDrag: () => activeDragSession()?.entries ?? null,
         content: (schema, entries) => {
           const catalog = referenceCatalogRef.current;
           if (!catalog) return null;

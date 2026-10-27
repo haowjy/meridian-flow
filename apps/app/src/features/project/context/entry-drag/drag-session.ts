@@ -1,20 +1,16 @@
 /**
- * The rows being dragged right now. A browser hides a drag's data until the
- * drop, so targets decide from this record instead. The drag carries only
- * Meridian's own type: writing surfaces turn resolvable rows into mentions,
- * while every other surface ignores it rather than pasting stray text.
+ * The rows being dragged right now. A browser hides a drag's data until the drop, so the
+ * session is the data: targets decide from it, and the drag itself carries only Meridian's own
+ * type, empty, so a target can tell the drag apart from the types alone. Writing surfaces turn
+ * resolvable rows into mentions, while every other surface ignores the drag rather than pasting
+ * stray text.
  */
 import { MERIDIAN_ENTRIES_MIME } from "../tree-drop/drag-payload";
 import type { DragEntry, DragSource, EntryDrag } from "./entry";
 
 let active: EntryDrag | null = null;
 
-/** What a writing surface may turn into mentions: the dragged identities, whatever started the drag. */
-export function activeEntryDrag(): readonly DragEntry[] | null {
-  return active?.entries ?? null;
-}
-
-/** The drag with where it came from, for a drop target deciding between moving at once and asking. */
+/** The drag with where it came from: the identities (for a writing surface), and the source (for a drop target deciding between moving at once and asking). */
 export function activeDragSession(): EntryDrag | null {
   return active;
 }
@@ -30,7 +26,7 @@ export function startEntryDrag(
   // An `<a>` carries its URL, and a drop on the window would navigate to it.
   transfer.clearData();
   transfer.effectAllowed = "copyMove";
-  transfer.setData(MERIDIAN_ENTRIES_MIME, JSON.stringify(entries.map((entry) => entry.ref)));
+  transfer.setData(MERIDIAN_ENTRIES_MIME, "");
   setPreview(transfer, entries);
   window.addEventListener("dragend", endEntryDrag, { once: true });
 }
