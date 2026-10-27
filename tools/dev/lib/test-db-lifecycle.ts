@@ -1,8 +1,39 @@
 import { execFileSync } from "node:child_process";
+import { randomInt } from "node:crypto";
 import { validateDbName } from "./dev-db";
 
 const MANAGED_TEST_SLUG_PREFIX = "test-run-";
 const MANUAL_TEST_SLUG_PREFIX = "test-manual-";
+const MANAGED_WORKER_PATTERN = /^(.*_test-run-\d+-\d+)-worker-\d+$/;
+
+export interface DisposableTestDatabaseTarget {
+  databaseName: string;
+  databaseUrl: string;
+  /** The managed run's template, whose collector drops this database; absent means drop it yourself. */
+  managedTemplate: string | undefined;
+}
+
+/**
+ * Places a suite-owned database under the managed run's worker prefix so the run's detached collector
+ * drops it after Vitest exits. Test code must not drop it inline: PostgreSQL makes every DROP DATABASE
+ * wait for a forced checkpoint, which takes tens of seconds while other runs share the server. Unmanaged
+ * runs (CI) have no collector and get the caller's standalone name.
+ */
+export function disposableTestDatabaseTarget(
+  ownerDatabaseUrl: string,
+  unmanagedDatabaseName: string,
+): DisposableTestDatabaseTarget {
+  const url = new URL(ownerDatabaseUrl);
+  const ownerName = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  const managedTemplate = ownerName.match(MANAGED_WORKER_PATTERN)?.[1];
+  // Indexes far above any worker count keep suite databases distinct from worker clones.
+  const databaseName = managedTemplate
+    ? `${managedTemplate}-worker-${randomInt(1000, 1_000_000)}`
+    : unmanagedDatabaseName;
+  validateDbName(databaseName);
+  url.pathname = `/${databaseName}`;
+  return { databaseName, databaseUrl: url.toString(), managedTemplate };
+}
 
 export function managedTestDatabaseUrl(
   sourceDatabaseUrl: string,

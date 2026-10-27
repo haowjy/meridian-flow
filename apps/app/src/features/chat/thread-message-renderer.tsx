@@ -15,7 +15,14 @@ function ThreadMessageTitle({ tool }: { tool: ToolView }) {
   const row = threadMessageRow(tool);
   const handle =
     row?.kind === "queued" ? row.message.handle : (stringInput(toolInputObject(tool), "ref") ?? "");
-  const line = <SubagentRefLine handle={handle} />;
+  const line =
+    row?.kind === "queued" && row.message.name ? (
+      <>
+        {row.message.name} <span className="text-muted-foreground">({handle})</span>
+      </>
+    ) : (
+      <SubagentRefLine handle={handle} />
+    );
   if (row?.kind === "queued") return <Trans>Sent a message to {line}</Trans>;
   return <Trans>Couldn't send a message to {line}</Trans>;
 }

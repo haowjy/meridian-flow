@@ -4,18 +4,15 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - single-snapshot migration bytes recorded before lock acquisition (kb/decisions/platform/stack/drizzle-migration-integrity.md)
  */
-
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MIGRATION_ADVISORY_LOCK_ID, runMigrations } from "./migration-runner";
+import { disposableTestDatabaseTarget } from "./test-db-lifecycle";
 
-const execFileAsync = promisify(execFile);
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 
@@ -75,21 +72,21 @@ async function waitForAdvisoryLockWaiters(
 
 describe.skipIf(!enabled)("migration runner (postgres)", () => {
   // The runner's contracts change schemas, so they run on a database of their own, never the worker's.
-  const scratchName = `migration_runner_test_${process.pid}_${Date.now()}`;
+  const scratchTarget = disposableTestDatabaseTarget(
+    databaseUrl ?? "",
+    `migration_runner_test_${process.pid}_${Date.now()}`,
+  );
+  const scratchName = scratchTarget.databaseName;
   const adminUrl = new URL(databaseUrl ?? "");
   adminUrl.pathname = "/postgres";
-  const psqlAdminUrl = new URL(adminUrl);
-  psqlAdminUrl.search = "";
-  const scratch = new URL(adminUrl);
-  scratch.pathname = `/${scratchName}`;
-  const scratchUrl = scratch.toString();
+  const scratchUrl = scratchTarget.databaseUrl;
   const admin = postgres(adminUrl.toString(), { max: 1 });
   let sql: postgres.Sql;
   let temporaryRoot: string;
 
   beforeAll(async () => {
     temporaryRoot = await mkdtemp(path.join(tmpdir(), "meridian-migration-runner-"));
-    await admin.unsafe(`CREATE DATABASE ${scratchName}`);
+    await admin.unsafe(`CREATE DATABASE "${scratchName}"`);
     sql = postgres(scratchUrl, { max: 1 });
   });
 
@@ -101,23 +98,11 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
 
   afterAll(async () => {
     try {
-      // The full parallel suite can starve postgres.js cleanup behind its own pool.
-      // Start forced pool retirement without awaiting its bookkeeping, then let psql
-      // own the database drop without sharing either pool.
-      void sql?.end({ timeout: 0 });
-      void admin.end({ timeout: 0 });
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      await execFileAsync("psql", [
-        "--dbname",
-        psqlAdminUrl.toString(),
-        "--set",
-        "ON_ERROR_STOP=1",
-        "--command",
-        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${scratchName}' AND pid <> pg_backend_pid()`,
-        "--command",
-        `DROP DATABASE IF EXISTS ${scratchName}`,
-      ]);
+      await sql?.end();
+      if (!scratchTarget.managedTemplate)
+        await admin.unsafe(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`);
     } finally {
+      await admin.end();
       if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true });
     }
   });

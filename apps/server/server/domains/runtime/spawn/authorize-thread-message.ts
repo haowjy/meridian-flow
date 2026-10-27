@@ -1,8 +1,8 @@
 /**
  * Authority for the model-callable `thread_message` tool. Background delivery is
- * authorized by lineage or a direct handoff/source connection; foreground by subtree
- * (the target is the caller or a descendant, walking `parentThreadId`), which
- * prevents a wait cycle on an ancestor. Resolves the model-facing `ref` inside
+ * authorized to any live chat owned by the caller in the same project; foreground
+ * by subtree (the target is the caller or a descendant, walking `parentThreadId`),
+ * which prevents a wait cycle on an ancestor. Resolves the model-facing `ref` inside
  * the caller's project; the internal id never crosses the tool boundary.
  */
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
@@ -10,9 +10,8 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { parseThreadRef } from "@meridian/contracts/threads";
 import { isInSubtree } from "../../threads/domain/lineage.js";
-import type { ThreadRepository, TurnRepository } from "../../threads/index.js";
+import type { ThreadRepository } from "../../threads/index.js";
 import type { ThreadMessageMode } from "../tools/spawn-tools.js";
-import { areThreadsConnected } from "./resolve-readable-thread.js";
 
 export type ThreadMessageTargetOutcome =
   | { ok: true; target: Thread }
@@ -37,7 +36,6 @@ export async function authorizeThreadMessage(input: {
   targetRef: string;
   mode: ThreadMessageMode;
   threads: Pick<ThreadRepository, "findLiveByProjectRef" | "findById">;
-  turns: Parameters<typeof areThreadsConnected>[2];
 }): Promise<ThreadMessageTargetOutcome> {
   // Reject a malformed ref before the DB, so an unknown value stays a uniform
   // not-found rather than a low-level lookup error.
@@ -49,12 +47,7 @@ export async function authorizeThreadMessage(input: {
   if (!target) return notFound();
   if (target.userId !== input.callerThread.userId) return notFound();
 
-  if (input.mode === "background") {
-    if (!(await areThreadsConnected(input.callerThread, target, input.turns))) {
-      return notAuthorized("Background messages are limited to connected conversations");
-    }
-    return { ok: true, target };
-  }
+  if (input.mode === "background") return { ok: true, target };
 
   if (!(await isInCallerSubtree(input.callerThread.id, target, input.threads))) {
     return notAuthorized("Foreground messages are limited to the caller's subtree");

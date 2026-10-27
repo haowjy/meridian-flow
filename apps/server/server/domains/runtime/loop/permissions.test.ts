@@ -27,7 +27,11 @@ __mergedSuite("action-policy.test.ts", () => {
   __mergedSuite("actionPolicy", () => {
     it("denies Work changes to a default-edit child under a read parent", () => {
       expect(actionPolicy(chainPermission(chain("edit", "read")), "work.archive")).toBe("deny");
+      expect(actionPolicy(chainPermission(chain("edit", "read")), "work.switch")).toBe("deny");
+      expect(actionPolicy(chainPermission(chain("edit", "read")), "work.write_mode")).toBe("deny");
       expect(actionPolicy(chainPermission(chain("edit", "read")), "work.show")).toBe("allow");
+      expect(actionPolicy("edit", "work.switch")).toBe("allow");
+      expect(actionPolicy("edit", "work.write_mode")).toBe("allow");
     });
   });
 });

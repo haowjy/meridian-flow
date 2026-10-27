@@ -248,7 +248,7 @@ else
       await expect(
         rig.delivery.enqueueControl({
           threadId: rig.threadId,
-          actorId: rig.ids.user,
+          provenance: { kind: "writer", actorId: rig.ids.user },
           id: crypto.randomUUID(),
           control: { kind: "compact" },
         }),
@@ -363,7 +363,7 @@ else
       await expect(
         rig.delivery.enqueueControl({
           threadId: forkAtRequest.id,
-          actorId: rig.ids.user,
+          provenance: { kind: "writer", actorId: rig.ids.user },
           id: crypto.randomUUID(),
           control: { kind: "compact" },
         }),
@@ -407,7 +407,7 @@ else
       await expect(
         rig.delivery.enqueueControl({
           threadId: secondFork.id,
-          actorId: rig.ids.user,
+          provenance: { kind: "writer", actorId: rig.ids.user },
           id: crypto.randomUUID(),
           control: { kind: "compact" },
         }),
@@ -902,7 +902,7 @@ else
       const rig = await manualFixture();
       const input = {
         threadId: rig.threadId,
-        actorId: rig.ids.user,
+        provenance: { kind: "writer" as const, actorId: rig.ids.user },
         id: crypto.randomUUID(),
         control: { kind: "compact" as const },
       };
@@ -1044,7 +1044,7 @@ else
       function switchMode(rig: Rig, mode: "direct" | "draft", id: string = crypto.randomUUID()) {
         return rig.delivery.enqueueControl({
           threadId: rig.threadId,
-          actorId: rig.ids.user,
+          provenance: { kind: "writer", actorId: rig.ids.user },
           id,
           control: { kind: "write_mode", mode },
         });

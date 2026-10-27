@@ -1,13 +1,12 @@
-/** thread_message authority: background is lineage, foreground is subtree.
+/** thread_message authority: background is project-wide, foreground is subtree.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Connected-lineage messaging policy
+ * - Project-wide background and subtree-only foreground messaging policy
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Thread, Turn } from "@meridian/contracts/threads";
+import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { TURN_GRAPH } from "../../threads/ports/turn-graph.js";
 
 const CALLER = "caller" as ThreadId;
 const SIBLING = "sibling" as ThreadId;
@@ -58,7 +57,6 @@ async function authorize(input: {
     targetRef: input.targetRef,
     mode: input.mode,
     threads: repo(input.threads) as never,
-    turns: { [TURN_GRAPH]: { findById: async () => null } as never },
   });
 }
 
@@ -79,7 +77,6 @@ describe("authorizeThreadMessage", () => {
       callerThread,
       targetRef,
       threads: repo([source, handoff]),
-      turns: { [TURN_GRAPH]: { findById: async () => ({ threadId: source.id }) as Turn } as never },
     };
     const { authorizeThreadMessage } = await import("./authorize-thread-message.js");
     expect(await authorizeThreadMessage({ ...input, mode: "background" })).toMatchObject({
@@ -113,7 +110,7 @@ describe("authorizeThreadMessage", () => {
     expect(foreground).toMatchObject({ ok: true, target: { id: CHILD } });
   });
 
-  it("rejects background to a different lineage", async () => {
+  it("allows background to a different lineage in the same project", async () => {
     const caller = thread({ id: CALLER, rootThreadId: CALLER, kind: "primary", ref: "c1" });
     const stranger = thread({ id: STRANGER, rootThreadId: STRANGER, ref: "p9" });
 
@@ -123,9 +120,7 @@ describe("authorizeThreadMessage", () => {
       mode: "background",
       threads: [caller, stranger],
     });
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.error.code).toBe("thread_message_not_authorized");
+    expect(outcome).toMatchObject({ ok: true, target: { id: STRANGER } });
   });
 
   it("rejects foreground to an ancestor (no wait cycle)", async () => {

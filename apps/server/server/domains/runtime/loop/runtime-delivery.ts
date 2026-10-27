@@ -143,7 +143,7 @@ export interface RuntimeDelivery
   /** Append a transcript command to the thread's ordinary ordered inbox. */
   enqueueControl(input: {
     threadId: ThreadId;
-    actorId: string;
+    provenance: import("@meridian/contracts/threads").MessageProvenance;
     id: string;
     control: import("@meridian/contracts/threads").ControlBody;
   }): Promise<{
