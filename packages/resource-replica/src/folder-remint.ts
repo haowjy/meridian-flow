@@ -40,10 +40,22 @@ export function remintFolder(input: {
       revision: record.revision + 1,
       serverHold: "local",
       folderId: input.folderId,
-      aliases: { ...record.aliases, [record.folderId]: true },
+      aliases: [...(record.aliases ?? []), record.folderId],
       intents,
     },
   };
+}
+
+/** The record an id names: the folder whose current id it is, else the one it was minted as before a remint. */
+export function folderForId<T extends Pick<FolderNamespaceRecord, "folderId" | "aliases">>(
+  folders: readonly T[],
+  folderId: string,
+): T | null {
+  return (
+    folders.find((folder) => folder.folderId === folderId) ??
+    folders.find((folder) => folder.aliases?.includes(folderId)) ??
+    null
+  );
 }
 
 function namesFolder(destination: ResourceDestination, folderId: string): boolean {

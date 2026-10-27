@@ -18,11 +18,12 @@ checks every resource before an outer transaction writes anything.
 Folder placement lives in the same database (`folders` table, keyed by handle) and
 the same projection stream: `IndexedDbResourceMetadata` implements
 `FolderNamespaceStore`, and `ResourceProjectionSnapshot.folders` carries every
-folder record beside the file records. A folder's handle is `folder:<first folder id>`,
-so it can never collide with a document's, and it does not change when the server holds
-the id out of reach: the record takes a new `folderId` and keeps the old one in `aliases`
-(`remintFolder`). Resolve a folder by the id a caller holds with `readFolderById` (handle first,
-alias-aware scan after a remint), never by rebuilding `folder:${id}`. `commitFolder` rewrites the
+folder record beside the file records. A folder's handle is opaque (a random id for a folder
+this device creates, `catalog-folder:<entry id>` for one a catalog lists), and it does not change
+when the server holds the id out of reach: the record takes a new `folderId` and keeps the old one
+in `aliases` (`remintFolder`). Resolve a folder by the id a caller holds with `readFolderById`
+(the `folderId` and multi-entry `aliases` indexes) or `folderForId` over a snapshot, never by
+rebuilding a handle from an id. `commitFolder` rewrites the
 unsent placements in other records that named the old id in the same transaction as the remint. `setFolderLocation` admits a
 rename or move from the installed catalog's location (never the optimistic
 projection) and the runner dispatches it like a file's. `createFolder` mints the

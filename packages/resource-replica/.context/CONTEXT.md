@@ -16,8 +16,10 @@ whose captured revision is still current. A late response cannot regress a newer
 canonical location. Scope disappearance and invalidation change projection
 membership only; they never imply global deletion. Resource aliases are obsolete
 local identities after remint, not catalog identity aliases. A folder's `aliases` are the
-same thing: the record keeps its handle (`folder:<first id>`), its `folderId` is the current
-id, and requests are matched against the current id or an alias.
+same thing: the record keeps its handle (opaque, like a document's: nothing derives it from an id),
+its `folderId` is the current id, and requests are matched against the current id or an alias.
+Catalog discovery gives a folder it lists its own handle (`catalog-folder:<entry id>`), so a spent
+id that comes back in a catalog is a second folder beside the reminted record, not a collision.
 A join (`resource-join.ts`) is the same re-identification triggered by a `joined`
 create answer or a catalog entry's `joinedFrom`: a create that carries its
 destination landed on a document that already existed (a branch's, hidden live until

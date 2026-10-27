@@ -514,7 +514,7 @@ describe("catalog cache reducer", () => {
     expect(writes).toHaveLength(3);
     for (const write of writes) validateFolderNamespaceUpdate(null, write.next);
     expect(writes.find((write) => write.next.folderId === "A")?.next).toMatchObject({
-      handle: "folder:A",
+      handle: "catalog-folder:A",
       canonical: loc("P/A"),
       canonicalParent: { kind: "folder", folderId: "P" },
       intents: [],

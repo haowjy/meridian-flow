@@ -405,8 +405,8 @@ export function validateFolderNamespaceUpdate(
     next.folderId !== previous.folderId &&
     (previous.serverHold !== "spent" ||
       next.serverHold !== "local" ||
-      next.aliases?.[previous.folderId] !== true ||
-      Object.keys(previous.aliases ?? {}).some((id) => next.aliases?.[id] !== true))
+      !next.aliases?.includes(previous.folderId) ||
+      previous.aliases?.some((id) => !next.aliases?.includes(id)))
   )
     throw new Error("Folder namespace identity mismatch");
   if (
@@ -418,7 +418,7 @@ export function validateFolderNamespaceUpdate(
     )
   )
     throw new Error("Folder journal only admits folder namespace commands");
-  const named = (id: string) => id === next.folderId || next.aliases?.[id] === true;
+  const named = (id: string) => id === next.folderId || next.aliases?.includes(id);
   if (
     next.intents.some((intent) =>
       intent.attempts.some(({ request }) =>

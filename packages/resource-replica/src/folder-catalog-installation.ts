@@ -74,7 +74,9 @@ export function planFolderCatalogInstallation(input: {
     writes.push({
       expectedRevision: null,
       next: {
-        handle: `folder:${entry.entryId}`,
+        // A handle never derives from an id: a remint changes a record's id and keeps its handle,
+        // so a spent id can come back in a catalog as a second folder beside the reminted record.
+        handle: `catalog-folder:${entry.entryId}`,
         folderId: entry.entryId,
         projectId: location.scheme === "user" ? null : input.projectId,
         revision: 1,

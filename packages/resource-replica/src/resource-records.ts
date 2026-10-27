@@ -354,8 +354,8 @@ export type FolderNamespaceRecord = ResourceKey & {
   /** Null for account-owned personal folders; command projects live on the intents. */
   projectId: string | null;
   folderId: string;
-  /** Ids this folder was minted under before a remint (`folder-remint.ts`); attempts name them. */
-  aliases?: Readonly<Record<string, true>>;
+  /** Ids this folder was minted under before a remint (`folder-remint.ts`); attempts name them. A list so the store can index it. */
+  aliases?: readonly string[];
   revision: number;
   /** What the server holds under `folderId`, as its answers prove (`server-hold.ts`). */
   serverHold: ServerHold;

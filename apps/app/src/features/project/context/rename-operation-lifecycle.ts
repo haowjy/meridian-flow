@@ -1,6 +1,8 @@
 /** Account-owned transient operation selection, independent of mounted feedback rows. */
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
 import {
+  type FolderNamespaceRecord,
+  folderForId,
   NAMESPACE_RECEIPT_NOTE_TTL_MS,
   type NamespaceIntent,
   namespaceRequestId,
@@ -68,6 +70,7 @@ type Entry = {
   kind: LinkNoteSubject["kind"];
   handle: string;
   records: readonly ResourceRecord[];
+  folders: readonly FolderNamespaceRecord[];
   /** Whether a snapshot has carried this subject's intents since admission. */
   seen: boolean;
   selection: Selection;
@@ -81,7 +84,10 @@ export class RenameOperationLifecycle {
   private listeners = new Set<() => void>();
   private closed = false;
   constructor(
-    private replica: Pick<AccountResourceReplica, "observeProjection" | "readKnownDocument">,
+    private replica: Pick<
+      AccountResourceReplica,
+      "observeProjection" | "readKnownDocument" | "readKnownFolder"
+    >,
   ) {}
 
   subscribe = (listener: () => void) => {
@@ -91,14 +97,13 @@ export class RenameOperationLifecycle {
     };
   };
   get(projectId: string, subject: LinkNoteSubject): Selection | null {
-    if (subject.kind === "folder")
-      return (
-        this.entries.get(subjectKey(projectId, "folder", `folder:${subject.id}`))?.selection ?? null
-      );
     for (const entry of this.entries.values()) {
-      if (entry.projectId !== projectId || entry.kind !== "file") continue;
-      if (resourceForDocumentIdentity(entry.records, subject.id)?.resource.handle === entry.handle)
-        return entry.selection;
+      if (entry.projectId !== projectId || entry.kind !== subject.kind) continue;
+      const handle =
+        subject.kind === "file"
+          ? resourceForDocumentIdentity(entry.records, subject.id)?.resource.handle
+          : folderForId(entry.folders, subject.id)?.handle;
+      if (handle === entry.handle) return entry.selection;
     }
     return null;
   }
@@ -119,8 +124,12 @@ export class RenameOperationLifecycle {
       subject.kind === "file"
         ? await this.replica.readKnownDocument(projectId, subject.id).catch(() => null)
         : null;
-    if (this.closed || (subject.kind === "file" && !known)) return;
-    const handle = known?.key.handle ?? `folder:${subject.id}`;
+    const folder =
+      subject.kind === "folder"
+        ? await this.replica.readKnownFolder(subject.id).catch(() => null)
+        : null;
+    const handle = known?.key.handle ?? folder?.handle;
+    if (this.closed || !handle) return;
     const key = subjectKey(projectId, subject.kind, handle);
     const old = this.entries.get(key);
     if (old?.selection.operationId === operationId) return;
@@ -130,6 +139,7 @@ export class RenameOperationLifecycle {
       kind: subject.kind,
       handle,
       records: known ? [known.record] : [],
+      folders: folder ? [folder] : [],
       seen: false,
       selection: { operationId, feedback: null },
       stop: () => {},
@@ -137,24 +147,28 @@ export class RenameOperationLifecycle {
     this.entries.set(key, entry);
     const update = (snapshot: ResourceProjectionSnapshot) => {
       if (this.entries.get(key) !== entry) return;
-      const previousIdentity = entry.records.find((record) => record.resource.handle === handle)
-        ?.resource.identity.documentId;
+      const identity = () =>
+        subject.kind === "file"
+          ? entry.records.find((record) => record.resource.handle === handle)?.resource.identity
+              .documentId
+          : entry.folders.find((folder) => folder.handle === handle)?.folderId;
+      const previousIdentity = identity();
       // A replay from before admission cannot erase the known identity either.
       if (
-        subject.kind === "folder" ||
+        subject.kind === "file" &&
         snapshot.records.some((record) => record.resource.handle === handle)
       )
         entry.records = snapshot.records;
-      const currentIdentity = entry.records.find((record) => record.resource.handle === handle)
-        ?.resource.identity.documentId;
-      if (previousIdentity !== currentIdentity) this.notify();
+      if (subject.kind === "folder" && snapshot.folders.some((folder) => folder.handle === handle))
+        entry.folders = snapshot.folders;
+      if (previousIdentity !== identity()) this.notify();
       const file =
         subject.kind === "file"
           ? snapshot.records.find((record) => record.resource.handle === handle)
           : null;
       const intents =
         subject.kind === "folder"
-          ? snapshot.folders.find((folder) => folder.folderId === subject.id)?.intents
+          ? snapshot.folders.find((folder) => folder.handle === handle)?.intents
           : file?.intents;
       // Absent before it was ever seen is a replay from before admission; absent after
       // being seen means the subject is gone (a deleted folder), so its watch ends.

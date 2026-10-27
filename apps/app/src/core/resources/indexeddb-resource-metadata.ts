@@ -209,9 +209,10 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     // create intent becomes the placement it now is, and a placement with no destination (the
     // editor's nameless create) names the home its materialization records. Every document and
     // folder also gains `serverHold`, replayed from the create attempts it already recorded.
+    // `folderId` and `aliases` (multi-entry) find a folder by its current or a former id.
     this.database
       .version(5)
-      .stores({})
+      .stores({ folders: "handle,projectId,canonicalRefresh.operationId,folderId,*aliases" })
       .upgrade(async (transaction) => {
         const resources = transaction.table<ResourceDescriptor, string>("resources");
         const intents = transaction.table<LegacyIntent, string>("intents");
@@ -490,15 +491,12 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     return this.run(async () => (await this.folders.get(key.handle)) ?? null);
   }
 
-  /**
-   * The record a folder id names: a folder keeps its handle through a remint (`remintFolder`), so
-   * its current id is found by scan, and a former id still resolves through its handle.
-   */
+  /** The record a folder id names: the folder with that current id, else the one reminted from it (`folderForId`). */
   readFolderById(folderId: string): Promise<FolderNamespaceRecord | null> {
     return this.run(
       async () =>
-        (await this.folders.get(`folder:${folderId}`)) ??
-        (await this.folders.filter((folder) => folder.folderId === folderId).first()) ??
+        (await this.folders.where("folderId").equals(folderId).first()) ??
+        (await this.folders.where("aliases").equals(folderId).first()) ??
         null,
     );
   }

@@ -55,11 +55,6 @@ import { createResourceNamespaceLock } from "./resource-namespace-lock";
 import { createResourceNamespaceTransport } from "./resource-namespace-transport";
 import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption";
 
-/** Folders share the account journal under a handle that can never collide with a document's. */
-function folderKey(folderId: string): ResourceKey {
-  return { handle: `folder:${folderId}` };
-}
-
 function exactPersistenceName(accountId: string, persistenceId: string): string {
   return `meridian:resource:${collabSchemaKeyTag()}:${encodeURIComponent(accountId)}:${encodeURIComponent(persistenceId)}`;
 }
@@ -410,6 +405,11 @@ export class AccountResourceReplica {
     return record ? { key: { handle: record.resource.handle }, record } : null;
   }
 
+  /** The folder record an id names, the id it was minted under included (`folderForId`). */
+  readKnownFolder(folderId: string): Promise<FolderNamespaceRecord | null> {
+    return this.metadata.readFolderById(folderId);
+  }
+
   async canAcquireRemoteDocument(projectId: string, documentId: string): Promise<boolean> {
     const known = await this.readKnownDocument(projectId, documentId);
     return Boolean(
@@ -732,7 +732,8 @@ export class AccountResourceReplica {
   ): Promise<{ folderId: string }> {
     this.requireOpen();
     const folderId = crypto.randomUUID();
-    const key = folderKey(folderId);
+    // A handle names the record, never the id: a remint changes the id and keeps the handle.
+    const key: ResourceKey = { handle: crypto.randomUUID() };
     await this.admitPlacement(
       projectId,
       null,
@@ -819,20 +820,24 @@ export class AccountResourceReplica {
         this.metadata.readFolderById(folderId),
         this.metadata.readProjection(projectId),
       ]);
-      // A reminted folder keeps its handle; the id the writer acted on may be its former one.
-      const key = current ? { handle: current.handle } : folderKey(folderId);
-      const observation = installedFolderObservation(projection.catalogs, projectId, folderId);
-      // A folder only this device holds has no place yet, but it has a record.
-      const source = current?.canonical ?? observation?.location;
-      if (!current && !source) throw new Error("Folder is unavailable");
+      // The id the writer acted on may be a former one: the record keeps its handle through a remint.
+      if (!current) throw new Error("Folder is unavailable");
+      const key: ResourceKey = { handle: current.handle };
+      const observation = installedFolderObservation(
+        projection.catalogs,
+        projectId,
+        current.folderId,
+      );
+      // A folder only this device holds has no place yet, until a catalog lists it.
+      const source = current.canonical ?? observation?.location;
       const write = plan({
         record: current,
         projectId,
         handle: key.handle,
-        folderId: current?.folderId ?? folderId,
+        folderId: current.folderId,
         source,
-        sourceParent: current?.canonicalParent ?? observation?.parent,
-        sourceObservationVersion: current?.observationVersion ?? observation?.observationVersion,
+        sourceParent: current.canonicalParent ?? observation?.parent,
+        sourceObservationVersion: current.observationVersion ?? observation?.observationVersion,
         intentId: crypto.randomUUID(),
         operationId,
         admission,
