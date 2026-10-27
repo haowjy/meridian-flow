@@ -9,9 +9,8 @@
  * read, and the total becomes a lower bound. `content` mode reads the document to find passages.
  *
  * The scan stops when `signal` aborts (the caller left, or the time budget ran out) and returns
- * what it found with `exact: false` and `stopped: true`. It yields to the event loop and checks
- * the signal between lines; one line's match can't be interrupted, which the pattern's repeat
- * limit keeps short.
+ * what it found with `exact: false` and `stopped: true`. Matching runs in worker threads that
+ * the abort terminates mid-match, so the event loop stays free and a slow pattern ends on time.
  */
 import { grepText } from "@meridian/agent-edit";
 import {
@@ -19,16 +18,10 @@ import {
   type GrepBlock,
   type GrepLocate,
   type GrepMatcher,
+  GrepStopped,
   grepBlocks,
 } from "../../grep/matcher.js";
 import type { GrepMode } from "../../ports/context-port.js";
-
-/**
- * Milliseconds of matching between yields to the event loop, so a long scan doesn't hold up
- * requests. A request takes many turns of the loop, so a slice that long is added to each of
- * them: it is time, not a document count, and it is checked between lines, not documents.
- */
-const YIELD_AFTER_MS = 10;
 
 /** Documents whose stored text is fetched, and held, together. */
 const STORED_SLICE = 50;
@@ -69,9 +62,6 @@ export interface ScanResult<Shown> {
 
 export type ScanOutcome<Value, Fault> = { ok: true; value: Value } | { ok: false; error: Fault };
 
-/** Thrown by the pacer when the signal aborts, to unwind to the scan's return. */
-class ScanStopped extends Error {}
-
 export async function scanDocuments<Shown, Fault>(input: {
   documents: readonly ScanDocument[];
   /** Usable stored grep text by document id, asked for one slice of documents at a time. */
@@ -86,27 +76,10 @@ export async function scanDocuments<Shown, Fault>(input: {
   let totalFiles = 0;
   let exact = true;
   let stopped = false;
-  let sliceStart = performance.now();
-  const pace = async () => {
-    if (performance.now() - sliceStart < YIELD_AFTER_MS) return;
-    await new Promise((resolve) => setImmediate(resolve));
-    sliceStart = performance.now();
-    if (input.signal?.aborted) throw new ScanStopped();
-  };
-  /** Matches in the text; with `all` false it stops at the first, which is all a hit needs. */
-  const countMatches = async (text: string, all: boolean) => {
-    let count = 0;
-    for (const line of text.split("\n")) {
-      await pace();
-      if (all) count += input.matcher.spans(line).length;
-      else if (input.matcher.matchesLine(line)) return 1;
-    }
-    return count;
-  };
   let stored: ReadonlyMap<string, string> = new Map();
   try {
     for (const [index, document] of input.documents.entries()) {
-      if (input.signal?.aborted) throw new ScanStopped();
+      if (input.signal?.aborted) throw new GrepStopped();
       // Text for a slice at a time bounds what a scan holds, however many documents it covers.
       if (index % STORED_SLICE === 0)
         stored = await input.stored(
@@ -137,7 +110,11 @@ export async function scanDocuments<Shown, Fault>(input: {
         text = result.value.texts.join("\n");
       }
       if (input.matcher.test && !input.matcher.test(text)) continue;
-      const matchCount = await countMatches(text, !full && input.mode !== "files_with_matches");
+      const matchCount = await input.matcher.count(
+        text,
+        !full && input.mode !== "files_with_matches",
+        input.signal,
+      );
       if (matchCount === 0) continue;
       totalFiles += 1;
       if (full) continue;
@@ -153,7 +130,7 @@ export async function scanDocuments<Shown, Fault>(input: {
       const result = await load();
       if (!result.ok) return result;
       const { read, texts } = result.value;
-      const match = await grepBlocks(read.blocks, texts, input.matcher, read.locate, pace);
+      const match = await grepBlocks(read.blocks, texts, input.matcher, read.locate, input.signal);
       const shown = read.shownOf(match);
       hits.push({
         document,
@@ -164,7 +141,7 @@ export async function scanDocuments<Shown, Fault>(input: {
       });
     }
   } catch (cause) {
-    if (!(cause instanceof ScanStopped)) throw cause;
+    if (!(cause instanceof GrepStopped)) throw cause;
     exact = false;
     stopped = true;
   }
