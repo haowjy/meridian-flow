@@ -169,11 +169,10 @@ export function createImportOrganizer(deps: OrganizerDeps) {
   async function buildBatch(
     claim: OrganizeClaim,
     record: ImportRecord,
+    projectId: string,
     build: Awaited<ReturnType<typeof prepareBuild>>,
     offset: number,
   ): Promise<number> {
-    const projectId = record.projectId;
-    if (!projectId) throw new Error("Import project is unavailable");
     const { entriesById, index, pending, planned, roots, selectedById, uris } = build;
     const batch = [] as typeof pending;
     const folders = [] as Parameters<ContextStagedCreation["stage"]>[2]["folders"][number][];
@@ -308,11 +307,12 @@ export function createImportOrganizer(deps: OrganizerDeps) {
   async function organize(claim: OrganizeClaim, signal: AbortSignal): Promise<number> {
     let record = await deps.repository.read(claim.importId);
     if (record?.state !== "organizing") return 0;
-    if (!record.projectId) throw new Error("Import project is unavailable");
+    const projectId = record.projectId;
+    if (!projectId) throw new Error("Import project is unavailable");
     const entries = await deps.repository.entries(record.id);
     const prepared = await prepareImportEntries(deps, {
       importId: record.id,
-      projectId: record.projectId,
+      projectId,
       entries,
     });
     if (prepared.patches.length) {
@@ -352,7 +352,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     const build = await prepareBuild(record, tree, durableEntries, context.read);
     let built = 0;
     while (!signal.aborted && built < build.pending.length) {
-      const batch = await buildBatch(claim, record, build, built);
+      const batch = await buildBatch(claim, record, projectId, build, built);
       if (!batch) break;
       built += batch;
     }
