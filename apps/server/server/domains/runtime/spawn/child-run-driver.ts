@@ -19,6 +19,7 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
+import { isAbortError } from "../loop/run-session.js";
 import { NoPendingWakeError, type PreparedRun, type RunTurnPort } from "../loop/run-turn-port.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
 import { savedReportToSpawnResult } from "./saved-report-outcome.js";
@@ -152,8 +153,14 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
           treeBudget: input.budget,
         });
       } catch (error) {
-        // Another runner (the wake sweep, or a crashed caller's recovery) took it.
-        if (!(error instanceof TurnStartConflictError) && !(error instanceof NoPendingWakeError))
+        // Another runner (the wake sweep, or a crashed caller's recovery) took it, or a
+        // cancellation aborted the child's start. The continuation's state says what
+        // became of it; an abort of this caller's own signal still throws in the wait.
+        if (
+          !(error instanceof TurnStartConflictError) &&
+          !(error instanceof NoPendingWakeError) &&
+          !isAbortError(error)
+        )
           throw error;
       }
       if (handle) await handle.execute();
