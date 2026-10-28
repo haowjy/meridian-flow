@@ -9,9 +9,17 @@
  * apply it identifies. It is a freshness signal, never a write refusal.
  */
 import { createHash } from "node:crypto";
+import {
+  type AgentEditCodecFactory,
+  type AgentEditModel,
+  toDocHandle,
+  toHashline,
+} from "@meridian/agent-edit/integration";
+import { spelledLinks } from "@meridian/markup/links";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { HashlineRead } from "../contracts.js";
 import type { HolderLinkScope } from "./ports/document-link-scope.js";
 
 export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
@@ -33,6 +41,30 @@ export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
     .update(Uint8Array.of(0))
     .update(JSON.stringify([...triples].sort()), "utf8")
     .digest("base64url")}`;
+}
+
+/**
+ * One agent `read` of a document in a holder's spelling: hashlines, the links each block
+ * spells, and the revision. One projection serves all three; the revision follows the render
+ * because projecting can repair the document.
+ */
+export function readHashlines(
+  doc: Y.Doc,
+  scope: HolderLinkScope,
+  model: AgentEditModel,
+  codecs: AgentEditCodecFactory,
+): HashlineRead {
+  const blocks = model.projectBlocks(toDocHandle(doc));
+  const bodies = codecs.forScope(scope).serializeBlocks(
+    blocks.map((block) => block.node),
+    blocks.map((block) => block.hash),
+  );
+  return {
+    content: bodies.map((body, index) => toHashline(blocks[index].hash, body)),
+    revision: documentRevision(doc, scope),
+    links: blocks.map((block) => spelledLinks([block.node], scope)),
+    holder: { uri: scope.holder.uri, view: scope.holder.view },
+  };
 }
 
 /** Render and identify one synchronous view of a document. */

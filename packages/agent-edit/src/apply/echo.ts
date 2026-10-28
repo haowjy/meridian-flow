@@ -32,18 +32,18 @@ export function snapshotBlocks(
   model: AgentEditModel,
   codec: AgentEditCodec,
 ): BlockSnapshot[] {
-  const blocks = model.getBlocks(doc);
-  if (blocks.length === 0) return [];
-  const hashes = model.getDocumentBlockIds(doc);
-  const serialized = model.serializeBlockLines(doc, codec);
-  const bodies = model.serializeBlockBodies(doc, codec, blocks);
-  return blocks.map((block, index) => ({
-    hash: hashes[index],
-    ...model.getCanonicalBlockIdentity(block),
-    renderedContent: `${model.getBlockType(block)}|${bodies[index]}`,
+  const projected = model.projectBlocks(doc);
+  const bodies = codec.serializeBlocks(
+    projected.map((block) => block.node),
+    projected.map((block) => block.hash),
+  );
+  return projected.map(({ ref, id, hash, node }, index) => ({
+    hash,
+    ...id,
+    renderedContent: `${node.type.name}|${bodies[index]}`,
     body: bodies[index],
-    serialized: serialized[index],
-    lineage: model.getVisibleContentLineage(block),
+    serialized: toHashline(hash, bodies[index]),
+    lineage: model.getVisibleContentLineage(ref),
   }));
 }
 

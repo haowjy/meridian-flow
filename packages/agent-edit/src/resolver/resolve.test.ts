@@ -17,7 +17,7 @@ import { Doc, type XmlElement } from "yjs";
 import { editSegments } from "../apply/segments.js";
 import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
 import { type AgentEditCodec, createAgentEditCodecFactory } from "../codec-adapter.js";
-import type { BlockRef, DocHandle } from "../handles.js";
+import type { BlockRef } from "../handles.js";
 import {
   blockHashesForDoc,
   fullHashForItemId,
@@ -26,7 +26,7 @@ import {
   lookupBlockHash,
 } from "../model/block-hash.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { ProjectedBlock } from "../ports/model.js";
 import { alignBlocks, type CanPair } from "./block-alignment.js";
 import { findTextMatches } from "./find.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
@@ -436,19 +436,17 @@ it("falls back to one block segment for changed marks and hard breaks", () => {
   });
 
   function findInBodies(bodies: string[], find: string, all = false) {
-    const blocks = bodies.map((_, index) => ({ index }) as unknown as BlockRef);
+    const blocks = bodies.map((body) => ({ ref: { body } as unknown as BlockRef, node: { body } }));
     const ctx = {
-      doc: {} as DocHandle,
-      codec: {} as AgentEditCodec,
-      model: {
-        getBlocks: () => blocks,
-        serializeBlockBodies: (_doc, _codec, selected) =>
-          selected.map((block) => bodies[blocks.indexOf(block)] ?? ""),
-      } satisfies Partial<AgentEditModel> as unknown as AgentEditModel,
+      codec: {
+        serializeBlockBodies: (nodes: readonly { body: string }[]) => nodes.map((n) => n.body),
+      } as unknown as AgentEditCodec,
+      projectedBlocks: () => blocks as unknown as readonly ProjectedBlock[],
     };
+    const refs = blocks.map((block) => block.ref);
     const scope: BlockScope = {
       kind: "document",
-      blocks,
+      blocks: refs,
       startIndex: 0,
       endIndex: blocks.length - 1,
     };

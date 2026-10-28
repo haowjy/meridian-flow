@@ -727,7 +727,7 @@ export function createDrizzleApplyClick(
                               view: { kind: "live" },
                             }),
                           );
-                          const before = describeTrailBlocks(live, deps.model, codec, schema);
+                          const before = describeTrailBlocks(live, deps.model, codec);
                           const liveEffects: { groupId: string; seq: number | null }[] = [];
                           for (const group of click.groups) {
                             const groupMerge = rebase(
@@ -758,7 +758,7 @@ export function createDrizzleApplyClick(
                           }
                           return {
                             before,
-                            after: describeTrailBlocks(live, deps.model, codec, schema),
+                            after: describeTrailBlocks(live, deps.model, codec),
                             liveEffects,
                           };
                         },

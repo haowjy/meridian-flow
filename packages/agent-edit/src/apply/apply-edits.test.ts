@@ -93,9 +93,11 @@ describe("applyEdits update fidelity", () => {
     const update = Y.encodeStateAsUpdate(doc, prevVector);
     Y.applyUpdate(fresh, update);
     expect(documentJson(fresh)).toEqual(documentJson(doc));
-    expect(baseModel.serializeBlockBodies(doc, codec, baseModel.getBlocks(doc)).join("\n\n")).toBe(
-      expected,
-    );
+    expect(
+      codec
+        .serializeBlockBodies(baseModel.projectBlocks(doc).map((block) => block.node))
+        .join("\n\n"),
+    ).toBe(expected);
     expectNoOrphanedElements(doc);
   });
 });
@@ -266,7 +268,13 @@ function blockTexts(doc: Y.Doc): string[] {
 }
 
 function documentJson(doc: Y.Doc): unknown {
-  return schema.node("doc", null, baseModel.projectBlocks(doc)).toJSON();
+  return schema
+    .node(
+      "doc",
+      null,
+      baseModel.projectBlocks(doc).map((block) => block.node),
+    )
+    .toJSON();
 }
 
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {

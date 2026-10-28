@@ -12,7 +12,7 @@ import {
   recordedFrontier,
   writtenOnlyBy,
 } from "../frontier.js";
-import { toDocHandle, toRef } from "../handles.js";
+import { toDocHandle } from "../handles.js";
 import { renderedItems, type ShownCommandLinks, shownEvidence } from "../links/shown.js";
 import {
   blockHashesForDoc,
@@ -22,13 +22,9 @@ import {
   uniqueHashesForIds,
 } from "../model/block-hash.js";
 import { toHashline } from "../model/hashline.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import {
-  type AgentEditConcurrentListing,
-  type AgentEditModelPayload,
-  modelBlockItem,
-} from "./model-result.js";
+import type { AgentEditConcurrentListing, AgentEditModelPayload } from "./model-result.js";
 import type { ObservationFailedDetail } from "./write-deps.js";
 
 /** The rendered listing's cap. */
@@ -134,23 +130,22 @@ export function observeRendered(
   );
   const shown = shownInFull(doc, models);
   for (const id of writtenOnlyBy(doc, source.written ?? [])) shown.add(id);
-  const blocks = getTopLevelXmlBlocks(doc);
-  const byId = new Map(blocks.map((block) => [frontierBlockId(getBlockItemId(block)), block]));
-  const candidates = changed.filter((id) => !shown.has(id) && byId.has(id));
   const removed = removedIds.filter((id) => !source.ownRemoved?.has(frontierBlockId(id)));
   const frontier = recordedFrontier(room, delta, source.position);
   if (!source.links || (changed.length === 0 && removed.length === 0)) return { frontier };
 
-  const items = source.model
-    .serializeBlockLines(
-      toDocHandle(doc),
-      source.links.codec,
-      candidates.map((id) => toRef(byId.get(id) as Y.XmlElement)),
-    )
-    .map(modelBlockItem);
+  const projected = source.model.projectBlocks(toDocHandle(doc));
+  const byId = new Map(projected.map((block) => [frontierBlockId(block.id), block]));
+  const candidates = changed.filter((id) => !shown.has(id) && byId.has(id));
+  const rendered = candidates.map((id) => byId.get(id) as ProjectedBlock);
+  const bodies = source.links.codec.serializeBlocks(
+    rendered.map((block) => block.node),
+    rendered.map((block) => block.hash),
+  );
+  const items = rendered.map((block, index) => ({ hash: block.hash, body: bodies[index] }));
   const authors = changeAuthors(source, prev, changed, removedIds);
   const itemById = new Map(candidates.map((id, index) => [id, items[index]]));
-  const hashes = hashMap(doc, blocks, removed);
+  const hashes = hashMap(doc, projected, removed);
   const groups: AgentEditConcurrentListing["groups"] = [];
   let remaining = CONCURRENT_LISTING_MAX_BYTES;
   for (const [author, changes] of authors) {
@@ -335,10 +330,10 @@ function shownInFull(
 
 function hashMap(
   doc: Y.Doc,
-  present: readonly Y.XmlElement[],
+  present: readonly ProjectedBlock[],
   removed: readonly { clientID: number; clock: number }[],
 ): Map<string, string> {
-  const ids = [...present.map((block) => getBlockItemId(block)), ...removed];
+  const ids = [...present.map((block) => block.id), ...removed];
   const identities = ids.map((id) => blockIdentityForItem(doc, id));
   const hashes = uniqueHashesForIds(identities);
   return new Map(ids.map((id, index) => [frontierBlockId(id), hashes[index]]));

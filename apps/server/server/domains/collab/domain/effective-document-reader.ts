@@ -9,7 +9,6 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -20,7 +19,7 @@ import type {
 } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
-import { documentRevision, versioned } from "./document-revision.js";
+import { documentRevision, readHashlines } from "./document-revision.js";
 import type { DraftPullService } from "./draft-pulls.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
@@ -113,14 +112,7 @@ export function createEffectiveDocumentReader(input: {
       return readEffective(command, async (handle): Promise<HashlineRead> => {
         const doc = unwrapDoc(handle);
         const scope = await spelling(command, doc);
-        const codec = input.codec.forScope(scope);
-        const read = versioned(doc, scope, (doc) =>
-          input.model.serializeBlockLines(toDocHandle(doc), codec),
-        );
-        const links = input.model
-          .projectBlocks(toDocHandle(doc))
-          .map((block) => spelledLinks([block], scope));
-        return { ...read, links, holder: { uri: scope.holder.uri, view: scope.holder.view } };
+        return readHashlines(doc, scope, input.model, input.codec);
       });
     },
     ensureCreatedDocumentDraft(command) {

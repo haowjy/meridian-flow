@@ -177,7 +177,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     const clone = createCollabYDoc({ gc: false });
     try {
       Y.applyUpdate(clone, state);
-      return [...deps.model.projectBlocks(toDocHandle(clone))];
+      return deps.model.projectBlocks(toDocHandle(clone)).map((block) => block.node);
     } finally {
       clone.destroy();
     }

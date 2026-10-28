@@ -103,9 +103,14 @@ hosts cannot disagree; the package imports no server or infrastructure code.
 ### `AgentEditModel` (`src/ports/model.ts`)
 
 The model port makes document and block handles opaque to the kernel. It owns
-identity lookup, visible text, structural mutation, inline replacement,
-projection, and block serialization. v1's implementation is y-prosemirror;
-host composition supplies its schema explicitly.
+identity lookup, visible text, structural mutation, inline replacement, and
+`projectBlocks`: every top-level block as `{ ref, id, hash, node }`, built in one
+walk so the four always describe the same block. Serialization is the codec's
+(`serializeBlocks` records shown links; `serializeBlockBodies` does not); each
+caller composes what it uses from one projection. Projecting runs y-prosemirror's
+repair on the document it is given (an unbuildable element is deleted and left out,
+and hashes cover the survivors), so hand it a disposable copy, never a shared document.
+v1's implementation is y-prosemirror; host composition supplies its schema explicitly.
 
 ## Session and facade ports
 
@@ -127,8 +132,7 @@ history.
 
 ## Performance boundary
 
-Multi-block callers use batch model operations for IDs, projections, hashline
-serialization, and block bodies; per-block helpers rescan the document and can
+Multi-block callers project once and serialize from that projection; per-block helpers rescan the document and can
 be quadratic. A logical write reserves one ordinal before staging, and the
 journal's batch append owns row expansion. Tests should exercise the batch seam,
 not rebuild the same walk in each caller.
