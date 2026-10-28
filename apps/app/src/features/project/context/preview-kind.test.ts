@@ -41,6 +41,7 @@ const binary = (
   url: "https://example.test/x",
   fileType,
   mimeType,
+  sizeBytes: null,
 });
 
 describe("previewKind", () => {

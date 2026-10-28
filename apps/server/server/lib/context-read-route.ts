@@ -20,7 +20,11 @@ import {
   requireProjectOwner,
   type WorkRepository,
 } from "../domains/projects/index.js";
-import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../domains/storage/index.js";
+import {
+  type ObjectStorePort,
+  objectStoreKeyFromStorageUrl,
+  previewObjectKey,
+} from "../domains/storage/index.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import { documentTarget, requireFileGrant } from "./file-access-http.js";
 
@@ -214,11 +218,17 @@ export async function handleContextReadRequest(
       throw createError({ statusCode: 404, message: "Context path not found" });
     throw createError({ statusCode: 502, message: "Failed to resolve context file URL" });
   }
+  // A missing or unsignable preview leaves the file card, which the original's URL still serves.
+  const preview = ref.value.hasPreview
+    ? await deps.objectStore.getSignedUrl(previewObjectKey(key))
+    : null;
   return {
     kind: "binary",
     path: path.path,
     url: signed.value,
+    ...(preview?.ok ? { previewUrl: preview.value } : {}),
     fileType: ref.value.fileType,
     mimeType: ref.value.mimeType ?? "application/octet-stream",
+    sizeBytes: ref.value.sizeBytes ?? null,
   };
 }

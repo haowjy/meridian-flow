@@ -132,6 +132,7 @@ describe.runIf(enabled)("durable upload", () => {
             storageUrl: "object://fixture",
             receivedSize: IMPORT_ADMISSION.totalBytes - 5,
             sha256: "fixture",
+            hasPreview: false,
             facts: {
               kind: "note",
               filetype: "markdown",

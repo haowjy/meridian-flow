@@ -85,6 +85,7 @@ export type VisibleDocument = {
   storageUrl: string | null;
   mimeType: string | null;
   sizeBytes: number | null;
+  hasPreview: boolean;
   metadata: JsonObject;
   provisionalName: boolean;
   rank: string | null;
@@ -372,6 +373,7 @@ export function createTreeReader(
       storageUrl: row.storageUrl,
       mimeType: row.mimeType,
       sizeBytes: row.sizeBytes,
+      hasPreview: row.hasPreview,
       metadata: row.metadata,
       provisionalName: row.provisionalName,
       rank: row.rank,

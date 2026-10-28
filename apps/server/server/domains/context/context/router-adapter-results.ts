@@ -56,6 +56,7 @@ export function toFileRef(
         fileType: ref.fileType,
         storageUrl: ref.storageUrl,
         mimeType: ref.mimeType,
+        hasPreview: ref.hasPreview,
       }
     : { ...base, kind: "tracked", filetype: ref.filetype, schemaType: ref.schemaType };
 }

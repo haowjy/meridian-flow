@@ -37,6 +37,7 @@ const visibleDocumentShape = pgTable("visible_documents", {
   storageUrl: text("storage_url"),
   mimeType: text("mime_type"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
+  hasPreview: boolean("has_preview").notNull(),
   metadata: jsonb("metadata").$type<JsonObject>().notNull(),
   provisionalName: boolean("provisional_name").notNull(),
   rank: text("rank"),
@@ -84,7 +85,7 @@ function subquery<TAlias extends string, TColumns extends Record<string, unknown
 }
 
 const documentTail = sql.raw(
-  "d.file_type, d.storage_url, d.mime_type, d.size_bytes, d.metadata, d.provisional_name, " +
+  "d.file_type, d.storage_url, d.mime_type, d.size_bytes, d.has_preview, d.metadata, d.provisional_name, " +
     "d.location_version, d.hidden, d.created_at, d.updated_at",
 );
 const folderColumns = sql.raw(

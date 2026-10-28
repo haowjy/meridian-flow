@@ -19,8 +19,9 @@ import {
 
 export { classifyUpload } from "../../file-intake/index.js";
 
+import { saveImagePreview } from "../../file-intake/image-preview.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { ObjectStorePort } from "../../storage/index.js";
+import { type ObjectStorePort, previewObjectKey } from "../../storage/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 
 export interface UploadIntakeInput {
@@ -113,6 +114,8 @@ export interface UploadContentPort<Bound = unknown> {
     mimeType: string;
     bytes: Uint8Array;
     storageUrl: string | null;
+    /** A browser-drawable preview sits beside the stored object. */
+    hasPreview: boolean;
   }): Promise<{ ok: true } | { ok: false; definite: boolean }>;
   /** Soft-deletes an arrived upload; `stale` when its identity no longer stands at its URI. */
   remove(input: {
@@ -152,6 +155,9 @@ async function cleanupObject(
   try {
     const result = await objectStore.delete(key);
     if (!result.ok) throw new Error(result.error.message);
+    // Most uploads have no preview, so its absence is not a failure.
+    const preview = await objectStore.delete(previewObjectKey(key));
+    if (!preview.ok && preview.error.code !== "not_found") throw new Error(preview.error.message);
   } catch (cause) {
     emitEvent(eventSink, {
       level: "warn",
@@ -241,6 +247,22 @@ export function createUploadIntake<Bound>(deps: {
         reservation = { ...reservation, state: "object_stored", storageUrl };
       }
 
+      const hasPreview =
+        !storedTracked && storageUrl
+          ? await saveImagePreview({
+              objectStore: deps.objectStore,
+              storageUrl,
+              bytes: raw.bytes,
+              onFailure: (cause) =>
+                emitEvent(deps.eventSink, {
+                  level: "warn",
+                  source: "context.upload-intake",
+                  name: "image_preview.failed",
+                  payload: { documentId: reservation.documentId, ...unknownToEventPayload(cause) },
+                }),
+            })
+          : false;
+
       try {
         const bound = await deps.content.bind({
           reservation,
@@ -258,6 +280,7 @@ export function createUploadIntake<Bound>(deps: {
             mimeType,
             bytes: raw.bytes,
             storageUrl: current.storageUrl,
+            hasPreview,
           });
           if (!persisted.ok) throw Object.assign(new Error("upload persistence failed"), persisted);
           return deps.repository.finalize(raw.owner.projectId, raw.intakeId);

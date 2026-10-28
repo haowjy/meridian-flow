@@ -10,10 +10,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
-import {
-  type DraftImagePreviewTarget,
-  isDraftImagePath,
-} from "@/features/draft-review/DraftImagePreview";
+import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
@@ -117,7 +114,7 @@ export function useDraftDock({
       controller.dismissNotice();
       // A draft-only picture has no review room: it opens as a preview.
       if (!file.row.draft.hasDraft && file.row.draft.tree?.deleted !== true) {
-        if (isDraftImagePath(file.row.contextLocation?.path))
+        if (file.row.draft.binary)
           setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
         return;
       }

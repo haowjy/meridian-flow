@@ -206,6 +206,7 @@ function toNewTree(
           // A binary row normally carries its type; an old row that lost it copies as opaque bytes.
           mimeType: source.mimeType ?? "application/octet-stream",
           sizeBytes: source.sizeBytes ?? 0,
+          hasPreview: source.hasPreview,
           // A binary has no drafts or revisions, so its copy always records the live file.
           metadata: { copiedFrom: { uri: source.uri, version: "live", revision: null } },
         },

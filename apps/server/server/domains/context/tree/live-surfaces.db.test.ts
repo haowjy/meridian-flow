@@ -654,6 +654,8 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
                 storageUrl: s.mapStorageUrl,
                 mimeType: "image/png",
                 fileType: "image",
+                name: "map.png",
+                sizeBytes: 4,
                 signedUrl: expect.any(String),
                 signedUrlExpiresAt: expect.any(String),
               },

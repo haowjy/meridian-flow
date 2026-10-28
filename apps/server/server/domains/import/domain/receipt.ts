@@ -4,6 +4,7 @@ import { IMPORT_ADMISSION } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
 import { splitFrontmatter } from "@meridian/markup/wikilinks";
 import { frontmatterAliases } from "../../context/index.js";
+import { saveImagePreview } from "../../file-intake/image-preview.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type {
   ImportEntry,
@@ -20,6 +21,8 @@ export interface FileReceipt {
   storageUrl: string;
   receivedSize: number;
   sha256: string;
+  /** A browser-drawable preview sits beside the object (`previewObjectKey`). */
+  hasPreview: boolean;
   facts: {
     kind: "note" | "code" | "docx" | "binary";
     filetype: Filetype;
@@ -93,6 +96,13 @@ export async function prepareReceipts(
     const key = stagingKey(record.id, part.entryId);
     const put = await objects.put(key, part.bytes, facts.mimeType);
     if (!put.ok) throw new Error(put.error.message);
+    const hasPreview =
+      facts.kind === "binary" &&
+      (await saveImagePreview({
+        objectStore: objects,
+        storageUrl: put.value.storageUrl,
+        bytes: part.bytes,
+      }));
     candidates.push({
       kind: "receipt",
       entryId: part.entryId,
@@ -102,6 +112,7 @@ export async function prepareReceipts(
         storageUrl: put.value.storageUrl,
         receivedSize: part.bytes.byteLength,
         sha256: createHash("sha256").update(part.bytes).digest("hex"),
+        hasPreview,
         facts,
         aliases:
           facts.kind === "note"

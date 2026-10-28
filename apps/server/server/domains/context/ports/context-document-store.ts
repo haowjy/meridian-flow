@@ -46,6 +46,7 @@ export interface ContextDocument {
   storageUrl: string | null;
   mimeType: string | null;
   sizeBytes: number | null;
+  hasPreview: boolean;
   updatedAt: string;
   provisionalName: boolean;
   /** `documents.metadata` as stored; read through `document-metadata.ts`. */
@@ -88,6 +89,7 @@ export interface CreateBinaryDocumentInput {
   storageUrl: string;
   mimeType: string;
   sizeBytes: number;
+  hasPreview?: boolean;
   metadata?: DocumentCreationMetadata;
 }
 

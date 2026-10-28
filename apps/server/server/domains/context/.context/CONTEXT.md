@@ -314,7 +314,10 @@ location commit within the same tracked schema. Document/code or tracked/
 binary conversion is refused until an explicit conversion seam exists.
 Unknown suffixes remain tracked prose; registered non-tracked types fail with
 a typed error. Binary creation and upload use the binary storage path and do
-not erase storage or MIME metadata through a text write.
+not erase storage or MIME metadata through a text write. `writeBinary` takes
+`hasPreview`: the caller stores the original and its preview first
+(`saveImagePreview`, [storage](../../storage/.context/CONTEXT.md#previews)).
+Reads sign the preview beside the original (`previewUrl`, `previewSignedUrl`).
 
 Text writes route provenance through `collab-document-sync.ts`: agent writes
 carry turn identity, human writes carry user identity, and omitted provenance

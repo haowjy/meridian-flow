@@ -736,6 +736,13 @@
       "when": 1793227541330,
       "tag": "0110_document_projection_fts_bounded",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1793228096051,
+      "tag": "0111_file_preview",
+      "breakpoints": true
     }
   ]
 }

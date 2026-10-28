@@ -224,6 +224,7 @@ it("rejects a committed address different from the reservation", async () => {
       bytes: new Uint8Array(),
       mimeType: "text/plain",
       storageUrl: null,
+      hasPreview: false,
     }),
   ).toEqual({ ok: false, definite: true });
 });

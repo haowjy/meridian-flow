@@ -212,6 +212,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             storageUrl: entry.receipt.storageUrl,
             mimeType: entry.receipt.facts.mimeType,
             sizeBytes: entry.receipt.receivedSize,
+            hasPreview: entry.receipt.hasPreview,
           },
         };
       } else {

@@ -18,9 +18,10 @@ type StoredSpec = ImportEntrySelection &
   Partial<Omit<FileReceipt["facts"], "kind">> & {
     fileKind?: FileReceipt["facts"]["kind"];
     aliases?: string[];
+    hasPreview?: boolean;
   };
 function projectEntry(row: EntryRow): ImportEntry {
-  const { fileKind, filetype, mimeType, name, extension, aliases, ...selection } =
+  const { fileKind, filetype, mimeType, name, extension, aliases, hasPreview, ...selection } =
     row.spec as StoredSpec;
   let receipt: FileReceipt | null = null;
   if (row.kind === "file" && row.objectKey !== null) {
@@ -41,6 +42,8 @@ function projectEntry(row: EntryRow): ImportEntry {
       storageUrl: row.storageUrl,
       receivedSize: row.receivedSize,
       sha256: row.sha256,
+      // Absent from a receipt an older build wrote.
+      hasPreview: hasPreview ?? false,
       facts: { kind: fileKind, filetype, mimeType, name, extension },
       aliases,
     };
@@ -66,7 +69,9 @@ function receiptColumns(receipt: FileReceipt | null) {
     storageUrl: receipt?.storageUrl ?? null,
     receivedSize: receipt?.receivedSize ?? null,
     sha256: receipt?.sha256 ?? null,
-    facts: receipt ? { ...facts, fileKind, aliases: receipt.aliases } : {},
+    facts: receipt
+      ? { ...facts, fileKind, aliases: receipt.aliases, hasPreview: receipt.hasPreview }
+      : {},
   };
 }
 export function createDrizzleImportRepository(db: Database): ImportRepository {

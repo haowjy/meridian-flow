@@ -788,6 +788,10 @@ msgstr "Active Work"
 msgid "Activity"
 msgstr "Activity"
 
+#: src/components/app/ToastRegion.tsx
+msgid "Activity ({FOCUS_KEY})"
+msgstr "Activity ({FOCUS_KEY})"
+
 #: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "Actually…"
@@ -2552,9 +2556,13 @@ msgstr "documents that were deleted"
 msgid "Doesn't exist yet"
 msgstr "Doesn't exist yet"
 
+#: src/components/app/FileCard.tsx
+msgid "Download"
+msgstr "Download"
+
 #: src/features/project/context/viewers/DownloadFallback.tsx
-msgid "Download {name}"
-msgstr "Download {name}"
+#~ msgid "Download {name}"
+#~ msgstr "Download {name}"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -4144,8 +4152,8 @@ msgid "Preferences"
 msgstr "Preferences"
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
-msgid "Preview not available"
-msgstr "Preview not available"
+#~ msgid "Preview not available"
+#~ msgstr "Preview not available"
 
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "Previous change"
@@ -5462,8 +5470,8 @@ msgid "Thinking out loud?"
 msgstr "Thinking out loud?"
 
 #: src/features/project/context/viewers/PdfViewer.tsx
-msgid "This browser cannot display the PDF inline."
-msgstr "This browser cannot display the PDF inline."
+#~ msgid "This browser cannot display the PDF inline."
+#~ msgstr "This browser cannot display the PDF inline."
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "This browser will not export this diagram as an image. Copy the diagram source instead."
@@ -5691,8 +5699,8 @@ msgstr "This file is unavailable. Refresh and try again."
 
 #. placeholder {0}: mimeType || "application/octet-stream"
 #: src/features/project/context/viewers/BinaryFallbackViewer.tsx
-msgid "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
-msgstr "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
+#~ msgid "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
+#~ msgstr "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
 
 #: src/client/api/upload-intake-api.ts
 msgid "This filename contains unsupported characters. Rename the file and attach it again."

@@ -303,8 +303,8 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   /** Put a copy of each binary's bytes; if any put fails, the ones already put are released. */
   async function duplicateBinaries(
     binaries: readonly CopySourceFile[],
-  ): Promise<Result<{ binaries: Map<string, string>; putKeys: string[] }, ContextError>> {
-    const duplicates = new Map<string, string>();
+  ): Promise<Result<{ binaries: Map<string, DuplicatedBinary>; putKeys: string[] }, ContextError>> {
+    const duplicates = new Map<string, DuplicatedBinary>();
     const putKeys: string[] = [];
     try {
       for (const file of binaries) {
@@ -314,6 +314,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             uri: file.uri,
             storageUrl: file.storageUrl ?? "",
             ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+            hasPreview: file.hasPreview,
           },
         });
         if (!duplicated.ok) {
@@ -321,7 +322,10 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
           return duplicated;
         }
         putKeys.push(duplicated.value.key);
-        duplicates.set(file.documentId, duplicated.value.storageUrl);
+        duplicates.set(file.documentId, {
+          storageUrl: duplicated.value.storageUrl,
+          hasPreview: duplicated.value.hasPreview,
+        });
       }
     } catch (error) {
       await deps.release.keys(putKeys);
@@ -606,17 +610,20 @@ function binariesOf(roots: readonly PreparedRoot[]): CopySourceFile[] {
   );
 }
 
+/** The object a copy put for one binary, and whether its preview came along. */
+type DuplicatedBinary = { storageUrl: string; hasPreview: boolean };
+
 /** Rewrite each binary's source entry to the object the copy duplicated. */
 function seededRoots(
   roots: readonly PreparedRoot[],
-  binaries: ReadonlyMap<string, string>,
+  binaries: ReadonlyMap<string, DuplicatedBinary>,
 ): CopySourceEntry[] {
   const reseed = (entry: CopySourceEntry): CopySourceEntry => {
     if (entry.kind === "folder") {
       return { ...entry, children: entry.children.map(reseed) };
     }
-    const storageUrl = binaries.get(entry.documentId);
-    return storageUrl ? { ...entry, storageUrl } : entry;
+    const duplicate = binaries.get(entry.documentId);
+    return duplicate ? { ...entry, ...duplicate } : entry;
   };
   return roots.map((root) => reseed(root.snapshot));
 }

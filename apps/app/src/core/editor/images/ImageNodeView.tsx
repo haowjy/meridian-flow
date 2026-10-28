@@ -10,7 +10,8 @@
  * and a picture (the ordinary case, a signed read URL for the document its
  * `asset:` source or its `ref` names).
  *
- * A picture whose ref names nothing it can draw says which: an address nothing
+ * A stored picture this browser can't draw (no preview could be made) is a file
+ * card with Download, never Retry. A picture whose ref names nothing it can draw says which: an address nothing
  * has been uploaded to yet (it draws itself when a file lands there), or a
  * document that is gone. Neither offers Retry, because nothing a press could
  * do would change the answer.
@@ -36,6 +37,7 @@ import { NodeViewWrapper } from "@tiptap/react";
 import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { type CSSProperties, useRef } from "react";
 
+import { FileCard } from "@/components/app/FileCard";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -120,6 +122,14 @@ export function ImageNodeView(props: NodeViewProps) {
         <UploadingElsewhere />
       ) : src === "" ? (
         <AbandonedImage editor={props.editor} getPos={props.getPos} />
+      ) : state.kind === "file" ? (
+        <FileCard
+          name={state.file.name}
+          mimeType={state.file.mimeType}
+          sizeBytes={state.file.sizeBytes}
+          url={state.file.downloadUrl}
+          className="meridian-image-node__card"
+        />
       ) : state.url ? (
         <img
           src={state.url}

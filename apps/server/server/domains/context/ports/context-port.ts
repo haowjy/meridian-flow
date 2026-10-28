@@ -276,6 +276,8 @@ export interface BinaryFileRef extends BaseFileRef {
   storageUrl: string;
   /** Persisted MIME type for the stored object, when known. */
   mimeType?: string;
+  /** A browser-drawable preview is stored beside the object (`previewObjectKey`). */
+  hasPreview?: boolean;
 }
 
 /** A single-file lookup result returned by {@link ContextPort.stat}. */
@@ -421,6 +423,8 @@ export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   storageUrl: string;
   mimeType: string;
   sizeBytes: number;
+  /** A preview of the object was stored beside it (`saveImagePreview` said so). */
+  hasPreview?: boolean;
 }
 
 /**

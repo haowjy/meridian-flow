@@ -24,3 +24,12 @@ export function objectStoreKeyFromStorageUrl(storageUrl: string): string | null 
   const key = url.pathname.replace(/^\/+/, "");
   return key.length > 0 ? key : null;
 }
+
+/**
+ * Where a file's browser-drawable preview lives: beside the original, derived from its key so
+ * that anything that copies, moves or releases the original can find the preview without
+ * storing a second reference. Whether one exists is the document's `has_preview`.
+ */
+export function previewObjectKey(key: string): string {
+  return `${key}.preview`;
+}

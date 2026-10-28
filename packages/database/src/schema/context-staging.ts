@@ -1,6 +1,7 @@
 /** Private Context creation rows, inaccessible to live catalog and document readers. */
 import {
   bigint,
+  boolean,
   index,
   integer,
   jsonb,
@@ -37,6 +38,7 @@ export const contextStagedDocuments = pgTable(
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    hasPreview: boolean("has_preview").notNull().default(false),
     aheadMints: jsonb("ahead_mints").notNull(),
   },
   (table) => [

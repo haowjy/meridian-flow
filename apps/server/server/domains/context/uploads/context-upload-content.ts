@@ -60,6 +60,7 @@ export function createContextUploadContentPort(
               storageUrl: input.storageUrl ?? "",
               mimeType: input.mimeType,
               sizeBytes: input.bytes.byteLength,
+              hasPreview: input.hasPreview,
               origin,
             });
       return result.ok &&

@@ -19,6 +19,25 @@ Keys must match the safe-key grammar (`^[a-zA-Z0-9][a-zA-Z0-9/_:+=.,@-]*$`),
 contain no empty or `..` segments, and remain under the local storage root.
 Both adapters validate before I/O.
 
+## Previews
+
+An image browsers can't draw (TIFF, HEIC, BMP, ...) is stored as it arrived and
+gets a browser-drawable WebP preview (longest side 2048 px) beside it at
+`previewObjectKey(key)`: the original's key plus `.preview`. The key is derived,
+so `ObjectRelease` deletes a preview with its original, the copy command copies
+it, and the import sweep protects it, all without a stored reference. Whether
+one exists is the document's `has_preview` (also on `context_staged_documents`
+and the import receipt).
+
+`saveImagePreview` (`file-intake/image-preview.ts`) is the one function that
+makes and stores it; every save path calls it right after putting the original:
+import receive and DOCX-image extraction, chat Uploads intake, pasted or dropped
+figures. A copy duplicates the stored preview instead. It never throws: a file
+with no preview is drawn as a file card. Decoders: `sharp` (TIFF and other
+libvips formats), `heic-decode` (HEVC HEIC/HEIF; the bundled libvips has no
+HEVC), `bmp-ts`. EMF/WMF have no maintained decoder and stay cards. Files saved
+before previews existed have none and show the card; nothing generates one later.
+
 ## Adapters and composition
 
 Production selects `local` or `s3` from `OBJECT_STORE_PROVIDER`; tests use the
