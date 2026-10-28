@@ -73,10 +73,6 @@ export type SyncObservation =
   | { kind: "check"; turnId: string; rewritten: boolean; diffs: readonly Diff[] }
   /** A stream write that started a turn or changed its status. */
   | { kind: "turn"; turnId: string; status: TurnStatus }
-  | {
-      kind: "interruptSettled";
-      identity: { threadId: string; turnId: string; interruptId: string };
-    }
   | { kind: "error"; error: Error };
 
 export type ThreadSyncPorts = {
@@ -165,11 +161,9 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       }
       observe({ kind: "turn", turnId, status });
       if (!isTerminalTurnStatus(status)) return;
-      reducer.clearPendingInterruptPatchesForTurn(threadId, turnId);
       requestSnapshot("fresh");
     },
     invalidateThreadSnapshot: () => requestSnapshot("any"),
-    settleInterruptResponse: (identity) => observe({ kind: "interruptSettled", identity }),
   });
   const turnOf = (turnId: string) => state.get().turns.find((turn) => turn.id === turnId);
   /** Run a write to one turn and remember that the reducer changed it. */
@@ -430,13 +424,13 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       const runState = read.liveState.runState;
       const next = applyRead(state.get(), {
         turns: read.turns,
+        asks: read.asks,
         nextSeq: read.nextSeq,
         runningTurnId: runState.execution?.currentTurnId ?? null,
         runState,
       });
       if (!next) return "stale";
       state.set(next);
-      reducer.clearPendingInterruptPatchesForThread(threadId);
       for (const check of checks) observe(check);
       observe({ kind: "read", read, applied: true });
       noteRecord(runState);

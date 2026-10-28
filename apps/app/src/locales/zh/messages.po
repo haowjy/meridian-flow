@@ -111,6 +111,11 @@ msgstr ""
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr ""
 
+#. placeholder {0}: Math.floor(seconds / 60)
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{0, plural, one {Continues in # min} other {Continues in # min}}"
+msgstr "{0, plural, other {# 分钟后继续}}"
+
 #. placeholder {0}: failed.length
 #: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
@@ -233,6 +238,15 @@ msgstr "{0} 词元/秒"
 #: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0} will be renamed {1}"
 msgstr ""
+
+#. placeholder {0}: ask.payload.summary
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{agentName} wants to {0}?"
+msgstr "{agentName} 想要{0}？"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{agentName} wants to {summary}?"
+msgstr "{agentName} 想要{summary}？"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -447,6 +461,10 @@ msgstr ""
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
 msgstr ""
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{seconds, plural, one {Continues in # second} other {Continues in # seconds}}"
+msgstr "{seconds, plural, other {# 秒后继续}}"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{shown} of {total}"
@@ -794,6 +812,22 @@ msgstr ""
 msgid "All your devices"
 msgstr "所有设备"
 
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Allow"
+msgstr "允许"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Allow always"
+msgstr "始终允许"
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Allowed"
+msgstr "已允许"
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Allowed always"
+msgstr "已始终允许"
+
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Already in {0}"
@@ -828,8 +862,8 @@ msgid "Another Work now has this name. Rename that Work, then restore this one."
 msgstr ""
 
 #: src/features/chat/TextBlock.tsx
-msgid "Answer the question"
-msgstr ""
+#~ msgid "Answer the question"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Appearance and behavior settings."
@@ -913,8 +947,8 @@ msgstr ""
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
-msgid "auto-selected"
-msgstr ""
+#~ msgid "auto-selected"
+#~ msgstr ""
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
@@ -1274,8 +1308,8 @@ msgid "Choose a document or enter a web address or document path."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Choose a listed option"
-msgstr ""
+#~ msgid "Choose a listed option"
+#~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
@@ -1287,8 +1321,8 @@ msgid "Choose agent, currently {0}"
 msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
-msgid "Choose an option"
-msgstr ""
+#~ msgid "Choose an option"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Choose what to do before continuing."
@@ -1456,8 +1490,8 @@ msgid "Composer controls"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Confirm"
-msgstr ""
+#~ msgid "Confirm"
+#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Confirming your purchase…"
@@ -1471,6 +1505,10 @@ msgstr ""
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Continues from <0/>"
 msgstr ""
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Continuing…"
+msgstr "正在继续…"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1555,9 +1593,17 @@ msgstr ""
 msgid "Couldn't apply this draft."
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Couldn't ask a question"
+msgstr "无法提出问题"
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Couldn't be reversed"
 msgstr ""
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Couldn't check how this question ended."
+msgstr "无法确认这个问题的结果。"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
@@ -1884,9 +1930,9 @@ msgstr ""
 msgid "Couldn't send now."
 msgstr ""
 
-#: src/features/chat/InterruptResponseFeedback.tsx
+#: src/features/chat/ask/AskTakeover.tsx
 msgid "Couldn't send your answer."
-msgstr ""
+msgstr "无法发送你的回答。"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/chat-card-copy.ts
@@ -2129,6 +2175,14 @@ msgstr ""
 msgid "Demo image"
 msgstr "演示图片"
 
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Denied"
+msgstr "已拒绝"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Deny"
+msgstr "拒绝"
+
 #: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
 msgid "Describe the picture for a reader who cannot see it"
 msgstr ""
@@ -2364,8 +2418,8 @@ msgid "Embedded blocks take no links."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Enabled"
-msgstr ""
+#~ msgid "Enabled"
+#~ msgstr ""
 
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
 msgid "Enclosing folder"
@@ -2506,8 +2560,8 @@ msgid "Fork from here"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Form payload is malformed."
-msgstr ""
+#~ msgid "Form payload is malformed."
+#~ msgstr ""
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
@@ -3158,20 +3212,20 @@ msgid "Moving {source} to"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be a number"
-msgstr ""
+#~ msgid "Must be a number"
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be a whole number"
-msgstr ""
+#~ msgid "Must be a whole number"
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be at least {value}"
-msgstr ""
+#~ msgid "Must be at least {value}"
+#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be at most {value}"
-msgstr ""
+#~ msgid "Must be at most {value}"
+#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -3258,11 +3312,14 @@ msgstr ""
 msgid "No agents available."
 msgstr ""
 
-#: src/features/chat/ChoiceBlock.tsx
-#: src/features/chat/FormBlock.tsx
-#: src/features/chat/TextBlock.tsx
+#: src/features/chat/ask/AskReceipt.tsx
 msgid "No answer"
-msgstr ""
+msgstr "未回答"
+
+#. placeholder {0}: resolution.label
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "No answer, went with {0}"
+msgstr "未回答，已采用 {0}"
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "No archived Work."
@@ -3298,8 +3355,8 @@ msgid "No favorite chats yet."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "No fields required; confirm to continue."
-msgstr ""
+#~ msgid "No fields required; confirm to continue."
+#~ msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "No files attached in this chat yet."
@@ -3572,6 +3629,10 @@ msgstr ""
 msgid "Opening the link"
 msgstr ""
 
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Or type your own answer"
+msgstr "或输入你自己的回答"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ordered"
 msgstr ""
@@ -3591,6 +3652,11 @@ msgstr ""
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr ""
+
+#. placeholder {0}: resolution.text
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Parent Agent: {0}"
+msgstr "上级代理：{0}"
 
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"
@@ -3758,13 +3824,13 @@ msgstr ""
 msgid "Recently opened"
 msgstr ""
 
-#: src/features/chat/ChoiceBlock.tsx
+#: src/features/chat/ask/AskTakeover.tsx
 msgid "Recommended"
-msgstr ""
+msgstr "推荐"
 
 #: src/features/chat/ChoiceBlock.tsx
-msgid "Recommended option is highlighted."
-msgstr ""
+#~ msgid "Recommended option is highlighted."
+#~ msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
 msgid "Reconnect now"
@@ -3812,9 +3878,10 @@ msgstr ""
 msgid "Reference a file"
 msgstr ""
 
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/editor/SchemaNotices.tsx
 msgid "Refresh"
-msgstr ""
+msgstr "刷新"
 
 #: src/features/chat/ChatCards.tsx
 msgid "Reload"
@@ -3903,8 +3970,8 @@ msgid "Report is unavailable"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Required"
-msgstr ""
+#~ msgid "Required"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Reset column widths"
@@ -3980,6 +4047,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
@@ -3997,7 +4065,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/project/work/WorkFileRows.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "Retry"
-msgstr ""
+msgstr "重试"
 
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Retry changes"
@@ -4193,8 +4261,12 @@ msgid "Select the merged cell on its own to split it."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Select…"
-msgstr ""
+#~ msgid "Select…"
+#~ msgstr ""
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Send answer"
+msgstr "发送回答"
 
 #: src/components/app/composer/Composer.tsx
 msgid "Send message"
@@ -4204,17 +4276,18 @@ msgstr "发送消息"
 msgid "Send now"
 msgstr ""
 
+#: src/features/chat/ask/AskReceipt.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Sending"
-msgstr ""
+msgstr "正在发送"
 
 #: src/features/chat/useSendNow.ts
 msgid "Sending now"
 msgstr ""
 
 #: src/features/chat/InterruptResponseFeedback.tsx
-msgid "Sending your answer…"
-msgstr ""
+#~ msgid "Sending your answer…"
+#~ msgstr ""
 
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Sent a message to {line}"
@@ -4314,6 +4387,14 @@ msgstr ""
 msgid "Skimming"
 msgstr "浏览中"
 
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Skip"
+msgstr "跳过"
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Skipped"
+msgstr "已跳过"
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Small"
 msgstr ""
@@ -4395,8 +4476,8 @@ msgid "Stop compaction"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
-msgid "Stop run"
-msgstr ""
+#~ msgid "Stop run"
+#~ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Stop switch to auto-apply"
@@ -4452,8 +4533,8 @@ msgid "Subagents, {0}"
 msgstr "子代理，{0}"
 
 #: src/features/chat/TextBlock.tsx
-msgid "Submit"
-msgstr ""
+#~ msgid "Submit"
+#~ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Subscribe"
@@ -4464,13 +4545,13 @@ msgid "subsection"
 msgstr ""
 
 #: src/features/chat/TextBlock.tsx
-msgid "Suggested text is prefilled; edit it before submitting if needed."
-msgstr ""
+#~ msgid "Suggested text is prefilled; edit it before submitting if needed."
+#~ msgstr ""
 
 #. placeholder {0}: String(field.defaultValue)
 #: src/features/chat/FormBlock.tsx
-msgid "Suggested: {0}"
-msgstr ""
+#~ msgid "Suggested: {0}"
+#~ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 msgid "Summarize earlier messages so the model has room to keep going"
@@ -5278,8 +5359,8 @@ msgid "Two of this Work's drafts share this path. Review the drafts to keep one.
 msgstr "此工作中的两个草稿使用了相同路径。请查看草稿并保留其中一个。"
 
 #: src/features/chat/TextBlock.tsx
-msgid "Type your answer…"
-msgstr ""
+#~ msgid "Type your answer…"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ul"
@@ -5500,6 +5581,10 @@ msgstr "你在想什么？"
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
 
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Withdrawn"
+msgstr "已撤回"
+
 #: src/features/chat/chat-upload-display.ts
 msgid "Word document"
 msgstr ""
@@ -5582,8 +5667,8 @@ msgstr ""
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
-msgid "you answered"
-msgstr ""
+#~ msgid "you answered"
+#~ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "You can retry when this chat is free."
@@ -5598,8 +5683,8 @@ msgid "You're out of usage. Your messages will send when you add more."
 msgstr ""
 
 #: src/features/chat/InterruptResponseFeedback.tsx
-msgid "Your answer may not have reached the agent."
-msgstr ""
+#~ msgid "Your answer may not have reached the agent."
+#~ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"
@@ -5620,6 +5705,10 @@ msgstr ""
 #: src/features/billing/BillingPage.tsx
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr ""
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Your own answer"
+msgstr "你自己的回答"
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "Your projects"

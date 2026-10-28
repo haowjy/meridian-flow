@@ -5,7 +5,7 @@
  * handler in `interrupt-error-handler.ts` (nitro.config `errorHandler`) unwraps it — mapped
  * routes cannot accidentally serialize the wrapper by forgetting to set response body.
  */
-import type { ErrorInterrupt } from "@meridian/contracts/interrupt";
+import type { ErrorInterrupt } from "@meridian/contracts/errors";
 import {
   httpErrorInterruptBody,
   type MeridianError,

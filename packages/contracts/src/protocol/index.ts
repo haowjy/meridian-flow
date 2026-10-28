@@ -1,3 +1,4 @@
+export type { ArtifactRef } from "../artifacts/index.js";
 /**
  * Purpose: Collects protocol submodules behind the @meridian/contracts/protocol entrypoint.
  * Why independent: Protocol exports are the shared wire-contract surface for clients and server adapters.
@@ -5,14 +6,10 @@
  */
 
 export type {
-  ArtifactRef,
-  AskRequest,
   Interrupt,
   MeridianError,
-} from "../interrupt/index.js";
+} from "../errors/index.js";
 export {
-  askInterrupt,
-  componentContentForAsk,
   errorInterrupt,
   httpErrorInterruptBody,
   meridianError,
@@ -24,10 +21,9 @@ export {
   meridianErrorFromWsBoundary,
   sharedErrorInterrupt,
   wsErrorInterruptPayload,
-} from "../interrupt/index.js";
+} from "../errors/index.js";
 export { blockContentRecord } from "../threads/block-content-record.js";
 export { blockPlainText } from "../threads/block-plain-text.js";
-export { interruptIdForBlock } from "../threads/interrupt-id-for-block.js";
 export type {
   ProjectChatFeedPage,
   ProjectChatItem,

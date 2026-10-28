@@ -83,9 +83,9 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   claim bookkeeping: it counts only if above the claim's cursor (`send`: the admission's
   `resumeAfterSeq`; `tail`: the first applied read's) and above every seq already counted. A gap
   counts against the claim when its range reaches past the cursor or is unknown.
-  `thread events`, plain `thread tail` and `thread respond` read the journal over the shared
-  transport and hold no client state. Plain tail and the printer claim nothing from content;
-  `respond` proves its own interrupt resolution.
+  `thread events`, plain `thread tail` and `thread answer` read the journal over the shared
+  transport and hold no transcript client state. Plain tail and the printer claim nothing from
+  content; `thread answer` runs the shared durable-ask command and prints its resolution.
   `thread stop` and `thread queue` read one snapshot and run the hand-back operation.
 - **`liveView` is the sync's end-of-turn check, a diagnostic.** When the stream's own frames
   end an assistant turn (complete, cancelled, error), the next applied read is compared with it:
@@ -95,7 +95,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   writing it, or ended it first and replay ended it again), `read_ended` (a read showed it terminal before the stream wrote
   it), `not_ended` (the stream did not end it within the catch-up), or `gap`. A difference is
   kept even if a later read agrees. It sees client state, not paint: no tools, reasoning,
-  interrupts, rows, dividers or queued rows, so `matches` does not prove the screen was right,
+  ask receipts, rows, dividers or queued rows, so `matches` does not prove the screen was right,
   and it never changes the claim or exit code. Only the proving read decides those. The planned
   rule ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md))
   is that a true disagreement will fail with exit 6 once every `differs` has been classified;
@@ -109,11 +109,11 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   `replay_truncated`, `unconfirmed`, `deliverer_unknown`; a `failed` outcome may carry
   `credits_exhausted`, `not_a_message` or `forgotten`. Outcomes: `accepted`,
   `complete`, `failed`, `cancelled`, `handed_back` (exit 5, shared with cancelled),
-  `interrupt`, `timeout`, `unproven`.
+  `timeout`, `unproven`.
   Exit codes (`EXIT` in `src/core/cli-error.ts`): 0 proven; 1 the app failed or the
   server refused; 2 usage; 3 not found; 4 unavailable (the stack, login, a closed socket,
   or a Stop, hand-back or Send now answer that could not be read); 5 cancelled or handed
-  back; 6 unproven; 8 waiting on an interrupt; 124 `./mf`'s own deadline.
+  back; 6 unproven; 124 `./mf`'s own deadline.
   A message the chat forgot (`forgottenBy`, after the chat moved past its failed reply)
   makes `send` exit 1 with `failed`/`forgotten` before any reply is attributed to it.
   `accepted` (exit 0) is admission only, returned just by `send --no-wait`. Run
@@ -156,8 +156,8 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   `submissionId`; a failed lookup or pending admission is 6 `admission_unknown`), raises the
   cell's floor to the admission's `snapshotFloorNextSeq` (`acknowledgeAdmission`), then starts the
   sync, which asks for the first read and joins on it. The stream only decides when to look: the
-  subscribed state, a `meridian.run_state` or `meridian.messages.handed_back` frame,
-  `interrupt.requested` or a gap calls `sync.refresh()`. Every claim is the shared `messageFate`
+  subscribed state, a `meridian.run_state` or `meridian.messages.handed_back` frame, or a gap
+  calls `sync.refresh()`. Every claim is the shared `messageFate`
   over one applied read's response whole (`messageFate({ messageId, admittedVersion, read })`;
   never the synced value, whose turns and record come from different frames) plus the
   admission's `runStateVersion`: waiting, answering, answered, handed back, unproven. One
@@ -209,9 +209,8 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   `meridian.write_mode.switched` divider installs after its anchor turn. When the anchor is a user
   turn the stream never carried, the sync holds the divider out and asks for a read; it never
   inserts the divider at the tail. `./mf` has no recovery code of its own.
-- `respond` uses the shared interrupt sender and confirms its interrupt's
-  journaled resolution (deadline: 6 `unconfirmed`). `events` on a replay gap is 6
-  `replay_truncated` after printing. Tool results distinguish staged
+- `thread answer` uses the shared durable-ask command over the socket and prints the resolved ask.
+  `events` on a replay gap is 6 `replay_truncated` after printing. Tool results distinguish staged
   `tool.completed` from committed `tool.settled`.
 - Message admission builds one paragraph with `buildMessageDoc` and
   `serializeMessageDoc` (reference labels and image capability from the address

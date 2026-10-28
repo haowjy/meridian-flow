@@ -299,7 +299,7 @@ export const threadInboxMessages = pgTable(
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(CASE WHEN ${table.intent} = 'control' THEN (${table.body}->>'kind' = 'compact' OR (${table.body}->>'kind' = 'write_mode' AND ${table.body}->>'mode' IN ('direct','draft'))) ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
+      sql`(CASE WHEN ${table.intent} = 'control' THEN (${table.body}->>'kind' IN ('compact','ask_resolved') OR (${table.body}->>'kind' = 'write_mode' AND ${table.body}->>'mode' IN ('direct','draft'))) ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
     ),
   ],
 );
@@ -402,7 +402,7 @@ export const turns = pgTable(
       .where(sql`${table.promptBakeId} IS NOT NULL`),
     index("turns_unsettled")
       .on(table.threadId, table.position)
-      .where(sql`${table.status} IN ('pending','streaming','waiting_interrupt')`),
+      .where(sql`${table.status} IN ('pending','streaming','awaiting_answer')`),
     index("turns_execution")
       .on(table.threadId, table.executionId)
       .where(sql`${table.executionId} IS NOT NULL`),
@@ -428,7 +428,7 @@ export const turns = pgTable(
     ),
     check(
       "turns_status_valid",
-      sql`${table.status} IN ('pending', 'streaming', 'waiting_interrupt', 'complete', 'cancelled', 'error')`,
+      sql`${table.status} IN ('pending', 'streaming', 'awaiting_answer', 'complete', 'cancelled', 'error')`,
     ),
     check(
       "turns_compaction_model_required",
