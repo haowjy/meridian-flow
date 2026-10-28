@@ -21,7 +21,7 @@ import {
   projects,
   users,
 } from "@meridian/database/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -63,7 +63,6 @@ function proseBlock(text: string) {
     id: "prose",
     text,
     contentHash: createHash("sha256").update(text).digest(),
-    wordCount: 0,
   };
 }
 
@@ -127,13 +126,11 @@ describe("durable document derivations", () => {
         projectId,
         blockOrder: ["prose"],
         wordCount: 0,
-        documentBytes: 9n,
         documentHash: outputsOf("last good").documentHash,
         cutGeneration: -1n,
         cutAdmissionSeq: -1n,
         cutLocationVersion: -1n,
         extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
-        derivedAt: new Date(),
       })
       .returning({ roomId: documentBlockRooms.roomId });
     await db.insert(documentBlocks).values({
@@ -142,7 +139,6 @@ describe("durable document derivations", () => {
       projectId,
       text: "last good",
       contentHash: proseBlock("last good").contentHash,
-      wordCount: 0,
     });
     await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(new Y.Doc()));
   });
@@ -639,9 +635,23 @@ describe("durable document derivations", () => {
       .update(documentBlockRooms)
       .set({ extractorVersion: 1 })
       .where(eq(documentBlockRooms.documentId, documentId));
+    // Same content hash, stale text: only the version says the text is out of date.
+    await db
+      .update(documentBlocks)
+      .set({ text: "STALE" })
+      .where(
+        inArray(
+          documentBlocks.roomId,
+          db
+            .select({ id: documentBlockRooms.roomId })
+            .from(documentBlockRooms)
+            .where(eq(documentBlockRooms.documentId, documentId)),
+        ),
+      );
     expect(await store.stale({ projectId })).toEqual([documentId]);
     await service.flush({ projectId });
     expect(await store.stale({ projectId })).toEqual([]);
+    expect(await projection()).toBe("old new");
     // A live document under a deleted folder holds no address there (deleted-ancestor rule).
     await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, folderId));
     expect((await store.capture(documentId))?.holderUri).toBeNull();

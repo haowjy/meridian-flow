@@ -474,15 +474,12 @@ export const documentBlockRooms = pgTable(
     /** Block ids ("<clientID>:<clock>" of the top-level element) in document order. */
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
-    /** Sum of the blocks' text bytes: `documents.size_bytes`. */
-    documentBytes: bigint("document_bytes", { mode: "bigint" }).notNull(),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
     cutGeneration: bigint("cut_generation", { mode: "bigint" }).notNull(),
     cutAdmissionSeq: bigint("cut_admission_seq", { mode: "bigint" }).notNull(),
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),
-    derivedAt: timestamp("derived_at", { withTimezone: true }).notNull(),
   },
   (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
 );
@@ -501,7 +498,6 @@ export const documentBlocks = pgTable(
     text: text("text").notNull(),
     /** Hash of the block's destination-free markdown: the diff key. */
     contentHash: byteaColumn("content_hash").notNull(),
-    wordCount: integer("word_count").notNull(),
   },
   (table) => [primaryKey({ columns: [table.roomId, table.blockId] })],
 );

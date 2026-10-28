@@ -8,7 +8,6 @@
  * single source of the orchestrator->AG-UI mapping; depends only on the protocol
  * contracts.
  */
-import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
 import {
   type AGUIEvent,
   EventSchemas,
@@ -22,7 +21,11 @@ import {
   WRITE_MODE_SWITCHED_EVENT,
   type WriteModeSwitchedValue,
 } from "@meridian/contracts/protocol";
-import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
+import {
+  ASK_UPDATED_EVENT,
+  type BlockUpsertedRow,
+  type OrchestratorEvent,
+} from "@meridian/contracts/threads";
 import {
   WORK_CONTEXT_PROJECTION_EVENT,
   type WorkContextProjectionSignal,
@@ -36,8 +39,6 @@ export const PROJECTOR_RESET_EVENT_TYPES = [
   "turn.cancelled",
   "turn.error",
 ] as const satisfies readonly OrchestratorEvent["type"][];
-
-const USER_INTERRUPT_PROVENANCE: InterruptAnswerProvenance = "user";
 
 function parseAguiEvent(input: Record<string, unknown>): AGUIEvent {
   return EventSchemas.parse(input);
@@ -110,7 +111,10 @@ export function createOrchestratorEventProjector() {
     state.nextBlockSequence = Math.max(state.nextBlockSequence, block.sequence + 1);
   }
 
-  function finalizeRun(errorMessage?: string, cancelled = false): AGUIEvent[] {
+  function finalizeRun(
+    errorMessage?: string,
+    settledStatus: "complete" | "awaiting_answer" | "cancelled" = "complete",
+  ): AGUIEvent[] {
     const events = [...closeOpenTextMessage(), ...closeOpenReasoningMessage()];
     if (errorMessage) {
       events.push(
@@ -127,7 +131,11 @@ export function createOrchestratorEventProjector() {
           runId: state.activeRunId,
           // Every cancellation is stored as status "cancelled"; clients read this
           // marker instead of guessing from a bare finish.
-          ...(cancelled ? { result: { stopReason: "user_cancelled" } } : {}),
+          ...(settledStatus === "cancelled"
+            ? { result: { stopReason: "user_cancelled", turnStatus: settledStatus } }
+            : settledStatus === "awaiting_answer"
+              ? { result: { turnStatus: settledStatus } }
+              : {}),
         }),
       );
     }
@@ -288,7 +296,7 @@ export function createOrchestratorEventProjector() {
 
         // Text/reasoning/tool blocks already have delta-based AG-UI paths.
         // Custom component blocks do not, so projecting only this type avoids
-        // both the interrupt UI gap and double-emitting streamed blocks.
+        // double-emitting streamed blocks.
         const events: AGUIEvent[] = closeOpenMessages();
         events.push(
           parseAguiEvent({
@@ -369,49 +377,12 @@ export function createOrchestratorEventProjector() {
         return events;
       }
 
-      case "interrupt.created":
+      case "ask.updated":
         return [
           parseAguiEvent({
             type: EventType.CUSTOM,
-            name: "meridian.interrupt",
-            value: {
-              turnId: event.turnId,
-              interruptId: event.interruptId,
-              blockSequence: event.blockSequence,
-              state: "created",
-            },
-          }),
-        ];
-
-      case "interrupt.resolved":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: "meridian.interrupt",
-            value: {
-              turnId: event.turnId,
-              interruptId: event.interruptId,
-              blockSequence: event.blockSequence,
-              state: "resolved",
-              value: event.value,
-              provenance: USER_INTERRUPT_PROVENANCE,
-            },
-          }),
-        ];
-
-      case "interrupt.expired":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: "meridian.interrupt",
-            value: {
-              turnId: event.turnId,
-              interruptId: event.interruptId,
-              blockSequence: event.blockSequence,
-              state: "expired",
-              value: null,
-              provenance: "auto",
-            },
+            name: ASK_UPDATED_EVENT,
+            value: event.ask,
           }),
         ];
 
@@ -550,10 +521,13 @@ export function createOrchestratorEventProjector() {
         ];
 
       case "turn.completed":
-        return finalizeRun();
+        return finalizeRun(
+          undefined,
+          event.turn.status === "awaiting_answer" ? event.turn.status : "complete",
+        );
 
       case "turn.cancelled":
-        return finalizeRun(undefined, true);
+        return finalizeRun(undefined, "cancelled");
 
       case "turn.error":
         return finalizeRun(event.error.message);

@@ -170,13 +170,11 @@ export async function certifyDocumentDerivation(
   const roomValues = {
     projectId,
     wordCount: outputs.wordCount,
-    documentBytes: BigInt(outputs.documentBytes),
     documentHash: outputs.documentHash,
     cutGeneration: w.generation,
     cutAdmissionSeq: w.admissionSequence,
     cutLocationVersion: w.locationVersion,
     extractorVersion: w.extractorVersion,
-    derivedAt: at,
   };
   let roomId: number;
   if (room) {
@@ -214,8 +212,11 @@ export async function certifyDocumentDerivation(
     await tx
       .delete(documentBlocks)
       .where(and(eq(documentBlocks.roomId, roomId), inArray(documentBlocks.blockId, ids)));
+  // A content hash does not cover how the text was extracted, so rows from an older extractor
+  // certify nothing: every block is rewritten once.
+  const current = room?.extractorVersion === w.extractorVersion;
   const written = outputs.blocks.filter(
-    (block) => !stored.get(block.id)?.equals(block.contentHash),
+    (block) => !(current && stored.get(block.id)?.equals(block.contentHash)),
   );
   for (const rows of chunks(written))
     await tx
@@ -227,7 +228,6 @@ export async function certifyDocumentDerivation(
           projectId,
           text: block.text,
           contentHash: block.contentHash,
-          wordCount: block.wordCount,
         })),
       )
       .onConflictDoUpdate({
@@ -235,7 +235,6 @@ export async function certifyDocumentDerivation(
         set: {
           text: sql`excluded.text`,
           contentHash: sql`excluded.content_hash`,
-          wordCount: sql`excluded.word_count`,
         },
       });
 

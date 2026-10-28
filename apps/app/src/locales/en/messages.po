@@ -111,6 +111,11 @@ msgstr "{0, plural, one {# item will be renamed} other {# items will be renamed}
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 
+#. placeholder {0}: Math.floor(seconds / 60)
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{0, plural, one {Continues in # min} other {Continues in # min}}"
+msgstr "{0, plural, one {Continues in # min} other {Continues in # min}}"
+
 #. placeholder {0}: failed.length
 #: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
@@ -233,6 +238,15 @@ msgstr "{0} tok/s"
 #: src/features/project/context/entry-drag/move-notice.tsx
 msgid "{0} will be renamed {1}"
 msgstr "{0} will be renamed {1}"
+
+#. placeholder {0}: ask.payload.summary
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{agentName} wants to {0}?"
+msgstr "{agentName} wants to {0}?"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{agentName} wants to {summary}?"
+msgstr "{agentName} wants to {summary}?"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -451,6 +465,10 @@ msgstr "{position} of {count}"
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "{seconds, plural, one {Continues in # second} other {Continues in # seconds}}"
+msgstr "{seconds, plural, one {Continues in # second} other {Continues in # seconds}}"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{shown} of {total}"
@@ -798,6 +816,22 @@ msgstr "All Work"
 msgid "All your devices"
 msgstr "All your devices"
 
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Allow"
+msgstr "Allow"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Allow always"
+msgstr "Allow always"
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Allowed"
+msgstr "Allowed"
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Allowed always"
+msgstr "Allowed always"
+
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "Already in {0}"
@@ -832,8 +866,8 @@ msgid "Another Work now has this name. Rename that Work, then restore this one."
 msgstr "Another Work now has this name. Rename that Work, then restore this one."
 
 #: src/features/chat/TextBlock.tsx
-msgid "Answer the question"
-msgstr "Answer the question"
+#~ msgid "Answer the question"
+#~ msgstr "Answer the question"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Appearance and behavior settings."
@@ -925,8 +959,8 @@ msgstr "Auto-apply"
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
-msgid "auto-selected"
-msgstr "auto-selected"
+#~ msgid "auto-selected"
+#~ msgstr "auto-selected"
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
@@ -1286,8 +1320,8 @@ msgid "Choose a document or enter a web address or document path."
 msgstr "Choose a document or enter a web address or document path."
 
 #: src/features/chat/FormBlock.tsx
-msgid "Choose a listed option"
-msgstr "Choose a listed option"
+#~ msgid "Choose a listed option"
+#~ msgstr "Choose a listed option"
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
@@ -1299,8 +1333,8 @@ msgid "Choose agent, currently {0}"
 msgstr "Choose agent, currently {0}"
 
 #: src/features/chat/ChoiceBlock.tsx
-msgid "Choose an option"
-msgstr "Choose an option"
+#~ msgid "Choose an option"
+#~ msgstr "Choose an option"
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Choose what to do before continuing."
@@ -1468,8 +1502,8 @@ msgid "Composer controls"
 msgstr "Composer controls"
 
 #: src/features/chat/FormBlock.tsx
-msgid "Confirm"
-msgstr "Confirm"
+#~ msgid "Confirm"
+#~ msgstr "Confirm"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Confirming your purchase…"
@@ -1483,6 +1517,10 @@ msgstr "Connection lost. Retrying… attempt {0}"
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Continues from <0/>"
 msgstr "Continues from <0/>"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Continuing…"
+msgstr "Continuing…"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1567,9 +1605,17 @@ msgstr "Could not load files."
 msgid "Couldn't apply this draft."
 msgstr "Couldn't apply this draft."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Couldn't ask a question"
+msgstr "Couldn't ask a question"
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Couldn't be reversed"
 msgstr "Couldn't be reversed"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Couldn't check how this question ended."
+msgstr "Couldn't check how this question ended."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
@@ -1896,7 +1942,7 @@ msgstr "Couldn't send a message to {line}"
 msgid "Couldn't send now."
 msgstr "Couldn't send now."
 
-#: src/features/chat/InterruptResponseFeedback.tsx
+#: src/features/chat/ask/AskTakeover.tsx
 msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
 
@@ -2141,6 +2187,14 @@ msgstr "Deleting a Work…"
 msgid "Demo image"
 msgstr "Demo image"
 
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Denied"
+msgstr "Denied"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Deny"
+msgstr "Deny"
+
 #: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
 msgid "Describe the picture for a reader who cannot see it"
 msgstr "Describe the picture for a reader who cannot see it"
@@ -2376,8 +2430,8 @@ msgid "Embedded blocks take no links."
 msgstr "Embedded blocks take no links."
 
 #: src/features/chat/FormBlock.tsx
-msgid "Enabled"
-msgstr "Enabled"
+#~ msgid "Enabled"
+#~ msgstr "Enabled"
 
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
 msgid "Enclosing folder"
@@ -2518,8 +2572,8 @@ msgid "Fork from here"
 msgstr "Fork from here"
 
 #: src/features/chat/FormBlock.tsx
-msgid "Form payload is malformed."
-msgstr "Form payload is malformed."
+#~ msgid "Form payload is malformed."
+#~ msgstr "Form payload is malformed."
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
@@ -3170,20 +3224,20 @@ msgid "Moving {source} to"
 msgstr "Moving {source} to"
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be a number"
-msgstr "Must be a number"
+#~ msgid "Must be a number"
+#~ msgstr "Must be a number"
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be a whole number"
-msgstr "Must be a whole number"
+#~ msgid "Must be a whole number"
+#~ msgstr "Must be a whole number"
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be at least {value}"
-msgstr "Must be at least {value}"
+#~ msgid "Must be at least {value}"
+#~ msgstr "Must be at least {value}"
 
 #: src/features/chat/FormBlock.tsx
-msgid "Must be at most {value}"
-msgstr "Must be at most {value}"
+#~ msgid "Must be at most {value}"
+#~ msgstr "Must be at most {value}"
 
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -3270,11 +3324,14 @@ msgstr "Next draft"
 msgid "No agents available."
 msgstr "No agents available."
 
-#: src/features/chat/ChoiceBlock.tsx
-#: src/features/chat/FormBlock.tsx
-#: src/features/chat/TextBlock.tsx
+#: src/features/chat/ask/AskReceipt.tsx
 msgid "No answer"
 msgstr "No answer"
+
+#. placeholder {0}: resolution.label
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "No answer, went with {0}"
+msgstr "No answer, went with {0}"
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "No archived Work."
@@ -3310,8 +3367,8 @@ msgid "No favorite chats yet."
 msgstr "No favorite chats yet."
 
 #: src/features/chat/FormBlock.tsx
-msgid "No fields required; confirm to continue."
-msgstr "No fields required; confirm to continue."
+#~ msgid "No fields required; confirm to continue."
+#~ msgstr "No fields required; confirm to continue."
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "No files attached in this chat yet."
@@ -3588,6 +3645,10 @@ msgstr "Opening draft"
 msgid "Opening the link"
 msgstr "Opening the link"
 
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Or type your own answer"
+msgstr "Or type your own answer"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ordered"
 msgstr "ordered"
@@ -3607,6 +3668,11 @@ msgstr "Over your monthly usage"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr "Paragraph"
+
+#. placeholder {0}: resolution.text
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Parent Agent: {0}"
+msgstr "Parent Agent: {0}"
 
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"
@@ -3774,13 +3840,13 @@ msgstr "Recent activity"
 msgid "Recently opened"
 msgstr "Recently opened"
 
-#: src/features/chat/ChoiceBlock.tsx
+#: src/features/chat/ask/AskTakeover.tsx
 msgid "Recommended"
 msgstr "Recommended"
 
 #: src/features/chat/ChoiceBlock.tsx
-msgid "Recommended option is highlighted."
-msgstr "Recommended option is highlighted."
+#~ msgid "Recommended option is highlighted."
+#~ msgstr "Recommended option is highlighted."
 
 #: src/components/app/ConnectionBanner.tsx
 msgid "Reconnect now"
@@ -3828,6 +3894,7 @@ msgstr "Redoing…"
 msgid "Reference a file"
 msgstr "Reference a file"
 
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/editor/SchemaNotices.tsx
 msgid "Refresh"
 msgstr "Refresh"
@@ -3919,8 +3986,8 @@ msgid "Report is unavailable"
 msgstr "Report is unavailable"
 
 #: src/features/chat/FormBlock.tsx
-msgid "Required"
-msgstr "Required"
+#~ msgid "Required"
+#~ msgstr "Required"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Reset column widths"
@@ -3996,6 +4063,7 @@ msgstr "Resume my documents on any device"
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
@@ -4209,8 +4277,12 @@ msgid "Select the merged cell on its own to split it."
 msgstr "Select the merged cell on its own to split it."
 
 #: src/features/chat/FormBlock.tsx
-msgid "Select…"
-msgstr "Select…"
+#~ msgid "Select…"
+#~ msgstr "Select…"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Send answer"
+msgstr "Send answer"
 
 #: src/components/app/composer/Composer.tsx
 msgid "Send message"
@@ -4220,6 +4292,7 @@ msgstr "Send message"
 msgid "Send now"
 msgstr "Send now"
 
+#: src/features/chat/ask/AskReceipt.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Sending"
 msgstr "Sending"
@@ -4229,8 +4302,8 @@ msgid "Sending now"
 msgstr "Sending now"
 
 #: src/features/chat/InterruptResponseFeedback.tsx
-msgid "Sending your answer…"
-msgstr "Sending your answer…"
+#~ msgid "Sending your answer…"
+#~ msgstr "Sending your answer…"
 
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Sent a message to {line}"
@@ -4330,6 +4403,14 @@ msgstr "Skimmed"
 msgid "Skimming"
 msgstr "Skimming"
 
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Skip"
+msgstr "Skip"
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Skipped"
+msgstr "Skipped"
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Small"
 msgstr "Small"
@@ -4411,8 +4492,8 @@ msgid "Stop compaction"
 msgstr "Stop compaction"
 
 #: src/features/chat/FormBlock.tsx
-msgid "Stop run"
-msgstr "Stop run"
+#~ msgid "Stop run"
+#~ msgstr "Stop run"
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Stop switch to auto-apply"
@@ -4468,8 +4549,8 @@ msgid "Subagents, {0}"
 msgstr "Subagents, {0}"
 
 #: src/features/chat/TextBlock.tsx
-msgid "Submit"
-msgstr "Submit"
+#~ msgid "Submit"
+#~ msgstr "Submit"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Subscribe"
@@ -4480,13 +4561,13 @@ msgid "subsection"
 msgstr "subsection"
 
 #: src/features/chat/TextBlock.tsx
-msgid "Suggested text is prefilled; edit it before submitting if needed."
-msgstr "Suggested text is prefilled; edit it before submitting if needed."
+#~ msgid "Suggested text is prefilled; edit it before submitting if needed."
+#~ msgstr "Suggested text is prefilled; edit it before submitting if needed."
 
 #. placeholder {0}: String(field.defaultValue)
 #: src/features/chat/FormBlock.tsx
-msgid "Suggested: {0}"
-msgstr "Suggested: {0}"
+#~ msgid "Suggested: {0}"
+#~ msgstr "Suggested: {0}"
 
 #: src/features/chat/ChatView.tsx
 msgid "Summarize earlier messages so the model has room to keep going"
@@ -5294,8 +5375,8 @@ msgid "Two of this Work's drafts share this path. Review the drafts to keep one.
 msgstr "Two of this Work's drafts share this path. Review the drafts to keep one."
 
 #: src/features/chat/TextBlock.tsx
-msgid "Type your answer…"
-msgstr "Type your answer…"
+#~ msgid "Type your answer…"
+#~ msgstr "Type your answer…"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ul"
@@ -5516,6 +5597,10 @@ msgstr "What's on your mind?"
 msgid "Where were we?"
 msgstr "Where were we?"
 
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Withdrawn"
+msgstr "Withdrawn"
+
 #: src/features/chat/chat-upload-display.ts
 msgid "Word document"
 msgstr "Word document"
@@ -5598,8 +5683,8 @@ msgstr "You"
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
-msgid "you answered"
-msgstr "you answered"
+#~ msgid "you answered"
+#~ msgstr "you answered"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "You can retry when this chat is free."
@@ -5614,8 +5699,8 @@ msgid "You're out of usage. Your messages will send when you add more."
 msgstr "You're out of usage. Your messages will send when you add more."
 
 #: src/features/chat/InterruptResponseFeedback.tsx
-msgid "Your answer may not have reached the agent."
-msgstr "Your answer may not have reached the agent."
+#~ msgid "Your answer may not have reached the agent."
+#~ msgstr "Your answer may not have reached the agent."
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"
@@ -5636,6 +5721,10 @@ msgstr "Your messages are below."
 #: src/features/billing/BillingPage.tsx
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Your own answer"
+msgstr "Your own answer"
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "Your projects"

@@ -20,6 +20,7 @@ import {
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type { InternalThreadRepositories, ThreadStatusReader } from "../../ports/repositories.js";
+import { createDrizzleAskRepository } from "./ask-repository.js";
 import { createDrizzleBlockRepository } from "./block-repository.js";
 import { createDrizzleProjectChatFeedRepository } from "./chat-feed-repository.js";
 import { createDrizzleExecutionReportRepository } from "./execution-report-repository.js";
@@ -42,6 +43,7 @@ function composeDrizzleRepositories(
   statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {
   return {
+    asks: createDrizzleAskRepository(db),
     threads: createDrizzleThreadRepository(db, { statusReader, lineageScratch }),
     chatFeed: createDrizzleProjectChatFeedRepository(db),
     threadUserState: createDrizzleThreadUserStateRepository(db),

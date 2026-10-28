@@ -24,6 +24,7 @@ export {
   type SyncedThread,
   type SyncedTurnStoreOptions,
   syncedTurnStore,
+  updateAsks,
 } from "./synced-thread";
 export {
   createThreadSync,

@@ -563,13 +563,14 @@ projects the cut's own private doc with `projectBlocks`, with no copy. Recovery 
 stale rooms and retries failures without advancing certification.
 
 Storage is `document_block_rooms` (one row per document: `block_order`, word count,
-bytes, `document_hash`, and the `cut_*` and `extractor_version` watermark) and
+`document_hash`, and the `cut_*` and `extractor_version` watermark) and
 `document_blocks` (one row per top-level block, keyed by its Yjs item id: `text`,
-`content_hash`, word count). A block row never holds its position, so inserting a
+`content_hash`). A block row never holds its position, so inserting a
 paragraph rewrites one array and no block row. Certify (`certifyDocumentDerivation`) is
 under `lockDocumentMutation` and does only this: compare-and-set the cut against the
 head and location version, read the `(block_id, content_hash)` pairs, upsert the blocks
-whose hash changed and delete the removed ones, replace `document_links`, and write the
+whose hash changed (all of them when the room's `extractor_version` is older than the cut's,
+since a hash does not cover how the text was extracted) and delete the removed ones, replace `document_links`, and write the
 room row (`block_order` only when the order moved). Text is produced and hashed before
 the transaction, so certify never reads text back and a later normalizer can run there
 too. A room is stale when its `cut_*` or `extractor_version` differ from the head, the

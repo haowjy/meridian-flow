@@ -58,8 +58,7 @@ it is given and keeps no memory of earlier ends. A failed handoff seed's Retry r
 block records `failure.recorded` and its clear `failure.ended { resolved }`
 from `setBlockedReason`, with occurrence `usage:${threadId}:${episode}`, where the
 episode is the journal seq of the chat's last unblocked `run_state.changed`
-record (no column holds it). `interrupts.ts` projects directly and calls the same
-detector. The projector itself never logs.
+record (no column holds it). The projector itself never logs.
 
 Records go to the `recordFailure` a `LiveEventWriter` carries (required by
 `PersistenceDeps`; `noFailureRecorder` is the explicit opt-out; the raw journal stays
@@ -103,7 +102,7 @@ Summary calls use `TurnAccounting.computeAndDebit` and the shared tree budget;
 handoff settlement is outside this loop. Summary calls do not consume model
 iterations or the turn budget. The explicit gateway, repositories, retained
 Agent reader, tool registry/executor, delivery, claim, credit ledger, child
-coordinator, interrupts, EventSink, and background tracker are required ports;
+coordinator, EventSink, and background tracker are required ports;
 no disabled behavior is represented by an omitted dependency.
 
 Continuation eligibility is checked before preparation or compaction; iteration
