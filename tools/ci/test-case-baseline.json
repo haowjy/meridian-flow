@@ -381,7 +381,7 @@
     "packages/agent-edit/src/model/markdown-yjs-roundtrip.test.ts": 2,
     "packages/agent-edit/src/model/navigation-target.test.ts": 5,
     "packages/agent-edit/src/prosemirror-lowering.test.ts": 5,
-    "packages/agent-edit/src/resolver/resolve.test.ts": 19,
+    "packages/agent-edit/src/resolver/resolve.test.ts": 20,
     "packages/agent-edit/src/semantic-edit-ir.test.ts": 10,
     "packages/agent-edit/src/tool/concurrent-overwrite.test.ts": 16,
     "packages/agent-edit/src/tool/copy.test.ts": 2,

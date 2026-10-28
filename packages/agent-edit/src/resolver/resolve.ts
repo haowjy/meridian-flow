@@ -25,7 +25,7 @@ import {
   spliceFindMatches,
   type TextFindMatch,
 } from "./find.js";
-import { locateBlockByHash } from "./hash-locator.js";
+import { blockRefs, locateBlockByHash } from "./hash-locator.js";
 import { type BlockScope, resolveScope, resolveSearchScope, type ScopeFailure } from "./scope.js";
 
 export type WriteCommandName = "insert" | "replace" | "remove";
@@ -107,16 +107,14 @@ export function planWrite(
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
   const doc = ctx.doc;
-  let projected: ProjectedBlock[] | undefined;
+  // Projecting repairs the document (an element the schema can't build is deleted), so it
+  // runs before anything takes an index; every scope, hash lookup and anchor below reads
+  // this one list. The resolver does not change the document, so it stays current.
+  const projected = ctx.model.projectBlocks(doc);
   const concreteCtx: ConcreteResolveContext = {
     ...ctx,
     doc,
-    // The document can't change while a write resolves, so one projection
-    // serves every scope it replaces.
-    projectedBlocks: () => {
-      projected ??= ctx.model.projectBlocks(doc);
-      return projected;
-    },
+    projectedBlocks: () => projected,
   };
   const normalized = normalizeParams(concreteCtx, params);
   const contentCheck = validateContent(concreteCtx, normalized);
@@ -312,7 +310,7 @@ function replaceScopeWithCopies(
   copies: readonly Block[],
 ): PlannedWrite {
   const anchor =
-    scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
+    scope.startIndex > 0 ? ctx.projectedBlocks()[scope.startIndex - 1]?.ref : undefined;
   return {
     steps: [
       { kind: "edits", edits: [insertEdit(params, anchor, copies), ...deleteEdits(params, scope)] },
@@ -434,7 +432,7 @@ function lowerInsertPosition(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteFailure | { ok: true; after?: BlockRef } {
-  const blocks = ctx.model.getBlocks(ctx.doc);
+  const blocks = blockRefs(ctx);
   if (params.after) {
     const located = locateBlockByHash(ctx, params.after);
     if (!located.ok) return scopeError(located);
@@ -663,7 +661,7 @@ function replaceScope(
   const oldBlocks = scope.blocks;
   const oldNodes = scopeNodes(ctx, scope);
   let anchor: BlockRef | undefined =
-    scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
+    scope.startIndex > 0 ? ctx.projectedBlocks()[scope.startIndex - 1]?.ref : undefined;
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
   let keptBlocks = false;
