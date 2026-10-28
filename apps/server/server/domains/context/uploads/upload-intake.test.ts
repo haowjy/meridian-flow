@@ -149,7 +149,8 @@ describe("UploadIntake", () => {
     expect(await service.intake(request)).toEqual({ ok: false, error: { code: "storage_failed" } });
     const recovered = await service.intake(request);
     expect(recovered.ok && recovered.value.documentId).toBe("00000000-0000-4000-8000-000000000001");
-    expect(objectStore.delete).toHaveBeenCalledOnce();
+    // The object and its (absent) preview.
+    expect(objectStore.delete).toHaveBeenCalledTimes(2);
     expect(objectStore.put).toHaveBeenCalledTimes(2);
   });
 
