@@ -123,6 +123,7 @@ describe.skipIf(!runDbTests || !databaseUrl)("0104 grep tool rename", () => {
       ).rejects.toThrow(/insert-only/);
     } finally {
       await session`SET session_replication_role = replica`;
+      await session`DELETE FROM prompt_bakes WHERE owner_thread_id = ${thread}`;
       await session`DELETE FROM turn_blocks WHERE turn_id = ${turn}`;
       await session`DELETE FROM agent_definition_revisions WHERE package_revision_id = ${packageRevision}`;
       await session`DELETE FROM thread_agent_bindings WHERE thread_id = ${binding}`;
