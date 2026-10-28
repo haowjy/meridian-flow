@@ -68,7 +68,7 @@ type ContextTreePanelProps = {
 
 /**
  * VS Code-style multi-scheme file tree. Each context scheme renders as a
- * collapsible top-level section with hover "New file / New folder" actions.
+ * collapsible top-level section with hover "New file / New folder / Import…" actions.
  * Every section's tree query runs from rail mount — collapsed panes just
  * don't render the data yet — so the first expand after a reload paints from
  * cache instead of flashing a load. A selection landing in a section
@@ -405,6 +405,11 @@ function SchemeSection({
               label={t`New file`}
               onClick={() => requestCreate("file", "")}
             />
+            <PaneHeaderActionButton
+              icon={FolderPlus}
+              label={t`New folder`}
+              onClick={() => requestCreate("folder", "")}
+            />
             {importable ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -414,17 +419,14 @@ function SchemeSection({
                   <ImportMenuItems
                     onPick={(kind: PickKind) => {
                       const destination = destinationOf(scheme, null);
-                      if (destination) pickImport?.(destination, kind);
+                      if (!destination) return;
+                      setExpanded(true);
+                      pickImport?.(destination, kind);
                     }}
                   />
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
-            <PaneHeaderActionButton
-              icon={FolderPlus}
-              label={t`New folder`}
-              onClick={() => requestCreate("folder", "")}
-            />
           </>
         ) : undefined
       }
