@@ -37,7 +37,7 @@ export function FileCard({ name, mimeType, sizeBytes, url, className }: FileCard
     <span
       contentEditable={false}
       className={cn(
-        "flex max-w-md items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5 text-left",
+        "flex max-w-[min(28rem,100%)] items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5 text-left",
         className,
       )}
     >
