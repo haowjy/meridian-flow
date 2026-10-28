@@ -180,10 +180,15 @@ function listingEntry(row: Record<string, JsonValue>): ToolResultRow | null {
 }
 
 /** `4 of 42` — a fact about the payload, never an invitation to see more. */
-export function boundLabel<T>({ rows, total }: CappedList<T>): string | null {
+export function boundLabel<T>({
+  rows,
+  total,
+  exact = true,
+}: CappedList<T> & { exact?: boolean }): string | null {
   if (total <= rows.length) return null;
   const shown = rows.length;
-  return t`${shown} of ${total}`;
+  // A partial scan's total is a lower bound, as the card's header already says.
+  return exact ? t`${shown} of ${total}` : t`${shown} of at least ${total}`;
 }
 
 /** The card's header: what this grep found, and nothing else. */

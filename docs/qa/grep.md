@@ -101,6 +101,40 @@ State cases (mock script with a `write` step before the `grep`):
   tool through the file-access policy. Access is asked for before any document is matched or counted
   (`ContextFS.grep`), so neither the results nor the total can include an unreadable document.
 
+## Browser cases
+
+Drive these in the browser (`agent-browser`) on a `MODEL_PROVIDER=mock` stack, scripting the model
+with `./mf thread send … --mock`, and expand each tool step in the transcript. They check what the
+writer sees; the timing cases above stay the scale checks.
+
+- **Multi-block passage.** Seed a document with several paragraphs and put the pattern in the third
+  (and again in a different one for a second document). Click the passage in the card: the editor
+  opens on that paragraph, not the first block.
+- **Editor edit, then grep.** Open a document, select all, type new text, and wait for the editor to
+  say it is saved and connected. Collab-ready check before trusting the result: the browser's network
+  log shows the Yjs WebSocket upgrade with status 101 and `./mf doc read` returns the new text; an
+  editor stuck on "Saved locally (offline)" has not persisted yet, so the grep sees the old text. Then
+  `grep` the new text (found) and the old text (no passage).
+- **Lower-bound wording.** Seed 55 small documents with one token and run `grep` with `head_limit` 2.
+  The heading reads "At least 55 documents" and the footer reads "2 of at least 55". Both say lower
+  bound; a footer of "2 of 55" is a regression. Also check the exact case ("2 of 55" with a plain
+  heading) when the scan finishes.
+- **Work draft across replies.** In a Work with `write_mode` `draft`, `write create` a document
+  containing a token in one reply, then `grep` for it in a later reply of the same chat: found, and
+  the draft shows in the change bar. A chat with no Work, and `version: live` in the draft chat,
+  find nothing.
+- **Trash preview.** Delete a document from its Actions menu, open Trash: the preview shows its
+  current (edited) text. Restore it afterwards.
+- **Moved-link destination.** Link document A from document B, move A to another folder, then open
+  the link from B's text: it lands on A at its new address.
+- **Move-only ordering.** Record the project's recently-updated order, move one document without
+  editing it, and read the order again: the moved document's `updated_at` does not change, so it does
+  not jump to the top.
+- **`ls -v` counts and file-tree sizes.** `ls` with `verbose: true` returns a word count per
+  document; read it from the tool result (`./mf log` or the `turn_blocks` row's `output`), because the
+  expanded card shows names only. Compare it with the file tree's size label for the same document;
+  both should come from the same count.
+
 ## Measured against predicted
 
 Run on the worker-thread commit (its hash is in the PR), 2026-10-27, the shared dev machine

@@ -474,6 +474,10 @@ msgstr "{seconds, plural, other {# 秒后继续}}"
 msgid "{shown} of {total}"
 msgstr ""
 
+#: src/features/chat/tool-result-preview.ts
+msgid "{shown} of at least {total}"
+msgstr ""
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is a folder. Only documents can be moved or deleted."
 msgstr ""
