@@ -1,17 +1,22 @@
-# Local dev Postgres for Meridian Flow — plain postgres:16 on host port 54422.
+# Local dev Postgres for Meridian Flow — postgres:16 with pg_bigm on host port 54422.
 # Start with `pnpm dev:infra`; schema is Drizzle-owned via `pnpm bootstrap`.
 # Explicit project name so the `tools/dev` directory doesn't collide with a
 # sibling repo's compose project (e.g. voluma also has tools/dev/docker-compose).
 name: meridian-dev
 services:
   postgres:
-    image: postgres:16
+    # Built from tools/postgres/Dockerfile: postgres:16 + pg_bigm (btree_gin and pg_trgm are contrib).
+    # The tag names the pg_bigm version; bump it with the pin in install-pg-bigm.sh. An existing
+    # container on the old image is recreated on the next `pnpm dev:infra`; the named volume keeps the data.
+    build: ../postgres
+    image: meridian-postgres:16-pg_bigm-1.2-20250903
     # Come back after a reboot: every dev stack and DB test run needs this server.
     restart: unless-stopped
     # Every worktree's dev stack and managed DB test run share this server. One full
     # `pnpm test:db` holds about 20 connections at peak, so the default of 100 runs out
     # with a fifth concurrent run. Host memory, not connections, should be the limit.
-    command: ["postgres", "-c", "max_connections=300"]
+    # Repeats the image's shared_preload_libraries flag, which `command` replaces.
+    command: ["postgres", "-c", "shared_preload_libraries=pg_bigm", "-c", "max_connections=300"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

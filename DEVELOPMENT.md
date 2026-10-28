@@ -96,11 +96,12 @@ not an app bug.
 
 ## Local database
 
-Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docker-compose.yml`). App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.
+Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `postgres:16` plus `pg_bigm` (btree_gin and pg_trgm are contrib), with `pg_bigm` preloaded. Writer search needs all three. Compose is `tools/dev/docker-compose.yml`. App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm dev:infra` | Start `postgres:16` Docker container (`:54422`) |
+| `pnpm dev:infra` | Build and start the Postgres Docker container (`:54422`). On a machine with the older plain `postgres:16` container, this recreates it on the new image and keeps the data volume |
+| `pnpm db:check-extensions` | Prove pg_bigm is preloaded and the search extensions install and serve a 1-character Han `LIKE` (rolled back) |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |

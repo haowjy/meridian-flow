@@ -13,10 +13,10 @@ import {
   readMigrationHistory,
 } from "./migration-history";
 
-/** Start the local postgres:16 container and wait until healthy. */
+/** Build and start the local Postgres container (postgres:16 + pg_bigm) and wait until healthy. */
 export function ensureDevInfraUp(repoRoot: string): void {
   const composeFile = path.join(repoRoot, "tools/dev/docker-compose.yml");
-  execFileSync("docker", ["compose", "-f", composeFile, "up", "-d", "--wait"], {
+  execFileSync("docker", ["compose", "-f", composeFile, "up", "-d", "--wait", "--build"], {
     cwd: repoRoot,
     stdio: "inherit",
   });
