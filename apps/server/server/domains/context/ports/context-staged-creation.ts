@@ -15,7 +15,13 @@ export type ContextStage = {
     origin: DocumentSeedOrigin;
     content:
       | { kind: "tracked"; seed: PreparedSeed; aheadMints: readonly AheadMint[] }
-      | { kind: "binary"; storageUrl: string; mimeType: string; sizeBytes: number };
+      | {
+          kind: "binary";
+          storageUrl: string;
+          mimeType: string;
+          sizeBytes: number;
+          hasPreview: boolean;
+        };
   })[];
 };
 export type ContextPlacement = {

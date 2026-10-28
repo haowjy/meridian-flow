@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { IMPORT_ADMISSION, importNodeId } from "@meridian/contracts";
+import { saveImagePreview } from "../../../file-intake/image-preview.js";
 import type { ObjectStorePort } from "../../../storage/index.js";
 import type { ConvertedDocument, DocumentConverterPort } from "../../ports/document-converter.js";
 import type { ImportEntry, ImportEntryPatch } from "../../ports/import-repository.js";
@@ -140,6 +141,11 @@ export async function prepareImportEntries(
       const put = await deps.objects.put(key, image.bytes, facts.mimeType);
       if (!put.ok) throw new Error(`Could not store extracted import image ${key}`);
       createdKeys.push(key);
+      const hasPreview = await saveImagePreview({
+        objectStore: deps.objects,
+        storageUrl: put.value.storageUrl,
+        bytes: image.bytes,
+      });
       images.push({
         id: importNodeId({
           projectId: input.projectId,
@@ -164,6 +170,7 @@ export async function prepareImportEntries(
           storageUrl: put.value.storageUrl,
           receivedSize: image.bytes.byteLength,
           sha256: createHash("sha256").update(image.bytes).digest("hex"),
+          hasPreview,
           facts,
           aliases: [],
         },

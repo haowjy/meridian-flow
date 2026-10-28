@@ -422,6 +422,7 @@ export class ContextFS implements ContextSchemeAdapter {
       fileType: doc.fileType,
       storageUrl: doc.storageUrl,
       mimeType: doc.mimeType ?? undefined,
+      hasPreview: doc.hasPreview,
     });
   }
 

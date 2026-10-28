@@ -72,6 +72,7 @@ export function createDrizzleContextStagedCreation(deps: {
                 content.kind === "binary"
                   ? content.sizeBytes
                   : Buffer.byteLength(content.seed.markdown, "utf8"),
+              hasPreview: content.kind === "binary" && content.hasPreview,
               aheadMints: content.kind === "tracked" ? content.aheadMints : [],
             };
           }),
@@ -268,9 +269,9 @@ export function createDrizzleContextStagedCreation(deps: {
           on cs.project_id = ${projectId} and cs.slug = f.area and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
         where f.staging_id = ${stagingId}`);
       await tx.execute(sql`insert into documents
-        (id, context_source_id, folder_id, name, extension, file_type, metadata, storage_url, mime_type, size_bytes)
+        (id, context_source_id, folder_id, name, extension, file_type, metadata, storage_url, mime_type, size_bytes, has_preview)
         select d.id, cs.id, d.parent_id, d.name, d.extension, d.filetype, d.metadata, d.storage_url, d.mime_type,
-          d.size_bytes
+          d.size_bytes, d.has_preview
         from context_staged_documents d join context_sources cs on cs.project_id = ${projectId} and cs.slug = d.area
           and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
         where d.staging_id = ${stagingId}`);

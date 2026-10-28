@@ -72,6 +72,7 @@ type DocumentRow = Pick<
   | "storageUrl"
   | "mimeType"
   | "sizeBytes"
+  | "hasPreview"
   | "updatedAt"
   | "provisionalName"
   | "metadata"
@@ -90,6 +91,7 @@ function mapDocument(row: DocumentRow): ContextDocument {
     storageUrl: row.storageUrl,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes === null ? null : Number(row.sizeBytes),
+    hasPreview: row.hasPreview,
     updatedAt: row.updatedAt.toISOString(),
     provisionalName: row.provisionalName,
     metadata: row.metadata,
@@ -415,6 +417,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           storageUrl: input.storageUrl,
           mimeType: input.mimeType,
           sizeBytes: input.sizeBytes,
+          ...(input.hasPreview ? { hasPreview: true } : {}),
           ...(input.metadata ? { metadata: input.metadata } : {}),
         },
         { hidden: false, ...(input.id ? { id: input.id as DocumentId } : {}) },

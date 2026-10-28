@@ -1,33 +1,29 @@
 /**
- * BinaryFallbackViewer — the "Preview not available — Download" body for
- * non-tracked files we don't have a dedicated viewer for yet.
+ * BinaryFallbackViewer — the file card for non-tracked files with no dedicated viewer.
  *
  * DEFERRED follow-up: rich preview for tabular files (CSV / TSV / Parquet).
  * The product wants a real grid eventually, but a parser + virtualised grid is
  * its own stream. Until then a CSV opens here as a downloadable file. Frame
  * chrome belongs to hosts.
  */
-import { Trans } from "@lingui/react/macro";
-
-import { DownloadFallback } from "./DownloadFallback";
+import { FileCard } from "@/components/app/FileCard";
 
 export type BinaryFallbackViewerProps = {
   url: string;
   mimeType: string;
   name: string;
+  sizeBytes: number | null;
 };
 
-export function BinaryFallbackViewer({ url, mimeType, name }: BinaryFallbackViewerProps) {
+export function BinaryFallbackViewer({
+  url,
+  mimeType,
+  name,
+  sizeBytes,
+}: BinaryFallbackViewerProps) {
   return (
-    <DownloadFallback
-      url={url}
-      name={name}
-      body={
-        <Trans>
-          This file type ({mimeType || "application/octet-stream"}) doesn't have an inline viewer
-          yet. Download the original to inspect it.
-        </Trans>
-      }
-    />
+    <div className="grid h-full min-h-0 place-items-center px-6 py-10">
+      <FileCard name={name} mimeType={mimeType} sizeBytes={sizeBytes} url={url} />
+    </div>
   );
 }

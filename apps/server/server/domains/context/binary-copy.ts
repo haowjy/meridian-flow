@@ -18,7 +18,11 @@ import {
 } from "@meridian/contracts/protocol";
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
-import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../storage/index.js";
+import {
+  type ObjectStorePort,
+  objectStoreKeyFromStorageUrl,
+  previewObjectKey,
+} from "../storage/index.js";
 import type { CopiedFrom } from "./document-metadata.js";
 import type {
   BinaryFileRef,
@@ -36,12 +40,14 @@ export interface PreparedBinaryCopy {
   key: string;
   mimeType: string;
   sizeBytes: number;
+  /** The destination has its own copy of the source's preview. */
+  hasPreview: boolean;
 }
 
 /** Duplicate a binary's stored bytes for a destination that does not exist yet (D24). */
 export async function prepareBinaryCopy(input: {
   objectStore: ObjectStorePort;
-  source: Pick<BinaryFileRef, "uri" | "storageUrl" | "mimeType">;
+  source: Pick<BinaryFileRef, "uri" | "storageUrl" | "mimeType" | "hasPreview">;
 }): Promise<Result<PreparedBinaryCopy, ContextError>> {
   const sourceKey = objectStoreKeyFromStorageUrl(input.source.storageUrl);
   if (!sourceKey) return ioError(input.source.uri, "The source file has no stored object.");
@@ -52,6 +58,19 @@ export async function prepareBinaryCopy(input: {
   const mimeType = input.source.mimeType ?? object.value.mimeType;
   const put = await input.objectStore.put(key, object.value.bytes, mimeType);
   if (!put.ok) return ioError(input.source.uri, put.error.message);
+  // The preview is derived, so a copy that can't carry it just shows the file card.
+  const preview = input.source.hasPreview
+    ? await input.objectStore.get(previewObjectKey(sourceKey))
+    : null;
+  const hasPreview =
+    preview?.ok === true &&
+    (
+      await input.objectStore.put(
+        previewObjectKey(key),
+        preview.value.bytes,
+        preview.value.mimeType,
+      )
+    ).ok;
   return {
     ok: true,
     value: {
@@ -59,6 +78,7 @@ export async function prepareBinaryCopy(input: {
       key,
       mimeType,
       sizeBytes: object.value.bytes.byteLength,
+      hasPreview,
     },
   };
 }
@@ -120,6 +140,7 @@ export async function copyBinaryDocument(
     storageUrl: prepared.value.storageUrl,
     mimeType: prepared.value.mimeType,
     sizeBytes: prepared.value.sizeBytes,
+    hasPreview: prepared.value.hasPreview,
     metadata: { copiedFrom: input.copiedFrom },
     ...(input.origin ? { origin: input.origin } : {}),
   });

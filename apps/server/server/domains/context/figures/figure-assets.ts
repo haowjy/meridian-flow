@@ -10,8 +10,12 @@ import type {
   FigureAssetReference,
   GetFigureSignedUrlResponse,
 } from "@meridian/contracts/protocol";
+import { saveImagePreview } from "../../file-intake/image-preview.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { objectStoreKeyFromStorageUrl } from "../../storage/object-storage-url.js";
+import {
+  objectStoreKeyFromStorageUrl,
+  previewObjectKey,
+} from "../../storage/object-storage-url.js";
 import type { ObjectStorePort, ObjectStoreResult } from "../../storage/ports/object-store.js";
 import type {
   DocumentFileRecord,
@@ -180,6 +184,7 @@ function labelFromAssetDocumentId(assetDocumentId: string): string {
 function toReference(input: {
   record: DocumentFileRecord;
   signedUrl: string;
+  previewSignedUrl?: string | null;
   signedUrlExpiresAt: string;
   alt: string;
   label: string | null;
@@ -199,8 +204,10 @@ function toReference(input: {
     mimeType: input.record.mimeType,
     fileType: input.record.fileType,
     sizeBytes: input.record.sizeBytes,
+    name: input.record.name,
     figure,
     signedUrl: input.signedUrl,
+    ...(input.previewSignedUrl ? { previewSignedUrl: input.previewSignedUrl } : {}),
     signedUrlExpiresAt: input.signedUrlExpiresAt,
   };
 }
@@ -244,6 +251,19 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         return err("object_store_error", errorMessage(error, "Failed to write object"));
       }
       if (!put.ok) return err("object_store_error", put.error.message);
+      const hasPreview = await saveImagePreview({
+        objectStore: options.objectStore,
+        storageUrl: put.value.storageUrl,
+        bytes: input.bytes,
+        onFailure: (error) =>
+          emitEvent(eventSink, {
+            level: "warn",
+            source: "context.figures",
+            name: "image_preview.failed",
+            payload: { key, ...unknownToEventPayload(error), projectId: input.projectId },
+          }),
+      });
+      const cleanupKeys = hasPreview ? [key, previewObjectKey(key)] : [key];
 
       let assetDocumentId: string | undefined;
       try {
@@ -254,23 +274,26 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
             mimeType: input.mimeType,
             fileType,
             sizeBytes: input.bytes.byteLength,
+            hasPreview,
             origin: { type: "human", userId: input.userId },
           });
         if (created.ok) assetDocumentId = created.value.documentId;
       } catch (error) {
-        await deleteObjectBestEffort(eventSink, options.objectStore, key, {
-          projectId: input.projectId,
-          hostDocumentId: input.hostDocumentId,
-          phase: "asset_create_throw",
-        });
+        for (const cleanupKey of cleanupKeys)
+          await deleteObjectBestEffort(eventSink, options.objectStore, cleanupKey, {
+            projectId: input.projectId,
+            hostDocumentId: input.hostDocumentId,
+            phase: "asset_create_throw",
+          });
         return err("repository_error", errorMessage(error, "Failed to create figure asset"));
       }
       if (!assetDocumentId) {
-        await deleteObjectBestEffort(eventSink, options.objectStore, key, {
-          projectId: input.projectId,
-          hostDocumentId: input.hostDocumentId,
-          phase: "asset_create_failed",
-        });
+        for (const cleanupKey of cleanupKeys)
+          await deleteObjectBestEffort(eventSink, options.objectStore, cleanupKey, {
+            projectId: input.projectId,
+            hostDocumentId: input.hostDocumentId,
+            phase: "asset_create_failed",
+          });
         return err("repository_error", "Failed to create figure asset document");
       }
       let asset: DocumentFileRecord | null;
@@ -291,6 +314,14 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
           phase: "upload_response",
         })) ?? "";
 
+      const previewSignedUrl = asset.hasPreview
+        ? await signObjectUrlBestEffort(eventSink, options.objectStore, previewObjectKey(key), {
+            projectId: input.projectId,
+            assetDocumentId,
+            phase: "upload_response_preview",
+          })
+        : null;
+
       const alt = input.alt?.trim() || input.filename || "Figure";
       const label = input.label?.trim() || labelFromAssetDocumentId(assetDocumentId);
       const caption = input.caption?.trim() || null;
@@ -301,6 +332,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         toReference({
           record: asset,
           signedUrl,
+          previewSignedUrl,
           signedUrlExpiresAt,
           alt,
           label,
@@ -335,13 +367,22 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         return err("object_store_error", errorMessage(error, "Failed to sign object URL"));
       }
       if (!signedUrl.ok) return err("object_store_error", signedUrl.error.message);
+      let previewSignedUrl: string | undefined;
+      if (record.hasPreview) {
+        // Without its preview the picture shows as a file card: still a usable answer.
+        const preview = await options.objectStore.getSignedUrl(previewObjectKey(key));
+        if (preview.ok) previewSignedUrl = preview.value;
+      }
 
       return ok({
         assetDocumentId: record.assetDocumentId,
         storageUrl: record.storageUrl,
         mimeType: record.mimeType,
         fileType: record.fileType,
+        name: record.name,
+        sizeBytes: record.sizeBytes,
         signedUrl: signedUrl.value,
+        ...(previewSignedUrl ? { previewSignedUrl } : {}),
         signedUrlExpiresAt: options.signedUrlExpiresAt(),
       });
     },

@@ -26,6 +26,7 @@ export type BinaryNode = {
   storageUrl: string;
   mimeType: string;
   sizeBytes: number;
+  hasPreview?: boolean;
   metadata?: JsonObject | DocumentCreationMetadata;
 };
 

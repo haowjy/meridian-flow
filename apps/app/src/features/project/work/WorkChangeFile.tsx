@@ -10,7 +10,7 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
-import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
+import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import {
   type DraftChangesView,
   isWholeDocumentChange,
@@ -52,7 +52,7 @@ export function WorkChangeFile({
   )
     return null;
   const wholeDocument = shown && isWholeDocumentChange(view);
-  const imageOpenable = isDraftImagePath(file.contextLocation?.path);
+  const imageOpenable = file.draft.binary;
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
   const copyView = draftCopyView(file, workId);
   const drag = useReferenceDrag(

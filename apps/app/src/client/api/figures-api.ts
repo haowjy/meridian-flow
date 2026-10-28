@@ -45,15 +45,7 @@ export type GetFigureSignedUrlInput = AssetRouteInput & {
   skipCache?: boolean;
 };
 
-type CachedSignedUrl = {
-  projectId: string;
-  assetDocumentId: string;
-  storageUrl: string;
-  signedUrl: string;
-  signedUrlExpiresAt: string;
-};
-
-const signedUrlCache = new Map<string, CachedSignedUrl>();
+const signedUrlCache = new Map<string, GetFigureSignedUrlResponse>();
 const inFlightSignedUrls = new Map<string, Promise<GetFigureSignedUrlResponse>>();
 
 function figurePath(projectId: string, documentId: string): string {
@@ -71,25 +63,13 @@ function cacheKey(input: AssetRouteInput & { workId?: string }): string {
 }
 
 function cacheSignedUrl(
-  input: AssetRouteInput & { workId?: string } & GetFigureSignedUrlResponse,
+  input: AssetRouteInput & { workId?: string },
+  value: GetFigureSignedUrlResponse,
 ): void {
-  signedUrlCache.set(
-    cacheKey({
-      projectId: input.projectId,
-      assetDocumentId: input.assetDocumentId,
-      workId: input.workId,
-    }),
-    {
-      projectId: input.projectId,
-      assetDocumentId: input.assetDocumentId,
-      storageUrl: input.storageUrl,
-      signedUrl: input.signedUrl,
-      signedUrlExpiresAt: input.signedUrlExpiresAt,
-    },
-  );
+  signedUrlCache.set(cacheKey(input), value);
 }
 
-function getCachedSignedUrl(input: GetFigureSignedUrlInput): CachedSignedUrl | null {
+function getCachedSignedUrl(input: GetFigureSignedUrlInput): GetFigureSignedUrlResponse | null {
   const cached = signedUrlCache.get(
     cacheKey({
       projectId: input.projectId,
@@ -105,31 +85,17 @@ export function seedFigureSignedUrlCache(input: {
   projectId: string;
   reference: UploadFigureAssetResponse;
 }): void {
-  cacheSignedUrl({
-    projectId: input.projectId,
-    assetDocumentId: input.reference.assetDocumentId,
-    storageUrl: input.reference.storageUrl,
-    mimeType: input.reference.mimeType,
-    fileType: input.reference.fileType,
-    signedUrl: input.reference.signedUrl,
-    signedUrlExpiresAt: input.reference.signedUrlExpiresAt,
-  });
+  cacheSignedUrl(
+    { projectId: input.projectId, assetDocumentId: input.reference.assetDocumentId },
+    input.reference,
+  );
 }
 
 export async function getFigureSignedUrl(
   input: GetFigureSignedUrlInput,
 ): Promise<GetFigureSignedUrlResponse> {
   const cached = input.skipCache ? null : getCachedSignedUrl(input);
-  if (cached) {
-    return {
-      assetDocumentId: cached.assetDocumentId,
-      storageUrl: cached.storageUrl,
-      mimeType: "image/*",
-      fileType: "image",
-      signedUrl: cached.signedUrl,
-      signedUrlExpiresAt: cached.signedUrlExpiresAt,
-    };
-  }
+  if (cached) return cached;
 
   const key = cacheKey(input);
   const pending = inFlightSignedUrls.get(key);
@@ -140,7 +106,7 @@ export async function getFigureSignedUrl(
     // gone (or unreadable, which it does not tell apart), not a failure.
     const query = input.workId ? `?workId=${encodeURIComponent(input.workId)}` : "";
     const value = await getJson<GetFigureSignedUrlResponse>(`${signedUrlPath(input)}${query}`);
-    cacheSignedUrl({ ...input, ...value });
+    cacheSignedUrl(input, value);
     return value;
   })();
   inFlightSignedUrls.set(key, request);

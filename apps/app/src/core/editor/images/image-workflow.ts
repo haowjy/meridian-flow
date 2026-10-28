@@ -14,6 +14,15 @@ export function isImageFile(file: Pick<File, "type" | "name">): boolean {
 }
 
 /**
+ * Whether browsers draw this stored image type from the original. The server makes a preview of
+ * the rest (`file-intake/image-preview.ts` holds the matching list); one with no preview shows
+ * the file card. `image/*` is the type a signed-URL answer carries for an unknown image.
+ */
+export function browserDrawsImage(mimeType: string): boolean {
+  return /^image\/(png|jpeg|gif|webp|avif|svg\+xml|\*)$/i.test(mimeType);
+}
+
+/**
  * May a picture stand at this exact position?
  *
  * An `image` is an inline atom (§5.6), so this is a schema question about the

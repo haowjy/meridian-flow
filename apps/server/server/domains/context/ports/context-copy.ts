@@ -38,6 +38,8 @@ export interface CopySourceFile {
   storageUrl: string | null;
   mimeType: string | null;
   sizeBytes: number | null;
+  /** A browser-drawable preview sits beside the stored object. */
+  hasPreview: boolean;
   /** Set by the command on a selected root only: the client's id for the root's copy. */
   copyId?: string;
 }

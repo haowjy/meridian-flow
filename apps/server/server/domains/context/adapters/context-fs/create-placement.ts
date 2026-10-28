@@ -170,6 +170,7 @@ function livePlacement(
           storageUrl: options.storageUrl,
           mimeType: options.mimeType,
           sizeBytes: options.sizeBytes,
+          ...(options.hasPreview ? { hasPreview: true } : {}),
           ...(options.metadata ? { metadata: options.metadata } : {}),
         });
         return Ok({ documentId: doc.id, placement: "live" as const });
@@ -254,6 +255,7 @@ function draftPlacement(
             storageUrl: options.storageUrl,
             mimeType: options.mimeType,
             sizeBytes: options.sizeBytes,
+            ...(options.hasPreview ? { hasPreview: true } : {}),
             ...(options.metadata ? { metadata: options.metadata } : {}),
           },
           createdBy: { threadId: placement.threadId },

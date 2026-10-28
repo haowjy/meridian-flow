@@ -298,6 +298,8 @@ export const documents = pgTable(
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
+    /** A browser-drawable preview sits beside the original object (`previewObjectKey`). */
+    hasPreview: boolean("has_preview").notNull().default(false),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
     provisionalName: boolean("provisional_name").notNull().default(false),
     rank: text("rank"),

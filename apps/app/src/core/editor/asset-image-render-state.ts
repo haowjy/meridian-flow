@@ -18,6 +18,11 @@
  * resolver's for a ref, the signed-URL route's 404 for a document (which also
  * hides an unreadable one, so a stored id is never a capability). A gone
  * document is asked again when the catalog changes, so restoring it draws it.
+ *
+ * A stored picture the browser can't draw (the server makes a preview of the
+ * ones it can convert) ends in the file card, never in Retry: an `<img>`
+ * failure gets one automatic URL refresh, then the card. Retry is only for a
+ * signed-URL request that failed, which a second try can fix.
  */
 
 import { t } from "@lingui/core/macro";
@@ -36,7 +41,12 @@ import {
 import { getFigureSignedUrl } from "@/client/api/figures-api";
 import { httpErrorStatus } from "@/client/api/http-client";
 
-import { assetDocumentIdFromSrc, browserPictureSource, signedUrlRefreshDelayMs } from "./images";
+import {
+  assetDocumentIdFromSrc,
+  browserDrawsImage,
+  browserPictureSource,
+  signedUrlRefreshDelayMs,
+} from "./images";
 import {
   type LinkAnswerCache,
   type LinkKey,
@@ -46,10 +56,21 @@ import {
   pictureKeyOfNode,
 } from "./links";
 
+/** What the file card shows for a stored picture that can't be drawn. */
+export type AssetFileFacts = {
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** The stored original, which Download serves. */
+  downloadUrl: string;
+};
+
 export type AssetImageRenderState =
   | { kind: "idle"; url: string | null; message?: string }
   | { kind: "loading"; url: string | null; message?: string }
   | { kind: "ready"; url: string; expiresAt?: string }
+  /** Stored, but not drawable by this browser: the file card stands in. */
+  | { kind: "file"; url: null; file: AssetFileFacts }
   | { kind: "error"; url: string | null; message: string }
   /**
    * Nothing to draw, and nothing to retry: an address nothing has been
@@ -236,6 +257,8 @@ export function useAssetImageRenderState(input: {
   // rendered state: an `<img>` error arrives between renders, and what it has
   // to be judged against is the request in flight at that instant.
   const loadInFlightRef = useRef(false);
+  // The facts of the picture last signed, for the card an `<img>` failure ends in.
+  const fileFactsRef = useRef<AssetFileFacts | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const generation = useLinkGeneration(resolution);
   const generationRef = useRef(generation);
@@ -274,7 +297,8 @@ export function useAssetImageRenderState(input: {
   const imageLoadFailed = useCallback(() => {
     const setState = showFor(setShown, picture);
     if (!assetDocumentId) {
-      setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
+      // A web URL that won't draw: asking again can't change a stored source.
+      setState({ kind: "unavailable", url: null, message: t`Image could not be displayed.` });
       return;
     }
     const transition = reduceAssetImageLoadFailure(
@@ -287,7 +311,12 @@ export function useAssetImageRenderState(input: {
       setRefreshToken((token) => token + 1);
       return;
     }
-    setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
+    const file = fileFactsRef.current;
+    setState(
+      file
+        ? { kind: "file", url: null, file }
+        : { kind: "unavailable", url: null, message: t`Image could not be displayed.` },
+    );
   }, [assetDocumentId, picture]);
 
   // Keyed by `targetIdentity`, the target's value: the object is rebuilt
@@ -336,7 +365,20 @@ export function useAssetImageRenderState(input: {
           skipCache,
         });
         if (cancelled) return;
-        setState({ kind: "ready", url: signed.signedUrl, expiresAt: signed.signedUrlExpiresAt });
+        const file = {
+          name: signed.name,
+          mimeType: signed.mimeType,
+          sizeBytes: signed.sizeBytes,
+          downloadUrl: signed.signedUrl,
+        };
+        fileFactsRef.current = file;
+        const drawn =
+          signed.previewSignedUrl ?? (browserDrawsImage(signed.mimeType) ? signed.signedUrl : null);
+        if (!drawn) {
+          setState({ kind: "file", url: null, file });
+          return;
+        }
+        setState({ kind: "ready", url: drawn, expiresAt: signed.signedUrlExpiresAt });
         const delay = signedUrlRefreshDelayMs(signed.signedUrlExpiresAt);
         refreshTimer = setTimeout(() => void loadSignedUrl(true), delay);
       } catch (error) {

@@ -71,6 +71,7 @@ export function documentRowValues(
           storageUrl: node.storageUrl,
           mimeType: node.mimeType,
           sizeBytes: node.sizeBytes,
+          ...(node.hasPreview ? { hasPreview: true } : {}),
         }),
     ...(options.provisionalName ? { provisionalName: true } : {}),
     ...(node.metadata ? { metadata: node.metadata as JsonObject } : {}),

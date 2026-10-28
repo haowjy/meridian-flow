@@ -107,6 +107,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
       storageUrl: binary ? document.storageUrl : null,
       mimeType: binary ? document.mimeType : null,
       sizeBytes: binary ? document.sizeBytes : null,
+      hasPreview: binary && document.hasPreview,
     };
   }
 

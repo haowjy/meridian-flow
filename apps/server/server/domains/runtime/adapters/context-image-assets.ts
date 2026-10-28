@@ -1,11 +1,15 @@
 /** F4 identity-backed late image byte adapter. */
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { ProjectContextAvailabilityPort, UploadIdentityPort } from "../../context/index.js";
+import { PREVIEW_MIME_TYPE } from "../../file-intake/image-preview.js";
 import { type FileAccess, isFileAccessDenied } from "../../file-policy/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
-import { objectStoreKeyFromStorageUrl } from "../../storage/index.js";
+import { objectStoreKeyFromStorageUrl, previewObjectKey } from "../../storage/index.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
+
+/** The image types every model provider accepts; anything else is sent as its preview or left out. */
+const MODEL_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 export function createContextImageAssetPort(deps: {
   /** The writer's read grant on each image a prompt carries (file-access §4). */
@@ -53,16 +57,17 @@ export function createContextImageAssetPort(deps: {
         if (isFileAccessDenied(grant)) return null;
         const identity = await deps.identities.lookupDocument(reference.documentId);
         if (!identity) return null;
-        const mediaType = identity.mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
-        if (
-          !mediaType.startsWith("image/") ||
-          !identity.storageUrl ||
-          (identity.sizeBytes ?? 0) > options.maxBytes
-        ) {
+        const storedType = identity.mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
+        if (!storedType.startsWith("image/") || !identity.storageUrl) return null;
+        const originalKey = objectStoreKeyFromStorageUrl(identity.storageUrl);
+        if (!originalKey) return null;
+        // An image the models can't read goes as the preview the server made of it. The preview
+        // is a bounded WebP, so the original's size limit does not apply to it.
+        const asPreview = !MODEL_IMAGE_TYPES.has(storedType);
+        if (asPreview ? !identity.hasPreview : (identity.sizeBytes ?? 0) > options.maxBytes)
           return null;
-        }
-        const key = objectStoreKeyFromStorageUrl(identity.storageUrl);
-        if (!key) return null;
+        const mediaType = asPreview ? PREVIEW_MIME_TYPE : storedType;
+        const key = asPreview ? previewObjectKey(originalKey) : originalKey;
         const object = await deps.objects.get(key);
         if (!object.ok) {
           if (object.error.code === "not_found") return null;

@@ -524,3 +524,9 @@
   .meridian-peer-mark--tick[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"] {
   box-shadow: 0 0 0 3px var(--color-review-warning-border);
 }
+
+/* The file card standing where a picture can't be drawn: a block-level box in the line. */
+.meridian-image-node__card {
+  display: inline-flex;
+  vertical-align: middle;
+}

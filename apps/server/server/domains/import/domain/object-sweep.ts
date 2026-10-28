@@ -1,5 +1,5 @@
 /** Prefix reclamation, abandoned-upload expiry, and entry retention. Header identities survive forever. */
-import type { ObjectStorePort } from "../../storage/index.js";
+import { type ObjectStorePort, previewObjectKey } from "../../storage/index.js";
 import type { ImportRepository } from "../ports/import-repository.js";
 import { IMPORT_MAINTENANCE, maintenanceCutoffs } from "./maintenance-policy.js";
 import { stagingKeyTime } from "./staging-key.js";
@@ -65,13 +65,15 @@ export async function sweepImportObjects(
     const protectedKeys = new Set(
       entries.flatMap((entry) => {
         if (!terminal)
-          return [entry.receipt?.objectKey ?? null, entry.convertedKey].filter(
-            (key) => key !== null,
-          );
+          return [
+            entry.receipt?.objectKey ?? null,
+            entry.receipt && previewObjectKey(entry.receipt.objectKey),
+            entry.convertedKey,
+          ].filter((key) => key !== null);
         return entry.receipt &&
           entry.state === "organized" &&
           (entry.receipt.facts.kind === "binary" || entry.reason === "kept_as_file")
-          ? [entry.receipt.objectKey]
+          ? [entry.receipt.objectKey, previewObjectKey(entry.receipt.objectKey)]
           : [];
       }),
     );

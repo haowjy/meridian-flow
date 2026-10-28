@@ -637,10 +637,13 @@ export type ContextReadBinaryResponse = {
   kind: "binary";
   /** Slash-prefixed display/routing path, e.g. `/project/report.pdf`. */
   path: string;
-  /** Short-lived URL for browser preview/download; clients must not persist it. */
+  /** Short-lived URL of the stored file, for download; clients must not persist it. */
   url: string;
+  /** Short-lived URL of the browser-drawable preview, when the server made one. */
+  previewUrl?: string;
   fileType: DocumentFileType;
   mimeType: string;
+  sizeBytes: number | null;
 };
 
 export const contextReadResponseSchema = z.discriminatedUnion("kind", [
@@ -655,8 +658,10 @@ export const contextReadResponseSchema = z.discriminatedUnion("kind", [
     kind: z.literal("binary"),
     path: z.string(),
     url: z.string().min(1),
+    previewUrl: z.string().min(1).optional(),
     fileType: z.enum(["docx", "image", "pdf", "binary"]),
     mimeType: z.string(),
+    sizeBytes: z.number().nullable(),
   }),
 ]) satisfies z.ZodType<ContextReadResponse>;
 export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinaryResponse;
@@ -895,27 +900,30 @@ export interface FigureNodeReference {
   caption: string | null;
 }
 
-export interface FigureAssetReference {
-  assetDocumentId: string;
-  /** Project-relative markdown path for codec and clipboard translation. */
-  assetPath: string;
-  storageUrl: string;
-  mimeType: string;
-  fileType: BinaryDocumentFileType;
-  sizeBytes: number;
-  figure: FigureNodeReference;
-  /** Short-lived URL for immediate browser preview/rendering. Do not persist in Yjs. */
-  signedUrl: string;
-  signedUrlExpiresAt: string;
-}
-
-export type UploadFigureAssetResponse = FigureAssetReference;
-
+/** A stored image document and the short-lived URLs that draw or download it. */
 export type GetFigureSignedUrlResponse = {
   assetDocumentId: string;
   storageUrl: string;
   mimeType: string;
   fileType: BinaryDocumentFileType;
+  /** The file name, for the file card shown when the image can't be drawn. */
+  name: string;
+  sizeBytes: number;
+  /** Short-lived URL of the original: what Download serves. Do not persist in Yjs. */
   signedUrl: string;
+  /**
+   * Short-lived URL of the browser-drawable preview the server made of an image
+   * browsers can't draw (TIFF, HEIC, ...). Absent when the original draws as it is, and when
+   * no preview could be made, which shows the file card.
+   */
+  previewSignedUrl?: string;
   signedUrlExpiresAt: string;
 };
+
+export interface FigureAssetReference extends GetFigureSignedUrlResponse {
+  /** Project-relative markdown path for codec and clipboard translation. */
+  assetPath: string;
+  figure: FigureNodeReference;
+}
+
+export type UploadFigureAssetResponse = FigureAssetReference;
