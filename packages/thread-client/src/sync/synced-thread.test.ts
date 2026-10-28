@@ -77,7 +77,13 @@ describe("durable block wire freshness", () => {
     const before = store.turns("thread-1");
     cell.set("thread-1", acceptDurableBlockSeq(value(), "375000") as SyncedThread);
     expect(
-      applyRead(value(), { turns: [], nextSeq: "375000", runningTurnId: null, runState: IDLE }),
+      applyRead(value(), {
+        turns: [],
+        asks: [],
+        nextSeq: "375000",
+        runningTurnId: null,
+        runState: IDLE,
+      }),
     ).toBeNull();
     expect(store.turns("thread-1")).toBe(before);
     expect(value().durableCursor).toBe("375000");
@@ -94,6 +100,7 @@ it("drops an optimistic row whose admission answer names a message another tab h
   // A read taken before the removal does not bring it back either.
   const stale = applyRead(synced, {
     turns: [{ id: "turn-server-1", role: "user", blocks: [] } as never],
+    asks: [],
     nextSeq: "6500",
     runningTurnId: null,
     runState: IDLE,
@@ -106,6 +113,7 @@ it("drops an optimistic row whose admission answer names a message another tab h
   waiting = removeTurns(waiting, ["turn-server-2"], "7000");
   waiting = applyRead(waiting, {
     turns: [],
+    asks: [],
     nextSeq: "8000",
     runningTurnId: null,
     runState: IDLE,

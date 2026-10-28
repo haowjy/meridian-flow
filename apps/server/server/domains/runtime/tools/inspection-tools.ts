@@ -1,5 +1,5 @@
 /** Read-only connected-conversation tools wired with repositories at composition. */
-import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import type { z } from "zod";

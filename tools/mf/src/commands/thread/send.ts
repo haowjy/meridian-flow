@@ -1,4 +1,4 @@
-/** Thread driving commands: create, send (wait by default), tail, cancel, respond. */
+/** Thread driving commands: create, send (wait by default), tail, and cancel. */
 import { randomUUID } from "node:crypto";
 import {
   type AdmissionLookup,
@@ -16,7 +16,7 @@ import {
   threadAvailableSkillsResponseSchema,
   threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
-import { interruptIdForBlock, type Turn } from "@meridian/contracts/threads";
+import type { Turn } from "@meridian/contracts/threads";
 import {
   buildMessageDoc,
   imageCapable,
@@ -65,7 +65,6 @@ export type SendFields = {
   status: Turn["status"] | "timeout" | "unknown" | "blocked" | "handed_back";
   finalText: string | null;
   error: string | null;
-  interrupt?: { turnId: string; interruptId: string };
   /** The end-of-turn check of this follower's client state against the next read (`live-view.ts`); absent when nothing was followed. */
   liveView?: "matches" | "differs" | "not_observed";
   liveDiff?: LiveDiff[];
@@ -207,7 +206,7 @@ function admissionFailure(error: unknown, threadId: string): SendOutcome {
 
 /**
  * Send and wait: admit, follow from `resumeAfterSeq` until this send's run
- * finishes, fails, or raises an interrupt, then read the durable outcome.
+ * finishes or fails, then read the durable outcome.
  */
 export async function sendMessage(
   session: Session,
@@ -262,9 +261,8 @@ async function followToOutcome(
     ),
     onFrame(event) {
       const wantsLook =
-        event.type === "interrupt.requested" ||
-        (event.type === "event" &&
-          (event.name === RUN_STATE_EVENT || event.name === MESSAGES_HANDED_BACK_EVENT));
+        event.type === "event" &&
+        (event.name === RUN_STATE_EVENT || event.name === MESSAGES_HANDED_BACK_EVENT);
       if (wantsLook) observer.refresh();
     },
     onLive: () => observer.refresh(),
@@ -398,33 +396,8 @@ function finalResult(
           },
         ),
       );
-    case "answering": {
-      const { last } = fate;
-      const interruptId = last.blocks
-        .map(interruptIdForBlock)
-        .filter((id): id is string => id !== null)
-        .at(-1);
-      if (last.status !== "waiting_interrupt" || !interruptId) return null;
-      return done(
-        terminalResult(
-          "thread.send",
-          { outcome: "interrupt", reason: null },
-          {
-            ...base,
-            answeredBy: fate.answeredBy,
-            turnId: last.id,
-            status: "waiting_interrupt",
-            finalText: null,
-            error: null,
-            interrupt: { turnId: last.id, interruptId },
-            next: [
-              `./mf thread respond ${threadId} --turn ${last.id} --interrupt ${interruptId} --value '<json>'`,
-            ],
-          },
-        ),
-        assistantTurns(fate.chain),
-      );
-    }
+    case "answering":
+      return null;
     case "answered": {
       const { last } = fate;
       const claim: Claim =

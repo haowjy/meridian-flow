@@ -1,6 +1,6 @@
 /** One terminal transaction for a turn and its admitted child execution report. */
-import type { MeridianError } from "@meridian/contracts/interrupt";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import type { MeridianError } from "@meridian/contracts/errors";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import {
@@ -12,12 +12,12 @@ import {
   type ProviderErrorResponse,
   type Turn,
 } from "@meridian/contracts/threads";
+import { threadAsk } from "../../threads/domain/ask.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import {
   CompactionFailureOutcomeCodec,
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
-  type EventJournalWriter,
   type LiveEventWriter,
   replyFailureMetadata,
   type ThreadRepositories,
@@ -28,6 +28,7 @@ import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
   | { kind: "success"; finishReason: FinishReason }
+  | { kind: "asked"; askId: string }
   | {
       kind: "failed";
       reason: string;
@@ -77,7 +78,7 @@ async function resolveReportContent(
 }
 
 function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
-  if (cause.kind === "success") return { type: "turn.completed", turn };
+  if (cause.kind === "success" || cause.kind === "asked") return { type: "turn.completed", turn };
   if (cause.kind === "cancelled") return { type: "turn.cancelled", turn };
   if (turn.role === "compaction") {
     return {
@@ -136,6 +137,7 @@ export async function finalizeExecution(
     repos: Pick<
       ThreadRepositories,
       | "promptBakes"
+      | "asks"
       | "threads"
       | "turns"
       | "blocks"
@@ -176,6 +178,9 @@ export async function finalizeExecution(
       );
       const existingReport =
         turn.role === "compaction" && ancestorReport?.outcome !== null ? null : ancestorReport;
+      // Every ask transition locks the ask before the thread. The lifecycle
+      // owner uses the same order when deletion or archive races settlement.
+      const liveAsk = await deps.repos.asks.findLiveByTurnForUpdate(input.turnId);
       const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
       if (thread?.kind === "subagent" && !existingReport && turn.role === "assistant") {
         throw new Error("Subagent execution was not admitted");
@@ -186,48 +191,83 @@ export async function finalizeExecution(
         report = existingReport;
         return { result: turn, events: [] };
       }
+      const askedCause = input.cause.kind === "asked" ? input.cause : null;
+      const publishAsk =
+        askedCause !== null && thread && !thread.deletedAt && thread.status !== "archived";
+      const effectiveCause: TerminalCause =
+        input.cause.kind === "asked" && !publishAsk
+          ? { kind: "cancelled", reason: "thread_unavailable" }
+          : input.cause;
       const completedAt = toIsoString(new Date());
-      const error = input.cause.kind === "failed" ? turnFailedCopy(turn) : null;
+      const error = effectiveCause.kind === "failed" ? turnFailedCopy(turn) : null;
       const updated: Turn = {
         ...turn,
-        ...(turn.role === "assistant" && input.cause.kind === "failed"
+        ...(turn.role === "assistant" && effectiveCause.kind === "failed"
           ? {
               metadata: replyFailureMetadata(turn.metadata, {
-                reason: input.cause.reason,
-                ...(typeof input.cause.error === "string"
+                reason: effectiveCause.reason,
+                ...(typeof effectiveCause.error === "string"
                   ? {}
-                  : { retryable: input.cause.error.retryable }),
-                ...(input.cause.providerError ? { providerError: input.cause.providerError } : {}),
+                  : { retryable: effectiveCause.error.retryable }),
+                ...(effectiveCause.providerError
+                  ? { providerError: effectiveCause.providerError }
+                  : {}),
               }),
             }
           : {}),
-        ...(turn.role === "compaction" && input.cause.kind === "failed"
+        ...(turn.role === "compaction" && effectiveCause.kind === "failed"
           ? {
               metadata: compactionFailureMetadata(
                 turn.metadata,
-                compactionFailureForFinalizer(input.cause),
+                compactionFailureForFinalizer(effectiveCause),
               ),
             }
           : {}),
         status:
-          input.cause.kind === "success"
+          effectiveCause.kind === "success"
             ? "complete"
-            : input.cause.kind === "cancelled"
-              ? "cancelled"
-              : "error",
+            : effectiveCause.kind === "asked"
+              ? "awaiting_answer"
+              : effectiveCause.kind === "cancelled"
+                ? "cancelled"
+                : "error",
         finishReason:
-          input.cause.kind === "success"
-            ? input.cause.finishReason
-            : input.cause.kind === "failed"
+          effectiveCause.kind === "success"
+            ? effectiveCause.finishReason
+            : effectiveCause.kind === "failed"
               ? "error"
               : turn.finishReason,
         error,
         completedAt,
       };
-      if (input.cause.kind === "success") {
+      let askEvent: OrchestratorEvent | null = null;
+      if (publishAsk) {
+        if (!askedCause) throw new Error("Ask publication lost its terminal cause");
+        if (!liveAsk || liveAsk.id !== askedCause.askId)
+          throw new Error(`Pending ask disappeared before settlement: ${askedCause.askId}`);
+        const opened = await deps.repos.asks.openPending(
+          askedCause.askId,
+          input.turnId,
+          new Date(Date.now() + 270_000),
+        );
+        if (!opened)
+          throw new Error(`Pending ask disappeared before settlement: ${askedCause.askId}`);
+        askEvent = { type: "ask.updated", ask: threadAsk(opened) };
+      } else if (liveAsk) {
+        await deps.repos.asks.resolveLive({
+          id: liveAsk.id,
+          status: "cancelled",
+          resolution: { kind: "cancelled" },
+          resolvedAt: new Date(),
+        });
+      }
+      if (effectiveCause.kind === "success" || effectiveCause.kind === "asked") {
         await deps.repos.threads.updateCost(input.threadId, "0", 1);
       }
-      return { result: updated, events: [turnEvent(updated, input.cause)] };
+      return {
+        result: updated,
+        events: [turnEvent(updated, effectiveCause), ...(askEvent ? [askEvent] : [])],
+      };
     },
     {
       async afterEvents(turn) {
@@ -239,7 +279,7 @@ export async function finalizeExecution(
         }
         const capture = admitted.capture;
         const outcome =
-          input.cause.kind === "success"
+          input.cause.kind === "success" || input.cause.kind === "asked"
             ? "succeeded"
             : input.cause.kind === "cancelled"
               ? "cancelled"
@@ -277,7 +317,10 @@ export async function finalizeExecution(
           executionTurnId: admitted.executionTurnId,
           terminalTurnId: turn.id as TurnId,
           outcome,
-          reason: input.cause.kind === "success" ? null : input.cause.reason,
+          reason:
+            input.cause.kind === "failed" || input.cause.kind === "cancelled"
+              ? input.cause.reason
+              : null,
           ...content,
           costMillicredits: Number(cost),
         });

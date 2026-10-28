@@ -2,7 +2,8 @@
  * EventSink call-site helpers: timestamp stamping and JSON-natural error payloads
  * for observability records. Keeps emit shape consistent across domain migrations.
  */
-import { isMeridianError } from "@meridian/contracts/interrupt";
+
+import { isMeridianError } from "@meridian/contracts/errors";
 import { DrizzleQueryError } from "drizzle-orm";
 import type { EventRecord, EventSink } from "./ports/event-sink.js";
 import { safeMeridianErrorCode } from "./safe-event.js";

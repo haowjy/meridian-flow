@@ -81,6 +81,7 @@ export class HandoffInProgressError extends Error {
 export type ForkCutoffErrorCode =
   | "turn_not_in_transcript"
   | "unsettled_history"
+  | "answer_required"
   | "turn_not_actionable";
 
 export class ForkCutoffError extends Error {
@@ -92,6 +93,7 @@ export class ForkCutoffError extends Error {
       {
         turn_not_in_transcript: `Derivation cutoff turn ${turnId} is not in the source's effective transcript`,
         unsettled_history: `Derivation cutoff turn ${turnId} has unsettled history`,
+        answer_required: "Answer or skip the question first.",
         turn_not_actionable: `Derivation is not available at turn ${turnId}`,
       }[code],
     );
@@ -342,6 +344,8 @@ async function requireDerivationCutoff(
         turn.status !== "complete" && turn.status !== "cancelled" && turn.status !== "error",
     )
   ) {
+    if (turns.some((turn) => turn.status === "awaiting_answer"))
+      throw new ForkCutoffError("answer_required", selectedTurnId);
     throw new ForkCutoffError("unsettled_history", selectedTurnId);
   }
   const selected = turns[selectedIndex];

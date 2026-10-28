@@ -6,7 +6,7 @@
  */
 import { GENERIC_SUBAGENT_SLUG, type InvocationPatch } from "@meridian/contracts/agents";
 import type { InvocationCardProps } from "@meridian/contracts/components";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation, SpawnResult } from "@meridian/contracts/spawn";
 import type { Block, Thread, ThreadActivity } from "@meridian/contracts/threads";

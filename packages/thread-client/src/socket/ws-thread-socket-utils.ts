@@ -16,6 +16,12 @@ export const DEFAULT_WS_PING_TIMEOUT_MS = 45_000;
  */
 export const DEFAULT_WS_REPLAY_DEADLINE_MS = 20_000;
 
+/**
+ * One `ask.answer` request's bound, from its send to its reply. Pings do not reset it. Expiry is
+ * `unconfirmed`: the answer may have landed, and a Retry under the same submission id is safe.
+ */
+export const DEFAULT_WS_ASK_ANSWER_DEADLINE_MS = 20_000;
+
 export function isTerminalWsClose(event: SocketClose): boolean {
   return event.code === WS_CLOSE.AUTH_FAILED.code || event.code === WS_CLOSE.PERMISSION_DENIED.code;
 }

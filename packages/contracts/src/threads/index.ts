@@ -235,9 +235,7 @@ export type JournalEventType =
   | "turn.completed"
   | "turn.cancelled"
   | "turn.error"
-  | "interrupt.created"
-  | "interrupt.resolved"
-  | "interrupt.expired"
+  | "ask.updated"
   /** EPHEMERAL transport — live hub streaming delta, not durable journal authority. */
   | "stream.delta"
   | "tool.executing"
@@ -311,7 +309,6 @@ export interface PromptBake {
 export { formatThreadRef, parseThreadRef } from "../handles.js";
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
-export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export type {
   ModelRequestDebugCapture,
   ModelRequestDebugMessage,
@@ -366,3 +363,5 @@ export interface ThreadAvailabilityDetails {
   authenticatedUserId: string;
   projectDeleted?: true;
 }
+
+export * from "./asks.js";

@@ -115,7 +115,7 @@ it("preserves typed errors in catchup and live envelopes", async () => {
 it.each([
   "thread_not_found",
   "thread_deleted",
-])("keeps %s subscribe and interrupt.respond refusals as identical unattested not_found frames", async (code) => {
+])("keeps a %s subscribe refusal as an unattested not_found frame", async (code) => {
   const frames: WsServerMessage[] = [];
   const app = {
     eventSink: createNoopEventSink(),
@@ -143,16 +143,6 @@ it.each([
   await session.onMessage(
     JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID, lastSeq: "0" }),
   );
-  await session.onMessage(
-    JSON.stringify({
-      type: "interrupt.respond",
-      requestId: "r2",
-      threadId: THREAD_ID,
-      turnId: "00000000-0000-4000-8000-000000000902",
-      interruptId: "ask-1",
-      value: "yes",
-    }),
-  );
   const expected = (requestId: string) => ({
     type: "error",
     requestId,
@@ -165,10 +155,7 @@ it.each([
       source: "system",
     },
   });
-  expect(frames.filter((frame) => frame.type === "error")).toEqual([
-    expected("r1"),
-    expected("r2"),
-  ]);
+  expect(frames.filter((frame) => frame.type === "error")).toEqual([expected("r1")]);
   session.onClose();
 });
 

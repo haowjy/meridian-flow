@@ -1,9 +1,31 @@
+/** Structured errors shared by runtime, HTTP, WebSocket, and clients. */
+import { z } from "zod";
+import type { JsonObject, JsonValue } from "../threads/index.js";
+
+export type MeridianErrorSource = "gateway" | "tool" | "child-agent" | "system";
+export type MeridianError = {
+  code: string;
+  message: string;
+  retryable: boolean;
+  source: MeridianErrorSource;
+  details?: JsonValue;
+};
+export const meridianErrorSchema: z.ZodType<MeridianError> = z.object({
+  code: z.string().min(1),
+  message: z.string(),
+  retryable: z.boolean(),
+  source: z.enum(["gateway", "tool", "child-agent", "system"]),
+  details: z.json().optional(),
+});
+export type ErrorInterrupt = { kind: "error"; error: MeridianError };
+export type Interrupt = ErrorInterrupt;
+export function errorInterrupt(error: MeridianError): ErrorInterrupt {
+  return { kind: "error", error };
+}
 /**
  * Purpose: Maps domain and transport failures to the canonical MeridianError envelope and shared HTTP/WS serialization.
  * Key decisions: one JSON body shape for the error interrupt arm; WS adds only routing fields (`type`, `threadId`).
  */
-import type { JsonObject, JsonValue } from "../threads/index.js";
-import type { ErrorInterrupt, MeridianError, MeridianErrorSource } from "./index.js";
 
 const MERIDIAN_ERROR_SOURCES = new Set<MeridianErrorSource>([
   "gateway",
@@ -152,11 +174,6 @@ const WS_BOUNDARY_CODES: Record<string, Pick<MeridianError, "code" | "retryable"
   already_active: { code: "already_active", retryable: false },
   rate_limited: { code: "rate_limited", retryable: true },
   bad_request: { code: "bad_request", retryable: false },
-  interrupt_not_pending: { code: "interrupt_not_pending", retryable: false },
-  interrupt_correlation_mismatch: {
-    code: "interrupt_correlation_mismatch",
-    retryable: false,
-  },
   internal: { code: "internal", retryable: false },
 };
 

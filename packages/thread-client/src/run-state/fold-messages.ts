@@ -7,7 +7,12 @@
  * writer provenance. A switch, or a control row, never counts toward busy, the tray or Stop.
  */
 
-import type { PendingInboxItem, SendNowRequest, StopRequest } from "@meridian/contracts/threads";
+import type {
+  PendingInboxItem,
+  SendNowRequest,
+  StopRequest,
+  ThreadAsk,
+} from "@meridian/contracts/threads";
 import type { RunStateView } from "./run-state-view";
 
 const isWriterMessage = (item: PendingInboxItem) =>
@@ -98,10 +103,21 @@ export function isBlockedForUsage(view: RunStateView, userTurnId: string): boole
   return usageBlockedMessages(view).some((item) => item.id === userTurnId);
 }
 
-/** The queued tray: writer messages waiting on the open reply, or all of them while a start is blocked. */
-export function waitingWriterMessages(view: RunStateView): PendingInboxItem[] {
+const deliveryWaitingWriterMessages = (view: RunStateView): PendingInboxItem[] => {
   const blocked = view.record?.blocked != null;
   return writerItems(view).filter((item) => blocked || item.deliveryState === "waiting");
+};
+
+/**
+ * The queued tray, from the same authoritative facts that govern server delivery: writer messages
+ * waiting on the open reply, or all of them while usage or an open ask blocks delivery.
+ */
+export function waitingWriterMessages(
+  view: RunStateView,
+  asks: Iterable<Pick<ThreadAsk, "status">>,
+): PendingInboxItem[] {
+  for (const ask of asks) if (ask.status === "open") return writerItems(view);
+  return deliveryWaitingWriterMessages(view);
 }
 
 /** Stop's body, from the record the writer sees and this device's unanswered messages. */
@@ -118,10 +134,13 @@ export function stopRequest(view: RunStateView, requestId: string): StopRequest 
  * Send now's body: the open execution the writer saw and every writer message the record shows
  * waiting. Null when there is nothing to send now (no open reply, or nothing queued).
  */
-export function sendNowRequest(view: RunStateView): SendNowRequest | null {
+export function sendNowRequest(
+  view: RunStateView,
+  asks: Iterable<Pick<ThreadAsk, "status">>,
+): SendNowRequest | null {
   const record = view.record;
   const executionId = record?.execution?.executionId;
-  const waiting = waitingWriterMessages(view).map((item) => item.id);
+  const waiting = waitingWriterMessages(view, asks).map((item) => item.id);
   if (!record || !executionId || waiting.length === 0) return null;
   return { seenThrough: record.sentThrough, seenExecutionId: executionId, waiting };
 }
@@ -136,7 +155,7 @@ export function handBackCandidates(
   view: RunStateView,
   scope: { seenThrough: number; mine: readonly string[] },
 ): string[] {
-  const ids = waitingWriterMessages(view)
+  const ids = deliveryWaitingWriterMessages(view)
     .filter((item) => item.seq <= scope.seenThrough)
     .map((item) => item.id);
   return [...new Set([...ids, ...scope.mine])];
