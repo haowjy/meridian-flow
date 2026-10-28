@@ -597,8 +597,8 @@ function WorkToolTitle({ tool }: { tool: ToolView }) {
   return <span className="block truncate">{toolActivityPhrase(tool).verb}</span>;
 }
 
-/** A failed call's server error message, for tools whose failure has nothing else to open. */
-function errorMessageExpand(tool: ToolView): ToolExpand | null {
+/** A failed call's server error message: what a failed row opens when its renderer has nothing else. */
+export function errorMessageExpand(tool: ToolView): ToolExpand | null {
   if (!tool.isError || tool.result == null) return null;
   const message = meridianErrorFromStructuredToolOutput(tool.result).message;
   if (!message) return null;
@@ -643,12 +643,10 @@ const RENDERERS: Record<string, ToolRenderer> = {
   },
   work: {
     title: (tool) => <WorkToolTitle tool={tool} />,
-    expand: errorMessageExpand,
   },
   // Only a failed `ask_user` has a row; a question that was asked shows as the takeover and receipt.
-  ask: {
+  ask_user: {
     title: () => t`Couldn't ask a question`,
-    expand: errorMessageExpand,
   },
   thread_message: THREAD_MESSAGE_RENDERER,
   thread_report: THREAD_REPORT_RENDERER,

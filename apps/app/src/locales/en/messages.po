@@ -2485,6 +2485,10 @@ msgstr "Exploring folders…"
 msgid "Extra usage"
 msgstr "Extra usage"
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Failed"
+msgstr "Failed"
+
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
 msgstr "Failed to load image"
@@ -4513,6 +4517,7 @@ msgstr "Stop the reply and send now"
 msgid "stopped"
 msgstr "stopped"
 
+#: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"

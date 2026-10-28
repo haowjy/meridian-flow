@@ -941,7 +941,7 @@ msgstr ""
 #: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/subagent/SubagentMark.tsx
 msgid "Asked a question"
-msgstr ""
+msgstr "提出了问题"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -2484,6 +2484,10 @@ msgstr "正在浏览文件夹…"
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
 msgstr ""
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Failed"
+msgstr "失败"
 
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
@@ -4513,6 +4517,7 @@ msgstr ""
 msgid "stopped"
 msgstr "已停止"
 
+#: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"

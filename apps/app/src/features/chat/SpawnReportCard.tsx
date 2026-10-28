@@ -110,6 +110,14 @@ export function SpawnReportCard({
             </p>
           ) : reason ? (
             <p className="text-xs text-muted-foreground">{reason}</p>
+          ) : run.status === "stopped" ? (
+            <p className="text-xs text-muted-foreground">
+              {resolvedOutcome === "failed" || status === "failed" ? (
+                <Trans>Failed</Trans>
+              ) : (
+                <Trans>Stopped</Trans>
+              )}
+            </p>
           ) : undefined
         }
       />
