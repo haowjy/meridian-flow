@@ -1,11 +1,17 @@
 // Resolves agent-visible block hashes to document positions with structured ambiguity.
 
 import type { BlockRef, DocHandle } from "../handles.js";
-import type { DocumentModel } from "../ports/model.js";
+import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
 
 export interface HashLocateContext {
   doc: DocHandle;
   model: DocumentModel;
+  /** The one projection the resolver indexes into. */
+  projectedBlocks(): readonly ProjectedBlock[];
+}
+
+export function blockRefs(ctx: Pick<HashLocateContext, "projectedBlocks">): BlockRef[] {
+  return ctx.projectedBlocks().map((block) => block.ref);
 }
 
 export type HashLocationFailure =
@@ -38,7 +44,7 @@ export function locateBlockByHash(
     };
   }
 
-  const blocks = ctx.model.getBlocks(ctx.doc);
+  const blocks = blockRefs(ctx);
   const index = blocks.indexOf(lookup.block);
   if (index < 0) {
     return {

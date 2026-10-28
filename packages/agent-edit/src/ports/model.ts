@@ -124,7 +124,7 @@ export interface AgentEditModel extends DocumentModel {
    *
    * Projects on the document it is given. An element the schema can't build is deleted from
    * that document (y-prosemirror's repair) and left out of the result, so callers must hand
-   * over a disposable copy, never a document other peers share. Hashes cover the surviving
+   * over a private copy (one no other peer writes to), never a shared document. Hashes cover the surviving
    * blocks only.
    */
   projectBlocks(doc: DocHandle): ProjectedBlock[];

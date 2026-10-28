@@ -14,7 +14,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { expect, it } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { prosemirrorBlocksForDoc } from "../model/y-prosemirror.js";
+import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { schema } from "../tool/test-support/write-tool-harness.js";
 import type { ShownLink } from "./correspondence.js";
 import {
@@ -73,7 +73,9 @@ function elsewhere(doc: Y.Doc, text = "Elsewhere, later."): void {
 }
 
 function stored(doc: Y.Doc): Stored {
-  const [first] = prosemirrorBlocksForDoc(doc, schema);
+  const [first] = yProsemirrorModel(schema)
+    .projectBlocks(doc)
+    .map((block) => block.node);
   const out: Stored = [];
   first?.forEach((child) => {
     const ref = (child.marks.find((mark) => mark.type.name === "link")?.attrs.ref ?? null) as
@@ -195,7 +197,12 @@ async function runFourWays(row: MatrixRow, producer: Producer): Promise<void> {
 /** Converged: the same blocks, marks and attrs (client ids differ between client orders). */
 function sameContent(left: Y.Doc, right: Y.Doc): boolean {
   const json = (doc: Y.Doc) =>
-    JSON.stringify(prosemirrorBlocksForDoc(doc, schema).map((node) => node.toJSON()));
+    JSON.stringify(
+      yProsemirrorModel(schema)
+        .projectBlocks(doc)
+        .map((block) => block.node)
+        .map((node) => node.toJSON()),
+    );
   return json(left) === json(right);
 }
 

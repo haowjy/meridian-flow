@@ -134,20 +134,6 @@ export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
   return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
 }
 
-export function toProsemirrorBlock(
-  doc: Y.Doc,
-  block: Y.XmlElement | BlockRef,
-  schema: Schema,
-): PMNode {
-  const element = unwrapBlock(toRef(block));
-  const blocks = getTopLevelXmlBlocks(doc);
-  const index = blocks.indexOf(element);
-  if (index < 0) throw new Error("Y.XmlElement is not a top-level block in this document");
-  const pmBlock = prosemirrorRootOf(doc, schema).child(index);
-  if (!pmBlock) throw new Error("ProseMirror block not found for Y.XmlElement");
-  return pmBlock;
-}
-
 /**
  * One walk that pairs each top-level element with its node. Building the root repairs the
  * document (an element the schema can't build is deleted and dropped), so the surviving
@@ -169,11 +155,6 @@ function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
     hash: hashes[index],
     node: root.child(index),
   }));
-}
-
-/** The projected top-level nodes alone, for callers that need no handles or hashes. */
-export function prosemirrorBlocksForDoc(doc: Y.Doc, schema: Schema): PMNode[] {
-  return projectBlocks(doc, schema).map((block) => block.node);
 }
 
 export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newText: string): void {
@@ -271,7 +252,10 @@ export function applyInlineReplacements(
   schema: Schema,
 ): InlineReplacementResult {
   const element = unwrapBlock(toRef(block));
-  const current = toProsemirrorBlock(doc, element, schema);
+  const current = projectBlocks(doc, schema).find(
+    (block) => unwrapBlock(block.ref) === element,
+  )?.node;
+  if (!current) throw new Error("Y.XmlElement is not a top-level block in this document");
   const blockType = element.nodeName;
   if (current.type.name !== blockType) return blockTypeMismatch(blockType, current.type.name);
   if (!canReplaceInline(current) || !hasFlatInlineContent(current)) {
