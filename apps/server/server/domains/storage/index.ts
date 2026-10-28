@@ -15,6 +15,7 @@ export {
 export { createObjectRelease, type ObjectRelease } from "./object-release.js";
 export {
   createObjectStorageUrl,
+  drawObjectKey,
   objectStoreKeyFromStorageUrl,
   previewObjectKey,
 } from "./object-storage-url.js";

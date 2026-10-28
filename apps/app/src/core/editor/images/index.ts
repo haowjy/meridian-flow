@@ -31,7 +31,6 @@ export {
 export {
   acceptsInlineImage,
   assetDocumentIdFromSrc,
-  browserDrawsImage,
   browserPictureSource,
   imageAttrsFromUpload,
   signedUrlRefreshDelayMs,

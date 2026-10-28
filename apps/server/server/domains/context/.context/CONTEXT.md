@@ -317,7 +317,9 @@ a typed error. Binary creation and upload use the binary storage path and do
 not erase storage or MIME metadata through a text write. `writeBinary` takes
 `hasPreview`: the caller stores the original and its preview first
 (`saveImagePreview`, [storage](../../storage/.context/CONTEXT.md#previews)).
-Reads sign the preview beside the original (`previewUrl`, `previewSignedUrl`).
+Reads sign the original for download and answer `drawUrl`, what to draw:
+the preview, the original when browsers draw that type, or nothing (the file
+card). `drawObjectKey` in storage is the one place that decides it.
 
 Text writes route provenance through `collab-document-sync.ts`: agent writes
 carry turn identity, human writes carry user identity, and omitted provenance

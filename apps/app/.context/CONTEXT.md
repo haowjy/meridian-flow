@@ -240,12 +240,15 @@ Related server contracts live in [the server context](../../server/server/domain
 ## Showing a saved file
 
 Every saved file is displayed. An image browsers can't draw has a server-made
-preview, and the read answers carry `previewUrl` / `previewSignedUrl` beside
-the original's URL. The context viewer and the editor's `image` and `figure`
-nodes draw the preview when present. Anything still undrawable (an unknown
-binary, an image with no preview, a decode failure) is a `FileCard`: name, type,
-size, Download. An `<img>` failure gets one automatic URL refresh, then the card;
-Retry stays only for a signed-URL request that failed. Draft review opens any
+preview. The read answers carry the original's URL (Download) and `drawUrl`,
+what to draw: the preview, the original, or nothing. The server decides; the
+client keeps no list of drawable types. The context viewer and the editor's
+`image` and `figure` nodes draw `drawUrl`; with none, or when an unknown
+binary, an image with no preview, or a decode failure leaves nothing drawable,
+a `FileCard` shows name, type, size, Download. An `<img>` failure gets one
+automatic URL refresh, then the card, and the editor then treats that picture
+as undrawable: it keeps re-signing the card's Download before expiry and never
+retries the `<img>`. Retry stays only for a signed-URL request that failed. Draft review opens any
 binary draft (`ThreadDraftListItem.binary`) in the same preview.
 
 ## Import activity

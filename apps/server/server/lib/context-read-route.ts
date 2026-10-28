@@ -21,9 +21,9 @@ import {
   type WorkRepository,
 } from "../domains/projects/index.js";
 import {
+  drawObjectKey,
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
-  previewObjectKey,
 } from "../domains/storage/index.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import { documentTarget, requireFileGrant } from "./file-access-http.js";
@@ -218,17 +218,22 @@ export async function handleContextReadRequest(
       throw createError({ statusCode: 404, message: "Context path not found" });
     throw createError({ statusCode: 502, message: "Failed to resolve context file URL" });
   }
+  const mimeType = ref.value.mimeType ?? "application/octet-stream";
+  const drawKey = drawObjectKey({ key, mimeType, hasPreview: ref.value.hasPreview ?? false });
   // A missing or unsignable preview leaves the file card, which the original's URL still serves.
-  const preview = ref.value.hasPreview
-    ? await deps.objectStore.getSignedUrl(previewObjectKey(key))
-    : null;
+  const drawUrl =
+    drawKey === key
+      ? signed.value
+      : drawKey
+        ? await deps.objectStore.getSignedUrl(drawKey).then((r) => (r.ok ? r.value : null))
+        : null;
   return {
     kind: "binary",
     path: path.path,
     url: signed.value,
-    ...(preview?.ok ? { previewUrl: preview.value } : {}),
+    ...(drawUrl ? { drawUrl } : {}),
     fileType: ref.value.fileType,
-    mimeType: ref.value.mimeType ?? "application/octet-stream",
+    mimeType,
     sizeBytes: ref.value.sizeBytes ?? null,
   };
 }
