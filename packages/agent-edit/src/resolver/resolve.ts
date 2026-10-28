@@ -14,7 +14,7 @@ import type { BlockRef, DocHandle } from "../handles.js";
 import type { LineageRange } from "../lineage/range-set.js";
 import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
-import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
 import { wordHunks } from "../word-hunks.js";
 import { alignBlocks } from "./block-alignment.js";
@@ -25,8 +25,14 @@ import {
   spliceFindMatches,
   type TextFindMatch,
 } from "./find.js";
-import { blockRefs, locateBlockByHash } from "./hash-locator.js";
-import { type BlockScope, resolveScope, resolveSearchScope, type ScopeFailure } from "./scope.js";
+import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
+import {
+  type BlockScope,
+  resolveScope,
+  resolveSearchScope,
+  type ScopeFailure,
+  type ScopeResult,
+} from "./scope.js";
 
 export type WriteCommandName = "insert" | "replace" | "remove";
 
@@ -47,6 +53,8 @@ export interface ResolveWriteParams {
   in?: unknown;
   around?: string;
   all?: boolean;
+  /** Target every block of the document, whatever its repaired size turns out to be (`in` is ignored). */
+  wholeDocument?: boolean;
 }
 
 export interface ResolveWriteContext {
@@ -112,9 +120,9 @@ export function planWrite(
   // this one list. The resolver does not change the document, so it stays current.
   const projected = ctx.model.projectBlocks(doc);
   const concreteCtx: ConcreteResolveContext = {
+    ...hashLocateContext(ctx.model, projected),
     ...ctx,
     doc,
-    projectedBlocks: () => projected,
   };
   const normalized = normalizeParams(concreteCtx, params);
   const contentCheck = validateContent(concreteCtx, normalized);
@@ -237,8 +245,7 @@ function assignScope(
 
 /** A scope is always a contiguous run of top-level blocks. */
 function scopeNodes(ctx: ConcreteResolveContext, scope: BlockScope): Block[] {
-  return ctx
-    .projectedBlocks()
+  return ctx.projected
     .slice(scope.startIndex, scope.startIndex + scope.blocks.length)
     .map((block) => block.node);
 }
@@ -309,8 +316,7 @@ function replaceScopeWithCopies(
   scope: BlockScope,
   copies: readonly Block[],
 ): PlannedWrite {
-  const anchor =
-    scope.startIndex > 0 ? ctx.projectedBlocks()[scope.startIndex - 1]?.ref : undefined;
+  const anchor = scope.startIndex > 0 ? ctx.projected[scope.startIndex - 1]?.ref : undefined;
   return {
     steps: [
       { kind: "edits", edits: [insertEdit(params, anchor, copies), ...deleteEdits(params, scope)] },
@@ -338,10 +344,10 @@ function planReplace(
   }
 
   const target = params.in ?? fragmentScope(params);
-  if (target === undefined) {
+  if (target === undefined && !params.wholeDocument) {
     return error("invalid_write", "replace needs `in`, `find` or a #heading-slug in path");
   }
-  const scope = resolveScope(ctx, target, { allowSlugFallback: false });
+  const scope = writeScope(ctx, params, target);
   if (!scope.ok) return scopeError(scope);
   if (params.blocks) {
     if (params.blocks.length === 0) return error("invalid_write", "from selected no blocks");
@@ -357,17 +363,26 @@ function planRemove(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): PlannedWrite | ResolveWriteFailure {
-  const scope = resolveScope(ctx, params.in ?? fragmentScope(params), {
-    allowSlugFallback: false,
-  });
+  const scope = writeScope(ctx, params, params.in ?? fragmentScope(params));
   if (!scope.ok) return scopeError(scope);
   return { steps: [{ kind: "edits", edits: deleteEdits(params, scope.scope) }] };
 }
 
-interface ConcreteResolveContext extends Omit<ResolveWriteContext, "links"> {
+/** The blocks a replace or remove targets; a whole-document write takes the repaired document's. */
+function writeScope(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+  target: unknown,
+): ScopeResult {
+  return params.wholeDocument
+    ? resolveSearchScope(ctx)
+    : resolveScope(ctx, target, { allowSlugFallback: false });
+}
+
+interface ConcreteResolveContext
+  extends Omit<ResolveWriteContext, "links">,
+    Omit<HashLocateContext, "model"> {
   doc: DocHandle;
-  /** Every top-level block, in document order. */
-  projectedBlocks(): readonly ProjectedBlock[];
 }
 
 function normalizeParams(
@@ -432,7 +447,7 @@ function lowerInsertPosition(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
 ): ResolveWriteFailure | { ok: true; after?: BlockRef } {
-  const blocks = blockRefs(ctx);
+  const { blocks } = ctx;
   if (params.after) {
     const located = locateBlockByHash(ctx, params.after);
     if (!located.ok) return scopeError(located);
@@ -480,10 +495,7 @@ function planFindMatches(
   for (const group of groupFindMatches(matches).reverse()) {
     const groupSource = ctx.codec
       .serializeBlockBodies(
-        ctx
-          .projectedBlocks()
-          .slice(group.startIndex, group.endIndex + 1)
-          .map((block) => block.node),
+        ctx.projected.slice(group.startIndex, group.endIndex + 1).map((block) => block.node),
       )
       .join("\n\n");
     const spliced = spliceFindMatches(
@@ -522,7 +534,7 @@ function lowerPlainTextFindMatches(
     if (match.rangeSource !== ctx.model.getText(element)) return null;
     // A block holding a link goes through ref assignment, so a ref- or title-only
     // change is never filtered out as equal text.
-    const node = ctx.projectedBlocks()[match.startIndex]?.node;
+    const node = ctx.projected[match.startIndex]?.node;
     if (!node || walkLinkOccurrences([node]).length > 0) return null;
     const existing = byBlock.get(element);
     if (existing) existing.push(match);
@@ -661,7 +673,7 @@ function replaceScope(
   const oldBlocks = scope.blocks;
   const oldNodes = scopeNodes(ctx, scope);
   let anchor: BlockRef | undefined =
-    scope.startIndex > 0 ? ctx.projectedBlocks()[scope.startIndex - 1]?.ref : undefined;
+    scope.startIndex > 0 ? ctx.projected[scope.startIndex - 1]?.ref : undefined;
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
   let keptBlocks = false;
