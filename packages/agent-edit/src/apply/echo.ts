@@ -3,20 +3,16 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
-import type { AgentEditModel, ContentLineage } from "../ports/model.js";
+import type { AgentEditModel } from "../ports/model.js";
 import type { ApplyEchoHunk } from "./types.js";
 
 export interface BlockSnapshot {
   hash: string;
   clientID: number;
   clock: number;
-  /** Hash-independent canonical rendering used by provenance classification. */
-  renderedContent: string;
   /** Canonical hashless block body. */
   body: string;
   serialized: string;
-  /** Visible prose ancestry; identities come from CRDT items, never text bytes. */
-  lineage: readonly ContentLineage[];
 }
 
 export interface EchoInput {
@@ -37,13 +33,11 @@ export function snapshotBlocks(
     projected.map((block) => block.node),
     projected.map((block) => block.hash),
   );
-  return projected.map(({ ref, id, hash, node }, index) => ({
+  return projected.map(({ id, hash }, index) => ({
     hash,
     ...id,
-    renderedContent: `${node.type.name}|${bodies[index]}`,
     body: bodies[index],
     serialized: toHashline(hash, bodies[index]),
-    lineage: model.getVisibleContentLineage(ref),
   }));
 }
 
@@ -73,7 +67,7 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
  * to the document, merged, in order. The echo's window.
  * A target of -1 (an insert at the start) widens to the first block.
  */
-export function windowOf(targets: Iterable<number>, blockCount: number): number[] {
+function windowOf(targets: Iterable<number>, blockCount: number): number[] {
   const indexes = new Set<number>();
   for (const target of targets) {
     for (

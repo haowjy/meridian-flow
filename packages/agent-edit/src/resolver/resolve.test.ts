@@ -13,7 +13,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
-import { Doc, type XmlElement } from "yjs";
+import { Doc, XmlElement } from "yjs";
 import { editSegments } from "../apply/segments.js";
 import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
 import { type AgentEditCodec, createAgentEditCodecFactory } from "../codec-adapter.js";
@@ -221,7 +221,10 @@ describe("resolveWrite", () => {
     const doc = createDoc(collisionMarkdown());
     const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
 
-    const scope = resolveScope({ doc, model }, fixture.sharedPrefix);
+    const scope = resolveScope(
+      { doc, model, projectedBlocks: () => model.projectBlocks(doc) },
+      fixture.sharedPrefix,
+    );
     expect(scope).toMatchObject({ ok: false, code: "ambiguous" });
     if (scope.ok) throw new Error("expected ambiguous scope");
     if (scope.code !== "ambiguous") throw new Error(`expected ambiguous scope, got ${scope.code}`);
@@ -260,6 +263,23 @@ describe("resolveWrite", () => {
         expect(result.error.message).toContain(candidate.displayHash);
       }
     }
+  });
+
+  it("indexes scopes against the repaired block list when the document holds an unbuildable block", () => {
+    const doc = createDoc("alpha\n\nbeta needle\n\ngamma needle");
+    doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(1, [new XmlElement("not_a_node")]);
+    const [, , beta, gamma] = blockHashesForDoc(doc);
+
+    const edits = expectOk(
+      resolve(doc, {
+        command: "replace",
+        content: "X",
+        find: "needle",
+        in: `${beta}..${gamma}`,
+        all: true,
+      }),
+    );
+    expect(edits).toHaveLength(2);
   });
 });
 
