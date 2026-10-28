@@ -255,7 +255,7 @@ Portless + tmux (not raw `localhost:3000`). See [AGENTS.md — Dev environment](
 pnpm dev                  # start (tailscale serve by default)
 pnpm dev --no-tailscale   # local-only (no Tailscale exposure)
 pnpm dev --funnel         # public internet via Tailscale Funnel
-pnpm dev --print          # dry-run: print the session plan (secrets redacted)
+pnpm dev --print          # dry-run: print the session plan (the command holds no secrets)
 pnpm dev --stop           # stop this worktree's tmux session + prune routes
 pnpm dev:stacks           # list every checkout's stack and its memory
 pnpm dev --restart        # stop + restart (preserves mode unless --no-tailscale/--funnel)

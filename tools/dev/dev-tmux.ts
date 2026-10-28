@@ -209,7 +209,7 @@ async function verifyAndPublish({
 }
 
 async function main(): Promise<void> {
-  const store = new TmuxSessionStore(repoRoot, { ...process.env });
+  const store = new TmuxSessionStore(repoRoot);
   const tailscale = new TailscaleDevLifecycle();
   const options = parseDevCliOptions({ argv: process.argv.slice(2) });
   const identity = resolveCheckoutSessionIdentity(repoRoot);
@@ -257,7 +257,7 @@ async function main(): Promise<void> {
     if (store.legacyDefaultServerHasSession(name))
       throw new Error(
         `a dev stack from an older pnpm dev is still on your default tmux server as '${name}'. ` +
-          `Stop it with: tmux kill-session -t =${name}  (or pnpm dev --stop from the previous build), then retry.`,
+          `Stop it with: tmux -L default kill-session -t =${name}  (or pnpm dev --stop from the previous build), then retry.`,
       );
   }
   if (options.stop) {

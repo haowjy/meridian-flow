@@ -150,8 +150,8 @@ export function resolveLiveWorktreeDatabaseNames(
 /**
  * Fill step shared by every env consumer: sets variables that are still unset
  * from the checkout's own `.env.local`, then the main checkout's `.env` (so a
- * worktree override beats the shared file, and both lose to the caller's
- * environment), and pins `LOG_DIR`. `.env.local` may not define a database URL:
+ * worktree override beats the shared file, and both lose to a non-empty value in the
+ * caller's environment), and pins `LOG_DIR`. `.env.local` may not define a database URL:
  * the main `.env` is the one source of the base database.
  */
 export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
@@ -166,7 +166,7 @@ export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
   }
   for (const file of [local, readMainEnvFile(repoRoot)]) {
     for (const [key, value] of Object.entries(file)) {
-      if (env[key] === undefined) env[key] = value;
+      if (!env[key]) env[key] = value;
     }
   }
 
