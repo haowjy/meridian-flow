@@ -36,6 +36,8 @@ export interface ListingSource {
   links?: ShownCommandLinks & { codec: AgentEditCodec };
   ownRemoved?: ReadonlySet<string>;
   written?: readonly Uint8Array[];
+  /** `doc`'s projection when the caller already took it and nothing has changed `doc` since. */
+  projected?: readonly ProjectedBlock[];
   ownActorTurnIds?: ReadonlySet<string>;
   /** Host journal high-water mark for `doc`. */
   position?: number;
@@ -128,8 +130,8 @@ export function observeRendered(
     (id, index, all) =>
       all.findIndex((candidate) => frontierBlockId(candidate) === frontierBlockId(id)) === index,
   );
-  let projected: ProjectedBlock[] | undefined;
-  const project = (): ProjectedBlock[] =>
+  let projected = source.projected;
+  const project = (): readonly ProjectedBlock[] =>
     (projected ??= source.model.projectBlocks(toDocHandle(doc)));
   const shown = shownInFull(project, models);
   for (const id of writtenOnlyBy(doc, source.written ?? [])) shown.add(id);

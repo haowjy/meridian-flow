@@ -3,7 +3,7 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
 import type { ApplyEchoHunk } from "./types.js";
 
 export interface BlockSnapshot {
@@ -28,7 +28,14 @@ export function snapshotBlocks(
   model: AgentEditModel,
   codec: AgentEditCodec,
 ): BlockSnapshot[] {
-  const projected = model.projectBlocks(doc);
+  return snapshotProjected(model.projectBlocks(doc), codec);
+}
+
+/** `snapshotBlocks` over a projection the caller already holds. */
+export function snapshotProjected(
+  projected: readonly ProjectedBlock[],
+  codec: AgentEditCodec,
+): BlockSnapshot[] {
   const bodies = codec.serializeBlocks(
     projected.map((block) => block.node),
     projected.map((block) => block.hash),
