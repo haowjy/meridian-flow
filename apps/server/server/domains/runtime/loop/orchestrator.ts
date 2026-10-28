@@ -2586,7 +2586,7 @@ async function executeLoop({
                 return cancelExit();
               }
 
-              if (call.name === "ask" && (batchHasReturnResult || acceptedAsk)) {
+              if (call.name === "ask_user" && (batchHasReturnResult || acceptedAsk)) {
                 const reason = batchHasReturnResult
                   ? "You returned a result; there's no one left to answer."
                   : "One question at a time: ask this after the answer arrives";
@@ -2602,7 +2602,7 @@ async function executeLoop({
                 allBlocks.push(refused.block);
                 continue;
               }
-              if (call.name === "ask") acceptedAsk = true;
+              if (call.name === "ask_user") acceptedAsk = true;
 
               if (continuation.kind === "notes") {
                 const withinBudget = continuation.remaining > 0;

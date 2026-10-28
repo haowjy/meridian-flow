@@ -1,6 +1,6 @@
 # Durable questions
 
-This recipe checks a primary chat's question from the model's `ask` call through
+This recipe checks a primary chat's question from the model's `ask_user` call through
 its continuation. Run it on an owned stack and database with
 `MODEL_PROVIDER=mock`. Record the commit, date, routes, and command output in the
 active work directory.
@@ -14,7 +14,7 @@ active work directory.
 
    ```json
    {
-     "name": "ask",
+     "name": "ask_user",
      "arguments": {
        "question": "Which point of view should this scene use?",
        "options": [
@@ -70,7 +70,7 @@ every queued-message step below.
    durable writer turn and pending run-state item exist, and the browser shows
    the bubble as queued, but no model request adopts it. Answer the ask. PASS:
    one continuation adopts the continuation row and queued message together.
-   Its first model request orders the ask tool use, tool result, then queued
+   Its first model request orders the `ask_user` tool use, tool result, then queued
    writer message, and produces exactly one reply; the message is acknowledged
    exactly once.
 2. Repeat with

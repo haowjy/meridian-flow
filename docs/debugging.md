@@ -427,7 +427,7 @@ from the real runtime, not fabricated model output.
 - [Truncated response](../tools/mf/fixtures/mock-truncated.json): a partial sentence with the provider's length finish reason.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.
 
-The `ask` tool is available in primary chats. Queue a tool call with the shape
+The `ask_user` tool is available in primary chats. Queue a tool call with the shape
 shown in [the ask QA recipe](qa/ask.md); answer it with `./mf thread answer`.
 It remains unavailable in child chats until question forwarding lands. A mock
 script does not bypass tool availability or permissions.

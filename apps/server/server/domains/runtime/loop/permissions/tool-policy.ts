@@ -16,7 +16,7 @@ export const TOOL_CATALOG = [
   "ls",
   "search",
   "skill",
-  "ask",
+  "ask_user",
   "spawn",
   "thread_message",
   "thread_report",
@@ -39,17 +39,15 @@ export function projectToolPolicy(
   configuration: Pick<ResolvedAgentConfiguration, "tools" | "disallowed-tools">,
   kind: Thread["kind"],
 ): ToolPolicy {
-  const denied = new Set(
-    (configuration["disallowed-tools"] ?? []).map((name) => (name === "ask_user" ? "ask" : name)),
-  );
+  const denied = new Set(configuration["disallowed-tools"] ?? []);
   const tools = new Set(
-    (configuration.tools ?? TOOL_CATALOG)
-      .map((name) => (name === "ask_user" ? "ask" : name))
-      .filter((name) => !denied.has(name) && name !== SUBAGENT_REPORT),
+    (configuration.tools ?? TOOL_CATALOG).filter(
+      (name) => !denied.has(name) && name !== SUBAGENT_REPORT,
+    ),
   );
   if (kind === "subagent") {
     // Remove this temporary exclusion when the subagent-question PR adds forwarding.
-    tools.delete("ask");
+    tools.delete("ask_user");
     tools.add(SUBAGENT_REPORT);
   }
   return tools;

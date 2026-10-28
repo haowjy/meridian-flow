@@ -70,7 +70,7 @@ An open ask takes over the composer (`ask/useAskTakeover.tsx`): the editor stays
 mounted and hidden, and text left in the own-answer field when the ask closes is
 appended to the draft. The asking turn draws its receipt after its items and
 before its deliveries (`ask/AskReceipt.tsx`): a delivery placed under the asking
-turn arrived after the question. The `ask` tool row itself is hidden. Ask
+turn arrived after the question. The `ask_user` tool row itself is hidden. Ask
 state and the answer command are `@meridian/thread-client`'s (`asks/`).
 
 ## Scrolling and run state
