@@ -108,13 +108,10 @@ import {
   createBoundAgentCatalog,
   createDrizzleAccountSkillInstallStore,
   createDrizzleAgentRevisionStore,
-  createGitHubMarsPackageFetcher,
   createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
-  defaultPackageSeedConfigFromEnv,
-  type MarsPackageFetcher,
-  seedDefaultAgentPackages,
   seedGeneralAgent,
+  seedLaunchAgentPackage,
 } from "../domains/packages/index.js";
 import {
   type AccountSettingsRepository,
@@ -304,7 +301,6 @@ export type AppServices = {
   agentCatalog: BoundAgentCatalog;
   eventSink: EventSink;
   eventQuery?: EventQuery;
-  marsPackageFetcher: MarsPackageFetcher;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -394,7 +390,6 @@ export type ProductionAppPorts = {
   billingUsage: BillingUsagePolicy;
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
-  marsPackageFetcher: MarsPackageFetcher;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -623,14 +618,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
   });
   await seedGeneralAgent(agentRevisions, defaultModel);
-  const marsPackageFetcher = createGitHubMarsPackageFetcher({
-    githubToken: environment.GITHUB_TOKEN,
-  });
-  await seedDefaultAgentPackages({
-    store: agentRevisions,
-    fetcher: marsPackageFetcher,
-    config: defaultPackageSeedConfigFromEnv(environment),
-  });
+  await seedLaunchAgentPackage(agentRevisions);
   const users = createDrizzleUserRepository({ db });
   const accountSkillInstalls = createDrizzleAccountSkillInstallStore(db);
   const projects = createDrizzleProjectBootstrapRepository({
@@ -726,7 +714,6 @@ export async function createProductionAppPorts(input: {
     billingUsage: billingDomain.usagePolicy,
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
-    marsPackageFetcher,
     accountSettings,
     workingSet,
     recentDocuments,
@@ -1168,7 +1155,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     }),
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
-    marsPackageFetcher: ports.marsPackageFetcher,
     accountSettings: ports.accountSettings,
     workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
@@ -1661,11 +1647,6 @@ export function createInMemoryAppServices(): AppServices {
         agentExecutionUnavailableReasons(definition, {}, model),
     }),
     eventSink: createNoopEventSink(),
-    marsPackageFetcher: {
-      async fetch() {
-        throw new Error("in-memory Mars package fetcher is not implemented");
-      },
-    },
     accountSettings,
     workingSet,
     recentDocuments,

@@ -1,9 +1,8 @@
 /** Live provider probe for the pure compaction request estimator. */
 
 import { readFile } from "node:fs/promises";
-import { loadEnvFile } from "node:process";
-import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
+import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
 import type { GenerateRequest } from "../server/domains/runtime/gateway/index.js";
 import { createGatewayFromEnv } from "../server/domains/runtime/gateway/index.js";
 import {
@@ -12,16 +11,7 @@ import {
 } from "../server/domains/runtime/loop/compaction/index.js";
 
 const corpusUrl = new URL("./fixtures/compaction-estimator-probe.json", import.meta.url);
-for (const envUrl of [
-  new URL("../../../.env", import.meta.url),
-  new URL("../.env", import.meta.url),
-]) {
-  try {
-    loadEnvFile(fileURLToPath(envUrl));
-  } catch {
-    // Environment may be supplied by the caller or the shared root .env may be absent.
-  }
-}
+applyDevEnvToProcess();
 
 type CorpusDefinition = {
   id: string;

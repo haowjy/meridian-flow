@@ -37,7 +37,7 @@ for i in $(seq 20); do sleep 1; seen | grep -q '"seenExecutionId":"' && break; d
 queued with `./mf mock script '<steps>' --match '<text>'` stays until `./mf mock clear`; run that after
 a step that queued one. An error step is `{"error":{"status":400,"message":"boom"}}`.
 
-SQL reads (`psql "$DATABASE_URL"` for this worktree's database): the inbox rows with their hand-back
+SQL reads (`tools/dev/psql` for this worktree's database): the inbox rows with their hand-back
 mark, the open execution, and the turns.
 
 ```sql

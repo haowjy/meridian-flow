@@ -11,9 +11,13 @@
  *
  * Usage: node tools/ci/check-pr-body.mjs <changed-files.txt> [body.md]
  *   PR_BODY — the body in CI (env, so attacker-controlled markdown never
- *             reaches the shell); the body.md argument is for checking a
- *             draft locally before `gh pr create`.
+ *             reaches the shell); the body.md argument checks a file.
+ *        node tools/ci/check-pr-body.mjs --local [body.md]
+ *   `pnpm check:pr-body` and the last step of `pnpm check`: the draft, else this
+ *   branch's open PR body, against `git diff origin/main...HEAD`. Skips when
+ *   there is neither, so `pnpm check` passes before a PR exists.
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import {
   CHANGELOG_CATEGORIES,
@@ -58,16 +62,48 @@ function hasAuthoredLine(content) {
     .some((line) => line && !scaffoldLines.has(line));
 }
 
-if (!process.argv[2] || (process.env.PR_BODY === undefined && !process.argv[3])) {
+const local = process.argv[2] === "--local";
+if (!local && (!process.argv[2] || (process.env.PR_BODY === undefined && !process.argv[3]))) {
   console.error("usage: node tools/ci/check-pr-body.mjs <changed-files.txt> [body.md]");
+  console.error("       node tools/ci/check-pr-body.mjs --local [body.md]");
   console.error("       (PR_BODY env replaces body.md in CI)");
   process.exit(1);
 }
 
-const body = process.env.PR_BODY ?? readFileSync(process.argv[3], "utf8");
+/** The branch's open PR body, or null when `gh` is missing or the branch has no PR. */
+function currentPrBody() {
+  try {
+    return execFileSync("gh", ["pr", "view", "--json", "body", "--jq", ".body"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
+
+let body;
+let changedFileText;
+if (local) {
+  // `pnpm check:pr-body [draft.md]`: the draft, else this branch's open PR, against
+  // the same file set CI reads (the PR's commits since it left main).
+  body = process.argv[3] ? readFileSync(process.argv[3], "utf8") : currentPrBody();
+  if (body === null) {
+    console.log(
+      "check:pr-body: no PR for this branch yet; skipped. Check a draft with `pnpm check:pr-body <body.md>`.",
+    );
+    process.exit(0);
+  }
+  changedFileText = execFileSync("git", ["diff", "--name-only", "origin/main...HEAD"], {
+    encoding: "utf8",
+  });
+} else {
+  body = process.env.PR_BODY ?? readFileSync(process.argv[3], "utf8");
+  changedFileText = readFileSync(process.argv[2], "utf8");
+}
 // Trimmed like the body lines: a CRLF or copy-pasted entry must not slip past
 // the anchored UI_FILE match and silently skip the visual-evidence rule.
-const changedFiles = readFileSync(process.argv[2], "utf8")
+const changedFiles = changedFileText
   .split("\n")
   .map((line) => line.trim())
   .filter(Boolean);

@@ -9,7 +9,11 @@ import {
   isCiRunnerPostgres,
   isLocalDevPostgres,
 } from "./lib/dev-db";
-import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
+import {
+  applyDevEnvToProcess,
+  resolveCurrentRepoRoot,
+  resolveMainDatabaseNames,
+} from "./lib/dev-env";
 import { managedTestDatabaseUrl, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
 
 function run(
@@ -39,10 +43,11 @@ function run(
 }
 
 async function main(): Promise<void> {
+  const repoRoot = resolveCurrentRepoRoot();
+  applyDevEnvToProcess(repoRoot);
   const sourceDatabaseUrl = process.env.DATABASE_URL;
   if (!sourceDatabaseUrl) throw new Error("DB tests require DATABASE_URL.");
 
-  const repoRoot = resolveCurrentRepoRoot();
   const mainDatabaseNames = resolveMainDatabaseNames(repoRoot);
   const local = isLocalDevPostgres(sourceDatabaseUrl);
   const mainDatabaseName = mainDatabaseNames[0];

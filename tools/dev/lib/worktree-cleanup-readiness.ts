@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { devTmuxArgs } from "./dev-tmux-socket";
 
 const PRESERVABLE_EXECUTABLES = new Set([
   "bash",
@@ -258,19 +259,70 @@ function currentUserProcessCwds(): {
   return { entries, hiddenEntries, failures };
 }
 
+const PANE_FORMAT = "#{session_name}\t#{pane_id}\t#{pane_current_path}";
+
+function parsePanes(stdout: string): TmuxPane[] {
+  return stdout
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const [sessionName, paneId, paneCwd] = line.split("\t", 3);
+      return sessionName && paneId && paneCwd ? { sessionName, paneId, cwd: paneCwd } : undefined;
+    })
+    .filter((entry): entry is TmuxPane => entry !== undefined);
+}
+
+/** Panes of `pnpm dev` stacks, which live on their own socket, not the human's server. */
+function devSocketPanes(cwd: string): {
+  readonly entries: readonly TmuxPane[];
+  readonly failures: readonly string[];
+} {
+  const result = spawnSync("tmux", devTmuxArgs(["list-panes", "-a", "-F", PANE_FORMAT]), {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, LC_ALL: "C" },
+  });
+  if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") {
+    return { entries: [], failures: [] };
+  }
+  if (result.status !== 0) {
+    const detail = `${result.stderr ?? ""}`.trim();
+    // No server is normal; any other inspection failure must remain visible.
+    if (
+      /^(no server running on|error connecting to .* \(No such file or directory\))/m.test(detail)
+    )
+      return { entries: [], failures: [] };
+    return {
+      entries: [],
+      failures: [`could not inspect tmux dev sessions${detail ? `: ${detail}` : ""}`],
+    };
+  }
+  return { entries: parsePanes(result.stdout ?? ""), failures: [] };
+}
+
+/** The human's own server (`$TMUX` or the default socket) plus the dev socket. */
 function tmuxPanes(cwd: string): {
   readonly entries: readonly TmuxPane[];
   readonly failures: readonly string[];
 } {
-  const result = spawnSync(
-    "tmux",
-    ["list-panes", "-a", "-F", "#{session_name}\t#{pane_id}\t#{pane_current_path}"],
-    {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const human = humanServerPanes(cwd);
+  const dev = devSocketPanes(cwd);
+  return {
+    entries: [...human.entries, ...dev.entries],
+    failures: [...human.failures, ...dev.failures],
+  };
+}
+
+function humanServerPanes(cwd: string): {
+  readonly entries: readonly TmuxPane[];
+  readonly failures: readonly string[];
+} {
+  const result = spawnSync("tmux", ["list-panes", "-a", "-F", PANE_FORMAT], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 
   if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") {
     return { entries: [], failures: [] };
@@ -293,14 +345,7 @@ function tmuxPanes(cwd: string): {
     };
   }
 
-  const entries = `${result.stdout ?? ""}`
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => {
-      const [sessionName, paneId, paneCwd] = line.split("\t", 3);
-      return sessionName && paneId && paneCwd ? { sessionName, paneId, cwd: paneCwd } : undefined;
-    })
-    .filter((entry): entry is TmuxPane => entry !== undefined);
+  const entries = parsePanes(result.stdout ?? "");
   return { entries, failures: [] };
 }
 

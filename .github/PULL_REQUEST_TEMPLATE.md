@@ -16,7 +16,8 @@
 
 <!-- One line per change a user or developer will notice, written in the terms
      of whoever feels it. Start each line with Added:, Changed:, Fixed: or
-     Removed:. A refactor, test, documentation or tooling change nobody can
+     Removed:, at most 300 characters. A refactor, test, documentation or
+     tooling change nobody can
      notice says "None." and why. `pnpm changelog` builds the changelog from
      these lines. -->
 

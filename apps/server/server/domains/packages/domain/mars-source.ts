@@ -1,28 +1,12 @@
 /**
- * Mars package source parser/serializer: reads a Mars package directory and
- * parses mars.toml plus its markdown-fronted agent and skill definitions into
- * domain records (and serializes them back). Owns the on-disk Mars format; the
- * single module that knows the file layout.
+ * Mars file-format parsers: mars.toml, markdown frontmatter, and the canonical
+ * JSON form used for digests.
  */
-import { readdir, readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { parse as parseToml } from "smol-toml";
 import YAML from "yaml";
 
-import { normalizeAgentMetaFields } from "./agent-gateway-meta.js";
-import { booleanAt, isNodeError, objectAt, sha256, stringAt } from "./helpers.js";
-import { normalizeSkillFilesForChecksum, readSkillFileFromDisk } from "./skill-files.js";
-import type {
-  AgentConfigOverlay,
-  JsonObject,
-  MarsDependency,
-  PackageVisibility,
-  ParsedAgentDefinition,
-  ParsedMarsPackageSource,
-  ParsedMarsToml,
-  ParsedSkillDefinition,
-} from "./types.js";
+import { objectAt, stringAt } from "./helpers.js";
+import type { AgentConfigOverlay, JsonObject, PackageVisibility, ParsedMarsToml } from "./types.js";
 
 export function parseMarsToml(
   source: string,
@@ -49,62 +33,7 @@ export function parseMarsToml(
       ...(description ? { description } : {}),
       ...(visibility ? { visibility } : {}),
     },
-    dependencies: [
-      ...readDependencies(parsed.dependencies, false),
-      ...readDependencies(parsed["local-dependencies"], true),
-    ],
     agentOverlays: readAgentOverlays(parsed.agents),
-  };
-}
-
-export async function parseMarsPackageSource(sourceDir: string): Promise<ParsedMarsPackageSource> {
-  const marsToml = await readFile(path.join(sourceDir, "mars.toml"), "utf8");
-  const manifest = parseMarsToml(marsToml, { packageNameFallback: path.basename(sourceDir) });
-  const [agents, skills] = await Promise.all([
-    loadAgentDefinitions(sourceDir),
-    loadSkillDefinitions(sourceDir),
-  ]);
-  return { sourceDir, manifest, agents, skills };
-}
-
-export async function loadAgentDefinitions(packageDir: string): Promise<ParsedAgentDefinition[]> {
-  const agentsDir = path.join(packageDir, "agents");
-  const entries = await readOptionalDir(agentsDir);
-  const markdownFiles = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".md"));
-  return Promise.all(
-    markdownFiles.map(async (entry) => parseAgentDefinitionFile(path.join(agentsDir, entry.name))),
-  );
-}
-
-export async function parseAgentDefinitionFile(filePath: string): Promise<ParsedAgentDefinition> {
-  const raw = await readFile(filePath, "utf8");
-  const parsed = parseMarkdownDefinition(raw);
-  return {
-    slug: path.basename(filePath, ".md"),
-    body: parsed.body,
-    meta: normalizeAgentMeta(parsed.meta),
-  };
-}
-
-export async function loadSkillDefinitions(packageDir: string): Promise<ParsedSkillDefinition[]> {
-  const skillsDir = path.join(packageDir, "skills");
-  const entries = await readOptionalDir(skillsDir);
-  const skillDirs = entries.filter((entry) => entry.isDirectory());
-  return Promise.all(
-    skillDirs.map(async (entry) =>
-      parseSkillDefinitionFile(path.join(skillsDir, entry.name, "SKILL.md")),
-    ),
-  );
-}
-
-export async function parseSkillDefinitionFile(filePath: string): Promise<ParsedSkillDefinition> {
-  const raw = await readFile(filePath, "utf8");
-  const parsed = parseMarkdownDefinition(raw);
-  return {
-    slug: path.basename(path.dirname(filePath)),
-    body: parsed.body,
-    meta: normalizeSkillMeta(parsed.meta),
-    files: await readSkillFiles(path.dirname(filePath)),
   };
 }
 
@@ -147,133 +76,16 @@ function canonicalizeJsonValue(entry: JsonObject[string]): JsonObject[string] {
   return entry;
 }
 
-/*
- * Checksum inputs MUST be canonicalized (sorted keys, deep) before the YAML
- * serialization below. The serialized markdown is key-order-sensitive, and
- * Postgres jsonb does not preserve object key order — so a checksum computed
- * over freshly-parsed meta at import time would never match one recomputed
- * over the same meta read back from the database, and every imported
- * definition would permanently read as "Edited". (The in-memory store
- * preserves JS insertion order, which is why tests can't catch this without
- * a Drizzle-backed case.)
- */
-export function agentDefinitionContentChecksum(definition: {
-  body: string;
-  meta: JsonObject;
-  config?: JsonObject;
-}): string {
-  return sha256(
-    JSON.stringify({
-      markdown: serializeMarkdownDefinition(
-        canonicalizeJsonObject(definition.meta),
-        definition.body,
-      ),
-      config: canonicalizeJsonObject(definition.config ?? {}),
-    }),
-  );
-}
-
-export function definitionContentChecksum(definition: {
-  body: string;
-  meta: JsonObject;
-  files?: ParsedSkillDefinition["files"];
-}): string {
-  const files = normalizeSkillFilesForChecksum(definition.files ?? {});
-  return sha256(
-    JSON.stringify({
-      markdown: serializeMarkdownDefinition(
-        canonicalizeJsonObject(definition.meta),
-        definition.body,
-      ),
-      files,
-    }),
-  );
-}
-
 /** Serialize with one separator newline; parsing removes the separator, preserving the body. */
 export function serializeMarkdownDefinition(meta: JsonObject, body: string): string {
   const yaml = YAML.stringify(meta).trimEnd();
   return `---\n${yaml}\n---\n\n${body}`;
 }
 
-async function readSkillFiles(skillDir: string): Promise<ParsedSkillDefinition["files"]> {
-  const files: ParsedSkillDefinition["files"] = {};
-  await readSkillFilesInto(skillDir, skillDir, files);
-  return files;
-}
-
-async function readSkillFilesInto(
-  rootDir: string,
-  currentDir: string,
-  files: ParsedSkillDefinition["files"],
-): Promise<void> {
-  for (const entry of await readOptionalDir(currentDir)) {
-    const fullPath = path.join(currentDir, entry.name);
-    // Normalize Windows path separators to forward slashes for checksum
-    // determinism — definitionContentChecksum uses these paths as keys.
-    const relativePath = path.relative(rootDir, fullPath).split(path.sep).join("/");
-    if (relativePath === "SKILL.md") continue;
-    if (entry.isDirectory()) {
-      await readSkillFilesInto(rootDir, fullPath, files);
-    } else if (entry.isFile()) {
-      files[relativePath] = await readSkillFileFromDisk(fullPath);
-    }
-  }
-}
-
 function packageVisibilityAt(value: unknown): PackageVisibility | undefined {
   const visibility = stringAt(value);
   if (visibility === "public" || visibility === "private") return visibility;
   return undefined;
-}
-
-export function normalizeAgentMeta(meta: JsonObject): JsonObject {
-  // Presence carries inheritance intent; defaults belong in execution resolution.
-  return normalizeAgentMetaFields(meta);
-}
-
-/**
- * Normalize skill YAML frontmatter from kebab-case (Mars format) to
- * camelCase (domain types). This is the canonical normal form — all
- * downstream code uses camelCase and never sees kebab-case.
- *
- * Defaults: type="reference", modelInvocable=true, userInvocable=true,
- * isGlobal=false.
- */
-function normalizeSkillMeta(meta: JsonObject): JsonObject {
-  const normalized: JsonObject = { ...meta };
-  if ("model-invocable" in normalized && !("modelInvocable" in normalized)) {
-    normalized.modelInvocable = normalized["model-invocable"];
-    delete normalized["model-invocable"];
-  }
-  if ("user-invocable" in normalized && !("userInvocable" in normalized)) {
-    normalized.userInvocable = normalized["user-invocable"];
-    delete normalized["user-invocable"];
-  }
-  if ("is-global" in normalized && !("isGlobal" in normalized)) {
-    normalized.isGlobal = normalized["is-global"];
-    delete normalized["is-global"];
-  }
-  normalized.type = stringAt(normalized.type) ?? "reference";
-  normalized.modelInvocable = booleanAt(normalized.modelInvocable) ?? true;
-  normalized.userInvocable = booleanAt(normalized.userInvocable) ?? true;
-  normalized.isGlobal = booleanAt(normalized.isGlobal) ?? false;
-  delete normalized.inputSchema;
-  delete normalized["input-schema"];
-  return normalized;
-}
-
-function readDependencies(value: unknown, local: boolean): MarsDependency[] {
-  return Object.entries(objectAt(value)).map(([name, raw]) => {
-    const dependency = objectAt(raw);
-    return {
-      name,
-      ...(stringAt(dependency.path) ? { path: stringAt(dependency.path) } : {}),
-      ...(stringAt(dependency.url) ? { url: stringAt(dependency.url) } : {}),
-      ...(stringAt(dependency.version) ? { version: stringAt(dependency.version) } : {}),
-      local,
-    };
-  });
 }
 
 function readAgentOverlays(value: unknown): Record<string, AgentConfigOverlay> {
@@ -296,19 +108,4 @@ function requireTomlTable(value: unknown, field: string): JsonObject {
     throw new Error(`mars.toml ${field} must be a table`);
   }
   return value as JsonObject;
-}
-
-/**
- * Read a directory that may not exist (silently returns [] for ENOENT).
- *
- * Agents/ and skills/ directories are optional in a Mars package. A
- * package with no agents just contributes skills to the dependency graph.
- */
-async function readOptionalDir(dir: string) {
-  try {
-    return await readdir(dir, { withFileTypes: true });
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return [];
-    throw error;
-  }
 }

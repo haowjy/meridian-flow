@@ -5,11 +5,17 @@ that span more than one script.
 
 ## Environment and database
 
-`DEV_DATABASES` is the single registry. Main `.env` values are loaded through
-the shared environment helpers, and linked worktrees rewrite registered URLs to
-an idempotent worktree database. Non-interactive shells need the same
-`applyDevEnvToProcess` path as `.envrc`; failure to derive a scoped database is
-loud, never a fallback.
+`DEV_DATABASES` is the single registry. Every dev entry point calls
+`applyDevEnvToProcess` (rule in its docstring); no direnv or shell hook exports
+repo values. The base database has one source, the main `.env`, so the
+main-database guard, `gc-dbs`, `run-db-tests` and the loader cannot disagree
+about which database is main. No build config runs the loader, and
+`shared-db-server` loads server configs in-process and passes its own URL as
+given (it uses only the fill step). The stack's services start through
+`with-dev-env.ts`, so one loader feeds the panes. `tools/dev/psql` hands `psql`
+its connection as `PG*` variables, never argv. CI and deploy migrations reach the
+loader through `db:migrate` with no file defining the URL. Failure to derive a
+scoped database is loud, never a fallback.
 
 `db:migrate` and `db:apply-functions` resolve the checkout the same way and
 refuse a registered main database unless a human passes `--allow-main-database`;
@@ -85,8 +91,8 @@ every DB file.
 ## Session and readiness
 
 `applyDevEnvToProcess(repoRoot)` precedes `createDevSessionCommand`. The
-executable command may contain secrets and is sent only to tmux; display output
-and `.meridian/dev-session.json` contain the redacted command. The internal SSR
+tmux command line, `.meridian/dev-session.json` and display output are one
+string and hold no secrets. The internal SSR
 API origin is the paired worktree server origin, not the public app URL.
 The production-client profiling mode uses the same session plan and Portless
 routes. Its app command builds the client, runs the built Nitro server with
@@ -104,6 +110,14 @@ and browser tests. Only the primary checkout gets bare names. Linked detached
 checkouts include their session slug and path hash, so equal commits cannot
 alias each other. Commands use Portless named mode, not its branch inference;
 session metadata retains the prefix used by a running stack across Git changes.
+`pnpm dev` sessions run on one private tmux socket (`meridian-flow-dev`,
+`lib/dev-tmux-socket.ts`) shared by all checkouts. It keeps `--stop`, the orphan
+sweep and `dev:stacks` off the human's own server while still seeing every
+checkout's stack; cleanup readiness lists panes on both servers. The store passes
+tmux the environment from before the dev-env loader ran, so a server it starts
+never holds loaded secrets. `legacyDefaultServerHasSession` refuses a start while
+an old default-server stack of this checkout runs (read-only `-L default`); remove
+it with the TODO in `.context/TODO`.
 `dev-session-state.ts` validates the checkout-bound launch record and discovers
 its live tmux session. Startup, `./mf`, and browser discovery use that active
 identity, not current HEAD; Git derives only the next launch's identity. A
