@@ -193,7 +193,7 @@ export type SearchToolInput = z.output<typeof SearchToolInputSchema>;
 export const AskToolInputSchema = askToolInputSchema;
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask"] as const;
+export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -323,13 +323,13 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "ask",
+        name: "ask_user",
         description:
           "Ask only when the answer changes what you do and you can't make a reasonable choice. Otherwise choose, say what you chose, and continue. Give 2–4 options; the writer can also answer in their own words. Mark one recommended if you have a preference: it's used if no one answers within a few minutes. Asking ends your turn, and the answer arrives as this tool's result.",
         inputSchema: modelToolSchema(AskToolInputSchema),
       },
       input: AskToolInputSchema,
-      execution: { type: "server", handler: handlers.ask },
+      execution: { type: "server", handler: handlers.ask_user },
     },
   ];
 }

@@ -645,7 +645,7 @@ const RENDERERS: Record<string, ToolRenderer> = {
     title: (tool) => <WorkToolTitle tool={tool} />,
     expand: errorMessageExpand,
   },
-  // Only a failed `ask` has a row; a question that was asked shows as the takeover and receipt.
+  // Only a failed `ask_user` has a row; a question that was asked shows as the takeover and receipt.
   ask: {
     title: () => t`Couldn't ask a question`,
     expand: errorMessageExpand,

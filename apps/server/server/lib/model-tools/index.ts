@@ -31,7 +31,7 @@ export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistra
       work: createWorkHandler(deps),
       ls: createLsHandler(deps),
       search: createSearchHandler(deps),
-      ask: askHandler,
+      ask_user: askHandler,
     }),
     ...createSkillToolRegistrations(deps),
   ];

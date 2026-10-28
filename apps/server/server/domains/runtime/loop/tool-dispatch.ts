@@ -343,7 +343,7 @@ export async function dispatchToolCall(
     return { kind: "cancelled" };
   }
 
-  if (call.name === "ask" && execResult.isError !== true) {
+  if (call.name === "ask_user" && execResult.isError !== true) {
     const ask = await deps.asks.create({
       threadId: ctx.threadId,
       askingTurnId: ctx.currentTurn.id,

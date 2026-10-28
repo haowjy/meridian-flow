@@ -656,7 +656,7 @@ describe("inbox drain", () => {
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({
-      results: [toolCallResult("ask", "call-1"), textResult("done")],
+      results: [toolCallResult("ask_user", "call-1"), textResult("done")],
     });
     const carried = await inbox.enqueue(message("carry me", thread.id));
 

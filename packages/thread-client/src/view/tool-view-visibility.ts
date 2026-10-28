@@ -14,7 +14,7 @@ import { threadMessageRow } from "./thread-message-result";
 export function isToolViewVisible(tool: ToolView): boolean {
   if (isNotesStepHeldResult(tool.result)) return true;
   // A failed call made no ask, so no takeover or receipt stands in for its row.
-  if (tool.toolName === "ask") return tool.isError;
+  if (tool.toolName === "ask_user") return tool.isError;
   if (tool.toolName === "spawn") return false;
   if (tool.toolName === "thread_message") return threadMessageRow(tool) !== null;
   return true;

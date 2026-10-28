@@ -43,10 +43,10 @@ allow the target, and the action policy must allow the operation.
 
 Advertisement and the per-turn gate use this policy. Dispatch and direct
 executor calls do not silently reapply it; callers must choose the policy seam.
-`ask` creates a durable question for a primary chat and ends that execution.
+`ask_user` creates a durable question for a primary chat and ends that execution.
 The answer's tool result is written onto the asking turn before an internal
-continuation starts through ordinary request assembly. Agent definitions keep
-the `ask_user` capability name. The action policy retains `ask` for future
+continuation starts through ordinary request assembly. The tool and the Mars
+capability share one name. The action policy retains `ask` for future
 actions, but no current action maps to it. Children temporarily do not receive
 the Flow tool; the subagent-question change removes that exclusion.
 
