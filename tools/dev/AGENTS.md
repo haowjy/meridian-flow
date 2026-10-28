@@ -12,8 +12,8 @@ directory never imports application packages. The `./mf` CLI lives in
 - Dev sessions live on the private tmux socket in `lib/dev-tmux-socket.ts`
   (`-L meridian-flow-dev`). Build every dev-session tmux call from
   `devTmuxArgs`; a bare `tmux` reaches the human's own sessions. Only the
-  worktree-cleanup readiness check reads the human's server, and only to list
-  panes.
+  worktree-cleanup readiness check (to list panes) and the legacy-stack guard in
+  `dev-tmux.ts` (a read-only `has-session`) read the human's server.
 - `DEV_DATABASES` in `lib/dev-env.ts` is the only database registry. Resolve
   worktree URLs through `applyDevEnvToProcess()` and administer databases
   through `lib/dev-db.ts`. Never regex-edit a URL, fall back to a shared

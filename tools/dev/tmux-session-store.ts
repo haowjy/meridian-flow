@@ -1,10 +1,43 @@
 import { spawnSync } from "node:child_process";
+import path from "node:path";
 import { devTmuxArgs, legacyDefaultServerArgs } from "./lib/dev-tmux-socket";
 
 export interface CommandResult {
   status: number | null;
   stdout: string;
   stderr: string;
+}
+
+const TMUX_ENV_NAMES = new Set([
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TERM",
+  "LANG",
+  "TMPDIR",
+  "TMUX_TMPDIR",
+  "XDG_RUNTIME_DIR",
+  "SSH_AUTH_SOCK",
+]);
+
+/**
+ * The environment tmux runs with. The first tmux call starts the shared dev server,
+ * which keeps its caller's environment as its global one and hands it to every
+ * window opened later, from any checkout. A fixed allowlist makes that environment
+ * the same whichever checkout started the server, with no caller overrides or loaded
+ * secrets in it. Each stack's own env reaches its panes through the launch command.
+ */
+function tmuxEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (TMUX_ENV_NAMES.has(name) || name.startsWith("LC_")) env[name] = value;
+  }
+  env.PATH = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .filter((entry) => entry && !entry.split(path.sep).join("/").includes("node_modules/.bin"))
+    .join(path.delimiter);
+  return env;
 }
 
 function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): CommandResult {
@@ -23,16 +56,7 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
 }
 
 export class TmuxSessionStore {
-  /**
-   * `env` is what tmux and its helpers run with. `pnpm dev` passes its environment
-   * from before the dev-env loader ran: a tmux server this call starts keeps that
-   * environment as its global one, and every window opened on it later inherits it,
-   * so the loaded secrets must never reach it. Panes get their env from the loader.
-   */
-  constructor(
-    private readonly repoRoot: string,
-    private readonly env: NodeJS.ProcessEnv = process.env,
-  ) {}
+  constructor(private readonly repoRoot: string) {}
 
   hasCommandOnPath(command: string): boolean {
     const result = spawnSync("bash", ["-lc", `command -v ${command}`], {
@@ -43,7 +67,7 @@ export class TmuxSessionStore {
   }
 
   run(command: string, args: string[]): CommandResult {
-    return run(command, args, this.repoRoot, this.env);
+    return run(command, args, this.repoRoot, tmuxEnv());
   }
 
   private tmux(args: string[]): CommandResult {
