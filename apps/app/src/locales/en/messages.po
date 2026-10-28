@@ -322,6 +322,10 @@ msgstr "{days}d"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr "{documents, plural, one {# document} other {# documents}}"
 
+#: src/features/chat/tool-result-preview.ts
+msgid "{documents, plural, one {At least # document} other {At least # documents}}"
+msgstr "{documents, plural, one {At least # document} other {At least # documents}}"
+
 #: src/core/editor/images/image-imports.ts
 msgid "{filename} could not be read from that site. It stayed a link."
 msgstr "{filename} could not be read from that site. It stayed a link."
@@ -901,6 +905,14 @@ msgstr "Archived Work {name}"
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
+
+#: src/features/chat/tool-result-preview.ts
+#~ msgid "At least {found}"
+#~ msgstr "At least {found}"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "At least {matches} results in {inDocuments}"
+msgstr "At least {matches} results in {inDocuments}"
 
 #: src/components/app/composer/Composer.tsx
 msgid "Attach file"
@@ -3321,6 +3333,10 @@ msgstr "No image has been uploaded to {path} yet."
 #: src/rich-content/TranscriptReference.tsx
 msgid "No longer available"
 msgstr "No longer available"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "No matches found before the search stopped"
+msgstr "No matches found before the search stopped"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No matching chats"

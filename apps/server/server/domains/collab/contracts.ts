@@ -244,11 +244,27 @@ export type TurnReversalAccess = {
 
 export type VersionedDocumentRead<T> = { content: T; revision: string | null };
 
-export type HashlineRead = VersionedDocumentRead<string[]> & {
-  /** Aligned with `content`: the ref-bearing links each block spells. */
-  links: readonly (readonly SpelledLinkFact[])[];
+/** One block of a hashline read: what `read` shows, and what grep matches and spells. */
+export type HashlineBlock = {
+  hash: string;
+  /** The block as `read` shows it, with no addressing prefix. */
+  body: string;
+  /** The block's markdown with link destinations spelled empty (what grep matches). */
+  destinationFree: string;
+  /** The ref-bearing links the block spells. */
+  links: readonly SpelledLinkFact[];
+};
+
+export type HashlineRead = {
+  blocks: HashlineBlock[];
+  revision: string | null;
   /** The holder `links` were spelled from, as the read's own binding named it. */
   holder: { uri: string | null; view: LinkView };
+  /** A range of a block's `destinationFree` markdown, placed in its `body`; null when it can't be. */
+  locate(
+    block: Pick<HashlineBlock, "body" | "destinationFree">,
+    range: { start: number; end: number },
+  ): { start: number; end: number } | null;
 };
 
 /**
@@ -470,6 +486,19 @@ export type DraftPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<string | null>;
   flushDraftLivePull(documentId: DocumentId): Promise<void>;
+  /**
+   * Stored grep text for those of `documentIds` whose text matches what this reader sees: the
+   * derived outputs are current, no active draft stands between a draft reader and the live
+   * text, and the reply has staged no writes of its own (they leave no draft row, so only the
+   * reply's room says the projection is behind its view). Documents left out need a read.
+   */
+  readStoredGrepTexts(
+    input: {
+      documentIds: DocumentId[];
+      threadId?: ThreadId | null;
+      responseId?: string | null;
+    } & EffectiveReadVersion,
+  ): Promise<Map<DocumentId, string>>;
   readEffectiveMarkdown(
     input: {
       documentId: DocumentId;

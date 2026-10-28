@@ -11,7 +11,7 @@ lives in [turn-composition.md](turn-composition.md).
 > render as inert text.
 
 `DocumentName.tsx` is the whole rule. It renders every document name — row
-titles via `tool-renderers`, `search` match rows via `ResultRows`, receipt rows
+titles via `tool-renderers`, `grep` match rows via `ResultRows`, receipt rows
 via `TurnEditsReceipt` — and it alone decides linkability. There is no
 navigation policy per renderer to remember or uphold.
 
@@ -41,7 +41,7 @@ navigation policy per renderer to remember or uphold.
   destination: the route says the destination is unavailable in place
   (`ProjectRouteBoundary`), so not pre-checking costs the writer one click.
 - **One door, two precisions.** A name standing for a whole document opens the
-  document; a name standing for a matched passage (`search` match rows) carries
+  document; a name standing for a matched passage (`grep` match rows) carries
   that passage in the same call and opens there. Same affordance, same
   underline, same predicate — only the destination is finer. A passage anchor
   is a block hash plus the term that matched, and a row without a hash is
@@ -124,12 +124,11 @@ one lives in [tool-expands.md](tool-expands.md).
   shape alone is the answer. Never a second validator beside the real one —
   that is how the two came to disagree the first time.
 - **Built on open, not on render.** `ToolRenderer.expand` returns a builder;
-  deciding *whether* there is content is cheap, rendering it is not. `search`
-  takes the contract route: a hit that cannot fill a section is refused at
-  normalization, so a non-empty payload *is* content and a closed row reads
-  `Array.isArray` and stops. Sections and the totals scan wait for the writer
+  deciding *whether* there is content is cheap, rendering it is not. `grep`
+  takes the contract route: a non-empty `files` *is* content, so a closed row
+  reads `Array.isArray` and stops. Sections and the totals scan wait for the writer
   who opens the row — a settled turn holds a dozen closed rows, and none of
-  them should be parsing search results.
+  them should be parsing grep results.
 - **Open state is local to the row.** It resets when the row unmounts. Process
   folds live and settled alike, so settlement is not a remount — do not hoist
   it.

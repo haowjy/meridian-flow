@@ -144,7 +144,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(scratch[0]).not.toHaveProperty("editable");
       expect(scratch[0]).not.toHaveProperty("documentId");
       expect(scratchCall.output).toBe("scratch://@w1/\n  notes (read-only)");
-      const search = await call("search", { pattern: "Writer" });
+      const search = await call("grep", { pattern: "Writer" });
       expect(search.output).toContain("manuscript://chapter");
       expect(search.output).not.toContain(".md");
       const data = crypto.randomUUID();

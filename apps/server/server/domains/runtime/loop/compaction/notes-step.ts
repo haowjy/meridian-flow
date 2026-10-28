@@ -53,11 +53,11 @@ export type NotesContinuation =
 
 /** Selects Scratch operations only; ordinary tool validation and file policy still own access. */
 export function isScratchCall(call: { name: string; arguments: unknown }): boolean {
-  if (!["read", "write", "ls", "search"].includes(call.name)) return false;
+  if (!["read", "write", "ls", "grep"].includes(call.name)) return false;
   if (!call.arguments || typeof call.arguments !== "object" || Array.isArray(call.arguments))
     return false;
   const args = call.arguments as Record<string, unknown>;
-  const paths = [call.name === "search" ? args.scope : args.path];
+  const paths = [args.path];
   if (call.name === "write" && args.from !== undefined) {
     if (!args.from || typeof args.from !== "object" || Array.isArray(args.from)) return false;
     paths.push((args.from as Record<string, unknown>).path);

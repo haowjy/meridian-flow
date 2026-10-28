@@ -260,7 +260,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const derivations = createDocumentDerivationService({
     store: derivationStore,
     serializer: {
-      serializeDocument: (...args) => runtime.markdownDocuments.serializeDocument(...args),
+      projectDocument: (...args) => runtime.markdownDocuments.projectDocument(...args),
     },
     outsideTransaction: runOutsideDrizzleTransaction,
     deferred: (documentId) => {
@@ -535,6 +535,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftPeers = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts,
+      derivations: derivationStore,
       draftPulls,
       agentEdit,
       documents: runtime.markdownDocuments,

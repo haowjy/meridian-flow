@@ -39,6 +39,7 @@ import {
   documentAuthority,
   RetiredDocumentHandleError,
 } from "../domain/document-handle.js";
+import { DOCUMENT_EXTRACTOR_VERSION } from "../domain/ports/document-derivations.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createTestLinkAheadRegistry } from "../test-support/document-link-scopes.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./drizzle-authority-generation-replacement.js";
@@ -63,9 +64,10 @@ describe("durable document derivations", () => {
     deferred: () => {},
     store,
     serializer: {
-      async serializeDocument(_id, doc) {
+      async projectDocument(_id, doc) {
         if (fail) throw new Error("serializer unavailable");
-        return doc.getText("prose").toString();
+        const text = doc.getText("prose").toString();
+        return { markdown: text, grepText: text };
       },
     },
     outsideTransaction: (operation) => operation(),
@@ -491,7 +493,9 @@ describe("durable document derivations", () => {
     if (!oldCut) throw new Error("Missing old cut");
     await append(doc, " new");
     await service.derive(documentId);
-    expect(await store.certify(oldCut, { markdown: "old", links: [] }, new Date())).toBe(false);
+    expect(
+      await store.certify(oldCut, { markdown: "old", grepText: "old", links: [] }, new Date()),
+    ).toBe(false);
     expect(await projection()).toBe("old new");
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
@@ -502,9 +506,13 @@ describe("durable document derivations", () => {
       });
       await bumpLocationVersions(db, { documentIds: [documentId] });
     });
-    expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
-      false,
-    );
+    expect(
+      await store.certify(
+        preMove,
+        { markdown: "wrong folder", grepText: "wrong folder", links: [] },
+        new Date(),
+      ),
+    ).toBe(false);
     expect(await projection()).toBe("old new");
     doc.destroy();
   });
@@ -537,7 +545,9 @@ describe("durable document derivations", () => {
       },
     ];
     expect(await links()).toEqual(expected);
-    expect(await store.certify(oldCut, { markdown: "old", links: [] }, new Date())).toBe(false);
+    expect(
+      await store.certify(oldCut, { markdown: "old", grepText: "old", links: [] }, new Date()),
+    ).toBe(false);
     expect(await links()).toEqual(expected);
     await expect(
       runInDrizzleTransaction(db, async () => {
@@ -573,9 +583,13 @@ describe("durable document derivations", () => {
       });
       await bumpLocationVersions(db, { documentIds: [documentId] });
     });
-    expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
-      false,
-    );
+    expect(
+      await store.certify(
+        preMove,
+        { markdown: "wrong folder", grepText: "wrong folder", links: [] },
+        new Date(),
+      ),
+    ).toBe(false);
     expect(await store.stale({ projectId })).toEqual([documentId]);
     await service.flush({ projectId });
     expect(await store.stale({ projectId })).toEqual([]);
@@ -587,7 +601,7 @@ describe("durable document derivations", () => {
     // The holder moved; its ref-keyed rows did not change, and nothing was written into it.
     expect(await links()).toEqual(expected);
     expect(watermark?.linksLocationVersion).toBe(1n);
-    expect(watermark?.linksExtractorVersion).toBe(3);
+    expect(watermark?.linksExtractorVersion).toBe(DOCUMENT_EXTRACTOR_VERSION);
     await db
       .update(documentDerivations)
       .set({ linksExtractorVersion: 1 })
@@ -812,7 +826,12 @@ describe("durable document derivations", () => {
     const aheadService = createDocumentDerivationService({
       deferred: () => {},
       store: aheadStore,
-      serializer: { serializeDocument: async (_id, doc) => doc.getText("prose").toString() },
+      serializer: {
+        projectDocument: async (_id, doc) => {
+          const text = doc.getText("prose").toString();
+          return { markdown: text, grepText: text };
+        },
+      },
       outsideTransaction: (operation) => operation(),
       failed: () => {},
     });

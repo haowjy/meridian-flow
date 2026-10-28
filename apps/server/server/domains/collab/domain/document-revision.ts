@@ -9,11 +9,11 @@
  * apply it identifies. It is a freshness signal, never a write refusal.
  */
 import { createHash } from "node:crypto";
+import { bodyRange, destinationFreeBlocks } from "@meridian/agent-edit";
 import {
   type AgentEditCodecFactory,
   type AgentEditModel,
   toDocHandle,
-  toHashline,
 } from "@meridian/agent-edit/integration";
 import { spelledLinks } from "@meridian/markup/links";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
@@ -44,9 +44,9 @@ export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
 }
 
 /**
- * One agent `read` of a document in a holder's spelling: hashlines, the links each block
- * spells, and the revision. One projection serves all three; the revision follows the render
- * because projecting can repair the document.
+ * One agent `read` of a document in a holder's spelling: each block's body, destination-free
+ * markdown (what grep matches), and the links it spells, plus the revision. One projection
+ * serves all of it; the revision follows the render because projecting can repair the document.
  */
 export function readHashlines(
   doc: Y.Doc,
@@ -55,15 +55,22 @@ export function readHashlines(
   codecs: AgentEditCodecFactory,
 ): HashlineRead {
   const blocks = model.projectBlocks(toDocHandle(doc));
+  const nodes = blocks.map((block) => block.node);
   const bodies = codecs.forScope(scope).serializeBlocks(
-    blocks.map((block) => block.node),
+    nodes,
     blocks.map((block) => block.hash),
   );
+  const destinationFree = destinationFreeBlocks(codecs.markup, nodes);
   return {
-    content: bodies.map((body, index) => toHashline(blocks[index].hash, body)),
+    blocks: blocks.map((block, index) => ({
+      hash: block.hash,
+      body: bodies[index] as string,
+      destinationFree: destinationFree[index] as string,
+      links: spelledLinks([block.node], scope),
+    })),
     revision: documentRevision(doc, scope),
-    links: blocks.map((block) => spelledLinks([block.node], scope)),
     holder: { uri: scope.holder.uri, view: scope.holder.view },
+    locate: (block, range) => bodyRange(codecs.markup, block.destinationFree, block.body, range),
   };
 }
 

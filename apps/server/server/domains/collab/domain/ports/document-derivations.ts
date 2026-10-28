@@ -4,7 +4,7 @@ import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime"
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
 // Changing the extractor must bump this version to invalidate older output.
-export const DOCUMENT_EXTRACTOR_VERSION = 3;
+export const DOCUMENT_EXTRACTOR_VERSION = 4;
 export type DerivationScope = { projectId: ProjectId; personalOwnerId?: UserId };
 export type DerivationWatermark = {
   generation: bigint;
@@ -22,13 +22,19 @@ export type DocumentDerivationStore = {
   capture(documentId: DocumentId): Promise<DocumentDerivationCut | null>;
   certify(
     cut: DocumentDerivationCut,
-    outputs: { markdown: string; links: DocumentLinkRow[] },
+    outputs: { markdown: string; grepText: string; links: DocumentLinkRow[] },
     at: Date,
   ): Promise<boolean>;
   stale(
     scope?: DerivationScope,
     page?: { after?: DocumentId; limit: number },
   ): Promise<DocumentId[]>;
+  /**
+   * Stored grep text of the documents whose derived outputs are current. With `ignoreDrafts`
+   * false, a document with an active draft is left out too: a draft reader sees the draft, not
+   * the live text.
+   */
+  grepTexts(ids: DocumentId[], view: { ignoreDrafts: boolean }): Promise<Map<DocumentId, string>>;
   /**
    * Registers the client-minted ahead refs of this holder's certified rows (contract §11.3):
    * awaited outside a transaction, after commit inside one. Failures are logged, never thrown;

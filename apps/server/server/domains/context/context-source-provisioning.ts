@@ -332,6 +332,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return store ? store.readProjections(ids) : new Map();
   }
 
+  async listTree(view: TreeView) {
+    return (await this.readableSourceStore())?.listTree(view) ?? { folders: [], documents: [] };
+  }
+
   async ensureFolderPath(dir: readonly string[]) {
     // The source root always exists.
     if (dir.length === 0) return null;

@@ -176,7 +176,7 @@ describe("frozen prompt provider requests", () => {
     const tools: Tool[] = [
       {
         type: "function",
-        name: "search",
+        name: "grep",
         description: "Search the story notes.",
         inputSchema: {
           type: "object",

@@ -8,7 +8,7 @@ already breaks at position 0; it does not rewrite later arrivals.
 
 ## Revision evidence
 
-Document reads, search hits, settled writes, and reference reads persist
+Document reads, grep hits, settled writes, and reference reads persist
 `DocumentRevisionEvidence`; the model sees only result text. URI is canonical at
 observation time. A null revision means unverifiable and is never resolved
 against current content. Empty evidence is explicit; failed lookups and edits

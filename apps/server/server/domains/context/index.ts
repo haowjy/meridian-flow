@@ -49,6 +49,8 @@ export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
+export { type AddressGlob, compileAddressGlob } from "./grep/address-glob.js";
+export { compileGrep, type GrepMatcher } from "./grep/matcher.js";
 export {
   type ChatFileAddresses,
   createOwnerLookup,
@@ -58,7 +60,8 @@ export type {
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
-  AdapterSearchHit,
+  AdapterGrepFile,
+  AdapterGrepResult,
   ContextSchemeAdapter,
   SchemeCapabilities,
 } from "./ports/context-adapter.js";
@@ -97,8 +100,12 @@ export type {
   EditableFileEntry,
   FileEntry,
   FileRef,
+  GrepFile,
+  GrepMode,
+  GrepPassage,
+  GrepQuery,
+  GrepResult,
   ProjectContextFsScheme,
-  SearchResult,
   TrackedFileRef,
   WorkScopedContextFsScheme,
   WriteProvenance,

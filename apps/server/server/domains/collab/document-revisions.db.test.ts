@@ -102,6 +102,7 @@ async function fixture(
   const effective = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts: f.draftStore,
+      derivations: { grepTexts: async () => new Map() },
       draftPulls: f.draftPulls,
       agentEdit: f.collab.agentEdit(),
       documents: f.runtime.markdownDocuments,
@@ -269,7 +270,9 @@ describe("document revisions (postgres and collab)", () => {
     const hashlines = await f.effective.readEffectiveHashlines(view);
     const revision = await f.effective.readEffectiveRevision(view);
     if (!markdown.ok || !hashlines.ok) throw new Error(JSON.stringify({ markdown, hashlines }));
-    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](gamma)");
+    expect
+      .soft(hashlines.value.blocks.map((block) => block.body).join("\n"), "hashlines")
+      .toContain("[Beta](gamma)");
     expect.soft(markdown.value.content, "Markdown").toContain("[Beta](gamma)");
     expect
       .soft([markdown.value.revision, revision], "one view")
