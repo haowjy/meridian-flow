@@ -27,6 +27,8 @@ import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 export interface ChildDriveInput {
   parentThread: Thread;
   parentTurnId: TurnId;
+  /** The parent's sending execution: a machine wake the fence checks. */
+  parentExecutionId: string;
   prompt: string;
   budget: TreeBudget;
   /** Original parent invocation, including the retained running card. */
@@ -111,6 +113,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       signal: prepared.signal,
       child: {
         parentThreadId: input.parentThread.id as ThreadId,
+        parentExecutionId: input.parentExecutionId,
         background: prepared.background,
         origin: prepared.origin,
         sender: { ref: input.parentThread.ref, title: input.parentThread.title },
@@ -146,6 +149,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
           signal: prepared.signal,
           child: {
             parentThreadId: input.parentThread.id as ThreadId,
+            parentExecutionId: input.parentExecutionId,
             background: false,
             origin: prepared.origin,
             sender: { ref: input.parentThread.ref, title: input.parentThread.title },

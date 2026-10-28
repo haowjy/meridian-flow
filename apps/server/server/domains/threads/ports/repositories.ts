@@ -307,6 +307,8 @@ export interface ThreadRepository {
    * subtrees whose root the execution that reserved that turn spawned.
    */
   listSubtreeIds(threadId: ThreadId, spawnedByTurnId?: TurnId): Promise<ThreadId[]>;
+  /** The spawn ancestors of `threadId`: its parent first, the root last. */
+  listAncestorIds(threadId: ThreadId): Promise<ThreadId[]>;
   /** Bounded newest-first spawn/derivation children; derivations attach to the cutoff owner. */
   listLineageChildren(input: {
     rootThreadId: ThreadId;

@@ -46,6 +46,8 @@ export const asks = pgTable(
     continuation: text("continuation").$type<AskContinuationState>(),
     /** The latest turn admitted to continue this ask. */
     continuationTurnId: uuid("continuation_turn_id").$type<TurnId>(),
+    /** The child's ask this one forwards: a copy cancels with its source. */
+    forwardedFromAskId: uuid("forwarded_from_ask_id"),
     createdAt: createdAt(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
@@ -55,6 +57,14 @@ export const asks = pgTable(
       foreignColumns: [turns.threadId, turns.id],
       name: "asks_asking_turn_fk",
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.forwardedFromAskId],
+      foreignColumns: [table.id],
+      name: "asks_forwarded_from_fk",
+    }).onDelete("set null"),
+    index("asks_forwarded_from")
+      .on(table.forwardedFromAskId)
+      .where(sql`${table.forwardedFromAskId} IS NOT NULL`),
     unique("asks_turn_tool_call_unique").on(table.askingTurnId, table.toolCallId),
     index("asks_open_deadline")
       .on(table.deadlineAt, table.id)

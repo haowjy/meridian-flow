@@ -1,10 +1,14 @@
 /**
  * PostgreSQL race of an ask's three resolvers: the writer's answer, its deadline and a lineage
- * cancellation, all claiming the same ask row while the cancellation also takes thread locks.
+ * cancellation, all claiming the same ask row while the cancellation also takes thread locks;
+ * and the edges a cancellation fences: a forwarded copy goes with its source, and the stopped
+ * thread refuses a wake from an execution admitted before the Stop.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a continuation's state is `asks.continuation`, and lineage cancellation claims it in one
  *   transaction, ask rows before thread locks (apps/server/server/domains/runtime/.context/spawn.md)
+ * - the machine-wake fence is `threads.wake_fence_at` compared with the sender lease's
+ *   `acquired_at`
  */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -52,11 +56,12 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const eventWriter = createQuietDrizzleJournalWriter(db);
     const delivery = createTestDrizzleDelivery(db, { repos, eventWriter });
-    const asks = createAskService({ repos, eventWriter, delivery });
+    const runClaim = createDrizzleRunClaim(db);
+    const asks = createAskService({ repos, eventWriter, delivery, wakes: runClaim });
     const lineage = createLineageCancellation({
       transaction: repos.transaction,
       threads: repos.threads,
-      runClaim: createDrizzleRunClaim(db),
+      runClaim,
       delivery,
       asks,
       askRows: repos.asks,
@@ -136,5 +141,72 @@ else
           );
         expect(hints).toEqual([]);
       }
+    });
+
+    it("cancels a forwarded copy with its source and fences the stopped child", async () => {
+      const caller = await runClaim.startExecution(ids.caller, crypto.randomUUID(), async () => {});
+      if (!caller) throw new Error("caller claim was not taken");
+      const childTurn = await repos.turns.create({
+        threadId: ids.child,
+        prevTurnId: ids.execution,
+        role: "assistant",
+        origin: "assistant",
+        status: "awaiting_answer",
+        executionId: crypto.randomUUID(),
+      });
+      const question = {
+        kind: "question" as const,
+        payload: { question: "Which?", options: [{ label: "A" }] },
+        deadlineAt: null,
+        status: "open" as const,
+        resolution: null,
+        submissionId: null,
+      };
+      const source = await repos.asks.create({
+        ...question,
+        threadId: ids.child,
+        askingTurnId: childTurn.id,
+        executionId: childTurn.executionId as string,
+        toolCallId: "child-ask",
+      });
+      const callerTurn = await repos.turns.create({
+        threadId: ids.caller,
+        prevTurnId: ids.callerTurn,
+        role: "assistant",
+        origin: "assistant",
+        status: "awaiting_answer",
+        executionId: caller.executionId,
+      });
+      const copy = await repos.asks.create({
+        ...question,
+        threadId: ids.caller,
+        askingTurnId: callerTurn.id,
+        executionId: caller.executionId,
+        toolCallId: "forward",
+        forwardedFromAskId: source.id,
+      });
+
+      // The writer stops the child: the caller is outside the lineage, its copy is not.
+      await lineage.cancel(ids.child, async () => ({
+        result: null,
+        reach: { kind: "chat" as const },
+        execution: null,
+      }));
+      expect(await repos.asks.findById(copy.id)).toMatchObject({ status: "cancelled" });
+      const sender = { threadId: ids.caller, executionId: caller.executionId };
+      expect(await runClaim.wakeRefusal({ sender, receiver: ids.child })).toBe("receiver_stopped");
+      expect(await runClaim.wakeRefusal({ sender, receiver: null })).toBeNull();
+
+      // An execution admitted after the Stop wakes the child as usual.
+      await delivery.withThreadLock(ids.caller, () => runClaim.release(caller));
+      const later = await runClaim.startExecution(ids.caller, crypto.randomUUID(), async () => {});
+      if (!later) throw new Error("caller claim was not taken again");
+      expect(
+        await runClaim.wakeRefusal({
+          sender: { threadId: ids.caller, executionId: later.executionId },
+          receiver: ids.child,
+        }),
+      ).toBeNull();
+      await delivery.withThreadLock(ids.caller, () => runClaim.release(later));
     });
   });

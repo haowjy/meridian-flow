@@ -820,6 +820,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     delivery,
+    wakes: runClaim,
   });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
@@ -1018,6 +1019,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const childRunCoordinator = createChildRunCoordinator({
     driver: childRunDriver,
     delivery,
+    wakes: runClaim,
     asks,
     relayRepos: ports.threadRepos,
     unavailableReasons: (definition, model) =>
@@ -1285,7 +1287,12 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
-  const asks = createAskService({ repos: threadRepos, eventWriter: journal, delivery });
+  const asks = createAskService({
+    repos: threadRepos,
+    eventWriter: journal,
+    delivery,
+    wakes: runClaim,
+  });
   const handoffBriefs: HandoffBriefs = {
     async hold() {
       return null;

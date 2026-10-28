@@ -461,6 +461,20 @@ export function createDrizzleThreadRepository(
       `);
       return rows.map((row) => row.id as ThreadId);
     },
+    async listAncestorIds(threadId) {
+      const rows = await currentDrizzleDb(db).execute(sql`
+        WITH RECURSIVE ancestors AS (
+          SELECT parent.id, parent.parent_thread_id, 1 AS depth FROM threads parent
+          JOIN threads child ON child.parent_thread_id = parent.id
+          WHERE child.id = ${threadId}
+          UNION ALL
+          SELECT parent.id, parent.parent_thread_id, ancestors.depth + 1 FROM threads parent
+          JOIN ancestors ON ancestors.parent_thread_id = parent.id
+        )
+        SELECT id FROM ancestors ORDER BY depth
+      `);
+      return rows.map((row) => row.id as ThreadId);
+    },
     async listChildren(threadId: ThreadId) {
       const rows = await currentDrizzleDb(db)
         .select({

@@ -40,6 +40,8 @@ export type StoredAsk = {
   continuation: AskContinuationState | null;
   /** The latest turn admitted to continue this ask. */
   continuationTurnId: TurnId | null;
+  /** The child's ask this one forwards; a live copy cancels with its source. */
+  forwardedFromAskId: string | null;
   createdAt: Date;
   resolvedAt: Date | null;
 };
@@ -49,9 +51,16 @@ export type ClaimedAsk = { ask: StoredAsk; wasLive: boolean };
 
 export type CreateAskInput = Omit<
   StoredAsk,
-  "id" | "createdAt" | "resolvedAt" | "relay" | "continuation" | "continuationTurnId"
+  | "id"
+  | "createdAt"
+  | "resolvedAt"
+  | "relay"
+  | "continuation"
+  | "continuationTurnId"
+  | "forwardedFromAskId"
 > & {
   id?: string;
+  forwardedFromAskId?: string | null;
   resolvedAt?: Date | null;
   relay?: AskRelay | null;
 };
@@ -65,13 +74,19 @@ export interface AskRepository {
   findLiveByThread(threadId: ThreadId): Promise<StoredAsk | null>;
   /** Row-locks, in id order, the asks these threads hold: live asks and owed continuations. */
   lockHeldByThreads(threadIds: readonly ThreadId[]): Promise<void>;
+  /**
+   * The threads holding a live forwarded copy, at any remove, of an ask these threads hold. A copy
+   * lives on its source thread's parent, so these are ancestors of `threadIds`' topmost thread.
+   */
+  listCopyHolders(threadIds: readonly ThreadId[]): Promise<ThreadId[]>;
   /** Row-locks these asks in id order. */
   lockByIds(ids: readonly string[]): Promise<void>;
   /**
    * One lineage cancellation's claim, in one statement: every live ask and owed continuation of
    * `threadIds`, and of `owner` the live asks (only `turnId`'s, when given) and the owed
-   * continuations not admitted by the execution it spares. Live asks become cancelled; every
-   * claimed continuation becomes `cancelled`.
+   * continuations not admitted by the execution it spares, and every live copy forwarded from a
+   * claimed ask, transitively. Live asks become cancelled; every claimed continuation becomes
+   * `cancelled`.
    */
   claimLineage(input: {
     threadIds: readonly ThreadId[];

@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryAppServices } from "../../../lib/compose.js";
 import type { SubagentThreadFactory } from "../../threads/index.js";
+import type { RunClaim } from "../loop/ports.js";
 
 const USER_ID = "writer";
 
@@ -119,9 +120,12 @@ describe("durable ask claims", () => {
       submissionId: null,
     });
 
+    // A parent's answer comes from its live execution (the app exposes only part of its claim).
+    await (app.runClaim as RunClaim).startExecution(parent.id, "parent-execution", async () => {});
     const [parentAnswer, writerAnswer] = await Promise.all([
       app.asks.answerFromParent({
         parentThreadId: parent.id,
+        parentExecutionId: "parent-execution",
         childThreadId: child.id,
         askId: ask.id,
         submissionId: "parent-answer",

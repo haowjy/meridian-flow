@@ -22,6 +22,8 @@ export type ForwardedRelayInput = {
   parentThread: Thread;
   /** The parent continuation's reserved turn. */
   parentTurnId: TurnId;
+  /** The parent continuation's execution. */
+  parentExecutionId: string;
   /** The parent's resolved forwarded ask. */
   ask: StoredAsk;
   /** The parent's `ask_resolved` row this relay retires. */
@@ -61,6 +63,7 @@ export async function relayForwardedAnswer(
       kind: "message",
       parentThread: input.parentThread,
       parentTurnId: input.parentTurnId,
+      parentExecutionId: input.parentExecutionId,
       ref: forwarded.handle,
       prompt: text,
       toolCallId: `forwarded-ask:${ask.id}`,

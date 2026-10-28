@@ -178,6 +178,7 @@ import {
   isDrainRun,
   type PreparedLoop,
   type RunLoopInput,
+  WakeRefusedError,
 } from "./run-turn-port.js";
 import type { AdoptedBatch, DeliveryBoundary, RuntimeDelivery } from "./runtime-delivery.js";
 import { settleSummaryResponses } from "./settle-summary-responses.js";
@@ -476,6 +477,17 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {
     const thread = await deps.repos.threads.findById(input.threadId);
     if (!thread) throw new Error(`Thread not found: ${input.threadId}`);
+    // A child's admission is its parent's machine wake, checked under the child's lock.
+    const refusal = input.child
+      ? await deps.runClaim.wakeRefusal({
+          sender: {
+            threadId: input.child.parentThreadId,
+            executionId: input.child.parentExecutionId,
+          },
+          receiver: input.threadId,
+        })
+      : null;
+    if (refusal) throw new WakeRefusedError(refusal, input.threadId);
     return persistWriterTurn({
       persistence: deps,
       threadId: input.threadId,
@@ -839,6 +851,7 @@ async function runDrainTurn(
         await deps.childRunCoordinator.relayForwardedAnswer({
           parentThread: setup.thread,
           parentTurnId: reservedTurn.id,
+          parentExecutionId: input.lease.executionId,
           ask: relayAsk,
           controlId: relayControlId,
           budget: treeBudget,
