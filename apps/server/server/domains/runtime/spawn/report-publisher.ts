@@ -16,6 +16,7 @@ import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer, RuntimeDelivery } from "../loop/runtime-delivery.js";
 import { readAskContinuation } from "./ask-continuation.js";
+import { childQuestionText } from "./model-spawn-result.js";
 import { invocationAgentName, invocationCardProps } from "./spawn-output.js";
 
 export type PublicationOutcome = "published" | "parked" | "already";
@@ -215,7 +216,12 @@ export function createReportPublisher(deps: {
                 kind: "text",
                 text:
                   actionableAsk && question
-                    ? questionText(report.handle, actionableAsk.id, question)
+                    ? childQuestionText(
+                        report.handle,
+                        actionableAsk.id,
+                        question.question,
+                        question.options.map((option) => option.label),
+                      )
                     : notificationText(report),
               },
               idempotencyKey: actionableAsk
@@ -312,11 +318,6 @@ export function createReportPublisher(deps: {
   }
 
   return { projectRunning, publish, settleCancelledAsk, sweep };
-}
-
-function questionText(handle: string, askId: string, payload: QuestionAskPayload): string {
-  const options = payload.options.map((option) => option.label).join(", ");
-  return `@${handle} asks (ask ${askId}): ${payload.question} (options: ${options})`;
 }
 
 function notificationText(report: SavedExecutionReport): string {

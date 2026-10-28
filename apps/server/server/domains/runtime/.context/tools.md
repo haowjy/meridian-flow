@@ -50,7 +50,9 @@ capability share one name. The action policy retains `ask` for future
 actions, but no current action maps to it. A primary question goes to the
 writer. A child question becomes an `asked` report to its parent; the parent
 can answer with a request-bound `thread_message` or forward the question with
-`ask_user({forward})`.
+`ask_user({forward})`. The tool description and the child-question notice
+nudge toward forwarding; the parent answers itself only when its own context
+already settles the question.
 
 ## Document and cost boundaries
 
