@@ -610,7 +610,7 @@ export function createRunSessions(deps: {
   };
 }
 
-function isAbortError(error: unknown): boolean {
+export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
