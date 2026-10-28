@@ -1,7 +1,6 @@
 // Resolves agent-visible block hashes to document positions with structured ambiguity.
 
 import type { BlockRef } from "../handles.js";
-import { fullHashForItemId } from "../model/block-hash.js";
 import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
 
 /**
@@ -41,7 +40,7 @@ export function locateBlockByHash(
   const matches =
     normalized.length === 0
       ? []
-      : ctx.projected.filter((block) => fullHashForItemId(block.id).startsWith(normalized));
+      : ctx.projected.filter((block) => block.fullHash.startsWith(normalized));
   if (matches.length > 1) {
     const refs = matches.map((match) => match.ref);
     return {
