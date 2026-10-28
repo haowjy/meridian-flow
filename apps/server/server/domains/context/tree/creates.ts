@@ -57,7 +57,7 @@ export async function createInBranch(
     createdBy?: { threadId: ThreadId; turnId?: TurnId };
     /** A new text row's authority, empty, in this transaction (never seeded). */
     initializeEmptyContent(documentId: DocumentId): Promise<void>;
-    /** A joined text row whose authority is missing, repaired from its stored projection. */
+    /** A joined text row whose authority is missing, repaired as an empty document. */
     repairContent(documentId: DocumentId): Promise<void>;
     /** The branch's draft of a text document, seeded from its empty live document. */
     ensureDocumentDraft(documentId: DocumentId): Promise<void>;

@@ -1,8 +1,8 @@
 /**
  * E-2: shown-link capture records only what the model was actually shown
  * (contract §7.2), through the real runtime loop, tool registrations,
- * executor and reference reader. A copy's private source read, a search match
- * past the passage cap, an unauthorized search hit, a `thread_history` item
+ * executor and reference reader. A copy's private source read, a grep match
+ * past the passage cap, an unauthorized grep hit, a `thread_history` item
  * quoting an earlier write, a read whose result never came back (cancelled or
  * timed out), a result whose persistence failed, and a reference read from a
  * preparation that failed, was cancelled or was retried never become
@@ -99,8 +99,8 @@ function success(
 }
 
 /** Five matching blocks in each document, one link each; three passages come back. */
-const searchEntries = Array.from({ length: 5 }, (_, n) => [`h${n}|needle ${n}`, "x|gap"]).flat();
-const searchLinks = searchEntries.map((_, index) => (index % 2 === 0 ? [fact(index / 2)] : []));
+const grepEntries = Array.from({ length: 5 }, (_, n) => [`h${n}|needle ${n}`, "x|gap"]).flat();
+const grepLinks = grepEntries.map((_, index) => (index % 2 === 0 ? [fact(index / 2)] : []));
 
 const usage = { inputTokens: 1, outputTokens: 1 };
 const toolCall = (name: string, input: Record<string, unknown>): GenerateResult => ({
@@ -141,8 +141,8 @@ async function harness(
   options: {
     read?: () => Promise<void>;
     readTimeoutMs?: number;
-    /** The blocks every document's search read returns, with each block's facts. */
-    search?: { entries: string[]; links: SpelledLinkFact[][] };
+    /** The blocks every document's grep read returns, with each block's facts. */
+    grep?: { entries: string[]; links: SpelledLinkFact[][] };
     write?: (context: {
       responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
     }) => Promise<WriteOutcome>;
@@ -170,7 +170,7 @@ async function harness(
     readEffectiveHashlines: async ({ documentId }: { documentId: string }) => ({
       ok: true,
       value: {
-        blocks: (options.search?.entries ?? searchEntries).map((entry, index) => {
+        blocks: (options.grep?.entries ?? grepEntries).map((entry, index) => {
           const body = entry.slice(entry.indexOf("|") + 1);
           return {
             hash: entry.slice(0, entry.indexOf("|")),
@@ -178,7 +178,7 @@ async function harness(
             destinationFree: body,
             text: body,
             verbatim: false,
-            links: (options.search?.links ?? searchLinks)[index] ?? [],
+            links: (options.grep?.links ?? grepLinks)[index] ?? [],
           };
         }),
         revision: "r1",
@@ -444,14 +444,14 @@ const rows: Array<{
     async act(check) {
       // The window keeps about 120 characters either side of the match.
       const filler = "filler ".repeat(100);
-      const search = {
+      const grep = {
         entries: [
           `h0|needle ${filler}[Secret](user://never-shown)`,
           `h1|${"word ".repeat(22)}needle ${"word ".repeat(22)}[Cut through here](user://cut) ${filler}`,
         ],
         links: [[fact(80)], [fact(81)]],
       };
-      const windowed = await harness({ search });
+      const windowed = await harness({ grep });
       const plain = await runTurn(windowed, [toolCall("grep", { pattern: "needle" })]);
       // What the model reads: the rendered text, not the typed hits beside it.
       const output = plain.results
@@ -461,7 +461,7 @@ const rows: Array<{
       check(output, "the window cuts into the second link").toContain("[Cut…");
       check(output, "its destination is cut off").not.toContain("user://cut)");
       check(await shown(windowed.store, plain.threadId, SOURCE), "windowed").toEqual([]);
-      const whole = await harness({ search });
+      const whole = await harness({ grep });
       const verbose = await runTurn(whole, [
         toolCall("grep", { pattern: "needle", verbose: true }),
       ]);
@@ -698,13 +698,16 @@ const rows: Array<{
         {
           thread,
           responseId: crypto.randomUUID(),
-          state: { threadId: thread.id, currentTurn: turn, allBlocks: [] },
+          threadId: thread.id,
+          currentTurn: turn,
+          allBlocks: [],
           lease: {},
-          interruptSession: {},
-          interruptAutoResume: {},
           treeBudget: {},
           blockSeqRef: { value: 0 },
           allTurns: [],
+          planningBlockIds: [],
+          replyMutations: [],
+          credited: { ids: new Set(), fingerprints: new Set() },
         } as never,
       ).catch((error: Error) => error.message);
       check(dispatched, "dispatch failed").toBe("journal append failed");
