@@ -1,8 +1,9 @@
 /**
  * Parent-first publication B for immutable child execution reports. An asked
- * report whose question resolved with no continuation left to run (withdrawn, or
- * its continuation dropped by a cancellation) projects as a cancelled invocation:
- * the report stays immutable, the card and spawn status stop waiting on it.
+ * report whose question's continuation was cancelled projects as a cancelled
+ * invocation: the report stays immutable, the card and spawn status stop waiting
+ * on it. A run a lineage cancellation ended still projects its card, but its
+ * notice is withdrawn, so nothing it publishes wakes a parent.
  */
 
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
@@ -14,9 +15,9 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import type { LiveEventWriter, StoredAsk, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
-import type { DeliveryProducer, RuntimeDelivery } from "../loop/runtime-delivery.js";
-import { readAskContinuation } from "./ask-continuation.js";
+import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { childQuestionText } from "./model-spawn-result.js";
+import { reportOutcome } from "./saved-report-outcome.js";
 import { invocationAgentName, invocationCardProps } from "./spawn-output.js";
 
 export type PublicationOutcome = "published" | "parked" | "already";
@@ -32,7 +33,7 @@ export interface ReportPublisher {
 export function createReportPublisher(deps: {
   repos: ThreadRepositories;
   eventWriter: LiveEventWriter;
-  delivery: DeliveryProducer & Pick<RuntimeDelivery, "selectPending">;
+  delivery: DeliveryProducer;
   eventSink: EventSink;
 }): ReportPublisher {
   let cursor: TurnId | undefined;
@@ -47,22 +48,12 @@ export function createReportPublisher(deps: {
     return ask;
   }
 
-  /** Whether an asked report's question resolved and nothing will continue it. */
-  async function continuationCancelled(report: SavedExecutionReport, ask: StoredAsk | null) {
-    if (!ask || ask.status === "open" || ask.status === "pending") return false;
-    const continuation = await readAskContinuation(
-      { delivery: deps.delivery, executionReports: deps.repos.executionReports },
-      report.childThreadId,
-      ask.id,
-    );
-    return continuation.kind === "cancelled";
-  }
-
   /** What the invocation shows for this report: a cancelled continuation ends it cancelled. */
   async function projectedTerminal(report: SavedExecutionReport, ask: StoredAsk | null) {
-    return (await continuationCancelled(report, ask))
-      ? { outcome: "cancelled" as const, terminalAt: ask?.resolvedAt?.toISOString() ?? null }
-      : { outcome: report.outcome, terminalAt: report.terminalAt };
+    const outcome = reportOutcome(report, ask);
+    return outcome === report.outcome
+      ? { outcome, terminalAt: report.terminalAt }
+      : { outcome, terminalAt: ask?.resolvedAt?.toISOString() ?? null };
   }
 
   async function cardProjection(
@@ -187,7 +178,7 @@ export function createReportPublisher(deps: {
           result: null,
           events,
         }));
-        if (report.deliveryMode === "background_notification") {
+        if (report.deliveryMode === "background_notification" && !report.noticeWithdrawn) {
           const question = actionableAsk ? (actionableAsk.payload as QuestionAskPayload) : null;
           // A delayed asked publication whose question already settled has no
           // actionable notification. Its ordered card projection still runs,
@@ -267,7 +258,7 @@ export function createReportPublisher(deps: {
     const report = await deps.repos.executionReports.findLatestFinishedByChild(childThreadId);
     if (report?.outcome !== "asked") return;
     const asked = await askedQuestion(report);
-    if (!(await continuationCancelled(report, asked))) return;
+    if (asked?.continuation !== "cancelled") return;
     if (report.origin === "spawn")
       await deps.repos.threads.updateSpawnLifecycle(childThreadId, { spawnStatus: "cancelled" });
     // An unpublished asked report takes the same projection through its obligation.

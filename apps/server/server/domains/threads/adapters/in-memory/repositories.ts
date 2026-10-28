@@ -1440,6 +1440,8 @@ export function createInMemoryRepositories(
           id: input.id ?? crypto.randomUUID(),
           submissionId: input.submissionId ?? null,
           relay: input.relay ?? null,
+          continuation: null,
+          continuationTurnId: null,
           createdAt: new Date(),
           resolvedAt: input.resolvedAt ?? null,
         };
@@ -1478,25 +1480,55 @@ export function createInMemoryRepositories(
           ) ?? null
         );
       },
-      async listLiveByLineage(threadId) {
-        const lineage = new Set<string>([threadId]);
-        let changed = true;
-        while (changed) {
-          changed = false;
-          for (const thread of threads.values()) {
-            if (
-              thread.parentThreadId &&
-              lineage.has(thread.parentThreadId) &&
-              !lineage.has(thread.id)
-            ) {
-              lineage.add(thread.id);
-              changed = true;
-            }
-          }
-        }
-        return [...asks.values()].filter(
-          (ask) => lineage.has(ask.threadId) && (ask.status === "pending" || ask.status === "open"),
-        );
+      async lockHeldByThreads() {},
+      async lockByIds() {},
+      async claimLineage(input) {
+        const targets = new Set<string>(input.threadIds);
+        const live = (ask: StoredAsk) => ask.status === "pending" || ask.status === "open";
+        const owed = (ask: StoredAsk) =>
+          ask.continuation === "pending" || ask.continuation === "admitted";
+        const { owner } = input;
+        const claimed = [...asks.values()]
+          .filter((ask) => {
+            if (targets.has(ask.threadId)) return live(ask) || owed(ask);
+            if (ask.threadId !== owner?.threadId) return false;
+            if (live(ask)) return !owner.turnId || ask.askingTurnId === owner.turnId;
+            if (!owed(ask)) return false;
+            const admittedBy = ask.continuationTurnId
+              ? turns.get(ask.continuationTurnId)?.executionId
+              : null;
+            return owner.spare === null || admittedBy !== owner.spare;
+          })
+          .sort((a, b) => a.id.localeCompare(b.id));
+        return claimed.map((ask) => {
+          const wasLive = live(ask);
+          const row: StoredAsk = {
+            ...ask,
+            ...(wasLive
+              ? {
+                  status: "cancelled" as const,
+                  resolution: { kind: "cancelled" as const },
+                  resolvedAt: new Date(),
+                }
+              : {}),
+            continuation: "cancelled",
+          };
+          asks.set(row.id, row);
+          return { ask: { ...row }, wasLive };
+        });
+      },
+      async admitContinuation(input) {
+        const ask = asks.get(input.id);
+        const owed =
+          ask?.continuation === "pending" || (input.forwarded && ask?.continuation === "admitted");
+        if (!ask || !owed) return null;
+        const row: StoredAsk = {
+          ...ask,
+          continuation: input.forwarded ? "admitted" : "done",
+          continuationTurnId: input.turnId,
+        };
+        asks.set(row.id, row);
+        return { ...row };
       },
       async listByThread(threadId) {
         return [...asks.values()].filter((ask) => ask.threadId === threadId);
@@ -1524,11 +1556,20 @@ export function createInMemoryRepositories(
         asks.set(id, updated);
         return { ...updated };
       },
-      async completeRelay(id, result) {
-        const row = asks.get(id);
-        if (!row?.relay) throw new Error("Forwarded ask has no admitted relay to complete");
-        const updated = { ...row, relay: { ...row.relay, result } };
-        asks.set(id, updated);
+      async completeRelay(input) {
+        const row = asks.get(input.id);
+        if (
+          !row ||
+          row.continuation !== "admitted" ||
+          row.continuationTurnId !== input.turnId ||
+          (input.late ? row.relay !== null : row.relay === null)
+        )
+          return null;
+        const relay = input.late
+          ? { ...input.late, result: input.result }
+          : { ...(row.relay as NonNullable<StoredAsk["relay"]>), result: input.result };
+        const updated: StoredAsk = { ...row, relay, continuation: "done" };
+        asks.set(input.id, updated);
         return { ...updated };
       },
       async openPending(id, turnId, deadline) {
@@ -1547,6 +1588,7 @@ export function createInMemoryRepositories(
             status: "cancelled",
             resolution: { kind: "cancelled" },
             resolvedAt: new Date(),
+            continuation: "cancelled",
           };
           asks.set(row.id, row);
           cancelled.push(row);
@@ -1562,6 +1604,7 @@ export function createInMemoryRepositories(
           resolution: input.resolution as AskResolution,
           submissionId: input.submissionId ?? null,
           resolvedAt: input.resolvedAt,
+          continuation: input.status === "cancelled" ? "cancelled" : "pending",
         };
         asks.set(row.id, row);
         return row;
@@ -1574,6 +1617,7 @@ export function createInMemoryRepositories(
           status: input.status,
           resolution: input.resolution as AskResolution,
           resolvedAt: input.resolvedAt,
+          continuation: "cancelled",
         };
         asks.set(row.id, row);
         return row;

@@ -2,6 +2,7 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
+  AskContinuationState,
   AskKind,
   AskPayload,
   AskResolution,
@@ -42,6 +43,9 @@ export const asks = pgTable(
     resolution: jsonb("resolution").$type<AskResolution>(),
     submissionId: text("submission_id"),
     relay: jsonb("relay").$type<JsonValue | null>(),
+    continuation: text("continuation").$type<AskContinuationState>(),
+    /** The latest turn admitted to continue this ask. */
+    continuationTurnId: uuid("continuation_turn_id").$type<TurnId>(),
     createdAt: createdAt(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
@@ -56,6 +60,12 @@ export const asks = pgTable(
       .on(table.deadlineAt, table.id)
       .where(sql`${table.status} = 'open' AND ${table.deadlineAt} IS NOT NULL`),
     index("asks_thread_created").on(table.threadId, table.createdAt, table.id),
+    // The rows a thread lock takes before its own lock: live asks and owed continuations.
+    index("asks_held_by_thread")
+      .on(table.threadId)
+      .where(
+        sql`${table.status} IN ('pending', 'open') OR ${table.continuation} IN ('pending', 'admitted')`,
+      ),
     uniqueIndex("asks_one_live_per_thread")
       .on(table.threadId)
       .where(sql`${table.status} IN ('pending', 'open')`),
@@ -63,6 +73,10 @@ export const asks = pgTable(
     check(
       "asks_status_valid",
       sql`${table.status} IN ('pending', 'open', 'answered', 'expired', 'cancelled')`,
+    ),
+    check(
+      "asks_continuation_valid",
+      sql`(${table.status} IN ('pending', 'open') AND ${table.continuation} IS NULL) OR (${table.status} IN ('answered', 'expired') AND ${table.continuation} IN ('pending', 'admitted', 'done', 'cancelled')) OR (${table.status} = 'cancelled' AND ${table.continuation} = 'cancelled')`,
     ),
     check(
       "asks_resolution_coherent",

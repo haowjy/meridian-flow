@@ -37,7 +37,6 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
   return {
     childThreadId: row.childThreadId,
     executionTurnId: row.executionTurnId,
-    continuationAskId: row.continuationAskId,
     admittedAt: row.createdAt.toISOString(),
     terminalTurnId: row.terminalTurnId,
     handle: row.handle,
@@ -58,6 +57,7 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
     costMillicredits: row.costMillicredits,
     publication: row.publication as SavedExecutionReport["publication"],
     publishedAt: row.publishedAt?.toISOString() ?? null,
+    noticeWithdrawn: row.noticeWithdrawn,
   };
 }
 
@@ -225,14 +225,17 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
       const row = await find(childThreadId, executionTurnId);
       return row ? map(row) : null;
     },
-    async findByContinuationAsk(askId) {
-      const [row] = await currentDrizzleDb(db)
-        .select(reportSelection)
-        .from(table)
-        .where(eq(table.continuationAskId, askId))
-        .orderBy(desc(table.createdAt), desc(table.executionTurnId))
-        .limit(1);
-      return row ? map(row) : null;
+    async withdrawNotices(childThreadIds) {
+      if (childThreadIds.length === 0) return;
+      await currentDrizzleDb(db)
+        .update(table)
+        .set({ noticeWithdrawn: true })
+        .where(
+          and(
+            inArray(table.childThreadId, [...childThreadIds]),
+            sql`${table.publication} <> 'published'`,
+          ),
+        );
     },
     async listLatestByChildren(childThreadIds) {
       if (childThreadIds.length === 0) return [];

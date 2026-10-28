@@ -29,8 +29,11 @@ interface TransitionThreadTrashDeps {
   works: Pick<WorkRepository, "findById" | "findNoWork">;
   workContextNotices: Pick<WorkContextNotices, "threadChanged">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
-  /** Runs before the thread row lock so ask resolution keeps ask → thread lock order. */
-  cancelAsks(threadId: ThreadId): Promise<void>;
+  /**
+   * Ends the thread's run and subagent subtree in this transaction (lineage cancellation).
+   * Runs before the thread row lock: it takes ask rows, then thread locks, parents first.
+   */
+  stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
 }
 
 /** Serialized archive transition. Archive is not yet exposed by an HTTP route. */
@@ -39,7 +42,7 @@ export async function transitionThreadArchive(
   input: { threadId: ThreadId; userId: UserId; archived: boolean },
 ): Promise<ThreadTrashTransition> {
   return deps.repos.transaction(async () => {
-    if (input.archived) await deps.cancelAsks(input.threadId);
+    if (input.archived) await deps.stopThreads([input.threadId]);
     const before = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
     if (!before || before.userId !== input.userId || before.deletedAt)
       throw new ThreadTrashUnavailableError(input.threadId);
@@ -97,7 +100,7 @@ export async function transitionThreadTrash(
     });
   }
   return deps.repos.transaction(async () => {
-    await deps.cancelAsks(input.threadId);
+    await deps.stopThreads([input.threadId]);
     const before = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
     if (!before || before.userId !== input.userId) {
       throw new ThreadTrashUnavailableError(input.threadId);

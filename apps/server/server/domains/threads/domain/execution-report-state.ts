@@ -69,7 +69,6 @@ export function reportIdentity(input: AdmitExecutionReportInput) {
   return {
     childThreadId: input.childThreadId,
     executionTurnId: input.executionTurnId,
-    continuationAskId: input.continuationAskId ?? null,
     handle: input.handle,
     origin: input.origin,
     deliveryMode: input.deliveryMode,

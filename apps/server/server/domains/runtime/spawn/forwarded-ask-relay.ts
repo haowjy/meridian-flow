@@ -3,7 +3,9 @@
  * answer to the child as a foreground `thread_message` bound to the child's
  * exact ask, then rewrites the forwarded ask's tool result with the child's
  * report. The relay record commits with the child's answer, so a replay after a
- * crash repeats this same call and waits on the same continuation.
+ * crash repeats this same call and waits on the same continuation. The rewritten
+ * result, the ask's `done` continuation and the wake hint's acknowledgement
+ * commit together, and only for the turn admitted to relay it.
  */
 import type { TurnId } from "@meridian/contracts/runtime";
 import type { SpawnResult, TreeBudget } from "@meridian/contracts/spawn";
@@ -12,6 +14,7 @@ import { askToolResult } from "../../threads/domain/ask.js";
 import type { LiveEventWriter, StoredAsk, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "../loop/persistence.js";
+import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import type { InvalidArgumentsResult } from "../tools/invalid-arguments.js";
 import type { ChildRunOptions, ChildRunRequest } from "./child-run-coordinator.js";
 
@@ -21,6 +24,8 @@ export type ForwardedRelayInput = {
   parentTurnId: TurnId;
   /** The parent's resolved forwarded ask. */
   ask: StoredAsk;
+  /** The parent's `ask_resolved` row this relay retires. */
+  controlId: string;
   budget: TreeBudget;
   signal?: AbortSignal;
 };
@@ -28,6 +33,7 @@ export type ForwardedRelayInput = {
 export type ForwardedRelayDeps = {
   repos: PersistenceDeps["repos"] & Pick<ThreadRepositories, "asks">;
   eventWriter: LiveEventWriter;
+  delivery: Pick<DeliveryProducer, "withThreadLock">;
   runChild(
     request: ChildRunRequest,
     options: ChildRunOptions,
@@ -41,7 +47,6 @@ export async function relayForwardedAnswer(
   const { ask } = input;
   const forwarded = (ask.payload as QuestionAskPayload).forwardedFrom;
   if (ask.kind !== "question" || !forwarded) throw new Error("Ask is not a forwarded question");
-  if (ask.relay && ask.relay.result !== null) return;
   const base = askToolResult(ask);
   const text =
     typeof base.answer === "string"
@@ -93,15 +98,27 @@ export async function relayForwardedAnswer(
     content: { toolCallId: ask.toolCallId, output: result, result, isError: false },
     status: "complete",
   });
-  await persistAndAppendEvents(deps, ask.threadId, async () => {
-    if (child.status === "background")
-      await deps.repos.asks.recordRelayOnce(ask.id, {
-        childAskId: forwarded.askId,
-        mode: "late",
-        messageId: `thread-message:forwarded-ask:${ask.id}`,
-        result,
-      });
-    else await deps.repos.asks.completeRelay(ask.id, result);
-    return { result: undefined, events: [{ type: "block.updated" as const, block }] };
+  await deps.delivery.withThreadLock(ask.threadId, async (producer) => {
+    const done = await deps.repos.asks.completeRelay({
+      id: ask.id,
+      turnId: input.parentTurnId,
+      result,
+      ...(child.status === "background"
+        ? {
+            late: {
+              childAskId: forwarded.askId,
+              mode: "late" as const,
+              messageId: `thread-message:forwarded-ask:${ask.id}`,
+            },
+          }
+        : {}),
+    });
+    // A lineage cancellation took this relay's obligation; its run is ending.
+    if (!done) throw new DOMException("The relay was cancelled", "AbortError");
+    await persistAndAppendEvents(deps, ask.threadId, async () => ({
+      result: undefined,
+      events: [{ type: "block.updated" as const, block }],
+    }));
+    await producer.acknowledge([input.controlId]);
   });
 }

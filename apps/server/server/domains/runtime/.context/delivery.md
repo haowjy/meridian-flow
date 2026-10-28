@@ -221,7 +221,9 @@ adopting later messages. The row carries no public control body and materializes
 no transcript turn. Delivery rechecks this eligibility under the thread lock;
 SQL wake discovery only avoids wasted starts. The row carries the continuation's
 report delivery (`direct` or `background_notification`); a `direct` row is enqueued
-without a wake because its parent call drives it. A plain question's row is
+without a wake because its parent call drives it. The row is only the wake hint:
+what the continuation owes is `asks.continuation`, which admission claims in the
+reservation commit (see [spawn](spawn.md)). A plain question's row is
 acknowledged in its admission transaction. For a forwarded ask, admission leaves the
 row unacknowledged until the parent's relay result exists, so a crash replays the
 relay instead of starting a model request without it.

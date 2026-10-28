@@ -251,9 +251,9 @@ ports rather than adapter details.
   Delete/restore are serialized; only a real restore enqueues the targeted
   Work-context notice. Missing, foreign, or concealed rows do not leak
   existence. A fully owned deleted thread has the attested `thread_deleted`
-  response; WebSocket subscribe still conceals it as `not_found`. Delete
-  cancels the lineage's asks inside the transaction; after it commits, the route
-  ends the chat's run and subagent subtree (`stopThreads`, see
+  response; WebSocket subscribe still conceals it as `not_found`. Delete and
+  archive end the chat's run, its asks and its subagent subtree inside their own
+  transaction, before the thread row lock (`stopThreads`, see
   `runtime/.context/spawn.md`).
 - Project-scoped refs are allocated in the create transaction from one counter:
   primaries use `cN`, subagents `pN`. The grammar is shared in

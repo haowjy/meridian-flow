@@ -3,6 +3,7 @@
  * `RunClaim` plus a recording `RunStarter`. The authority fake takes an
  * injected clock so lease expiry and renewal are deterministic.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadLeaseState } from "@meridian/contracts/threads";
 import type { Lease } from "../../loop/ports.js";
@@ -410,12 +411,17 @@ export function createInMemoryRunStarter(): InMemoryRunStarter {
   };
 }
 
+/** Reentrant like PostgreSQL's transaction-scoped lock: a holder that locks again runs at once. */
 export function createInMemoryThreadLock(): ThreadLock {
   const chains = new Map<ThreadId, Promise<unknown>>();
+  const held = new AsyncLocalStorage<ReadonlySet<ThreadId>>();
   return {
     withThreadLock<T>(threadId: ThreadId, operation: () => Promise<T>): Promise<T> {
+      const holding = held.getStore() ?? new Set<ThreadId>();
+      if (holding.has(threadId)) return operation();
+      const locked = () => held.run(new Set([...holding, threadId]), operation);
       const previous = chains.get(threadId) ?? Promise.resolve();
-      const result = previous.then(operation, operation);
+      const result = previous.then(locked, locked);
       chains.set(
         threadId,
         result.then(

@@ -115,8 +115,15 @@ export interface WorkRepository {
   update(id: WorkId, input: UpdateWorkInput): Promise<Work>;
   archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
-  /** Soft-deletes the Work and marks its live children in the same transaction. */
-  softDelete(id: WorkId): Promise<WorkDeletion>;
+  /**
+   * Soft-deletes the Work and marks its live children in the same transaction. `endThreads`
+   * runs first, on the Work's thread tree before any of its rows lock: lineage cancellation,
+   * which takes ask rows and thread locks before thread rows.
+   */
+  softDelete(
+    id: WorkId,
+    endThreads?: (threadIds: readonly ThreadId[]) => Promise<void>,
+  ): Promise<WorkDeletion>;
   /** Restores a soft-deleted Work and exactly its marked children, with an exact receipt. */
   restore(id: WorkId): Promise<WorkRestoration>;
   touch(id: WorkId): Promise<void>;

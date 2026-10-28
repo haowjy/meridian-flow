@@ -1,5 +1,5 @@
 {
-  "id": "f2f1a4a2-a3a5-4b65-903b-dc0125511cc9",
+  "id": "270ae87c-ce25-44e3-9cdc-6223f60c314c",
   "prevId": "e3d5b237-60c3-41ba-87df-8e0f0f1891a2",
   "version": "7",
   "dialect": "postgresql",
@@ -1668,12 +1668,6 @@
           "primaryKey": true,
           "notNull": true
         },
-        "continuation_ask_id": {
-          "name": "continuation_ask_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "terminal_turn_id": {
           "name": "terminal_turn_id",
           "type": "uuid",
@@ -1807,6 +1801,13 @@
           "notNull": true,
           "default": "'none'"
         },
+        "notice_withdrawn": {
+          "name": "notice_withdrawn",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "published_at": {
           "name": "published_at",
           "type": "timestamp with time zone",
@@ -1834,22 +1835,6 @@
           ],
           "isUnique": false,
           "where": "\"thread_execution_reports\".\"publication\" = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "thread_execution_reports_continuation_ask": {
-          "name": "thread_execution_reports_continuation_ask",
-          "columns": [
-            {
-              "expression": "continuation_ask_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"thread_execution_reports\".\"continuation_ask_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -8442,6 +8427,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "continuation": {
+          "name": "continuation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "continuation_turn_id": {
+          "name": "continuation_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8502,6 +8499,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "asks_held_by_thread": {
+          "name": "asks_held_by_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"asks\".\"status\" IN ('pending', 'open') OR \"asks\".\"continuation\" IN ('pending', 'admitted')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -8573,6 +8586,10 @@
         "asks_status_valid": {
           "name": "asks_status_valid",
           "value": "\"asks\".\"status\" IN ('pending', 'open', 'answered', 'expired', 'cancelled')"
+        },
+        "asks_continuation_valid": {
+          "name": "asks_continuation_valid",
+          "value": "(\"asks\".\"status\" IN ('pending', 'open') AND \"asks\".\"continuation\" IS NULL) OR (\"asks\".\"status\" IN ('answered', 'expired') AND \"asks\".\"continuation\" IN ('pending', 'admitted', 'done', 'cancelled')) OR (\"asks\".\"status\" = 'cancelled' AND \"asks\".\"continuation\" = 'cancelled')"
         },
         "asks_resolution_coherent": {
           "name": "asks_resolution_coherent",

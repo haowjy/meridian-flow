@@ -96,8 +96,6 @@ export type SavedExecutionReport = {
   terminalTurnId: TurnId | null;
   childThreadId: ThreadId;
   executionTurnId: TurnId;
-  /** Resolved ask whose continuation this execution admits, when applicable. */
-  continuationAskId: string | null;
   /** Durable report-row creation time, which commits with run admission. */
   admittedAt: string;
   handle: string;
@@ -118,6 +116,8 @@ export type SavedExecutionReport = {
   costMillicredits: number | null;
   publication: "none" | "pending" | "published";
   publishedAt: string | null;
+  /** A lineage cancellation ended this run: its card still settles, but no notice goes out. */
+  noticeWithdrawn: boolean;
 } & (
   | { outcome: null; source: null; summary: null; terminalAt: null }
   | { outcome: SavedOutcome; source: ExecutionReportSource; summary: string; terminalAt: string }

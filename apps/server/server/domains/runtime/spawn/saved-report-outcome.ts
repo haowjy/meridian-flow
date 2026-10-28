@@ -1,7 +1,43 @@
 /** Direct tool result derived only from an immutable terminal execution report. */
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { AgentReport, SavedExecutionReport, SpawnResult } from "@meridian/contracts/spawn";
-import type { StoredAsk } from "../../threads/index.js";
+import type { AskRepository, StoredAsk } from "../../threads/index.js";
+
+/**
+ * The outcome every reader shows: an asked report whose question's continuation was
+ * cancelled (by a lineage cancellation, or withdrawn) ended the invocation cancelled.
+ */
+export function reportOutcome(
+  report: Pick<SavedExecutionReport, "outcome">,
+  question: Pick<StoredAsk, "continuation"> | null | undefined,
+): SavedExecutionReport["outcome"] {
+  return report.outcome === "asked" && question?.continuation === "cancelled"
+    ? "cancelled"
+    : report.outcome;
+}
+
+/** `reports` with each outcome as `reportOutcome` reads it, in one ask query. */
+export async function withReportOutcomes(
+  asks: Pick<AskRepository, "listByTurnIds">,
+  reports: SavedExecutionReport[],
+): Promise<SavedExecutionReport[]> {
+  const askedTurns = reports.flatMap((report) =>
+    report.outcome === "asked" && report.terminalTurnId ? [report.terminalTurnId] : [],
+  );
+  if (askedTurns.length === 0) return reports;
+  const questions = new Map(
+    (await asks.listByTurnIds(askedTurns))
+      .filter((ask) => ask.kind === "question")
+      .map((ask) => [ask.askingTurnId as string, ask]),
+  );
+  return reports.map((report) => {
+    const outcome = reportOutcome(
+      report,
+      report.terminalTurnId ? questions.get(report.terminalTurnId) : null,
+    );
+    return outcome === report.outcome ? report : ({ ...report, outcome } as SavedExecutionReport);
+  });
+}
 
 export function savedReportToSpawnResult(
   report: SavedExecutionReport,
