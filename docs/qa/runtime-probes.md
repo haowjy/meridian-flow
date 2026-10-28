@@ -732,7 +732,6 @@ restart smoke check.
   ./mf doc put 'manuscript://M1 Chapter' --text @"$E/chapter.md" --json > "$E/doc.json"
   ./mf thread create --title 'M1 frontier auto-apply' --json > "$E/thread.json"
   T=$(jq -r .threadId "$E/thread.json")
-  eval "$(pnpm exec tsx tools/dev/print-worktree-env.ts)"
   ```
 
 - **Steps:**

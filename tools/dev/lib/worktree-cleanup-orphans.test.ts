@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveSessionIdentity } from "../session-identity";
+import { devTmuxArgs } from "./dev-tmux-socket";
 
 const checkout = fileURLToPath(new URL("../../../", import.meta.url));
 const cli = path.join(checkout, "tools/dev/prune-worktrees.ts");
@@ -42,7 +43,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
   }
 
   function tmux(...args: string[]): string {
-    const result = run("tmux", args);
+    const result = run("tmux", devTmuxArgs(args));
     if (result.status !== 0) throw new Error(result.stderr || "tmux failed");
     return result.stdout.trim();
   }
@@ -128,7 +129,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
   });
 
   afterEach(() => {
-    run("tmux", ["kill-server"]);
+    run("tmux", devTmuxArgs(["kill-server"]));
     for (const name of ["parent.pid", "child.pid", "late.pid"]) {
       const file = path.join(temp, name);
       if (fs.existsSync(file)) {
@@ -149,13 +150,13 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     const preview = prune("--dry-run");
     expect(preview.status, preview.stderr).toBe(0);
     expect(preview.stdout).toContain(name);
-    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).toBe(0);
     const cancel = prune();
     expect(cancel.status, cancel.stderr).toBe(0);
-    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).toBe(0);
     const execute = prune("--yes");
     expect(execute.status, execute.stderr).toBe(0);
-    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).not.toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).not.toBe(0);
   });
 
   it("preserves live, foreign, unowned, locked and ambiguous sessions despite inherited Git overrides", () => {
@@ -189,7 +190,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     const result = prune("--yes");
     expect(result.status, result.stderr).toBe(0);
     for (const name of [live, foreign, user, wrong, moved, symlink, locked]) {
-      expect(run("tmux", ["has-session", "-t", `=${name}`]).status, name).toBe(0);
+      expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status, name).toBe(0);
     }
   });
 
@@ -202,7 +203,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
       await stopOrphanDevSessions(process.cwd(), plan);
     `);
     expect(result.status).not.toBe(0);
-    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).toBe(0);
   });
 
   it("preserves a live-checkout pane added during shutdown", async () => {
@@ -213,7 +214,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     const livePidFile = path.join(temp, "live.pid");
     const result = stopScript(`
       setTimeout(() => {
-        const pane = spawnSync('tmux', ['split-window', '-d', '-t', plan[0].sessionId + ':0',
+        const pane = spawnSync('tmux', ['-L', 'meridian-flow-dev', 'split-window', '-d', '-t', plan[0].sessionId + ':0',
           '-c', ${JSON.stringify(repo)}, '-P', '-F', '#{pane_pid}', 'sleep 60'], { encoding: 'utf8' });
         if (pane.status !== 0) throw new Error(pane.stderr);
         fs.writeFileSync(${JSON.stringify(livePidFile)}, pane.stdout.trim());
@@ -221,7 +222,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
       await stopOrphanDevSessions(process.cwd(), plan);
     `);
     expect(result.status).not.toBe(0);
-    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).toBe(0);
     const state = run("ps", [
       "-p",
       fs.readFileSync(livePidFile, "utf8"),
@@ -258,7 +259,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
       });
     `);
     expect(result.status).not.toBe(0);
-    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).toBe(0);
     expect(run("ps", ["-p", pid, "-o", "comm="]).stdout.trim()).toMatch(/(^|\/)sleep$/);
   });
 
@@ -276,8 +277,8 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
       const state = run("ps", ["-p", pid, "-o", "stat="]).stdout.trim();
       expect(state === "" || state.startsWith("Z"), file).toBe(true);
     }
-    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).not.toBe(0);
-    expect(run("tmux", ["has-session", "-t", `=${live}`]).status).toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).not.toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${live}`])).status).toBe(0);
   });
 
   it("tolerates route contention, retries with zero orphans and leaves dry-run non-mutating", () => {
@@ -293,7 +294,7 @@ describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", (
     const result = prune("--yes");
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain("Failed to acquire route lock");
-    expect(run("tmux", ["has-session", "-t", `=${name}`]).status).not.toBe(0);
+    expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).not.toBe(0);
     fs.rmSync(called);
     const retry = prune("--yes");
     expect(retry.status, retry.stderr).toBe(0);
