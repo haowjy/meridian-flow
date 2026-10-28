@@ -10,7 +10,6 @@ export interface DevDatabase {
   readonly migrateScript: string;
   readonly label: string;
   readonly extensions?: readonly string[];
-  readonly optional?: boolean;
   /** Repo-relative migrations dir used to detect live-DB schema drift at startup. */
   readonly migrationsDir?: string;
   /** Command shown when the DB can catch up by applying unapplied migrations. */
@@ -80,7 +79,7 @@ function readEnvFile(envPath: string): Record<string, string> {
   );
 }
 
-export function loadMainEnvFile(repoRoot: string): Record<string, string> {
+function readMainEnvFile(repoRoot: string): Record<string, string> {
   return readEnvFile(path.join(resolveMainCheckoutRoot(repoRoot), ".env"));
 }
 
@@ -104,13 +103,10 @@ export function resolveWorktreeDatabaseName(baseDbName: string, slug: string): s
   return name;
 }
 
-/** Rewrite a URL to the expected worktree database name; idempotent when already scoped. */
-export function applyWorktreeDatabaseRewrite(baseUrl: string, expectedDbName: string): string {
-  const currentDb = databaseNameFromUrl(baseUrl);
-  if (currentDb === expectedDbName) return baseUrl;
-  const url = new URL(baseUrl);
-  url.pathname = `/${expectedDbName}`;
-  return url.toString();
+function rewriteDatabaseName(url: string, dbName: string): string {
+  const rewritten = new URL(url);
+  rewritten.pathname = `/${dbName}`;
+  return rewritten.toString();
 }
 
 /**
@@ -152,22 +148,23 @@ export function resolveLiveWorktreeDatabaseNames(
 }
 
 /**
- * The one dev-env loader: fills variables that are still unset from the
- * checkout's own `.env.local`, then the main checkout's `.env` (so a worktree
- * override beats the shared file, and both lose to the caller's environment),
- * then pins `LOG_DIR` and derives the per-worktree database URL.
- *
- * `DATABASE_URL`: when the files define it, the incoming value must name this
- * checkout's database (see `assertExpectedDatabase`). With no file defining it
- * (CI) the incoming value is the base, scoped to `<name>_<slug>` in a linked
- * worktree.
+ * Fill step shared by every env consumer: sets variables that are still unset
+ * from the checkout's own `.env.local`, then the main checkout's `.env` (so a
+ * worktree override beats the shared file, and both lose to the caller's
+ * environment), and pins `LOG_DIR`. `.env.local` may not define a database URL:
+ * the main `.env` is the one source of the base database.
  */
-export function applyDevEnvToProcess(
-  repoRoot = resolveCurrentRepoRoot(),
-  env: NodeJS.ProcessEnv = process.env,
-): void {
-  const fileLayers = [readEnvFile(path.join(repoRoot, ".env.local")), loadMainEnvFile(repoRoot)];
-  for (const file of fileLayers) {
+export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
+  const local = readEnvFile(path.join(repoRoot, ".env.local"));
+  for (const db of DEV_DATABASES) {
+    if (local[db.envVar]) {
+      throw new Error(
+        `${db.envVar} is set in ${path.join(repoRoot, ".env.local")}. Set it in the main checkout's .env: ` +
+          `the base database has one source, and linked worktrees derive theirs from it.`,
+      );
+    }
+  }
+  for (const file of [local, readMainEnvFile(repoRoot)]) {
     for (const [key, value] of Object.entries(file)) {
       if (env[key] === undefined) env[key] = value;
     }
@@ -180,42 +177,46 @@ export function applyDevEnvToProcess(
   // JSONL mirror away from repo-root `logs/events/` (where `logs/portless.log`
   // and probe tooling look). resolveDevLogDir keeps only an absolute override.
   env.LOG_DIR = resolveDevLogDir(repoRoot, env.LOG_DIR);
-
-  for (const db of DEV_DATABASES) {
-    const incoming = env[db.envVar];
-    if (!incoming) continue;
-    const fileUrl = fileLayers.map((file) => file[db.envVar]).find(Boolean);
-    env[db.envVar] = fileUrl
-      ? assertExpectedDatabase({ envVar: db.envVar, incoming, fileUrl, repoRoot })
-      : resolveDatabaseUrl({ baseUrl: incoming, repoRoot });
-  }
 }
 
 /**
- * When the files name the database, the expected one is fixed: the bare name in
- * the main checkout, `<name>_<slug>` in a linked worktree. An incoming URL that
- * names another database (a worktree's URL exported into a shell, then `cd` to
- * main) throws rather than silently targeting it; one that already names the
- * expected database passes through unchanged, so a second run is a no-op.
+ * The one dev-env loader: `fillDevEnv`, then derive this checkout's database.
+ * Never call it from a build config (`shared-db-server` loads those in-process
+ * and passes its own URL verbatim).
+ *
+ * `DATABASE_URL`, when the main `.env` defines it: the expected database is the
+ * bare name in the main checkout and `<name>_<slug>` in a linked worktree. An
+ * incoming value that is unset (so filled from the file), the base, or the
+ * expected name resolves to the file's URL with the expected name, so host and
+ * credentials always come from the file and a second run is a no-op. Any other
+ * name (a worktree's URL left in a shell, then a branch switch) throws.
+ * When no file defines it (CI, deploy migrations) the incoming URL is used
+ * exactly as given.
  */
-function assertExpectedDatabase(input: {
-  envVar: string;
-  incoming: string;
-  fileUrl: string;
-  repoRoot: string;
-}): string {
-  const baseDbName = databaseNameFromUrl(input.fileUrl);
-  const expected = isMainCheckout(input.repoRoot)
-    ? baseDbName
-    : resolveWorktreeDatabaseName(baseDbName, resolveCheckoutSessionIdentity(input.repoRoot).slug);
-  const actual = databaseNameFromUrl(input.incoming);
-  if (actual === expected) return input.incoming;
-  // The fill above makes an unset shell value the files' own base URL: derive from it.
-  if (actual === baseDbName) return applyWorktreeDatabaseRewrite(input.incoming, expected);
-  throw new Error(
-    `${input.envVar} names database "${actual}" but this checkout's is "${expected}". ` +
-      `Unset ${input.envVar} in this shell (it is probably left over from another checkout).`,
-  );
+export function applyDevEnvToProcess(
+  repoRoot = resolveCurrentRepoRoot(),
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  fillDevEnv(repoRoot, env);
+
+  const mainEnv = readMainEnvFile(repoRoot);
+  for (const db of DEV_DATABASES) {
+    const fileUrl = mainEnv[db.envVar];
+    if (!fileUrl) continue;
+    const baseDbName = databaseNameFromUrl(fileUrl);
+    const expected = isMainCheckout(repoRoot)
+      ? baseDbName
+      : resolveWorktreeDatabaseName(baseDbName, resolveCheckoutSessionIdentity(repoRoot).slug);
+    const actual = databaseNameFromUrl(env[db.envVar] ?? fileUrl);
+    if (actual !== baseDbName && actual !== expected) {
+      throw new Error(
+        `${db.envVar} names database "${actual}" but this checkout's is "${expected}". ` +
+          `It is left over from another checkout or a branch switch: unset ${db.envVar} in this shell` +
+          `, and run \`pnpm dev --restart\` if a dev stack is running.`,
+      );
+    }
+    env[db.envVar] = rewriteDatabaseName(fileUrl, expected);
+  }
 }
 
 /**
@@ -230,33 +231,8 @@ export function resolveDevLogDir(repoRoot: string, override?: string): string {
   return path.join(repoRoot, "logs", "events");
 }
 
-/** Dev runtime env keys exported into the tmux dev shell after canonical resolution. */
-export const DEV_RUNTIME_ENV_KEYS = ["LOG_DIR", "EVENT_PROVIDER", "LOG_RETENTION_DAYS"] as const;
-
-export function resolveDevRuntimeEnvPassthroughKeys(env: NodeJS.ProcessEnv): string[] {
-  return DEV_RUNTIME_ENV_KEYS.filter((key) => env[key] !== undefined);
-}
-
-export function assertRequiredBaseUrl(db: DevDatabase, value: string | undefined): value is string {
-  if (value) return true;
-  if (db.optional) return false;
-  throw new Error(
-    `Missing ${db.envVar}. Run pnpm dev:infra, copy .env.example to .env, and set DATABASE_URL.`,
-  );
-}
-
-/** No file names the database (CI): the main checkout keeps the URL; linked worktrees scope it to `<name>_<slug>`. */
-function resolveDatabaseUrl(input: { baseUrl: string; repoRoot?: string }): string {
-  const repoRoot = input.repoRoot ?? resolveCurrentRepoRoot();
-  if (isMainCheckout(repoRoot)) return input.baseUrl;
-  const slug = resolveCheckoutSessionIdentity(repoRoot).slug;
-  const name = databaseNameFromUrl(input.baseUrl);
-  if (name.endsWith(`_${slug}`)) return input.baseUrl; // already scoped: a rerun is a no-op
-  return applyWorktreeDatabaseRewrite(input.baseUrl, resolveWorktreeDatabaseName(name, slug));
-}
-
 export function resolveMainDatabaseNames(repoRoot: string): string[] {
-  const env = loadMainEnvFile(repoRoot);
+  const env = readMainEnvFile(repoRoot);
   return DEV_DATABASES.flatMap((db) => {
     const value = env[db.envVar];
     if (!value) return [];

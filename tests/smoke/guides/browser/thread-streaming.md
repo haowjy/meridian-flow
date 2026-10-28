@@ -40,8 +40,8 @@ Find the active thread id from the DOM (`data-turn-id` on the latest assistant
 turn can identify the turn), or query newest rows:
 
 ```bash
-pnpm db:psql -c "select id, role, status, completed_at from turns order by created_at desc limit 4;"
-pnpm db:psql -c "select event_type, count(*) from event_journal group by event_type order by event_type;"
+tools/dev/psql -c "select id, role, status, completed_at from turns order by created_at desc limit 4;"
+tools/dev/psql -c "select event_type, count(*) from event_journal group by event_type order by event_type;"
 ```
 
 **Pass:** there is a complete user turn, a complete assistant turn, and journal

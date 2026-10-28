@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dump observation_frontiers joined to their source turn_blocks.
-# Run from the repo root of the checkout to read; queries go through `pnpm db:psql`.
+# Run from the repo root of the checkout to read; queries go through `tools/dev/psql`.
 # Optional $1: a thread UUID, or a room_key prefix (`live:` / `draft:`).
 set -euo pipefail
 
@@ -38,7 +38,7 @@ ORDER BY of.recorded_seq;
 """
 
 subprocess.run(
-    ["pnpm", "-s", "db:psql", "-v", "ON_ERROR_STOP=1", "-c", sql],
+    ["tools/dev/psql", "-v", "ON_ERROR_STOP=1", "-c", sql],
     check=True,
 )
 PY

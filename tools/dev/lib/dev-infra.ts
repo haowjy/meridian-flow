@@ -52,7 +52,7 @@ export async function assertDevInfraReady(): Promise<void> {
 
   if (active.length === 0) {
     throw new DevInfraNotReadyError(
-      "pnpm dev requires DATABASE_URL — set it in the main checkout's .env (copy .env.example), or in this checkout's .env.local.",
+      "pnpm dev requires DATABASE_URL — set it in the main checkout's .env (copy .env.example).",
     );
   }
 

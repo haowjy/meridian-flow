@@ -16,7 +16,6 @@
     "dev:restart": "tsx tools/dev/dev-tmux.ts --restart --preserve-mode",
     "dev:infra": "docker compose -f tools/dev/docker-compose.yml up -d --wait",
     "dev:infra:down": "docker compose -f tools/dev/docker-compose.yml down -t 5",
-    "db:psql": "tsx tools/dev/psql.ts",
     "db:reset": "tsx tools/dev/reset-db.ts --yes",
     "lint": "biome check .",
     "format": "biome check .",
