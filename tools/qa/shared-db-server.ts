@@ -4,9 +4,9 @@
  *
  *   pnpm exec tsx tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian
  *
- * `DATABASE_URL` is set verbatim. `applyDevEnvToProcess` is never called for it: its
- * `resolveDatabaseUrl` rewrites a worktree's URL to that checkout's own database, which is how a
- * "second worktree with DATABASE_URL" silently lands on a different database. The rest of the
+ * `DATABASE_URL` is set verbatim. `applyDevEnvToProcess` is never called for it: the
+ * loader pins a worktree's URL to that checkout's own database, which is how a "second worktree
+ * with DATABASE_URL" would land on a different one. No server build config calls the loader either. The rest of the
  * environment comes from the main checkout's `.env`, as the dev stack's does.
  *
  * It refuses any target but the local dev Postgres and prints the database identity

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { APIRequestContext, Page } from "@playwright/test";
 import postgres from "postgres";
+import { applyDevEnvToProcess } from "../../../../tools/dev/lib/dev-env";
+
+// Every DB-using spec imports this module before it reads `DATABASE_URL`, so a
+// run from a bare shell finds the checkout's database instead of skipping.
+applyDevEnvToProcess();
 
 export type Db = ReturnType<typeof postgres>;
 
