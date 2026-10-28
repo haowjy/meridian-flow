@@ -103,9 +103,12 @@ shows it beside whichever notice holds the place. Each owner keeps its notice's 
 and decides from the replica when Undo still applies, so a notice outlives the
 list that published it. A Trash restore reports its removal to the delete
 owner (`useReportRestoredRemovals`), which closes a delete's notice once every
-removal in that delete's receipt came back. `SurfaceNotices` renders a surface's place: in the
-rail between the tree and User; at the foot of Work Files, the phone browser
-and the chat Files menu.
+removal in that delete's receipt came back. On desktop, `ProjectNoticesProvider`
+portals every surface's notices into the Activity region at the window's
+bottom-right, below the import toasts (`ToastRegion`), so a notice never covers
+the rail and survives a closed menu or panel. On a phone, `SurfaceNotices`
+renders a surface's place inline: in the navigation drawer between the tree and
+User, and at the foot of Work Files, the phone browser and the chat Files menu.
 
 ContextPaneController
        ├─ route ↔ server-tab reconciliation

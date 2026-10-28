@@ -200,7 +200,7 @@ export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewP
         </ScratchDropGroup>
       </EntryList>
       {/* Under the list, which stays visible with the sidebar collapsed. */}
-      <SurfaceNotices surface="work-files" className="sticky bottom-2 mt-2 px-2" />
+      <SurfaceNotices surface="work-files" className="sticky bottom-2 mx-2 mt-2" />
     </div>
   );
 }

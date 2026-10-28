@@ -36,7 +36,7 @@ export type WorkspaceNavBodyProps = {
   scratch?: ReactNode;
   /** Opens the project's Trash; its row sits below Scratch. */
   onOpenTrash?: () => void;
-  /** One replaceable notice under the file tree: it takes height from the tree, so nothing shifts or is covered. */
+  /** The phone drawer's notice under the file tree: it takes height from the tree, so nothing shifts or is covered. Desktop notices sit in the window's corner. */
   notice?: ReactNode;
 };
 

@@ -9,13 +9,19 @@
  * fact with `useToastVisible` to time things like a clean "Done" closing itself.
  *
  * One registry per authenticated tree (`ToastRegistryProvider`); tests build
- * their own with `createToastRegistry`.
+ * their own with `createToastRegistry`. The provider also holds the desktop
+ * region's layout: the host element project notices portal into
+ * (`useToastRegionLayout`), so they stack in the same corner as the toasts, and
+ * the elements the region rises above rather than covers (`useToastClearance`).
  */
 import {
   createContext,
   type ReactNode,
+  type RefObject,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -128,6 +134,14 @@ export function createToastRegistry() {
 
 const ToastRegistryContext = createContext<ToastRegistry | null>(null);
 
+type RegionLayout = {
+  host: HTMLElement | null;
+  setHost: (host: HTMLElement | null) => void;
+  clearances: ReadonlySet<HTMLElement>;
+  clear: (element: HTMLElement) => () => void;
+};
+const RegionLayoutContext = createContext<RegionLayout | null>(null);
+
 export function ToastRegistryProvider({
   registry,
   children,
@@ -137,11 +151,42 @@ export function ToastRegistryProvider({
   children: ReactNode;
 }) {
   const [owned] = useState(createToastRegistry);
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  const [clearances, setClearances] = useState<ReadonlySet<HTMLElement>>(() => new Set());
+  const clear = useCallback((element: HTMLElement) => {
+    setClearances((current) => new Set(current).add(element));
+    return () =>
+      setClearances((current) => {
+        const next = new Set(current);
+        next.delete(element);
+        return next;
+      });
+  }, []);
+  const layout = useMemo(() => ({ host, setHost, clearances, clear }), [host, clearances, clear]);
   return (
     <ToastRegistryContext.Provider value={registry ?? owned}>
-      {children}
+      <RegionLayoutContext.Provider value={layout}>{children}</RegionLayoutContext.Provider>
     </ToastRegistryContext.Provider>
   );
+}
+
+/** The desktop region's layout: where notices portal in (null until it mounts) and what it rises above. */
+export function useToastRegionLayout(): RegionLayout {
+  const layout = useContext(RegionLayoutContext);
+  if (!layout) throw new Error("useToastRegionLayout needs a ToastRegistryProvider above it.");
+  return layout;
+}
+
+/**
+ * Keeps the desktop region from covering the element (the pinned chat composer):
+ * while it is mounted, the region rises above it whenever they would overlap.
+ */
+export function useToastClearance(ref: RefObject<HTMLElement | null>): void {
+  const { clear } = useToastRegionLayout();
+  useEffect(() => {
+    const element = ref.current;
+    return element ? clear(element) : undefined;
+  }, [clear, ref]);
 }
 
 /** The registry for imperative owners: `show`, `update`, `remove`, `reveal`. */

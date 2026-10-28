@@ -15,6 +15,7 @@
 import type { ReactNode, RefObject } from "react";
 import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 
+import { useToastClearance } from "@/components/app/toast-registry";
 import { ChatColumn } from "./ChatColumn";
 
 /** Measured height (px) of the pinned composer footer; the transcript's bottom inset. */
@@ -37,6 +38,8 @@ export type ChatSurfaceProps = {
 export function ChatSurface({ title, surfaceRef, children, footer, header }: ChatSurfaceProps) {
   const hasFooter = Boolean(footer);
   const footerRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  useToastClearance(composerRef);
   const [bottomInset, setBottomInset] = useState(0);
 
   // Measure the pinned footer so the transcript can pad its end to match. Layout
@@ -75,6 +78,7 @@ export function ChatSurface({ title, surfaceRef, children, footer, header }: Cha
         <div ref={footerRef} className="pointer-events-none absolute inset-x-0 bottom-0">
           <ChatColumn>
             <div
+              ref={composerRef}
               className="pointer-events-auto pt-3"
               style={{
                 paddingBottom:

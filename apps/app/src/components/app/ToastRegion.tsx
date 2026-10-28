@@ -2,9 +2,14 @@
  * ToastRegion: the app-wide "Activity" region that stacks the toasts owners
  * register in the `ToastRegistry`. It knows nothing about what a toast is for.
  *
- * Desktop (fine pointer): 240px wide inside the default 264px rail, above its account/navigation footer,
- * stacking upward with the newest at the bottom. At most three are expanded;
- * older ones fold into a "+N more" row above that reveals them all.
+ * Desktop: the window's bottom-right corner, 352px wide, stacking upward with
+ * the newest at the bottom. At most three are expanded; older ones fold into a
+ * "+N more" row above that reveals them all. Below the toasts sits the notice
+ * host, where the open project's Undo notices (delete, move, copy) portal in
+ * (`project-notices.tsx`), so every desktop notice shares this one corner.
+ * When the corner would cover a pinned chat composer (its column reaches the
+ * right edge once the right panel is closed), the region rises above it
+ * (`useToastClearance`): the send button stays reachable.
  *
  * Phone (coarse pointer, narrow): one compact bar at the top under the top bar
  * showing the toast's title and bar (several running toasts become "N in
@@ -20,16 +25,23 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronUp, X } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { PersistentToast, ToastBar } from "@/components/ui/persistent-toast";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
-import { type ActivityToast, useToastRegistry, useToastSnapshot } from "./toast-registry";
+import {
+  type ActivityToast,
+  useToastRegionLayout,
+  useToastRegistry,
+  useToastSnapshot,
+} from "./toast-registry";
 
 const MAX_EXPANDED = 3;
+/** The region's inset from the window's right and bottom edges, in px. */
+const EDGE = 16;
 
 function subscribeTabVisibility(onChange: () => void) {
   document.addEventListener("visibilitychange", onChange);
@@ -56,6 +68,9 @@ function combinedProgress(running: readonly ActivityToast[]): number | "indeterm
 
 export function ToastRegion() {
   const registry = useToastRegistry();
+  const { setHost, clearances } = useToastRegionLayout();
+  const desktopRegion = useRef<HTMLElement>(null);
+  const [lift, setLift] = useState(EDGE);
   const { toasts, collapsed, revealRequest } = useToastSnapshot();
   const phone = usePhoneShell();
   const tabVisible = useTabVisible();
@@ -98,9 +113,34 @@ export function ToastRegion() {
     return () => registry.reportVisible(new Set());
   }, [registry, shownKeys, tabVisible]);
 
-  if (phone === null || toasts.length === 0 || !newest) return null;
+  // Rises above any cleared element it would overlap. Observing each element's ancestors
+  // catches what moves it sideways without resizing it (the right panel opening).
+  useLayoutEffect(() => {
+    const region = desktopRegion.current;
+    if (!region) return;
+    const measure = () => {
+      const left = window.innerWidth - EDGE - region.offsetWidth;
+      let next = EDGE;
+      for (const element of clearances) {
+        const box = element.getBoundingClientRect();
+        if (box.width === 0 || box.right <= left || box.bottom < window.innerHeight / 2) continue;
+        next = Math.max(next, window.innerHeight - box.top + EDGE / 2);
+      }
+      setLift(next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(region);
+    for (const element of clearances)
+      for (let node: Element | null = element; node; node = node.parentElement)
+        observer.observe(node);
+    return () => observer.disconnect();
+  }, [clearances, phone]);
+
+  if (phone === null) return null;
 
   if (phone) {
+    if (!newest) return null;
     const others = toasts.length - 1;
     return (
       <section aria-label={t`Activity`}>
@@ -167,11 +207,13 @@ export function ToastRegion() {
   const canFold = toasts.length > MAX_EXPANDED;
   return (
     <section
+      ref={desktopRegion}
       aria-label={t`Activity`}
+      style={{ bottom: lift, maxHeight: showAll ? `calc(100svh - ${lift + EDGE}px)` : undefined }}
       className={cn(
-        "pointer-events-none fixed bottom-24 left-3 z-40 flex w-60 flex-col gap-2",
+        "pointer-events-none fixed right-4 z-40 flex w-88 max-w-[calc(100vw-2rem)] flex-col gap-2",
         // Scrolling clips a card's shadow at the region edge, so the long list drops it.
-        showAll && "max-h-[calc(100svh-2rem)] overflow-y-auto [&_article]:shadow-none",
+        showAll && "overflow-y-auto [&_article]:shadow-none",
       )}
     >
       {canFold ? (
@@ -183,7 +225,7 @@ export function ToastRegion() {
           {hidden > 0 ? <Trans>+{hidden} more</Trans> : <Trans>Show fewer</Trans>}
         </button>
       ) : null}
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-2 empty:hidden">
         {shown.map(({ key, ...spec }) => (
           <li
             key={key}
@@ -197,6 +239,10 @@ export function ToastRegion() {
           </li>
         ))}
       </ul>
+      <div
+        ref={setHost}
+        className="pointer-events-auto flex flex-col gap-2 empty:hidden [&>*]:animate-in [&>*]:fade-in-0 [&>*]:slide-in-from-bottom-2 [&>*]:duration-200 motion-reduce:[&>*]:animate-none"
+      />
     </section>
   );
 }
