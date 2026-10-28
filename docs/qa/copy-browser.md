@@ -40,7 +40,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    `Book (2)` with `./mf doc put`, then Undo: the folder and the later addition are gone.
    `Book` is disabled in that picker's list, as Move… disables it.
 5. **A refusal.** Go offline, copy `Prologue` to `Templates`, delete `Prologue` with
-   `./mf doc rm`, go online. The rows leave `Templates` and a notice on the rail says "Couldn't
+   `./mf doc rm`, go online. The rows leave `Templates` and a notice at the window's bottom-right says "Couldn't
    copy Prologue to Templates. A source or the destination is no longer there." with Copy
    to… and Dismiss. Reload: it is still there. Open a second tab: it shows there too.
    Dismiss in one tab: the other loses it.

@@ -1,6 +1,7 @@
 /**
  * The notice card project surfaces show after a delete or a move, and the one
- * notice place each surface has. A surface shows one notice: a newer one, of
+ * notice place each surface has (inline on a phone, the window's bottom-right
+ * corner on desktop: `project-notices.tsx`). A surface shows one notice: a newer one, of
  * either kind, replaces the older (`useNoticeSlot`).
  */
 
@@ -62,11 +63,13 @@ export function SurfaceNotice({
 }) {
   if (!notice) return null;
   return (
-    <div className={cn("min-w-0", className)}>
-      <div
-        role="status"
-        className="flex min-h-10 min-w-0 items-center gap-3 rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-popover-foreground shadow-sm"
-      >
+    <div
+      className={cn(
+        "min-w-0 rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-popover-foreground shadow-sm",
+        className,
+      )}
+    >
+      <div role="status" className="flex min-h-7 min-w-0 items-center gap-3">
         <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{notice.message}</span>
         {notice.action ? (
           <button
@@ -97,7 +100,7 @@ export function SurfaceNotice({
         </IconButton>
       </div>
       {notice.failure ? (
-        <div role="alert" className="px-2 text-destructive text-xs">
+        <div role="alert" className="pb-0.5 text-destructive text-xs">
           {notice.failure}
         </div>
       ) : null}

@@ -57,14 +57,6 @@ export function createProductionImportOrganizer(deps: {
   arrivals: DocumentArrivals;
   catalog: ContextCatalogMutationPort;
 }): ImportOrganizer {
-  const internalCause = (cause: unknown) => {
-    if (cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string")
-      return { kind: "typed", code: cause.code } as const;
-    return {
-      kind: "unexpected",
-      name: cause instanceof Error ? cause.name : typeof cause,
-    } as const;
-  };
   return createImportOrganizer({
     repository: createDrizzleImportRepository(deps.db),
     queue: createDrizzleOrganizeQueue(deps.db),
@@ -94,7 +86,6 @@ export function createProductionImportOrganizer(deps: {
         name: "pass.failed",
         payload: {
           ...detail,
-          internalCause: internalCause(cause),
           ...errorMessageOf(cause),
           ...unknownToEventPayload(cause),
         },

@@ -239,4 +239,4 @@ Related server contracts live in [the server context](../../server/server/domain
 
 ## Import activity
 
-The authenticated app root owns one account-keyed import coordinator and the app-wide activity toast registry. They survive project navigation, so uploads continue and their status remains reviewable after the initiating tree unmounts.
+The authenticated app root owns one account-keyed import coordinator and the app-wide activity toast registry. They survive project navigation, so uploads continue and their status remains reviewable after the initiating tree unmounts. On desktop the region (`ToastRegion`) sits at the window's bottom-right and also hosts the open project's Undo notices; on a phone it is a bar under the top bar with a bottom sheet.

@@ -285,11 +285,11 @@ Letting go accepts it; Escape or another target declines it. A drop moves every 
 own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
 2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface
 that took the drop, in that surface's one notice place, shared with delete
-notices (see `CONTEXT.md`): in the rail (and the phone drawer) between the
-Files tree and User, under Work Files (visible with the sidebar collapsed), at
-the end of the chat Files menu, and at the end of the phone folder browser. The
-notice is part of the surface's layout: it takes height from the tree's scroll
-area and never covers a control. It stays until the next move or delete on
+notices (see `CONTEXT.md`). On desktop every surface's notice shows in the
+window's bottom-right corner, below the import toasts. On a phone it sits in
+the drawer between the Files tree and User and at the end of the folder
+browser, part of the layout: it takes height from the tree's scroll area and
+never covers a control. It stays until the next move or delete on
 that surface, Dismiss, or the project changing, so Undo is never a race.
 `OperationNoticesProvider` keeps each surface's latest move or copy, as data, whether or
 not the list that made it is still on screen; a kind supplies its message, how it
