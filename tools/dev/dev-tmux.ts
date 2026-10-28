@@ -243,7 +243,7 @@ async function main(): Promise<void> {
     session,
     force: options.restart,
   });
-  if (options.print) return printDryRun(plan, active?.command ?? plan.command.display);
+  if (options.print) return printDryRun(plan, active?.command ?? plan.command.line);
   if (!store.hasCommandOnPath("tmux"))
     throw new Error("tmux is required but was not found on PATH. Install tmux and retry.");
   const sessionNames = [identity.sessionName, ...(previous ? [previous.sessionName] : [])];
@@ -278,11 +278,11 @@ async function main(): Promise<void> {
     // Record launch identity immediately: HEAD may change before readiness finishes.
     writeDevSessionMetadata(repoRoot, {
       ...session,
-      command: plan.command.display,
+      command: plan.command.line,
       externalRoutes: [],
     });
     requireSuccess(
-      store.sendKeys(session.sessionName, plan.command.executable),
+      store.sendKeys(session.sessionName, plan.command.line),
       "failed to start portless in tmux",
     );
   }
@@ -291,7 +291,7 @@ async function main(): Promise<void> {
     tailscale,
     plan,
     alreadyRunning: active !== null,
-    launchCommand: active?.command ?? plan.command.display,
+    launchCommand: active?.command ?? plan.command.line,
   });
 }
 

@@ -8,9 +8,9 @@ See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cur
 
 Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` or `vite dev` gets no repo env, like a direct `apps/app` run.
 
-`DATABASE_URL` is fixed by those files: the bare name in the main checkout, `<name>_<slug>` in a linked worktree (on the shared `:54422` Postgres server). A `DATABASE_URL` in your shell that names any other database (say, left over from another checkout) is an error. Where no file defines it (CI, deploy) the shell value is the base, and a linked worktree scopes it to `<name>_<slug>`.
+Set `DATABASE_URL` only in the main `.env`: the main checkout uses that database and each linked worktree gets `<name>_<slug>` on the same server (`:54422`). Setting it in `.env.local`, or leaving another checkout's URL in your shell, is an error.
 
-For `psql`, run `pnpm db:psql [psql args…]`. It targets this checkout's database and passes `PGPASSWORD` to `psql` only, so no database URL or provider key stays in your shell.
+For `psql`, run `tools/dev/psql [psql args…]`. It targets this checkout's database through `PG*` variables set for `psql` alone, so nothing stays in your shell or shows in `ps`.
 
 ### Toolchain
 
@@ -79,8 +79,8 @@ pnpm dev
 
 | Concern | Behavior |
 |---------|----------|
-| `.env` | Loaded from main checkout (no copy into the worktree) |
-| `DATABASE_URL` | Rewritten to `meridian_<slug>` (main checkout keeps `meridian`) |
+| `.env` | Read from the main checkout (no copy into the worktree); `.env.local` here overrides it, except `DATABASE_URL` |
+| `DATABASE_URL` | Derived as `meridian_<slug>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
 | Postgres | One Docker container on `:54422`; each worktree gets its own database |
 | `pnpm dev:infra` | Shared — start once if Postgres is not already running |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
@@ -105,7 +105,7 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |
 | `pnpm db:studio` | Drizzle Kit Studio |
-| `pnpm db:psql [args…]` | Run `psql` against this checkout's database |
+| `tools/dev/psql [args…]` | Run `psql` against this checkout's database |
 | `pnpm bootstrap` | Ensure DB + migrate + apply-functions |
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
 

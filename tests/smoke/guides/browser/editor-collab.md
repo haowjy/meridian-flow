@@ -35,7 +35,7 @@ shows agent-origin metadata.
 ### 3. Verify persistence
 
 ```bash
-pnpm db:psql -c "select document_id, length(update_data), origin_type, actor_turn_id from document_yjs_updates order by created_at desc limit 5;"
+tools/dev/psql -c "select document_id, length(update_data), origin_type, actor_turn_id from document_yjs_updates order by created_at desc limit 5;"
 ```
 
 **Pass:** Yjs update rows increase after the send, markdown projection includes

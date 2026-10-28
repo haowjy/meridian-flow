@@ -6,8 +6,8 @@
  *
  * `DATABASE_URL` is set verbatim. `applyDevEnvToProcess` is never called for it: the
  * loader pins a worktree's URL to that checkout's own database, which is how a "second worktree
- * with DATABASE_URL" would land on a different one. No server build config calls the loader either. The rest of the
- * environment comes from the main checkout's `.env`, as the dev stack's does.
+ * with DATABASE_URL" would land on a different one. No server build config calls the loader either.
+ * The rest of the environment is the dev stack's fill step (`fillDevEnv`).
  *
  * It refuses any target but the local dev Postgres and prints the database identity
  * (`current_database()`, `inet_server_addr()`, `inet_server_port()`) as one `db-identity` JSON
@@ -25,7 +25,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 import { isLocalDevPostgres } from "../dev/lib/dev-db";
-import { loadMainEnvFile, resolveCurrentRepoRoot, resolveDevLogDir } from "../dev/lib/dev-env";
+import { fillDevEnv, resolveCurrentRepoRoot, resolveDevLogDir } from "../dev/lib/dev-env";
 import { resolveCheckoutPortlessPrefix } from "../dev/portless-prefix";
 import { expectedPortlessName } from "../dev/portless-routes";
 
@@ -76,7 +76,7 @@ async function launch(): Promise<void> {
   const serverName = expectedPortlessName("server", prefix);
   const appName = expectedPortlessName("app", prefix);
   const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const [key, value] of Object.entries(loadMainEnvFile(repoRoot))) env[key] ??= value;
+  fillDevEnv(repoRoot, env);
   Object.assign(env, {
     DATABASE_URL: databaseUrl,
     SHARED_DB_SERVER_URL: databaseUrl,

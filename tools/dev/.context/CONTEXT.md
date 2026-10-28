@@ -5,20 +5,17 @@ that span more than one script.
 
 ## Environment and database
 
-`DEV_DATABASES` is the single registry. Main `.env` values are loaded through
-the shared environment helpers, and linked worktrees rewrite registered URLs to
-an idempotent worktree database. No direnv or shell hook exports
-repo values: every dev entry point calls `applyDevEnvToProcess`, which fills unset
-variables from the checkout's `.env.local`, then the main `.env`, so the caller's
-environment wins. When a file defines `DATABASE_URL`, the expected database is fixed (bare name
-in main, `<name>_<slug>` in a linked worktree): an incoming value naming any
-other database throws, one naming the expected database passes through, so
-reruns are idempotent. With no file defining it (CI) the incoming value is the
-base, scoped to `<name>_<slug>` in a worktree and untouched in main. Only dev
-entry paths call the loader, never a build config (server and www configs
-included), so `shared-db-server` can pass its URL verbatim. `pnpm db:psql` runs
-`psql` against the resolved URL in a child process. Failure to derive a scoped
-database is loud, never a fallback.
+`DEV_DATABASES` is the single registry. Every dev entry point calls
+`applyDevEnvToProcess` (rule in its docstring); no direnv or shell hook exports
+repo values. The base database has one source, the main `.env`, so the
+main-database guard, `gc-dbs`, `run-db-tests` and the loader cannot disagree
+about which database is main. No build config runs the loader, and
+`shared-db-server` loads server configs in-process and passes its own URL as
+given (it uses only the fill step). The stack's services start through
+`with-dev-env.ts`, so one loader feeds the panes. `tools/dev/psql` hands `psql`
+its connection as `PG*` variables, never argv. CI and deploy migrations reach the
+loader through `db:migrate` with no file defining the URL. Failure to derive a
+scoped database is loud, never a fallback.
 
 `db:migrate` and `db:apply-functions` resolve the checkout the same way and
 refuse a registered main database unless a human passes `--allow-main-database`;
@@ -94,8 +91,8 @@ every DB file.
 ## Session and readiness
 
 `applyDevEnvToProcess(repoRoot)` precedes `createDevSessionCommand`. The
-executable command may contain secrets and is sent only to tmux; display output
-and `.meridian/dev-session.json` contain the redacted command. The internal SSR
+tmux command line, `.meridian/dev-session.json` and display output are one
+string and hold no secrets. The internal SSR
 API origin is the paired worktree server origin, not the public app URL.
 The production-client profiling mode uses the same session plan and Portless
 routes. Its app command builds the client, runs the built Nitro server with
