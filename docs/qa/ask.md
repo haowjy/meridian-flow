@@ -213,9 +213,9 @@ scripts cannot interpolate the ids returned by an earlier tool call.
     times. PASS each time: no turn stays streaming and no agent row stays pending.
     When the child's ask is answered with no continuation report, its card,
     `spawn_status` and `thread_report` read cancelled, and a full restart starts no
-    turn. A run whose
-    Stop request names no execution (it reached the server before the
-    continuation started) spares that continuation, which relays and replies.
+    turn. Stop also cancels a continuation that started after the client's last
+    view when it continues the writer's answer, so no child run starts after the
+    Stop commits (a child continuation admitted before it ends `cancelled`).
     Finally repeat step 7's turn cancel with a running 40 s leaf under the middle.
     PASS: no root turn answers the withdrawn `@child asks` notice, and the root's
     ask is the last one cancelled.
@@ -232,3 +232,20 @@ scripts cannot interpolate the ids returned by an earlier tool call.
     "$childAsk"})` and a `thread_message` to that child. PASS: the child's
     question stays open, the primary shows the forwarded question, and the child
     receives the message as an ordinary queued message.
+16. Stop a child whose question the root forwarded. Run `./mf thread stop "$child"`
+    while the root's copy is open. PASS: the root's copy reads `cancelled`
+    (`asks.forwarded_from_ask_id` names the child's ask), the root's asking turn
+    ends `cancelled`, answering the copy returns `not_open`, and the child starts no
+    turn. A later root reply that messages the child still wakes it.
+17. A dying sender. Have a background middle spawn a leaf, then re-task the middle
+    with a script whose next step waits 4 s (`delayMs`) before a background
+    `thread_message` to the leaf, or before a `spawn`. While it waits, press Stop on
+    the root. PASS: the leaf starts no turn and no child appears. To reproduce a
+    flagged run in another process, which keeps calling tools until its next
+    heartbeat, set the middle's `thread_run_leases.cancel_requested` instead of
+    pressing Stop. PASS: the call's result is `thread_stopped` ("This run was
+    stopped, so nothing was sent or started."), and nothing wakes.
+18. Failed rows. Repeat step 15's two `ask_user` calls and expand the reply's step.
+    PASS: the row reads "Couldn't ask a question" and opens to "One request at a
+    time: make this one after the answer arrives." A stopped subagent's card reads
+    "Stopped" under its name.
