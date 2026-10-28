@@ -106,7 +106,8 @@ probe `ws://127.0.0.1:<port>`. Start with `pnpm dev`; discover URLs with
 After installing, upgrading, or patching a package, run `pnpm dev:restart`: the
 dev server doesn't watch `node_modules`.
 
-Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
+Postgres is `postgres:16` plus pg_bigm (`tools/postgres/Dockerfile`; btree_gin and pg_trgm
+are contrib); `DATABASE_URL` is the app seam. Use
 noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 
 Dev stacks use more memory than the tests; when the host is short, run

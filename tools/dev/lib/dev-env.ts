@@ -20,8 +20,8 @@ export interface DevDatabase {
 
 /**
  * Meridian Flow keeps a single-registry dev-tool contract against local
- * postgres:16 (Docker). Linked worktrees rewrite registered DB URLs to sibling
- * databases on the same server (`<baseDbName>_<slug>`); the main checkout keeps
+ * Postgres (Docker, tools/postgres/Dockerfile). Linked worktrees rewrite registered
+ * DB URLs to sibling databases on the same server (`<baseDbName>_<slug>`); the main checkout keeps
  * the bare name from `.env`.
  */
 export const DEV_DATABASES: readonly DevDatabase[] = [

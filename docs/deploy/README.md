@@ -29,7 +29,8 @@ Nx `build`, `test`, and `typecheck` targets wrap package scripts for orchestrati
 
 ## Database
 
-Production uses Postgres. Dev uses a plain `postgres:16` Docker container for
+Production uses Postgres. Dev uses a Docker container built from `tools/postgres/Dockerfile`
+(`postgres:16` plus pg_bigm) for
 Postgres only; the app schema remains Drizzle-owned in `@meridian/database`.
 Auth is WorkOS AuthKit with `public.users` as the identity table.
 
