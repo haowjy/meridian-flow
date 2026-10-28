@@ -22,6 +22,8 @@ export function scopeMarkdownEngine(
 ): MarkdownDocumentEngine {
   const by = (documentId: string) => ({ documentId });
   return {
+    projectDocument: (documentId, doc) =>
+      scopes.within(by(documentId), () => engine.projectDocument(documentId, doc)),
     serializeDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
     serializeVersionedDocument: (documentId, doc, view) =>
@@ -118,6 +120,7 @@ export function scopeDraftPeer(
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
     flushDraftLivePull: access.flushDraftLivePull,
+    readStoredGrepTexts: access.readStoredGrepTexts,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,

@@ -281,6 +281,8 @@ function createInMemoryDraftPeerStub(
       return read.ok ? read.value.revision : null;
     },
     async flushDraftLivePull() {},
+    // Nothing is derived in memory.
+    readStoredGrepTexts: async () => new Map(),
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {

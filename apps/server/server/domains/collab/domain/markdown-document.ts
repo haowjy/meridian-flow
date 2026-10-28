@@ -7,6 +7,7 @@
  */
 
 import type { TransactionOrigin } from "@hocuspocus/server";
+import { destinationFreeBlocks, grepText } from "@meridian/agent-edit";
 import {
   createAgentEditCodecFactory,
   fragmentOf,
@@ -121,6 +122,14 @@ type DraftMutation = (
 export type MarkdownDocumentEngine = {
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
+  /**
+   * The durable projections of the live `doc` from one projection of its blocks: the markdown,
+   * and the text `grep` matches, which spells no link.
+   */
+  projectDocument(
+    documentId: DocumentId,
+    doc: Y.Doc,
+  ): Promise<{ markdown: string; grepText: string }>;
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeVersionedDocument(
     documentId: DocumentId,
@@ -207,11 +216,17 @@ export function createMarkdownDocumentEngine(
     schemaType: YjsTrackedSchemaType,
     links: DocumentLinkScope,
   ): string {
-    return projectBlocks(documentId, doc, (blocks) => {
-      if (blocks.length === 0) return "";
-      if (schemaType === "code") return blocks[0]?.textContent ?? "";
-      return deps.codec.serialize(blocks, links);
-    });
+    return projectBlocks(documentId, doc, (blocks) => markdownOf(blocks, schemaType, links));
+  }
+
+  function markdownOf(
+    blocks: ParsedContent["blocks"],
+    schemaType: YjsTrackedSchemaType,
+    links: DocumentLinkScope,
+  ): string {
+    if (blocks.length === 0) return "";
+    if (schemaType === "code") return blocks[0]?.textContent ?? "";
+    return deps.codec.serialize(blocks, links);
   }
 
   /**
@@ -475,6 +490,16 @@ export function createMarkdownDocumentEngine(
   }
 
   const engine: MarkdownDocumentEngine = {
+    async projectDocument(documentId, doc) {
+      const format = await documentFormat(documentId);
+      if (!format.ok) throwSyncError(format.error);
+      const links = await spelling(documentId, [doc], LIVE_VIEW);
+      return projectBlocks(documentId, doc, (blocks) => ({
+        markdown: markdownOf(blocks, format.value.schemaType, links),
+        grepText: grepText(destinationFreeBlocks(deps.codec, blocks)),
+      }));
+    },
+
     async serializeDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);

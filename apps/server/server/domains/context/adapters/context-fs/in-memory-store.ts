@@ -471,6 +471,22 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     );
   }
 
+  async listTree(
+    view: TreeView,
+  ): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }> {
+    const folders: ContextFolder[] = [];
+    const documents: ContextDocument[] = [];
+    const walk = async (parentId: string | null) => {
+      documents.push(...(await this.listDocuments(view, parentId)));
+      for (const folder of await this.listFolders(view, parentId)) {
+        folders.push(folder);
+        await walk(folder.id);
+      }
+    };
+    await walk(null);
+    return { folders, documents };
+  }
+
   async listFolders(_view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const out: ContextFolder[] = [];
     for (const folder of this.backing.folders.values()) {

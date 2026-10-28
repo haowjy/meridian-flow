@@ -13,7 +13,7 @@ export type ToolCommand =
   | "edit"
   | "undo"
   | "redo"
-  | "search"
+  | "grep"
   | "list"
   | "skill"
   | "work-read"
@@ -29,8 +29,8 @@ export function toolCommand(tool: ToolView): ToolCommand {
       return stringInput(toolInputObject(tool), "format") === "outline" ? "skim" : "read";
     case "write":
       return writeCommand(toolInputObject(tool));
-    case "search":
-      return "search";
+    case "grep":
+      return "grep";
     case "ls":
       return "list";
     case "skill":

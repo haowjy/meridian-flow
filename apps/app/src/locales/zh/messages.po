@@ -322,6 +322,10 @@ msgstr "{days}天"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr ""
 
+#: src/features/chat/tool-result-preview.ts
+msgid "{documents, plural, one {At least # document} other {At least # documents}}"
+msgstr ""
+
 #: src/core/editor/images/image-imports.ts
 msgid "{filename} could not be read from that site. It stayed a link."
 msgstr ""
@@ -901,6 +905,14 @@ msgstr ""
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
+
+#: src/features/chat/tool-result-preview.ts
+#~ msgid "At least {found}"
+#~ msgstr ""
+
+#: src/features/chat/tool-result-preview.ts
+msgid "At least {matches} results in {inDocuments}"
+msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Attach file"
@@ -3320,6 +3332,10 @@ msgstr ""
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/rich-content/TranscriptReference.tsx
 msgid "No longer available"
+msgstr ""
+
+#: src/features/chat/tool-result-preview.ts
+msgid "No matches found before the search stopped"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx

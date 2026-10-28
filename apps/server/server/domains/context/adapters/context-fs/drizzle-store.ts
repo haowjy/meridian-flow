@@ -319,6 +319,21 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return new Map(rows.map((row) => [row.documentId, row.markdown]));
   }
 
+  async listTree(
+    view: TreeView,
+  ): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }> {
+    const vf = visibleFolders(view);
+    const vd = visibleDocuments(view);
+    const [folders, docs] = await Promise.all([
+      this.db
+        .select({ id: vf.id, parentId: vf.parentId, name: vf.name })
+        .from(vf)
+        .where(eq(vf.contextSourceId, this.sourceId)),
+      this.db.select().from(vd).where(eq(vd.contextSourceId, this.sourceId)),
+    ]);
+    return { folders: folders.map(mapFolder), documents: docs.map(mapDocument) };
+  }
+
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const vf = visibleFolders(view);
     const rows = await this.db

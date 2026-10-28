@@ -23,6 +23,7 @@ import { documentRevision, readHashlines } from "./document-revision.js";
 import type { DraftPullService } from "./draft-pulls.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
+import type { DocumentDerivationStore } from "./ports/document-derivations.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
@@ -33,6 +34,7 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
+  derivations: Pick<DocumentDerivationStore, "grepTexts">;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
@@ -95,6 +97,17 @@ export function createEffectiveDocumentReader(input: {
       } catch {
         return null;
       }
+    },
+    async readStoredGrepTexts({ documentIds, responseId, ...version }) {
+      const texts = await input.derivations.grepTexts(documentIds, {
+        ignoreDrafts: version.destination === "live",
+      });
+      // A reply's writes to a document stay in its room until a commit and leave no draft row,
+      // so the stored text can lag the reply's own view.
+      if (responseId)
+        for (const id of texts.keys())
+          if (input.agentEdit.hasResponseDocument(responseId, id)) texts.delete(id);
+      return texts;
     },
     flushDraftLivePull(documentId) {
       return input.draftPulls.flushLivePull(documentId);

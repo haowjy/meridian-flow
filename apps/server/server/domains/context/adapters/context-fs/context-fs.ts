@@ -18,7 +18,6 @@ import {
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { SpelledLinkFact } from "@meridian/markup/links";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
@@ -27,7 +26,6 @@ import type {
   DocumentLinkScopes,
   DraftPeerShadowAccess,
   EffectiveReadVersion,
-  HashlineRead,
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
@@ -45,8 +43,9 @@ import type {
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
+  AdapterGrepFile,
+  AdapterGrepResult,
   AdapterMoveResult,
-  AdapterSearchHit,
   ContextBranchTreeAdapter,
   ContextEnsureTrackedOptions,
   ContextSchemeAdapter,
@@ -66,6 +65,8 @@ import type {
   ContextScheme,
   ContextWriteBinaryOptions,
   ContextWriteOptions,
+  GrepQuery,
+  GrepShowing,
   ThreadContextView,
 } from "../../ports/context-port.js";
 import type {
@@ -86,8 +87,8 @@ import {
   OUTLIVED_PATH_FAULT,
 } from "./create-placement.js";
 import { resolveCreateTarget } from "./create-target.js";
+import { type GrepRead, scanDocuments } from "./grep-scan.js";
 import { LiveCreate } from "./live-create.js";
-import { matchDocument } from "./match.js";
 
 /**
  * A document path's leaf through the name codec: its folders and canonical parts, null for
@@ -108,7 +109,10 @@ export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore &
-    Pick<DraftPeerShadowAccess, "readEffectiveHashlines" | "readEffectiveMarkdown">;
+    Pick<
+      DraftPeerShadowAccess,
+      "readEffectiveHashlines" | "readEffectiveMarkdown" | "readStoredGrepTexts"
+    >;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
@@ -696,68 +700,82 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok(entries);
   }
 
-  async search(
-    query: string,
-    pathPrefix?: string,
-  ): Promise<Result<AdapterSearchHit[], AdapterFault>> {
-    const prefix = pathPrefix?.replace(/\/+$/, "") ?? "";
-    const documents = await this.collectDocuments(await this.readTreeView(), "", null);
-    const searchable = documents.filter(
-      ({ path, document }) =>
-        document.fileType === null && (!prefix || path === prefix || path.startsWith(`${prefix}/`)),
-    );
+  async grep(query: GrepQuery): Promise<Result<AdapterGrepResult, AdapterFault>> {
+    const prefix = query.path?.replace(/\/+$/, "") ?? "";
+    const { folders, documents } = await this.store.listTree(await this.readTreeView());
+    const folderPaths = new Map<string | null, string>([[null, ""]]);
+    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    const folderPath = (id: string | null): string => {
+      const known = folderPaths.get(id);
+      if (known !== undefined) return known;
+      const folder = byId.get(id as string);
+      const path = folder ? joinPath(folderPath(folder.parentId), folder.name) : "";
+      folderPaths.set(id, path);
+      return path;
+    };
+    const inScope = documents
+      .flatMap((document) => {
+        if (document.fileType !== null) return [];
+        const path = joinPath(
+          folderPath(document.folderId),
+          renderFilename(document.name, document.extension),
+        );
+        const inPrefix = !prefix || path === prefix || path.startsWith(`${prefix}/`);
+        return inPrefix && (!query.glob || query.glob(path)) ? [{ id: document.id, path }] : [];
+      })
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    // Access is decided before anything is matched or counted: neither the hits nor the total
+    // may reveal a document the caller can't read.
+    const access = await query.readable(inScope.map(({ id }) => id));
+    const searchable = inScope.filter(({ id }) => access.has(id));
     const first = searchable[0];
-    if (!first) return Ok([]);
+    if (!first) return Ok({ files: [], totalFiles: 0, exact: true });
+
+    const view = this.threadView();
+    const stored = async (ids: string[]) => {
+      const texts = await this.documentSync.readStoredGrepTexts({
+        ...(view ?? { destination: "live" as const }),
+        documentIds: ids as DocumentId[],
+      });
+      return new Map<string, string>(texts);
+    };
     // One source has one project association, including personal and Work sources; its
     // chapters' reads join this snapshot, so it is read in their thread.
-    const threadId = this.threadView()?.threadId;
     return this.links.within(
       {
-        documentId: first.document.id,
-        documentIds: searchable.map(({ document }) => document.id),
-        ...(threadId ? { viewer: { threadId } } : {}),
+        documentId: first.id,
+        documentIds: searchable.map(({ id }) => id),
+        ...(view ? { viewer: { threadId: view.threadId } } : {}),
       },
       async () => {
-        const hits: AdapterSearchHit[] = [];
-        for (const row of searchable) {
-          const read = await this.searchableLines(row.document.id);
-          if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-          const found = matchDocument(read.value.entries, query, {
-            hashlines: read.value.hashlines,
-          });
-          if (!found) continue;
-          const { entries: passageEntries, ...match } = found;
-          // Only the returned passages can be shown, never the matches past the cap.
-          const passages = passageEntries.map((entry) => read.value.links[entry] ?? []);
-          const { holder } = read.value;
-          hits.push({
-            path: row.path,
-            documentId: row.document.id,
-            revision: read.value.revision,
-            ...match,
-            ...(holder?.uri && passages.some((links) => links.length > 0)
-              ? { shown: { holderUri: holder.uri, view: holder.view, passages } }
-              : {}),
-          });
-        }
-        return Ok(hits);
+        const scanned = await scanDocuments({
+          documents: searchable,
+          stored,
+          matcher: query.matcher,
+          mode: query.mode,
+          headLimit: query.headLimit,
+          signal: query.signal,
+          read: async (documentId) => {
+            const read = await this.readGrepBlocks(documentId);
+            return read.ok ? read : { ok: false, error: this.syncFault(read.error) };
+          },
+        });
+        if (!scanned.ok) return scanned;
+        const { hits, totalFiles, exact, stopped } = scanned.value;
+        const files = hits.map(
+          ({ document, match, matchCount, revision, shown }): AdapterGrepFile => ({
+            path: document.path,
+            documentId: document.id,
+            revision,
+            readonly: access.get(document.id) !== "edit",
+            matches: query.mode === "content" && match ? match.matches : [],
+            ...(query.mode === "files_with_matches" ? {} : { matchCount }),
+            ...(shown ? { shown } : {}),
+          }),
+        );
+        return Ok({ files, totalFiles, exact, ...(stopped ? { stopped } : {}) });
       },
     );
-  }
-
-  private async collectDocuments(
-    view: TreeView,
-    path: string,
-    folderId: string | null,
-  ): Promise<Array<{ path: string; document: ContextDocument }>> {
-    const out: Array<{ path: string; document: ContextDocument }> = [];
-    for (const doc of await this.store.listDocuments(view, folderId)) {
-      out.push({ path: joinPath(path, renderFilename(doc.name, doc.extension)), document: doc });
-    }
-    for (const folder of await this.store.listFolders(view, folderId)) {
-      out.push(...(await this.collectDocuments(view, joinPath(path, folder.name), folder.id)));
-    }
-    return out;
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */
@@ -787,50 +805,31 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * What a search scans, and whether its entries carry block hashes. Only the
-   * thread view serializes hashlines, so the flag travels with the text
-   * rather than being re-derived from the scheme name: a read outside a
-   * thread view falls back to plain markdown and would otherwise be parsed as
-   * hashlines it does not have.
+   * A document's blocks as grep matches them, and the link facts each spells. Outside a thread
+   * the live document is read, through the same reader.
    */
-  private async searchableLines(documentId: string): Promise<
-    Result<
-      {
-        entries: string[];
-        hashlines: boolean;
-        revision: string | null;
-        links: readonly (readonly SpelledLinkFact[])[];
-        holder?: HashlineRead["holder"];
+  private async readGrepBlocks(
+    documentId: string,
+  ): Promise<{ ok: true; value: GrepRead<GrepShowing> } | { ok: false; error: SyncError }> {
+    const view = this.threadView() ?? { destination: "live" as const };
+    const read = await this.documentSync.readEffectiveHashlines({
+      ...view,
+      documentId: documentId as DocumentId,
+    });
+    if (!read.ok) return read;
+    const { blocks, holder, revision, locate } = read.value;
+    return Ok({
+      blocks,
+      revision,
+      locate,
+      shownOf: ({ blocks: passageBlocks }) => {
+        // Only the returned passages can be shown, never the matches past the cap.
+        const passages = passageBlocks.map((block) => blocks[block]?.links ?? []);
+        return holder.uri && passages.some((facts) => facts.length > 0)
+          ? { holderUri: holder.uri, view: holder.view, passages }
+          : undefined;
       },
-      SyncError
-    >
-  > {
-    const view = this.threadView();
-    if (view) {
-      const hashlines = await this.documentSync.readEffectiveHashlines({
-        ...view,
-        documentId: documentId as DocumentId,
-      });
-      return hashlines.ok
-        ? Ok({
-            entries: hashlines.value.content,
-            hashlines: true,
-            revision: hashlines.value.revision,
-            links: hashlines.value.links,
-            holder: hashlines.value.holder,
-          })
-        : hashlines;
-    }
-    const read = await this.documentSync.readVersionedMarkdown(documentId);
-    return read.ok
-      ? Ok({
-          entries: read.value.content.split("\n"),
-          hashlines: false,
-          revision: read.value.revision,
-          // Plain lines are not blocks; outside a thread no model is shown anything.
-          links: [],
-        })
-      : read;
+    });
   }
 
   private mutationFault(error: ContextTreeMutationError): AdapterFault {
