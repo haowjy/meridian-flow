@@ -170,7 +170,8 @@ docs repository.
 Write a PR body for a reader who knows nothing about the area. Explain each term
 in a few words the first time it appears, and link the issues, PRs, decisions and
 code it refers to, so a newcomer catches up quickly. The
-[PR template](.github/PULL_REQUEST_TEMPLATE.md) holds the sections.
+[PR template](.github/PULL_REQUEST_TEMPLATE.md) holds the sections. Check a draft with
+`pnpm check:pr-body <body.md>` before `gh pr create`; `pnpm check` checks the branch's open PR body.
 
 **Clean up as soon as you're done with something.** Idle dev stacks, databases and
 checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,
