@@ -137,37 +137,72 @@ A parked child exists only in the database, so lifetime follows thread lineage,
 not live sessions. Lineage cancellation is one durable command
 (`spawn/lineage-cancellation.ts`), run inside the trigger's own transaction:
 
-1. **Ask rows first.** Lock the rows every lineage thread holds (live asks and
-   owed continuations), in id order.
-2. **Thread locks, parents first.** The owner's parent (a parked owner's card is
-   there), then the owner. Under the owner's lock the trigger makes its own
-   decision: Stop's rule, the turn's lease flag, Send now's rule.
+1. **Ask rows first.** In one id-ordered statement, lock the rows held (live asks
+   and owed continuations) by the owner, its subtree and its ancestors: a
+   forwarded copy of a lineage question lives on an ancestor.
+2. **Thread locks, parents first.** The ancestors the command writes to (the
+   owner's parent, where a parked owner's card is; each thread holding a live copy
+   of a lineage question, and its parent), root first, then the owner. Under the
+   owner's lock the trigger makes its own decision: Stop's rule, the turn's lease
+   flag, Send now's rule. Then each target, parents first; under each target's
+   lock its subtree is listed again, so a child whose spawn committed before that
+   lock is a target too.
 3. **One claim.** One statement cancels the reached threads' live asks and owed
-   continuations, and the owner's live asks (a cancelled turn's own question only)
-   and owed continuations, except one admitted by an execution the decision spared.
-4. **Per thread, parents first:** drop the targets' queued non-writer rows, the
-   owner's child notices from them and the owner's hints for the claimed asks; write
-   each claimed ask's cancelled tool result or `ask.updated`. Then set
-   `cancel_requested` on the targets' live leases, mark their unpublished reports
-   `notice_withdrawn`, and settle each parked invocation whose ask was claimed
-   (`settleCancelledAsk`: card, `agent.run_completed`, `spawn_status`).
+   continuations, the owner's live asks (a cancelled turn's own question only)
+   and owed continuations, except one admitted by an execution the decision spared,
+   and every live copy forwarded from a claimed ask (`asks.forwarded_from_ask_id`),
+   at any remove.
+4. **Per locked thread:** drop a target's queued non-writer rows; elsewhere drop
+   the child notices from targets, the hints for claimed asks and the question
+   notices (`child-question:<askId>`) for claimed asks. Write each claimed ask's
+   cancelled tool result or `ask.updated`. Then set `cancel_requested` on the
+   targets' live leases, stamp the **wake fence** (`threads.wake_fence_at`) on the
+   targets, and on the owner when the writer stopped or deleted the chat, mark the
+   targets' unpublished reports `notice_withdrawn`, and settle each parked
+   invocation whose ask was claimed (`settleCancelledAsk`: card,
+   `agent.run_completed`, `spawn_status`).
+
+**The wake fence.** A stopped thread accepts no machine wake from an execution
+admitted before its cancellation. Every wake one execution sends to another thread
+asks `RunClaim.wakeRefusal` in the receiver's transaction, under the receiver's
+thread lock: a background `thread_message` enqueue, a parent's answer (the relay
+included) and a child's direct admission (spawn, foreground `thread_message`). It
+is refused when the sending execution no longer holds its lease or was flagged
+(`sender_stopped`: a dying run sends nothing), or when the receiver's fence is
+later than the sender lease's `acquired_at` (`receiver_stopped`). The sender gets a
+`thread_stopped` tool result. A spawn checks its sender under the parent's row
+lock, which the cancellation holds until commit, so it either commits first and
+the cancellation finds the child, or sees its sender stopped. Writer actions never
+ask, and an execution admitted after the fence wakes the thread normally.
+
+`notice_withdrawn` stays a separate column: it fences a *target's* report from its
+parent, while the owner's own report must still reach its parent after Stop, and a
+report is published (and republished by the sweep) after its execution's lease is
+gone.
 
 After commit the run session aborts its own sessions of the cancelled execution
 and the targets; that only makes them stop sooner. Runs in other processes stop at
 their next heartbeat (`DEFAULT_LEASE_TTL_MS / 3`, about 10 s). Whatever a dying run
-writes meanwhile wakes nothing: its hint and notices are gone, its continuation is
-`cancelled` so a re-drain admits nothing, and its report's publication projects the
-card but enqueues no parent notice (`notice_withdrawn`). Stop decides the owner's
-execution from what the writer saw: a continuation that started after the client's
-last view (an answer followed at once by Stop) is spared and replies.
+writes meanwhile wakes nothing: its sends are refused by the fence, its hint and
+notices are gone, its continuation is `cancelled` so a re-drain admits nothing, and
+its report's publication projects the card but enqueues no parent notice. Stop
+decides the owner's execution from what the writer saw, and an execution that
+continues the writer's answer counts as one the writer asked for, so Stop cancels
+it; a continuation of a machine wake that started after the client's last view is
+spared and replies.
 
 Lock order is ask rows, then thread locks parents first, then thread rows and
 leases. The thread lock itself locks its thread's held ask rows before its
 advisory lock (`shared/thread-work-lock.ts`, `lockThreadAsks`), so admission, the
 relay's `done` and the finalizer's open-or-cancel of its own ask never take an ask
-row under a thread lock. An answer that relays locks both ask rows, in id order,
-before its claim. Work delete runs the command on the Work's tree before
-`lockWorkThreadTree` takes the tree's rows.
+row under a thread lock. Every resolver locks its ask row (and a relay's forwarded
+ask), in id order, before the thread lock; a forward locks its source. Lineage
+cancellation is the only transaction that takes more than one thread's lock
+(`asMultiThreadLocker`); outside production the Postgres thread lock throws on a
+second thread's lock anywhere else. Its one late ask lock is a child spawned
+between its listing and its parent's lock, which can hold an ask only if it ran a
+whole model turn in that window. Work delete runs the command on the Work's tree
+before `lockWorkThreadTree` takes the tree's rows. Nothing retries `40P01`.
 
 Ownership decides the scope:
 

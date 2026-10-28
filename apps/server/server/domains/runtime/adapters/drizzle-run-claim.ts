@@ -257,6 +257,37 @@ export function createDrizzleRunClaim(
         );
     },
 
+    async fenceWakes(threadIds) {
+      if (threadIds.length === 0) return;
+      // The wall clock, not the transaction's start: a lease acquired while this command
+      // waited on locks must not read as admitted before the fence.
+      await db_()
+        .update(schema.threads)
+        .set({ wakeFenceAt: sql`clock_timestamp()` })
+        .where(inArray(schema.threads.id, threadIds as string[]));
+    },
+
+    async wakeRefusal({ sender, receiver }) {
+      const leases = schema.threadRunLeases;
+      const [lease] = await db_()
+        .select({
+          cancelRequested: leases.cancelRequested,
+          // Compared in SQL: a JS Date would truncate the lease's microseconds.
+          fenced: receiver
+            ? sql<boolean>`EXISTS (SELECT 1 FROM ${schema.threads}
+                WHERE ${schema.threads.id} = ${receiver}
+                  AND ${schema.threads.wakeFenceAt} > ${leases.acquiredAt})`
+            : sql<boolean>`FALSE`,
+        })
+        .from(leases)
+        .where(
+          and(eq(leases.threadId, sender.threadId), eq(leases.executionId, sender.executionId)),
+        )
+        .limit(1);
+      if (!lease || lease.cancelRequested) return "sender_stopped";
+      return lease.fenced ? "receiver_stopped" : null;
+    },
+
     async cancelExecution(threadId, turnId) {
       return runInDrizzleTransaction(db, async () => {
         const rows = await db_()

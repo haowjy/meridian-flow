@@ -63,7 +63,12 @@ export interface ToolDispatchDeps {
  */
 export type RequestBatch = {
   readonly hasReturnResult: boolean;
-  readonly forwarding: ReadonlySet<string>;
+  /**
+   * Child asks this batch forwards. Calls run in order, so a forward later in the batch counts
+   * from its arguments until its request runs; a refused one is dropped, and a message after it
+   * answers the question as usual.
+   */
+  readonly forwarding: Set<string>;
   deferred: string | null;
 };
 
@@ -252,6 +257,7 @@ export async function dispatchToolCall(
             kind: "spawn",
             parentThread: ctx.thread,
             parentTurnId: ctx.currentTurn.id,
+            parentExecutionId: ctx.lease.executionId,
             agentSlug: spawnInput.agent,
             prompt: spawnInput.prompt,
             from: spawnInput.from,
@@ -290,6 +296,7 @@ export async function dispatchToolCall(
             kind: "message",
             parentThread: ctx.thread,
             parentTurnId: ctx.currentTurn.id,
+            parentExecutionId: ctx.lease.executionId,
             ref: messageInput.ref,
             prompt: messageInput.message,
             toolCallId: call.id,
@@ -341,14 +348,17 @@ export async function dispatchToolCall(
       : ctx.batch.deferred
         ? "One request at a time: make this one after the answer arrives."
         : null;
-    if (refused) return { kind: "refused", refusal: { code: "request_refused", reason: refused } };
-    const outcome = await deps.askRequests.request({
-      threadId: ctx.threadId,
-      askingTurnId: ctx.currentTurn.id,
-      executionId: ctx.lease.executionId,
-      toolCallId: call.id,
-      request: asked,
-    });
+    const outcome: import("../asks/ask-service.js").AskRequestOutcome = refused
+      ? { kind: "refused", refusal: { code: "request_refused", message: refused } }
+      : await deps.askRequests.request({
+          threadId: ctx.threadId,
+          askingTurnId: ctx.currentTurn.id,
+          executionId: ctx.lease.executionId,
+          toolCallId: call.id,
+          request: asked,
+        });
+    if (outcome.kind === "refused" && asked.kind === "forward")
+      ctx.batch.forwarding.delete(asked.askId);
     if (outcome.kind === "deferred") {
       ctx.batch.deferred = outcome.askId;
       deferredAskId = outcome.askId;

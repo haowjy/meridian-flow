@@ -144,6 +144,8 @@ interface InMemoryLease {
   cancelRequested: boolean;
   currentTool: CurrentToolCall | null;
   expiresAt: number;
+  /** Admission order, compared with wake fences. */
+  admitted: number;
 }
 
 export interface InMemoryRunClaimOptions {
@@ -162,6 +164,9 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
   const now = options.now ?? (() => Date.now());
   const leases = new Map<ThreadId, InMemoryLease>();
+  // A sequence, not the clock: a fence and an admission in the same millisecond still order.
+  let sequence = 0;
+  const fences = new Map<ThreadId, number>();
   const shortClaims = new Set<ThreadId>();
   // The execution claim, apart from its row: abandon unlocks and keeps the row. It records the
   // claimant's execution, because settling a stale row happens under the new claimant's claim:
@@ -229,6 +234,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
         cancelRequested: false,
         currentTool: null,
         expiresAt: now() + leaseTtlMs,
+        admitted: ++sequence,
       });
       return { threadId, executionId, holderId };
     },
@@ -378,6 +384,18 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
         const row = liveLease(threadId);
         if (row) row.cancelRequested = true;
       }
+    },
+
+    async fenceWakes(threadIds) {
+      const at = ++sequence;
+      for (const threadId of threadIds) fences.set(threadId, at);
+    },
+
+    async wakeRefusal({ sender, receiver }) {
+      const row = leases.get(sender.threadId);
+      if (!row || row.executionId !== sender.executionId || row.cancelRequested)
+        return "sender_stopped";
+      return receiver && (fences.get(receiver) ?? 0) > row.admitted ? "receiver_stopped" : null;
     },
 
     async cancelExecution(threadId, turnId) {

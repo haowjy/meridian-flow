@@ -19,6 +19,8 @@ import type {
   ThreadRepository,
 } from "../../threads/index.js";
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
+import type { RunClaim, WakeRefusal } from "../loop/ports.js";
+import { WakeRefusedError } from "../loop/run-turn-port.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { threadReferenceBlock } from "../thread-reference.js";
 import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/invalid-arguments.js";
@@ -108,6 +110,8 @@ export interface ChildRunCoordinatorDeps {
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
   delivery: DeliveryProducer;
+  /** The machine-wake fence every message, relay and spawn from a parent's execution passes. */
+  wakes: Pick<RunClaim, "wakeRefusal">;
   asks?: Pick<import("../asks/ask-service.js").AskService, "answerFromParent">;
   /** The forwarded ask's tool result is rewritten in place under the parent's journal. */
   relayRepos: ForwardedRelayDeps["repos"];
@@ -184,6 +188,17 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       const lockedParent = await deps.repos.threads.lockByIdIncludingDeleted(
         input.parentThread.id as ThreadId,
       );
+      // Under the parent's row lock, which a lineage cancellation holds until it commits: a
+      // spawn either commits first, and the cancellation finds the child, or sees its sender
+      // stopped here.
+      const refusal = await deps.wakes.wakeRefusal({
+        sender: {
+          threadId: input.parentThread.id as ThreadId,
+          executionId: input.parentExecutionId,
+        },
+        receiver: null,
+      });
+      if (refusal) throw new WakeRefusedError(refusal, null);
       const created = await createBoundConversation({
         transaction: deps.repos.transaction,
         agentRevisions: deps.agentRevisions,
@@ -390,7 +405,32 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const target = authorized.target;
     const notifiesCaller =
       target.kind === "subagent" && target.parentThreadId === request.parentThread.id;
-    await deps.delivery.enqueue({
+    const refusal = await deps.delivery.withThreadLock(target.id as ThreadId, async (producer) => {
+      const refusal = await deps.wakes.wakeRefusal({
+        sender: {
+          threadId: request.parentThread.id as ThreadId,
+          executionId: request.parentExecutionId,
+        },
+        receiver: target.id as ThreadId,
+      });
+      if (refusal) return refusal;
+      await producer.enqueue(backgroundMessage(request, target, notifiesCaller));
+      return null;
+    });
+    if (refusal) return stoppedResult(refusal, target.ref);
+    // The target drives its own run in its own process, so no lease is held here
+    // and no activity frame fires from this call. The woken process emits the
+    // start and terminal frames when it acquires and releases its lease, so the
+    // strip shows the target `awake` for the whole run.
+    return backgroundResult(target, notifiesCaller);
+  }
+
+  function backgroundMessage(
+    request: ThreadMessageChildInput,
+    target: Thread,
+    notifiesCaller: boolean,
+  ): import("../loop/ports.js").MessageDraft {
+    return {
       threadId: target.id as ThreadId,
       intent: "message",
       provenance: {
@@ -404,12 +444,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       },
       body: { kind: "text", text: request.prompt },
       idempotencyKey: `thread-message:${request.toolCallId}`,
-    });
-    // The target drives its own run in its own process, so no lease is held here
-    // and no activity frame fires from this call. The woken process emits the
-    // start and terminal frames when it acquires and releases its lease, so the
-    // strip shows the target `awake` for the whole run.
-    return backgroundResult(target, notifiesCaller);
+    };
   }
 
   async function backgroundResult(target: Thread, notifiesCaller: boolean): Promise<SpawnResult> {
@@ -443,6 +478,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       if (!authorized.ok) return { status: "error", error: authorized.error };
       const answered = await deps.asks.answerFromParent({
         parentThreadId: request.parentThread.id as ThreadId,
+        parentExecutionId: request.parentExecutionId,
         childThreadId: authorized.target.id as ThreadId,
         askId: request.boundAskId,
         submissionId: `parent-message:${request.toolCallId}`,
@@ -450,6 +486,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         delivery: background ? "background_notification" : "direct",
         ...(request.relayFor ? { relayFor: request.relayFor } : {}),
       });
+      if (!answered.ok && answered.code === "thread_stopped")
+        return stoppedResult(answered.refusal, authorized.target.ref);
       // The exact question lost the race. Preserve its binding on the ordinary
       // message; it must never be retargeted to a newer question.
       if (!answered.ok) return sendBackgroundMessage(request);
@@ -464,7 +502,10 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
     const correlation = invocationCorrelation(request, background);
 
-    const prepared = await prepare(request, background);
+    const prepared = await prepare(request, background).catch((error: unknown) => {
+      if (error instanceof WakeRefusedError) return stoppedResult(error.refusal, null);
+      throw error;
+    });
     if ("status" in prepared || "issues" in prepared) {
       const reason =
         "issues" in prepared
@@ -533,6 +574,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             runCard,
           );
         }
+        if (error instanceof WakeRefusedError)
+          return stoppedResult(error.refusal, prepared.child.ref);
         throw error;
       }
     }
@@ -553,6 +596,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           runCard,
         );
       }
+      if (error instanceof WakeRefusedError)
+        return stoppedResult(error.refusal, prepared.child.ref);
       if (request.kind === "message" && error instanceof TurnStartConflictError) {
         return {
           status: "error",
@@ -581,7 +626,21 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   };
 }
 
+/** The tool result of a wake the fence refused: the model learns who was stopped. */
+function stoppedResult(refusal: WakeRefusal, handle: string | null): SpawnResult {
+  return {
+    status: "error",
+    error: meridianErrorFromSystem(
+      "thread_stopped",
+      refusal === "sender_stopped"
+        ? "This run was stopped, so nothing was sent or started."
+        : `${handle ? `@${handle}` : "That thread"} was stopped, so the message wasn't sent.`,
+    ),
+  };
+}
+
 function readableFailureReason(error: unknown): string {
+  if (error instanceof WakeRefusedError) return "Stopped before it started.";
   // The conflict's own message names the child thread's id; the card already names the subagent.
   if (error instanceof TurnStartConflictError) {
     return error.reason === "already_running"

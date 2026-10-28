@@ -1,6 +1,7 @@
 -- migration: no-transaction
 -- Subagent asks: the asked outcome and spawn status, the forwarded-ask relay record, each ask's
--- continuation state and admitted turn, and the withdrawn-notice fence on execution reports.
+-- continuation state and admitted turn, a forwarded copy's source ask, the withdrawn-notice fence
+-- on execution reports, and the machine-wake fence on threads.
 -- Checks are added NOT VALID, then validated, so no ACCESS EXCLUSIVE lock is held through
 -- validation; the index is built concurrently.
 SET lock_timeout = '2s';
@@ -79,7 +80,29 @@ ALTER TABLE "asks" ADD COLUMN IF NOT EXISTS "continuation_turn_id" uuid;
 --> statement-breakpoint
 ALTER TABLE "thread_execution_reports" ADD COLUMN IF NOT EXISTS "notice_withdrawn" boolean DEFAULT false NOT NULL;
 --> statement-breakpoint
+ALTER TABLE "asks" ADD COLUMN IF NOT EXISTS "forwarded_from_ask_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "threads" ADD COLUMN IF NOT EXISTS "wake_fence_at" timestamp with time zone;
+--> statement-breakpoint
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'asks'::regclass AND conname = 'asks_forwarded_from_fk'
+  ) THEN
+    ALTER TABLE asks ADD CONSTRAINT asks_forwarded_from_fk FOREIGN KEY ("forwarded_from_ask_id")
+      REFERENCES "public"."asks"("id") ON DELETE set null ON UPDATE no action NOT VALID;
+  END IF;
+END $$;
+--> statement-breakpoint
 RESET lock_timeout;
+--> statement-breakpoint
+-- A forwarded copy names its source in its payload; the column makes the source queryable.
+UPDATE "asks" copy SET "forwarded_from_ask_id" = source."id"
+FROM "asks" source
+WHERE copy."forwarded_from_ask_id" IS NULL
+  AND source."id"::text = copy."payload"->'forwardedFrom'->>'askId';
+--> statement-breakpoint
+ALTER TABLE asks VALIDATE CONSTRAINT asks_forwarded_from_fk;
 --> statement-breakpoint
 -- A resolved ask whose ask_resolved row is still waiting has a continuation owed; every other
 -- resolved ask already continued, or was cancelled.
@@ -114,3 +137,7 @@ ALTER TABLE asks VALIDATE CONSTRAINT asks_continuation_valid;
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "asks_held_by_thread"
   ON "asks" ("thread_id")
   WHERE "status" IN ('pending', 'open') OR "continuation" IN ('pending', 'admitted');
+--> statement-breakpoint
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "asks_forwarded_from"
+  ON "asks" ("forwarded_from_ask_id")
+  WHERE "forwarded_from_ask_id" IS NOT NULL;

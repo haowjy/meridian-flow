@@ -22,6 +22,7 @@ function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
     relay: row.relay as AskRelay | null,
     continuation: row.continuation,
     continuationTurnId: row.continuationTurnId,
+    forwardedFromAskId: row.forwardedFromAskId,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
   };
@@ -44,6 +45,7 @@ function storedAskFromColumns(row: Record<string, unknown>): StoredAsk {
     relay: row.relay as AskRelay | null,
     continuation: row.continuation as StoredAsk["continuation"],
     continuationTurnId: row.continuation_turn_id as TurnId | null,
+    forwardedFromAskId: row.forwarded_from_ask_id as string | null,
     createdAt: dateOrNull(row.created_at) as Date,
     resolvedAt: dateOrNull(row.resolved_at),
   };
@@ -102,6 +104,25 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
     async lockHeldByThreads(threadIds) {
       await lockThreadAsks(db, threadIds);
     },
+    async listCopyHolders(threadIds) {
+      if (threadIds.length === 0) return [];
+      const rows = await currentDrizzleDb(db).execute(sql`
+        WITH RECURSIVE copies AS (
+          SELECT copy.id, copy.thread_id FROM asks copy
+          JOIN asks source ON source.id = copy.forwarded_from_ask_id
+          WHERE source.thread_id IN (${sql.join(
+            threadIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )}) AND copy.status IN ('pending', 'open')
+          UNION
+          SELECT copy.id, copy.thread_id FROM asks copy
+          JOIN copies ON copy.forwarded_from_ask_id = copies.id
+          WHERE copy.status IN ('pending', 'open')
+        )
+        SELECT DISTINCT thread_id FROM copies
+      `);
+      return rows.map((row) => row.thread_id as ThreadId);
+    },
     async lockByIds(ids) {
       if (ids.length === 0) return;
       await currentDrizzleDb(db)
@@ -134,10 +155,18 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
             ))
           ))`
         : sql`false`;
+      // A live copy forwarded from a claimed ask goes with it, at any remove.
       const rows = await currentDrizzleDb(db).execute(sql`
-        WITH claimed AS (
+        WITH RECURSIVE reached AS (
+          SELECT a.id FROM asks a WHERE ${targets} OR ${owned}
+          UNION
+          SELECT copy.id FROM asks copy
+          JOIN reached ON copy.forwarded_from_ask_id = reached.id
+          WHERE copy.status IN ('pending', 'open')
+        ),
+        claimed AS (
           SELECT a.id, a.status AS prior FROM asks a
-          WHERE ${targets} OR ${owned}
+          WHERE a.id IN (SELECT id FROM reached)
           ORDER BY a.id
           FOR UPDATE
         )

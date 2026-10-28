@@ -184,7 +184,12 @@ export function createRuntimeHarness(
     afterCommit: (task) => task(),
     askRequests: {
       request: (input) =>
-        createAskService({ repos, eventWriter, delivery: deps.delivery }).request(input),
+        createAskService({
+          repos,
+          eventWriter,
+          delivery: deps.delivery,
+          wakes: deps.runClaim,
+        }).request(input),
     },
     reports: {
       async projectRunning() {},

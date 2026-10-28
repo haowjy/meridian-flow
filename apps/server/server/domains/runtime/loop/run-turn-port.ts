@@ -23,6 +23,8 @@ interface RunTurnBase {
   };
   child?: {
     parentThreadId: ThreadId;
+    /** The parent's execution that admits this run; the fence can refuse it. */
+    parentExecutionId: string;
     background: boolean;
     origin: "spawn" | "message";
     sender: { ref: string | null; title: string | null };
@@ -73,6 +75,20 @@ export class NoPendingWakeError extends Error {
   constructor(readonly threadId: ThreadId) {
     super("no_pending_wake");
     this.name = "NoPendingWakeError";
+  }
+}
+
+/**
+ * A machine wake the fence refused (`RunClaim.wakeRefusal`): the sending execution or the
+ * receiving thread was stopped. The tool that sent it answers with a "was stopped" result.
+ */
+export class WakeRefusedError extends Error {
+  constructor(
+    readonly refusal: import("./ports.js").WakeRefusal,
+    readonly receiver: ThreadId | null,
+  ) {
+    super(`wake_refused:${refusal}`);
+    this.name = "WakeRefusedError";
   }
 }
 

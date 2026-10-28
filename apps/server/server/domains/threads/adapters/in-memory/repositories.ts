@@ -421,6 +421,16 @@ export function createInMemoryRepositories(
       }
       return result;
     },
+    async listAncestorIds(threadId) {
+      const result: ThreadId[] = [];
+      for (
+        let parent = threads.get(threadId)?.parentThreadId;
+        parent;
+        parent = threads.get(parent)?.parentThreadId
+      )
+        result.push(parent as ThreadId);
+      return result;
+    },
     async listChildren(threadId) {
       return [...threads.values()]
         .filter(
@@ -1442,6 +1452,7 @@ export function createInMemoryRepositories(
           relay: input.relay ?? null,
           continuation: null,
           continuationTurnId: null,
+          forwardedFromAskId: input.forwardedFromAskId ?? null,
           createdAt: new Date(),
           resolvedAt: input.resolvedAt ?? null,
         };
@@ -1481,6 +1492,21 @@ export function createInMemoryRepositories(
         );
       },
       async lockHeldByThreads() {},
+      async listCopyHolders(threadIds) {
+        const live = (ask: StoredAsk) => ask.status === "pending" || ask.status === "open";
+        let sources = new Set(
+          [...asks.values()].filter((ask) => threadIds.includes(ask.threadId)).map(({ id }) => id),
+        );
+        const holders = new Set<ThreadId>();
+        while (sources.size > 0) {
+          const copies = [...asks.values()].filter(
+            (ask) => live(ask) && ask.forwardedFromAskId && sources.has(ask.forwardedFromAskId),
+          );
+          for (const copy of copies) holders.add(copy.threadId);
+          sources = new Set(copies.map(({ id }) => id));
+        }
+        return [...holders];
+      },
       async lockByIds() {},
       async claimLineage(input) {
         const targets = new Set<string>(input.threadIds);
@@ -1500,6 +1526,13 @@ export function createInMemoryRepositories(
             return owner.spare === null || admittedBy !== owner.spare;
           })
           .sort((a, b) => a.id.localeCompare(b.id));
+        for (let reached = claimed; reached.length > 0; ) {
+          const ids = new Set(reached.map(({ id }) => id));
+          reached = [...asks.values()].filter(
+            (ask) => live(ask) && ask.forwardedFromAskId && ids.has(ask.forwardedFromAskId),
+          );
+          claimed.push(...reached);
+        }
         return claimed.map((ask) => {
           const wasLive = live(ask);
           const row: StoredAsk = {

@@ -93,6 +93,20 @@ export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
             OR (${inbox.handedBackBy} IS NOT NULL AND ${inbox.seq} <= ${scope.seenThrough}))`,
         );
       }
+      // A writer's answer: an option, their own text, or Skip (not a parent's or an expiry's).
+      const [writerAnswer] = carried
+        ? await db_()
+            .select({ id: schema.asks.id })
+            .from(schema.asks)
+            .where(
+              and(
+                eq(schema.asks.threadId, threadId),
+                inArray(schema.asks.continuationTurnId, executionTurnIds as TurnId[]),
+                sql`${schema.asks.resolution}->>'kind' IN ('option', 'text', 'skipped')`,
+              ),
+            )
+            .limit(1)
+        : [];
       const executionTurns = new Set(executionTurnIds);
       const rows = await db_()
         .select({
@@ -108,6 +122,7 @@ export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
       return {
         execution: carried ? { id: lease.executionId, holder } : null,
         receipt: lease?.receipt ?? [],
+        continuesWriterAnswer: writerAnswer !== undefined,
         rows: rows.map(
           (row): WriterRow => ({
             id: row.id,

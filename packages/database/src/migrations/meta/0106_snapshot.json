@@ -2889,6 +2889,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "wake_fence_at": {
+          "name": "wake_fence_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "next_seq": {
           "name": "next_seq",
           "type": "bigint",
@@ -8439,6 +8445,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "forwarded_from_ask_id": {
+          "name": "forwarded_from_ask_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8454,6 +8466,22 @@
         }
       },
       "indexes": {
+        "asks_forwarded_from": {
+          "name": "asks_forwarded_from",
+          "columns": [
+            {
+              "expression": "forwarded_from_ask_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"asks\".\"forwarded_from_ask_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "asks_open_deadline": {
           "name": "asks_open_deadline",
           "columns": [
@@ -8563,6 +8591,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "asks_forwarded_from_fk": {
+          "name": "asks_forwarded_from_fk",
+          "tableFrom": "asks",
+          "tableTo": "asks",
+          "columnsFrom": [
+            "forwarded_from_ask_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

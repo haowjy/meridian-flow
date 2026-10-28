@@ -84,8 +84,9 @@ validate under the same lock and refuse a flagged lease.
   the writer rows at or below `seenThrough` plus `mine`; L is the writer rows
   above it that are not `mine`. An execution *takes on* a message when it is in
   the lease receipt or one of its turns delivered it. The execution is cancelled
-  when the writer saw it or it took on a message in P, unless it took on one in
-  L. `decideHandBack` classifies each covered message as `gone` (another request
+  when the writer saw it, it took on a message in P, or it continues the writer's
+  answer to a question (`continuesWriterAnswer`: an answer is the writer's own
+  request, like `mine`), unless it took on one in L. `decideHandBack` classifies each covered message as `gone` (another request
   handed it back), handed back, or `answered`.
 - **`handBack`** is the same operation for the queue's x and Cancel queue
   (`POST /api/threads/:id/hand-back`, `HandBackRequest { requestId, ids }`,

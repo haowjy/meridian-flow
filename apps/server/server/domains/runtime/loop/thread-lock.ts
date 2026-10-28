@@ -5,6 +5,7 @@
  * the in-memory adapter uses a promise-chain mutex. It is a latency mechanism,
  * not the durable guarantee — the wake sweep recovers a pending message either way.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadId } from "@meridian/contracts/runtime";
 
 export interface ThreadLock {
@@ -16,4 +17,21 @@ export const THREAD_LOCK_SEED = 82n;
 
 export function threadLockKey(threadId: ThreadId): string {
   return `meridian:thread-lock:${threadId}`;
+}
+
+const multiThreadLocker = new AsyncLocalStorage<true>();
+
+/**
+ * Runs the one command allowed to hold several thread locks in a transaction: lineage
+ * cancellation, which locks every ask row it may claim before its first thread lock, then
+ * threads parents first. Everywhere else a transaction takes one thread's lock, so the order
+ * "ask rows, then thread locks" holds by construction; the Postgres adapter asserts it outside
+ * production.
+ */
+export function asMultiThreadLocker<T>(operation: () => Promise<T>): Promise<T> {
+  return multiThreadLocker.run(true, operation);
+}
+
+export function isMultiThreadLocker(): boolean {
+  return multiThreadLocker.getStore() === true;
 }

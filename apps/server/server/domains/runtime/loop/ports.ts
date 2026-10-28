@@ -97,6 +97,8 @@ export interface HeldRunClaim {
   onLost(listener: () => void): () => void;
 }
 
+export type WakeRefusal = "sender_stopped" | "receiver_stopped";
+
 export interface RunClaim {
   /** Takes the shared run mutex without publishing a run lease. */
   hold(threadId: ThreadId): Promise<HeldRunClaim | null>;
@@ -144,6 +146,18 @@ export interface RunClaim {
    * heartbeat and batch adoption honour the flag. Lineage cancellation's durable half.
    */
   requestCancel(threadIds: readonly ThreadId[]): Promise<void>;
+  /** Stamps the machine-wake fence on threads a lineage cancellation stopped (see `wakeRefusal`). */
+  fenceWakes(threadIds: readonly ThreadId[]): Promise<void>;
+  /**
+   * Whether a machine wake one execution sends (a message, a relay, a child's admission) is
+   * refused: `sender_stopped` when that execution no longer holds its lease or was cancelled,
+   * `receiver_stopped` when the receiver was fenced after the execution was admitted. Writer
+   * actions never ask. Call under the receiver's thread lock, which the fence takes too.
+   */
+  wakeRefusal(input: {
+    sender: { threadId: ThreadId; executionId: ExecutionId };
+    receiver: ThreadId | null;
+  }): Promise<WakeRefusal | null>;
   /** See `ThreadStatusReader.readOpenExecutionId`. */
   readOpenExecutionId(threadId: ThreadId): Promise<ExecutionId | null>;
   /** Threads whose lease row expired: stale executions for the repair lane to settle. */
