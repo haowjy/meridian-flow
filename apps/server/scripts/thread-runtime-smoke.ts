@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { loadEnvFile } from "node:process";
 import { EventType } from "@meridian/contracts/protocol";
 import {
   createDb,
@@ -15,6 +14,7 @@ import {
 } from "@meridian/database";
 import { eq, inArray } from "drizzle-orm";
 import WebSocket from "ws";
+import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
 import { createNoopEventSink } from "../server/domains/observability/index.js";
 import {
   createDrizzleEventJournalReader,
@@ -27,12 +27,7 @@ import {
   resolveDevInternalUserId,
 } from "./workos-dev-session.js";
 
-try {
-  loadEnvFile("../../.env");
-} catch {}
-try {
-  loadEnvFile(".env");
-} catch {}
+applyDevEnvToProcess();
 
 const serverUrl = process.env.SMOKE_SERVER_URL;
 const databaseUrl = process.env.DATABASE_URL;
