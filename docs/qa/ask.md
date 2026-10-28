@@ -148,7 +148,7 @@ Use fresh child runs for each case and inspect both chats after every step. Save
 child refs and ask ids from `./mf thread view <thread> --json --full`; mock
 scripts cannot interpolate the ids returned by an earlier tool call.
 
-1. Have a foreground child call `ask`. PASS: the parent call returns
+1. Have a foreground child call `ask_user`. PASS: the parent call returns
    `@child asks (ask …)` and the parent inbox has no duplicate. Answer with a
    foreground `thread_message`. The child receives a `parent` tool result and
    the original parent card finishes with the continuation's report.
@@ -156,7 +156,7 @@ scripts cannot interpolate the ids returned by an earlier tool call.
    parent. Answer from the child chat as the writer, then repeat by leaving the
    question to its deadline. Both continuations report to the original card;
    only the child chat is action-required.
-3. Forward an open child question with `ask({"forward":"$childAsk"})`. Answer
+3. Forward an open child question with `ask_user({"forward":"$childAsk"})`. Answer
    before the child deadline. PASS: the parent continuation waits for the child
    and sees one enriched result with `relayed_to` and `report`.
 4. Repeat after forcing the child deadline first. PASS: the parent's later

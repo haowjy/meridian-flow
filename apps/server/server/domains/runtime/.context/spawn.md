@@ -38,7 +38,7 @@ A parent re-task carries notification correlation and publishes the same
 completion notice as a background spawn; other background messages promise no
 completion. The target's run owns wake and report admission.
 
-A child `ask` finalizes an immutable `asked` execution report without ending
+A child's `ask_user` call finalizes an immutable `asked` execution report without ending
 the child's lifetime. Background reports enqueue a structured question in the
 parent; foreground calls return the same question directly. Request assembly
 batch-loads the open questions present in that request. A `thread_message` to
@@ -47,7 +47,7 @@ claims that ask before ordinary inbox delivery; losing the answer race turns
 the unchanged text into an ordinary background message rather than binding it
 to a newer question.
 
-`ask({forward})` copies an open direct child's question. The parent's admitted
+`ask_user({forward})` copies an open direct child's question. The parent's admitted
 continuation relays its answer before the first model request and replaces the
 provisional ask result with the child report, or with `late: true` when the
 child question had already resolved (`spawn/forwarded-ask-relay.ts`). The relay
