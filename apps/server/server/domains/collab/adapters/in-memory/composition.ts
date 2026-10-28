@@ -2,12 +2,10 @@
 
 import {
   type AgentEditCodecFactory,
-  toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createAllowAllFileAccess } from "../../../file-policy/index.js";
@@ -27,7 +25,7 @@ import {
 import { createBranches } from "../../domain/branches.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
-import { versioned } from "../../domain/document-revision.js";
+import { readHashlines } from "../../domain/document-revision.js";
 import { DraftNotFoundError } from "../../domain/draft-resolver.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
@@ -287,18 +285,7 @@ function createInMemoryDraftPeerStub(
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
         const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
-        const bound = codec.forScope(scope);
-        const read = versioned(doc, scope, (doc) =>
-          model.serializeBlockLines(toDocHandle(doc), bound),
-        );
-        const blockLinks = model
-          .projectBlocks(toDocHandle(doc))
-          .map((block) => spelledLinks([block], scope));
-        return Ok({
-          ...read,
-          links: blockLinks,
-          holder: { uri: scope.holder.uri, view: LIVE_VIEW },
-        });
+        return Ok(readHashlines(doc, scope, model, codec));
       }),
     async ensureCreatedDocumentDraft() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");

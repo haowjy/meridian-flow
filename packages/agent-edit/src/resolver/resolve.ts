@@ -14,14 +14,13 @@ import type { BlockRef, DocHandle } from "../handles.js";
 import type { LineageRange } from "../lineage/range-set.js";
 import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
 import { wordHunks } from "../word-hunks.js";
 import { alignBlocks } from "./block-alignment.js";
 import {
   findTextMatches,
   type SplicedGroup,
-  serializeBlockBody,
   serializePmBlockBody,
   spliceFindMatches,
   type TextFindMatch,
@@ -108,7 +107,7 @@ export function planWrite(
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
   const doc = ctx.doc;
-  let projected: Block[] | undefined;
+  let projected: ProjectedBlock[] | undefined;
   const concreteCtx: ConcreteResolveContext = {
     ...ctx,
     doc,
@@ -240,7 +239,10 @@ function assignScope(
 
 /** A scope is always a contiguous run of top-level blocks. */
 function scopeNodes(ctx: ConcreteResolveContext, scope: BlockScope): Block[] {
-  return ctx.projectedBlocks().slice(scope.startIndex, scope.startIndex + scope.blocks.length);
+  return ctx
+    .projectedBlocks()
+    .slice(scope.startIndex, scope.startIndex + scope.blocks.length)
+    .map((block) => block.node);
 }
 
 type ResolveWriteResultWithoutIr =
@@ -366,8 +368,8 @@ function planRemove(
 
 interface ConcreteResolveContext extends Omit<ResolveWriteContext, "links"> {
   doc: DocHandle;
-  /** Every top-level block as a ProseMirror node, in document order. */
-  projectedBlocks(): readonly Block[];
+  /** Every top-level block, in document order. */
+  projectedBlocks(): readonly ProjectedBlock[];
 }
 
 function normalizeParams(
@@ -478,8 +480,13 @@ function planFindMatches(
   // Structural groups can replace their predecessor block. Lower from the end
   // so every insert anchor remains live until its group executes.
   for (const group of groupFindMatches(matches).reverse()) {
-    const groupSource = group.elements
-      .map((element) => serializeBlockBody(ctx, element))
+    const groupSource = ctx.codec
+      .serializeBlockBodies(
+        ctx
+          .projectedBlocks()
+          .slice(group.startIndex, group.endIndex + 1)
+          .map((block) => block.node),
+      )
       .join("\n\n");
     const spliced = spliceFindMatches(
       groupSource,
@@ -517,7 +524,7 @@ function lowerPlainTextFindMatches(
     if (match.rangeSource !== ctx.model.getText(element)) return null;
     // A block holding a link goes through ref assignment, so a ref- or title-only
     // change is never filtered out as equal text.
-    const node = ctx.projectedBlocks()[match.startIndex];
+    const node = ctx.projectedBlocks()[match.startIndex]?.node;
     if (!node || walkLinkOccurrences([node]).length > 0) return null;
     const existing = byBlock.get(element);
     if (existing) existing.push(match);

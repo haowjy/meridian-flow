@@ -59,7 +59,7 @@ export function humanDeleteBlock(doc: Y.Doc, blockIndex: number): void {
 }
 
 export function serializeDoc(doc: Y.Doc): string {
-  return codec.serialize(model.projectBlocks(doc));
+  return codec.serialize(model.projectBlocks(doc).map((block) => block.node));
 }
 
 export function documentBytes(doc: Y.Doc): number[] {

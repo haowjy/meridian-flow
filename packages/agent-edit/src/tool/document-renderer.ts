@@ -11,7 +11,6 @@ import {
   resolveSearchScope,
   type ScopeResult,
 } from "../resolver/scope.js";
-import { modelBlockItem } from "./model-result.js";
 import type { ReadCommand } from "./types.js";
 
 export interface DocumentRenderAddress {
@@ -29,7 +28,6 @@ export interface DocumentRenderer {
     command: ReadCommand,
     address: DocumentRenderAddress,
   ): ReadBlockSelection;
-  renderBlockLines(doc: DocHandle, codec: AgentEditCodec, blocks?: readonly BlockRef[]): string[];
   renderRead(
     doc: DocHandle,
     codec: AgentEditCodec,
@@ -60,7 +58,6 @@ export function createDocumentRenderer(deps: {
 
   return {
     selectReadBlocks,
-    renderBlockLines,
     renderRead,
     parseForCommand,
   };
@@ -92,14 +89,6 @@ export function createDocumentRenderer(deps: {
     return result;
   }
 
-  function renderBlockLines(
-    doc: DocHandle,
-    codec: AgentEditCodec,
-    blocks?: readonly BlockRef[],
-  ): string[] {
-    return model.serializeBlockLines(doc, codec, blocks);
-  }
-
   function renderRead(
     doc: DocHandle,
     codec: AgentEditCodec,
@@ -110,18 +99,28 @@ export function createDocumentRenderer(deps: {
       format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
     const outline = headingBlocks.length > 0;
     const rendered = outline ? headingBlocks : blocks;
-    const items = model.serializeBlockLines(doc, codec, rendered).map(modelBlockItem);
+    const projected = model.projectBlocks(doc);
+    const byRef = new Map(projected.map((block) => [block.ref, block]));
+    const shown = rendered.flatMap((ref) => byRef.get(ref) ?? []);
+    const bodies = codec.serializeBlocks(
+      shown.map((block) => block.node),
+      shown.map((block) => block.hash),
+    );
+    const items: RenderedRead["blocks"] = shown.map((block, index) => ({
+      hash: block.hash,
+      body: bodies[index],
+    }));
     if (outline) {
       const fragments = headingSectionFragments({ doc, model });
       items.forEach((item, index) => {
-        const section = fragments.get(rendered[index] as BlockRef);
+        const section = fragments.get(shown[index].ref);
         if (section !== undefined) item.section = section;
       });
     }
     return {
       format: outline ? "outline" : "full",
       blocks: items,
-      documentBlocks: model.getBlocks(doc).length,
+      documentBlocks: projected.length,
     };
   }
 

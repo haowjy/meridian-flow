@@ -136,7 +136,7 @@ describe("checkpoint restore", () => {
         const [paragraph] = model.projectBlocks(
           toDocHandle(subject.coordinator.ensureEmpty(DOCUMENT_ID)),
         );
-        expect(paragraph?.firstChild?.attrs).toMatchObject({
+        expect(paragraph?.node.firstChild?.attrs).toMatchObject({
           src: "pending.png",
           uploadToken: "upload-1",
         });

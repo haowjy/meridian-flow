@@ -249,7 +249,7 @@ export function createMarkdownDocumentEngine(
     clone.on("update", observeRepair);
 
     try {
-      return read(deps.model.projectBlocks(toDocHandle(clone)));
+      return read(deps.model.projectBlocks(toDocHandle(clone)).map((block) => block.node));
     } finally {
       clone.off("update", observeRepair);
       const anomaly = serializationAnomaly(repairUpdates, nodeSpans);

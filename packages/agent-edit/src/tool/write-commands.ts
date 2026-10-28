@@ -195,16 +195,11 @@ export function createWriteCommands(deps: {
 
   /** The selected blocks as nodes, in document order; a copy gets fresh identity when inserted. */
   function selectedNodes(doc: Y.Doc, selected: readonly BlockRef[]): Block[] {
-    const handle = toDocHandle(doc);
-    const nodes = options.model.projectBlocks(handle);
-    const indexByBlock = new Map(
-      options.model.getBlocks(handle).map((block, index) => [block, index]),
-    );
-    return selected.flatMap((block) => {
-      const index = indexByBlock.get(block);
-      const node = index === undefined ? undefined : nodes[index];
-      return node ? [node] : [];
-    });
+    const selection = new Set(selected);
+    return options.model
+      .projectBlocks(toDocHandle(doc))
+      .filter((block) => selection.has(block.ref))
+      .map((block) => block.node);
   }
 
   /**
