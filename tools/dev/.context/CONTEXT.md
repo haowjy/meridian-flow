@@ -110,6 +110,14 @@ and browser tests. Only the primary checkout gets bare names. Linked detached
 checkouts include their session slug and path hash, so equal commits cannot
 alias each other. Commands use Portless named mode, not its branch inference;
 session metadata retains the prefix used by a running stack across Git changes.
+`pnpm dev` sessions run on one private tmux socket (`meridian-flow-dev`,
+`lib/dev-tmux-socket.ts`) shared by all checkouts. It keeps `--stop`, the orphan
+sweep and `dev:stacks` off the human's own server while still seeing every
+checkout's stack; cleanup readiness lists panes on both servers. The store passes
+tmux the environment from before the dev-env loader ran, so a server it starts
+never holds loaded secrets. `legacyDefaultServerHasSession` refuses a start while
+an old default-server stack of this checkout runs (read-only `-L default`); remove
+it with the TODO in `.context/TODO`.
 `dev-session-state.ts` validates the checkout-bound launch record and discovers
 its live tmux session. Startup, `./mf`, and browser discovery use that active
 identity, not current HEAD; Git derives only the next launch's identity. A

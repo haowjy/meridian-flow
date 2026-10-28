@@ -170,7 +170,7 @@ targeted path's optional fifth `meridian work done` action.
 
 ### Orphan dev sessions
 
-Deleting a checkout directly can leave its tmux terminal session and dev servers
+Deleting a checkout directly can leave its dev tmux session and dev servers
 running. `pnpm dev` cleans up these abandoned stacks before starting or reusing a
 stack. `--print` and `--stop` never sweep other checkouts. To inspect the cleanup
 plan before stopping anything:
@@ -257,9 +257,17 @@ pnpm dev --no-tailscale   # local-only (no Tailscale exposure)
 pnpm dev --funnel         # public internet via Tailscale Funnel
 pnpm dev --print          # dry-run: print the session plan (secrets redacted)
 pnpm dev --stop           # stop this worktree's tmux session + prune routes
+pnpm dev:stacks           # list every checkout's stack and its memory
 pnpm dev --restart        # stop + restart (preserves mode unless --no-tailscale/--funnel)
 pnpm portless:list        # live localhost HTTPS URLs
 ```
+
+Dev sessions run on their own tmux socket, `meridian-flow-dev`, shared by all
+checkouts and separate from your own tmux server. Attach with
+`tmux -L meridian-flow-dev attach -t <session>` (`pnpm dev` prints the command)
+and list with `tmux -L meridian-flow-dev ls`. If an older `pnpm dev` left a stack
+on your default server, `pnpm dev` refuses to start and prints the command that
+stops it.
 
 Restart terminates this worktree's owned tmux session, then owns its configured
 fixed ports. It logs each remaining holder by PID and command, sends SIGTERM,

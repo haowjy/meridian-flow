@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { devTmuxArgs, legacyDefaultServerArgs } from "./lib/dev-tmux-socket";
 
 export interface CommandResult {
   status: number | null;
@@ -6,9 +7,10 @@ export interface CommandResult {
   stderr: string;
 }
 
-function run(command: string, args: string[], cwd: string): CommandResult {
+function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): CommandResult {
   const result = spawnSync(command, args, {
     cwd,
+    env,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -21,7 +23,16 @@ function run(command: string, args: string[], cwd: string): CommandResult {
 }
 
 export class TmuxSessionStore {
-  constructor(private readonly repoRoot: string) {}
+  /**
+   * `env` is what tmux and its helpers run with. `pnpm dev` passes its environment
+   * from before the dev-env loader ran: a tmux server this call starts keeps that
+   * environment as its global one, and every window opened on it later inherits it,
+   * so the loaded secrets must never reach it. Panes get their env from the loader.
+   */
+  constructor(
+    private readonly repoRoot: string,
+    private readonly env: NodeJS.ProcessEnv = process.env,
+  ) {}
 
   hasCommandOnPath(command: string): boolean {
     const result = spawnSync("bash", ["-lc", `command -v ${command}`], {
@@ -32,22 +43,34 @@ export class TmuxSessionStore {
   }
 
   run(command: string, args: string[]): CommandResult {
-    return run(command, args, this.repoRoot);
+    return run(command, args, this.repoRoot, this.env);
+  }
+
+  private tmux(args: string[]): CommandResult {
+    return this.run("tmux", devTmuxArgs(args));
   }
 
   sessionExists(sessionName: string): boolean {
-    return this.run("tmux", ["has-session", "-t", sessionName]).status === 0;
+    return this.tmux(["has-session", "-t", sessionName]).status === 0;
+  }
+
+  /** Read-only check for a stack an older `pnpm dev` started on the default server. */
+  legacyDefaultServerHasSession(sessionName: string): boolean {
+    return (
+      this.run("tmux", legacyDefaultServerArgs(["has-session", "-t", `=${sessionName}`])).status ===
+      0
+    );
   }
 
   createSession(sessionName: string): CommandResult {
-    return this.run("tmux", ["new-session", "-d", "-s", sessionName, "-c", this.repoRoot]);
+    return this.tmux(["new-session", "-d", "-s", sessionName, "-c", this.repoRoot]);
   }
 
   killSession(sessionName: string): CommandResult {
-    return this.run("tmux", ["kill-session", "-t", sessionName]);
+    return this.tmux(["kill-session", "-t", sessionName]);
   }
 
   sendKeys(sessionName: string, command: string): CommandResult {
-    return this.run("tmux", ["send-keys", "-t", `${sessionName}:0`, command, "C-m"]);
+    return this.tmux(["send-keys", "-t", `${sessionName}:0`, command, "C-m"]);
   }
 }
