@@ -1,14 +1,13 @@
-// The text `grep` matches, produced by one function on both of grep's paths:
-// the derivation stores it beside the projection, and a live hashline read
-// computes it per block. Same blocks, same codec call, same function: the two
-// agree by construction.
+// The text `grep` matches, produced by one rule on both of grep's paths: the derivation
+// stores it per block, and a live hashline read computes it per block. Same blocks, same
+// function: the two agree by construction.
 //
-// A block is serialized the way a hashline body is (`serializeBlocks`, never
-// the whole-document `serialize`, which joins blocks with blank lines and
-// writes an empty paragraph as U+00A0) with every link and image destination
-// spelled empty, so a match never depends on which reader's address spelling
-// a destination took. The grep text is that markdown decoded to the writer's
-// text view, blocks joined with `\n`.
+// A block is serialized the way a hashline body is (`serializeBlocks`, never the
+// whole-document `serialize`, which joins blocks with blank lines and writes an empty
+// paragraph as U+00A0) with every link and image destination spelled empty, so a match
+// never depends on which reader's address spelling a destination took. The block's text is
+// that markdown decoded to the writer's text view. A code file is not markdown: its block
+// is the code node's own text, with no fence.
 import type { DocumentLinkScope, MarkupCodec, PMNode } from "@meridian/markup";
 import { markdownPlainText } from "./markdown-text-view.js";
 
@@ -22,9 +21,12 @@ export function destinationFreeBlocks(markup: MarkupCodec, blocks: readonly PMNo
   return markup.serializeBlocks(blocks, DESTINATION_FREE_LINKS);
 }
 
-/** The grep text of blocks already serialized by {@link destinationFreeBlocks}. */
-export function grepText(destinationFree: readonly string[]): string {
-  return destinationFree.map((markdown) => markdownPlainText(markdown)).join("\n");
+/**
+ * One block's grep text, from its {@link destinationFreeBlocks} markdown. `verbatim` is a
+ * code file's block, whose text is the node's text as stored.
+ */
+export function grepBlockText(destinationFree: string, node: PMNode, verbatim: boolean): string {
+  return verbatim ? node.textContent : markdownPlainText(destinationFree);
 }
 
 /**

@@ -11,7 +11,7 @@ A case that takes more than twice its prediction is explained before merge.
 
 1. `MODEL_PROVIDER=mock pnpm dev` (`./mf` scripts the mock model; a stack with a provider key refuses `--mock`).
 2. Generate and seed the project, then wait a few seconds for the derivation to fill
-   `grep_text` (`select count(*), count(grep_text) from document_markdown_projections` shows equal counts):
+   the block rows (`select count(*) from documents d left join document_block_rooms r on r.document_id = d.id where r.room_id is null and d.file_type is not null` shows 0 underived text documents, and `document_blocks` holds the text):
 
    ```bash
    node tools/mf/fixtures/grep-scale.mjs > /tmp/grep-scale.json

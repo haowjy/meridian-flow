@@ -16,7 +16,6 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import {
   agentEditWidCounters,
-  documentMarkdownProjections,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
@@ -937,19 +936,15 @@ function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
       });
     },
 
-    async missingAuthorityProjection(docId) {
+    async lacksAuthority(docId) {
       const readDb = currentDrizzleDb(db as Database) as JournalDb;
-      const [row] = await readDb.execute<{ markdown: string }>(sql`
-        select coalesce(
-          (select ${documentMarkdownProjections.markdown} from ${documentMarkdownProjections}
-            where ${documentMarkdownProjections.documentId} = ${docId}),
-          ''
-        ) as markdown
+      const rows = await readDb.execute<{ lacks: boolean }>(sql`
+        select true as lacks
         where not exists (select 1 from ${documentYjsCheckpoints}
             where ${documentYjsCheckpoints.documentId} = ${docId})
           and not exists (select 1 from ${documentYjsUpdates}
             where ${documentYjsUpdates.documentId} = ${docId})`);
-      return row ? row.markdown : null;
+      return rows.length > 0;
     },
   };
 }

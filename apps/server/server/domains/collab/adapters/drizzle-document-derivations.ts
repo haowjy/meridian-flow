@@ -1,12 +1,13 @@
 /** Journal-locked cuts and compare-and-set writes of document derived outputs. */
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  branches,
   contextSources,
-  documentDerivations,
+  documentBlockRooms,
+  documentBlocks,
   documentDrafts,
   documentLinks,
-  documentMarkdownProjections,
   documents,
   documentYjsHeads,
   projects,
@@ -35,10 +36,12 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { documentHash } from "../domain/document-derivations.js";
 import {
   type DerivationScope,
   DOCUMENT_EXTRACTOR_VERSION,
   type DocumentDerivationCut,
+  type DocumentDerivationOutputs,
   type DocumentDerivationStore,
 } from "../domain/ports/document-derivations.js";
 import { loadDocumentState } from "./document-loader.js";
@@ -84,11 +87,26 @@ export async function captureDocumentDerivation(
   };
 }
 
-/** Caller owns the document mutation lock for this transaction. */
+/** Rows per statement: bounded by the driver's parameter limit. */
+const WRITE_CHUNK = 1000;
+
+const EMPTY_DOCUMENT_HASH = documentHash([], []);
+
+function chunks<T>(rows: readonly T[]): T[][] {
+  const out: T[][] = [];
+  for (let at = 0; at < rows.length; at += WRITE_CHUNK) out.push(rows.slice(at, at + WRITE_CHUNK));
+  return out;
+}
+
+/**
+ * Caller owns the document mutation lock for this transaction. The outputs arrive already
+ * normalized and hashed: nothing here reads block text back, and the block diff writes only the
+ * blocks whose content hash changed.
+ */
 export async function certifyDocumentDerivation(
   tx: DrizzleDb,
   cut: DocumentDerivationCut,
-  outputs: Parameters<DocumentDerivationStore["certify"]>[1],
+  outputs: DocumentDerivationOutputs,
   at: Date,
 ): Promise<boolean> {
   const w = cut.watermark;
@@ -109,72 +127,123 @@ export async function certifyDocumentDerivation(
     .where(eq(documents.id, cut.documentId))
     .for("no key update");
   if (!location || location.version !== w.locationVersion) return false;
-  const [existing] = await tx
+  const [room] = await tx
     .select()
-    .from(documentDerivations)
-    .where(eq(documentDerivations.documentId, cut.documentId))
+    .from(documentBlockRooms)
+    .where(eq(documentBlockRooms.documentId, cut.documentId))
     .limit(1);
+  if (room && room.extractorVersion > w.extractorVersion) return false;
   if (
-    existing &&
-    (existing.projectionExtractorVersion > w.extractorVersion ||
-      (existing.linksExtractorVersion ?? 0) > w.extractorVersion)
-  )
-    return false;
-  if (
-    existing &&
-    existing.projectionGeneration === w.generation &&
-    existing.projectionAdmissionSequence === w.admissionSequence &&
-    existing.projectionLocationVersion === w.locationVersion &&
-    existing.projectionExtractorVersion === w.extractorVersion &&
-    existing.linksGeneration === w.generation &&
-    existing.linksAdmissionSequence === w.admissionSequence &&
-    existing.linksLocationVersion === w.locationVersion &&
-    existing.linksExtractorVersion === w.extractorVersion
+    room &&
+    room.cutGeneration === w.generation &&
+    room.cutAdmissionSeq === w.admissionSequence &&
+    room.cutLocationVersion === w.locationVersion &&
+    room.extractorVersion === w.extractorVersion
   )
     return true;
-  // A re-derivation that changed no text (an extractor bump) is not an edit: `ls` shows
-  // `updatedAt` to the model and the writer. Postgres compares, so the old markdown never travels.
-  const unchanged = sql`exists (select 1 from ${documentMarkdownProjections} where ${documentMarkdownProjections.documentId} = ${cut.documentId} and ${documentMarkdownProjections.markdown} = ${outputs.markdown})`;
+  const [source] = await tx
+    .select({
+      projectId: sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`,
+    })
+    .from(documents)
+    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+    .leftJoin(works, eq(works.id, contextSources.workId))
+    .where(eq(documents.id, cut.documentId))
+    .limit(1);
+  const projectId = source?.projectId;
+  if (!projectId) throw new Error(`Document ${cut.documentId} has no project`);
+
+  // A re-derivation that changed no content (an extractor bump, a move) is not an edit:
+  // `ls` shows `updatedAt` to the model and the writer.
+  const edited = !(room?.documentHash ?? EMPTY_DOCUMENT_HASH).equals(outputs.documentHash);
   const [updated] = await tx
     .update(documents)
     .set({
-      sizeBytes: Buffer.byteLength(outputs.markdown, "utf8"),
-      updatedAt: sql`case when ${unchanged} then ${documents.updatedAt} else ${sql.param(at, documents.updatedAt)} end`,
+      sizeBytes: outputs.documentBytes,
+      ...(edited ? { updatedAt: at } : {}),
     })
     .where(and(eq(documents.id, cut.documentId), eq(documents.locationVersion, w.locationVersion)))
     .returning({ id: documents.id });
   if (!updated) return false;
-  await tx
-    .insert(documentMarkdownProjections)
-    .values({
-      documentId: cut.documentId,
-      markdown: outputs.markdown,
-      grepText: outputs.grepText,
-      updatedAt: at,
-    })
-    .onConflictDoUpdate({
-      target: documentMarkdownProjections.documentId,
-      set: { markdown: outputs.markdown, grepText: outputs.grepText, updatedAt: at },
-    });
+
+  const blockOrder = outputs.blocks.map((block) => block.id);
+  const roomValues = {
+    projectId,
+    wordCount: outputs.wordCount,
+    documentBytes: BigInt(outputs.documentBytes),
+    documentHash: outputs.documentHash,
+    cutGeneration: w.generation,
+    cutAdmissionSeq: w.admissionSequence,
+    cutLocationVersion: w.locationVersion,
+    extractorVersion: w.extractorVersion,
+    derivedAt: at,
+  };
+  let roomId: number;
+  if (room) {
+    roomId = room.roomId;
+    // The order array is rewritten only when the order moved: an edit inside a block leaves it.
+    const orderMoved =
+      room.blockOrder.length !== blockOrder.length ||
+      room.blockOrder.some((id, index) => id !== blockOrder[index]);
+    await tx
+      .update(documentBlockRooms)
+      .set({ ...roomValues, ...(orderMoved ? { blockOrder } : {}) })
+      .where(eq(documentBlockRooms.roomId, roomId));
+  } else {
+    const [created] = await tx
+      .insert(documentBlockRooms)
+      .values({ documentId: cut.documentId, blockOrder, ...roomValues })
+      .returning({ roomId: documentBlockRooms.roomId });
+    roomId = (created as { roomId: number }).roomId;
+  }
+
+  const stored = new Map(
+    (room
+      ? await tx
+          .select({ blockId: documentBlocks.blockId, contentHash: documentBlocks.contentHash })
+          .from(documentBlocks)
+          .where(eq(documentBlocks.roomId, roomId))
+      : []
+    ).map((row) => [row.blockId, row.contentHash]),
+  );
+  if (room && room.projectId !== projectId)
+    await tx.update(documentBlocks).set({ projectId }).where(eq(documentBlocks.roomId, roomId));
+  const kept = new Set(blockOrder);
+  const removed = [...stored.keys()].filter((id) => !kept.has(id));
+  for (const ids of chunks(removed))
+    await tx
+      .delete(documentBlocks)
+      .where(and(eq(documentBlocks.roomId, roomId), inArray(documentBlocks.blockId, ids)));
+  const written = outputs.blocks.filter(
+    (block) => !stored.get(block.id)?.equals(block.contentHash),
+  );
+  for (const rows of chunks(written))
+    await tx
+      .insert(documentBlocks)
+      .values(
+        rows.map((block) => ({
+          roomId,
+          blockId: block.id,
+          projectId,
+          text: block.text,
+          contentHash: block.contentHash,
+          wordCount: block.wordCount,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [documentBlocks.roomId, documentBlocks.blockId],
+        set: {
+          text: sql`excluded.text`,
+          contentHash: sql`excluded.content_hash`,
+          wordCount: sql`excluded.word_count`,
+        },
+      });
+
   await tx.delete(documentLinks).where(eq(documentLinks.sourceDocumentId, cut.documentId));
   if (outputs.links.length)
     await tx
       .insert(documentLinks)
       .values(outputs.links.map((row) => ({ ...row, sourceDocumentId: cut.documentId })));
-  const values = {
-    projectionGeneration: w.generation,
-    projectionAdmissionSequence: w.admissionSequence,
-    projectionLocationVersion: w.locationVersion,
-    projectionExtractorVersion: w.extractorVersion,
-    linksGeneration: w.generation,
-    linksAdmissionSequence: w.admissionSequence,
-    linksLocationVersion: w.locationVersion,
-    linksExtractorVersion: w.extractorVersion,
-  };
-  await tx
-    .insert(documentDerivations)
-    .values({ documentId: cut.documentId, ...values })
-    .onConflictDoUpdate({ target: documentDerivations.documentId, set: values });
   return true;
 }
 
@@ -189,24 +258,16 @@ export type AheadRegistrationRecovery = {
 const AHEAD_RECOVERY_PAGE = 100;
 
 /**
- * The derived outputs are behind the document: never derived, or a watermark (projection or
- * links) differs from the document's head, location or the extractor version. Needs
- * `documentDerivations` left-joined to `documents` and `documentYjsHeads`.
+ * The derived outputs are behind the document: never derived, or the room's cut differs from
+ * the document's head, location or the extractor version. Needs `documentBlockRooms`
+ * left-joined to `documents` and `documentYjsHeads`.
  */
 const staleDerivation = or(
-  isNull(documentDerivations.documentId),
-  ne(documentDerivations.projectionGeneration, documentYjsHeads.authorityGeneration),
-  ne(documentDerivations.projectionAdmissionSequence, documentYjsHeads.nextAdmissionSequence),
-  ne(documentDerivations.projectionLocationVersion, documents.locationVersion),
-  ne(documentDerivations.projectionExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-  isNull(documentDerivations.linksGeneration),
-  isNull(documentDerivations.linksAdmissionSequence),
-  isNull(documentDerivations.linksLocationVersion),
-  isNull(documentDerivations.linksExtractorVersion),
-  ne(documentDerivations.linksGeneration, documentYjsHeads.authorityGeneration),
-  ne(documentDerivations.linksAdmissionSequence, documentYjsHeads.nextAdmissionSequence),
-  ne(documentDerivations.linksLocationVersion, documents.locationVersion),
-  ne(documentDerivations.linksExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
+  isNull(documentBlockRooms.roomId),
+  ne(documentBlockRooms.cutGeneration, documentYjsHeads.authorityGeneration),
+  ne(documentBlockRooms.cutAdmissionSeq, documentYjsHeads.nextAdmissionSequence),
+  ne(documentBlockRooms.cutLocationVersion, documents.locationVersion),
+  ne(documentBlockRooms.extractorVersion, DOCUMENT_EXTRACTOR_VERSION),
 ) as SQL;
 
 export function createDrizzleDocumentDerivationStore(
@@ -271,42 +332,47 @@ export function createDrizzleDocumentDerivationStore(
         return certifyDocumentDerivation(tx, cut, outputs, at);
       });
     },
-    async grepTexts(ids, { ignoreDrafts }) {
+    async grepTexts(ids, { draftWorkId }) {
       if (!ids.length) return new Map();
+      // The watermark and the text come from one snapshot: one statement.
       const rows = await currentDrizzleDb(db)
         .select({
-          id: documentMarkdownProjections.documentId,
-          text: documentMarkdownProjections.grepText,
+          id: documentBlockRooms.documentId,
+          text: sql<string>`coalesce((
+            select string_agg(${documentBlocks.text}, E'\n' order by o.position)
+            from unnest(${documentBlockRooms.blockOrder}) with ordinality as o(block_id, position)
+            join ${documentBlocks} on ${documentBlocks.roomId} = ${documentBlockRooms.roomId}
+              and ${documentBlocks.blockId} = o.block_id
+          ), '')`,
         })
-        .from(documentMarkdownProjections)
-        .innerJoin(documents, eq(documents.id, documentMarkdownProjections.documentId))
+        .from(documentBlockRooms)
+        .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
         .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
-        .innerJoin(documentDerivations, eq(documentDerivations.documentId, documents.id))
         .where(
           and(
-            inArray(documentMarkdownProjections.documentId, ids),
-            sql`${documentMarkdownProjections.grepText} is not null`,
+            inArray(documentBlockRooms.documentId, ids),
             not(staleDerivation),
-            // A draft reader sees the draft, which the projection of the live document doesn't.
-            ignoreDrafts
-              ? undefined
-              : notExists(
+            // A draft reader sees the draft, which the live room doesn't hold.
+            draftWorkId
+              ? notExists(
                   currentDrizzleDb(db)
                     .select({ one: sql`1` })
                     .from(documentDrafts)
+                    .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
                     .where(
                       and(
                         eq(documentDrafts.documentId, documents.id),
                         eq(documentDrafts.kind, "work_draft"),
                         eq(documentDrafts.status, "active"),
+                        eq(branches.status, "active"),
+                        eq(branches.originWorkId, draftWorkId),
                       ),
                     ),
-                ),
+                )
+              : undefined,
           ),
         );
-      return new Map(
-        rows.flatMap((row) => (row.text === null ? [] : [[row.id, row.text] as const])),
-      );
+      return new Map(rows.map((row) => [row.id, row.text]));
     },
     async stale(scope, page) {
       // LIMIT bounds returned stale rows, not the cross-table freshness scan.
@@ -318,7 +384,7 @@ export function createDrizzleDocumentDerivationStore(
         .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
         .leftJoin(works, eq(works.id, contextSources.workId))
         .leftJoin(projects, sql`${projects.id} = ${projectId}`)
-        .leftJoin(documentDerivations, eq(documentDerivations.documentId, documents.id))
+        .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
         .where(
           and(
             isNull(documents.deletedAt),

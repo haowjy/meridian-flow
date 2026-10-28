@@ -391,18 +391,6 @@ export const documentForwards = pgTable(
   (table) => [index("document_forwards_to").on(table.toDocumentId)],
 );
 
-/** Markdown projection kept separate so location writes never rebuild its derived columns. */
-export const documentMarkdownProjections = pgTable("document_markdown_projections", {
-  documentId: uuid("document_id")
-    .$type<DocumentId>()
-    .primaryKey()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  markdown: text("markdown").notNull().default(""),
-  /** What `grep` matches (`grepText` in agent-edit); null until the derivation sweep fills it. */
-  grepText: text("grep_text"),
-  updatedAt: updatedAt(),
-});
-
 export const uploadIntakes = pgTable(
   "upload_intakes",
   {

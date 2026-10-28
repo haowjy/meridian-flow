@@ -201,7 +201,6 @@ export type LiveCreateFault =
 export type LiveInsert = {
   node: TrackedNode;
   id?: DocumentId;
-  markdown: string;
   provisionalName?: boolean;
 };
 
@@ -238,10 +237,9 @@ export async function createLive(
     if (!confirmed) return Err({ code: "candidate_changed" });
   }
   if (!chosen) {
-    const { node, markdown, id, provisionalName } = input.insert;
+    const { node, id, provisionalName } = input.insert;
     const documentId = await insertDocumentRow(db, input.slot, node, {
       hidden: false,
-      markdown,
       ...(id ? { id } : {}),
       ...(provisionalName ? { provisionalName } : {}),
     });

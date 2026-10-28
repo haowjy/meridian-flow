@@ -21,7 +21,7 @@ import {
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCheckpointService } from "../checkpoints.js";
-import { createLinkBinder, createUnboundParser } from "./link-binding.js";
+import { createLinkBinder } from "./link-binding.js";
 import { createMarkdownDocumentEngine } from "./markdown-document.js";
 
 const DOCUMENT_ID = "code-document" as DocumentId;
@@ -42,9 +42,8 @@ function setup(filetype = "typescript") {
     coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
-      missingAuthorityProjection: async () => null,
+      lacksAuthority: async () => false,
     },
-    parseStored: createUnboundParser({ codec: mdxCodec({ schema }), schema }),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     identityPreservingWrite: async () => {
       throw new Error("Identity-preserving writes are not part of this test");

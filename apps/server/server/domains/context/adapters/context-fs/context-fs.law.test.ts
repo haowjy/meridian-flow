@@ -469,7 +469,6 @@ it("atomically claims opposite-kind names across in-memory store instances", asy
         name,
         extension: "",
         filetype: "markdown",
-        markdown: "",
       });
     const folder = () => right.ensureFolderPath([name]);
     const results = await Promise.allSettled(fileFirst ? [file(), folder()] : [folder(), file()]);

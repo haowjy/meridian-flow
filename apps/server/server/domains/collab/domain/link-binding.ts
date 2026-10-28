@@ -133,7 +133,7 @@ export interface LinkBinderDeps {
  * is a link; repair takes it as a stored projection's best reading, since binding mints
  * ahead refs in a root transaction that a repair's caller may already be inside.
  */
-export function createUnboundParser(deps: { codec: MarkupCodec; schema: Schema }) {
+function createUnboundParser(deps: { codec: MarkupCodec; schema: Schema }) {
   return (markdown: string, filetype: string | null) => {
     const schemaType = schemaTypeOf(filetype);
     const blocks: PMNode[] =

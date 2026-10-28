@@ -7,7 +7,6 @@
  */
 
 import type { TransactionOrigin } from "@hocuspocus/server";
-import { destinationFreeBlocks, grepText } from "@meridian/agent-edit";
 import {
   createAgentEditCodecFactory,
   fragmentOf,
@@ -88,8 +87,6 @@ type MarkdownDocumentEngineDeps = {
   journal: UpdateJournal;
   coordinator: Pick<LiveDocumentCoordinator, "withDocument" | "deliver">;
   initialDocumentSeeds: InitialDocumentSeeds;
-  /** A stored projection read with its links unbound, in its filetype's shape (repair only). */
-  parseStored(markdown: string, filetype: string | null): { blocks: readonly PMNode[] };
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   afterWrite?: MarkdownWriteHook;
@@ -122,14 +119,6 @@ type DraftMutation = (
 export type MarkdownDocumentEngine = {
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
-  /**
-   * The durable projections of the live `doc` from one projection of its blocks: the markdown,
-   * and the text `grep` matches, which spells no link.
-   */
-  projectDocument(
-    documentId: DocumentId,
-    doc: Y.Doc,
-  ): Promise<{ markdown: string; grepText: string }>;
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeVersionedDocument(
     documentId: DocumentId,
@@ -477,29 +466,13 @@ export function createMarkdownDocumentEngine(
   }
 
   async function repairDocumentAuthority(documentId: DocumentId): Promise<void> {
-    const projection = await deps.initialDocumentSeeds.missingAuthorityProjection(documentId);
-    if (projection === null) return;
-    // An empty projection is an empty document, not the empty paragraph a parse would give.
-    if (projection.length === 0) return initializeAuthority(documentId, []);
-    const format = await documentFormat(documentId);
-    if (!format.ok) throwSyncError(format.error);
-    await initializeAuthority(
-      documentId,
-      deps.parseStored(projection, format.value.filetype).blocks,
-    );
+    if (!(await deps.initialDocumentSeeds.lacksAuthority(documentId))) return;
+    // Nothing else holds the document's text: it is an empty document, not the empty
+    // paragraph a parse would give.
+    await initializeAuthority(documentId, []);
   }
 
   const engine: MarkdownDocumentEngine = {
-    async projectDocument(documentId, doc) {
-      const format = await documentFormat(documentId);
-      if (!format.ok) throwSyncError(format.error);
-      const links = await spelling(documentId, [doc], LIVE_VIEW);
-      return projectBlocks(documentId, doc, (blocks) => ({
-        markdown: markdownOf(blocks, format.value.schemaType, links),
-        grepText: grepText(destinationFreeBlocks(deps.codec, blocks)),
-      }));
-    },
-
     async serializeDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);

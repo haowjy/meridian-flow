@@ -9,12 +9,12 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 import { assertThrowawayDatabaseForRunDbTests } from "../__test-support__/db-fixtures";
-import { migrate } from "./0104_grep_tool_rename";
+import { migrate } from "./0103_grep_tool_rename";
 
 const databaseUrl = process.env.DATABASE_URL;
 const runDbTests = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 
-describe.skipIf(!runDbTests || !databaseUrl)("0104 grep tool rename", () => {
+describe.skipIf(!runDbTests || !databaseUrl)("0103 grep tool rename", () => {
   it("renames every stored place, keeps the bake trigger, and is re-runnable", async () => {
     assertThrowawayDatabaseForRunDbTests(databaseUrl ?? "");
     const sql = postgres(databaseUrl ?? "", { max: 1 });

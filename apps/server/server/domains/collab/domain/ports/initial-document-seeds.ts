@@ -13,9 +13,6 @@ export interface InitialDocumentSeeds {
    * removal record for a removed document.
    */
   seedInitialDocument(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
-  /**
-   * The stored projection (empty when none) of a document with no checkpoint and no update,
-   * or null when its authority exists. One read; the repair's fast path.
-   */
-  missingAuthorityProjection(documentId: DocumentId): Promise<string | null>;
+  /** True for a document with no checkpoint and no update. One read; the repair's fast path. */
+  lacksAuthority(documentId: DocumentId): Promise<boolean>;
 }

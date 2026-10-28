@@ -31,6 +31,7 @@ async function _expectScopedReplay(
   const reader = createEffectiveDocumentReader({
     drafts: fixture.draftStore,
     derivations: { grepTexts: async () => new Map() },
+    resolveFiletype: async () => null,
     draftPulls: fixture.draftPulls,
     agentEdit: fixture.collab.agentEdit(),
     documents: fixture.runtime.markdownDocuments,

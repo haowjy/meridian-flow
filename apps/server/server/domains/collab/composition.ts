@@ -49,6 +49,7 @@ import {
   SILENT_TURN_INVERSE_NOTICES,
   UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
 } from "./adapters/declared-stubs.js";
+import { serializeStoredDocument } from "./adapters/document-loader.js";
 import { createDrizzleApplyClick, measureApplyAppend } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
 import { createDrizzleBranchCommands } from "./adapters/drizzle-branch-commands.js";
@@ -94,7 +95,10 @@ import { createBranchReviewItems } from "./domain/branch-review-items.js";
 import { createBranches } from "./domain/branches.js";
 import { createDocumentAttribution } from "./domain/document-attribution.js";
 import { createDocumentCreationAggregate } from "./domain/document-creation.js";
-import { createDocumentDerivationService } from "./domain/document-derivations.js";
+import {
+  createBlockDeriver,
+  createDocumentDerivationService,
+} from "./domain/document-derivations.js";
 import {
   scopeAgentEdit,
   scopeDraftPeer,
@@ -113,7 +117,11 @@ import { createDraftPullService } from "./domain/draft-pulls.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
-import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
+import {
+  type AheadRefRegistrar,
+  type DocumentLinkScopes,
+  LIVE_VIEW,
+} from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
@@ -259,9 +267,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const derivations = createDocumentDerivationService({
     store: derivationStore,
-    serializer: {
-      projectDocument: (...args) => runtime.markdownDocuments.projectDocument(...args),
-    },
+    deriveBlocks: (documentId, doc) =>
+      createBlockDeriver({
+        model: runtime.model,
+        codec: runtime.codec,
+        resolveFiletype: lookups.resolveDocumentFiletype,
+      })(documentId, doc),
     outsideTransaction: runOutsideDrizzleTransaction,
     deferred: (documentId) => {
       if (!deps.eventSink) return;
@@ -543,6 +554,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       codec: runtime.codec,
       links: deps.links,
       branches: workBranches,
+      resolveFiletype: lookups.resolveDocumentFiletype,
     }),
     deps.links,
   );
@@ -620,6 +632,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
       repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      readFrozenMarkdown: (documentId) =>
+        serializeStoredDocument(persistence.journal, documentId, (doc) =>
+          runtime.markdownDocuments.serializeDocument(documentId, doc, LIVE_VIEW),
+        ),
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,

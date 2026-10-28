@@ -5,7 +5,7 @@
  * is about to spell, because only it has loaded them.
  *
  * Text crosses these doors: the Markdown engine (reads, the read API and
- * download, writer and import writes, projections), the model's edit core, a
+ * download, writer and import writes), the model's edit core, a
  * reply's save and draft-aware reads (Markdown, hashlines and revision).
  * ContextFS.search scopes its source's chapters together. Links
  * spelled outside every scope are reported (`createLinkScopeObserver`).
@@ -22,8 +22,6 @@ export function scopeMarkdownEngine(
 ): MarkdownDocumentEngine {
   const by = (documentId: string) => ({ documentId });
   return {
-    projectDocument: (documentId, doc) =>
-      scopes.within(by(documentId), () => engine.projectDocument(documentId, doc)),
     serializeDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
     serializeVersionedDocument: (documentId, doc, view) =>
