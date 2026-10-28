@@ -8,7 +8,7 @@ import { z } from "zod";
 export const turnStatusSchema = z.enum([
   "pending",
   "streaming",
-  "waiting_interrupt",
+  "awaiting_answer",
   "complete",
   "cancelled",
   "error",
@@ -17,5 +17,10 @@ export type TurnStatus = z.infer<typeof turnStatusSchema>;
 
 /** Terminal = durable final state, no longer live. The single source of truth for turn liveness. */
 export function isTerminalTurnStatus(status: TurnStatus): boolean {
-  return status === "complete" || status === "cancelled" || status === "error";
+  return (
+    status === "awaiting_answer" ||
+    status === "complete" ||
+    status === "cancelled" ||
+    status === "error"
+  );
 }

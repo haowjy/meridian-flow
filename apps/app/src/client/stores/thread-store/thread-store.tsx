@@ -1,22 +1,25 @@
 /**
  * Stores one `SyncedThread` per chat (turns, fences, positions and run state, changed only by the
- * package's transitions) and the app's own per-thread state: pending creation, interrupt responses.
+ * package's transitions) and the app's own per-thread state, such as pending creation.
  */
 
-import {
-  type Block,
-  blockContentRecord,
-  interruptIdForBlock,
-  type ThreadListItem,
-  type ThreadSnapshotResponse,
-  type Turn,
-  type TurnStatus,
+import type {
+  ThreadListItem,
+  ThreadSnapshotResponse,
+  Turn,
+  TurnStatus,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
+  type AskReceipt,
+  askReceipt,
+  type ChatAsks,
+  EMPTY_CHAT_ASKS,
   INITIAL_RUN_STATE_SLICE,
   isOptimisticTurnId,
   OPTIMISTIC_TURN_ID_PREFIX,
+  type OpenAsk,
+  openAsk,
   type RunStateSlice,
   type RunStateView,
 } from "@meridian/thread-client";
@@ -34,6 +37,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -45,11 +49,8 @@ import {
   isThreadAwaitingCreation,
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
-import {
-  type InterruptResponseEntry,
-  interruptResponseKey,
-} from "@/core/session/interrupt-response";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { announceError } from "./announcements";
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type { ThreadStoreActions, ThreadStoreState } from "./types";
@@ -60,9 +61,6 @@ type PendingCreationState = {
 
 type ThreadStoreSliceState = ThreadStoreState & {
   pendingCreation: PendingCreationState;
-  interruptResponses: Record<string, InterruptResponseEntry>;
-  /** Monotonic order for the newest-pending error correlation. */
-  interruptResponseCounter: number;
   turnCounter: number;
 };
 
@@ -90,7 +88,7 @@ function liveThreadListPatchForTurnStatus(
   turnId: string,
   status: TurnStatus,
 ): ThreadListLifecyclePatch {
-  if (status === "waiting_interrupt") {
+  if (status === "awaiting_answer") {
     return { actionRequired: true, runningTurnId: null };
   }
 
@@ -102,61 +100,6 @@ function liveThreadListPatchForTurnStatus(
     actionRequired: false,
     runningTurnId: null,
   };
-}
-
-/** Drop the settlements of turns that ended: a terminal turn has nothing left to answer. */
-function dropEndedInterruptResponses(
-  responses: Record<string, InterruptResponseEntry>,
-  threadId: string,
-  turns: readonly Turn[],
-): Record<string, InterruptResponseEntry> | null {
-  let next: Record<string, InterruptResponseEntry> | null = null;
-  for (const [key, entry] of Object.entries(responses)) {
-    if (entry.threadId !== threadId) continue;
-    const turn = turns.find((candidate) => candidate.id === entry.turnId);
-    if (!turn || !isTerminalTurnStatus(turn.status)) continue;
-    next ??= { ...responses };
-    delete next[key];
-  }
-  return next;
-}
-
-/** True once a resolved/expired props payload has been written to the block. */
-function interruptBlockHasResolvedValue(block: Block): boolean {
-  const props = blockContentRecord(block).props;
-  if (!props || typeof props !== "object" || Array.isArray(props)) return false;
-  return Object.hasOwn(props, "resolvedValue");
-}
-
-function reconcileInterruptResponsesForThread(
-  responses: Record<string, InterruptResponseEntry>,
-  threadId: string,
-  turns: readonly Turn[],
-): Record<string, InterruptResponseEntry> | null {
-  let next: Record<string, InterruptResponseEntry> | null = null;
-  for (const [key, entry] of Object.entries(responses)) {
-    if (entry.threadId !== threadId) continue;
-
-    const turn = turns.find((candidate) => candidate.id === entry.turnId);
-    const waiting = turn?.status === "waiting_interrupt";
-    const block = turn?.blocks.find(
-      (candidate) =>
-        candidate.blockType === "custom" && interruptIdForBlock(candidate) === entry.interruptId,
-    );
-    const resolved = block ? interruptBlockHasResolvedValue(block) : false;
-
-    if (!waiting || resolved) {
-      next ??= { ...responses };
-      delete next[key];
-      continue;
-    }
-
-    if (entry.status === "pending") {
-      next ??= { ...responses };
-      next[key] = { ...entry, status: "ambiguous" };
-    }
-  }
-  return next;
 }
 
 function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
@@ -174,15 +117,9 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     removeTurns: state.removeTurns,
     dispatchRunState: state.dispatchRunState,
+    updateAsks: state.updateAsks,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
-    interruptResponseFor: state.interruptResponseFor,
-    beginInterruptResponse: state.beginInterruptResponse,
-    failInterruptResponse: state.failInterruptResponse,
-    settleInterruptResponse: state.settleInterruptResponse,
-    pendingInterruptResponseForThread: state.pendingInterruptResponseForThread,
-    markInterruptResponsesForGenerationAmbiguous:
-      state.markInterruptResponsesForGenerationAmbiguous,
   };
 }
 
@@ -195,20 +132,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           get().syncedByThread[threadId];
         const cellOf = (threadId: string): SyncedThread =>
           readCell(threadId) ?? EMPTY_SYNCED_THREAD;
-        /**
-         * The chat's next value, and with it the settlements of turns it shows ended: a terminal
-         * status write and the interrupt responses it clears are one update, so no render sees one
-         * without the other.
-         */
-        const withCell = (state: ThreadStoreSlice, threadId: string, next: SyncedThread) => {
-          const ended = dropEndedInterruptResponses(state.interruptResponses, threadId, next.turns);
-          return {
-            syncedByThread: { ...state.syncedByThread, [threadId]: next },
-            ...(ended ? { interruptResponses: ended } : {}),
-          };
-        };
         const writeCell = (threadId: string, next: SyncedThread) =>
-          set((state) => withCell(state, threadId, next));
+          set((state) => ({ syncedByThread: { ...state.syncedByThread, [threadId]: next } }));
         /** Write the chat's next value; a transition that changed nothing writes nothing. */
         const update = (threadId: string, change: (synced: SyncedThread) => SyncedThread) => {
           const current = cellOf(threadId);
@@ -217,7 +142,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         };
         const storeNow = () => new Date(get().now).toISOString();
 
-        // What the thread lists, the caches and the interrupt settlements do when a turn starts,
+        // What the thread lists and the caches do when a turn starts,
         // changes status, or a read lands. The sync's observations and the command actions that
         // cause the same thing both call these.
         const turnChanged = (
@@ -238,18 +163,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             { snapshot: options.snapshot },
           );
         };
-        const readApplied = (threadId: string, read: ThreadSnapshotResponse) => {
+        const readApplied = (_threadId: string, read: ThreadSnapshotResponse) => {
           threadCache.upsertThread(read.thread, {
             actionRequired: read.actionRequired,
             runningTurnId: read.liveState.runState.execution?.currentTurnId ?? null,
-          });
-          set((state) => {
-            const reconciled = reconcileInterruptResponsesForThread(
-              state.interruptResponses,
-              threadId,
-              cellOf(threadId).turns,
-            );
-            return reconciled ? { interruptResponses: reconciled } : state;
           });
         };
         const observe = (threadId: string, observation: SyncObservation) => {
@@ -261,8 +178,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             case "read":
               if (observation.applied) readApplied(threadId, observation.read);
               break;
-            case "interruptSettled":
-              get().settleInterruptResponse(observation.identity);
+            case "error":
+              announceError(observation.error.message || "Thread stream failed");
               break;
             default:
               break;
@@ -273,8 +190,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           now,
           syncedByThread: {},
           pendingCreation: { threadIds: {} },
-          interruptResponses: {},
-          interruptResponseCounter: 0,
           streamingThreadId: null,
           streamingProjectId: null,
           turnCounter: 0,
@@ -312,14 +227,13 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
             set((state) => ({
               turnCounter: next,
-              ...withCell(
-                state,
-                threadId,
-                sync.appendLocalUserTurn(
+              syncedByThread: {
+                ...state.syncedByThread,
+                [threadId]: sync.appendLocalUserTurn(
                   state.syncedByThread[threadId] ?? EMPTY_SYNCED_THREAD,
                   turn,
                 ),
-              ),
+              },
             }));
 
             return turn;
@@ -358,6 +272,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             update(threadId, (synced) => sync.receiveRunState(synced, action));
           },
 
+          updateAsks(threadId, change) {
+            update(threadId, (synced) => sync.updateAsks(synced, change));
+          },
+
           pruneStaleAssistantTurns(threadId) {
             update(threadId, sync.pruneStreamingTail);
           },
@@ -379,96 +297,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               const threadIds = { ...state.pendingCreation.threadIds };
               if (threadId) delete threadIds[threadId];
               return { pendingCreation: { threadIds } };
-            });
-          },
-
-          interruptResponseFor(identity) {
-            return get().interruptResponses[interruptResponseKey(identity)];
-          },
-
-          beginInterruptResponse(input) {
-            const key = interruptResponseKey(input);
-            set((state) => {
-              const sequence = state.interruptResponseCounter + 1;
-              return {
-                interruptResponseCounter: sequence,
-                interruptResponses: {
-                  ...state.interruptResponses,
-                  [key]: {
-                    threadId: input.threadId,
-                    turnId: input.turnId,
-                    interruptId: input.interruptId,
-                    status: "pending",
-                    value: input.value,
-                    sequence,
-                    generation: input.generation,
-                  },
-                },
-              };
-            });
-          },
-
-          failInterruptResponse(input, failure) {
-            const key = interruptResponseKey(input);
-            set((state) => {
-              const existing = state.interruptResponses[key];
-              if (existing) {
-                // Preserve the retained value/sequence; only the status moves.
-                return {
-                  interruptResponses: {
-                    ...state.interruptResponses,
-                    [key]: { ...existing, status: failure.status },
-                  },
-                };
-              }
-              // A send that never left the client has no pending row yet.
-              const sequence = state.interruptResponseCounter + 1;
-              return {
-                interruptResponseCounter: sequence,
-                interruptResponses: {
-                  ...state.interruptResponses,
-                  [key]: {
-                    threadId: input.threadId,
-                    turnId: input.turnId,
-                    interruptId: input.interruptId,
-                    status: failure.status,
-                    value: input.value,
-                    sequence,
-                    generation: null,
-                  },
-                },
-              };
-            });
-          },
-
-          settleInterruptResponse(identity) {
-            const key = interruptResponseKey(identity);
-            set((state) => {
-              if (!(key in state.interruptResponses)) return state;
-              const { [key]: _removed, ...rest } = state.interruptResponses;
-              return { interruptResponses: rest };
-            });
-          },
-
-          pendingInterruptResponseForThread(threadId) {
-            let newest: InterruptResponseEntry | null = null;
-            for (const entry of Object.values(get().interruptResponses)) {
-              if (entry.threadId !== threadId || entry.status !== "pending") continue;
-              if (!newest || entry.sequence > newest.sequence) newest = entry;
-            }
-            return newest;
-          },
-
-          markInterruptResponsesForGenerationAmbiguous(generation) {
-            set((state) => {
-              let changed = false;
-              const next = { ...state.interruptResponses };
-              for (const [key, entry] of Object.entries(state.interruptResponses)) {
-                if (entry.status !== "pending" || entry.generation !== generation) continue;
-                next[key] = { ...entry, status: "ambiguous" };
-                changed = true;
-              }
-              return changed ? { interruptResponses: next } : state;
             });
           },
         };
@@ -548,6 +376,26 @@ export function useRunStateSlice(threadId: string): RunStateSlice {
 /** The chat's run-state view, the one input to the package's selectors (`isBusy`, `stopRequest`, ...). */
 export function useRunState(threadId: string): RunStateView {
   return useRunStateSlice(threadId).view;
+}
+
+const NO_TURNS: Turn[] = [];
+
+/** The chat's authoritative asks, including resolved history and this device's answer attempts. */
+export function useThreadAsks(threadId: string): ChatAsks {
+  return useThreadStore((state) => state.syncedByThread[threadId]?.asks ?? EMPTY_CHAT_ASKS);
+}
+
+/** The ask that takes over the chat's composer, if one is open. */
+export function useOpenAsk(threadId: string): OpenAsk | null {
+  const asks = useThreadAsks(threadId);
+  const turns = useThreadStore((state) => state.syncedByThread[threadId]?.turns ?? NO_TURNS);
+  return useMemo(() => openAsk(asks, turns), [asks, turns]);
+}
+
+/** The receipt line an asking turn shows, once its ask is answered here or resolved. */
+export function useAskReceipt(threadId: string, turnId: string): AskReceipt | null {
+  const asks = useThreadAsks(threadId);
+  return useMemo(() => askReceipt(asks, turnId), [asks, turnId]);
 }
 
 export function useThreadActions(): ThreadStoreActions {

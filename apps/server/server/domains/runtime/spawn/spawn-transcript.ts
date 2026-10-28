@@ -168,7 +168,7 @@ export async function persistReturnResult(
     capture: ReturnResultCapture | undefined;
     executionReports: Pick<ExecutionReportRepository, "captureOnce" | "findByTurn">;
   },
-): Promise<{ block: Block; endTurn: boolean }> {
+): Promise<{ block: Block; endsBatch: boolean }> {
   const persisted = await persistAndAppendEvents(
     transcript.persistence,
     transcript.threadId,
@@ -219,12 +219,12 @@ export async function persistReturnResult(
         },
       ];
       return {
-        result: { tool: localBlockFromEvent(toolRow), endTurn: output.ok },
+        result: { tool: localBlockFromEvent(toolRow), endsBatch: output.ok },
         events,
       };
     },
   );
   rememberBlock(transcript, persisted.result.tool);
 
-  return { block: persisted.result.tool, endTurn: persisted.result.endTurn };
+  return { block: persisted.result.tool, endsBatch: persisted.result.endsBatch };
 }

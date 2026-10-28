@@ -78,15 +78,6 @@ export {
   planCompaction,
   resolveCompactionTrigger,
 } from "./loop/compaction/index.js";
-export {
-  createNoopInterruptArtifactFlushPort,
-  type InterruptArtifactFlushPort,
-} from "./loop/interrupt-session.js";
-export type { InterruptAutoResumePolicy, InterruptRegistry } from "./loop/interrupts.js";
-export {
-  createInterruptRegistry,
-  EXPIRED_INTERRUPT_VALUE,
-} from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
 export * from "./loop/permissions/index.js";

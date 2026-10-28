@@ -134,14 +134,6 @@ export type {
 } from "./ports/project-context-availability.js";
 export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
 export { createInMemoryResultRepository } from "./promotion/adapters/in-memory-result-repository.js";
-export { createInterruptArtifactFlush } from "./promotion/interrupt-artifact-flush.js";
-export {
-  createInterruptFlushService,
-  type InterruptFlushManifest,
-  type InterruptFlushManifestEntry,
-  type InterruptFlushService,
-  sourcePathsFromArtifactRefs,
-} from "./promotion/interrupt-flush.js";
 export type {
   CreateProjectResultInput,
   ProjectResultRecord,

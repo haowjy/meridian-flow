@@ -65,10 +65,9 @@ project id and calls the current Postgres FIFO/debt-lot functions.
 
 ### preferences
 
-Project preferences are persisted in `project_user_preferences` via the
-Drizzle adapter, which is wired as the production surface at the composition
-root. The in-memory adapter remains for hermetic tests and local reference
-behavior. Both adapters are exported from the domain barrel.
+Account appearance preferences are persisted in `user_preferences`; working-set
+sync remains a column on `users`. The Drizzle account-settings adapter is wired
+at the composition root, while the in-memory adapter supports hermetic tests.
 
 ## No external package-execution runtime
 

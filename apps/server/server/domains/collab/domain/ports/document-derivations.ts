@@ -26,7 +26,6 @@ export type DerivedBlock = {
   text: string;
   /** Hash of the destination-free markdown: the key the store diffs on. */
   contentHash: Buffer;
-  wordCount: number;
 };
 export type DocumentDerivationOutputs = {
   /** In document order. */

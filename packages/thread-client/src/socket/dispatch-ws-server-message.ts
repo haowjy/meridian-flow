@@ -21,27 +21,16 @@ export type WsServerMessageDispatchDeps = {
   handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void;
   send: (payload: unknown) => void;
   onConnected: (connectionToken: string) => void;
+  onAskAnswerReply: (
+    message: Extract<WsServerMessage, { type: "ask.answer.ok" | "ask.answer.error" }>,
+  ) => void;
   /** An error that names a request. The client ends the request it matches and drops the rest. */
   onRequestError: (requestId: string, error: Error, retryable: boolean) => void;
   /** An error that names a thread but no request. Ends nothing. */
   onThreadError: (threadId: string, error: Error) => void;
-  onInterruptResponseError: (threadId: string, error: Error) => void;
   /** An error that names neither. Ends nothing. */
   onGlobalError: (error: Error) => void;
 };
-
-function isNonFatalInterruptResponseError(
-  message: Extract<WsServerMessage, { type: "error" }>,
-): boolean {
-  // A late/double interrupt response is an allowed race: the server has
-  // already resumed or expired the interrupt, and the active run subscription
-  // must stay alive to receive the assistant output that follows.
-  return (
-    Boolean(message.threadId) &&
-    (message.error.code === "interrupt_not_pending" ||
-      message.error.code === "interrupt_correlation_mismatch")
-  );
-}
 
 export function dispatchWsServerMessage(
   message: WsServerMessage,
@@ -71,13 +60,13 @@ export function dispatchWsServerMessage(
       deps.handleGap(message);
       return;
 
+    case "ask.answer.ok":
+    case "ask.answer.error":
+      deps.onAskAnswerReply(message);
+      return;
+
     case "error": {
       const error = deps.toError(message.error);
-      // Interrupt refusals never touch a request, whatever id they carry.
-      if (isNonFatalInterruptResponseError(message)) {
-        if (message.threadId) deps.onInterruptResponseError(message.threadId, error);
-        return;
-      }
       if (message.requestId) {
         deps.onRequestError(message.requestId, error, message.error.retryable);
         return;

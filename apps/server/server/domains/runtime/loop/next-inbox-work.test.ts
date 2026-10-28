@@ -5,7 +5,7 @@
  */
 import type { ControlBody } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { next } from "./next-inbox-work.js";
+import { next, prefixRows } from "./next-inbox-work.js";
 import type { InboxMessage } from "./ports.js";
 
 let seq = 0;
@@ -28,6 +28,7 @@ const notice = (id: string) => row(id, "notice", { kind: "text", text: id });
 const control = (id: string, body: ControlBody) => row(id, "control", body);
 const S = () => control("S", { kind: "write_mode", mode: "draft" });
 const C = () => control("C", { kind: "compact" });
+const A = () => row("A", "control", { kind: "ask_resolved", askId: "ask" });
 
 function describeSelection(selection: ReturnType<typeof next>) {
   switch (selection.kind) {
@@ -73,9 +74,21 @@ describe("next", () => {
       runStart: "batch M2",
     },
     { name: "N", pending: () => [notice("N")], boundary: "batch N", runStart: "none" },
-  ])("$name → boundary $boundary, run start $runStart", ({ pending, boundary, runStart }) => {
+  ])("$name → boundary $boundary, run start $runStart", ({ name, pending, boundary, runStart }) => {
     const rows = pending();
     expect(describeSelection(next(rows, "boundary"))).toBe(boundary);
     expect(describeSelection(next(rows, "run_start"))).toBe(runStart);
+    if (name === "M1, S, M2") {
+      const continuation = A();
+      expect(next([...rows, continuation], "run_start")).toMatchObject({
+        kind: "control",
+        control: { id: "A" },
+        rows: [{ id: "M1" }],
+      });
+      expect(prefixRows([...rows, continuation])).toMatchObject({
+        kind: "batch",
+        rows: [{ id: "M1" }],
+      });
+    }
   });
 });

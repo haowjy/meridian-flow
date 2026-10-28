@@ -3,14 +3,8 @@
  * collab, file-policy and thread services.
  */
 import {
-  type AskUserToolInput,
-  interruptResolvedPropsFromAnswer,
-} from "@meridian/contracts/components";
-import { askRequestFromAskUser } from "@meridian/contracts/interrupt";
-import {
   createCoreToolRegistrations,
   createSkillToolRegistrations,
-  type InterruptToolHandlerContext,
   type ToolRegistration,
 } from "../../domains/runtime/index.js";
 import { createReadHandler, createWriteHandler } from "./document-tools.js";
@@ -26,15 +20,8 @@ export {
 } from "./response-write-lifecycle.js";
 export type { ToolWiringDeps } from "./tool-context.js";
 
-async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) {
-  const args = input as AskUserToolInput;
-  const timeoutMs = args.timeoutMs ?? ctx.interruptTimeoutMs;
-  const request = askRequestFromAskUser(args, crypto.randomUUID());
-
-  const response = await ctx.interrupt(request, timeoutMs);
-  const resolvedProps = interruptResolvedPropsFromAnswer(response);
-  await ctx.updateComponentBlock(request.interruptId, resolvedProps);
-  return { value: resolvedProps.resolvedValue, provenance: response.provenance };
+async function askHandler(input: unknown) {
+  return input;
 }
 
 export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
@@ -45,7 +32,7 @@ export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistra
       work: createWorkHandler(deps),
       ls: createLsHandler(deps),
       grep: createGrepHandler(deps),
-      ask_user: askUserHandler,
+      ask_user: askHandler,
     }),
     ...createSkillToolRegistrations(deps),
   ];

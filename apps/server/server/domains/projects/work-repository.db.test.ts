@@ -813,6 +813,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         workAuthorityResolver: authorities,
         works,
+        async cancelAsks() {},
       };
       for (const threadId of [THREAD_ID, childThreadId, separatelyDeletedThreadId]) {
         await expect(
@@ -954,6 +955,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             workAuthorityResolver: authorities,
             works,
+            async cancelAsks() {},
           },
           childThreadId as never,
           USER_ID as never,

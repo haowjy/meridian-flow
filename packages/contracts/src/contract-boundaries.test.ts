@@ -1,13 +1,9 @@
 /**
  * Tests contract boundaries behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Interrupt answers unwrap exactly one envelope
  */
 
 import { describe, expect, it } from "vitest";
 import { parseTrailChangesV1, type TrailChangeV1 } from "./change-trails.js";
-import { normalizeInterruptAnswerValue } from "./components/index.js";
 import { parseThreadReportResult, toReportContentValue } from "./spawn/index.js";
 import { parseWorkReceipt } from "./works/receipts.js";
 
@@ -42,16 +38,6 @@ describe("change-trail Yjs identities", () => {
     identity[field] = value;
 
     expect(() => parseTrailChangesV1([change])).toThrow("Corrupt change-trail detail");
-  });
-});
-
-describe("normalizeInterruptAnswerValue", () => {
-  it("unwraps exactly one interrupt answer envelope", () => {
-    expect(normalizeInterruptAnswerValue("direct")).toBe("direct");
-    expect(normalizeInterruptAnswerValue({ value: "wrapped" })).toBe("wrapped");
-    expect(normalizeInterruptAnswerValue({ value: { value: "nested" } })).toBe(
-      JSON.stringify({ value: "nested" }),
-    );
   });
 });
 

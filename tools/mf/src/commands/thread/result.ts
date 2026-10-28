@@ -11,7 +11,6 @@ export type Outcome =
   | "failed"
   | "cancelled"
   | "handed_back"
-  | "interrupt"
   | "timeout"
   | "unproven";
 export type Reason =
@@ -27,7 +26,7 @@ export type Reason =
   | "forgotten";
 /** `accepted` is admission only and is built solely by `thread send --no-wait`; no wait produces it. */
 export type Claim =
-  | { outcome: "accepted" | "complete" | "cancelled" | "handed_back" | "interrupt"; reason: null }
+  | { outcome: "accepted" | "complete" | "cancelled" | "handed_back"; reason: null }
   | { outcome: "failed"; reason: null | "credits_exhausted" | "not_a_message" | "forgotten" }
   | {
       outcome: "unproven" | "timeout";
@@ -54,7 +53,6 @@ const EXITS: Record<Outcome, ExitCode> = {
   failed: EXIT.failed,
   cancelled: EXIT.cancelled,
   handed_back: EXIT.cancelled,
-  interrupt: EXIT.interrupt,
   timeout: EXIT.timeout,
   unproven: EXIT.unproven,
 };

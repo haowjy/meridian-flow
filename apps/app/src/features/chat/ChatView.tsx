@@ -49,6 +49,7 @@ import {
   useIsThreadPendingCreation,
   useRunStateSlice,
   useThreadActions,
+  useThreadAsks,
   useThreadStore,
 } from "@/client/stores";
 import type { ComposerChatCommand, ComposerHandle } from "@/components/app/composer";
@@ -72,7 +73,6 @@ import { ChatComposer } from "./ChatComposer";
 import { ChatContextNavigationProvider } from "./ChatContextNavigation";
 import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
-import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { chatLineageId } from "./chat-scratch-owner";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { useRegisterChatComposer } from "./composer-insertion";
@@ -185,6 +185,7 @@ export function ChatView({
   );
   const brief = useHandoffBrief({ threadId, storedTurns });
   const { view: runState, history } = useRunStateSlice(threadId);
+  const asks = useThreadAsks(threadId);
   const replyRetry = useReplyRetry({ threadId, storedTurns });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
@@ -202,9 +203,13 @@ export function ChatView({
   const runningBackgroundSubagents = runningSubagents.filter(
     (node) => node.deliveryMode === "background_notification",
   );
+  const queuedWriterItems = useMemo(
+    () => waitingWriterMessages(runState, asks.byId.values()),
+    [asks, runState],
+  );
   const queuedWriterTurnIds = useMemo(
-    () => new Set(waitingWriterMessages(runState).map((item) => item.id)),
-    [runState],
+    () => new Set(queuedWriterItems.map((item) => item.id)),
+    [queuedWriterItems],
   );
   const hiddenTurnIds = useMemo(() => hiddenWriterTurns(runState), [runState]);
   const usageBlocked = usageBlockedMessages(runState).length > 0;
@@ -640,10 +645,6 @@ export function ChatView({
   });
   const handleWriteModeChange = useCommittedEvent(controls.switchWriteMode);
 
-  const handleRespondToInterrupt = useCommittedEvent((request: InterruptRespondRequest) =>
-    controller.respondInterrupt(request),
-  );
-
   const links = useChatLinkFollowing({ projectId, activeThread, activeWork, active });
 
   return (
@@ -695,7 +696,6 @@ export function ChatView({
                           historySettled={historySettled}
                           tailFollowRevision={tailFollowRevision}
                           ariaLabel={t`Chat`}
-                          onRespondToInterrupt={handleRespondToInterrupt}
                           changeTrails={changeTrails.byId}
                           submissionRecoveryByTurnId={submissions.presentation}
                           controls={controls}

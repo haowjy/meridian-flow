@@ -3,10 +3,11 @@
  * Why independent: Durable thread events are a shared contract between the orchestrator, event journal, thread event hub, and AG-UI projector.
  */
 
+import type { MeridianError } from "../errors/index.js";
 import type { PromptBakeId, TurnId } from "../ids.js";
-import type { AskRequest, MeridianError } from "../interrupt/index.js";
 import type { AgentReport, SavedOutcome, SpawnResult } from "../spawn/index.js";
 import type { WorkContextProjectionSignal } from "../works/index.js";
+import type { ThreadAsk } from "./asks.js";
 import type {
   BlockStatus,
   BlockType,
@@ -81,6 +82,7 @@ export type OrchestratorEvent =
       argumentsDelta?: string;
     }
   | { type: "tool.executing"; toolCallId: string; name: string }
+  | { type: "ask.updated"; ask: ThreadAsk }
   | {
       /** Best-effort live stdout/stderr; authoritative final output still arrives via tool.result. */
       type: "tool.output_delta";
@@ -119,21 +121,6 @@ export type OrchestratorEvent =
       tokensBefore: number;
       tokensAfter: number;
     }
-  | {
-      type: "interrupt.created";
-      turnId: string;
-      interruptId: string;
-      blockSequence: number;
-      request: AskRequest;
-    }
-  | {
-      type: "interrupt.resolved";
-      turnId: string;
-      interruptId: string;
-      blockSequence: number;
-      value: JsonValue;
-    }
-  | { type: "interrupt.expired"; turnId: string; interruptId: string; blockSequence: number }
   | {
       type: "permission.denied";
       toolCallId: string;

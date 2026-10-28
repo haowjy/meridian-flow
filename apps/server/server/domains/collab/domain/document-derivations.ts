@@ -177,7 +177,7 @@ export async function deriveDocumentOutputs(
       });
   return {
     blocks,
-    wordCount: blocks.reduce((sum, block) => sum + block.wordCount, 0),
+    wordCount: blocks.reduce((sum, block) => sum + countWords(block.text), 0),
     documentBytes: blocks.reduce((sum, block) => sum + Buffer.byteLength(block.text, "utf8"), 0),
     documentHash: documentHash(blocks, links),
     links,
@@ -207,7 +207,6 @@ export function createBlockDeriver(deps: {
         id: blockItemIdKey(block.id),
         text,
         contentHash: sha256(free[index] as string),
-        wordCount: countWords(text),
       };
     });
   };
