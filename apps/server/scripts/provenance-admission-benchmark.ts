@@ -12,6 +12,7 @@ import {
 import { sql } from "drizzle-orm";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
 import { createDrizzleJournal } from "../server/domains/collab/adapters/drizzle-journal.js";
 import {
   primeReservedNamespaceIndex,
@@ -154,6 +155,7 @@ async function measurePostgresAdmission(): Promise<{
   p95Ms: number;
   p99Ms: number;
 }> {
+  applyDevEnvToProcess();
   const databaseUrl = process.env.DATABASE_URL;
   const userId = process.env.PROVENANCE_BENCHMARK_USER_ID;
   if (!databaseUrl || !userId) {

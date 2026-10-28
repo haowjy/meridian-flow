@@ -9,14 +9,21 @@ directory never imports application packages. The `./mf` CLI lives in
 
 ## Rules
 
+- Dev sessions live on the private tmux socket in `lib/dev-tmux-socket.ts`
+  (`-L meridian-flow-dev`). Build every dev-session tmux call from
+  `devTmuxArgs`; a bare `tmux` reaches the human's own sessions. Only the
+  worktree-cleanup readiness check (to list panes) and the legacy-stack guard in
+  `dev-tmux.ts` (a read-only `has-session`) read the human's server.
 - `DEV_DATABASES` in `lib/dev-env.ts` is the only database registry. Resolve
   worktree URLs through `applyDevEnvToProcess()` and administer databases
   through `lib/dev-db.ts`. Never regex-edit a URL, fall back to a shared
   database, or open an ad-hoc admin client.
 - Change schemas with `generate` plus `migrate`, never `push`. Migration lint
   has one `RULES` list; a skip must be safe on populated tables.
-- Secrets may reach the command sent to tmux, never stdout or
-  `.meridian/dev-session.json`. Report `started` only after readiness and
+- No secret value appears in the tmux command, stdout or
+  `.meridian/dev-session.json`: services get secrets from `with-dev-env.ts`,
+  which loads them at startup. Keep the pane's exports non-secret and inside
+  the subshell. Report `started` only after readiness and
   verified routes pass.
 - Stop and clean up by target. Never stop dev servers by pattern
   (`pkill -f "pnpm dev"`, `killall node` match every worktree's stack), never

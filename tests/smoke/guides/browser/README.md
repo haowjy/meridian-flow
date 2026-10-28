@@ -29,11 +29,10 @@ verify real browser behavior, console output, WebSocket state, and database rows
    playwright-cli goto "$APP_URL/dev-login"
    ```
 
-4. Database checks use the worktree's `DATABASE_URL`:
+4. Database checks go through `tools/dev/psql`, which targets the worktree's database:
 
    ```bash
-   set -a; . ./.env; set +a
-   psql "$DATABASE_URL" -c 'select 1;'
+   tools/dev/psql -c 'select 1;'
    ```
 
 ## Runbooks

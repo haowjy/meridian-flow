@@ -9,6 +9,7 @@ import { createDevSessionPlan, type DevSessionPlan } from "./dev-session-plan";
 import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-state";
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
+import { DEV_TMUX_SOCKET } from "./lib/dev-tmux-socket";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { prunePortlessRoutes } from "./lib/portless-maintenance";
 import { pidBelongsToCheckout, processWorkingDirectory } from "./lib/route-ownership";
@@ -137,8 +138,12 @@ function printDryRun(plan: DevSessionPlan, launchCommand: string): void {
     console.log(
       `shared port: ${entry.service}=backend:${entry.appBackendPort},${entry.externalMode}:${entry.externalHttpsPort}`,
     );
-  console.log(`tmux new-session -d -s ${plan.session.sessionName} -c ${repoRoot}`);
-  console.log(`tmux send-keys -t ${plan.session.sessionName}:0 -- ${launchCommand} C-m`);
+  console.log(
+    `tmux -L ${DEV_TMUX_SOCKET} new-session -d -s ${plan.session.sessionName} -c ${repoRoot}`,
+  );
+  console.log(
+    `tmux -L ${DEV_TMUX_SOCKET} send-keys -t ${plan.session.sessionName}:0 -- ${launchCommand} C-m`,
+  );
 }
 
 async function verifyAndPublish({
@@ -243,10 +248,18 @@ async function main(): Promise<void> {
     session,
     force: options.restart,
   });
-  if (options.print) return printDryRun(plan, active?.command ?? plan.command.display);
+  if (options.print) return printDryRun(plan, active?.command ?? plan.command.line);
   if (!store.hasCommandOnPath("tmux"))
     throw new Error("tmux is required but was not found on PATH. Install tmux and retry.");
   const sessionNames = [identity.sessionName, ...(previous ? [previous.sessionName] : [])];
+  // TODO(remove): once no stack started before the private socket is running.
+  for (const name of sessionNames) {
+    if (store.legacyDefaultServerHasSession(name))
+      throw new Error(
+        `a dev stack from an older pnpm dev is still on your default tmux server as '${name}'. ` +
+          `Stop it with: tmux -L default kill-session -t =${name}  (or pnpm dev --stop from the previous build), then retry.`,
+      );
+  }
   if (options.stop) {
     tailscale.cleanupExternalRoutes({
       previousRoutes: previous?.externalRoutes,
@@ -278,11 +291,11 @@ async function main(): Promise<void> {
     // Record launch identity immediately: HEAD may change before readiness finishes.
     writeDevSessionMetadata(repoRoot, {
       ...session,
-      command: plan.command.display,
+      command: plan.command.line,
       externalRoutes: [],
     });
     requireSuccess(
-      store.sendKeys(session.sessionName, plan.command.executable),
+      store.sendKeys(session.sessionName, plan.command.line),
       "failed to start portless in tmux",
     );
   }
@@ -291,7 +304,7 @@ async function main(): Promise<void> {
     tailscale,
     plan,
     alreadyRunning: active !== null,
-    launchCommand: active?.command ?? plan.command.display,
+    launchCommand: active?.command ?? plan.command.line,
   });
 }
 

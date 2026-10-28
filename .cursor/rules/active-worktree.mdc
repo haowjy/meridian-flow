@@ -12,7 +12,7 @@ Meridian Flow feature work usually runs in a **linked git worktree**, not the ma
 | `~/gitrepos/meridian-collab.worktrees/<name>/` | Feature branches (`feat/*`, experiments) — **default for product edits** |
 | `~/gitrepos/meridian-collab/` | `main` / `platform` / shared integration — only when the user or task says so |
 
-Worktrees do **not** share gitignored files (e.g. `.env`). Run `pnpm dev` in the same tree you commit from.
+Worktrees do **not** share gitignored files (e.g. `.env`); dev tools load the main checkout's `.env` themselves. Run `pnpm dev` in the same tree you commit from.
 
 ## Before edits or `git commit`
 
