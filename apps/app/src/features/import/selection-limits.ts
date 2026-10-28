@@ -3,7 +3,7 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { IMPORT_ADMISSION, importFileCount, overFileBudget } from "@meridian/contracts";
-import { formatBytes } from "./format-size";
+import { formatBytes } from "@/lib/format-size";
 import { type Selection, selectionTotals } from "./selection";
 
 /** Why this selection cannot be imported, as a sentence; null when it can go. */

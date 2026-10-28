@@ -8,7 +8,7 @@
 import { Trans } from "@lingui/react/macro";
 import { Download, FileText } from "lucide-react";
 
-import { formatBytes } from "@/features/import/format-size";
+import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 export type FileCardProps = {
