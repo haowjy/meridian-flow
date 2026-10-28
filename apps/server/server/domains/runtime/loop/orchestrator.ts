@@ -76,7 +76,6 @@ import type {
   JsonValue,
   ModelResponseReceivedRow,
   OrchestratorEvent,
-  QuestionAskPayload,
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
@@ -90,7 +89,6 @@ import type {
   BlockRepository,
   LiveEventWriter,
   ModelResponseRepository,
-  StoredAsk,
   ThreadRepositories,
   ThreadRepository,
   TurnRepository,
@@ -116,7 +114,7 @@ import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import { openChildQuestionsInRequest } from "../spawn/child-question-binding.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
-import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
+import { admitRun, readContinuation } from "../spawn/run-admission.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import {
@@ -161,7 +159,7 @@ import {
 } from "./partial-tool-activity.js";
 import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { AskResolvedBody, InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
+import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import {
   loadReferenceReads,
@@ -436,70 +434,6 @@ function applyResponseToTurnSnapshot(turn: Turn, response: ModelResponseReceived
   };
 }
 
-/** The resolved ask a drain run continues, from its one durable `ask_resolved` row. */
-type AskContinuation = { ask: StoredAsk; delivery: AskResolvedBody["delivery"] };
-
-const THREAD_RUN_CORRELATION = {
-  callerThreadId: null,
-  callerTurnId: null,
-  toolCallId: null,
-  cardBlockId: null,
-  origin: "thread_run" as const,
-  deliveryMode: "none" as const,
-};
-
-function isForwardedAsk(ask: StoredAsk): boolean {
-  return ask.kind === "question" && !!(ask.payload as QuestionAskPayload).forwardedFrom;
-}
-
-async function admitRunExecution(
-  deps: OrchestratorDeps,
-  input: RunLoopInput,
-  thread: Thread,
-  executionTurnId: TurnId,
-  adopted: readonly InboxMessage[],
-  continuation: AskContinuation | null,
-): Promise<void> {
-  if (thread.kind !== "subagent" && input.executionReport) {
-    throw new Error("Execution report correlation requires a subagent thread");
-  }
-  if (thread.kind !== "subagent") return;
-  if (!thread.ref) throw new Error("Subagent thread has no project handle");
-  // A continuation belongs to the asked execution's invocation; the row says
-  // whether a waiting parent call or a notification delivers its report.
-  const asking = continuation
-    ? await deps.repos.executionReports.findByTurn(input.threadId, continuation.ask.askingTurnId)
-    : null;
-  const inherited =
-    asking && continuation
-      ? asking.deliveryMode === "none"
-        ? THREAD_RUN_CORRELATION
-        : {
-            callerThreadId: asking.callerThreadId,
-            callerTurnId: asking.callerTurnId,
-            toolCallId: asking.toolCallId,
-            cardBlockId: asking.cardBlockId,
-            origin: asking.origin,
-            deliveryMode: continuation.delivery,
-          }
-      : null;
-  const correlation =
-    input.executionReport?.correlation ??
-    inherited ??
-    parentRetaskCorrelation(thread, adopted) ??
-    THREAD_RUN_CORRELATION;
-  await deps.repos.executionReports.admit({
-    childThreadId: input.threadId,
-    executionTurnId,
-    handle: thread.ref,
-    ...correlation,
-    agentSlug: input.executionReport?.agentSlug ?? asking?.agentSlug ?? null,
-    name: input.executionReport?.name ?? asking?.name ?? null,
-  });
-  if (asking?.origin === "spawn")
-    await deps.repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: "running" });
-}
-
 /** Commit initial history before handing the session its lazy model loop. */
 async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise<PreparedLoop> {
   const { repos } = deps;
@@ -604,27 +538,12 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
-      const continuationControl = control?.body.kind === "ask_resolved" ? control.body : null;
-      const continuationAsk = continuationControl
-        ? await deps.repos.asks.findById(continuationControl.askId)
-        : null;
-      if (continuationControl && continuationAsk?.threadId !== input.threadId)
-        throw new Error("Ask continuation is not backed by this thread's ask");
-      // A hint whose ask owes nothing more (a redelivered row) retires without a turn;
-      // a continuation's state never returns to owed, so the read needs no lock.
-      if (
-        control &&
-        continuationAsk &&
-        continuationAsk.continuation !== "pending" &&
-        continuationAsk.continuation !== "admitted"
-      )
-        return { retire: [control.id] };
-      const continuation: AskContinuation | null =
-        continuationControl && continuationAsk
-          ? { ask: continuationAsk, delivery: continuationControl.delivery }
-          : null;
+      const hint = control?.body.kind === "ask_resolved" ? control.body : null;
+      const read = hint ? await readContinuation(deps.repos.asks, input.threadId, hint) : null;
+      if (read === "retire" && control) return { retire: [control.id] };
+      const continuation = read === "retire" ? null : read;
       // A forwarded ask's obligation is its relay, so its hint outlives admission.
-      const relayAsk = continuation && isForwardedAsk(continuation.ask) ? continuation.ask : null;
+      const relayAsk = continuation?.forwarded ? continuation.ask : null;
       const requestControl =
         control?.body.kind === "ask_resolved"
           ? null
@@ -871,25 +790,14 @@ async function runDrainTurn(
                     reservedTurn.id,
                     preflight.evidence,
                   );
-                // The thread lock already holds the ask's row.
-                if (
-                  continuation &&
-                  !(await deps.repos.asks.admitContinuation({
-                    id: continuation.ask.id,
-                    turnId: reservedTurn.id,
-                    forwarded: !!relayAsk,
-                  }))
-                )
-                  throw new Error("Ask continuation is no longer owed");
                 if (selection.outstanding.length > 0 || input.replyTurnId || continuation)
-                  await admitRunExecution(
-                    deps,
-                    input,
-                    setupThread,
-                    reservedTurn.id,
-                    selection.outstanding,
+                  await admitRun(deps.repos, {
+                    thread: setupThread,
+                    executionTurnId: reservedTurn.id,
+                    adopted: selection.outstanding,
                     continuation,
-                  );
+                    executionReport: input.executionReport,
+                  });
               },
             },
           );
@@ -1979,7 +1887,13 @@ async function executeLoop({
           (!executionSelector ||
             !(await deps.repos.executionReports.findByExecution(thread.id, executionSelector)))
         ) {
-          await admitRunExecution(deps, input, thread, turn.id, adopted, null);
+          await admitRun(deps.repos, {
+            thread,
+            executionTurnId: turn.id,
+            adopted,
+            continuation: null,
+            executionReport: input.executionReport,
+          });
           executionSelector = turn.id;
         }
       },

@@ -71,7 +71,8 @@ with one conditional update on the ask row, where answers already race:
 relay), and that row is enqueued without a wake so the waiting call drives it with
 its own signal and tree budget; every other answer is `background_notification`.
 The continuation's report inherits the asked execution's invocation with the row's
-delivery mode. A plain question's hint is acknowledged in its admission commit; a
+delivery mode (`spawn/run-admission.ts`, which also picks a re-task's and a thread
+run's correlation). A plain question's hint is acknowledged in its admission commit; a
 forwarded one's when the relay ends.
 
 Every reader reads the column. The foreground caller drives a `pending` or
