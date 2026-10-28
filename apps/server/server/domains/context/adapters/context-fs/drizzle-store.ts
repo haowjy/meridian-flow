@@ -7,7 +7,7 @@
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections } from "@meridian/database/schema";
+import { documentBlockRooms } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -238,7 +238,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
             filetype: input.filetype,
             ...(input.metadata ? { metadata: input.metadata } : {}),
           },
-          markdown: input.markdown,
           ...(input.id ? { id: input.id as DocumentId } : {}),
           ...(input.provisionalName ? { provisionalName: true } : {}),
         },
@@ -310,13 +309,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  async readProjections(ids: string[]): Promise<Map<string, string>> {
+  async readWordCounts(ids: string[]): Promise<Map<string, number>> {
     if (!ids.length) return new Map();
     const rows = await this.db
-      .select()
-      .from(documentMarkdownProjections)
-      .where(inArray(documentMarkdownProjections.documentId, ids as DocumentId[]));
-    return new Map(rows.map((row) => [row.documentId, row.markdown]));
+      .select({ id: documentBlockRooms.documentId, words: documentBlockRooms.wordCount })
+      .from(documentBlockRooms)
+      .where(inArray(documentBlockRooms.documentId, ids as DocumentId[]));
+    return new Map(rows.map((row) => [row.id, row.words]));
   }
 
   async listTree(

@@ -12,7 +12,6 @@
  * what it found with `exact: false` and `stopped: true`. Matching runs in worker threads that
  * the abort terminates mid-match, so the event loop stays free and a slow pattern ends on time.
  */
-import { grepText } from "@meridian/agent-edit";
 import {
   type DocumentMatch,
   type GrepBlock,
@@ -86,15 +85,15 @@ export async function scanDocuments<Shown, Fault>(input: {
           input.documents.slice(index, index + STORED_SLICE).map(({ id }) => id),
         );
       const full = hits.length >= input.headLimit;
-      // A document's read, once, with the grep text of each of its blocks.
-      const loaded: { value?: { read: GrepRead<Shown>; texts: string[] } } = {};
+      // A document's read, once.
+      const loaded: { value?: { read: GrepRead<Shown>; text: string } } = {};
       const load = async (): Promise<ScanOutcome<NonNullable<typeof loaded.value>, Fault>> => {
         if (loaded.value) return { ok: true, value: loaded.value };
         const result = await input.read(document.id);
         if (!result.ok) return result;
         loaded.value = {
           read: result.value,
-          texts: result.value.blocks.map((block) => grepText([block.destinationFree])),
+          text: result.value.blocks.map((block) => block.text).join("\n"),
         };
         return { ok: true, value: loaded.value };
       };
@@ -107,7 +106,7 @@ export async function scanDocuments<Shown, Fault>(input: {
         }
         const result = await load();
         if (!result.ok) return result;
-        text = result.value.texts.join("\n");
+        text = result.value.text;
       }
       if (input.matcher.test && !input.matcher.test(text)) continue;
       const matchCount = await input.matcher.count(
@@ -129,8 +128,8 @@ export async function scanDocuments<Shown, Fault>(input: {
       }
       const result = await load();
       if (!result.ok) return result;
-      const { read, texts } = result.value;
-      const match = await grepBlocks(read.blocks, texts, input.matcher, read.locate, input.signal);
+      const { read } = result.value;
+      const match = await grepBlocks(read.blocks, input.matcher, read.locate, input.signal);
       const shown = read.shownOf(match);
       hits.push({
         document,

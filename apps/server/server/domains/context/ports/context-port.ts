@@ -172,7 +172,7 @@ export type EditableFileEntry = BaseListEntry & {
   editable: true;
   filetype: Filetype;
   schemaType: YjsTrackedSchemaType;
-  /** Words in the projection; set only when {@link ContextListOptions.wordCounts} asks. */
+  /** Words as the last derivation counted them; set only when {@link ContextListOptions.wordCounts} asks. */
   wordCount?: number;
 };
 

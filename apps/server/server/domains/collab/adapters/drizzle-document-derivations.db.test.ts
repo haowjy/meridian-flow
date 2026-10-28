@@ -5,15 +5,15 @@
  * - lazy-cut retirement, lock-scoped capture, persistence revalidation, and durable recovery sweeps
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documentDerivations,
+  documentBlockRooms,
+  documentBlocks,
   documentLinks,
-  documentMarkdownProjections,
   documents,
   documentYjsCheckpoints,
   folders,
@@ -33,13 +33,20 @@ import {
 } from "../../context/document-uri-resolver.js";
 import { bumpLocationVersions, recordLocationHistory } from "../../context/tree/node-locations.js";
 import { createCheckpointService } from "../checkpoints.js";
-import { createDocumentDerivationService } from "../domain/document-derivations.js";
+import {
+  createDocumentDerivationService,
+  type DeriveBlocks,
+  documentHash,
+} from "../domain/document-derivations.js";
 import {
   bindDocumentAuthority,
   documentAuthority,
   RetiredDocumentHandleError,
 } from "../domain/document-handle.js";
-import { DOCUMENT_EXTRACTOR_VERSION } from "../domain/ports/document-derivations.js";
+import {
+  DOCUMENT_EXTRACTOR_VERSION,
+  type DocumentDerivationOutputs,
+} from "../domain/ports/document-derivations.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createTestLinkAheadRegistry } from "../test-support/document-link-scopes.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./drizzle-authority-generation-replacement.js";
@@ -51,6 +58,26 @@ import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js"
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
 
+function proseBlock(text: string) {
+  return {
+    id: "prose",
+    text,
+    contentHash: createHash("sha256").update(text).digest(),
+    wordCount: 0,
+  };
+}
+
+function outputsOf(text: string): DocumentDerivationOutputs {
+  const blocks = [proseBlock(text)];
+  return {
+    blocks,
+    wordCount: 0,
+    documentBytes: text.length,
+    documentHash: documentHash(blocks, []),
+    links: [],
+  };
+}
+
 describe("durable document derivations", () => {
   const db = createDb(DATABASE_URL, { max: 6 });
   const userId = randomUUID();
@@ -60,16 +87,15 @@ describe("durable document derivations", () => {
   const persistence = createDrizzleCollabPersistence(db);
   const store = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db));
   let fail = false;
+  // The document's prose is one block: these cases are about cuts and certification, not blocks.
+  const proseBlocks: DeriveBlocks = async (_id, doc) => {
+    if (fail) throw new Error("deriver unavailable");
+    return [proseBlock(doc.getText("prose").toString())];
+  };
   const service = createDocumentDerivationService({
     deferred: () => {},
     store,
-    serializer: {
-      async projectDocument(_id, doc) {
-        if (fail) throw new Error("serializer unavailable");
-        const text = doc.getText("prose").toString();
-        return { markdown: text, grepText: text };
-      },
-    },
+    deriveBlocks: proseBlocks,
     outsideTransaction: (operation) => operation(),
     failed: () => {},
   });
@@ -93,9 +119,31 @@ describe("durable document derivations", () => {
       contextSourceId: sourceId,
       name: "chapter",
     });
-    await db
-      .insert(documentMarkdownProjections)
-      .values({ documentId: documentId, markdown: "last good" });
+    // A room from an older cut: what a failed derive leaves standing.
+    const [room] = await db
+      .insert(documentBlockRooms)
+      .values({
+        documentId,
+        projectId,
+        blockOrder: ["prose"],
+        wordCount: 0,
+        documentBytes: 9n,
+        documentHash: outputsOf("last good").documentHash,
+        cutGeneration: -1n,
+        cutAdmissionSeq: -1n,
+        cutLocationVersion: -1n,
+        extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
+        derivedAt: new Date(),
+      })
+      .returning({ roomId: documentBlockRooms.roomId });
+    await db.insert(documentBlocks).values({
+      roomId: (room as { roomId: number }).roomId,
+      blockId: "prose",
+      projectId,
+      text: "last good",
+      contentHash: proseBlock("last good").contentHash,
+      wordCount: 0,
+    });
     await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(new Y.Doc()));
   });
   afterAll(async () => {
@@ -120,10 +168,11 @@ describe("durable document derivations", () => {
   }
   async function projection() {
     const [row] = await db
-      .select()
-      .from(documentMarkdownProjections)
-      .where(eq(documentMarkdownProjections.documentId, documentId));
-    return row?.markdown;
+      .select({ text: documentBlocks.text })
+      .from(documentBlocks)
+      .innerJoin(documentBlockRooms, eq(documentBlockRooms.roomId, documentBlocks.roomId))
+      .where(eq(documentBlockRooms.documentId, documentId));
+    return row?.text;
   }
 
   it.each([
@@ -493,9 +542,7 @@ describe("durable document derivations", () => {
     if (!oldCut) throw new Error("Missing old cut");
     await append(doc, " new");
     await service.derive(documentId);
-    expect(
-      await store.certify(oldCut, { markdown: "old", grepText: "old", links: [] }, new Date()),
-    ).toBe(false);
+    expect(await store.certify(oldCut, outputsOf("old"), new Date())).toBe(false);
     expect(await projection()).toBe("old new");
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
@@ -506,13 +553,7 @@ describe("durable document derivations", () => {
       });
       await bumpLocationVersions(db, { documentIds: [documentId] });
     });
-    expect(
-      await store.certify(
-        preMove,
-        { markdown: "wrong folder", grepText: "wrong folder", links: [] },
-        new Date(),
-      ),
-    ).toBe(false);
+    expect(await store.certify(preMove, outputsOf("wrong folder"), new Date())).toBe(false);
     expect(await projection()).toBe("old new");
     doc.destroy();
   });
@@ -545,9 +586,7 @@ describe("durable document derivations", () => {
       },
     ];
     expect(await links()).toEqual(expected);
-    expect(
-      await store.certify(oldCut, { markdown: "old", grepText: "old", links: [] }, new Date()),
-    ).toBe(false);
+    expect(await store.certify(oldCut, outputsOf("old"), new Date())).toBe(false);
     expect(await links()).toEqual(expected);
     await expect(
       runInDrizzleTransaction(db, async () => {
@@ -583,29 +622,23 @@ describe("durable document derivations", () => {
       });
       await bumpLocationVersions(db, { documentIds: [documentId] });
     });
-    expect(
-      await store.certify(
-        preMove,
-        { markdown: "wrong folder", grepText: "wrong folder", links: [] },
-        new Date(),
-      ),
-    ).toBe(false);
+    expect(await store.certify(preMove, outputsOf("wrong folder"), new Date())).toBe(false);
     expect(await store.stale({ projectId })).toEqual([documentId]);
     await service.flush({ projectId });
     expect(await store.stale({ projectId })).toEqual([]);
     const [watermark] = await db
       .select()
-      .from(documentDerivations)
-      .where(eq(documentDerivations.documentId, documentId));
+      .from(documentBlockRooms)
+      .where(eq(documentBlockRooms.documentId, documentId));
     expect(await projection()).toBe("old new");
     // The holder moved; its ref-keyed rows did not change, and nothing was written into it.
     expect(await links()).toEqual(expected);
-    expect(watermark?.linksLocationVersion).toBe(1n);
-    expect(watermark?.linksExtractorVersion).toBe(DOCUMENT_EXTRACTOR_VERSION);
+    expect(watermark?.cutLocationVersion).toBe(1n);
+    expect(watermark?.extractorVersion).toBe(DOCUMENT_EXTRACTOR_VERSION);
     await db
-      .update(documentDerivations)
-      .set({ linksExtractorVersion: 1 })
-      .where(eq(documentDerivations.documentId, documentId));
+      .update(documentBlockRooms)
+      .set({ extractorVersion: 1 })
+      .where(eq(documentBlockRooms.documentId, documentId));
     expect(await store.stale({ projectId })).toEqual([documentId]);
     await service.flush({ projectId });
     expect(await store.stale({ projectId })).toEqual([]);
@@ -826,12 +859,7 @@ describe("durable document derivations", () => {
     const aheadService = createDocumentDerivationService({
       deferred: () => {},
       store: aheadStore,
-      serializer: {
-        projectDocument: async (_id, doc) => {
-          const text = doc.getText("prose").toString();
-          return { markdown: text, grepText: text };
-        },
-      },
+      deriveBlocks: proseBlocks,
       outsideTransaction: (operation) => operation(),
       failed: () => {},
     });

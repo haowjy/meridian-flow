@@ -1,10 +1,10 @@
 /** Durable cuts and atomic certification for live-document derived outputs. */
-import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
 // Changing the extractor must bump this version to invalidate older output.
-export const DOCUMENT_EXTRACTOR_VERSION = 4;
+export const DOCUMENT_EXTRACTOR_VERSION = 5;
 export type DerivationScope = { projectId: ProjectId; personalOwnerId?: UserId };
 export type DerivationWatermark = {
   generation: bigint;
@@ -18,11 +18,31 @@ export type DocumentDerivationCut = {
   state: Uint8Array;
   holderUri: string | null;
 };
+/** One top-level block of the cut, in the shape the store keeps it. */
+export type DerivedBlock = {
+  /** "<clientID>:<clock>" of the block's own Yjs item. */
+  id: string;
+  /** What `grep` matches (`grepBlockText`). */
+  text: string;
+  /** Hash of the destination-free markdown: the key the store diffs on. */
+  contentHash: Buffer;
+  wordCount: number;
+};
+export type DocumentDerivationOutputs = {
+  /** In document order. */
+  blocks: DerivedBlock[];
+  wordCount: number;
+  /** Sum of the blocks' text bytes. */
+  documentBytes: number;
+  /** Ordered block content hashes plus the link facts: the edit signal behind `updated_at`. */
+  documentHash: Buffer;
+  links: DocumentLinkRow[];
+};
 export type DocumentDerivationStore = {
   capture(documentId: DocumentId): Promise<DocumentDerivationCut | null>;
   certify(
     cut: DocumentDerivationCut,
-    outputs: { markdown: string; grepText: string; links: DocumentLinkRow[] },
+    outputs: DocumentDerivationOutputs,
     at: Date,
   ): Promise<boolean>;
   stale(
@@ -30,11 +50,15 @@ export type DocumentDerivationStore = {
     page?: { after?: DocumentId; limit: number },
   ): Promise<DocumentId[]>;
   /**
-   * Stored grep text of the documents whose derived outputs are current. With `ignoreDrafts`
-   * false, a document with an active draft is left out too: a draft reader sees the draft, not
-   * the live text.
+   * Stored grep text of the documents whose derived outputs are current: the blocks' text
+   * joined with `\n` in block order, in one statement with the freshness check. A reader whose
+   * Work (`draftWorkId`) holds an active draft of a document sees the draft, not the live text,
+   * so that document is left out.
    */
-  grepTexts(ids: DocumentId[], view: { ignoreDrafts: boolean }): Promise<Map<DocumentId, string>>;
+  grepTexts(
+    ids: DocumentId[],
+    reader: { draftWorkId: WorkId | null },
+  ): Promise<Map<DocumentId, string>>;
   /**
    * Registers the client-minted ahead refs of this holder's certified rows (contract §11.3):
    * awaited outside a transaction, after commit inside one. Failures are logged, never thrown;

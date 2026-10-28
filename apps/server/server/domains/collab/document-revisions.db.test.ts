@@ -103,6 +103,7 @@ async function fixture(
     createEffectiveDocumentReader({
       drafts: f.draftStore,
       derivations: { grepTexts: async () => new Map() },
+      resolveFiletype: async () => null,
       draftPulls: f.draftPulls,
       agentEdit: f.collab.agentEdit(),
       documents: f.runtime.markdownDocuments,

@@ -5,6 +5,7 @@ import type {
   DocumentAuthorityId,
   DocumentId,
   ModelResponseId,
+  ProjectId,
   StoredBranchCommandResult,
   ThreadId,
   TurnId,
@@ -454,23 +455,56 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Independently certifiable outputs of the live-document derive step. */
-export const documentDerivations = pgTable("document_derivations", {
-  documentId: uuid("document_id")
-    .$type<DocumentId>()
-    .primaryKey()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  projectionGeneration: bigint("projection_generation", { mode: "bigint" }).notNull(),
-  projectionAdmissionSequence: bigint("projection_admission_sequence", {
-    mode: "bigint",
-  }).notNull(),
-  projectionLocationVersion: bigint("projection_location_version", { mode: "bigint" }).notNull(),
-  projectionExtractorVersion: integer("projection_extractor_version").notNull(),
-  linksGeneration: bigint("links_generation", { mode: "bigint" }),
-  linksAdmissionSequence: bigint("links_admission_sequence", { mode: "bigint" }),
-  linksLocationVersion: bigint("links_location_version", { mode: "bigint" }),
-  linksExtractorVersion: integer("links_extractor_version"),
-});
+/**
+ * One row per document: the live room's derived outputs, certified against one cut. `blockOrder`
+ * is the only place a block's position lives, so inserting a paragraph rewrites one array, never
+ * the block rows below it. The room is stale when `cut*` or `extractorVersion` differ from the
+ * document's head, location version or the code's.
+ */
+export const documentBlockRooms = pgTable(
+  "document_block_rooms",
+  {
+    roomId: bigint("room_id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    /** Derived: the document's source project, else its Work's. A move re-derives it. */
+    projectId: uuid("project_id").$type<ProjectId>().notNull(),
+    /** Block ids ("<clientID>:<clock>" of the top-level element) in document order. */
+    blockOrder: text("block_order").array().notNull(),
+    wordCount: integer("word_count").notNull(),
+    /** Sum of the blocks' text bytes: `documents.size_bytes`. */
+    documentBytes: bigint("document_bytes", { mode: "bigint" }).notNull(),
+    /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
+    documentHash: byteaColumn("document_hash").notNull(),
+    cutGeneration: bigint("cut_generation", { mode: "bigint" }).notNull(),
+    cutAdmissionSeq: bigint("cut_admission_seq", { mode: "bigint" }).notNull(),
+    cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
+    extractorVersion: integer("extractor_version").notNull(),
+    derivedAt: timestamp("derived_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
+);
+
+/** One row per top-level block of a room, keyed by its Yjs item id. */
+export const documentBlocks = pgTable(
+  "document_blocks",
+  {
+    roomId: bigint("room_id", { mode: "number" })
+      .notNull()
+      .references(() => documentBlockRooms.roomId, { onDelete: "cascade" }),
+    blockId: text("block_id").notNull(),
+    /** The room's, copied so a later index can narrow by project. */
+    projectId: uuid("project_id").$type<ProjectId>().notNull(),
+    /** What `grep` matches in this block (`grepBlockText` in agent-edit). */
+    text: text("text").notNull(),
+    /** Hash of the block's destination-free markdown: the diff key. */
+    contentHash: byteaColumn("content_hash").notNull(),
+    wordCount: integer("word_count").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.roomId, table.blockId] })],
+);
 
 /** Transaction-local dirty signals; sequence is identity, never commit order. */
 export const changeTrailDirtyLog = pgTable(

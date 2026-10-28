@@ -249,8 +249,12 @@ export type HashlineBlock = {
   hash: string;
   /** The block as `read` shows it, with no addressing prefix. */
   body: string;
-  /** The block's markdown with link destinations spelled empty (what grep matches). */
+  /** The block's markdown with link destinations spelled empty. */
   destinationFree: string;
+  /** What grep matches in this block: the writer's text, or a code file's text as stored. */
+  text: string;
+  /** A code file's block: `text` is not a decoding of `destinationFree`. */
+  verbatim: boolean;
   /** The ref-bearing links the block spells. */
   links: readonly SpelledLinkFact[];
 };
@@ -284,6 +288,8 @@ export type MarkdownDocumentStore = LinkBinder & {
    */
   repairDocumentAuthority(documentId: DocumentId): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
+  /** The markdown of a document's stored Yjs, even one in the trash; empty when it holds none. */
+  readFrozenMarkdown(documentId: DocumentId): Promise<string>;
   /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
     documentId: string,

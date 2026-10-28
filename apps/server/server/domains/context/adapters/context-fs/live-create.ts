@@ -510,7 +510,6 @@ export class LiveCreate {
               folderId: target.folderId,
               name: target.name,
               extension: target.extension,
-              markdown: "",
               filetype: target.filetype,
               provisionalName: extra.provisionalName,
               ...(extra.joinFrom

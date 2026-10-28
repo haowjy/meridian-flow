@@ -1,8 +1,8 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
 
-import {
-  type AgentEditCodecFactory,
-  type YProsemirrorDocumentModel,
+import type {
+  AgentEditCodecFactory,
+  YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -44,6 +44,7 @@ import {
   SILENT_POST_DURABILITY_NOTICES,
   UNSUPPORTED_REVERSE_THREAD_CONTEXT,
 } from "../declared-stubs.js";
+import { serializeStoredDocument } from "../document-loader.js";
 import { createHocuspocusBinding } from "../hocuspocus-binding.js";
 import {
   createInMemoryCoordinator,
@@ -78,9 +79,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
     agentCoordinator: coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
-      async missingAuthorityProjection(documentId) {
+      async lacksAuthority(documentId) {
         const snapshot = await journal.read(documentId);
-        return snapshot.checkpoint || snapshot.updates.length > 0 ? null : "";
+        return !snapshot.checkpoint && snapshot.updates.length === 0;
       },
     },
     runDocumentWriteHook,
@@ -197,6 +198,10 @@ export function createInMemoryCollabDomain(): CollabDomain {
       initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
       repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      readFrozenMarkdown: (documentId) =>
+        serializeStoredDocument(journal, documentId, (doc) =>
+          runtime.markdownDocuments.serializeDocument(documentId, doc, LIVE_VIEW),
+        ),
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
@@ -287,7 +292,7 @@ function createInMemoryDraftPeerStub(
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
         const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
-        return Ok(readHashlines(doc, scope, model, codec));
+        return Ok(readHashlines(doc, scope, model, codec, false));
       }),
     async ensureCreatedDocumentDraft() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");

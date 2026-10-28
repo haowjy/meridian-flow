@@ -9,7 +9,7 @@
  * apply it identifies. It is a freshness signal, never a write refusal.
  */
 import { createHash } from "node:crypto";
-import { bodyRange, destinationFreeBlocks } from "@meridian/agent-edit";
+import { bodyRange, destinationFreeBlocks, grepBlockText } from "@meridian/agent-edit";
 import {
   type AgentEditCodecFactory,
   type AgentEditModel,
@@ -45,14 +45,16 @@ export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
 
 /**
  * One agent `read` of a document in a holder's spelling: each block's body, destination-free
- * markdown (what grep matches), and the links it spells, plus the revision. One projection
- * serves all of it; the revision follows the render because projecting can repair the document.
+ * markdown, grep text, and the links it spells, plus the revision. One projection serves all
+ * of it; the revision follows the render because projecting can repair the document.
+ * `verbatim` is a code file, whose grep text is its code node's text.
  */
 export function readHashlines(
   doc: Y.Doc,
   scope: HolderLinkScope,
   model: AgentEditModel,
   codecs: AgentEditCodecFactory,
+  verbatim: boolean,
 ): HashlineRead {
   const blocks = model.projectBlocks(toDocHandle(doc));
   const nodes = blocks.map((block) => block.node);
@@ -66,6 +68,8 @@ export function readHashlines(
       hash: block.hash,
       body: bodies[index] as string,
       destinationFree: destinationFree[index] as string,
+      text: grepBlockText(destinationFree[index] as string, block.node, verbatim),
+      verbatim,
       links: spelledLinks([block.node], scope),
     })),
     revision: documentRevision(doc, scope),

@@ -29,7 +29,7 @@ import type {
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
-import { countWords, createDocumentCreationAggregate } from "../../../collab/index.js";
+import { createDocumentCreationAggregate } from "../../../collab/index.js";
 import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
@@ -659,11 +659,11 @@ export class ContextFS implements ContextSchemeAdapter {
       this.store.listDocuments(view, folderId),
     ]);
 
-    const projections = options?.wordCounts
-      ? await this.store.readProjections(
+    const wordCounts = options?.wordCounts
+      ? await this.store.readWordCounts(
           documents.filter((doc) => doc.fileType === null).map((doc) => doc.id),
         )
-      : new Map<string, string>();
+      : new Map<string, number>();
     const entries: AdapterFileEntry[] = folders.map((folder) => ({
       path: joinPath(path, folder.name),
       kind: "directory" as const,
@@ -686,9 +686,7 @@ export class ContextFS implements ContextSchemeAdapter {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
               schemaType: trackedSchema?.value ?? "document",
-              ...(options?.wordCounts
-                ? { wordCount: countWords(projections.get(doc.id) ?? "") }
-                : {}),
+              ...(options?.wordCounts ? { wordCount: wordCounts.get(doc.id) ?? 0 } : {}),
             }
           : {
               editable: false as const,
@@ -703,23 +701,25 @@ export class ContextFS implements ContextSchemeAdapter {
   async grep(query: GrepQuery): Promise<Result<AdapterGrepResult, AdapterFault>> {
     const prefix = query.path?.replace(/\/+$/, "") ?? "";
     const { folders, documents } = await this.store.listTree(await this.readTreeView());
-    const folderPaths = new Map<string | null, string>([[null, ""]]);
+    const folderPaths = new Map<string | null, string | null>([[null, ""]]);
     const byId = new Map(folders.map((folder) => [folder.id, folder]));
-    const folderPath = (id: string | null): string => {
+    // Null for a folder whose chain to the root is incomplete (a deleted ancestor): its
+    // documents are not candidates, rather than listed at the source root.
+    const folderPath = (id: string | null): string | null => {
       const known = folderPaths.get(id);
       if (known !== undefined) return known;
       const folder = byId.get(id as string);
-      const path = folder ? joinPath(folderPath(folder.parentId), folder.name) : "";
+      const parent = folder ? folderPath(folder.parentId) : null;
+      const path = folder && parent !== null ? joinPath(parent, folder.name) : null;
       folderPaths.set(id, path);
       return path;
     };
     const inScope = documents
       .flatMap((document) => {
         if (document.fileType !== null) return [];
-        const path = joinPath(
-          folderPath(document.folderId),
-          renderFilename(document.name, document.extension),
-        );
+        const folder = folderPath(document.folderId);
+        if (folder === null) return [];
+        const path = joinPath(folder, renderFilename(document.name, document.extension));
         const inPrefix = !prefix || path === prefix || path.startsWith(`${prefix}/`);
         return inPrefix && (!query.glob || query.glob(path)) ? [{ id: document.id, path }] : [];
       })

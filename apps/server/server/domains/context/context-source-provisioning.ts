@@ -327,9 +327,9 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.readableSourceStore())?.findDocumentLastLocation(documentId) ?? null;
   }
 
-  async readProjections(ids: string[]): Promise<Map<string, string>> {
+  async readWordCounts(ids: string[]): Promise<Map<string, number>> {
     const store = await this.readableSourceStore();
-    return store ? store.readProjections(ids) : new Map();
+    return store ? store.readWordCounts(ids) : new Map();
   }
 
   async listTree(view: TreeView) {

@@ -684,22 +684,15 @@
     {
       "idx": 97,
       "version": "7",
-      "when": 1793130216657,
-      "tag": "0103_document_grep_text",
+      "when": 1793131424510,
+      "tag": "0103_grep_tool_rename",
       "breakpoints": true
     },
     {
       "idx": 98,
       "version": "7",
-      "when": 1793131424510,
-      "tag": "0104_grep_tool_rename",
-      "breakpoints": true
-    },
-    {
-      "idx": 99,
-      "version": "7",
-      "when": 1793131552986,
-      "tag": "0105_drop_projection_text_indexes",
+      "when": 1793218576477,
+      "tag": "0104_document_block_projection",
       "breakpoints": true
     }
   ]

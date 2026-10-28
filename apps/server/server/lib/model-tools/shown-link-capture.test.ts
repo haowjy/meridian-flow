@@ -221,7 +221,6 @@ async function harness(
       folderId: null,
       name,
       extension: "",
-      markdown: "needle",
       filetype: "markdown",
     });
   }

@@ -87,10 +87,12 @@ vitest and `tsx` run the `.ts` file directly. The pool is shared by the process,
 slow greps (one user's four chats, say) hold every thread for up to 20 s; anyone else's grep queues,
 spends its own budget waiting, and returns stopped and empty. No per-user cap exists yet.
 Matching is per line of the document's grep text: markdown as `read` shows it, link destinations spelled empty, decoded to
-the text view. Each document's text comes first: collab's `readStoredGrepTexts`
+the text view (a code file's text is the file itself, with no fence). Each document's text comes first: collab's `readStoredGrepTexts`
 answers which of a slice of 50 documents have stored text matching what this reader
-sees (current derivation, no active draft for a draft reader, no staged writes of the
-reply), else the effective read's blocks give it. One loop over the text decides
+sees (current derivation, no active draft in the reader's own Work, no staged writes of
+the reply), else the effective read's blocks give it. Candidate paths are spelled through
+the tree view's folder chain; a document under a deleted ancestor has no path and is not
+searched. One loop over the text decides
 match and count; the read is repeated only for `content` mode's passages. A
 case-insensitive pattern first needs its required literal
 (`grep/required-literals.ts`) to appear. Past the limit, documents with stored text
@@ -130,7 +132,7 @@ check.
 path resolution. List and identity reads admit only a currently restorable
 delete: visible rather than hidden, not removed by a Work cascade, unpurged,
 and still under a live source and project. The list returns removal metadata;
-the identity read adds the retained Markdown projection. Both authorize
+the identity read adds the document's Markdown, serialized from its frozen Yjs on request. Both authorize
 through the project before exposing the tombstone or its text. The hourly
 purge releases content after the shared 30-day retention period while keeping
 the tombstone and incoming identity links. It takes the Work, branch,
@@ -234,7 +236,7 @@ not erase storage or MIME metadata through a text write.
 Text writes route provenance through `collab-document-sync.ts`: agent writes
 carry turn identity, human writes carry user identity, and omitted provenance
 is system-originated. The document engine's immediate durable derivation feeds
-projection and byte size from the same cut; ContextFS does not republish a
+block rows and byte size from the same cut; ContextFS does not republish a
 returned serialization. Cross-source moves only change tree identity and
 classification metadata allowed by the schema guard.
 

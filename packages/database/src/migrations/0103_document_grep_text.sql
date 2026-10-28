@@ -1,1 +1,0 @@
-ALTER TABLE "document_markdown_projections" ADD COLUMN "grep_text" text;

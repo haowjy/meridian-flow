@@ -8,7 +8,7 @@
  * matching runs in a worker thread (`match-pool.ts`) that the caller's abort signal
  * terminates, and no static limit on the pattern is needed beyond RE2's own refusals
  * and the pattern's length. The unit of matching is a line of the document's **grep
- * text** (see `@meridian/agent-edit`'s `grepText`): `^` and `$` anchor lines.
+ * text** (see `@meridian/agent-edit`'s `grepBlockText`): `^` and `$` anchor lines.
  *
  * **A document reports several passages, not one.** The list is capped because
  * a result is a way in, not the document itself; the count beside it stays
@@ -83,6 +83,10 @@ export interface GrepBlock {
   hash: string;
   /** The block's markdown with link destinations spelled empty (`destinationFreeBlocks`). */
   destinationFree: string;
+  /** What the matcher reads: `grepBlockText` of `destinationFree`, or a code file's text. */
+  text: string;
+  /** A code file's block: its text is no decoding of `destinationFree`, and has no body anchor. */
+  verbatim: boolean;
 }
 
 /** Places a range of a block's `destinationFree` markdown in its `body`; null when it can't. */
@@ -100,25 +104,30 @@ export interface DocumentMatch {
 }
 
 /**
- * The first {@link PASSAGE_CAP} blocks the matcher hits, as passages. `texts` holds each
- * block's grep text, aligned with `blocks`. The match count is not this function's: the caller
- * already counted.
+ * The first {@link PASSAGE_CAP} blocks the matcher hits, as passages. The match count is not
+ * this function's: the caller already counted.
  */
 export async function grepBlocks(
   blocks: readonly GrepBlock[],
-  texts: readonly string[],
   matcher: GrepMatcher,
   locate: GrepLocate,
   signal: AbortSignal,
 ): Promise<DocumentMatch> {
-  const found = await matcher.passages(texts, PASSAGE_CAP, signal);
+  const found = await matcher.passages(
+    blocks.map((block) => block.text),
+    PASSAGE_CAP,
+    signal,
+  );
   // Offsets into the plain text map back to the markdown only for blocks that are returned.
   const matches = found.map(([index, from, to]): GrepPassage => {
     const block = blocks[index] as GrepBlock;
-    const view = markdownTextView(block.destinationFree);
+    // A code file's text is the file as stored, so offsets are text offsets.
+    const view = block.verbatim
+      ? verbatimView(block.text)
+      : markdownTextView(block.destinationFree);
     const start = view.start[from] ?? 0;
     const end = view.end[Math.max(to, from + 1) - 1] ?? start;
-    const anchor = locate(block, { start, end });
+    const anchor = block.verbatim ? null : locate(block, { start, end });
     return {
       excerpt: block.body,
       ...(block.hash ? { blockHash: block.hash } : {}),
@@ -127,4 +136,9 @@ export async function grepBlocks(
     };
   });
   return { matches, blocks: found.map(([index]) => index) };
+}
+
+function verbatimView(text: string): ReturnType<typeof markdownTextView> {
+  const offsets = Array.from(text, (_, index) => index);
+  return { text, start: offsets, end: offsets.map((offset) => offset + 1) };
 }

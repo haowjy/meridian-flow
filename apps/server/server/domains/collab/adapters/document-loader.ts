@@ -31,6 +31,26 @@ export async function loadDocumentState(
   }
 }
 
+/**
+ * What `serialize` makes of a document's stored state, whatever its lifecycle (a trashed
+ * document keeps its state until purge); empty when it holds none. Reads the journal, never a
+ * live room.
+ */
+export async function serializeStoredDocument(
+  journal: UpdateJournal,
+  docId: string,
+  serialize: (doc: Y.Doc) => Promise<string>,
+): Promise<string> {
+  const snapshot = await journal.read(docId);
+  if (!snapshot.checkpoint && snapshot.updates.length === 0) return "";
+  const doc = storedDocument(snapshot);
+  try {
+    return await serialize(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+
 /** The stored state as a document; the caller destroys it. */
 export function storedDocument(snapshot: JournalSnapshot): Y.Doc {
   const doc = createCollabYDoc({ gc: false });
