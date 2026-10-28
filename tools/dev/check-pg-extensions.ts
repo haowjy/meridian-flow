@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /**
  * Proves the Postgres behind DATABASE_URL can serve writer search: pg_bigm is preloaded,
- * pg_bigm, btree_gin and pg_trgm install, and a 1-character Han LIKE can use a
+ * pg_bigm, btree_gin and pg_trgm install, and a 1-character Han LIKE is narrowed by a
  * (uuid, text gin_bigm_ops) index. Runs in a transaction that rolls back, so it leaves
  * nothing behind. Used by `pnpm db:check-extensions` and the CI db-tests job.
  */
@@ -10,6 +10,25 @@ import { formatPgError } from "./lib/dev-db";
 import { applyDevEnvToProcess } from "./lib/dev-env";
 
 class Rollback extends Error {}
+
+/** Actual Rows of the first Bitmap Index Scan node in an `explain (format json)` plan. */
+function findBitmapIndexScanRows(node: unknown): number | undefined {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findBitmapIndexScanRows(item);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (node === null || typeof node !== "object") return undefined;
+  const record = node as Record<string, unknown>;
+  if (record["Node Type"] === "Bitmap Index Scan") return Number(record["Actual Rows"]);
+  for (const value of Object.values(record)) {
+    const found = findBitmapIndexScanRows(value);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
 
 async function main(): Promise<void> {
   applyDevEnvToProcess();
@@ -32,12 +51,21 @@ async function main(): Promise<void> {
         await tx.unsafe(
           "create index search_probe_idx on search_probe using gin (owner, body gin_bigm_ops)",
         );
+        await tx.unsafe(
+          "insert into search_probe select gen_random_uuid(), '他说' || i || '山' from generate_series(1, 200) i",
+        );
         await tx.unsafe("insert into search_probe values (gen_random_uuid(), '他说剑来')");
+        await tx.unsafe("analyze search_probe");
         await tx.unsafe("set local enable_seqscan = off");
-        const plan = await tx.unsafe("explain select 1 from search_probe where body like '%剑%'");
-        const text = plan.map((row) => String(row["QUERY PLAN"])).join("\n");
-        if (!text.includes("search_probe_idx")) {
-          throw new Error(`1-character Han LIKE did not use the gin_bigm_ops index:\n${text}`);
+        // The index must narrow the search: the bitmap scan returns the one matching row, not all 201.
+        const [explained] = await tx.unsafe(
+          "explain (analyze, format json) select 1 from search_probe where body like '%剑%'",
+        );
+        const bitmapRows = findBitmapIndexScanRows(explained?.["QUERY PLAN"]);
+        if (bitmapRows !== 1) {
+          throw new Error(
+            `1-character Han LIKE: expected a Bitmap Index Scan returning 1 row, got ${bitmapRows}:\n${JSON.stringify(explained?.["QUERY PLAN"])}`,
+          );
         }
         const hits = await tx.unsafe("select 1 from search_probe where body like '%剑%'");
         if (hits.length !== 1) throw new Error(`expected 1 Han LIKE hit, got ${hits.length}`);

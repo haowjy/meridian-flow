@@ -15,5 +15,6 @@ curl -fsSL -o "$workdir/pg_bigm.tar.gz" "https://github.com/pgbigm/pg_bigm/archi
 echo "${PG_BIGM_SHA256}  $workdir/pg_bigm.tar.gz" | sha256sum -c -
 tar xz -C "$workdir" -f "$workdir/pg_bigm.tar.gz"
 cd "$workdir"/pg_bigm-*
-make USE_PGXS=1
-${SUDO:-} make USE_PGXS=1 install
+# with_llvm=no skips the JIT bitcode, which needs clang that the CI runner does not install.
+make USE_PGXS=1 with_llvm=no
+${SUDO:-} make USE_PGXS=1 with_llvm=no install

@@ -6,8 +6,8 @@ name: meridian-dev
 services:
   postgres:
     # Built from tools/postgres/Dockerfile: postgres:16 + pg_bigm (btree_gin and pg_trgm are contrib).
-    # The tag names the pg_bigm version; bump it with the pin in install-pg-bigm.sh. An existing
-    # container on the old image is recreated on the next `pnpm dev:infra`; the named volume keeps the data.
+    # The tag names the pg_bigm version; bump it with the pin in install-pg-bigm.sh. `pnpm dev:infra` leaves a running
+    # container alone; `pnpm dev:infra:upgrade` recreates it onto this tag, and the named volume keeps the data.
     build: ../postgres
     image: meridian-postgres:16-pg_bigm-1.2-20250903
     # Come back after a reboot: every dev stack and DB test run needs this server.

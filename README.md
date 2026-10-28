@@ -28,7 +28,7 @@ Domain runtime lives in `apps/server/server/domains/`, not in package route hand
 
 ```bash
 pnpm install
-pnpm dev:infra       # build and start the Postgres Docker container (postgres:16 + pg_bigm)
+pnpm dev:infra       # start the Postgres Docker container (postgres:16 + pg_bigm)
 pnpm bootstrap       # create the DB, migrate, apply-functions
 pnpm dev
 ```
