@@ -6,21 +6,24 @@ See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cur
 
 ## Environment
 
-Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env` — [`.envrc`](.envrc) loads the main checkout file via `git-common-dir`, then rewrites `DATABASE_URL` to a worktree-scoped database (`meridian_<slug>` on the shared `:54422` Postgres server).
+Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. It then rewrites `DATABASE_URL` to a worktree-scoped database (`meridian_<slug>` on the shared `:54422` Postgres server); that derived URL wins over every source. Production gets its env from the platform and has no `.env`, so the loader changes nothing there.
 
-Use **direnv** so the shell picks up `.envrc`. `pnpm bootstrap` runs `direnv allow` when direnv is installed; re-enter the directory or run `direnv reload` if variables look stale.
+For `psql` in a terminal, export just the local database (`DATABASE_URL` and `PGPASSWORD`, never provider or WorkOS keys):
+
+```bash
+eval "$(pnpm -s db:env)"
+```
 
 ### Toolchain
 
-Node and Python are pinned in [`.tool-versions`](.tool-versions): Node 24.17.0, and Python 3.12, which resolves to the newest installed 3.12.x. mise loads the pins; this assumes mise and direnv are installed and direnv is hooked into your shell.
+Node and Python are pinned in [`.tool-versions`](.tool-versions): Node 24.17.0, and Python 3.12, which resolves to the newest installed 3.12.x. `mise activate` in your shell rc resolves the pins.
 
 ```bash
 mise install                  # download the pinned versions
-mise direnv                   # once per machine: write ~/.config/direnv/lib/use_mise.sh
 eval "$(mise activate bash)"  # add to ~/.bashrc so every shell gets the pinned Node and Python
 ```
 
-`mise current` prints the versions a shell resolves (`node 24.17.0`, `python 3.12.x`). [`.envrc`](.envrc) starts with `use mise`, a function that exists only after `mise direnv` writes it into direnv's config directory. Without it direnv stops with `use_mise: command not found` and no project variables load; rerun `mise direnv` to restore the helper.
+`mise current` prints the versions a shell resolves (`node 24.17.0`, `python 3.12.x`).
 
 Runtime dev-tool contracts: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md).
 
@@ -53,13 +56,12 @@ Then, in the checkout:
 
 ```bash
 mise install                  # pinned Node and Python from .tool-versions
-mise direnv                   # once per machine: the use_mise helper .envrc calls
 eval "$(mise activate bash)"  # or add this line to ~/.bashrc
 pnpm install
 cp .env.example .env          # fill in WorkOS keys, etc.
 pnpm dev:infra                # start postgres:16 Docker container (:54422)
 pnpm exec lefthook install --reset-hooks-path
-pnpm bootstrap                # direnv allow + migrate + apply-functions
+pnpm bootstrap                # create the DB, migrate, apply-functions
 pnpm dev
 pnpm portless:list
 ```
@@ -105,7 +107,8 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |
 | `pnpm db:studio` | Drizzle Kit Studio |
-| `pnpm bootstrap` | `direnv allow` (if installed) + ensure DB + migrate + apply-functions |
+| `pnpm -s db:env` | Print `export` lines for this checkout's `DATABASE_URL` and `PGPASSWORD` (`eval` it before `psql`) |
+| `pnpm bootstrap` | Ensure DB + migrate + apply-functions |
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
 
 ### Resetting a dev database

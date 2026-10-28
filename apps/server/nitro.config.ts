@@ -1,19 +1,16 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
-import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "nitro/config";
 
+import { applyDevEnvToProcess } from "../../tools/dev/lib/dev-env";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const repoLogsGlob = `${path.join(repoRoot, "logs").replaceAll(path.sep, "/")}/**`;
 
-try {
-  loadEnvFile(path.join(repoRoot, ".env"));
-} catch (error) {
-  if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
-    throw error;
-  }
-}
+// Dev checkouts have a `.git`; a deploy build has no repo and gets its env from the platform.
+if (existsSync(path.join(repoRoot, ".git"))) applyDevEnvToProcess(repoRoot);
 
 export default defineConfig({
   scanDirs: ["server"],

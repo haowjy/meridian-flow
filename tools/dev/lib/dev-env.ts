@@ -71,14 +71,17 @@ export function isMainCheckout(repoRoot: string): boolean {
   return realpathSync(repoRoot) === realpathSync(mainRoot);
 }
 
-export function loadMainEnvFile(repoRoot: string): Record<string, string> {
-  const envPath = path.join(resolveMainCheckoutRoot(repoRoot), ".env");
+function readEnvFile(envPath: string): Record<string, string> {
   if (!existsSync(envPath)) return {};
   return Object.fromEntries(
     Object.entries(parseEnv(readFileSync(envPath, "utf8"))).filter(
       (entry): entry is [string, string] => entry[1] !== undefined,
     ),
   );
+}
+
+export function loadMainEnvFile(repoRoot: string): Record<string, string> {
+  return readEnvFile(path.join(resolveMainCheckoutRoot(repoRoot), ".env"));
 }
 
 function databaseNameFromUrl(databaseUrl: string): string {
@@ -159,25 +162,23 @@ function resolveWorktreeDatabaseUrl(repoRoot: string, baseUrl: string): string {
   return applyWorktreeDatabaseRewrite(baseUrl, expectedDbName);
 }
 
-/** Trust repo-root `.envrc` when direnv is installed (no-op otherwise). */
-export function ensureDirenvAllowed(repoRoot: string): void {
-  try {
-    execFileSync("direnv", ["allow", repoRoot], { stdio: "ignore" });
-    console.log("bootstrap: direnv allow — .envrc trusted for this checkout");
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException;
-    if (err.code === "ENOENT") return;
-    console.warn(`bootstrap: direnv allow skipped (${err.message})`);
-  }
-}
-
+/**
+ * The one dev-env loader: fills variables that are still unset from the
+ * checkout's own `.env.local`, then the main checkout's `.env` (so a worktree
+ * override beats the shared file, and both lose to the caller's environment),
+ * then pins `LOG_DIR` and derives the per-worktree database URL.
+ *
+ * With no `.env` files and `DATABASE_URL` already set (CI, deploy) the only
+ * changes are `LOG_DIR` and, in a linked worktree, the database name.
+ */
 export function applyDevEnvToProcess(
   repoRoot = resolveCurrentRepoRoot(),
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  const mainEnv = loadMainEnvFile(repoRoot);
-  for (const [key, value] of Object.entries(mainEnv)) {
-    if (env[key] === undefined) env[key] = value;
+  for (const file of [readEnvFile(path.join(repoRoot, ".env.local")), loadMainEnvFile(repoRoot)]) {
+    for (const [key, value] of Object.entries(file)) {
+      if (env[key] === undefined) env[key] = value;
+    }
   }
 
   // The dev stack owns the structured-event mirror location. Pin it here rather
@@ -189,7 +190,7 @@ export function applyDevEnvToProcess(
   env.LOG_DIR = resolveDevLogDir(repoRoot, env.LOG_DIR);
 
   for (const db of DEV_DATABASES) {
-    const baseUrl = mainEnv[db.envVar] ?? env[db.envVar];
+    const baseUrl = env[db.envVar];
     if (!baseUrl) continue;
     env[db.envVar] = resolveDatabaseUrl({ baseUrl, repoRoot });
   }

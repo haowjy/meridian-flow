@@ -22,7 +22,6 @@ as `$BASE` in guides, or set `PORT` before starting to bind a fixed port.
 |------|---------|
 | `server.ts` | Mini HTTP server exposing the model gateway over HTTP |
 | `run.ts` | CLI runner — starts server, runs a quick self-test, exits |
-| `load-env.ts` | Loads repo-root `.env` without logging secrets |
 | `guides/` | Markdown playbooks for manual/agent-run smoke checks |
 
 Full wired-stack flows still use the portless dev stack and the app/server smoke
