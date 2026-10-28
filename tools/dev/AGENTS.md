@@ -21,9 +21,11 @@ directory never imports application packages. The `./mf` CLI lives in
 - The dev Postgres image is `tools/postgres/Dockerfile` (`postgres:16` + pg_bigm).
   `meridian-dev-postgres-1` serves every worktree on the machine: test compose
   changes under another project name and port, never recreate it from a
-  branch you are still checking. Bump the image tag in `docker-compose.yml` with
-  the pg_bigm pin; compose then recreates the container onto it and the named
-  volume keeps the data. `pnpm db:check-extensions` proves the extensions work.
+  branch you are still checking. `ensureDevInfraUp` (`pnpm dev:infra`, bootstrap,
+  `db:reset`) starts a missing server and never reconciles a running one. Bump
+  the image tag in `docker-compose.yml` with the pg_bigm pin, then run
+  `pnpm dev:infra:upgrade` from a checkout that has merged `main`; compose
+  recreates the container onto the tag and the named volume keeps the data. `pnpm db:check-extensions` proves the extensions work.
 - Change schemas with `generate` plus `migrate`, never `push`. Migration lint
   has one `RULES` list; a skip must be safe on populated tables.
 - No secret value appears in the tmux command, stdout or
