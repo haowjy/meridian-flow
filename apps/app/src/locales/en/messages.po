@@ -474,6 +474,10 @@ msgstr "{seconds, plural, one {Continues in # second} other {Continues in # seco
 msgid "{shown} of {total}"
 msgstr "{shown} of {total}"
 
+#: src/features/chat/tool-result-preview.ts
+msgid "{shown} of at least {total}"
+msgstr "{shown} of at least {total}"
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is a folder. Only documents can be moved or deleted."
 msgstr "{source} is a folder. Only documents can be moved or deleted."
