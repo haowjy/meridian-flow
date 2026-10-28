@@ -415,9 +415,12 @@ export const documentMarkdownProjections = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index("document_markdown_projections_fts").using(
+    // Postgres refuses a tsvector over 1 MB, and the refusal aborts the writing transaction.
+    // 150,000 characters stays under it even for distinct two-character CJK words (4.7 bytes
+    // per character); text past that is not in the full-text index. Nothing queries this index yet.
+    index("document_markdown_projections_fts_head").using(
       "gin",
-      sql`to_tsvector('simple', ${t.markdown})`,
+      sql`to_tsvector('simple', left(${t.markdown}, 150000))`,
     ),
     index("document_markdown_projections_trgm").using("gin", sql`${t.markdown} gin_trgm_ops`),
   ],

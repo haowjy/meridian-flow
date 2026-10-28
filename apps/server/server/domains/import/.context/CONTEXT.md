@@ -107,7 +107,15 @@ URLs. Prepare stores each as an object plus an extra `import_entries` row
 `<docx name>/image-N.<ext>` beside the DOCX, so planning gives them a folder named
 after the document and the existing relative-link resolution points at them. Derived
 rows are replaced when the DOCX is reconverted, skipped by counts and the detail
-listing, and go with the import on Stop. Image types browsers can't render (TIFF,
+listing, and go with the import on Stop. A derived row has its own id namespace
+(`importNodeId` kind `derived`, keyed by the DOCX entry id), so it never collides with a
+picked file. If a picked or other derived path already holds an image's path, the images'
+folder gets a numeric suffix (`Chapter 1 (2)/`). Derived files skip the per-file size cap
+(their DOCX passed admission) and count against the file budget; past it, the DOCX stays a
+file. A lost image object makes prepare convert its DOCX again; once the DOCX is staged,
+the image fails and the DOCX takes `upload_lost` so the loss reaches "needs a look". A
+DOCX whose conversion failed (`kept_as_file`) is not converted again. Prepare lists the
+import's objects once per pass instead of reading each one to check it exists. Image types browsers can't render (TIFF,
 EMF) stay files; formats are not converted.
 Active sweeps protect both receipt and converted keys. `convertNote` produces occurrence-indexed
 targets and hrefs, preserving adjacent links that spell the same address. The

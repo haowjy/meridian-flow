@@ -17,8 +17,14 @@ import type { FileReceipt } from "./receipt.js";
 /** Organize supplies only files with receipts, plus folders and unreadable selection items. */
 export type ReceiptSelection = Omit<ImportSelection, "entries"> & {
   entries: (ImportSelection["entries"][number] &
-    Pick<FileReceipt, "sha256" | "aliases" | "facts">)[];
+    Pick<FileReceipt, "sha256" | "aliases" | "facts"> & {
+      /** Set on a file organize extracted from another entry (a DOCX's embedded image). */
+      derivedFrom?: string;
+    })[];
 };
+
+/** The path a derived file's id is minted from: its own namespace, so it never meets a picked path. */
+export const derivedNodePath = (parentId: string, path: string) => `${parentId}/${path}`;
 export interface PlannedNode {
   id: string;
   area?: ImportArea;
@@ -64,7 +70,7 @@ export function codePointOrder(a: string, b: string): number {
   return left.length - right.length;
 }
 export type MintId = (
-  kind: "folder" | "entry" | "unreadable",
+  kind: "folder" | "entry" | "unreadable" | "derived",
   rootId: number,
   path: string,
 ) => string;
@@ -142,7 +148,8 @@ export async function planSelection(
       const filename =
         root.kind === "file" && !entry.path ? root.name : (entry.path.split("/").at(-1) ?? "");
       const skip =
-        entry.size > IMPORT_ADMISSION.fileBytes
+        // A derived file's document already passed admission; capping the image would drop it silently.
+        entry.size > IMPORT_ADMISSION.fileBytes && !entry.derivedFrom
           ? "too_large"
           : marker && entry.path.split("/")[0] === EXPORT_WORKS_FOLDER
             ? "export_works"
@@ -157,7 +164,9 @@ export async function planSelection(
         parentPath = folderNote;
       }
       nodes.push({
-        id: mintId("entry", root.rootId, entry.path),
+        id: entry.derivedFrom
+          ? mintId("derived", root.rootId, derivedNodePath(entry.derivedFrom, entry.path))
+          : mintId("entry", root.rootId, entry.path),
         ...(marker?.areas.get(entry.path.split("/")[0])
           ? { area: marker.areas.get(entry.path.split("/")[0]) }
           : {}),

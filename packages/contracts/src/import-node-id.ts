@@ -18,7 +18,7 @@ export interface ImportNodeIdInput {
   projectId: string;
   importId: string;
   rootId: number;
-  kind: "folder" | "entry" | "unreadable";
+  kind: "folder" | "entry" | "unreadable" | "derived";
   /** "/"-separated; "" for the root folder. */
   path: string;
 }
