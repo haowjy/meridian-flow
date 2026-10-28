@@ -263,7 +263,7 @@ export function createImportUploadService(deps: {
           ...(await importSummary(repo, record)),
           roots: record.roots.map(({ id: _id, created: _created, ...root }) => root),
           entries: entries
-            .filter((e) => e.entryId !== null)
+            .filter((e) => e.entryId !== null && !e.selection.derivedFrom)
             .map((e) => ({
               entryId: e.entryId as number,
               rootId: e.selection.rootId,

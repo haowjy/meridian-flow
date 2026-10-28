@@ -101,6 +101,14 @@ The repository projects nullable storage columns into one verified `FileReceipt`
 at its boundary. Entries expose immutable `selection` separately; folders and
 unreadable items have no receipt. Placement records destinations (including fallback),
 top-level names and the creation-set digest, independent of its header generation.
+A DOCX's embedded images are extracted by the converter, never inlined as `data:`
+URLs. Prepare stores each as an object plus an extra `import_entries` row
+(`spec.derivedFrom` = the DOCX entry id, state `received`), at the path
+`<docx name>/image-N.<ext>` beside the DOCX, so planning gives them a folder named
+after the document and the existing relative-link resolution points at them. Derived
+rows are replaced when the DOCX is reconverted, skipped by counts and the detail
+listing, and go with the import on Stop. Image types browsers can't render (TIFF,
+EMF) stay files; formats are not converted.
 Active sweeps protect both receipt and converted keys. `convertNote` produces occurrence-indexed
 targets and hrefs, preserving adjacent links that spell the same address. The
 organizer binds selected targets directly by their planned document ids; ordinary
