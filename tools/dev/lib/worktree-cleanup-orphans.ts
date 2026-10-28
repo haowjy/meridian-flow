@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveSessionIdentity } from "../session-identity";
 import { runGit } from "./dev-env";
+import { devTmuxArgs } from "./dev-tmux-socket";
 import { stopOwnedProcessTree } from "./owned-process-tree";
 import { type GitWorktree, parseGitWorktreePorcelain } from "./worktree-cleanup";
 
@@ -28,7 +29,7 @@ interface RepositoryWorktrees {
 }
 
 function runTmux(args: string[], cwd: string): string {
-  return execFileSync("tmux", args, {
+  return execFileSync("tmux", devTmuxArgs(args), {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],

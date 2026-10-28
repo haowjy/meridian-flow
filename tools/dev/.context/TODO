@@ -34,3 +34,8 @@
   generation overwrite older snapshots (0071 and 0072 were overwritten after
   tag 0076). Until automated, follow the timestamp-prefix workflow in
   `packages/database/.context/CONTEXT.md`; never rewrite applied identities.
+
+- Delete the default-server shim once no stack from before the private tmux
+  socket is running: `legacyDefaultServerArgs` in `lib/dev-tmux-socket.ts`,
+  `TmuxSessionStore.legacyDefaultServerHasSession`, and its guard in
+  `dev-tmux.ts`.
