@@ -40,13 +40,14 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    `Book (2)` with `./mf doc put`, then Undo: the folder and the later addition are gone.
    `Book` is disabled in that picker's list, as Move… disables it.
 5. **A refusal.** Go offline, copy `Prologue` to `Templates`, delete `Prologue` with
-   `./mf doc rm`, go online. The rows leave `Templates` and a notice at the window's bottom-right says "Couldn't
-   copy Prologue to Templates. A source or the destination is no longer there." with Copy
-   to… and Dismiss. Reload: it is still there. Open a second tab: it shows there too.
+   `./mf doc rm`, go online. The rows leave `Templates` and one card at the window's
+   bottom-right (never two) says "Couldn't copy Prologue to Templates. A source or the
+   destination is no longer there." with Copy to… and Dismiss, below the older cards. Copy
+   to… opens its picker fully inside the window. Reload: it is still there. Open a second tab: it shows there too.
    Dismiss in one tab: the other loses it.
 6. **A gone destination.** Offline, copy a row into a new User folder, delete the folder
-   with `./mf api POST …/context/user/delete`, go online. The notice shows on the surface
-   that started the Copy. Copy to… › User › Templates › Copy to Templates sends the same
+   with `./mf api POST …/context/user/delete`, go online. On a phone the notice shows on the
+   surface that started the Copy; on desktop it is one card at the bottom-right. Copy to… › User › Templates › Copy to Templates sends the same
    row and the notice becomes "Copied … to Templates."
 7. **Unsynced edits.** Open a document, patch `WebSocket.prototype.send` to drop frames,
    type an edit, copy the document. The notice stays on "Copying…" (the server answers
@@ -66,7 +67,8 @@ Move… that stopped working because Copy joined them. This recipe drives the br
 11. **The phone.** Emulate 393 px, touch and a coarse pointer over CDP (`Emulation.setDeviceMetricsOverride`,
     `Emulation.setTouchEmulationEnabled`). In the drawer, a row's menu offers Copy to…;
     the picker opens at the row's folder, and a pick shows "Copied … to Knowledge Base."
-    with Undo.
+    with Undo inline in the drawer, not at the bottom. A 393 px window with a fine pointer is
+    the desktop shell, whose notices sit at the bottom-right: that is not a phone run.
 12. **A selection nested before the send.** Select a folder (`Part`) and a sibling document
     (`Loose`) in Manuscript, go offline, and drag the selection onto a User folder (`Targets`), then
     Copy to Targets. A drop onto Knowledge Base is a plain Move, so use User. Both rows are

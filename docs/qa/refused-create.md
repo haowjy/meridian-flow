@@ -153,8 +153,10 @@ run: it names the first id.
     browser profile: the refused rows live in that profile's IndexedDB, so a phone script
     attached to another profile lists documents only. A narrow viewport also collapses the
     desktop sidebar and keeps it collapsed (`Expand sidebar`), which hides the tree and its
-    New file and New folder buttons; they appear only while their section is expanded, and a
-    new tab starts with every section collapsed.
+    New file, New folder and Import… buttons. On desktop they show on header hover or focus,
+    collapsed or expanded, and each opens its section; on a touch phone they are always shown,
+    so a tap on a header's right end hits a visible button. A new tab starts with every
+    section collapsed.
 
 ## Server refusals a create can get
 

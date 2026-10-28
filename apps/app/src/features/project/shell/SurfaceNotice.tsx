@@ -1,15 +1,22 @@
 /**
- * The notice card project surfaces show after a delete or a move, and the one
- * notice place each surface has (inline on a phone, the window's bottom-right
- * corner on desktop: `project-notices.tsx`). A surface shows one notice: a newer one, of
- * either kind, replaces the older (`useNoticeSlot`).
+ * The notice card project surfaces show after a delete, a move or a copy, and
+ * where it goes. A notice has one place: on a phone, each surface's own (inline,
+ * at the foot of its list); on desktop, one shared place in the Activity corner
+ * at the window's bottom-right. A place shows one Undo notice: a newer one, of
+ * either kind and from any surface sharing the place, replaces the older
+ * (`useNoticeSlot`). `NoticePlacement` puts a card in its place: inline, or as
+ * its own entry in the toast registry, which orders and folds it with the
+ * other toasts (`project-notices.tsx` turns the corner on).
  */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { X } from "lucide-react";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
+import { useToastSlot } from "@/components/app/toast-registry";
 import { IconButton } from "@/components/ui/icon-button";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
 
 export const NOTICE_SURFACES = ["sidebar", "work-files", "mobile", "chat-files"] as const;
@@ -20,7 +27,7 @@ export const isNoticeSurface = (value: unknown): value is NoticeSurface =>
   NOTICE_SURFACES.some((surface) => surface === value);
 
 type NoticeSlots = {
-  /** Claims a surface's notice place; `release` closes whatever held it before. */
+  /** Claims the notice place `surface` shows in; `release` closes whatever held it before. */
   take: (surface: NoticeSurface, release: () => void) => void;
 };
 
@@ -28,10 +35,14 @@ const NoticeSlotsContext = createContext<NoticeSlots | null>(null);
 
 /** One per project, around every surface that shows notices. */
 export function NoticeSlotsProvider({ children }: { children: ReactNode }) {
-  const holders = useRef(new Map<NoticeSurface, () => void>());
+  const holders = useRef(new Map<NoticeSurface | "corner", () => void>());
+  const phone = usePhoneShell();
+  const corner = useRef(false);
+  corner.current = phone === false;
   const take = useCallback((surface: NoticeSurface, release: () => void) => {
-    const previous = holders.current.get(surface);
-    holders.current.set(surface, release);
+    const place = corner.current ? "corner" : surface;
+    const previous = holders.current.get(place);
+    holders.current.set(place, release);
     previous?.();
   }, []);
   const value = useMemo(() => ({ take }), [take]);
@@ -42,6 +53,25 @@ export function useNoticeSlot(): NoticeSlots {
   const slots = useContext(NoticeSlotsContext);
   if (!slots) throw new Error("NoticeSlotsProvider is required");
   return slots;
+}
+
+const CornerContext = createContext(false);
+
+/** Below it, notices render as entries in the desktop Activity corner instead of inline. */
+export function CornerNoticePlace({ children }: { children: ReactNode }) {
+  return <CornerContext.Provider value>{children}</CornerContext.Provider>;
+}
+
+/**
+ * Puts one notice in its place: inline where it is rendered, or, under
+ * `CornerNoticePlace`, portaled into its own toast slot keyed by `id` (nothing
+ * while the region folds it into "+N more"). Render it only while the notice exists.
+ */
+export function NoticePlacement({ id, children }: { id: string; children: ReactNode }) {
+  const corner = useContext(CornerContext);
+  const host = useToastSlot(corner ? `notice:${id}` : null);
+  if (!corner) return children;
+  return host ? createPortal(children, host) : null;
 }
 
 export type SurfaceNoticeModel = {

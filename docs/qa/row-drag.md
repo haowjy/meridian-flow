@@ -39,12 +39,13 @@ browser reports no fine pointer, so rows render at touch height.
    inside it: the folder and its rows light, the hint reads "Move to
    characters". Drop. The three chapters appear under `characters`, stay
    selected, and the open document's path reads Knowledge Base › characters.
-   Between the tree and Scratch, the rail reads "Moved 3 items to
-   characters." with Undo and Dismiss; it covers nothing and stays until the
-   next move or Dismiss.
-4. Press Undo: the chapters return to `Act 2`. Repeat with the keyboard (Tab
-   to Undo, Enter) and with Dismiss: focus lands on a moved row, not the page
-   body. Drop a row, then rename it: Undo leaves the notice and the message
+   A card at the window's bottom-right reads "Moved 3 items to
+   characters." with Undo and Dismiss, below any import toast; it stays until
+   the next move, copy or delete (which replaces it) or Dismiss. On a phone it
+   sits inline in the drawer between the Files tree and User instead.
+4. Press Undo: the chapters return to `Act 2`. Repeat with the keyboard (F8
+   moves focus into the bottom-right region, then Tab to Undo, Enter) and with
+   Dismiss: focus lands on a moved row, not the page body. Drop a row, then rename it: Undo leaves the notice and the message
    stays with Dismiss.
 4a. Open a row's `…` menu, Move… it into a collapsed folder: the same notice
    names the destination; Undo returns it.

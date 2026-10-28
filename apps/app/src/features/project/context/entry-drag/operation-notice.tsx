@@ -29,7 +29,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { type NoticeSurface, SurfaceNotice, useNoticeSlot } from "../../shell/SurfaceNotice";
+import {
+  NoticePlacement,
+  type NoticeSurface,
+  SurfaceNotice,
+  useNoticeSlot,
+} from "../../shell/SurfaceNotice";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
@@ -360,28 +365,30 @@ export function OperationNotice({
   // Asked before anything awaits: Undo's button disables while it runs and drops focus.
   const holdsFocus = () => ref.current?.contains(document.activeElement) ?? false;
   return (
-    <div ref={ref} className="contents">
-      <SurfaceNotice
-        className={className}
-        notice={{
-          message: shown.message,
-          undoing: shown.undoing,
-          undo: shown.undoable
-            ? () => {
-                const focused = holdsFocus();
-                void undo(surface, window.id).then((closed) => {
-                  if (closed && focused) refocus?.();
-                });
-              }
-            : null,
-          dismiss: () => {
-            const focused = holdsFocus();
-            dismiss(surface, window.id);
-            if (focused) refocus?.();
-          },
-        }}
-      />
-    </div>
+    <NoticePlacement id={`operation:${window.id}`}>
+      <div ref={ref} className="contents">
+        <SurfaceNotice
+          className={className}
+          notice={{
+            message: shown.message,
+            undoing: shown.undoing,
+            undo: shown.undoable
+              ? () => {
+                  const focused = holdsFocus();
+                  void undo(surface, window.id).then((closed) => {
+                    if (closed && focused) refocus?.();
+                  });
+                }
+              : null,
+            dismiss: () => {
+              const focused = holdsFocus();
+              dismiss(surface, window.id);
+              if (focused) refocus?.();
+            },
+          }}
+        />
+      </div>
+    </NoticePlacement>
   );
 }
 

@@ -31,6 +31,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import { useToastClearance } from "@/components/app/toast-registry";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -93,6 +94,8 @@ const SERVER_FEED_DOT: Record<ServerFeedState, string> = {
 
 function DebugPill({ onDisable }: { onDisable: () => void }) {
   const debugState = useDebugState();
+  // The Activity region rises above the pill (and its open panel) instead of covering it.
+  const clearance = useToastClearance();
   const [open, setOpen] = useState(false);
   const [traceViewerTarget, setTraceViewerTarget] = useState<TraceViewerTarget | null>(null);
   const [llmCallsViewerTarget, setLlmCallsViewerTarget] = useState<LlmCallsViewerTarget | null>(
@@ -180,7 +183,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
           onShowAll={clearLlmCallsScope}
         />
       </DebugErrorBoundary>
-      <div className="fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2">
+      <div ref={clearance} className="fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2">
         {open ? (
           <section
             className="flex max-h-[70svh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-rail-left"
@@ -254,7 +257,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
               ) : null}
               <p className="text-meta text-muted-foreground">
                 Alt+click any turn/block to inspect its record. Query cache → TanStack Query
-                Devtools (button, bottom-left). Stores → Redux DevTools.
+                Devtools (button, bottom-right). Stores → Redux DevTools.
               </p>
             </div>
           </section>

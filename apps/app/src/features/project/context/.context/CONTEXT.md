@@ -92,9 +92,11 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
                      │
           validateContextEntryName (pure)
 
-Delete, move and copy notices share one notice place per surface (sidebar, Work
-Files, phone browser, chat Files menu), drawn with `SurfaceNotice`: a newer
-notice of any kind replaces the older (`useNoticeSlot`). Each kind has one
+Delete, move and copy notices share one notice place, drawn with
+`SurfaceNotice`: a newer notice of any kind replaces the older
+(`useNoticeSlot`). On a phone each surface (drawer, Work Files, phone browser,
+chat Files menu) is its own place; on desktop every surface shares one place
+in the Activity corner, so a corner never holds two Undo notices. Each kind has one
 owner per project, mounted together by `ProjectNoticesProvider`:
 `DocumentDeleteUndoProvider` for deletes, `OperationNoticesProvider`
 (`entry-drag/operation-notice.tsx`) for moves and copies. A refused Copy is
@@ -104,9 +106,11 @@ and decides from the replica when Undo still applies, so a notice outlives the
 list that published it. A Trash restore reports its removal to the delete
 owner (`useReportRestoredRemovals`), which closes a delete's notice once every
 removal in that delete's receipt came back. On desktop, `ProjectNoticesProvider`
-portals every surface's notices into the Activity region at the window's
-bottom-right, below the import toasts (`ToastRegion`), so a notice never covers
-the rail and survives a closed menu or panel. On a phone, `SurfaceNotices`
+renders the notices once (refusals once each, not per surface), each as a
+toast-registry slot (`NoticePlacement` → `useToastSlot`): `ToastRegion` orders
+it by time with the import toasts, folds it into "+N more" and reports it seen,
+and the notice portals its card into the slot's element. So a notice never
+covers the rail and survives a closed menu or panel. On a phone, `SurfaceNotices`
 renders a surface's place inline: in the navigation drawer between the tree and
 User, and at the foot of Work Files, the phone browser and the chat Files menu.
 

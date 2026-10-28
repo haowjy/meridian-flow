@@ -38,8 +38,7 @@ export type ChatSurfaceProps = {
 export function ChatSurface({ title, surfaceRef, children, footer, header }: ChatSurfaceProps) {
   const hasFooter = Boolean(footer);
   const footerRef = useRef<HTMLDivElement | null>(null);
-  const composerRef = useRef<HTMLDivElement | null>(null);
-  useToastClearance(composerRef);
+  const composerRef = useToastClearance();
   const [bottomInset, setBottomInset] = useState(0);
 
   // Measure the pinned footer so the transcript can pad its end to match. Layout
