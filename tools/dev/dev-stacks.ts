@@ -15,7 +15,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { resolveCurrentRepoRoot } from "./lib/dev-env";
-import { DEFAULT_TMUX_SERVER, DEV_TMUX_SERVER } from "./lib/dev-tmux-server";
+import { devTmuxArgs } from "./lib/dev-tmux-socket";
 
 type Stack = {
   worktree: string;
@@ -46,53 +46,29 @@ function parseArgs(argv: string[]): {
 
 /**
  * tmux session activity is the only honest idle signal: a pane's last output.
- * dev-tmux names the stack session `meridian-*`, so that one is authoritative;
- * an agent shell that merely sits in the same worktree must not make a dead
- * stack look busy.
- *
- * New stacks live on the private dev server. The default server is still read
- * so a stack started before that move reports its idle time instead of
- * "unknown".
+ * The dev socket holds only `pnpm dev` sessions, so an agent shell that sits in
+ * a worktree on the human's server cannot make a dead stack look busy.
  */
-const SESSION_SERVERS = [DEV_TMUX_SERVER, DEFAULT_TMUX_SERVER] as const;
-
-function listSessionRows(server: string): string[] {
-  try {
-    return execFileSync(
-      "tmux",
-      [
-        "-L",
-        server,
-        "list-sessions",
-        "-F",
-        "#{session_name}|#{pane_current_path}|#{session_activity}",
-      ],
-      { stdio: ["ignore", "pipe", "ignore"] },
-    )
-      .toString()
-      .split("\n");
-  } catch {
-    return [];
-  }
-}
-
 function idleMinutesByWorktree(): Map<string, number> {
   const now = Math.floor(Date.now() / 1000);
-  const byWorktree = new Map<string, { idle: number; authoritative: boolean }>();
-  for (const line of SESSION_SERVERS.flatMap(listSessionRows)) {
-    const [name, path, activity] = line.split("|");
+  const byWorktree = new Map<string, number>();
+  let sessions: string;
+  try {
+    sessions = execFileSync(
+      "tmux",
+      devTmuxArgs(["list-sessions", "-F", "#{pane_current_path}|#{session_activity}"]),
+    ).toString();
+  } catch {
+    return new Map();
+  }
+  for (const line of sessions.split("\n")) {
+    const [path, activity] = line.split("|");
     const worktree = path ? WORKTREE_PATH.exec(path)?.[0] : undefined;
     if (!worktree || !activity) continue;
     const idle = Math.floor((now - Number(activity)) / 60);
-    const authoritative = name?.startsWith("meridian-") ?? false;
-    const current = byWorktree.get(worktree);
-    const better =
-      !current ||
-      (authoritative && !current.authoritative) ||
-      (authoritative === current.authoritative && idle < current.idle);
-    if (better) byWorktree.set(worktree, { idle, authoritative });
+    byWorktree.set(worktree, Math.min(idle, byWorktree.get(worktree) ?? idle));
   }
-  return new Map([...byWorktree].map(([worktree, entry]) => [worktree, entry.idle]));
+  return byWorktree;
 }
 
 function collectStacks(): Stack[] {

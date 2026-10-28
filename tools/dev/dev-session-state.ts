@@ -21,7 +21,7 @@ export interface DevSessionMetadata {
   clientBuild: ClientBuild;
   branch: string;
   worktreePrefix?: string;
-  /** Only the redacted launch command may be persisted. */
+  /** The launch command holds no secrets: panes get their env from the dev-env loader. */
   command: string;
   createdAt: string;
   externalRoutes: ExternalDevRoute[];

@@ -1,13 +1,23 @@
 /** Atomic source publication: management provenance and future-chat pointers share one owner. */
-import type {
-  AgentPackageInstallation,
-  AgentRevisionStore,
-} from "../ports/agent-revision-store.js";
+import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
 import { resolveAgentDependencies } from "./agent-configuration.js";
 import type { AgentSourceSnapshot } from "./agent-source-revision.js";
-import { sourceEntities } from "./package-reconciliation.js";
 
 export class AgentPublicationConflictError extends Error {}
+
+/** Agents and skills a source defines, by path alone: the collision check needs identities, not content. */
+function sourceEntities(
+  source: AgentSourceSnapshot,
+): Array<{ kind: "agent" | "skill"; slug: string }> {
+  const entities: Array<{ kind: "agent" | "skill"; slug: string }> = [];
+  for (const name of Object.keys(source.files).sort()) {
+    const agent = /^agents\/([^/]+)\.md$/.exec(name);
+    if (agent) entities.push({ kind: "agent", slug: agent[1] });
+    const skill = /^skills\/([^/]+)\/SKILL\.md$/.exec(name);
+    if (skill) entities.push({ kind: "skill", slug: skill[1] });
+  }
+  return entities;
+}
 
 export async function publishAgentSource(input: {
   store: AgentRevisionStore;
@@ -15,7 +25,6 @@ export async function publishAgentSource(input: {
   source: AgentSourceSnapshot;
   expectedRevisionId?: string;
   upstreamRevisionId?: string;
-  origin?: AgentPackageInstallation["origin"];
 }) {
   const { store, ownerUserId, source } = input;
   return store.withCatalogTransaction(ownerUserId, async () => {
@@ -84,7 +93,7 @@ export async function publishAgentSource(input: {
       currentRevisionId: installed.packageRevisionId,
       upstreamRevisionId:
         input.upstreamRevisionId ?? existing?.upstreamRevisionId ?? installed.packageRevisionId,
-      origin: input.origin === undefined ? (existing?.origin ?? null) : input.origin,
+      origin: existing?.origin ?? null,
       ...(existing ? { expectedRevisionId: existing.currentRevisionId } : {}),
     });
     if (!installation)

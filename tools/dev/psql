@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# psql against this checkout's database: `tools/dev/psql [psql args…]`.
+# The connection is PG* variables for psql only; the calling shell keeps nothing,
+# and `exec` leaves no wrapper process, so Ctrl-C reaches psql itself.
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+connection="$(cd "$root" && "$root/node_modules/.bin/tsx" tools/dev/psql-env.ts)"
+eval "$connection"
+exec psql "$@"

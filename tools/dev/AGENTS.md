@@ -9,6 +9,11 @@ directory never imports application packages. The `./mf` CLI lives in
 
 ## Rules
 
+- Dev sessions live on the private tmux socket in `lib/dev-tmux-socket.ts`
+  (`-L meridian-flow-dev`). Build every dev-session tmux call from
+  `devTmuxArgs`; a bare `tmux` reaches the human's own sessions. Only the
+  worktree-cleanup readiness check (to list panes) and the legacy-stack guard in
+  `dev-tmux.ts` (a read-only `has-session`) read the human's server.
 - Portless's proxy port comes only from `resolvePortlessProxyPort` in
   `portless-routes.ts`. Route expectations, readiness, the internal SSR API
   origin and `./mf` all pass that value; never hard-code a port, and leave
@@ -19,30 +24,20 @@ directory never imports application packages. The `./mf` CLI lives in
   database, or open an ad-hoc admin client.
 - Change schemas with `generate` plus `migrate`, never `push`. Migration lint
   has one `RULES` list; a skip must be safe on populated tables.
-- Secrets may reach the command sent to tmux, never stdout or
-  `.meridian/dev-session.json`. Report `started` only after readiness and
+- No secret value appears in the tmux command, stdout or
+  `.meridian/dev-session.json`: services get secrets from `with-dev-env.ts`,
+  which loads them at startup. Keep the pane's exports non-secret and inside
+  the subshell. Report `started` only after readiness and
   verified routes pass.
-- Dev stacks run on the private tmux server `meridian-dev`, named once in
-  `lib/dev-tmux-server.ts`, never on the default server, which holds the machine
-  owner's live shells. Attach with
-  `tmux -L meridian-dev attach -t <session>`. Cleanup readiness also lists panes
-  on the default server, read-only, so a shell parked there still blocks removal.
-- A session must not trust its pane's cwd: tmux ignores `new-session -c` once the
-  server's cwd has been deleted, and the server outlives the worktree that
-  started it. The launch command begins with `cd <checkout> &&`, and tmux clients
-  run from `$HOME` so a new server never holds a worktree's cwd.
 - Stop and clean up by target. Never stop dev servers by pattern
   (`pkill -f "pnpm dev"`, `killall node` match every worktree's stack), never
   reset all Tailscale routes, and never infer staleness from a branch name.
   Cleanup removes only what it can prove is merged; when it refuses a branch
   you believe is safe, follow [`WORKTREE-CLEANUP.md`](WORKTREE-CLEANUP.md).
-- `pnpm dev` sweeps managed sessions on `meridian-dev` for missing checkouts
-  before start/reuse, but never for `--print` or `--stop`, and the sweep never
-  touches the default tmux server. Inspect them with
+- `pnpm dev` sweeps managed sessions for missing checkouts before start/reuse,
+  but never for `--print` or `--stop`. Inspect them with
   `pnpm dev:prune-worktrees -- --orphans --dry-run`. Orphan teardown requires
-  path/pane ownership and process identity, never cwd or a name prefix alone. A
-  dead pane (`remain-on-exit`) has no process or cwd to check: skip it, never
-  signal its PID.
+  path/pane ownership and process identity, never cwd or a name prefix alone.
 - `tools/mf` and `apps/app/e2e` import the Portless helpers
   (`portless-prefix.ts`, `portless-routes.ts`, `dev-readiness.ts`,
   `dev-session-state.ts`). Keep those free of import-time side effects, with

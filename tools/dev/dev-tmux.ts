@@ -9,7 +9,7 @@ import { createDevSessionPlan, type DevSessionPlan } from "./dev-session-plan";
 import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-state";
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
-import { DEFAULT_TMUX_SERVER, devTmuxCommand } from "./lib/dev-tmux-server";
+import { DEV_TMUX_SOCKET } from "./lib/dev-tmux-socket";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
 import { prunePortlessRoutes } from "./lib/portless-maintenance";
 import { pidBelongsToCheckout, processWorkingDirectory } from "./lib/route-ownership";
@@ -97,15 +97,10 @@ function checkRouteConflicts(store: TmuxSessionStore, plan: DevSessionPlan, forc
     );
 }
 
-function teardownSessions(
-  stores: readonly [TmuxSessionStore, ...TmuxSessionStore[]],
-  names: string[],
-): void {
+function teardownSessions(store: TmuxSessionStore, names: string[]): void {
   for (const name of new Set(names)) {
-    for (const store of stores) {
-      if (store.sessionExists(name))
-        requireSuccess(store.killSession(name), `failed to kill tmux session '${name}'`);
-    }
+    if (store.sessionExists(name))
+      requireSuccess(store.killSession(name), `failed to kill tmux session '${name}'`);
   }
   prunePortlessRoutes(repoRoot);
 }
@@ -148,17 +143,10 @@ function printDryRun(plan: DevSessionPlan, launchCommand: string): void {
       `shared port: ${entry.service}=backend:${entry.appBackendPort},${entry.externalMode}:${entry.externalHttpsPort}`,
     );
   console.log(
-    devTmuxCommand(["new-session", "-d", "-s", plan.session.sessionName, "-c", repoRoot]),
+    `tmux -L ${DEV_TMUX_SOCKET} new-session -d -s ${plan.session.sessionName} -c ${repoRoot}`,
   );
   console.log(
-    devTmuxCommand([
-      "send-keys",
-      "-t",
-      `${plan.session.sessionName}:0`,
-      "--",
-      launchCommand,
-      "C-m",
-    ]),
+    `tmux -L ${DEV_TMUX_SOCKET} send-keys -t ${plan.session.sessionName}:0 -- ${launchCommand} C-m`,
   );
 }
 
@@ -226,8 +214,6 @@ async function verifyAndPublish({
 
 async function main(): Promise<void> {
   const store = new TmuxSessionStore(repoRoot);
-  // Stacks started before dev moved to its own tmux server still live here.
-  const legacyStore = new TmuxSessionStore(repoRoot, DEFAULT_TMUX_SERVER);
   const tailscale = new TailscaleDevLifecycle();
   const options = parseDevCliOptions({ argv: process.argv.slice(2) });
   const identity = resolveCheckoutSessionIdentity(repoRoot);
@@ -266,16 +252,24 @@ async function main(): Promise<void> {
     session,
     force: options.restart,
   });
-  if (options.print) return printDryRun(plan, active?.command ?? plan.command.display);
+  if (options.print) return printDryRun(plan, active?.command ?? plan.command.line);
   if (!store.hasCommandOnPath("tmux"))
     throw new Error("tmux is required but was not found on PATH. Install tmux and retry.");
   const sessionNames = [identity.sessionName, ...(previous ? [previous.sessionName] : [])];
+  // TODO(remove): once no stack started before the private socket is running.
+  for (const name of sessionNames) {
+    if (store.legacyDefaultServerHasSession(name))
+      throw new Error(
+        `a dev stack from an older pnpm dev is still on your default tmux server as '${name}'. ` +
+          `Stop it with: tmux -L default kill-session -t =${name}  (or pnpm dev --stop from the previous build), then retry.`,
+      );
+  }
   if (options.stop) {
     tailscale.cleanupExternalRoutes({
       previousRoutes: previous?.externalRoutes,
       sharedPorts: plan.sharedPorts,
     });
-    teardownSessions([store, legacyStore], sessionNames);
+    teardownSessions(store, sessionNames);
     console.log(`stopped · ${session.sessionName}`);
     return;
   }
@@ -290,7 +284,7 @@ async function main(): Promise<void> {
         previousRoutes: previous?.externalRoutes,
         sharedPorts: plan.sharedPorts,
       });
-      teardownSessions([store, legacyStore], sessionNames);
+      teardownSessions(store, sessionNames);
       await releaseBackendPorts(plan);
     }
     await tailscale.pruneStaleRoutes();
@@ -301,11 +295,11 @@ async function main(): Promise<void> {
     // Record launch identity immediately: HEAD may change before readiness finishes.
     writeDevSessionMetadata(repoRoot, {
       ...session,
-      command: plan.command.display,
+      command: plan.command.line,
       externalRoutes: [],
     });
     requireSuccess(
-      store.sendKeys(session.sessionName, plan.command.executable),
+      store.sendKeys(session.sessionName, plan.command.line),
       "failed to start portless in tmux",
     );
   }
@@ -314,7 +308,7 @@ async function main(): Promise<void> {
     tailscale,
     plan,
     alreadyRunning: active !== null,
-    launchCommand: active?.command ?? plan.command.display,
+    launchCommand: active?.command ?? plan.command.line,
   });
 }
 

@@ -1,7 +1,6 @@
 import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
 import type { DevMode } from "./dev-mode";
 import type { DevSessionMetadata } from "./dev-session-state";
-import { resolveDevRuntimeEnvPassthroughKeys } from "./lib/dev-env";
 import {
   resolveSharedDevServicePorts,
   type SharedDevServiceName,
@@ -31,8 +30,8 @@ interface DevServiceSpec {
 }
 
 export interface DevSessionCommand {
-  executable: string;
-  display: string;
+  /** The line sent to tmux and recorded in session metadata. Holds no secret values. */
+  line: string;
   internalApiOrigin: string;
 }
 
@@ -65,51 +64,14 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function databaseNameFromUrl(value: string): string | undefined {
-  try {
-    const url = new URL(value);
-    return decodeURIComponent(url.pathname.replace(/^\//, "")) || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function redactEnvValue(key: string, value: string): string {
-  if (key === "DATABASE_URL") {
-    try {
-      const url = new URL(value);
-      const dbName = databaseNameFromUrl(value);
-      return dbName ? `<postgres:${url.host}/${dbName}>` : "<postgres:redacted>";
-    } catch {
-      return "<postgres:redacted>";
-    }
-  }
-
-  if (
-    key === "WORKOS_DEV_LOGIN_EMAIL" ||
-    /(_API_KEY|_PASSWORD|_TOKEN|_SECRET|COOKIE_PASSWORD|PRIVATE_KEY)$/i.test(key)
-  ) {
-    return "<redacted>";
-  }
-
-  return value;
-}
-
-function envAssignments(
-  env: NodeJS.ProcessEnv,
-  keys: readonly string[],
-  redacted: boolean,
-): string[] {
+function envAssignments(env: NodeJS.ProcessEnv, keys: readonly string[]): string[] {
   return keys
     .filter((key) => env[key] !== undefined)
-    .map((key) => {
-      const value = env[key] ?? "";
-      return `${key}=${shellQuote(redacted ? redactEnvValue(key, value) : value)}`;
-    });
+    .map((key) => `${key}=${shellQuote(env[key] ?? "")}`);
 }
 
-function portlessEnvPrefix(env: NodeJS.ProcessEnv, redacted: boolean): string {
-  const assignments = envAssignments(env, PORTLESS_ENV_KEYS, redacted);
+function portlessEnvPrefix(env: NodeJS.ProcessEnv): string {
+  const assignments = envAssignments(env, PORTLESS_ENV_KEYS);
   return assignments.length > 0 ? `env ${assignments.join(" ")} ` : "";
 }
 
@@ -122,114 +84,18 @@ function appRuntimeEnv(env: NodeJS.ProcessEnv, internalApiOrigin: string): NodeJ
   };
 }
 
-function appEnvPassthroughExports(
-  env: NodeJS.ProcessEnv,
-  internalApiOrigin: string,
-  redacted: boolean,
-): string {
+/** Exports for the stack's subshell: only keys the caller set or this plan computes. */
+function stackEnvExports(env: NodeJS.ProcessEnv, internalApiOrigin: string): string {
   const runtimeEnv = appRuntimeEnv(env, internalApiOrigin);
-  const keys = resolveAppEnvPassthroughKeys(runtimeEnv);
-  const exports = envAssignments(runtimeEnv, keys, redacted).map(
-    (assignment) => `export ${assignment}`,
-  );
-
-  return exports.length > 0 ? `; ${exports.join("; ")}` : "";
-}
-
-function devRuntimeEnvExports(env: NodeJS.ProcessEnv, redacted: boolean): string {
-  const keys = resolveDevRuntimeEnvPassthroughKeys(env);
-  const exports = envAssignments(env, keys, redacted).map((assignment) => `export ${assignment}`);
-  return exports.length > 0 ? `; ${exports.join("; ")}` : "";
-}
-
-function envSourcePreamble(
-  env: NodeJS.ProcessEnv,
-  internalApiOrigin: string,
-  redacted: boolean,
-): string {
-  return `set -a; [ -f .env ] && . ./.env; set +a${appEnvPassthroughExports(
-    env,
-    internalApiOrigin,
-    redacted,
-  )}${devRuntimeEnvExports(env, redacted)}`;
+  return envAssignments(runtimeEnv, resolveAppEnvPassthroughKeys(runtimeEnv))
+    .map((assignment) => `export ${assignment}; `)
+    .join("");
 }
 
 function sharedPortsByService(
   sharedPorts: ReadonlyArray<SharedDevServicePorts>,
 ): Map<SharedDevServiceName, SharedDevServicePorts> {
   return new Map(sharedPorts.map((ports) => [ports.service, ports]));
-}
-
-function portlessCommandBody({
-  mode,
-  clientBuild,
-  sharedPorts,
-  env,
-  redacted,
-  worktreePrefix,
-  force,
-}: {
-  mode: DevMode;
-  clientBuild: DevSessionMetadata["clientBuild"];
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
-  env: NodeJS.ProcessEnv;
-  redacted: boolean;
-  worktreePrefix?: string;
-  force: boolean;
-}): string {
-  const portsByService = sharedPortsByService(sharedPorts);
-  const commands = DEV_SERVICES.filter(
-    (service) => mode !== "local" || !service.sharedModeOnly,
-  ).map(({ serviceName, pkg }) => {
-    const servicePorts =
-      serviceName === "app" || serviceName === "www" ? portsByService.get(serviceName) : undefined;
-    const appPortFlag = servicePorts ? ` --app-port ${servicePorts.appBackendPort}` : "";
-    const name = expectedPortlessName(serviceName, worktreePrefix);
-    const productionApp = serviceName === "app" && clientBuild === "production";
-    const script = productionApp ? "profile:dev-stack" : "dev";
-    const localStackEnv = productionApp ? "env APP_ENV=dev MERIDIAN_LOCAL_DEV_STACK=1 " : "";
-    return `${portlessEnvPrefix(env, redacted)}pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} ${localStackEnv}pnpm --filter ${pkg} ${script}`;
-  });
-
-  return `(${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
-}
-
-function renderPortlessCommand({
-  repoRoot,
-  mode,
-  clientBuild,
-  sharedPorts,
-  env,
-  internalApiOrigin,
-  redacted,
-  worktreePrefix,
-  force,
-}: {
-  repoRoot: string;
-  mode: DevMode;
-  clientBuild: DevSessionMetadata["clientBuild"];
-  sharedPorts: ReadonlyArray<SharedDevServicePorts>;
-  env: NodeJS.ProcessEnv;
-  internalApiOrigin: string;
-  redacted: boolean;
-  worktreePrefix?: string;
-  force: boolean;
-}): string {
-  // tmux ignores `new-session -c` once its server's cwd has been deleted, so the
-  // command anchors itself; every path below is relative to the checkout.
-  return `cd ${shellQuote(repoRoot)} && mkdir -p logs logs/events && ${envSourcePreamble(
-    env,
-    internalApiOrigin,
-    redacted,
-  )} && unset PORTLESS_TAILSCALE PORTLESS_FUNNEL && ${portlessCommandBody({
-    mode,
-    clientBuild,
-    sharedPorts,
-    env,
-    redacted,
-    worktreePrefix,
-    force,
-  })} 2>&1 | tee ${logPath}`;
 }
 
 export function resolveInternalApiOrigin(
@@ -257,29 +123,30 @@ export function createDevSessionCommand({
   force?: boolean;
 }): DevSessionCommand {
   const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix, env);
+  const portsByService = sharedPortsByService(sharedPorts);
+  const commands = DEV_SERVICES.filter(
+    (service) => mode !== "local" || !service.sharedModeOnly,
+  ).map(({ serviceName, pkg }) => {
+    const servicePorts =
+      serviceName === "app" || serviceName === "www" ? portsByService.get(serviceName) : undefined;
+    const appPortFlag = servicePorts ? ` --app-port ${servicePorts.appBackendPort}` : "";
+    const name = expectedPortlessName(serviceName, worktreePrefix);
+    const productionApp = serviceName === "app" && clientBuild === "production";
+    const script = productionApp ? "profile:dev-stack" : "dev";
+    const localStackEnv = productionApp ? "env APP_ENV=dev MERIDIAN_LOCAL_DEV_STACK=1 " : "";
+    // with-dev-env fills every key from .env.local and the main .env, so no
+    // secret travels in this command line.
+    return `${portlessEnvPrefix(env)}pnpm exec tsx tools/dev/with-dev-env.ts -- pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} ${localStackEnv}pnpm --filter ${pkg} ${script}`;
+  });
+
+  // Everything below runs in the subshell, so nothing is exported into the pane's
+  // interactive shell. A tmux server started from another checkout can leave that
+  // checkout's DATABASE_URL in the pane: unset it so the loader derives this one.
+  const stack = `(unset DATABASE_URL PORTLESS_TAILSCALE PORTLESS_FUNNEL; ${stackEnvExports(env, internalApiOrigin)}${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
   return {
-    executable: renderPortlessCommand({
-      repoRoot,
-      mode,
-      clientBuild,
-      sharedPorts,
-      env,
-      internalApiOrigin,
-      redacted: false,
-      worktreePrefix,
-      force,
-    }),
-    display: renderPortlessCommand({
-      repoRoot,
-      mode,
-      clientBuild,
-      sharedPorts,
-      env,
-      internalApiOrigin,
-      redacted: true,
-      worktreePrefix,
-      force,
-    }),
+    // tmux ignores `new-session -c` once its server's cwd has been deleted, so the
+    // command anchors itself; every path below is relative to the checkout.
+    line: `cd ${shellQuote(repoRoot)} && mkdir -p logs logs/events && ${stack} 2>&1 | tee ${logPath}`,
     internalApiOrigin,
   };
 }

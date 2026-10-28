@@ -1,11 +1,10 @@
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import { ensureDatabaseForUrl, ensureExtensionsForUrl } from "./lib/dev-db.ts";
-import { applyDevEnvToProcess, DEV_DATABASES, ensureDirenvAllowed } from "./lib/dev-env.ts";
+import { applyDevEnvToProcess, DEV_DATABASES } from "./lib/dev-env.ts";
 import { ensureDevInfraUp } from "./lib/dev-infra.ts";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
-ensureDirenvAllowed(repoRoot);
 applyDevEnvToProcess(repoRoot);
 
 const NEXT_STEP = "Next: log in via dev-login; identity is provisioned on first sign-in";
@@ -26,14 +25,12 @@ async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
-    // Fail loudly instead of silently skipping migrations. A missing DATABASE_URL in a
-    // worktree means direnv has not loaded .envrc, so the worktree-scoped DB was never
-    // derived — continuing would run the app against a stale/shared DB (the exact
-    // cross-worktree blast radius tools/dev is built to prevent).
+    // Fail loudly instead of silently skipping migrations: continuing would run the app
+    // against a stale/shared DB (the cross-worktree blast radius tools/dev prevents).
     throw new Error(
       "bootstrap: DATABASE_URL is not set, so database preparation cannot run. " +
-        "In a worktree this usually means direnv has not loaded .envrc — run `direnv allow`. " +
-        "For a fresh checkout, copy .env.example to .env and run `pnpm dev:infra`.",
+        "Copy .env.example to .env in the main checkout, set DATABASE_URL there, " +
+        "and run `pnpm dev:infra`.",
     );
   }
 
