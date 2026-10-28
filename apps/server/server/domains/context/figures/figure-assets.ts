@@ -13,6 +13,7 @@ import type {
 import { saveImagePreview } from "../../file-intake/image-preview.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
+  drawObjectKey,
   objectStoreKeyFromStorageUrl,
   previewObjectKey,
 } from "../../storage/object-storage-url.js";
@@ -184,7 +185,7 @@ function labelFromAssetDocumentId(assetDocumentId: string): string {
 function toReference(input: {
   record: DocumentFileRecord;
   signedUrl: string;
-  previewSignedUrl?: string | null;
+  drawUrl?: string | null;
   signedUrlExpiresAt: string;
   alt: string;
   label: string | null;
@@ -207,7 +208,7 @@ function toReference(input: {
     name: input.record.name,
     figure,
     signedUrl: input.signedUrl,
-    ...(input.previewSignedUrl ? { previewSignedUrl: input.previewSignedUrl } : {}),
+    ...(input.drawUrl ? { drawUrl: input.drawUrl } : {}),
     signedUrlExpiresAt: input.signedUrlExpiresAt,
   };
 }
@@ -314,13 +315,21 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
           phase: "upload_response",
         })) ?? "";
 
-      const previewSignedUrl = asset.hasPreview
-        ? await signObjectUrlBestEffort(eventSink, options.objectStore, previewObjectKey(key), {
-            projectId: input.projectId,
-            assetDocumentId,
-            phase: "upload_response_preview",
-          })
-        : null;
+      const drawKey = drawObjectKey({
+        key,
+        mimeType: asset.mimeType,
+        hasPreview: asset.hasPreview,
+      });
+      const drawUrl =
+        drawKey === key
+          ? signedUrl
+          : drawKey
+            ? await signObjectUrlBestEffort(eventSink, options.objectStore, drawKey, {
+                projectId: input.projectId,
+                assetDocumentId,
+                phase: "upload_response_preview",
+              })
+            : null;
 
       const alt = input.alt?.trim() || input.filename || "Figure";
       const label = input.label?.trim() || labelFromAssetDocumentId(assetDocumentId);
@@ -332,7 +341,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         toReference({
           record: asset,
           signedUrl,
-          previewSignedUrl,
+          drawUrl,
           signedUrlExpiresAt,
           alt,
           label,
@@ -367,11 +376,17 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         return err("object_store_error", errorMessage(error, "Failed to sign object URL"));
       }
       if (!signedUrl.ok) return err("object_store_error", signedUrl.error.message);
-      let previewSignedUrl: string | undefined;
-      if (record.hasPreview) {
+      const drawKey = drawObjectKey({
+        key,
+        mimeType: record.mimeType,
+        hasPreview: record.hasPreview,
+      });
+      let drawUrl: string | undefined;
+      if (drawKey === key) drawUrl = signedUrl.value;
+      else if (drawKey) {
         // Without its preview the picture shows as a file card: still a usable answer.
-        const preview = await options.objectStore.getSignedUrl(previewObjectKey(key));
-        if (preview.ok) previewSignedUrl = preview.value;
+        const preview = await options.objectStore.getSignedUrl(drawKey);
+        if (preview.ok) drawUrl = preview.value;
       }
 
       return ok({
@@ -382,7 +397,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         name: record.name,
         sizeBytes: record.sizeBytes,
         signedUrl: signedUrl.value,
-        ...(previewSignedUrl ? { previewSignedUrl } : {}),
+        ...(drawUrl ? { drawUrl } : {}),
         signedUrlExpiresAt: options.signedUrlExpiresAt(),
       });
     },

@@ -639,8 +639,11 @@ export type ContextReadBinaryResponse = {
   path: string;
   /** Short-lived URL of the stored file, for download; clients must not persist it. */
   url: string;
-  /** Short-lived URL of the browser-drawable preview, when the server made one. */
-  previewUrl?: string;
+  /**
+   * Short-lived URL of what to draw for an image: the server's preview, or the original when
+   * browsers draw it. Absent when nothing can be drawn: the client shows the file card.
+   */
+  drawUrl?: string;
   fileType: DocumentFileType;
   mimeType: string;
   sizeBytes: number | null;
@@ -658,7 +661,7 @@ export const contextReadResponseSchema = z.discriminatedUnion("kind", [
     kind: z.literal("binary"),
     path: z.string(),
     url: z.string().min(1),
-    previewUrl: z.string().min(1).optional(),
+    drawUrl: z.string().min(1).optional(),
     fileType: z.enum(["docx", "image", "pdf", "binary"]),
     mimeType: z.string(),
     sizeBytes: z.number().nullable(),
@@ -912,11 +915,11 @@ export type GetFigureSignedUrlResponse = {
   /** Short-lived URL of the original: what Download serves. Do not persist in Yjs. */
   signedUrl: string;
   /**
-   * Short-lived URL of the browser-drawable preview the server made of an image
-   * browsers can't draw (TIFF, HEIC, ...). Absent when the original draws as it is, and when
-   * no preview could be made, which shows the file card.
+   * Short-lived URL of what to draw: the server's preview of an image browsers can't draw
+   * (TIFF, HEIC, ...), or the original when browsers draw it. Absent when nothing can be
+   * drawn, which shows the file card.
    */
-  previewSignedUrl?: string;
+  drawUrl?: string;
   signedUrlExpiresAt: string;
 };
 

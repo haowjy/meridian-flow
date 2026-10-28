@@ -103,11 +103,13 @@ function ContextViewerContent({
           footer={imageViewerFooter({ url: binary.url, name: tab.name })}
         >
           <ImageViewer
+            key={`${tab.scheme}:${tab.path}`}
             url={binary.url}
-            previewUrl={binary.previewUrl}
+            drawUrl={binary.drawUrl}
             name={tab.name}
             mimeType={binary.mimeType}
             sizeBytes={binary.sizeBytes}
+            refresh={read.refetch}
           />
         </ReadOnlyViewerFrame>
       ) : null;
