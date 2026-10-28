@@ -10,7 +10,7 @@
 /// <reference path="./heic-decode.d.ts" />
 import { decode as decodeBmp } from "bmp-ts";
 import decodeHeic from "heic-decode";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import {
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
@@ -35,7 +35,13 @@ const BROWSER_DRAWABLE = new Set([
   "image/svg+xml",
 ]);
 
-type RawPixels = { data: Uint8Array | Uint8ClampedArray; width: number; height: number };
+type RawPixels = {
+  data: Uint8Array | Uint8ClampedArray;
+  width: number;
+  height: number;
+  /** The decoder's alpha channel means nothing (BMP writes 0 for 24-bit pixels). */
+  ignoreAlpha?: boolean;
+};
 
 async function decodeRaw(mime: string, bytes: Uint8Array): Promise<RawPixels | null> {
   if (mime === "image/heic" || mime === "image/heif" || mime === "image/heic-sequence") {
@@ -46,9 +52,14 @@ async function decodeRaw(mime: string, bytes: Uint8Array): Promise<RawPixels | n
     const image = decodeBmp(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), {
       toRGBA: true,
     });
-    return { data: image.data, width: image.width, height: image.height };
+    return { data: image.data, width: image.width, height: image.height, ignoreAlpha: true };
   }
   return null;
+}
+
+function fromRaw(raw: RawPixels): Sharp {
+  const image = sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: 4 } });
+  return raw.ignoreAlpha ? image.removeAlpha() : image;
 }
 
 /**
@@ -62,7 +73,7 @@ export async function makeImagePreview(bytes: Uint8Array): Promise<Uint8Array | 
   const raw = await decodeRaw(mime, bytes);
   if (raw && raw.width * raw.height > MAX_INPUT_PIXELS) return null;
   const pipeline = raw
-    ? sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: 4 } })
+    ? fromRaw(raw)
     : sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();
   return pipeline
     .resize({
