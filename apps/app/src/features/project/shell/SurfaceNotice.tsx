@@ -35,16 +35,21 @@ const NoticeSlotsContext = createContext<NoticeSlots | null>(null);
 
 /** One per project, around every surface that shows notices. */
 export function NoticeSlotsProvider({ children }: { children: ReactNode }) {
-  const holders = useRef(new Map<NoticeSurface | "corner", () => void>());
-  const phone = usePhoneShell();
-  const corner = useRef(false);
-  corner.current = phone === false;
-  const take = useCallback((surface: NoticeSurface, release: () => void) => {
-    const place = corner.current ? "corner" : surface;
-    const previous = holders.current.get(place);
-    holders.current.set(place, release);
-    previous?.();
-  }, []);
+  // Keyed by surface in both shells, so a notice claimed before the shell
+  // switched is still found: the desktop corner is one place every surface
+  // shares, a phone's places are each surface's own.
+  const holders = useRef(new Map<NoticeSurface, () => void>());
+  const shared = usePhoneShell() === false;
+  const take = useCallback(
+    (surface: NoticeSurface, release: () => void) => {
+      const held = holders.current;
+      const replaced = shared ? [...held.values()] : [held.get(surface)];
+      if (shared) held.clear();
+      held.set(surface, release);
+      for (const previous of replaced) previous?.();
+    },
+    [shared],
+  );
   const value = useMemo(() => ({ take }), [take]);
   return <NoticeSlotsContext.Provider value={value}>{children}</NoticeSlotsContext.Provider>;
 }
