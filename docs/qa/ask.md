@@ -225,3 +225,10 @@ scripts cannot interpolate the ids returned by an earlier tool call.
     child's report is `cancelled`, the asker's question is cancelled, both
     `spawn_status` read cancelled, and no lease or agent row is left. Repeat by
     trashing a No Work chat (`./mf api DELETE /api/threads/<id>`).
+15. Two requests in one batch. Script one model response with two `ask_user`
+    calls. PASS: one ask row exists, the second call's result is the refusal
+    `One request at a time…`, and the reply still ends `awaiting_answer` on the
+    first question. Then script a parent response with `ask_user({"forward":
+    "$childAsk"})` and a `thread_message` to that child. PASS: the child's
+    question stays open, the primary shows the forwarded question, and the child
+    receives the message as an ordinary queued message.

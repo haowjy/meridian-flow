@@ -14,7 +14,6 @@ const registrations = createCoreToolRegistrations({
   work: async () => null,
   ls: async () => null,
   search: async () => null,
-  ask_user: async () => null,
 });
 const policies = (name: string) =>
   registrations.find((registration) => registration.definition.name === name)?.documentText;

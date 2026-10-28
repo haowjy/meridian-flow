@@ -74,6 +74,7 @@ import {
 } from "./invalid-arguments.js";
 import { isMeridianErrorValue, renderRefusal } from "./refusal.js";
 import type {
+  RequestToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
   ThreadMessageToolHandlerContext,
@@ -330,7 +331,8 @@ function handlerContextForRegistration(
   | SpawnToolHandlerContext
   | ThreadMessageToolHandlerContext
   | ThreadReportToolHandlerContext
-  | ReturnResultToolHandlerContext {
+  | ReturnResultToolHandlerContext
+  | RequestToolHandlerContext {
   switch (registration.capability) {
     case undefined:
       return baseContext;
@@ -359,6 +361,10 @@ function handlerContextForRegistration(
         );
       }
       return { ...baseContext, returnResult: executionContext.returnResult };
+    case "request":
+      if (!executionContext.request)
+        throw new Error(`Request tool ${registration.definition.name} missing request context`);
+      return { ...baseContext, request: executionContext.request };
   }
 }
 

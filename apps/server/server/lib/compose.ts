@@ -1080,6 +1080,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       afterCommit: runAfterDrizzleCommit,
     }),
     afterCommit: runAfterDrizzleCommit,
+    askRequests: asks,
     reports: { projectRunning: reportPublisher.projectRunning, publish: reportPublisher.publish },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),

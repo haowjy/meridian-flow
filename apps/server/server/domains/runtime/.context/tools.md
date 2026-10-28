@@ -54,6 +54,16 @@ can answer with a request-bound `thread_message` or forward the question with
 nudge toward forwarding; the parent answers itself only when its own context
 already settles the question.
 
+A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
+the ask service's one creation call (`AskService.request`) opens a question or a
+forward and returns the deferred disposition, which settles the execution. The
+batch rule keys on that disposition, not on the tool: the first request in a
+provider batch defers it, and a later one, or any request beside `return_result`,
+is refused as that call's tool result while the reply continues
+(`loop/tool-dispatch.ts`, `requestBatch`). A `thread_message` to a child whose
+question the same batch forwards goes unbound: a plain message that leaves the
+question open for the writer.
+
 ## Document and cost boundaries
 
 `read` is non-mutating; `write`'s text commands mutate through agent-edit (`move` and
