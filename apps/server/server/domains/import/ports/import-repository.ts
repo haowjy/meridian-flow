@@ -42,6 +42,8 @@ export interface ImportEntrySelection {
   path: string;
   size: number;
   modifiedAt: number;
+  /** Set on a file organize extracted from another entry (a DOCX's embedded image). */
+  derivedFrom?: string;
   reasonParams?: { readReason: ImportUnreadableReason };
 }
 interface ImportEntryBase {
@@ -84,6 +86,12 @@ export interface ImportRepository {
     importId: string,
     entryIds: number[],
   ): Promise<Extract<ImportEntry, { kind: "file" }>[]>;
+  /** Adds organize-derived entries; `replaceDerived` first drops those derived from the listed entries. */
+  addDerivedEntries(
+    importId: string,
+    replaceDerived: string[],
+    entries: ImportEntry[],
+  ): Promise<void>;
   updateEntries(
     importId: string,
     patches: { id: string; patch: ImportEntryPatch }[],

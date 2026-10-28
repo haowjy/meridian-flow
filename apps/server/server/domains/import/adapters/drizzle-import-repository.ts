@@ -78,6 +78,17 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
   };
   const open = (userId: string) =>
     and(eq(imports.userId, userId), isNull(imports.acknowledgedAt), isNull(projects.deletedAt));
+  const insertEntries = async (entries: ImportEntry[]) => {
+    for (let offset = 0; offset < entries.length; offset += 1000)
+      await tx()
+        .insert(importEntries)
+        .values(
+          entries.slice(offset, offset + 1000).map(({ selection, receipt, ...entry }) => {
+            const { facts, ...columns } = receiptColumns(receipt);
+            return { ...entry, ...columns, spec: { ...selection, ...facts } };
+          }),
+        );
+  };
   return {
     async organizeTransaction(fence, run) {
       return runInDrizzleTransaction(db, async () => {
@@ -128,15 +139,19 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
     lock: (id) => read(id, true),
     async insert(record, entries) {
       await tx().insert(imports).values(record);
-      for (let offset = 0; offset < entries.length; offset += 1000)
+      await insertEntries(entries);
+    },
+    async addDerivedEntries(importId, replaceDerived, entries) {
+      if (replaceDerived.length)
         await tx()
-          .insert(importEntries)
-          .values(
-            entries.slice(offset, offset + 1000).map(({ selection, receipt, ...entry }) => {
-              const { facts, ...columns } = receiptColumns(receipt);
-              return { ...entry, ...columns, spec: { ...selection, ...facts } };
-            }),
+          .delete(importEntries)
+          .where(
+            and(
+              eq(importEntries.importId, importId),
+              inArray(sql`${importEntries.spec}->>'derivedFrom'`, replaceDerived),
+            ),
           );
+      await insertEntries(entries);
     },
     async update(id, patch) {
       await tx().update(imports).set(patch).where(eq(imports.id, id));
@@ -249,7 +264,14 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
           needsLook: sql<number>`count(*) FILTER (WHERE ${inArray(importEntries.reason, IMPORT_NEEDS_LOOK_REASONS)} OR ${importEntries.changedAfterUpload})::int`,
         })
         .from(importEntries)
-        .where(and(eq(importEntries.importId, id), ne(importEntries.kind, "folder")));
+        // Extracted images belong to their document: the writer's counts stay what they picked.
+        .where(
+          and(
+            eq(importEntries.importId, id),
+            ne(importEntries.kind, "folder"),
+            sql`${importEntries.spec}->>'derivedFrom' IS NULL`,
+          ),
+        );
       await tx().update(imports).set({ counts }).where(eq(imports.id, id));
       return counts as ImportCounts;
     },

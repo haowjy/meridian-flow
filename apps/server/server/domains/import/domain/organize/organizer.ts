@@ -308,8 +308,13 @@ export function createImportOrganizer(deps: OrganizerDeps) {
   async function organize(claim: OrganizeClaim, signal: AbortSignal): Promise<number> {
     let record = await deps.repository.read(claim.importId);
     if (record?.state !== "organizing") return 0;
+    if (!record.projectId) throw new Error("Import project is unavailable");
     const entries = await deps.repository.entries(record.id);
-    const prepared = await prepareImportEntries(deps, { importId: record.id, entries });
+    const prepared = await prepareImportEntries(deps, {
+      importId: record.id,
+      projectId: record.projectId,
+      entries,
+    });
     if (prepared.patches.length) {
       const applied = await deps.repository.organizeTransaction(claim, async (locked) => {
         const now = await deps.repository.now();
@@ -318,6 +323,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         )
           throw new Error("Prepared import object key is too old");
         await deps.repository.updateEntries(locked.id, prepared.patches);
+        await deps.repository.addDerivedEntries(locked.id, prepared.reconverted, prepared.images);
       });
       if (applied.kind !== "committed") return 0;
     }

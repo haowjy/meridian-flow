@@ -83,6 +83,8 @@ export async function planSelection(
       root.kind === "folder" &&
       (manifest.unreadable ?? []).some((item) => item.rootId === root.rootId && item.path === "");
     const folders = new Map<string, { id: string | null }>();
+    // A file root has no folders of its own, but a DOCX's extracted images sit in one beside it.
+    if (root.kind === "file") folders.set("", { id: destinationId });
     if (marker) {
       folders.set("", { id: destinationId });
       for (const area of marker.areas.keys()) folders.set(area, { id: null });
@@ -117,8 +119,8 @@ export async function planSelection(
       nodes.push(node);
       return node;
     };
-    if (root.kind === "folder" && !unreadableRoot) {
-      makeFolder("");
+    if (!unreadableRoot) {
+      if (root.kind === "folder") makeFolder("");
       for (const entry of [...manifest.folders, ...manifest.entries].filter(
         (item) => item.rootId === root.rootId,
       )) {
@@ -137,7 +139,8 @@ export async function planSelection(
     for (const entry of manifest.entries
       .filter((entry) => entry.rootId === root.rootId)
       .sort((a, b) => codePointOrder(a.path, b.path))) {
-      const filename = root.kind === "file" ? root.name : (entry.path.split("/").at(-1) ?? "");
+      const filename =
+        root.kind === "file" && !entry.path ? root.name : (entry.path.split("/").at(-1) ?? "");
       const skip =
         entry.size > IMPORT_ADMISSION.fileBytes
           ? "too_large"
@@ -150,11 +153,7 @@ export async function planSelection(
         ? entry.path.slice(0, entry.path.lastIndexOf("/"))
         : "";
       const folderNote = [parentPath, typed.name].filter(Boolean).join("/");
-      if (
-        root.kind === "folder" &&
-        (typed.kind === "note" || typed.kind === "docx") &&
-        folders.has(folderNote)
-      ) {
+      if ((typed.kind === "note" || typed.kind === "docx") && folders.has(folderNote)) {
         parentPath = folderNote;
       }
       nodes.push({
@@ -162,7 +161,7 @@ export async function planSelection(
         ...(marker?.areas.get(entry.path.split("/")[0])
           ? { area: marker.areas.get(entry.path.split("/")[0]) }
           : {}),
-        parentId: root.kind === "folder" ? makeFolder(skip ? "" : parentPath).id : destinationId,
+        parentId: makeFolder(skip ? "" : parentPath).id,
         rootId: root.rootId,
         entryId: entry.entryId,
         path: entry.path,
