@@ -14,6 +14,8 @@ import type {
 } from "../ports/model.js";
 import {
   blockHashesForDoc,
+  blockIdentityForItem,
+  fullHashForItemId,
   getBlockHash,
   getBlockItemId,
   getTopLevelXmlBlocks,
@@ -143,6 +145,7 @@ function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
     ref: toRef(element),
     id: getBlockItemId(element),
     hash: hashes[index],
+    fullHash: fullHashForItemId(blockIdentityForItem(doc, getBlockItemId(element))),
     node: root.child(index),
   }));
 }

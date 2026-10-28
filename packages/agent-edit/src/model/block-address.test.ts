@@ -4,6 +4,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { toDocHandle } from "../handles.js";
+import { hashLocateContext, locateBlockByHash } from "../resolver/hash-locator.js";
 import {
   bindBlockOrigins,
   blockHashesForDoc,
@@ -40,6 +41,13 @@ describe("seeded block addresses", () => {
     expect(localHash.length).toBeGreaterThan(4);
     expect(lookupBlockHash(draft, seededHash)).toMatchObject({ ok: true, block: seeded });
     expect(lookupBlockHash(draft, localHash)).toMatchObject({ ok: true, block: local });
+
+    // The resolver resolves the rendered (origin-aware) hash and a longer prefix of it.
+    const model = yProsemirrorModel(buildDocumentSchema());
+    const ctx = hashLocateContext(model, model.projectBlocks(toDocHandle(draft)));
+    for (const hash of [seededHash, fullHashForItemId(live).slice(0, seededHash.length + 2)]) {
+      expect(locateBlockByHash(ctx, hash)).toMatchObject({ ok: true, index: 0 });
+    }
   });
 });
 

@@ -129,5 +129,7 @@ export interface ProjectedBlock {
   id: CanonicalBlockIdentity;
   /** Display hash, unique among the projected blocks and origin-aware. */
   hash: string;
+  /** Immutable full hash behind `hash`, origin-aware; what a held hash prefix resolves against. */
+  fullHash: string;
   node: Block;
 }
