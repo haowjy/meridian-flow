@@ -17,3 +17,12 @@ behind: it ran on that call's disposable view and room copy. A stronger all-plan
 merge path is deferred until an adapter has a concrete failure-prone operation
 that the current preflight cannot protect. Do not add a parallel transaction
 planner without that producer.
+
+## One projection per write plan
+
+A write projects its planning document in `planWrite` and again when it snapshots
+the before-state (`snapshotBlocks(planDoc)`), with nothing changing the document in
+between. Sharing one projection needs `projected` on `WritePlan` and
+`PreparedEdit.plan`, plus a path for the `{ blocks }` create, which has no plan
+projection. Take it when profiling shows edit latency matters; reads, echoes and
+observations already share their projections.

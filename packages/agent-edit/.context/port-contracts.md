@@ -104,8 +104,11 @@ hosts cannot disagree; the package imports no server or infrastructure code.
 
 The model port makes document and block handles opaque to the kernel. It owns
 identity lookup, visible text, structural mutation, inline replacement, and
-`projectBlocks`: every top-level block as `{ ref, id, hash, node }`, built in one
-walk so the four always describe the same block. Serialization is the codec's
+`projectBlocks`: every top-level block as `{ ref, id, hash, fullHash, node }`, built
+in one walk so they always describe the same block. `id` is the local CRDT item, used for
+mutation and provenance; `hash` and `fullHash` come from the block's origin identity, which
+differs from `id` for a Work-draft block seeded from live, so hash lookup matches `fullHash`
+and never rebuilds a hash from `id`. Serialization is the codec's
 (`serializeBlocks` records shown links; `serializeBlockBodies` does not); each
 caller composes what it uses from one projection. Projecting runs y-prosemirror's
 repair on the document it is given (an unbuildable element is deleted and left out,
