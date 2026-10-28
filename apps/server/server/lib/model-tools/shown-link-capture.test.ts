@@ -176,6 +176,8 @@ async function harness(
             hash: entry.slice(0, entry.indexOf("|")),
             body,
             destinationFree: body,
+            text: body,
+            verbatim: false,
             links: (options.search?.links ?? searchLinks)[index] ?? [],
           };
         }),
