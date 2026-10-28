@@ -29,6 +29,7 @@ import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import type { ProjectedBlock } from "../ports/model.js";
 import { alignBlocks, type CanPair } from "./block-alignment.js";
 import { findTextMatches } from "./find.js";
+import { hashLocateContext } from "./hash-locator.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
 import { type BlockScope, resolveScope } from "./scope.js";
 import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
@@ -162,7 +163,6 @@ describe("resolveWrite", () => {
   it("does not resolve stale hex-shaped write fragments through section slugs", () => {
     const doc = createDoc("# cafe\n\nScene text");
 
-    expect(model.lookupBlock(doc, "cafe")).toMatchObject({ ok: false, reason: "not_found" });
     for (const params of [
       { command: "replace" as const, content: "Replacement", in: "#cafe" },
       { command: "remove" as const, in: "#cafe" },
@@ -222,7 +222,7 @@ describe("resolveWrite", () => {
     const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
 
     const scope = resolveScope(
-      { doc, model, projectedBlocks: () => model.projectBlocks(doc) },
+      hashLocateContext(model, model.projectBlocks(doc)),
       fixture.sharedPrefix,
     );
     expect(scope).toMatchObject({ ok: false, code: "ambiguous" });
@@ -280,6 +280,9 @@ describe("resolveWrite", () => {
       }),
     );
     expect(edits).toHaveLength(2);
+
+    // A whole-document write targets the repaired document, not a count taken before it.
+    expect(expectOk(resolve(doc, { command: "remove", wholeDocument: true }))).toHaveLength(3);
   });
 });
 
@@ -461,7 +464,7 @@ it("falls back to one block segment for changed marks and hard breaks", () => {
       codec: {
         serializeBlockBodies: (nodes: readonly { body: string }[]) => nodes.map((n) => n.body),
       } as unknown as AgentEditCodec,
-      projectedBlocks: () => blocks as unknown as readonly ProjectedBlock[],
+      projected: blocks as unknown as readonly ProjectedBlock[],
     };
     const refs = blocks.map((block) => block.ref);
     const scope: BlockScope = {

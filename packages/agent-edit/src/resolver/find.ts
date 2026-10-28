@@ -8,7 +8,7 @@ import type { BlockScope } from "./scope.js";
 export interface FindContext {
   codec: AgentEditCodec;
   /** The one projection of the document being resolved against. */
-  projectedBlocks(): readonly ProjectedBlock[];
+  projected: readonly ProjectedBlock[];
 }
 
 export interface FindMatch {
@@ -93,9 +93,7 @@ export function serializePmBlockBody(
 
 function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
   // A scope is a contiguous run of top-level blocks starting at `startIndex`.
-  const selected = ctx
-    .projectedBlocks()
-    .slice(scope.startIndex, scope.startIndex + scope.blocks.length);
+  const selected = ctx.projected.slice(scope.startIndex, scope.startIndex + scope.blocks.length);
   const bodies = ctx.codec.serializeBlockBodies(selected.map((block) => block.node));
   let cursor = 0;
   return selected.map((block, bodyIndex) => {
