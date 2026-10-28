@@ -150,8 +150,8 @@ export type MarkdownDocumentEngine = {
   /** The create's own step for an empty create: the document's authority, empty. */
   initializeEmptyDocument(documentId: DocumentId): Promise<void>;
   /**
-   * Explicit repair of a living document whose authority is absent (an old anomaly), from its
-   * stored projection. A no-op when any checkpoint or update exists; refuses a removed one.
+   * Explicit repair of a living document whose authority is absent (an old anomaly): it is
+   * seeded as an empty document. A no-op when any checkpoint or update exists; refuses a removed one.
    */
   repairDocumentAuthority(documentId: DocumentId): Promise<void>;
   /** Writes only a document with no state yet; otherwise a no-op. Takes fresh writes only. */
@@ -445,14 +445,9 @@ export function createMarkdownDocumentEngine(
    * The one initializer both materialization callers share: the create's transaction and
    * explicit repair. Rooms recover after the boundary that makes the state durable.
    */
-  async function initializeAuthority(
-    documentId: DocumentId,
-    blocks: readonly PMNode[],
-  ): Promise<void> {
+  async function initializeAuthority(documentId: DocumentId): Promise<void> {
     const doc = createCollabYDoc({ gc: false });
     try {
-      if (blocks.length > 0)
-        deps.model.insertBlocks(toDocHandle(doc), null, { blocks: [...blocks] });
       const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
         documentId,
         Y.encodeStateAsUpdate(doc),
@@ -469,7 +464,7 @@ export function createMarkdownDocumentEngine(
     if (!(await deps.initialDocumentSeeds.lacksAuthority(documentId))) return;
     // Nothing else holds the document's text: it is an empty document, not the empty
     // paragraph a parse would give.
-    await initializeAuthority(documentId, []);
+    await initializeAuthority(documentId);
   }
 
   const engine: MarkdownDocumentEngine = {
@@ -535,7 +530,7 @@ export function createMarkdownDocumentEngine(
 
     setMarkdown,
 
-    initializeEmptyDocument: (documentId) => initializeAuthority(documentId, []),
+    initializeEmptyDocument: initializeAuthority,
 
     repairDocumentAuthority,
 

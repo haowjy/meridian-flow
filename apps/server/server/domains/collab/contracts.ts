@@ -283,8 +283,8 @@ export type MarkdownDocumentStore = LinkBinder & {
   /** The create's own step for an empty create: its authority, empty, in its transaction. */
   initializeEmptyDocument(documentId: DocumentId): Promise<void>;
   /**
-   * Explicit repair of a living document whose authority is absent, from its stored
-   * projection; a no-op when it has authority. Called only on an explicit touch.
+   * Explicit repair of a living document whose authority is absent: it is
+   * seeded as an empty document; a no-op when it has authority. Called only on an explicit touch.
    */
   repairDocumentAuthority(documentId: DocumentId): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
@@ -496,7 +496,7 @@ export type DraftPeerShadowAccess = {
    * Stored grep text for those of `documentIds` whose text matches what this reader sees: the
    * derived outputs are current, no active draft stands between a draft reader and the live
    * text, and the reply has staged no writes of its own (they leave no draft row, so only the
-   * reply's room says the projection is behind its view). Documents left out need a read.
+   * reply's room says the derivation is behind its view). Documents left out need a read.
    */
   readStoredGrepTexts(
     input: {

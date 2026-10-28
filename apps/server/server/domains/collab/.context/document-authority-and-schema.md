@@ -37,7 +37,7 @@ the first checkpoint. Two kinds of caller reach it: the create's own
 transaction (live create, a branch's new hidden row, bootstrap and seeds
 through `seedFromMarkdown`, or `initializeEmptyDocument` for an empty create),
 and explicit repair of a living document whose authority is absent
-(`repairDocumentAuthority`, from its stored projection with links unbound).
+(`repairDocumentAuthority`, seeded as an empty document).
 Repair runs only on an explicit touch: the occupant `create-placement` returns,
 a joined hidden candidate before its draft seeds, live overwrite and the held
 live lease, and Hocuspocus room admission before its first generation read.

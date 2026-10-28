@@ -27,7 +27,7 @@ import { requiredLiterals } from "./required-literals.js";
 export { GrepStopped } from "./match-pool.js";
 
 /** How many passages one document contributes before the count speaks for the rest. */
-export const PASSAGE_CAP = 3;
+const PASSAGE_CAP = 3;
 
 /**
  * A compiled pattern. Matching methods run off the event loop and reject with `GrepStopped` when
@@ -121,24 +121,19 @@ export async function grepBlocks(
   // Offsets into the plain text map back to the markdown only for blocks that are returned.
   const matches = found.map(([index, from, to]): GrepPassage => {
     const block = blocks[index] as GrepBlock;
-    // A code file's text is the file as stored, so offsets are text offsets.
-    const view = block.verbatim
-      ? verbatimView(block.text)
-      : markdownTextView(block.destinationFree);
+    const hash = block.hash ? { blockHash: block.hash } : {};
+    // A code file's text is the file as stored: offsets are text offsets, and there is no anchor.
+    if (block.verbatim) return { excerpt: block.body, ...hash, term: block.text.slice(from, to) };
+    const view = markdownTextView(block.destinationFree);
     const start = view.start[from] ?? 0;
     const end = view.end[Math.max(to, from + 1) - 1] ?? start;
-    const anchor = block.verbatim ? null : locate(block, { start, end });
+    const anchor = locate(block, { start, end });
     return {
       excerpt: block.body,
-      ...(block.hash ? { blockHash: block.hash } : {}),
+      ...hash,
       ...(anchor ? { anchor } : {}),
       term: view.text.slice(from, to),
     };
   });
   return { matches, blocks: found.map(([index]) => index) };
-}
-
-function verbatimView(text: string): ReturnType<typeof markdownTextView> {
-  const offsets = Array.from(text, (_, index) => index);
-  return { text, start: offsets, end: offsets.map((offset) => offset + 1) };
 }

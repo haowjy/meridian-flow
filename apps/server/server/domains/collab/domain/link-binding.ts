@@ -130,8 +130,7 @@ export interface LinkBinderDeps {
 /**
  * Content parsed with every link unbound (`ref` null, href as written), in the shape its
  * filetype stores: one code block for a code file. Static seeds take it when nothing in it
- * is a link; repair takes it as a stored projection's best reading, since binding mints
- * ahead refs in a root transaction that a repair's caller may already be inside.
+ * is a link.
  */
 function createUnboundParser(deps: { codec: MarkupCodec; schema: Schema }) {
   return (markdown: string, filetype: string | null) => {
