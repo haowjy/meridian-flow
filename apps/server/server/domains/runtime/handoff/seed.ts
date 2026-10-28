@@ -1,6 +1,6 @@
 /** Durable seed completion and the frozen handoff-card/system-update projection. */
 import type { HandoffBriefProps } from "@meridian/contracts/components";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { Turn } from "@meridian/contracts/threads";
 import {
   continuesFromLine,

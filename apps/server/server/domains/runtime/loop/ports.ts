@@ -34,6 +34,7 @@ export type ContextPart = { source: string; text: string };
 
 export type MessageBody =
   | ControlBody
+  | { kind: "ask_resolved"; askId: string }
   | { kind: "text"; text: string }
   | { kind: "context"; parts: ContextPart[] }
   | { kind: "work_context_refresh" };

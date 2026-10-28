@@ -13,13 +13,3 @@ export const DEFAULT_ACCOUNT_APPEARANCE: AccountAppearancePreferences = {
   theme: "ink-jade",
   statsForNerds: false,
 };
-export interface ProjectPreferences {
-  autoResume: { enabled: boolean; timeoutMs: number };
-}
-export const DEFAULT_PROJECT_PREFERENCES: ProjectPreferences = {
-  autoResume: { enabled: true, timeoutMs: 270_000 },
-};
-export type UpdateProjectPreferencesRequest = Partial<ProjectPreferences>;
-export interface ProjectPreferencesResponse {
-  preferences: ProjectPreferences;
-}

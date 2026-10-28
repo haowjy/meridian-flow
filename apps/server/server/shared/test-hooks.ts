@@ -52,6 +52,10 @@ const TEST_HOOK_POINTS = [
   "draft.append.afterCommit",
   /** A draft rewrite wrote its checkpoint; the transaction has not committed. */
   "draft.rewrite.beforeCommit",
+  /** The ask row exists as pending, before the asking turn settles and publishes it. */
+  "ask.pending",
+  /** An answer, result block, completed asking turn, and continuation committed together. */
+  "ask.answer.afterCommit",
 ] as const;
 export type TestHookPoint = (typeof TEST_HOOK_POINTS)[number];
 

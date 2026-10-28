@@ -1,7 +1,7 @@
 /** Memoized composer lifecycle: drafts and typing do not follow transcript frames. */
 import type { Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { memo, type ReactNode, type Ref } from "react";
+import { memo, type ReactNode, type Ref, useCallback, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import type { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import {
@@ -15,6 +15,7 @@ import {
   useCanOpenChatReference,
   useOpenChatDocument,
 } from "@/features/project/context/open-chat-document";
+import { useAskTakeover } from "./ask/useAskTakeover";
 import { AnchoredCards } from "./ChatCards";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { DraftDock } from "./DraftDock";
@@ -72,6 +73,17 @@ function ChatComposerComponent({
   onStop,
 }: ChatComposerProps) {
   const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
+  const composer = useRef<ComposerHandle | null>(null);
+  const composerRef = useCallback(
+    (handle: ComposerHandle | null) => {
+      composer.current = handle;
+      if (typeof ref === "function") ref(handle);
+      else if (ref) ref.current = handle;
+    },
+    [ref],
+  );
+  // While an ask is open it takes the box's place; nothing runs, so Stop is not offered.
+  const takeover = useAskTakeover(threadId, agentName, composer);
   const dock = useDraftDock({ threadId, generating, active });
   const openReferenceDocument = useOpenChatDocument(projectId);
   const canOpenReference = useCanOpenChatReference();
@@ -88,7 +100,8 @@ function ChatComposerComponent({
         initialDraft={draft.initialDraft}
         onDraftChange={draft.updateDraft}
         onOpenReference={onOpenReference}
-        ref={ref}
+        ref={composerRef}
+        takeover={takeover}
         variant="pinned"
         fileDropActive={fileDropActive}
         attached={

@@ -14,10 +14,11 @@ import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock, parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { AssistantTurnActions } from "./AssistantTurnActions";
+import { AskReceipt } from "./ask/AskReceipt";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { blockRenderKey } from "./block-render-key";
 import { AnchoredCards } from "./ChatCards";
-import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
+import { CustomBlockRenderer } from "./CustomBlockRenderer";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
@@ -59,7 +60,6 @@ export type AssistantTurnProps = {
   continuesResponse?: boolean;
   /** A Retry's new reply before the server has it: nothing to read or act on yet. */
   standIn?: boolean;
-  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
 };
@@ -75,7 +75,6 @@ function AssistantTurnComponent({
   movedPast = false,
   continuesResponse = false,
   standIn = false,
-  onRespondToInterrupt,
   changeTrail,
   navigateToChange,
 }: AssistantTurnProps) {
@@ -99,14 +98,10 @@ function AssistantTurnComponent({
     >
       <div className="flex flex-col gap-[var(--chat-space-block)]">
         {items.map((item) => (
-          <TurnItemView
-            key={itemRenderKey(item)}
-            item={item}
-            threadId={resolvedThreadId}
-            turnStatus={turn.status}
-            onRespondToInterrupt={onRespondToInterrupt}
-          />
+          <TurnItemView key={itemRenderKey(item)} item={item} threadId={resolvedThreadId} />
         ))}
+        {/* Deliveries under an asking reply arrived after its question, so they follow its receipt. */}
+        <AskReceipt threadId={resolvedThreadId} turnId={turn.id} />
         {deliveries.length ? (
           <div data-turn-item-kind="delivery">
             <DeliveryEventRows groups={deliveries} />
@@ -209,13 +204,9 @@ function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft
 const TurnItemView = memo(function TurnItemView({
   item,
   threadId,
-  turnStatus,
-  onRespondToInterrupt,
 }: {
   item: ViewItem;
   threadId: string;
-  turnStatus: Turn["status"];
-  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
 }) {
   const digest = useMemo(
     () => (item.kind === "process" ? thinkingDigest(item.digest) : null),
@@ -277,12 +268,7 @@ const TurnItemView = memo(function TurnItemView({
 
   return (
     <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind="artifact">
-      <ArtifactItem
-        item={item}
-        threadId={threadId}
-        turnStatus={turnStatus}
-        onRespondToInterrupt={onRespondToInterrupt}
-      />
+      <ArtifactItem item={item} threadId={threadId} />
     </div>
   );
 });
@@ -339,13 +325,9 @@ AssistantTurn.displayName = "AssistantTurn";
 function ArtifactItem({
   item,
   threadId,
-  turnStatus,
-  onRespondToInterrupt,
 }: {
   item: Extract<ViewItem, { kind: "artifact" }>;
   threadId: string;
-  turnStatus: Turn["status"];
-  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
 }) {
   const { block, direct: directResult } = item;
   if (isImageBlock(block)) {
@@ -354,15 +336,7 @@ function ArtifactItem({
     return <ImageBlock content={content} />;
   }
   if (block.blockType === "custom") {
-    return (
-      <CustomBlockRenderer
-        block={block}
-        threadId={threadId}
-        turnStatus={turnStatus}
-        onRespondToInterrupt={onRespondToInterrupt}
-        directResult={directResult}
-      />
-    );
+    return <CustomBlockRenderer block={block} threadId={threadId} directResult={directResult} />;
   }
   return <TurnBlockStep block={block} body={item.text} />;
 }

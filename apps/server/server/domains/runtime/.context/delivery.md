@@ -209,12 +209,23 @@ does not start a run. `wakeIfRunnable` rereads after release and setup
 cancellation; the periodic sweep is the durable backstop, and an empty reread
 must not spin.
 
+An open ask blocks ordinary selection and prefix materialization. A writer send
+still follows the ordinary mid-run admission path: its complete turn, rich blocks,
+inbox row, attachments and admission identity commit together, while run state
+keeps the bubble queued and no request adopts it. Resolution replaces that
+barrier with one internal `ask_resolved` inbox row, which reserves the next run
+start and adopts eligible queued messages only up to the first write-mode switch.
+The continuation yields at that switch; the following run applies it before
+adopting later messages. The row carries no public control body and materializes
+no transcript turn. Delivery rechecks this eligibility under the thread lock;
+SQL wake discovery only avoids wasted starts.
+
 `UserTurnAdmission` is the writer fence under the thread lock. Its sequence is
 **validate → record → enqueue**: replay/fingerprint identity is settled first,
 then the writer turn, inbox message, activated-skill metadata, provenance,
 admission ledger, upload consumption, and document attachments commit together.
-Archiving the bound Work does not freeze its chats: sends, retries, and
-interrupt answers remain admissible.
+Archiving the bound Work does not freeze its chats: sends, retries, and ask
+answers remain admissible.
 The writer turn remains visible and is never tagged as an inbox delivery. With a
 live assistant binding and no queued write-mode switch it joins that reply
 (`metadata.delivery: "steer"`); otherwise (idle, or behind a queued switch) it is

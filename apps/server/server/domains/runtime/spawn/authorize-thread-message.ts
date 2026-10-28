@@ -5,7 +5,7 @@
  * which prevents a wait cycle on an ancestor. Resolves the model-facing `ref` inside
  * the caller's project; the internal id never crosses the tool boundary.
  */
-import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { parseThreadRef } from "@meridian/contracts/threads";

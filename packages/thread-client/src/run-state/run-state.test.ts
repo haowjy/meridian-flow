@@ -92,18 +92,18 @@ describe("message folds", () => {
       answer: null,
     });
     expect(isBusy(view)).toBe(false);
-    expect(waitingWriterMessages(view)).toEqual([]);
+    expect(waitingWriterMessages(view, [])).toEqual([]);
     expect(stopRequest(view, "r").mine).toEqual([]);
   });
 
   it("shows awaiting messages in the tray only while the start is blocked", () => {
     // Risk: a message owed under a usage block hidden from the tray, or shown when it is not stuck.
     const items = [message("m1", 1, "awaiting_run"), message("m2", 2, "waiting")];
-    expect(waitingWriterMessages(viewOf(record("1999", { items }))).map((i) => i.id)).toEqual([
+    expect(waitingWriterMessages(viewOf(record("1999", { items })), []).map((i) => i.id)).toEqual([
       "m2",
     ]);
     const blocked = record("2999", { items, blocked: { reason: "credits_exhausted" } });
-    expect(waitingWriterMessages(viewOf(blocked)).map((i) => i.id)).toEqual(["m1", "m2"]);
+    expect(waitingWriterMessages(viewOf(blocked), []).map((i) => i.id)).toEqual(["m1", "m2"]);
 
     // The same record answers the app's notice and `./mf`'s guards: blocked messages, and owed.
     expect(usageBlockedMessages(viewOf(blocked)).map((i) => i.id)).toEqual(["m1", "m2"]);
@@ -174,7 +174,7 @@ describe("message folds", () => {
         items: [message("m2", 2), message("m3", 3), message("m4", 4)],
       }),
     );
-    expect(waitingWriterMessages(later).map((i) => i.id)).toEqual(["m3", "m4"]);
+    expect(waitingWriterMessages(later, []).map((i) => i.id)).toEqual(["m3", "m4"]);
     // A failed request shows them again, still queued.
     const failed = addIntent(later, {
       kind: "handBack",
@@ -183,7 +183,7 @@ describe("message folds", () => {
       failed: true,
       answer: null,
     });
-    expect(waitingWriterMessages(failed).map((i) => i.id)).toEqual(["m2", "m3", "m4"]);
+    expect(waitingWriterMessages(failed, []).map((i) => i.id)).toEqual(["m2", "m3", "m4"]);
     // The answer retires it once the record is at or past the answer.
     const answered = answerIntent(later, "handBack", "req", "3999");
     expect(hiddenWriterTurns(answered).size).toBe(2);

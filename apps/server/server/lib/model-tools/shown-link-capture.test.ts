@@ -688,13 +688,16 @@ const rows: Array<{
         {
           thread,
           responseId: crypto.randomUUID(),
-          state: { threadId: thread.id, currentTurn: turn, allBlocks: [] },
+          threadId: thread.id,
+          currentTurn: turn,
+          allBlocks: [],
           lease: {},
-          interruptSession: {},
-          interruptAutoResume: {},
           treeBudget: {},
           blockSeqRef: { value: 0 },
           allTurns: [],
+          planningBlockIds: [],
+          replyMutations: [],
+          credited: { ids: new Set(), fingerprints: new Set() },
         } as never,
       ).catch((error: Error) => error.message);
       check(dispatched, "dispatch failed").toBe("journal append failed");
