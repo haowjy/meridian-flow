@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Dump observation_frontiers joined to their source turn_blocks.
-# Run from a checkout whose DATABASE_URL is already the worktree database
-# (direnv, or `eval "$(pnpm exec tsx tools/dev/print-worktree-env.ts)"`).
+# Run from a checkout whose DATABASE_URL is already the worktree database:
+# `eval "$(pnpm -s db:env)"` exports it and PGPASSWORD.
 # Optional $1: a thread UUID, or a room_key prefix (`live:` / `draft:`).
 set -euo pipefail
 

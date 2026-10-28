@@ -9,7 +9,7 @@ import {
   type StreamEvent,
 } from "../../apps/server/server/domains/runtime/gateway/index.js";
 
-import { loadRepoEnv } from "./load-env.js";
+import { applyDevEnvToProcess } from "../../tools/dev/lib/dev-env.js";
 
 export interface SmokeServer {
   baseUrl: string;
@@ -195,7 +195,7 @@ function createRequestHandler(state: {
 }
 
 export async function startSmokeServer(options?: { port?: number }): Promise<SmokeServer> {
-  loadRepoEnv();
+  applyDevEnvToProcess();
 
   const { gateway, cleanup } = await createGatewayFromEnv({
     MODEL_PROVIDER: process.env.MODEL_PROVIDER,

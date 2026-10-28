@@ -7,8 +7,12 @@ that span more than one script.
 
 `DEV_DATABASES` is the single registry. Main `.env` values are loaded through
 the shared environment helpers, and linked worktrees rewrite registered URLs to
-an idempotent worktree database. Non-interactive shells need the same
-`applyDevEnvToProcess` path as `.envrc`; failure to derive a scoped database is
+an idempotent worktree database. No direnv or shell hook exports
+repo values: every dev entry point calls `applyDevEnvToProcess`, which fills unset
+variables from the checkout's `.env.local`, then the main `.env`, so the caller's
+environment wins. With no `.env` and `DATABASE_URL` set (CI, deploy) it overrides
+nothing but `LOG_DIR`. `pnpm -s db:env` prints only `DATABASE_URL` and
+`PGPASSWORD` for `psql`. Failure to derive a scoped database is
 loud, never a fallback.
 
 `db:migrate` and `db:apply-functions` resolve the checkout the same way and

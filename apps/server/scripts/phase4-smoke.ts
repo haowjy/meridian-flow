@@ -1,16 +1,11 @@
-import { loadEnvFile } from "node:process";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb, documentMarkdownProjections, documentYjsUpdates } from "@meridian/database";
 import { eq } from "drizzle-orm";
+import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
 import { cookieAuthHeaders, mintWorkOsDevSession } from "./workos-dev-session.js";
 import { waitForHocuspocusMarkdown } from "./yjs-smoke-helpers.js";
 
-try {
-  loadEnvFile("../../.env");
-} catch {}
-try {
-  loadEnvFile(".env");
-} catch {}
+applyDevEnvToProcess();
 
 const serverUrl = process.env.SMOKE_SERVER_URL;
 const databaseUrl = process.env.DATABASE_URL;
