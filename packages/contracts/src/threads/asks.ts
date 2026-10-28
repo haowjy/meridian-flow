@@ -99,6 +99,12 @@ export type AskPayload = QuestionAskPayload | PermissionAskPayload;
 export type AskKind = z.infer<typeof askContentSchema>["kind"];
 export type AskResolution = z.infer<typeof askResolutionSchema>;
 export type AskStatus = z.infer<typeof askLifecycleSchema>["status"];
+
+/**
+ * Where a resolved ask's continuation stands; null while the ask is live. `admitted`
+ * is still owed (a forwarded ask's relay); `done` and `cancelled` are final.
+ */
+export type AskContinuationState = "pending" | "admitted" | "done" | "cancelled";
 export type ThreadAsk = z.infer<typeof threadAskSchema>;
 
 export const askAnswerSchema = z.discriminatedUnion("kind", [

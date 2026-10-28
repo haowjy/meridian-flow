@@ -330,10 +330,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       await deps.fileAccessChanges.publish({ workId: id });
       return unarchived;
     },
-    async softDelete(id: WorkId) {
+    async softDelete(id: WorkId, endThreads) {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
-        const lockedTree = await lockWorkThreadTree(db, id);
+        const lockedTree = await lockWorkThreadTree(db, id, { beforeLock: endThreads });
         const before = await findWorkById(id);
         if (lockedTree.lifecycle === "missing" || lockedTree.lifecycle === "deleted" || !before) {
           return { before, after: before, threadIds: [] };

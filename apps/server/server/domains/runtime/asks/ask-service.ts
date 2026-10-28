@@ -1,9 +1,10 @@
 /**
  * Durable ask resolution, split into claim, tool-result, and continuation owners.
- * Every resolution that continues writes one `ask_resolved` inbox row, the
- * continuation's only identity; a parent's foreground answer marks it `direct`.
- * Permission asks extend the typed tool-result plan with savepoint execution.
- * No path changes the ask-first claim and thread-lock ordering.
+ * A resolution that continues sets the ask's continuation `pending` and writes one
+ * `ask_resolved` inbox row, the wake hint that admission follows; a parent's
+ * foreground answer marks it `direct`. Permission asks extend the typed
+ * tool-result plan with savepoint execution. Every path claims ask rows before
+ * any thread lock.
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -16,7 +17,12 @@ import type {
 } from "@meridian/contracts/threads";
 import { testHook } from "../../../shared/test-hooks.js";
 import { askToolResult, threadAsk } from "../../threads/domain/ask.js";
-import type { LiveEventWriter, StoredAsk, ThreadRepositories } from "../../threads/index.js";
+import type {
+  ClaimedAsk,
+  LiveEventWriter,
+  StoredAsk,
+  ThreadRepositories,
+} from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { AskResolvedBody } from "../loop/ports.js";
@@ -79,9 +85,12 @@ export interface AskService {
     relayFor?: string;
   }): Promise<AskAnswerResult>;
   expireDue(now?: Date, limit?: number): Promise<number>;
-  cancelOpen(threadId: ThreadId, askId: string): Promise<AskAnswerResult>;
-  /** Joins a thread lifecycle transaction; claims the ask before its thread lock. */
-  cancelForThreadLifecycle(threadId: ThreadId): Promise<void>;
+  /**
+   * Records an ask a lineage cancellation claimed: a live one's cancelled tool result, or
+   * an `ask.updated` that wakes anything waiting on its continuation. Call under the ask's
+   * thread lock.
+   */
+  recordCancelled(claimed: ClaimedAsk): Promise<void>;
 }
 
 function questionResolution(
@@ -115,10 +124,9 @@ export function createAskService(deps: {
   async function claim(input: {
     askId: string;
     threadId: ThreadId;
-    status: "answered" | "expired" | "cancelled";
+    status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
-    claimLive?: boolean;
   }): Promise<AskClaim> {
     const existing = await deps.repos.asks.findById(input.askId);
     if (!existing || existing.threadId !== input.threadId)
@@ -130,20 +138,13 @@ export function createAskService(deps: {
     )
       return { kind: "finished", result: { ok: true, ask: threadAsk(existing) } };
 
-    const claimed = input.claimLive
-      ? await deps.repos.asks.resolveLive({
-          id: input.askId,
-          status: "cancelled",
-          resolution: input.resolution,
-          resolvedAt: new Date(),
-        })
-      : await deps.repos.asks.resolveOpen({
-          id: input.askId,
-          status: input.status,
-          resolution: input.resolution,
-          submissionId: input.submissionId,
-          resolvedAt: new Date(),
-        });
+    const claimed = await deps.repos.asks.resolveOpen({
+      id: input.askId,
+      status: input.status,
+      resolution: input.resolution,
+      submissionId: input.submissionId,
+      resolvedAt: new Date(),
+    });
     if (claimed) return { kind: "claimed", ask: claimed };
 
     const current = await deps.repos.asks.findById(input.askId);
@@ -249,13 +250,15 @@ export function createAskService(deps: {
   async function resolve(input: {
     askId: string;
     threadId: ThreadId;
-    status: "answered" | "expired" | "cancelled";
+    status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
-    claimLive?: boolean;
     continuation?: AskContinuationPlan;
   }): Promise<AskAnswerResult> {
     return deps.repos.transaction(async () => {
+      // A relay also writes the parent's forwarded ask: both rows lock before anything else.
+      if (input.continuation?.relayFor)
+        await deps.repos.asks.lockByIds([input.askId, input.continuation.relayFor]);
       const claimed = await claim(input);
       if (claimed.kind === "finished") return claimed.result;
       const plan = resolutionPlan(
@@ -264,12 +267,7 @@ export function createAskService(deps: {
       );
       // The conditional ask claim precedes the thread lock for every resolver.
       return deps.delivery.withThreadLock(input.threadId, async (producer) => {
-        await writeToolResult({
-          ask: claimed.ask,
-          threadId: input.threadId,
-          plan,
-          claimLive: input.claimLive,
-        });
+        await writeToolResult({ ask: claimed.ask, threadId: input.threadId, plan });
         if (plan.kind === "resume")
           await continueResolution(producer, claimed.ask, plan.continuation);
         return { ok: true, ask: threadAsk(claimed.ask) };
@@ -349,27 +347,20 @@ export function createAskService(deps: {
       }
       return expired;
     },
-    cancelOpen(threadId, askId) {
-      return resolve({
-        askId,
-        threadId,
-        status: "cancelled",
-        resolution: { kind: "cancelled" },
-      });
-    },
-    async cancelForThreadLifecycle(threadId) {
-      const asks = await deps.repos.asks.listLiveByLineage(threadId);
-      for (const ask of asks) {
-        const result = await resolve({
-          askId: ask.id,
+    async recordCancelled({ ask, wasLive }) {
+      if (wasLive) {
+        await writeToolResult({
+          ask,
           threadId: ask.threadId,
-          status: "cancelled",
-          resolution: { kind: "cancelled" },
+          plan: { kind: "cancel", toolResult: { kind: "from_resolution" } },
           claimLive: true,
         });
-        if (!result.ok && result.code !== "ask_not_open")
-          throw new Error(`Could not cancel live ask ${ask.id}`);
+        return;
       }
+      await persistAndAppendEvents(deps, ask.threadId, async () => ({
+        result: undefined,
+        events: [{ type: "ask.updated" as const, ask: threadAsk(ask) }],
+      }));
     },
   };
 }

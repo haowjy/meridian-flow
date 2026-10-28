@@ -570,7 +570,12 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     runChild,
     relayForwardedAnswer: (input) =>
       relayForwardedAnswer(
-        { repos: deps.relayRepos, eventWriter: deps.eventWriter, runChild },
+        {
+          repos: deps.relayRepos,
+          eventWriter: deps.eventWriter,
+          delivery: deps.delivery,
+          runChild,
+        },
         input,
       ),
   };

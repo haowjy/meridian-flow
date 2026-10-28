@@ -1005,7 +1005,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
     readActivity,
-    delivery,
     async watchThread(threadId, onChange) {
       const { unsubscribe } = await threadEventHub.catchupAndSubscribe(
         threadId,
@@ -1069,14 +1068,18 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       refreshSubagentActivity(threadId);
     },
     lineage: createLineageCancellation({
+      transaction: ports.threadRepos.transaction,
       threads: ports.threadRepos.threads,
       runClaim,
       delivery,
       asks,
-      openAsks: ports.threadRepos.asks,
+      askRows: ports.threadRepos.asks,
+      reports: ports.threadRepos.executionReports,
       publisher: reportPublisher,
       refreshActivity: refreshSubagentActivity,
+      afterCommit: runAfterDrizzleCommit,
     }),
+    afterCommit: runAfterDrizzleCommit,
     reports: { projectRunning: reportPublisher.projectRunning, publish: reportPublisher.publish },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),

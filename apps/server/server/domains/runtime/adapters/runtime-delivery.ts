@@ -836,9 +836,14 @@ export function createDeliveryAdapter(
             throw new DOMException("The operation was aborted", "AbortError");
         },
         prepare: (selection) => prepare(selection),
-        hasPreparationFailure: (prepared) => !prepared || prepared.preparationFailure !== undefined,
+        hasPreparationFailure: (prepared) =>
+          !prepared || "retire" in prepared || prepared.preparationFailure !== undefined,
         commit: async (_selection, work, prepared) => {
           if (!prepared) return null;
+          if ("retire" in prepared) {
+            await ack(lease.threadId, [...prepared.retire]);
+            return null;
+          }
           await prepared.persist?.();
           await ack(lease.threadId, work.ids);
           await ack(lease.threadId, prepared.completedControlIds ?? []);

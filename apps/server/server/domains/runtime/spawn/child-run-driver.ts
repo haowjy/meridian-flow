@@ -1,7 +1,7 @@
 /**
  * Child-run coordination: admit, drive, and read saved terminal truth. A resolved
- * ask's continuation is found by its ask id, whoever runs it; the run session
- * publishes every report.
+ * ask's continuation is read from the ask itself, whoever runs it; the run
+ * session publishes every report.
  */
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -20,9 +20,7 @@ import {
 } from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { NoPendingWakeError, type PreparedRun, type RunTurnPort } from "../loop/run-turn-port.js";
-import type { RuntimeDelivery } from "../loop/runtime-delivery.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
-import { readAskContinuation } from "./ask-continuation.js";
 import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 
 export interface ChildDriveInput {
@@ -56,8 +54,6 @@ export interface ChildRunDriverDeps {
   backgroundTasks: DetachedWorkTracker;
   orchestrator: RunTurnPort;
   repos: Pick<ThreadRepositories, "executionReports" | "asks">;
-  /** Pending rows show whether an ask's continuation obligation is still open. */
-  delivery: Pick<RuntimeDelivery, "selectPending">;
   /** Calls `onChange` after each committed event on the thread, in any process. */
   watchThread(threadId: ThreadId, onChange: () => void): Promise<() => void>;
   eventWriter: LiveEventWriter;
@@ -139,7 +135,8 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     askId: string,
   ): Promise<SpawnResult> {
     const childThreadId = prepared.child.id as ThreadId;
-    if ((await continuation(childThreadId, askId)).kind === "outstanding") {
+    const owed = (await deps.repos.asks.findById(askId))?.continuation;
+    if (owed === "pending" || owed === "admitted") {
       let handle: PreparedRun | null = null;
       try {
         handle = await deps.orchestrator.prepare({
@@ -164,18 +161,10 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     return awaitContinuation(childThreadId, askId, prepared.signal);
   }
 
-  const continuation = (childThreadId: ThreadId, askId: string) =>
-    readAskContinuation(
-      { delivery: deps.delivery, executionReports: deps.repos.executionReports },
-      childThreadId,
-      askId,
-    );
-
   /**
-   * Waits outside any lock until the ask's obligation is done: its row acknowledged
-   * and its latest continuation terminal (a forwarded child that crashed mid-relay
-   * reruns, and its stale-settled first attempt is not the answer), or its row
-   * dropped before any continuation ran, which a cancellation does.
+   * Waits outside any lock until the ask's continuation is `done` and the run it last
+   * admitted is terminal (a forwarded child that crashed mid-relay is admitted again, and
+   * its stale-settled first attempt is not the answer), or until it is `cancelled`.
    */
   async function awaitContinuation(
     childThreadId: ThreadId,
@@ -187,8 +176,8 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     try {
       for (;;) {
         signal?.throwIfAborted();
-        const state = await continuation(childThreadId, askId);
-        if (state.kind === "cancelled")
+        const ask = await deps.repos.asks.findById(askId);
+        if (!ask || ask.continuation === "cancelled")
           return {
             status: "error",
             error: meridianErrorFromSystem("spawn_cancelled", "Child run was cancelled"),
@@ -196,7 +185,14 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
             partial: true,
             reason: "cancelled",
           };
-        if (state.kind === "admitted" && state.report.outcome) return savedResult(state.report);
+        const report =
+          ask.continuation === "done" && ask.continuationTurnId
+            ? await deps.repos.executionReports.findByExecution(
+                childThreadId,
+                ask.continuationTurnId,
+              )
+            : null;
+        if (report?.outcome) return savedResult(report);
         await changes.next(signal);
       }
     } finally {

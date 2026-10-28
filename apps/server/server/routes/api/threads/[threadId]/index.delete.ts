@@ -1,7 +1,7 @@
 /**
- * DELETE /api/threads/[threadId]: soft-deletes an owned thread (idempotent), then ends its run
- * and subagent subtree. Depends on the auth gate, thread ownership, thread repositories, and the
- * turn runner.
+ * DELETE /api/threads/[threadId]: soft-deletes an owned thread (idempotent) and, in the same
+ * transaction, ends its run and subagent subtree. Depends on the auth gate, thread ownership,
+ * thread repositories, and the turn runner.
  */
 import { defineEventHandler, getRouterParam, setResponseStatus } from "nitro/h3";
 import { deleteOwnedThreadToTrash } from "../../../../domains/threads/index.js";
@@ -13,18 +13,17 @@ export default defineEventHandler(async (event) => {
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
 
-  const thread = await deleteOwnedThreadToTrash(
+  await deleteOwnedThreadToTrash(
     {
       repos: threadRepos,
       projects: projectRepo,
       workContextNotices,
       workAuthorityResolver: app.workAuthorityResolver,
       works: app.workRepo,
-      cancelAsks: (id) => app.asks.cancelForThreadLifecycle(id),
+      stopThreads: app.stopThreads,
     },
     threadId,
     userId,
   );
-  await app.stopThreads([thread.id]);
   setResponseStatus(event, 204);
 });

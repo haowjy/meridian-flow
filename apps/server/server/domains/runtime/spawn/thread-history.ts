@@ -47,6 +47,7 @@ import {
   type SavedReportView,
 } from "./history-result.js";
 import { resolveReadableThread, threadReadError } from "./resolve-readable-thread.js";
+import { withReportOutcomes } from "./saved-report-outcome.js";
 
 const INCLUDES = [
   "routine_calls",
@@ -183,11 +184,14 @@ function reportView(report: SavedExecutionReport, lines?: number): SavedReportVi
 }
 
 async function reportsByTurn(
-  repos: Pick<ThreadRepositories, "executionReports">,
+  repos: Pick<ThreadRepositories, "executionReports" | "asks">,
   target: Thread,
 ): Promise<ReadonlyMap<string, SavedExecutionReport>> {
   if (target.kind !== "subagent") return new Map();
-  const reports = await repos.executionReports.listFinishedByChild(target.id as ThreadId);
+  const reports = await withReportOutcomes(
+    repos.asks,
+    await repos.executionReports.listFinishedByChild(target.id as ThreadId),
+  );
   return new Map(
     reports.flatMap((report) =>
       report.terminalTurnId ? [[report.terminalTurnId as string, report] as const] : [],

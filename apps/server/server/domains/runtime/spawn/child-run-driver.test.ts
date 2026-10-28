@@ -15,7 +15,6 @@ function saved(
     childThreadId: "child-id",
     terminalTurnId: null,
     executionTurnId: "execution-id",
-    continuationAskId: null,
     admittedAt: "2026-01-01T00:00:00.000Z",
     handle: "p3",
     origin: "spawn",
@@ -37,6 +36,7 @@ function saved(
     terminalAt: "2026-01-01T00:00:00.000Z",
     publication: "published",
     publishedAt: "2026-01-01T00:00:00.000Z",
+    noticeWithdrawn: false,
     ...overrides,
   };
 }

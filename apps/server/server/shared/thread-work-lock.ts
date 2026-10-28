@@ -1,13 +1,36 @@
 /** Canonical mutation locks: thread (NO KEY UPDATE), then primary/target Works by id. */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { threads, threadWorks } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { asks, threads, threadWorks } from "@meridian/database/schema";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 import {
   type LockedWorkLifecycle,
   lockWorkLifecycle,
   lockWorksInIdOrder,
 } from "./work-lifecycle-lock.js";
+
+/**
+ * Locks, in id order, the asks these threads hold: live asks and owed continuations. Ask rows
+ * lock before thread locks everywhere (answers claim the ask first), so the thread lock takes
+ * its own asks first and an ask transition under it never waits on an ask row.
+ */
+export async function lockThreadAsks(db: DrizzleDb, threadIds: readonly ThreadId[]) {
+  if (threadIds.length === 0) return;
+  await currentDrizzleDb(db)
+    .select({ id: asks.id })
+    .from(asks)
+    .where(
+      and(
+        inArray(asks.threadId, [...threadIds]),
+        or(
+          inArray(asks.status, ["pending", "open"]),
+          inArray(asks.continuation, ["pending", "admitted"]),
+        ),
+      ),
+    )
+    .orderBy(asc(asks.id))
+    .for("update");
+}
 
 /** Caller owns the transaction. FK KEY SHARE from Work notices must remain compatible. */
 export async function lockThreadForMutation(db: DrizzleDb, threadId: ThreadId) {
@@ -71,7 +94,11 @@ async function findWorkThreadTree(
 export async function lockWorkThreadTree(
   db: DrizzleDb,
   workId: WorkId,
-  options: { includeMarked?: boolean } = {},
+  options: {
+    includeMarked?: boolean;
+    /** Runs on the tree before its rows lock; a thread that joins meanwhile reads as `changed`. */
+    beforeLock?: (threadIds: readonly ThreadId[]) => Promise<void>;
+  } = {},
 ): Promise<{
   lifecycle: LockedWorkLifecycle;
   threadIds: ThreadId[];
@@ -79,6 +106,7 @@ export async function lockWorkThreadTree(
   changed: boolean;
 }> {
   const initial = await findWorkThreadTree(db, workId, options.includeMarked ?? false);
+  await options.beforeLock?.(initial.threadIds);
   for (const threadId of initial.threadIds) await lockThreadForMutation(db, threadId);
   const lifecycle = await lockWorkLifecycle(db, workId);
   const current = await findWorkThreadTree(db, workId, options.includeMarked ?? false);

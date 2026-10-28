@@ -2,6 +2,7 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
+  AskContinuationState,
   AskKind,
   AskPayload,
   AskResolution,
@@ -35,11 +36,21 @@ export type StoredAsk = {
   resolution: AskResolution | null;
   submissionId: string | null;
   relay: AskRelay | null;
+  /** Null while live; see `AskContinuationState`. */
+  continuation: AskContinuationState | null;
+  /** The latest turn admitted to continue this ask. */
+  continuationTurnId: TurnId | null;
   createdAt: Date;
   resolvedAt: Date | null;
 };
 
-export type CreateAskInput = Omit<StoredAsk, "id" | "createdAt" | "resolvedAt" | "relay"> & {
+/** An ask a lineage cancellation claimed, and whether it was still live (its tool result is owed). */
+export type ClaimedAsk = { ask: StoredAsk; wasLive: boolean };
+
+export type CreateAskInput = Omit<
+  StoredAsk,
+  "id" | "createdAt" | "resolvedAt" | "relay" | "continuation" | "continuationTurnId"
+> & {
   id?: string;
   resolvedAt?: Date | null;
   relay?: AskRelay | null;
@@ -52,13 +63,45 @@ export interface AskRepository {
   findLiveByTurnForUpdate(turnId: TurnId): Promise<StoredAsk | null>;
   findOpenByThread(threadId: ThreadId): Promise<StoredAsk | null>;
   findLiveByThread(threadId: ThreadId): Promise<StoredAsk | null>;
-  /** Live asks owned by this thread and every descendant, parent before child. */
-  listLiveByLineage(threadId: ThreadId): Promise<StoredAsk[]>;
+  /** Row-locks, in id order, the asks these threads hold: live asks and owed continuations. */
+  lockHeldByThreads(threadIds: readonly ThreadId[]): Promise<void>;
+  /** Row-locks these asks in id order. */
+  lockByIds(ids: readonly string[]): Promise<void>;
+  /**
+   * One lineage cancellation's claim, in one statement: every live ask and owed continuation of
+   * `threadIds`, and of `owner` the live asks (only `turnId`'s, when given) and the owed
+   * continuations not admitted by the execution it spares. Live asks become cancelled; every
+   * claimed continuation becomes `cancelled`.
+   */
+  claimLineage(input: {
+    threadIds: readonly ThreadId[];
+    owner: { threadId: ThreadId; turnId: TurnId | null; spare: string | null } | null;
+  }): Promise<ClaimedAsk[]>;
+  /**
+   * Admits a resolved ask's continuation at `turnId`: a plain question's is then `done`, a
+   * forwarded one's `admitted` until its relay completes (a crashed relay is admitted again).
+   * Null when nothing is owed.
+   */
+  admitContinuation(input: {
+    id: string;
+    turnId: TurnId;
+    forwarded: boolean;
+  }): Promise<StoredAsk | null>;
   listByThread(threadId: ThreadId): Promise<StoredAsk[]>;
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
   listByTurnIds(turnIds: readonly TurnId[]): Promise<StoredAsk[]>;
   recordRelayOnce(id: string, relay: AskRelay): Promise<StoredAsk>;
-  completeRelay(id: string, result: JsonValue): Promise<StoredAsk>;
+  /**
+   * Writes the relay's result and ends the obligation (`done`), only for the turn admitted to
+   * relay it; null when that admission was cancelled. `late` records a relay that went as an
+   * ordinary message because the child's question had already resolved.
+   */
+  completeRelay(input: {
+    id: string;
+    turnId: TurnId;
+    result: JsonValue;
+    late?: Omit<AskRelay, "result">;
+  }): Promise<StoredAsk | null>;
   openPending(id: string, turnId: TurnId, deadline: Date): Promise<StoredAsk | null>;
   cancelPendingByTurn(turnId: TurnId): Promise<StoredAsk[]>;
   resolveOpen(input: {

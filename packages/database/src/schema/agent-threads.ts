@@ -580,7 +580,6 @@ export const threadExecutionReports = pgTable(
       .$type<TurnId>()
       .primaryKey()
       .references(() => turns.id, { onDelete: "cascade" }),
-    continuationAskId: uuid("continuation_ask_id"),
     terminalTurnId: uuid("terminal_turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
@@ -614,6 +613,8 @@ export const threadExecutionReports = pgTable(
     costMillicredits: bigint("cost_millicredits", { mode: "number" }),
     terminalAt: timestamp("terminal_at", { withTimezone: true }),
     publication: text("publication").notNull().default("none"),
+    /** A lineage cancellation ended this run: publication projects the card but enqueues no notice. */
+    noticeWithdrawn: boolean("notice_withdrawn").notNull().default(false),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
@@ -626,9 +627,6 @@ export const threadExecutionReports = pgTable(
     index("thread_execution_reports_pending")
       .on(table.executionTurnId)
       .where(sql`${table.publication} = 'pending'`),
-    index("thread_execution_reports_continuation_ask")
-      .on(table.continuationAskId)
-      .where(sql`${table.continuationAskId} IS NOT NULL`),
     check(
       "thread_execution_reports_origin_valid",
       sql`${table.origin} IN ('spawn','message','thread_run')`,

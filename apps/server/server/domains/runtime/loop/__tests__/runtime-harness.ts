@@ -172,12 +172,15 @@ export function createRuntimeHarness(
     },
     // No subagent threads: nothing below a run to cancel or publish.
     lineage: {
-      async targets() {
+      async cancel(_threadId, decide) {
+        const { result, execution } = await decide();
+        return { result, execution, targets: [] };
+      },
+      async endSubtree() {
         return [];
       },
-      async withdraw() {},
-      async settle() {},
     },
+    afterCommit: (task) => task(),
     reports: {
       async projectRunning() {},
       async publish() {},

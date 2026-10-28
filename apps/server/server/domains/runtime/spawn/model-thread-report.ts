@@ -20,7 +20,10 @@ const reportUnavailableCopy = (ref: string, notified = true) =>
 export async function readModelThreadReport(input: {
   callerThreadId: ThreadId;
   ref: string;
-  repos: Pick<ThreadRepositories, "threads" | "turns" | "executionReports" | "readSnapshot">;
+  repos: Pick<
+    ThreadRepositories,
+    "threads" | "turns" | "executionReports" | "asks" | "readSnapshot"
+  >;
 }): Promise<ModelThreadReportResult> {
   const report = await readThreadReport(input);
   if ("ok" in report) return report;

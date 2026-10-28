@@ -284,7 +284,6 @@ async function fixture(
     repos: { executionReports: repos.executionReports, asks: repos.asks },
     eventWriter,
     readActivity,
-    delivery,
     // No test here waits on an answered ask's continuation.
     watchThread: async () => () => {},
     eventSink,

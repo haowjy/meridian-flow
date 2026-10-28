@@ -258,6 +258,8 @@ export interface OrchestratorDeps {
   onRunSettled?: (threadId: ThreadId) => void;
   /** Ends a subtree across processes: Stop, turn cancel, and a child's terminal run. */
   lineage: LineageCancellation;
+  /** Runs after the ambient transaction commits, or at once outside one. */
+  afterCommit(task: () => void): void;
   /** Child invocation cards: running at admission, the saved report when the run ends. */
   reports: RunSessionReports;
   agentRevisions: Pick<
@@ -486,7 +488,6 @@ async function admitRunExecution(
     ...correlation,
     agentSlug: input.executionReport?.agentSlug ?? asking?.agentSlug ?? null,
     name: input.executionReport?.name ?? asking?.name ?? null,
-    continuationAskId: continuation?.ask.id ?? null,
   });
   if (asking?.origin === "spawn")
     await deps.repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: "running" });
@@ -600,19 +601,22 @@ async function runDrainTurn(
       const continuationAsk = continuationControl
         ? await deps.repos.asks.findById(continuationControl.askId)
         : null;
+      if (continuationControl && continuationAsk?.threadId !== input.threadId)
+        throw new Error("Ask continuation is not backed by this thread's ask");
+      // A hint whose ask owes nothing more (a redelivered row) retires without a turn;
+      // a continuation's state never returns to owed, so the read needs no lock.
       if (
-        continuationControl &&
-        (!continuationAsk ||
-          continuationAsk.threadId !== input.threadId ||
-          continuationAsk.status === "open" ||
-          continuationAsk.status === "pending")
+        control &&
+        continuationAsk &&
+        continuationAsk.continuation !== "pending" &&
+        continuationAsk.continuation !== "admitted"
       )
-        throw new Error("Ask continuation is not backed by a resolved ask");
+        return { retire: [control.id] };
       const continuation: AskContinuation | null =
         continuationControl && continuationAsk
           ? { ask: continuationAsk, delivery: continuationControl.delivery }
           : null;
-      // A forwarded ask's obligation is its relay, so its row outlives admission.
+      // A forwarded ask's obligation is its relay, so its hint outlives admission.
       const relayAsk = continuation && isForwardedAsk(continuation.ask) ? continuation.ask : null;
       const requestControl =
         control?.body.kind === "ask_resolved"
@@ -860,6 +864,16 @@ async function runDrainTurn(
                     reservedTurn.id,
                     preflight.evidence,
                   );
+                // The thread lock already holds the ask's row.
+                if (
+                  continuation &&
+                  !(await deps.repos.asks.admitContinuation({
+                    id: continuation.ask.id,
+                    turnId: reservedTurn.id,
+                    forwarded: !!relayAsk,
+                  }))
+                )
+                  throw new Error("Ask continuation is no longer owed");
                 if (selection.outstanding.length > 0 || input.replyTurnId || continuation)
                   await admitRunExecution(
                     deps,
@@ -906,18 +920,15 @@ async function runDrainTurn(
         throw new Error("Request context is unavailable after preparation failed");
       // The relay rewrites the forwarded ask's tool result before the first request.
       const relayed = !!relayAsk;
-      if (relayAsk && relayControlId) {
+      if (relayAsk && relayControlId)
         await deps.childRunCoordinator.relayForwardedAnswer({
           parentThread: setup.thread,
           parentTurnId: reservedTurn.id,
           ask: relayAsk,
+          controlId: relayControlId,
           budget: treeBudget,
           signal: input.signal,
         });
-        await deps.delivery.withThreadLock(input.threadId, (producer) =>
-          producer.acknowledge([relayControlId]),
-        );
-      }
       return executeLoop({
         deps,
         input,

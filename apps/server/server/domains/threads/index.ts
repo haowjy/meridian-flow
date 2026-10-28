@@ -162,7 +162,13 @@ export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
-export type { AskRelay, AskRepository, CreateAskInput, StoredAsk } from "./ports/ask-repository.js";
+export type {
+  AskRelay,
+  AskRepository,
+  ClaimedAsk,
+  CreateAskInput,
+  StoredAsk,
+} from "./ports/ask-repository.js";
 export type { HandoffBriefHold, HandoffBriefLauncher } from "./ports/handoff-brief-launcher.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";

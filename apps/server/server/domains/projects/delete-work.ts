@@ -24,13 +24,10 @@ export async function deleteWorkTransition(
   return runWorkLifecycleCommand(
     { transaction: deps.works.transaction, stopThreads: deps.stopThreads },
     async () => {
-      const deletion = await deps.works.softDelete(workId);
-      const { before, after } = deletion;
+      // The tree's runs and subagent lineages end in this same transaction.
+      const { before, after } = await deps.works.softDelete(workId, deps.stopThreads);
       const changed = !!after?.deletedAt && !before?.deletedAt;
-      return {
-        value: { before, after, changed },
-        threadIdsToStop: changed ? deletion.threadIds : [],
-      };
+      return { value: { before, after, changed }, threadIdsToStop: [] };
     },
   );
 }
