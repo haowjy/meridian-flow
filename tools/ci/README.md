@@ -95,7 +95,9 @@ whole hook, or `pnpm typecheck:staged` to isolate typechecking.
 ## PR body and changelog
 
 `check-pr-body.mjs` requires every template section and validates the structured
-`## Changelog` section through `pr-changelog.mjs`. `pnpm changelog` runs
+`## Changelog` section through `pr-changelog.mjs`. Locally, `pnpm check:pr-body
+[body.md]` checks a draft or the branch's open PR; it is the last step of
+`pnpm check`, which skips it before a PR exists. `pnpm changelog` runs
 `build-changelog.mjs`, which uses that same parser to build Markdown or JSON from
 PRs merged into `main`. GitHub results arrive in 50-PR pages; ranged builds stop
 once the pages pass their cutoff, while `--all` follows every page. Pass `--input
