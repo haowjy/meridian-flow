@@ -115,8 +115,8 @@ __mergedSuite("agent-chain.test.ts", () => {
 
 __mergedSuite("tool-policy.test.ts", () => {
   // Merged from apps/server/server/domains/runtime/loop/permissions/tool-policy.test.ts.
-  // ask_user is never granted while disabled (#601).
   const PRIMARY_DEFAULT = [
+    "ask_user",
     "ls",
     "read",
     "search",
@@ -141,7 +141,10 @@ __mergedSuite("tool-policy.test.ts", () => {
         "denials",
         { "disallowed-tools": ["write", "spawn", "return_result"] },
         "subagent",
-        [...PRIMARY_DEFAULT.filter((n) => n !== "write" && n !== "spawn"), "return_result"].sort(),
+        [
+          ...PRIMARY_DEFAULT.filter((n) => n !== "write" && n !== "spawn" && n !== "ask_user"),
+          "return_result",
+        ].sort(),
       ],
       [
         "a denial inside the allow-list",

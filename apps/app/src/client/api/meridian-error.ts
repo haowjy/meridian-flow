@@ -9,7 +9,7 @@
  * to read structured fields.
  */
 import { t } from "@lingui/core/macro";
-import { isMeridianError, type MeridianError } from "@meridian/contracts/interrupt";
+import { isMeridianError, type MeridianError } from "@meridian/contracts/errors";
 
 export class MeridianApiError extends Error {
   readonly code: string;

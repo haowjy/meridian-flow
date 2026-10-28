@@ -1,5 +1,5 @@
 /** Direct tool result derived only from an immutable terminal execution report. */
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { AgentReport, SavedExecutionReport, SpawnResult } from "@meridian/contracts/spawn";
 
 export function savedReportToSpawnResult(report: SavedExecutionReport): SpawnResult {

@@ -62,8 +62,7 @@ import {
   type MeridianError,
   meridianErrorFromGateway,
   meridianErrorFromSystem,
-} from "@meridian/contracts/interrupt";
-import type { ProjectPreferences } from "@meridian/contracts/preferences";
+} from "@meridian/contracts/errors";
 import type {
   DocumentRemovalRecord,
   DocumentRevisionEvidence,
@@ -144,12 +143,6 @@ import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
 import { CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
-import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
-import {
-  defaultInterruptAutoResumePolicy,
-  type InterruptAutoResumePolicy,
-  type InterruptRegistry,
-} from "./interrupts.js";
 import {
   createLocalTurn,
   currentTurnKind,
@@ -188,7 +181,7 @@ import {
   mapStreamEvent,
   toJsonValue,
 } from "./streaming.js";
-import { dispatchToolCall } from "./tool-dispatch.js";
+import { dispatchToolCall, reduceToolBatch, type ToolDispatchOutcome } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import {
   type AssembledNextTurnContext,
@@ -224,6 +217,7 @@ function errorTerminal(error: MeridianError | string, reason?: string): Terminal
 }
 
 export interface OrchestratorRepositories {
+  asks: ThreadRepositories["asks"];
   threads: ThreadRepository;
   turns: TurnRepository;
   promptBakes: ThreadRepositories["promptBakes"];
@@ -261,15 +255,9 @@ export interface OrchestratorDeps {
   >;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
-  projectPreferences: {
-    read(userId: string, projectId: string): Promise<ProjectPreferences>;
-  };
   workContext: WorkContextReader;
   billingUsage: BillingUsagePolicy;
-  /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
-  interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
-  interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
   modelRequestDebug: ModelRequestDebugStore;
@@ -428,14 +416,6 @@ function applyResponseToTurnSnapshot(turn: Turn, response: ModelResponseReceived
   };
 }
 
-async function resolveInterruptAutoResumePolicy(
-  deps: OrchestratorDeps,
-  thread: Thread,
-): Promise<InterruptAutoResumePolicy> {
-  const preferences = await deps.projectPreferences.read(thread.userId, thread.projectId);
-  return preferences.autoResume ?? defaultInterruptAutoResumePolicy();
-}
-
 async function admitRunExecution(
   deps: OrchestratorDeps,
   input: RunLoopInput,
@@ -572,6 +552,20 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
+      if (control?.body.kind === "ask_resolved") {
+        const ask = await deps.repos.asks.findById(control.body.askId);
+        if (
+          !ask ||
+          ask.threadId !== input.threadId ||
+          ask.status === "open" ||
+          ask.status === "pending"
+        )
+          throw new Error("Ask continuation is not backed by a resolved ask");
+      }
+      const requestControl =
+        control?.body.kind === "ask_resolved"
+          ? null
+          : (control as import("./next-inbox-work.js").ControlMessage | null);
       if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
@@ -587,10 +581,11 @@ async function runDrainTurn(
         },
       );
       const forgotten = new Set(forgetting.forget);
+      const deferred = new Set(selection.deferred.map((message) => message.id));
       const stays = <T extends { id: string }>(turns: readonly T[]) =>
-        turns.filter((turn) => !forgotten.has(turn.id));
+        turns.filter((turn) => !forgotten.has(turn.id) && !deferred.has(turn.id));
       const staysBlocks = (blocks: readonly Block[]) =>
-        blocks.filter((block) => !forgotten.has(block.turnId));
+        blocks.filter((block) => !forgotten.has(block.turnId) && !deferred.has(block.turnId));
       // `priorTurns` is the graph (the leaf, positions, known ids); `localTurns` the conversation.
       const { priorTurns, prevTurnId } = ctx;
       const localTurns = stays(ctx.localTurns);
@@ -663,7 +658,7 @@ async function runDrainTurn(
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
             currentTurnId: input.replyTurnId ?? reservedTurnId,
-            control,
+            control: requestControl,
             remainingIterations: Math.min(
               MAX_TURN_ITERATIONS,
               treeBudget.maxTotalTurns - treeBudget.spent.totalTurns,
@@ -772,7 +767,10 @@ async function runDrainTurn(
       return {
         value,
         turnId: reservedTurn.id,
-        completedControlIds: control?.body.kind === "compact" ? [control.id] : [],
+        completedControlIds:
+          control?.body.kind === "compact" || control?.body.kind === "ask_resolved"
+            ? [control.id]
+            : [],
         turnKind: currentTurnKind(reservedTurn),
         messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
@@ -1169,17 +1167,24 @@ async function persistToolOutcome(input: {
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  outcome: { kind: "permission_denied"; reason: string } | { kind: "notes_held" };
+  outcome:
+    | { kind: "permission_denied"; reason: string }
+    | { kind: "notes_held" }
+    | { kind: "ask_refused"; reason: string };
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const denied = input.outcome.kind === "permission_denied";
+  const denied = input.outcome.kind === "permission_denied" || input.outcome.kind === "ask_refused";
   const result: JsonObject =
     input.outcome.kind === "permission_denied"
       ? { error: "permission_denied", reason: input.outcome.reason }
-      : { refusal: "notes_step" };
+      : input.outcome.kind === "ask_refused"
+        ? { error: "ask_refused", reason: input.outcome.reason }
+        : { refusal: "notes_step" };
   const output = denied
-    ? result
+    ? input.outcome.kind === "ask_refused"
+      ? input.outcome.reason
+      : result
     : "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.";
   const extraEvents: OrchestratorEvent[] =
     input.outcome.kind === "permission_denied"
@@ -1855,7 +1860,6 @@ async function executeLoop({
     ackIds: (await deps.delivery.readPendingProjection(input.threadId)).run?.messageIds ?? [],
   };
   let executionSelector: TurnId | null = initialExecutionAdmitted ? reservedTurn.id : null;
-  let endTurnRequested = false;
   let terminalControl = false;
   // A message waits behind a queued write-mode switch: end the reply here.
   let yieldRequested = false;
@@ -2042,7 +2046,6 @@ async function executeLoop({
       allTurns.push(next);
       currentTurn = next;
       if (next.role === "assistant") carriedReservedFor = [];
-      endTurnRequested = false;
       input.onCurrentTurnChanged?.({
         id: next.id,
         kind: currentTurnKind(next),
@@ -2163,7 +2166,6 @@ async function executeLoop({
       // the run exits, so no suppression state is needed.
       let leaseCancelled = false;
       const isCancelled = () => (input.signal?.aborted ?? false) || leaseCancelled;
-      const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
       // Every cancellation/error path must persist terminal events, not just
       // return/throw, so subscribers see the turn lifecycle closure.
@@ -2179,8 +2181,8 @@ async function executeLoop({
           return yieldExit();
 
         // A cancel from another process has no local abort; the lease flag is the
-        // only signal. Read it before acting so the interrupt's next turn starts
-        // from a clean, already-released run.
+        // only signal. Read it before acting so the next admitted run starts
+        // from a clean, already-released lease.
         const status = await deps.runClaim.read(input.threadId);
         if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
         if (isCancelled()) {
@@ -2522,8 +2524,8 @@ async function executeLoop({
         }
 
         // blockSeq is the turn-scoped display order. It starts at the blocks
-        // already stored for this assistant turn and is handed to interrupt/tool
-        // collaborators so later blocks remain contiguous.
+        // already stored for this assistant turn and is handed to persistence and
+        // tool collaborators so later blocks remain contiguous.
         let blockSeq = allBlocks.filter(
           (b) => (b.turnId as string) === (currentTurn.id as string),
         ).length;
@@ -2572,12 +2574,35 @@ async function executeLoop({
               return cancelExit();
             }
 
+            const batchOutcomes: ToolDispatchOutcome[] = [];
+            const batchHasReturnResult = toolCallsFromResult.some(
+              (candidate) => candidate.name === "return_result",
+            );
+            let acceptedAsk = false;
             // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
             // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
             for (const call of toolCallsFromResult) {
               if (isCancelled()) {
                 return cancelExit();
               }
+
+              if (call.name === "ask_user" && (batchHasReturnResult || acceptedAsk)) {
+                const reason = batchHasReturnResult
+                  ? "You returned a result; there's no one left to answer."
+                  : "One question at a time: ask this after the answer arrives";
+                const refused = await persistToolOutcome({
+                  deps,
+                  threadId: input.threadId,
+                  turn: currentTurn,
+                  call,
+                  outcome: { kind: "ask_refused", reason },
+                  blockSeq,
+                });
+                blockSeq = refused.nextBlockSeq;
+                allBlocks.push(refused.block);
+                continue;
+              }
+              if (call.name === "ask_user") acceptedAsk = true;
 
               if (continuation.kind === "notes") {
                 const withinBudget = continuation.remaining > 0;
@@ -2627,24 +2652,7 @@ async function executeLoop({
               }
 
               await publishPhase("waiting");
-              const interruptState = {
-                thread,
-                threadId: input.threadId,
-                currentTurn: currentTurn,
-                autoResume: interruptAutoResume,
-                signal: input.signal,
-                blockSeqRef: { value: blockSeq },
-                allBlocks,
-              };
-              const interruptSession = createInterruptSession(
-                {
-                  interruptRegistry: deps.interruptRegistry,
-                  interruptArtifacts: deps.interruptArtifacts,
-                  persistenceDeps: deps,
-                  eventSink,
-                },
-                interruptState,
-              );
+              const blockSeqRef = { value: blockSeq };
               const dispatched = await dispatchToolCall(
                 {
                   toolExecutor: deps.toolExecutor,
@@ -2656,6 +2664,7 @@ async function executeLoop({
                   runClaim: deps.runClaim,
                   shownLinks: deps.shownLinks,
                   observationFrontiers: deps.observationFrontiers,
+                  asks: deps.repos.asks,
                 },
                 call,
                 {
@@ -2664,26 +2673,25 @@ async function executeLoop({
                   agentSlug: built.agentSlug,
                   responseId,
                   editResponseId: scope.id,
-                  state: interruptState,
-                  interruptSession,
-                  interruptAutoResume,
+                  threadId: input.threadId,
+                  currentTurn,
+                  signal: input.signal,
+                  allBlocks,
                   treeBudget,
-                  blockSeqRef: interruptState.blockSeqRef,
+                  blockSeqRef,
                   allTurns,
                   planningBlockIds,
                   credited,
                   replyMutations: scope.reply,
                 },
               );
-              currentTurn = interruptState.currentTurn;
-              blockSeq = interruptState.blockSeqRef.value;
+              blockSeq = blockSeqRef.value;
 
-              if (!dispatched.cancelled) scope.stage(dispatched);
-              if (dispatched.cancelled || isCancelled()) {
-                return cancelExit();
-              }
-              if (dispatched.endTurn === true) endTurnRequested = true;
+              if (dispatched.kind === "cancelled" || isCancelled()) return cancelExit();
+              batchOutcomes.push(dispatched);
+              if (dispatched.kind === "completed") scope.stage(dispatched);
             }
+            const batchDisposition = reduceToolBatch(batchOutcomes);
             if (isCancelled()) {
               return cancelExit();
             }
@@ -2699,7 +2707,13 @@ async function executeLoop({
               return true;
             }
 
-            if (endTurnRequested) {
+            if (batchDisposition.kind === "end") {
+              if (batchDisposition.cause === "asked") {
+                return exitRun(false, {
+                  kind: "asked",
+                  askId: batchDisposition.askId,
+                });
+              }
               // A child called return_result: the report is captured and persisted,
               // so the turn ends here instead of looping into another model round.
               // A message that landed in the exit window keeps the run going.

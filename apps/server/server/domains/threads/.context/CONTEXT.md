@@ -29,10 +29,13 @@ execution starts only after commit.
   turns remain beyond it. A subagent cannot be a derivation source.
 - `requireDerivationCutoff` cuts exactly at the named turn and never moves it
   to an earlier settled one. It refuses a turn outside the source's effective
-  transcript (`turn_not_in_transcript`), any unsettled turn (`pending`,
-  `streaming`, `waiting_interrupt`) at or before it (409 `unsettled_history`),
+  transcript (`turn_not_in_transcript`), any turn ineligible as a derivation
+  cutoff (`pending`, `streaming`, or the settled-but-unanswered
+  `awaiting_answer`) at or before it (409 `unsettled_history`),
   and a turn the UI offers no Fork or Hand off action on (400
-  `turn_not_actionable`). `complete`, `cancelled`, and `error` are settled.
+  `turn_not_actionable`). `awaiting_answer`, `complete`, `cancelled`, and
+  `error` are execution-settled; only the last three are valid derivation
+  history.
 - Public creation accepts only a primary root (`kind: "primary"`,
   `spawnDepth: 0`). `SubagentThreadFactory` is the only subagent creation
   boundary and starts children unbaked. A subagent-only or generic binding
@@ -290,7 +293,7 @@ ports rather than adapter details.
   ([delivery](../../runtime/.context/delivery.md#forgetting-a-failed-attempt)).
 - `actionRequired` is derived from the nearest assistant turn in the active
   lineage. A visible writer turn may be the head while an ancestor assistant is
-  still parked on `waiting_interrupt`; that still needs the writer's answer.
+  has settled as `awaiting_answer`; that still needs the writer's answer.
   Draft-review action-required remains an extension point.
 - `turns.origin` records authorship independently of `role` and has no column
   default: every create path sets it. Writer and assistant turns count for

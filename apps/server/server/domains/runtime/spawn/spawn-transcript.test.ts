@@ -78,7 +78,7 @@ describe("persistReturnResult", () => {
       executionReports: repos.executionReports,
     });
 
-    expect(settled.endTurn).toBe(false);
+    expect(settled.endsBatch).toBe(false);
     expect(settled.block.content).toMatchObject({
       output: "A different return_result was already accepted",
       result: { ok: false },

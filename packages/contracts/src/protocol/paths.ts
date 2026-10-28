@@ -172,9 +172,6 @@ export function apiProjectWorkDocumentDraftDiscardPath(
 }
 
 /** (user, project)-scoped UI preferences — user resolved from auth. */
-export function apiProjectPreferencesPath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/preferences`;
-}
 
 /** A chat's lineage by its first chat's id: handle and title, even when that chat is trashed. */
 export function apiProjectContextLineagePath(projectId: string, rootThreadId: string): string {

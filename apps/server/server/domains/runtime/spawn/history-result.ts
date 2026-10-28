@@ -2,7 +2,7 @@
  * `thread_history`'s structured result (D8) and the pure text rendering the
  * model reads (D10), each tool call written as the call itself (D48). Code mode would return `HistoryResult` itself.
  */
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { ExecutionReportSource, SavedOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { renderRefusal } from "../tools/refusal.js";

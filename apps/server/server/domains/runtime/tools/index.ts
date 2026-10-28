@@ -51,8 +51,6 @@ export {
 export { createToolExecutor, type ToolExecutorWithBatch } from "./tool-executor.js";
 export { createToolRegistry } from "./tool-registry.js";
 export type {
-  InterruptResponse,
-  InterruptToolHandlerContext,
   ResultEvidence,
   ToolCallInput,
   ToolExecutionContext,

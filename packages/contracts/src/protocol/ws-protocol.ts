@@ -5,7 +5,8 @@
  */
 import { z } from "zod";
 
-import { type MeridianError, meridianErrorSchema } from "../interrupt/index.js";
+import { type MeridianError, meridianErrorSchema } from "../errors/index.js";
+import { askAnswerSchema, type ThreadAsk, threadAskSchema } from "../threads/asks.js";
 import { controlBodySchema } from "../threads/control-body.js";
 import type { RunState } from "../threads/run-state.js";
 import { aiWriteModeSchema } from "../works/ai-write-mode.js";
@@ -74,25 +75,35 @@ const wsPongMessageSchema = z.object({
   type: z.literal("pong"),
 });
 
-const wsInterruptRespondMessageSchema = z.object({
-  type: z.literal("interrupt.respond"),
+const wsAskAnswerMessageSchema = z.object({
+  type: z.literal("ask.answer"),
   requestId: wsRequestIdSchema,
   threadId: z.string().min(1),
-  turnId: z.string().min(1),
-  interruptId: z.string().min(1),
-  value: z.unknown(),
+  askId: z.string().min(1),
+  submissionId: z.string().min(1),
+  answer: askAnswerSchema,
 });
 
 export const wsClientMessageSchema = z.discriminatedUnion("type", [
   wsSubscribeMessageSchema,
   wsUnsubscribeMessageSchema,
   wsPongMessageSchema,
-  wsInterruptRespondMessageSchema,
+  wsAskAnswerMessageSchema,
   wsCatalogSubscribeMessageSchema,
   wsCatalogUnsubscribeMessageSchema,
 ]);
 
 export type WsClientMessage = z.infer<typeof wsClientMessageSchema>;
+
+export type AskAnswerReply =
+  | { type: "ask.answer.ok"; requestId: string; threadId: string; ask: ThreadAsk }
+  | {
+      type: "ask.answer.error";
+      requestId: string;
+      threadId: string;
+      code: "ask_not_open" | "invalid_answer";
+      ask?: ThreadAsk;
+    };
 
 export const wsGapCauseSchema = z.enum(["replay_limit_exceeded", "server_restart"]);
 
@@ -226,6 +237,7 @@ export type WsServerMessage =
       scope: import("./context-catalog.js").CatalogScope;
       headRevision: string;
     }
+  | AskAnswerReply
   | {
       type: "error";
       kind: "error";
@@ -293,6 +305,19 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
       }),
     ]),
     headRevision: wsEventSeqSchema,
+  }),
+  z.object({
+    type: z.literal("ask.answer.ok"),
+    requestId: wsRequestIdSchema,
+    threadId: z.string().min(1),
+    ask: threadAskSchema,
+  }),
+  z.object({
+    type: z.literal("ask.answer.error"),
+    requestId: wsRequestIdSchema,
+    threadId: z.string().min(1),
+    code: z.enum(["ask_not_open", "invalid_answer"]),
+    ask: threadAskSchema.optional(),
   }),
   z.object({
     type: z.literal("error"),

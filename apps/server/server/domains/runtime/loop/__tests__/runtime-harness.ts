@@ -1,6 +1,5 @@
 /** One runtime composition: resolve ports first, then derive delivery, producer and loop. */
 
-import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/contracts/protocol";
 import {
   InMemoryTransactionOwner,
@@ -16,7 +15,6 @@ import { createContextCatalogWakeHub } from "../../../context/context-catalog-wa
 import type { NoticePort } from "../../../notices/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
-import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import { readThreadActivity } from "../../../threads/domain/thread-activity.js";
 import {
@@ -42,8 +40,6 @@ import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
-import { createNoopInterruptArtifactFlushPort } from "../interrupt-session.js";
-import { createInterruptRegistry } from "../interrupts.js";
 import type { OrchestratorDeps } from "../orchestrator.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createRunStarter } from "../run-starter.js";
@@ -96,12 +92,6 @@ export function createRuntimeHarness(
   const transactionOwner =
     "transactionOwner" in repos ? repos.transactionOwner : noTransactionOwner;
   const activeDocuments = createActiveDocumentResolver(repos);
-  const preferences = createInMemoryProjectPreferencesRepository();
-  const projectPreferences = {
-    async read(userId: string, projectId: string): Promise<ProjectPreferences> {
-      return preferences.read(userId, projectId);
-    },
-  };
 
   const creditLedger = suppliedLedger ?? createInMemoryCreditLedger();
   const gateway = overrides.gateway ?? createInertGateway();
@@ -166,11 +156,8 @@ export function createRuntimeHarness(
     ),
     accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     toolRegistry,
-    projectPreferences,
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
-    interruptArtifacts: createNoopInterruptArtifactFlushPort(),
     childRunCoordinator: noopChildRunCoordinator(),
-    interruptRegistry: createInterruptRegistry(),
     eventSink: createInMemoryEventSink(),
     wakeIfRunnable: (threadId) => wakeIfRunnable(threadId),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
@@ -441,7 +428,6 @@ export async function runtimeScenario(
         eventSink,
         threadEventHub: hub,
         projectRepo: projects,
-        interruptRegistry: harness.deps.interruptRegistry,
         contextCatalogWakeHub: createContextCatalogWakeHub(),
         threadRuntime: {
           async requireOwnedThread(id: string, owner: string) {

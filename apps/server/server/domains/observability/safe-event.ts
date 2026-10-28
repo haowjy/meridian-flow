@@ -164,8 +164,6 @@ const SAFE_MERIDIAN_ERROR_CODES = new Set([
   "credits_exhausted",
   "forbidden",
   "internal",
-  "interrupt_correlation_mismatch",
-  "interrupt_not_pending",
   "invalid_mutation",
   "invalid_operation",
   "invalid_request",

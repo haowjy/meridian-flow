@@ -16,7 +16,8 @@ export function deriveConversationErrorStatus(error: unknown): number | null {
   if (error instanceof AgentSelectionError || error instanceof SubagentDerivationError) {
     return 400;
   }
-  if (error instanceof ForkCutoffError) return error.code === "unsettled_history" ? 409 : 400;
+  if (error instanceof ForkCutoffError)
+    return error.code === "unsettled_history" || error.code === "answer_required" ? 409 : 400;
   if (error instanceof DerivedThreadConflictError || error instanceof HandoffInProgressError)
     return 409;
   return null;

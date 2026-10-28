@@ -1,6 +1,7 @@
 /** partition-turn — folds normalized delivery segments into render items: process folds, prose, reports and artifacts. */
+
+import { isArtifactRef } from "@meridian/contracts/artifacts";
 import { parseInvocationCard } from "@meridian/contracts/components";
-import { isArtifactRef } from "@meridian/contracts/interrupt";
 import { type Block, blockPlainText, type JsonValue } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue as ReportContentValue } from "@meridian/contracts/spawn";
 import { isNotesStepHeldResult } from "@meridian/contracts/threads";

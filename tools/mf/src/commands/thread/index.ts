@@ -1,12 +1,12 @@
 /** `thread`: read, drive, and follow thread sessions. */
 import type { CommandGroup } from "../../core/command";
+import { threadAnswerCommand } from "./answer";
 import { threadCancelCommand } from "./cancel";
 import { threadContextCommand } from "./context";
 import { threadCreateCommand } from "./create";
 import { threadEventsCommand } from "./events";
 import { threadListCommand } from "./list";
 import { threadQueueHandBackCommand, threadQueueSendNowCommand } from "./queue";
-import { threadRespondCommand } from "./respond";
 import { threadSendCommand } from "./send";
 import { threadStopCommand } from "./stop";
 import { threadTailCommand } from "./tail";
@@ -24,9 +24,9 @@ export const threadGroup: CommandGroup = {
     threadSendCommand,
     threadTailCommand,
     threadStopCommand,
+    threadAnswerCommand,
     threadQueueHandBackCommand,
     threadQueueSendNowCommand,
     threadCancelCommand,
-    threadRespondCommand,
   ],
 };

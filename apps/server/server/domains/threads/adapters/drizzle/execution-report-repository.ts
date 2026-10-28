@@ -1,6 +1,6 @@
 /** Durable per-execution execution reports and publication obligations. */
 
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, sql } from "drizzle-orm";

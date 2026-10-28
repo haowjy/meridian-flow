@@ -2,7 +2,7 @@
  * MeridianCopilotProvider — exposes Meridian's shared thread run controller.
  *
  * Constructs one `ThreadRunController` per `ThreadTransport` so chat surfaces
- * can submit, recover admissions, and answer interrupts without AG-UI client plumbing.
+ * can submit and recover admissions without AG-UI client plumbing.
  * The historical provider/context names stay as the app seam while the value is
  * now the direct transport controller.
  */
