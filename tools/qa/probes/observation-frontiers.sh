@@ -1,29 +1,13 @@
 #!/usr/bin/env bash
 # Dump observation_frontiers joined to their source turn_blocks.
-# Run from a checkout whose DATABASE_URL is already the worktree database:
-# `eval "$(pnpm -s db:env)"` exports it and PGPASSWORD.
+# Run from the repo root of the checkout to read; queries go through `pnpm db:psql`.
 # Optional $1: a thread UUID, or a room_key prefix (`live:` / `draft:`).
 set -euo pipefail
 
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "DATABASE_URL is not set" >&2
-  exit 2
-fi
-
 exec python3 - "${1:-}" <<'PY'
-import os, sys, urllib.parse, subprocess
+import sys, subprocess
 
 filter_arg = sys.argv[1]
-u = urllib.parse.urlparse(os.environ["DATABASE_URL"])
-env = {
-    **os.environ,
-    "PGHOST": u.hostname or "127.0.0.1",
-    "PGPORT": str(u.port or 5432),
-    "PGUSER": u.username or "postgres",
-    "PGPASSWORD": u.password or "",
-    "PGDATABASE": (u.path or "/").lstrip("/"),
-    "PGSSLMODE": "disable",
-}
 
 
 def sql_literal(value: str) -> str:
@@ -54,14 +38,7 @@ ORDER BY of.recorded_seq;
 """
 
 subprocess.run(
-    [
-        "psql", "-w",
-        "-h", env["PGHOST"], "-p", env["PGPORT"],
-        "-U", env["PGUSER"], "-d", env["PGDATABASE"],
-        "-v", "ON_ERROR_STOP=1",
-        "-c", sql,
-    ],
-    env=env,
+    ["pnpm", "-s", "db:psql", "-v", "ON_ERROR_STOP=1", "-c", sql],
     check=True,
 )
 PY

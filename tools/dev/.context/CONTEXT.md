@@ -10,10 +10,15 @@ the shared environment helpers, and linked worktrees rewrite registered URLs to
 an idempotent worktree database. No direnv or shell hook exports
 repo values: every dev entry point calls `applyDevEnvToProcess`, which fills unset
 variables from the checkout's `.env.local`, then the main `.env`, so the caller's
-environment wins. With no `.env` and `DATABASE_URL` set (CI, deploy) it overrides
-nothing but `LOG_DIR`. `pnpm -s db:env` prints only `DATABASE_URL` and
-`PGPASSWORD` for `psql`. Failure to derive a scoped database is
-loud, never a fallback.
+environment wins. When a file defines `DATABASE_URL`, the expected database is fixed (bare name
+in main, `<name>_<slug>` in a linked worktree): an incoming value naming any
+other database throws, one naming the expected database passes through, so
+reruns are idempotent. With no file defining it (CI) the incoming value is the
+base, scoped to `<name>_<slug>` in a worktree and untouched in main. Only dev
+entry paths call the loader, never a build config (server and www configs
+included), so `shared-db-server` can pass its URL verbatim. `pnpm db:psql` runs
+`psql` against the resolved URL in a child process. Failure to derive a scoped
+database is loud, never a fallback.
 
 `db:migrate` and `db:apply-functions` resolve the checkout the same way and
 refuse a registered main database unless a human passes `--allow-main-database`;

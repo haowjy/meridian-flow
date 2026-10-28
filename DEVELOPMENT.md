@@ -6,13 +6,11 @@ See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cur
 
 ## Environment
 
-Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. It then rewrites `DATABASE_URL` to a worktree-scoped database (`meridian_<slug>` on the shared `:54422` Postgres server); that derived URL wins over every source. Production gets its env from the platform and has no `.env`, so the loader changes nothing there.
+Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` or `vite dev` gets no repo env, like a direct `apps/app` run.
 
-For `psql` in a terminal, export just the local database (`DATABASE_URL` and `PGPASSWORD`, never provider or WorkOS keys):
+`DATABASE_URL` is fixed by those files: the bare name in the main checkout, `<name>_<slug>` in a linked worktree (on the shared `:54422` Postgres server). A `DATABASE_URL` in your shell that names any other database (say, left over from another checkout) is an error. Where no file defines it (CI, deploy) the shell value is the base, and a linked worktree scopes it to `<name>_<slug>`.
 
-```bash
-eval "$(pnpm -s db:env)"
-```
+For `psql`, run `pnpm db:psql [psql args…]`. It targets this checkout's database and passes `PGPASSWORD` to `psql` only, so no database URL or provider key stays in your shell.
 
 ### Toolchain
 
@@ -107,7 +105,7 @@ Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docke
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |
 | `pnpm db:studio` | Drizzle Kit Studio |
-| `pnpm -s db:env` | Print `export` lines for this checkout's `DATABASE_URL` and `PGPASSWORD` (`eval` it before `psql`) |
+| `pnpm db:psql [args…]` | Run `psql` against this checkout's database |
 | `pnpm bootstrap` | Ensure DB + migrate + apply-functions |
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
 

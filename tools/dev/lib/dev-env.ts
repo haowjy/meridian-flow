@@ -151,31 +151,23 @@ export function resolveLiveWorktreeDatabaseNames(
   return live;
 }
 
-function resolveWorktreeDatabaseUrl(repoRoot: string, baseUrl: string): string {
-  const mainEnv = loadMainEnvFile(repoRoot);
-  const mainBaseUrl = mainEnv.DATABASE_URL ?? baseUrl;
-  const baseDbName = databaseNameFromUrl(mainBaseUrl);
-
-  const identity = resolveCheckoutSessionIdentity(repoRoot);
-
-  const expectedDbName = resolveWorktreeDatabaseName(baseDbName, identity.slug);
-  return applyWorktreeDatabaseRewrite(baseUrl, expectedDbName);
-}
-
 /**
  * The one dev-env loader: fills variables that are still unset from the
  * checkout's own `.env.local`, then the main checkout's `.env` (so a worktree
  * override beats the shared file, and both lose to the caller's environment),
  * then pins `LOG_DIR` and derives the per-worktree database URL.
  *
- * With no `.env` files and `DATABASE_URL` already set (CI, deploy) the only
- * changes are `LOG_DIR` and, in a linked worktree, the database name.
+ * `DATABASE_URL`: when the files define it, the incoming value must name this
+ * checkout's database (see `assertExpectedDatabase`). With no file defining it
+ * (CI) the incoming value is the base, scoped to `<name>_<slug>` in a linked
+ * worktree.
  */
 export function applyDevEnvToProcess(
   repoRoot = resolveCurrentRepoRoot(),
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  for (const file of [readEnvFile(path.join(repoRoot, ".env.local")), loadMainEnvFile(repoRoot)]) {
+  const fileLayers = [readEnvFile(path.join(repoRoot, ".env.local")), loadMainEnvFile(repoRoot)];
+  for (const file of fileLayers) {
     for (const [key, value] of Object.entries(file)) {
       if (env[key] === undefined) env[key] = value;
     }
@@ -190,10 +182,40 @@ export function applyDevEnvToProcess(
   env.LOG_DIR = resolveDevLogDir(repoRoot, env.LOG_DIR);
 
   for (const db of DEV_DATABASES) {
-    const baseUrl = env[db.envVar];
-    if (!baseUrl) continue;
-    env[db.envVar] = resolveDatabaseUrl({ baseUrl, repoRoot });
+    const incoming = env[db.envVar];
+    if (!incoming) continue;
+    const fileUrl = fileLayers.map((file) => file[db.envVar]).find(Boolean);
+    env[db.envVar] = fileUrl
+      ? assertExpectedDatabase({ envVar: db.envVar, incoming, fileUrl, repoRoot })
+      : resolveDatabaseUrl({ baseUrl: incoming, repoRoot });
   }
+}
+
+/**
+ * When the files name the database, the expected one is fixed: the bare name in
+ * the main checkout, `<name>_<slug>` in a linked worktree. An incoming URL that
+ * names another database (a worktree's URL exported into a shell, then `cd` to
+ * main) throws rather than silently targeting it; one that already names the
+ * expected database passes through unchanged, so a second run is a no-op.
+ */
+function assertExpectedDatabase(input: {
+  envVar: string;
+  incoming: string;
+  fileUrl: string;
+  repoRoot: string;
+}): string {
+  const baseDbName = databaseNameFromUrl(input.fileUrl);
+  const expected = isMainCheckout(input.repoRoot)
+    ? baseDbName
+    : resolveWorktreeDatabaseName(baseDbName, resolveCheckoutSessionIdentity(input.repoRoot).slug);
+  const actual = databaseNameFromUrl(input.incoming);
+  if (actual === expected) return input.incoming;
+  // The fill above makes an unset shell value the files' own base URL: derive from it.
+  if (actual === baseDbName) return applyWorktreeDatabaseRewrite(input.incoming, expected);
+  throw new Error(
+    `${input.envVar} names database "${actual}" but this checkout's is "${expected}". ` +
+      `Unset ${input.envVar} in this shell (it is probably left over from another checkout).`,
+  );
 }
 
 /**
@@ -223,11 +245,14 @@ export function assertRequiredBaseUrl(db: DevDatabase, value: string | undefined
   );
 }
 
-/** Main checkout keeps the base URL; linked worktrees scope to `<baseDbName>_<slug>`. */
-export function resolveDatabaseUrl(input: { baseUrl: string; repoRoot?: string }): string {
+/** No file names the database (CI): the main checkout keeps the URL; linked worktrees scope it to `<name>_<slug>`. */
+function resolveDatabaseUrl(input: { baseUrl: string; repoRoot?: string }): string {
   const repoRoot = input.repoRoot ?? resolveCurrentRepoRoot();
   if (isMainCheckout(repoRoot)) return input.baseUrl;
-  return resolveWorktreeDatabaseUrl(repoRoot, input.baseUrl);
+  const slug = resolveCheckoutSessionIdentity(repoRoot).slug;
+  const name = databaseNameFromUrl(input.baseUrl);
+  if (name.endsWith(`_${slug}`)) return input.baseUrl; // already scoped: a rerun is a no-op
+  return applyWorktreeDatabaseRewrite(input.baseUrl, resolveWorktreeDatabaseName(name, slug));
 }
 
 export function resolveMainDatabaseNames(repoRoot: string): string[] {
