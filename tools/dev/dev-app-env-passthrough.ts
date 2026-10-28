@@ -1,12 +1,15 @@
-const APP_ENV_PASSTHROUGH_KEYS = [
-  "DATABASE_URL",
+/**
+ * Keys `pnpm dev` exports into the stack's tmux pane: what it computes
+ * (`MERIDIAN_API_ORIGIN`, `APP_DEBUG`) and the non-secret overrides a caller
+ * sets on the command line (`MODEL_PROVIDER=mock pnpm dev`) — a pane does not
+ * inherit the caller's environment when a tmux server is already running.
+ * Everything else, secrets included, reaches a service through
+ * `with-dev-env.ts`, never the command string.
+ */
+const PASSTHROUGH_KEYS = [
   "TEST_USER_ID",
-  "WORKOS_API_KEY",
   "WORKOS_CLIENT_ID",
-  "WORKOS_COOKIE_PASSWORD",
   "WORKOS_REDIRECT_URI",
-  "WORKOS_DEV_LOGIN_EMAIL",
-  "WORKOS_DEV_LOGIN_PASSWORD",
   "WORKOS_DEV_LOGIN_USER_ID",
   "WORKOS_DEV_AUTOLOGIN",
   "MERIDIAN_API_ORIGIN",
@@ -16,11 +19,10 @@ const APP_ENV_PASSTHROUGH_KEYS = [
   "MODEL_CALL_STALL_MS",
   "APP_DEBUG",
   "OBS_VERBOSE",
-  "FLOW_ANTHROPIC_API_KEY",
-  "FLOW_OPENAI_API_KEY",
-  "FLOW_DEEPSEEK_API_KEY",
-  "FLOW_OPENROUTER_API_KEY",
   "FLOW_OPENROUTER_BASE_URL",
+  "LOG_DIR",
+  "EVENT_PROVIDER",
+  "LOG_RETENTION_DAYS",
 ] as const;
 
 /** The hook controller's keys (the server's `shared/test-hook-controller.ts`), never passed to production. */
@@ -34,7 +36,7 @@ const DEV_ONLY_PASSTHROUGH_KEYS = [
 export function resolveAppEnvPassthroughKeys(env: NodeJS.ProcessEnv): string[] {
   const keys: readonly string[] =
     env.NODE_ENV === "production"
-      ? APP_ENV_PASSTHROUGH_KEYS
-      : [...APP_ENV_PASSTHROUGH_KEYS, ...DEV_ONLY_PASSTHROUGH_KEYS];
+      ? PASSTHROUGH_KEYS
+      : [...PASSTHROUGH_KEYS, ...DEV_ONLY_PASSTHROUGH_KEYS];
   return keys.filter((key) => env[key] !== undefined);
 }

@@ -1,4 +1,7 @@
 import { defineConfig } from "drizzle-kit";
+import { applyDevEnvToProcess } from "../../tools/dev/lib/dev-env";
+
+applyDevEnvToProcess();
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {

@@ -1,29 +1,29 @@
-/**
- * Reclaim managed dev sessions whose checkout directory has disappeared.
- *
- * Reads and kills only on the private `meridian-dev` server. The default server
- * holds the machine owner's shells and is never touched here, so a stack
- * started there before dev moved is stopped by `pnpm dev --stop`, not reaped.
- */
+/** Reclaim managed dev sessions whose checkout directory has disappeared. */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveSessionIdentity } from "../session-identity";
 import { runGit } from "./dev-env";
-import { DEV_TMUX_CLIENT_CWD, devTmuxArgs } from "./dev-tmux-server";
+import { devTmuxArgs } from "./dev-tmux-socket";
 import { stopOwnedProcessTree } from "./owned-process-tree";
 import { type GitWorktree, parseGitWorktreePorcelain } from "./worktree-cleanup";
 
-interface Pane {
+interface PaneIdentity {
   readonly sessionId: string;
   readonly sessionName: string;
   readonly worktreePath: string;
-  /**
-   * Absent for a dead pane, which `remain-on-exit` keeps listed: it has no
-   * process or cwd, and its PID may already belong to someone else.
-   */
-  readonly process?: { readonly pid: number; readonly cwd: string };
 }
+
+type Pane =
+  | (PaneIdentity & {
+      /** tmux keeps an exited pane without PID or cwd until the session is killed. */
+      readonly dead: true;
+    })
+  | (PaneIdentity & {
+      readonly dead: false;
+      readonly pid: number;
+      readonly cwd: string;
+    });
 
 export interface OrphanDevSession {
   readonly sessionId: string;
@@ -37,9 +37,9 @@ interface RepositoryWorktrees {
   readonly registered: ReadonlyMap<string, GitWorktree>;
 }
 
-function runTmux(args: string[]): string {
+function runTmux(args: string[], cwd: string): string {
   return execFileSync("tmux", devTmuxArgs(args), {
-    cwd: DEV_TMUX_CLIENT_CWD,
+    cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 10 * 1024 * 1024,
@@ -82,15 +82,18 @@ function within(candidate: string, root: string): boolean {
   );
 }
 
-function listPanes(): Pane[] {
+function listPanes(cwd: string): Pane[] {
   let output: string;
   try {
-    output = runTmux([
-      "list-panes",
-      "-a",
-      "-F",
-      "#{session_id}\t#{session_name}\t#{session_path}\t#{pane_dead}\t#{pane_pid}\t#{pane_current_path}",
-    ]);
+    output = runTmux(
+      [
+        "list-panes",
+        "-a",
+        "-F",
+        "#{session_id}\t#{session_name}\t#{session_path}\t#{pane_pid}\t#{pane_current_path}\t#{pane_dead}",
+      ],
+      cwd,
+    );
   } catch (error) {
     const failure = error as NodeJS.ErrnoException & { stderr?: string | Buffer };
     if (failure.code === "ENOENT") return [];
@@ -103,26 +106,24 @@ function listPanes(): Pane[] {
       return [];
     throw error;
   }
-  // No trim(): a dead pane's empty cwd is the line's last field.
   return output
+    .trim()
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
-      const [sessionId, sessionName, worktreePath, dead, pidText, paneCwd] = line.split("\t");
-      if (!sessionId || !sessionName || !worktreePath || (dead !== "0" && dead !== "1")) {
+      const [sessionId, sessionName, worktreePath, pidText, paneCwd, deadText] = line.split("\t");
+      if (!sessionId || !sessionName || !worktreePath)
         throw new Error("Could not inspect tmux pane ownership");
-      }
-      const session = {
+      const identity = {
         sessionId,
         sessionName,
         worktreePath: withoutDeletedMarker(worktreePath),
       };
-      if (dead === "1") return session;
+      if (deadText === "1") return { ...identity, dead: true };
       const pid = Number(pidText);
-      if (!paneCwd || !Number.isSafeInteger(pid) || pid <= 1) {
+      if (deadText !== "0" || !paneCwd || !Number.isSafeInteger(pid) || pid <= 1)
         throw new Error("Could not inspect tmux pane ownership");
-      }
-      return { ...session, process: { pid, cwd: withoutDeletedMarker(paneCwd) } };
+      return { ...identity, dead: false, pid, cwd: withoutDeletedMarker(paneCwd) };
     });
 }
 
@@ -152,21 +153,15 @@ function orphanSession(
   const root = path.resolve(first.worktreePath);
   const hash = resolveSessionIdentity({ branchName: "", repoRootRealpath: root }).worktreeHash;
   if (!new RegExp(`^meridian-[a-z0-9-]+-${hash}$`).test(first.sessionName)) return;
-  // A dead pane proves nothing about where work happens and holds nothing to
-  // kill, so only live panes need to sit inside the missing checkout. A session
-  // of dead panes is reaped on its name, path and checkout evidence alone.
-  if (
-    panes.some(
-      (pane) => pane.worktreePath !== root || (pane.process && !within(pane.process.cwd, root)),
-    )
-  )
+  // A dead pane has no cwd to check; its session path still must match.
+  if (panes.some((pane) => pane.worktreePath !== root || (!pane.dead && !within(pane.cwd, root))))
     return;
   if (!orphanCheckout(root, repository)) return;
   return {
     sessionId: first.sessionId,
     sessionName: first.sessionName,
     worktreePath: root,
-    panePids: panes.flatMap((pane) => (pane.process ? [pane.process.pid] : [])),
+    panePids: panes.flatMap((pane) => (pane.dead ? [] : [pane.pid])),
   };
 }
 
@@ -174,13 +169,14 @@ function orphanSession(
 export function collectOrphanDevSessions(cwd: string): OrphanDevSession[] {
   const repository = repositoryWorktrees(cwd);
   const sessions = new Map<string, Pane[]>();
-  for (const pane of listPanes()) {
+  for (const pane of listPanes(cwd)) {
     const panes = sessions.get(pane.sessionId) ?? [];
     panes.push(pane);
     sessions.set(pane.sessionId, panes);
   }
   return [...sessions.values()].flatMap((panes) => {
-    const orphan = orphanSession(panes, repository);
+    // Dead panes prove nothing about ownership; discovery needs a live pane.
+    const orphan = panes.some((pane) => !pane.dead) ? orphanSession(panes, repository) : undefined;
     return orphan ? [orphan] : [];
   });
 }
@@ -194,7 +190,7 @@ function inspectPlannedSession(
     throw new Error(`Orphan session ownership changed: ${expected.sessionName}`);
   };
   if (!orphanCheckout(expected.worktreePath, repository)) refuse();
-  const panes = listPanes().filter((pane) => pane.sessionId === expected.sessionId);
+  const panes = listPanes(cwd).filter((pane) => pane.sessionId === expected.sessionId);
   // TERM may remove some or all original panes. New or relocated panes are not
   // authorized by the plan, even if the session ID and name have not changed.
   if (panes.length === 0) return;
@@ -228,7 +224,7 @@ export async function stopOrphanDevSessions(
       teardown: () => {
         if (inspectPlannedSession(cwd, orphan)) {
           // Session IDs are exact tmux targets; never use a name-prefix match.
-          runTmux(["kill-session", "-t", orphan.sessionId]);
+          runTmux(["kill-session", "-t", orphan.sessionId], cwd);
         }
       },
       log,

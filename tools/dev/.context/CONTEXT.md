@@ -5,11 +5,17 @@ that span more than one script.
 
 ## Environment and database
 
-`DEV_DATABASES` is the single registry. Main `.env` values are loaded through
-the shared environment helpers, and linked worktrees rewrite registered URLs to
-an idempotent worktree database. Non-interactive shells need the same
-`applyDevEnvToProcess` path as `.envrc`; failure to derive a scoped database is
-loud, never a fallback.
+`DEV_DATABASES` is the single registry. Every dev entry point calls
+`applyDevEnvToProcess` (rule in its docstring); no direnv or shell hook exports
+repo values. The base database has one source, the main `.env`, so the
+main-database guard, `gc-dbs`, `run-db-tests` and the loader cannot disagree
+about which database is main. No build config runs the loader, and
+`shared-db-server` loads server configs in-process and passes its own URL as
+given (it uses only the fill step). The stack's services start through
+`with-dev-env.ts`, so one loader feeds the panes. `tools/dev/psql` hands `psql`
+its connection as `PG*` variables, never argv. CI and deploy migrations reach the
+loader through `db:migrate` with no file defining the URL. Failure to derive a
+scoped database is loud, never a fallback.
 
 `db:migrate` and `db:apply-functions` resolve the checkout the same way and
 refuse a registered main database unless a human passes `--allow-main-database`;
@@ -85,8 +91,8 @@ every DB file.
 ## Session and readiness
 
 `applyDevEnvToProcess(repoRoot)` precedes `createDevSessionCommand`. The
-executable command may contain secrets and is sent only to tmux; display output
-and `.meridian/dev-session.json` contain the redacted command. The internal SSR
+tmux command line, `.meridian/dev-session.json` and display output are one
+string and hold no secrets. The internal SSR
 API origin is the paired worktree server origin, not the public app URL.
 The production-client profiling mode uses the same session plan and Portless
 routes. Its app command builds the client, runs the built Nitro server with
@@ -104,19 +110,22 @@ and browser tests. Only the primary checkout gets bare names. Linked detached
 checkouts include their session slug and path hash, so equal commits cannot
 alias each other. Commands use Portless named mode, not its branch inference;
 session metadata retains the prefix used by a running stack across Git changes.
+`pnpm dev` sessions run on one private tmux socket (`meridian-flow-dev`,
+`lib/dev-tmux-socket.ts`) shared by all checkouts. It keeps `--stop`, the orphan
+sweep and `dev:stacks` off the human's own server while still seeing every
+checkout's stack; cleanup readiness lists panes on both servers. The store passes
+tmux the environment from before the dev-env loader ran, so a server it starts
+never holds loaded secrets. `legacyDefaultServerHasSession` refuses a start while
+an old default-server stack of this checkout runs (read-only `-L default`); remove
+it with the TODO in `.context/TODO`.
 `dev-session-state.ts` validates the checkout-bound launch record and discovers
-its live tmux session. Dev sessions live on the private `meridian-dev` tmux
-server, named once in `lib/dev-tmux-server.ts`; the default server holds the
-machine owner's live shells. `pnpm dev --stop` and `dev:stacks` still see
-sessions on the default server so a stack started before the move can be found
-and stopped. Startup, `./mf`, and browser discovery use that active
+its live tmux session. Startup, `./mf`, and browser discovery use that active
 identity, not current HEAD; Git derives only the next launch's identity. A
 single resolved `DevSessionPlan` supplies commands, ports and verification
 expectations. New/reused sessions share one readiness-and-publication pipeline.
 Each launch command begins with `cd <checkout> &&` and tmux clients run from
 `$HOME`: a session lands in its own checkout even when the server's cwd has been
-deleted (tmux then silently ignores `new-session -c`), and a newly started server
-never carries a worktree's cwd that cleanup can remove.
+deleted (tmux then silently ignores `new-session -c`).
 
 Portless is the URL source of truth. `resolvePortlessProxyPort` reads the port the running proxy recorded in `proxy.port` under `PORTLESS_STATE_DIR` (default `~/.portless`), falling back to `PORTLESS_PORT` before a proxy has written one. Every route expectation, readiness probe, internal SSR origin and `./mf` discovery uses that one value. Hosts carry the port only when it is not Portless's default 443, so default-port URLs stay bare. `pnpm dev` reports `started` only after
 expected routes, real HTTP readiness probes, and (when enabled) verified
@@ -174,9 +183,7 @@ Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
 occupants, then rechecks that only known shell/tmux executables remain before
 dropping the database and removing the checkout. It never signals those user
 shells/panes and prints their PIDs and tmux pane IDs so owners can `cd` out of
-the deleted directory. Pane liveness reads both `meridian-dev` and the default
-server (read-only): dev stacks live on the former, while a shell on the latter
-still blocks removal. Unknown processes, unreadable attributed processes,
+the deleted directory. Unknown processes, unreadable attributed processes,
 inspection failures, active work items and dirty state still block. Force does
 not bypass merge evidence, branch/HEAD revalidation or structural protections,
 and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
@@ -200,32 +207,18 @@ directory's Portless route contract (see [`AGENTS.md`](../AGENTS.md)).
 ### Missing-checkout sessions
 
 `lib/worktree-cleanup-orphans.ts` discovers from tmux rather than Git alone, so
-unregistered/deleted worktrees remain visible. It lists and kills only on the
-private `meridian-dev` server, with its client in `$HOME`; the default server is
-the owner's, so a stack left there before dev moved is never swept. `pnpm dev` runs this sweep before
+unregistered/deleted worktrees remain visible. `pnpm dev` runs this sweep before
 start/reuse, but not for `--print` or `--stop`. The independent `--orphans` cleanup
 mode requires confirmation or `--yes` and supports `--dry-run`; it needs no PR,
 branch-merge evidence, database access, or Meridian work-item discovery.
 
 A candidate must have a managed session name with the SHA-256 path hash from
-`session-identity.ts`, a missing session creation directory, and every live
-pane's cwd still under that directory. A registered locked checkout is protected.
-
+`session-identity.ts`, a missing session creation directory, and every pane cwd
+still under that directory. A registered locked checkout is protected.
 Unregistered candidates must be immediate children of the primary checkout's
 sibling `<repo>.worktrees/` directory; arbitrary missing paths do not prove repo
 ownership. Existing directories, dangling symlinks, and inspection failures are
 not deletion evidence.
-
-The private server loads the owner's `tmux.conf`, so attaching keeps their keys,
-mouse and colors (dev passes no `-f /dev/null`, and a running server would keep
-its loaded config anyway). There, `remain-on-exit on` keeps an exited pane listed
-with an empty cwd. The sweep reads `#{pane_dead}`: a dead pane skips the cwd check
-and contributes no PID, since the PID may belong to another process by now and
-nothing is left to signal. A session whose panes are all dead is reaped by
-`kill-session` alone, on the same name, path and checkout evidence. Live panes
-keep every check, and a live pane with an empty cwd or unreadable PID still
-refuses, so the sweep never fails on a dead pane and never signals a process
-because of one.
 
 Git discovery uses the canonical `runGit` boundary, ignoring inherited `GIT_*`
 repository overrides. Discovery and execution use the same session authorization
