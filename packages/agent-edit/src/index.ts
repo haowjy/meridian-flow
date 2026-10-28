@@ -86,7 +86,6 @@ export {
   AGENT_EDIT_RESULT_SCHEMA,
   agentEditResultCommand,
   isAgentEditResultEnvelope,
-  modelBlockItem,
   modelResult,
   type NamespaceRefusal,
   type WriteRejection,

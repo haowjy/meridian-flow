@@ -212,10 +212,8 @@ function block(hash: string, body: string) {
     hash,
     clientID: 1,
     clock: Number.parseInt(hash, 36),
-    renderedContent: `paragraph|${body}`,
     body,
     serialized: `${hash}|${body}`,
-    lineage: [],
   };
 }
 

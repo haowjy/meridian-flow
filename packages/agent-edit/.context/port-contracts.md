@@ -109,7 +109,9 @@ walk so the four always describe the same block. Serialization is the codec's
 (`serializeBlocks` records shown links; `serializeBlockBodies` does not); each
 caller composes what it uses from one projection. Projecting runs y-prosemirror's
 repair on the document it is given (an unbuildable element is deleted and left out,
-and hashes cover the survivors), so hand it a disposable copy, never a shared document.
+and hashes cover the survivors), so hand it a private copy (a room copy, a planning view, a document decoded from a
+stored snapshot), never a shared document. The resolver projects once, first, so its
+scopes and anchors index the repaired block list.
 v1's implementation is y-prosemirror; host composition supplies its schema explicitly.
 
 ## Session and facade ports

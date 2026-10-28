@@ -91,7 +91,7 @@ export function serializePmBlockBody(
   return ctx.codec.serializeBlockBodies([block])[0] ?? "";
 }
 
-export function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
+function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
   // A scope is a contiguous run of top-level blocks starting at `startIndex`.
   const selected = ctx
     .projectedBlocks()

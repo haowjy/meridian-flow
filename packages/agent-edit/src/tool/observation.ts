@@ -128,14 +128,16 @@ export function observeRendered(
     (id, index, all) =>
       all.findIndex((candidate) => frontierBlockId(candidate) === frontierBlockId(id)) === index,
   );
-  const shown = shownInFull(doc, models);
+  let projected: ProjectedBlock[] | undefined;
+  const project = (): ProjectedBlock[] =>
+    (projected ??= source.model.projectBlocks(toDocHandle(doc)));
+  const shown = shownInFull(project, models);
   for (const id of writtenOnlyBy(doc, source.written ?? [])) shown.add(id);
   const removed = removedIds.filter((id) => !source.ownRemoved?.has(frontierBlockId(id)));
   const frontier = recordedFrontier(room, delta, source.position);
   if (!source.links || (changed.length === 0 && removed.length === 0)) return { frontier };
 
-  const projected = source.model.projectBlocks(toDocHandle(doc));
-  const byId = new Map(projected.map((block) => [frontierBlockId(block.id), block]));
+  const byId = new Map(project().map((block) => [frontierBlockId(block.id), block]));
   const candidates = changed.filter((id) => !shown.has(id) && byId.has(id));
   const rendered = candidates.map((id) => byId.get(id) as ProjectedBlock);
   const bodies = source.links.codec.serializeBlocks(
@@ -145,7 +147,7 @@ export function observeRendered(
   const items = rendered.map((block, index) => ({ hash: block.hash, body: bodies[index] }));
   const authors = changeAuthors(source, prev, changed, removedIds);
   const itemById = new Map(candidates.map((id, index) => [id, items[index]]));
-  const hashes = hashMap(doc, projected, removed);
+  const hashes = hashMap(doc, project(), removed);
   const groups: AgentEditConcurrentListing["groups"] = [];
   let remaining = CONCURRENT_LISTING_MAX_BYTES;
   for (const [author, changes] of authors) {
@@ -307,7 +309,7 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 function shownInFull(
-  doc: Y.Doc,
+  project: () => readonly ProjectedBlock[],
   models: readonly (AgentEditModelPayload | undefined)[],
 ): Set<string> {
   const shownHashes = new Set(
@@ -321,10 +323,9 @@ function shownInFull(
   );
   const shown = new Set<string>();
   if (shownHashes.size === 0) return shown;
-  const blocks = getTopLevelXmlBlocks(doc);
-  blockHashesForDoc(doc).forEach((hash, index) => {
-    if (shownHashes.has(hash)) shown.add(frontierBlockId(getBlockItemId(blocks[index])));
-  });
+  for (const block of project()) {
+    if (shownHashes.has(block.hash)) shown.add(frontierBlockId(block.id));
+  }
   return shown;
 }
 

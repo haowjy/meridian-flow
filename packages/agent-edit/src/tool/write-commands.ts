@@ -11,6 +11,7 @@ import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
@@ -141,14 +142,16 @@ export function createWriteCommands(deps: {
         return withEvidence(links, room, address.documentId, context, {
           ...readSuccess(
             renderer.renderRead(
-              toDocHandle(room.doc),
+              selection.projected,
               links.codec,
               selection.blocks,
               command.format === "outline" ? "outline" : "full",
             ),
           ),
           revision: options.links.revision(room.doc, links.scope),
-          ...(context.includeNodes ? { nodes: selectedNodes(room.doc, selection.blocks) } : {}),
+          ...(context.includeNodes
+            ? { nodes: selectedNodes(selection.projected, selection.blocks) }
+            : {}),
         });
       },
     );
@@ -194,12 +197,12 @@ export function createWriteCommands(deps: {
   }
 
   /** The selected blocks as nodes, in document order; a copy gets fresh identity when inserted. */
-  function selectedNodes(doc: Y.Doc, selected: readonly BlockRef[]): Block[] {
+  function selectedNodes(
+    projected: readonly ProjectedBlock[],
+    selected: readonly BlockRef[],
+  ): Block[] {
     const selection = new Set(selected);
-    return options.model
-      .projectBlocks(toDocHandle(doc))
-      .filter((block) => selection.has(block.ref))
-      .map((block) => block.node);
+    return projected.filter((block) => selection.has(block.ref)).map((block) => block.node);
   }
 
   /**
