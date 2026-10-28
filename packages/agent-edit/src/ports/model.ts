@@ -16,11 +16,6 @@ export interface ContentLineage {
   length: number;
 }
 
-export type BlockLookup =
-  | { ok: true; block: BlockRef }
-  | { ok: false; reason: "not_found" }
-  | { ok: false; reason: "ambiguous"; matches: BlockRef[] };
-
 export type InlineReplacementResult =
   | { ok: true }
   | {
@@ -55,9 +50,6 @@ export interface DocumentModel {
 
   /** Canonical ordered hash list for a full document. */
   getDocumentBlockIds(doc: DocHandle): string[];
-
-  /** Resolve an agent-visible block hash against the current document. */
-  lookupBlock(doc: DocHandle, hash: string): BlockLookup;
 
   /** True when the block reference still points at a live integrated block. */
   isLive(block: BlockRef): boolean;

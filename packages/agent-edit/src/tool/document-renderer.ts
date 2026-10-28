@@ -2,8 +2,9 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
-import type { BlockRef, DocHandle } from "../handles.js";
+import type { DocHandle } from "../handles.js";
 import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
+import { hashLocateContext } from "../resolver/hash-locator.js";
 import {
   headingSectionFragments,
   isHeading,
@@ -21,8 +22,9 @@ export interface DocumentRenderAddress {
 export type ReadBlockSelection =
   | {
       ok: true;
-      blocks: Array<BlockRef>;
-      /** The one projection the selection indexes into; render from it, never re-project. */
+      /** The selected blocks, in document order. */
+      selected: readonly ProjectedBlock[];
+      /** The one projection of the document, whole: its size and headings; never re-project. */
       projected: readonly ProjectedBlock[];
     }
   | { ok: false; code: "not_found" | "invalid_write"; message: string; documentBlocks?: number };
@@ -34,9 +36,8 @@ export interface DocumentRenderer {
     address: DocumentRenderAddress,
   ): ReadBlockSelection;
   renderRead(
-    projected: readonly ProjectedBlock[],
+    selection: Extract<ReadBlockSelection, { ok: true }>,
     codec: AgentEditCodec,
-    blocks: readonly BlockRef[],
     format: "full" | "outline",
   ): RenderedRead;
   parseForCommand(content: string): ParseForCommandResult;
@@ -74,10 +75,24 @@ export function createDocumentRenderer(deps: {
   ): ReadBlockSelection {
     // Projecting repairs the document, so it runs before any scope takes an index.
     const projected = model.projectBlocks(doc);
-    const scopeContext = { doc, model, projectedBlocks: () => projected };
+    const scopeContext = hashLocateContext(model, projected);
     const scopeSelection = (result: ScopeResult): ReadBlockSelection => {
-      if (result.ok) return { ok: true, blocks: result.scope.blocks, projected };
-      if (result.code === "ambiguous") return { ok: true, blocks: result.matches, projected };
+      if (result.ok) {
+        const { startIndex, blocks } = result.scope;
+        return {
+          ok: true,
+          selected: projected.slice(startIndex, startIndex + blocks.length),
+          projected,
+        };
+      }
+      if (result.code === "ambiguous") {
+        const matches = new Set(result.matches);
+        return {
+          ok: true,
+          selected: projected.filter((block) => matches.has(block.ref)),
+          projected,
+        };
+      }
       return result;
     };
     if (address.fragment) return scopeSelection(resolveScope(scopeContext, `#${address.fragment}`));
@@ -85,21 +100,18 @@ export function createDocumentRenderer(deps: {
       return scopeSelection(resolveSearchScope(scopeContext, undefined, command.around));
     }
     if (command.in !== undefined) return scopeSelection(resolveScope(scopeContext, command.in));
-    return { ok: true, blocks: projected.map((block) => block.ref), projected };
+    return { ok: true, selected: projected, projected };
   }
 
   function renderRead(
-    projected: readonly ProjectedBlock[],
+    { selected, projected }: Extract<ReadBlockSelection, { ok: true }>,
     codec: AgentEditCodec,
-    blocks: readonly BlockRef[],
     format: "full" | "outline",
   ): RenderedRead {
     const headingBlocks =
-      format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
+      format === "outline" ? selected.filter((block) => isHeading(model, block.ref)) : [];
     const outline = headingBlocks.length > 0;
-    const rendered = outline ? headingBlocks : blocks;
-    const byRef = new Map(projected.map((block) => [block.ref, block]));
-    const shown = rendered.flatMap((ref) => byRef.get(ref) ?? []);
+    const shown = outline ? headingBlocks : selected;
     const bodies = codec.serializeBlocks(
       shown.map((block) => block.node),
       shown.map((block) => block.hash),
@@ -109,7 +121,7 @@ export function createDocumentRenderer(deps: {
       body: bodies[index],
     }));
     if (outline) {
-      const fragments = headingSectionFragments({ model, projectedBlocks: () => projected });
+      const fragments = headingSectionFragments(hashLocateContext(model, projected));
       items.forEach((item, index) => {
         const section = fragments.get(shown[index].ref);
         if (section !== undefined) item.section = section;

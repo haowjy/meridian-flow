@@ -1,17 +1,26 @@
 // Resolves agent-visible block hashes to document positions with structured ambiguity.
 
-import type { BlockRef, DocHandle } from "../handles.js";
+import type { BlockRef } from "../handles.js";
+import { fullHashForItemId } from "../model/block-hash.js";
 import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
 
+/**
+ * The one projection the resolver indexes into. Projecting repairs the document (an element
+ * the schema can't build is deleted), so resolver code holds only this list, never the raw
+ * document: no block index can come from before the repair.
+ */
 export interface HashLocateContext {
-  doc: DocHandle;
   model: DocumentModel;
-  /** The one projection the resolver indexes into. */
-  projectedBlocks(): readonly ProjectedBlock[];
+  projected: readonly ProjectedBlock[];
+  /** `projected`'s refs, in order. */
+  blocks: readonly BlockRef[];
 }
 
-export function blockRefs(ctx: Pick<HashLocateContext, "projectedBlocks">): BlockRef[] {
-  return ctx.projectedBlocks().map((block) => block.ref);
+export function hashLocateContext(
+  model: DocumentModel,
+  projected: readonly ProjectedBlock[],
+): HashLocateContext {
+  return { model, projected, blocks: projected.map((block) => block.ref) };
 }
 
 export type HashLocationFailure =
@@ -19,7 +28,7 @@ export type HashLocationFailure =
   | { ok: false; code: "ambiguous"; message: string; matches: BlockRef[] };
 
 export type HashLocationResult =
-  | { ok: true; block: BlockRef; index: number; blocks: BlockRef[] }
+  | { ok: true; block: BlockRef; index: number; blocks: readonly BlockRef[] }
   | HashLocationFailure;
 
 export function locateBlockByHash(
@@ -27,33 +36,30 @@ export function locateBlockByHash(
   hash: string,
   options: { notFoundMessage?: string } = {},
 ): HashLocationResult {
-  const lookup = ctx.model.lookupBlock(ctx.doc, hash);
-  if (!lookup.ok) {
-    if (lookup.reason === "ambiguous") {
-      return {
-        ok: false,
-        code: "ambiguous",
-        message: ambiguousHashMessage(ctx.model, hash, lookup.matches),
-        matches: lookup.matches,
-      };
-    }
+  // Display hashes are flexible prefixes; resolve held old widths against immutable full hashes.
+  const normalized = hash.trim().toLowerCase();
+  const matches =
+    normalized.length === 0
+      ? []
+      : ctx.projected.filter((block) => fullHashForItemId(block.id).startsWith(normalized));
+  if (matches.length > 1) {
+    const refs = matches.map((match) => match.ref);
+    return {
+      ok: false,
+      code: "ambiguous",
+      message: ambiguousHashMessage(ctx.model, hash, refs),
+      matches: refs,
+    };
+  }
+  const [match] = matches;
+  if (!match) {
     return {
       ok: false,
       code: "not_found",
       message: options.notFoundMessage ?? hashNotFoundMessage(hash),
     };
   }
-
-  const blocks = blockRefs(ctx);
-  const index = blocks.indexOf(lookup.block);
-  if (index < 0) {
-    return {
-      ok: false,
-      code: "not_found",
-      message: options.notFoundMessage ?? hashNotFoundMessage(hash),
-    };
-  }
-  return { ok: true, block: lookup.block, index, blocks };
+  return { ok: true, block: match.ref, index: ctx.projected.indexOf(match), blocks: ctx.blocks };
 }
 
 function ambiguousHashMessage(

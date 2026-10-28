@@ -1,6 +1,6 @@
-import type { BlockRef, DocHandle } from "../handles.js";
-import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
-import { blockRefs, locateBlockByHash } from "./hash-locator.js";
+import type { BlockRef } from "../handles.js";
+import type { DocumentModel } from "../ports/model.js";
+import { type HashLocateContext, locateBlockByHash } from "./hash-locator.js";
 import {
   headingSlugs,
   normalizeRequestedSlug,
@@ -12,13 +12,7 @@ export const AROUND_BLOCK_RADIUS = 3;
 
 const HEX_HASH_RE = /^[0-9a-f]{4,}$/i;
 
-interface ScopeContext {
-  doc: DocHandle;
-  model: DocumentModel;
-  projectedBlocks(): readonly ProjectedBlock[];
-}
-
-type HeadingContext = Pick<ScopeContext, "model" | "projectedBlocks">;
+export type ScopeContext = HashLocateContext;
 
 export interface ScopeResolveOptions {
   allowSlugFallback?: boolean;
@@ -26,7 +20,7 @@ export interface ScopeResolveOptions {
 
 export interface BlockScope {
   kind: "document" | "block" | "range" | "section" | "around";
-  blocks: BlockRef[];
+  blocks: readonly BlockRef[];
   startIndex: number;
   endIndex: number;
   heading?: BlockRef;
@@ -53,7 +47,7 @@ export function resolveSearchScope(
 ): ScopeResult {
   if (around !== undefined) return resolveAround(ctx, around);
   if (input !== undefined) return resolveScope(ctx, input, options);
-  const blocks = blockRefs(ctx);
+  const { blocks } = ctx;
   return { ok: true, scope: scopeFromIndexes("document", blocks, 0, blocks.length - 1) };
 }
 
@@ -62,7 +56,7 @@ export function resolveScope(
   input: unknown,
   options: ScopeResolveOptions = {},
 ): ScopeResult {
-  const blocks = blockRefs(ctx);
+  const { blocks } = ctx;
   if (blocks.length === 0) return notFound("Document has no blocks");
 
   if (typeof input === "number") {
@@ -151,7 +145,7 @@ function resolveHashAsBlockOrSection(ctx: ScopeContext, hash: string): ScopeResu
 function resolveStringRange(ctx: ScopeContext, input: string): ScopeResult {
   const [startHash, endHash] = input.split("..");
   if (!startHash) return invalid("Range start is required");
-  const blocks = blockRefs(ctx);
+  const { blocks } = ctx;
   const start = locateBlockByHash(ctx, startHash, {
     notFoundMessage: `Range start block "${startHash}" was not found`,
   });
@@ -166,7 +160,7 @@ function resolveStringRange(ctx: ScopeContext, input: string): ScopeResult {
 
 function resolveTupleRange(ctx: ScopeContext, input: unknown[]): ScopeResult {
   if (input.length !== 2) return invalid("Tuple ranges must have exactly two entries");
-  const blocks = blockRefs(ctx);
+  const { blocks } = ctx;
   const startIndex = tupleEndpointIndex(ctx, input[0]);
   const endIndex = tupleEndpointIndex(ctx, input[1]);
   if (!startIndex.ok) return startIndex.error;
@@ -179,7 +173,7 @@ function resolveTupleRange(ctx: ScopeContext, input: unknown[]): ScopeResult {
 type BlockIndexResult = { ok: true; index: number } | { ok: false; error: ScopeFailure };
 
 function tupleEndpointIndex(ctx: ScopeContext, value: unknown): BlockIndexResult {
-  const blocks = blockRefs(ctx);
+  const { blocks } = ctx;
   if (
     typeof value === "number" &&
     Number.isInteger(value) &&
@@ -219,10 +213,10 @@ function resolveSlug(ctx: ScopeContext, slug: string): ScopeResult {
 }
 
 function headingSlugEntries(
-  ctx: HeadingContext,
+  ctx: ScopeContext,
 ): Array<{ slug: string; index: number; block: BlockRef }> {
   const headings: Array<{ index: number; block: BlockRef }> = [];
-  blockRefs(ctx).forEach((block, index) => {
+  ctx.blocks.forEach((block, index) => {
     if (isHeading(ctx.model, block)) headings.push({ index, block });
   });
   const slugs = headingSlugs(headings.map(({ block }) => ctx.model.getText(block)));
@@ -233,7 +227,7 @@ function headingSlugEntries(
  * The `#fragment` that reads each heading's section: its slug, or its hash when
  * the slug is hex-shaped, since `resolveFragment` tries such fragments as hashes first.
  */
-export function headingSectionFragments(ctx: HeadingContext): Map<BlockRef, string | undefined> {
+export function headingSectionFragments(ctx: ScopeContext): Map<BlockRef, string | undefined> {
   return new Map(
     headingSlugEntries(ctx).map(({ slug, block }) => [
       block,
@@ -243,7 +237,7 @@ export function headingSectionFragments(ctx: HeadingContext): Map<BlockRef, stri
 }
 
 function sectionFromHeading(ctx: ScopeContext, headingIndex: number): ScopeResult {
-  const blocks = blockRefs(ctx);
+  const { blocks } = ctx;
   const heading = blocks[headingIndex];
   const endIndex = sectionEndIndex(blocks.length, headingIndex, (index) =>
     ctx.model.getHeadingLevel(blocks[index] as BlockRef),

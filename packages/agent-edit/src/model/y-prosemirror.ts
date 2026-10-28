@@ -55,16 +55,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return blockHashesForDoc(unwrapDoc(doc));
     },
 
-    lookupBlock(doc, hash) {
-      const lookup = lookupBlockHash(unwrapDoc(doc), hash);
-      if (!lookup.ok) {
-        return lookup.reason === "ambiguous"
-          ? { ok: false, reason: "ambiguous", matches: lookup.matches.map(toRef) }
-          : { ok: false, reason: "not_found" };
-      }
-      return { ok: true, block: toRef(lookup.block) };
-    },
-
     isLive(block) {
       return isLiveXmlElement(unwrapBlock(block));
     },
