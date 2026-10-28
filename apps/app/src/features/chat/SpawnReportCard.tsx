@@ -112,7 +112,9 @@ export function SpawnReportCard({
             <p className="text-xs text-muted-foreground">{reason}</p>
           ) : run.status === "stopped" ? (
             <p className="text-xs text-muted-foreground">
-              {resolvedOutcome === "failed" || status === "failed" ? (
+              {/* A cancelled run's card also settles with status `failed`; its outcome decides. */}
+              {resolvedOutcome === "failed" ||
+              (resolvedOutcome !== "cancelled" && status === "failed") ? (
                 <Trans>Failed</Trans>
               ) : (
                 <Trans>Stopped</Trans>
