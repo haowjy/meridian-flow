@@ -1,12 +1,13 @@
 /**
- * The notices for Copies the server refused, on the surfaces `copyRefusals` names. A refused
+ * The notices for Copies the server refused, on the surfaces `copyRefusals` names, or all of
+ * them once when no surface is given (the desktop corner, one place for every surface). A refused
  * Copy has already removed its rows; the notice says so, offers Copy to… with the same rows, and
  * stays until the writer dismisses it or copies again. It reads the journal, so it survives a
  * reload and shows in other tabs.
  */
 import { Trans } from "@lingui/react/macro";
 import { useState } from "react";
-import { type NoticeSurface, SurfaceNotice } from "../../shell/SurfaceNotice";
+import { NoticePlacement, type NoticeSurface, SurfaceNotice } from "../../shell/SurfaceNotice";
 import { useAccountResourceReplica } from "../account-feature-context";
 import { EntryDestinationPicker } from "../EntryDestinationPicker";
 import type { CopyRefusal } from "./copy-refusal";
@@ -16,21 +17,24 @@ export function CopyRefusalNotices({
   surface,
   className,
 }: {
-  surface: NoticeSurface;
+  surface?: NoticeSurface;
   className?: string;
 }) {
   const { projectId, refusals } = useOperationNotices();
-  return refusals
-    .filter((refusal) => refusal.surfaces.includes(surface))
-    .map((refusal) => (
-      <RefusedCopy
-        key={refusal.operationId}
-        projectId={projectId}
-        surface={surface}
-        refusal={refusal}
-        className={className}
-      />
-    ));
+  return refusals.flatMap((refusal) => {
+    const shownOn = surface ?? refusal.surfaces[0];
+    if (!shownOn || !refusal.surfaces.includes(shownOn)) return [];
+    return [
+      <NoticePlacement key={refusal.operationId} id={`refusal:${refusal.operationId}`}>
+        <RefusedCopy
+          projectId={projectId}
+          surface={shownOn}
+          refusal={refusal}
+          className={className}
+        />
+      </NoticePlacement>,
+    ];
+  });
 }
 
 function RefusedCopy({

@@ -527,6 +527,21 @@
 @media (hover: none), (pointer: coarse) {
   [data-turn-role="user"] .user-turn-actions { opacity: 1; }
 }
+/* A rail area header's New file / New folder / Import… follow the same rule;
+   an open Import… menu keeps them shown. */
+@media (hover: hover) {
+  [data-rail-pane-header] .rail-pane-actions {
+    opacity: 0;
+  }
+  [data-rail-pane-header]:hover .rail-pane-actions,
+  [data-rail-pane-header] .rail-pane-actions:focus-within,
+  [data-rail-pane-header]:has(.rail-pane-actions [aria-expanded="true"]) .rail-pane-actions {
+    opacity: 1;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  [data-rail-pane-header] .rail-pane-actions { opacity: 1; }
+}
 
 @utility chat-card {
   padding: var(--chat-card-pad-y) var(--chat-card-pad-x);

@@ -23,7 +23,7 @@ import {
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { ToastRegion } from "@/components/app/ToastRegion";
-import { ToastRegistryProvider } from "@/components/app/toast-registry";
+import { ToastRegistryProvider, useToastClearance } from "@/components/app/toast-registry";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
@@ -57,10 +57,11 @@ const DebugOverlay =
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
     : null;
 
-// The query devtools launcher floats over the bottom-right corner: the bottom-left holds the
-// import activity cards, the top-right the dock's header, and a narrow window's top bar keeps its
-// context toggle and its bottom the composer. Narrow by width, not pointer: a desktop browser
-// resized to phone width gets the same layout as a phone, so the launcher is dropped there.
+// The query devtools launcher sits in the bottom-right corner, and the Activity region rises above
+// it (`useToastClearance`): the bottom-left holds the rail's account footer, the top-right the
+// dock's header, and a narrow window's top bar keeps its context toggle and its bottom the
+// composer. Narrow by width, not pointer: a desktop browser resized to phone width gets the same
+// layout as a phone, so the launcher is dropped there.
 const NARROW_QUERY = "(max-width: 767px)";
 function useNarrowViewport(): boolean {
   return useSyncExternalStore(
@@ -79,6 +80,18 @@ const ReactQueryDevtools = import.meta.env.DEV
       import("@tanstack/react-query-devtools").then((m) => ({ default: m.ReactQueryDevtools })),
     )
   : null;
+
+function QueryDevtoolsLauncher({
+  devtools: Devtools,
+}: {
+  devtools: NonNullable<typeof ReactQueryDevtools>;
+}) {
+  return (
+    <div ref={useToastClearance()} className="fixed right-3 bottom-3 z-[55]">
+      <Devtools buttonPosition="relative" initialIsOpen={false} />
+    </div>
+  );
+}
 
 /**
  * Decide where to send an UNAUTHENTICATED request, server-side.
@@ -253,7 +266,7 @@ function AuthenticatedProviderTree({
                     ) : null}
                     {ReactQueryDevtools && !narrow ? (
                       <Suspense fallback={null}>
-                        <ReactQueryDevtools buttonPosition="bottom-right" initialIsOpen={false} />
+                        <QueryDevtoolsLauncher devtools={ReactQueryDevtools} />
                       </Suspense>
                     ) : null}
                   </ImportsProvider>

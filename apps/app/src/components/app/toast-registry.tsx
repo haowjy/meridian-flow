@@ -8,16 +8,17 @@
  * the region actually has on screen in a visible tab. Owners read that last
  * fact with `useToastVisible` to time things like a clean "Done" closing itself.
  *
+ * An owner whose content needs its own React context (a project's Undo
+ * notices) registers a slot instead (`useToastSlot`): the region places it like
+ * any toast (order, "+N more", seen) and hands back the element to portal into.
+ *
  * One registry per authenticated tree (`ToastRegistryProvider`); tests build
- * their own with `createToastRegistry`. The provider also holds the desktop
- * region's layout: the host element project notices portal into
- * (`useToastRegionLayout`), so they stack in the same corner as the toasts, and
- * the elements the region rises above rather than covers (`useToastClearance`).
+ * their own with `createToastRegistry`. The provider also holds the elements
+ * the desktop region rises above rather than covers (`useToastClearance`).
  */
 import {
   createContext,
   type ReactNode,
-  type RefObject,
   useCallback,
   useContext,
   useEffect,
@@ -39,9 +40,17 @@ export type ActivityToastSpec = {
   children?: ReactNode;
   /** Close control. Omit it and the card has none (a decision the writer must make). */
   onClose?: () => void;
+  slot?: never;
 };
 
-export type ActivityToast = ActivityToastSpec & { key: string };
+/** An entry its owner renders itself (`useToastSlot`); the region only places it. */
+type ToastSlotSpec = { slot: true };
+const SLOT: ToastSlotSpec = { slot: true };
+
+export type ActivityCardToast = ActivityToastSpec & { key: string };
+export type ActivityToast = ActivityCardToast | (ToastSlotSpec & { key: string });
+
+export const isCardToast = (toast: ActivityToast): toast is ActivityCardToast => !toast.slot;
 
 type Snapshot = {
   /** Oldest first. The region shows the tail. */
@@ -51,6 +60,8 @@ type Snapshot = {
   visible: ReadonlySet<string>;
   /** Increments when an owner asks for a toast to be brought forward. */
   revealRequest: number;
+  /** Each slot's element while the region has it on screen. */
+  hosts: ReadonlyMap<string, HTMLElement>;
 };
 
 export type ToastRegistry = ReturnType<typeof createToastRegistry>;
@@ -61,6 +72,7 @@ export function createToastRegistry() {
     collapsed: new Set(),
     visible: new Set(),
     revealRequest: 0,
+    hosts: new Map(),
   };
   const listeners = new Set<() => void>();
   const commit = (next: Partial<Snapshot>) => {
@@ -78,7 +90,7 @@ export function createToastRegistry() {
     getSnapshot: () => snapshot,
 
     /** Registers the toast, or replaces its content in place. */
-    show(key: string, spec: ActivityToastSpec) {
+    show(key: string, spec: ActivityToastSpec | ToastSlotSpec) {
       const at = snapshot.toasts.findIndex((toast) => toast.key === key);
       const toast = { ...spec, key };
       commit({
@@ -93,7 +105,7 @@ export function createToastRegistry() {
       if (!snapshot.toasts.some((toast) => toast.key === key)) return;
       commit({
         toasts: snapshot.toasts.map((toast) =>
-          toast.key === key ? { ...toast, ...patch } : toast,
+          toast.key === key && isCardToast(toast) ? { ...toast, ...patch } : toast,
         ),
       });
     },
@@ -129,14 +141,20 @@ export function createToastRegistry() {
         keys.size === snapshot.visible.size && [...keys].every((key) => snapshot.visible.has(key));
       if (!same) commit({ visible: keys });
     },
+    /** The region mounts or drops a slot's element. Not for owners. */
+    setHost(key: string, host: HTMLElement | null) {
+      if ((snapshot.hosts.get(key) ?? null) === host) return;
+      const hosts = new Map(snapshot.hosts);
+      if (host) hosts.set(key, host);
+      else hosts.delete(key);
+      commit({ hosts });
+    },
   };
 }
 
 const ToastRegistryContext = createContext<ToastRegistry | null>(null);
 
 type RegionLayout = {
-  host: HTMLElement | null;
-  setHost: (host: HTMLElement | null) => void;
   clearances: ReadonlySet<HTMLElement>;
   clear: (element: HTMLElement) => () => void;
 };
@@ -151,7 +169,6 @@ export function ToastRegistryProvider({
   children: ReactNode;
 }) {
   const [owned] = useState(createToastRegistry);
-  const [host, setHost] = useState<HTMLElement | null>(null);
   const [clearances, setClearances] = useState<ReadonlySet<HTMLElement>>(() => new Set());
   const clear = useCallback((element: HTMLElement) => {
     setClearances((current) => new Set(current).add(element));
@@ -162,7 +179,7 @@ export function ToastRegistryProvider({
         return next;
       });
   }, []);
-  const layout = useMemo(() => ({ host, setHost, clearances, clear }), [host, clearances, clear]);
+  const layout = useMemo(() => ({ clearances, clear }), [clearances, clear]);
   return (
     <ToastRegistryContext.Provider value={registry ?? owned}>
       <RegionLayoutContext.Provider value={layout}>{children}</RegionLayoutContext.Provider>
@@ -170,7 +187,7 @@ export function ToastRegistryProvider({
   );
 }
 
-/** The desktop region's layout: where notices portal in (null until it mounts) and what it rises above. */
+/** The elements the desktop region rises above. */
 export function useToastRegionLayout(): RegionLayout {
   const layout = useContext(RegionLayoutContext);
   if (!layout) throw new Error("useToastRegionLayout needs a ToastRegistryProvider above it.");
@@ -178,15 +195,16 @@ export function useToastRegionLayout(): RegionLayout {
 }
 
 /**
- * Keeps the desktop region from covering the element (the pinned chat composer):
- * while it is mounted, the region rises above it whenever they would overlap.
+ * A ref that keeps the desktop region from covering its element (the pinned chat
+ * composer): while the element is mounted, the region rises above it whenever
+ * they would overlap. A callback ref, so a replaced element is followed.
  */
-export function useToastClearance(ref: RefObject<HTMLElement | null>): void {
+export function useToastClearance(): (element: HTMLElement | null) => () => void {
   const { clear } = useToastRegionLayout();
-  useEffect(() => {
-    const element = ref.current;
-    return element ? clear(element) : undefined;
-  }, [clear, ref]);
+  return useCallback(
+    (element: HTMLElement | null) => (element ? clear(element) : () => {}),
+    [clear],
+  );
 }
 
 /** The registry for imperative owners: `show`, `update`, `remove`, `reveal`. */
@@ -213,6 +231,26 @@ export function useActivityToast(key: string, spec: ActivityToastSpec | null): v
     else registry.remove(key);
   }, [registry, key, spec]);
   useEffect(() => () => registry.remove(key), [registry, key]);
+}
+
+/**
+ * Keeps a slot registered while `key` is non-null and the caller is mounted, and
+ * returns the element to portal its content into: null while the region has it
+ * folded into "+N more" (or before it mounts). For content that needs the
+ * caller's React context; `useToastVisible` works for slots too.
+ */
+export function useToastSlot(key: string | null): HTMLElement | null {
+  const registry = useToastRegistry();
+  useEffect(() => {
+    if (!key) return;
+    registry.show(key, SLOT);
+    return () => registry.remove(key);
+  }, [registry, key]);
+  return useSyncExternalStore(
+    registry.subscribe,
+    () => (key ? (registry.getSnapshot().hosts.get(key) ?? null) : null),
+    () => null,
+  );
 }
 
 /**

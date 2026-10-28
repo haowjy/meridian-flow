@@ -29,9 +29,9 @@ import type { AccountResourceReplica } from "@/core/resources/account-resource-r
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
 import {
+  NoticePlacement,
   type NoticeSurface,
   SurfaceNotice,
-  type SurfaceNoticeModel,
   useNoticeSlot,
 } from "../shell/SurfaceNotice";
 import {
@@ -676,24 +676,29 @@ export function DocumentDeleteUndoNotice({
 }) {
   const { notices, undo, dismiss } = useDocumentDeleteUndo();
   const notice = notices.find((candidate) => candidate.surface === surface);
-  const model: SurfaceNoticeModel | null = notice
-    ? {
-        message:
-          notice.feedback?.kind === "restoring" ? (
-            <Trans>Restoring {notice.label}</Trans>
-          ) : (
-            <Trans>Deleted {notice.label}</Trans>
-          ),
-        undo:
-          notice.feedback?.kind === "failed" && !notice.feedback.retryable
-            ? null
-            : () => undo(notice.operationId),
-        dismiss: () => dismiss(notice.operationId),
-        failure: notice.feedback?.kind === "failed" ? notice.feedback.message : undefined,
-        undoing: notice.feedback?.kind === "restoring",
-      }
-    : null;
-  return <SurfaceNotice notice={model} className={className} />;
+  if (!notice) return null;
+  return (
+    <NoticePlacement id={`delete:${notice.operationId}`}>
+      <SurfaceNotice
+        className={className}
+        notice={{
+          message:
+            notice.feedback?.kind === "restoring" ? (
+              <Trans>Restoring {notice.label}</Trans>
+            ) : (
+              <Trans>Deleted {notice.label}</Trans>
+            ),
+          undo:
+            notice.feedback?.kind === "failed" && !notice.feedback.retryable
+              ? null
+              : () => undo(notice.operationId),
+          dismiss: () => dismiss(notice.operationId),
+          failure: notice.feedback?.kind === "failed" ? notice.feedback.message : undefined,
+          undoing: notice.feedback?.kind === "restoring",
+        }}
+      />
+    </NoticePlacement>
+  );
 }
 
 /** The removals a landed delete recorded in its receipt; null while no successful delete receipt exists. */

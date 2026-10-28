@@ -3,19 +3,21 @@
  * register in the `ToastRegistry`. It knows nothing about what a toast is for.
  *
  * Desktop: the window's bottom-right corner, 352px wide, stacking upward with
- * the newest at the bottom. At most three are expanded; older ones fold into a
- * "+N more" row above that reveals them all. Below the toasts sits the notice
- * host, where the open project's Undo notices (delete, move, copy) portal in
- * (`project-notices.tsx`), so every desktop notice shares this one corner.
- * When the corner would cover a pinned chat composer (its column reaches the
- * right edge once the right panel is closed), the region rises above it
- * (`useToastClearance`): the send button stays reachable.
+ * the newest at the bottom. At most three are shown; older ones fold into a
+ * "+N more" row above that reveals them all. Slots (the open project's Undo
+ * notices, `project-notices.tsx`) take their place in the same stack and fold;
+ * their owners portal the card in. F8 moves focus into the region, as Radix
+ * Toast's viewport does, so Undo is one key away from anywhere. When the corner
+ * would cover a pinned chat composer (its column reaches the right edge once
+ * the right panel is closed) or a dev launcher, the region rises above it
+ * (`useToastClearance`): the send button stays reachable. With nothing to show
+ * it renders nothing, so no empty landmark is left for screen readers.
  *
- * Phone (coarse pointer, narrow): one compact bar at the top under the top bar
+ * Phone (coarse pointer, narrow; `usePhoneShell`): one compact bar at the top under the top bar
  * showing the toast's title and bar (several running toasts become "N in
  * progress" with a combined bar). Tapping it opens a bottom sheet holding each
  * card with its controls. The bottom stays free for the composer, the keyboard
- * and the change bar.
+ * and the change bar. Project notices stay inline in their surfaces there.
  *
  * Toasts never take focus when they appear. The region reports which toasts it
  * is showing, while the tab is visible, back to the registry so an owner can
@@ -25,7 +27,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronUp, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { PersistentToast, ToastBar } from "@/components/ui/persistent-toast";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
@@ -33,7 +42,9 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
 import {
+  type ActivityCardToast,
   type ActivityToast,
+  isCardToast,
   useToastRegionLayout,
   useToastRegistry,
   useToastSnapshot,
@@ -42,6 +53,8 @@ import {
 const MAX_EXPANDED = 3;
 /** The region's inset from the window's right and bottom edges, in px. */
 const EDGE = 16;
+/** Focuses the desktop region (Radix Toast's viewport hotkey). */
+const FOCUS_KEY = "F8";
 
 function subscribeTabVisibility(onChange: () => void) {
   document.addEventListener("visibilitychange", onChange);
@@ -57,7 +70,7 @@ function useTabVisible(): boolean {
 }
 
 /** The one bar standing for several running toasts: their mean, or indeterminate when none has a number. */
-function combinedProgress(running: readonly ActivityToast[]): number | "indeterminate" {
+function combinedProgress(running: readonly ActivityCardToast[]): number | "indeterminate" {
   const values = running.flatMap((toast) =>
     typeof toast.progress === "number" ? [toast.progress] : [],
   );
@@ -68,7 +81,7 @@ function combinedProgress(running: readonly ActivityToast[]): number | "indeterm
 
 export function ToastRegion() {
   const registry = useToastRegistry();
-  const { setHost, clearances } = useToastRegionLayout();
+  const { clearances } = useToastRegionLayout();
   const desktopRegion = useRef<HTMLElement>(null);
   const [lift, setLift] = useState(EDGE);
   const { toasts, collapsed, revealRequest } = useToastSnapshot();
@@ -88,8 +101,10 @@ export function ToastRegion() {
     if (toasts.length === 0) setSheetOpen(false);
   }, [toasts.length]);
 
-  const newest = toasts.at(-1);
-  const running = toasts.filter((toast) => toast.progress !== undefined);
+  // Only desktop owners register slots; the phone shows cards alone.
+  const cards = toasts.filter(isCardToast);
+  const newest = cards.at(-1);
+  const running = cards.filter((toast) => toast.progress !== undefined);
   const summarized = running.length >= 2;
   const open = phone === true && sheetOpen;
 
@@ -100,7 +115,7 @@ export function ToastRegion() {
       ? []
       : phone
         ? open
-          ? toasts
+          ? cards
           : newest && !summarized
             ? [newest]
             : []
@@ -113,6 +128,7 @@ export function ToastRegion() {
     return () => registry.reportVisible(new Set());
   }, [registry, shownKeys, tabVisible]);
 
+  const hasToasts = toasts.length > 0;
   // Rises above any cleared element it would overlap. Observing each element's ancestors
   // catches what moves it sideways without resizing it (the right panel opening).
   useLayoutEffect(() => {
@@ -135,13 +151,24 @@ export function ToastRegion() {
       for (let node: Element | null = element; node; node = node.parentElement)
         observer.observe(node);
     return () => observer.disconnect();
-  }, [clearances, phone]);
+  }, [clearances, phone, hasToasts]);
+
+  useEffect(() => {
+    if (phone !== false || !hasToasts) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== FOCUS_KEY || event.altKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      desktopRegion.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [phone, hasToasts]);
 
   if (phone === null) return null;
 
   if (phone) {
     if (!newest) return null;
-    const others = toasts.length - 1;
+    const others = cards.length - 1;
     return (
       <section aria-label={t`Activity`}>
         <button
@@ -191,7 +218,7 @@ export function ToastRegion() {
               <Trans>What is running in the background, with its controls.</Trans>
             </SheetDescription>
             <ul className="flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain px-2 pb-3">
-              {[...toasts].reverse().map(({ key, ...spec }) => (
+              {[...cards].reverse().map(({ key, ...spec }) => (
                 <li key={key}>
                   <PersistentToast {...spec} touch />
                 </li>
@@ -203,15 +230,17 @@ export function ToastRegion() {
     );
   }
 
+  if (!hasToasts) return null;
   const hidden = toasts.length - shown.length;
   const canFold = toasts.length > MAX_EXPANDED;
   return (
     <section
       ref={desktopRegion}
-      aria-label={t`Activity`}
+      tabIndex={-1}
+      aria-label={t`Activity (${FOCUS_KEY})`}
       style={{ bottom: lift, maxHeight: showAll ? `calc(100svh - ${lift + EDGE}px)` : undefined }}
       className={cn(
-        "pointer-events-none fixed right-4 z-40 flex w-88 max-w-[calc(100vw-2rem)] flex-col gap-2",
+        "focus-ring pointer-events-none fixed right-4 z-40 flex w-88 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-lg",
         // Scrolling clips a card's shadow at the region edge, so the long list drops it.
         showAll && "overflow-y-auto [&_article]:shadow-none",
       )}
@@ -225,24 +254,37 @@ export function ToastRegion() {
           {hidden > 0 ? <Trans>+{hidden} more</Trans> : <Trans>Show fewer</Trans>}
         </button>
       ) : null}
-      <ul className="flex flex-col gap-2 empty:hidden">
-        {shown.map(({ key, ...spec }) => (
-          <li
-            key={key}
-            className="pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-2 duration-200 motion-reduce:animate-none"
-          >
-            <PersistentToast
-              {...spec}
-              collapsed={collapsed.has(key)}
-              onCollapsedChange={(next) => registry.setCollapsed(key, next)}
-            />
-          </li>
-        ))}
+      <ul className="flex flex-col gap-2">
+        {shown.map((toast) => {
+          if (!isCardToast(toast)) return <SlotHost key={toast.key} slot={toast.key} />;
+          const { key, ...spec } = toast;
+          return (
+            <li key={key} className={ENTRY}>
+              <PersistentToast
+                {...spec}
+                collapsed={collapsed.has(key)}
+                onCollapsedChange={(next) => registry.setCollapsed(key, next)}
+              />
+            </li>
+          );
+        })}
       </ul>
-      <div
-        ref={setHost}
-        className="pointer-events-auto flex flex-col gap-2 empty:hidden [&>*]:animate-in [&>*]:fade-in-0 [&>*]:slide-in-from-bottom-2 [&>*]:duration-200 motion-reduce:[&>*]:animate-none"
-      />
     </section>
   );
+}
+
+const ENTRY =
+  "pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-2 duration-200 motion-reduce:animate-none";
+
+/** A slot's place in the stack; its owner portals the card in. */
+function SlotHost({ slot }: { slot: string }) {
+  const registry = useToastRegistry();
+  const ref = useCallback(
+    (host: HTMLLIElement | null) => {
+      registry.setHost(slot, host);
+      return () => registry.setHost(slot, null);
+    },
+    [registry, slot],
+  );
+  return <li ref={ref} className={ENTRY} />;
 }
