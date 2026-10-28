@@ -20,9 +20,8 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import { testHook } from "../../../shared/test-hooks.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { readThreadActivity, threadAsk } from "../../threads/index.js";
+import { readThreadActivity } from "../../threads/index.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
@@ -53,6 +52,31 @@ export interface ToolDispatchDeps {
   shownLinks: Pick<ShownLinkStore, "record">;
   observationFrontiers: ObservationFrontiers;
   asks: import("../../threads/ports/ask-repository.js").AskRepository;
+  askRequests: Pick<import("../asks/ask-service.js").AskService, "request">;
+}
+
+/**
+ * One provider batch's request rule, keyed on what a call asks for, not on which tool:
+ * the first request defers the batch and a later one is refused, as is any request beside a
+ * `return_result`. A `thread_message` to a child whose question this batch forwards goes
+ * unbound, so it never answers the question going to the writer.
+ */
+export type RequestBatch = {
+  readonly hasReturnResult: boolean;
+  readonly forwarding: ReadonlySet<string>;
+  deferred: string | null;
+};
+
+export function requestBatch(calls: readonly ToolCallInput[]): RequestBatch {
+  return {
+    hasReturnResult: calls.some((call) => call.name === "return_result"),
+    forwarding: new Set(
+      calls.flatMap((call) =>
+        typeof call.arguments.forward === "string" ? [call.arguments.forward] : [],
+      ),
+    ),
+    deferred: null,
+  };
 }
 
 export interface ToolDispatchContext {
@@ -73,6 +97,7 @@ export interface ToolDispatchContext {
   planningBlockIds: readonly string[];
   /** Latest still-open child question whose structured evidence was in this request. */
   boundChildQuestions?: ReadonlyMap<string, string>;
+  batch: RequestBatch;
   /** The provider reply's own accepted mutations, replayed after the planning cut. */
   replyMutations: ReplyMutations;
   /** The run's credited ids, live: a sibling call's result counts as seen. */
@@ -253,6 +278,10 @@ export async function dispatchToolCall(
         }
       : undefined;
 
+  const boundAsk = (ref: string) => {
+    const askId = ctx.boundChildQuestions?.get(ref);
+    return askId && !ctx.batch.forwarding.has(askId) ? askId : undefined;
+  };
   const threadMessage =
     call.name === "thread_message"
       ? async (messageInput: ThreadMessageArgs) => {
@@ -264,9 +293,7 @@ export async function dispatchToolCall(
             ref: messageInput.ref,
             prompt: messageInput.message,
             toolCallId: call.id,
-            ...(ctx.boundChildQuestions?.get(messageInput.ref)
-              ? { boundAskId: ctx.boundChildQuestions.get(messageInput.ref) }
-              : {}),
+            ...(boundAsk(messageInput.ref) ? { boundAskId: boundAsk(messageInput.ref) } : {}),
             budget: ctx.treeBudget,
             ...(messageInput.mode === "foreground"
               ? {
@@ -305,6 +332,30 @@ export async function dispatchToolCall(
           })
       : undefined;
 
+  let deferredAskId: string | null = null;
+  const request = async (
+    asked: import("../asks/ask-service.js").AskRequest,
+  ): Promise<import("../asks/ask-service.js").AskRequestOutcome> => {
+    const refused = ctx.batch.hasReturnResult
+      ? "You returned a result; there's no one left to answer."
+      : ctx.batch.deferred
+        ? "One request at a time: make this one after the answer arrives."
+        : null;
+    if (refused) return { kind: "refused", refusal: { code: "request_refused", reason: refused } };
+    const outcome = await deps.askRequests.request({
+      threadId: ctx.threadId,
+      askingTurnId: ctx.currentTurn.id,
+      executionId: ctx.lease.executionId,
+      toolCallId: call.id,
+      request: asked,
+    });
+    if (outcome.kind === "deferred") {
+      ctx.batch.deferred = outcome.askId;
+      deferredAskId = outcome.askId;
+    }
+    return outcome;
+  };
+
   let returnResultCapture: ReturnResultCapture | undefined;
   const returnResult = async (capture: ReturnResultCapture) => {
     if (ctx.thread.kind !== "subagent") {
@@ -336,6 +387,7 @@ export async function dispatchToolCall(
       threadMessage,
       threadReport,
       returnResult,
+      request,
       frontiers: {
         recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
@@ -349,60 +401,8 @@ export async function dispatchToolCall(
     return { kind: "cancelled" };
   }
 
-  if (call.name === "ask_user" && execResult.isError !== true) {
-    const askInput = execResult.result as import("@meridian/contracts/components").AskToolInput;
-    let payload: import("@meridian/contracts/threads").QuestionAskPayload | null = null;
-    if ("forward" in askInput) {
-      const forwarded = await deps.asks.findById(askInput.forward);
-      const child = forwarded
-        ? await deps.persistenceDeps.repos.threads.findById(forwarded.threadId)
-        : null;
-      if (
-        forwarded?.kind !== "question" ||
-        forwarded.status !== "open" ||
-        child?.parentThreadId !== ctx.threadId ||
-        !child.ref
-      ) {
-        const refusal = {
-          code: "ask_not_open",
-          ...(forwarded ? { ask: threadAsk(forwarded) } : {}),
-        };
-        execResult.output = refusal;
-        execResult.result = refusal;
-        execResult.isError = true;
-      } else {
-        payload = {
-          ...(forwarded.payload as import("@meridian/contracts/threads").QuestionAskPayload),
-          forwardedFrom: {
-            threadId: forwarded.threadId,
-            askId: forwarded.id,
-            handle: child.ref,
-          },
-        };
-      }
-    } else {
-      payload = askInput;
-    }
-    if (execResult.isError === true) {
-      // The ordinary tool-result path below records the typed refusal.
-    } else {
-      if (!payload) throw new Error("Successful ask has no question payload");
-      const ask = await deps.asks.create({
-        threadId: ctx.threadId,
-        askingTurnId: ctx.currentTurn.id,
-        executionId: ctx.lease.executionId,
-        toolCallId: call.id,
-        kind: "question",
-        payload,
-        deadlineAt: null,
-        status: "pending",
-        resolution: null,
-        submissionId: null,
-      });
-      await testHook("ask.pending");
-      return { kind: "deferred", askId: ask.id };
-    }
-  }
+  // A created ask settles the execution, whatever the tool did after asking.
+  if (deferredAskId) return { kind: "deferred", askId: deferredAskId };
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
   if (execResult.returnResult) {

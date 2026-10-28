@@ -19,10 +19,6 @@ export {
 } from "./response-write-lifecycle.js";
 export type { ToolWiringDeps } from "./tool-context.js";
 
-async function askHandler(input: unknown) {
-  return input;
-}
-
 export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   return [
     ...createCoreToolRegistrations({
@@ -31,7 +27,6 @@ export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistra
       work: createWorkHandler(deps),
       ls: createLsHandler(deps),
       search: createSearchHandler(deps),
-      ask_user: askHandler,
     }),
     ...createSkillToolRegistrations(deps),
   ];

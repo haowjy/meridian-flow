@@ -20,7 +20,7 @@ import {
   renderAgentEditResult,
   WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
-import { askToolInputSchema } from "@meridian/contracts/components";
+import { type AskToolInput, askToolInputSchema } from "@meridian/contracts/components";
 import {
   aiWriteModeSchema,
   INVALID_WORK_NAME,
@@ -37,7 +37,7 @@ import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-argu
 import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { renderSearchResult } from "./search-result.js";
-import type { ToolExecutionError, ToolRegistration } from "./types.js";
+import type { RequestToolHandlerContext, ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
 
 /** A Work handle as the model writes it: trimmed, and `@w3` means Work `w3`. A name is answered by the handler. */
@@ -199,10 +199,21 @@ export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
 
 /**
- * Concrete handlers for every core tool. The mapped type makes adding a new
- * core tool an exhaustive wiring change instead of silently publishing a stub.
+ * Concrete handlers for every core tool the composition root binds. The mapped type
+ * makes adding a new core tool an exhaustive wiring change instead of silently
+ * publishing a stub. `ask_user` needs nothing from the root: it only makes a request.
  */
-export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
+export type CoreToolHandlers = {
+  [Name in Exclude<CoreToolName, "ask_user">]: ServerToolHandler;
+};
+
+async function askUser(input: unknown, ctx: RequestToolHandlerContext) {
+  const ask = input as AskToolInput;
+  const outcome = await ctx.request(
+    "forward" in ask ? { kind: "forward", askId: ask.forward } : { kind: "question", payload: ask },
+  );
+  return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
+}
 
 /**
  * The document tools' handlers and error formatter return agent-edit results,
@@ -329,7 +340,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         inputSchema: modelToolSchema(AskToolInputSchema),
       },
       input: AskToolInputSchema,
-      execution: { type: "server", handler: handlers.ask_user },
+      execution: { type: "server", handler: askUser },
+      capability: "request",
     },
   ];
 }

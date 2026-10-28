@@ -7,7 +7,7 @@
  * any thread lock.
  */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AskAnswer,
   AskResolution,
@@ -31,6 +31,19 @@ import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-deli
 export type AskAnswerResult =
   | { ok: true; ask: ThreadAsk }
   | { ok: false; code: "ask_not_open" | "invalid_answer"; ask?: ThreadAsk };
+
+/**
+ * What a tool call asks for: a question for whoever answers this thread, or a copy of
+ * an open direct child's question for this thread's own answerer.
+ */
+export type AskRequest =
+  | { kind: "question"; payload: QuestionAskPayload }
+  | { kind: "forward"; askId: string };
+
+/** `deferred`: the call's execution settles on the ask, and its answer writes the result. */
+export type AskRequestOutcome =
+  | { kind: "deferred"; askId: string }
+  | { kind: "refused"; refusal: JsonValue };
 
 export type AskToolResultPlan = { kind: "from_resolution" };
 
@@ -63,6 +76,14 @@ export type AskResolutionPlan =
 type AskClaim = { kind: "claimed"; ask: StoredAsk } | { kind: "finished"; result: AskAnswerResult };
 
 export interface AskService {
+  /** The one way a tool call opens an ask. Refuses a forward of anything but an open child question. */
+  request(input: {
+    threadId: ThreadId;
+    askingTurnId: TurnId;
+    executionId: string;
+    toolCallId: string;
+    request: AskRequest;
+  }): Promise<AskRequestOutcome>;
   answer(input: {
     userId: string;
     threadId: ThreadId;
@@ -275,7 +296,47 @@ export function createAskService(deps: {
     });
   }
 
+  async function requestedPayload(
+    threadId: ThreadId,
+    request: AskRequest,
+  ): Promise<QuestionAskPayload | { refusal: JsonValue }> {
+    if (request.kind === "question") return request.payload;
+    const forwarded = await deps.repos.asks.findById(request.askId);
+    const child = forwarded ? await deps.repos.threads.findById(forwarded.threadId) : null;
+    if (
+      forwarded?.kind !== "question" ||
+      forwarded.status !== "open" ||
+      child?.parentThreadId !== threadId ||
+      !child.ref
+    )
+      return {
+        refusal: { code: "ask_not_open", ...(forwarded ? { ask: threadAsk(forwarded) } : {}) },
+      };
+    return {
+      ...(forwarded.payload as QuestionAskPayload),
+      forwardedFrom: { threadId: forwarded.threadId, askId: forwarded.id, handle: child.ref },
+    };
+  }
+
   return {
+    async request(input) {
+      const payload = await requestedPayload(input.threadId, input.request);
+      if ("refusal" in payload) return { kind: "refused", refusal: payload.refusal };
+      const ask = await deps.repos.asks.create({
+        threadId: input.threadId,
+        askingTurnId: input.askingTurnId,
+        executionId: input.executionId,
+        toolCallId: input.toolCallId,
+        kind: "question",
+        payload,
+        deadlineAt: null,
+        status: "pending",
+        resolution: null,
+        submissionId: null,
+      });
+      await testHook("ask.pending");
+      return { kind: "deferred", askId: ask.id };
+    },
     async answer(input) {
       const thread = await deps.repos.threads.findById(input.threadId);
       if (!thread || thread.userId !== input.userId) return { ok: false, code: "ask_not_open" };

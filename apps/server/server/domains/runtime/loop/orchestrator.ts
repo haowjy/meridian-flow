@@ -104,6 +104,7 @@ import {
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
+import type { AskService } from "../asks/ask-service.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
@@ -188,7 +189,12 @@ import {
   mapStreamEvent,
   toJsonValue,
 } from "./streaming.js";
-import { dispatchToolCall, reduceToolBatch, type ToolDispatchOutcome } from "./tool-dispatch.js";
+import {
+  dispatchToolCall,
+  reduceToolBatch,
+  requestBatch,
+  type ToolDispatchOutcome,
+} from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import {
   type AssembledNextTurnContext,
@@ -258,6 +264,7 @@ export interface OrchestratorDeps {
   onRunSettled?: (threadId: ThreadId) => void;
   /** Ends a subtree across processes: Stop, turn cancel, and a child's terminal run. */
   lineage: LineageCancellation;
+  askRequests: Pick<AskService, "request">;
   /** Runs after the ambient transaction commits, or at once outside one. */
   afterCommit(task: () => void): void;
   /** Child invocation cards: running at admission, the saved report when the run ends. */
@@ -1253,24 +1260,17 @@ async function persistToolOutcome(input: {
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  outcome:
-    | { kind: "permission_denied"; reason: string }
-    | { kind: "notes_held" }
-    | { kind: "ask_refused"; reason: string };
+  outcome: { kind: "permission_denied"; reason: string } | { kind: "notes_held" };
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const denied = input.outcome.kind === "permission_denied" || input.outcome.kind === "ask_refused";
+  const denied = input.outcome.kind === "permission_denied";
   const result: JsonObject =
     input.outcome.kind === "permission_denied"
       ? { error: "permission_denied", reason: input.outcome.reason }
-      : input.outcome.kind === "ask_refused"
-        ? { error: "ask_refused", reason: input.outcome.reason }
-        : { refusal: "notes_step" };
+      : { refusal: "notes_step" };
   const output = denied
-    ? input.outcome.kind === "ask_refused"
-      ? input.outcome.reason
-      : result
+    ? result
     : "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.";
   const extraEvents: OrchestratorEvent[] =
     input.outcome.kind === "permission_denied"
@@ -2672,34 +2672,13 @@ async function executeLoop({
             }
 
             const batchOutcomes: ToolDispatchOutcome[] = [];
-            const batchHasReturnResult = toolCallsFromResult.some(
-              (candidate) => candidate.name === "return_result",
-            );
-            let acceptedAsk = false;
+            const batch = requestBatch(toolCallsFromResult);
             // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
             // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
             for (const call of toolCallsFromResult) {
               if (isCancelled()) {
                 return cancelExit();
               }
-
-              if (call.name === "ask_user" && (batchHasReturnResult || acceptedAsk)) {
-                const reason = batchHasReturnResult
-                  ? "You returned a result; there's no one left to answer."
-                  : "One question at a time: ask this after the answer arrives";
-                const refused = await persistToolOutcome({
-                  deps,
-                  threadId: input.threadId,
-                  turn: currentTurn,
-                  call,
-                  outcome: { kind: "ask_refused", reason },
-                  blockSeq,
-                });
-                blockSeq = refused.nextBlockSeq;
-                allBlocks.push(refused.block);
-                continue;
-              }
-              if (call.name === "ask_user") acceptedAsk = true;
 
               if (continuation.kind === "notes") {
                 const withinBudget = continuation.remaining > 0;
@@ -2762,6 +2741,7 @@ async function executeLoop({
                   shownLinks: deps.shownLinks,
                   observationFrontiers: deps.observationFrontiers,
                   asks: deps.repos.asks,
+                  askRequests: deps.askRequests,
                 },
                 call,
                 {
@@ -2779,6 +2759,7 @@ async function executeLoop({
                   allTurns,
                   planningBlockIds,
                   boundChildQuestions,
+                  batch,
                   credited,
                   replyMutations: scope.reply,
                 },
