@@ -162,6 +162,7 @@ else
         toolCallId: "ask-old-server",
         kind: "question",
         payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+        permissionCommand: null,
         deadlineAt: null,
         status: "answered",
         resolution: { kind: "option", label: "A" },
