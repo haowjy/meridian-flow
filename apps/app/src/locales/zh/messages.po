@@ -1745,7 +1745,7 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't finish that step"
-msgstr ""
+msgstr "这一步没能完成"
 
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
