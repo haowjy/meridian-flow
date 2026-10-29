@@ -150,13 +150,19 @@ Lineage cancellation is the only transaction that takes more than one thread's l
 (`asMultiThreadLocker`); outside production the Postgres thread lock throws on a
 second thread's lock anywhere else. What is enforced, not assumed: after a
 transaction's first thread lock, `lockThreadAsks` and the claim use `FOR UPDATE SKIP
-LOCKED`, so an ask row another transaction holds is skipped, never waited on. Such a
-row became held after its thread's lock took that thread's asks (a question asked
-during the command), and its holder waits on a thread lock this command holds.
-After commit that holder sees the cancellation: a flagged run cancels its own live
-ask when it closes, and a writer's answer that took the row first wins, as any
-writer action does. Nothing retries `40P01`. Work delete runs the command on the
-Work's tree before `lockWorkThreadTree` takes the tree's rows.
+LOCKED`, so an ask row another transaction holds is skipped, never waited on. Its
+holder waits on a thread lock this command holds: it is a question asked during the
+command, or a transaction that locked its thread's asks and waits for that thread's
+advisory lock. After commit that holder sees the cancellation: a flagged run cancels
+its own live ask when it closes, and a writer's answer that took the row first wins,
+as any writer action does, unless the command deleted the chat: then the answer's
+claim cancels the ask as the command would have. Nothing retries `40P01`.
+
+Work delete and a Work receipt reversal's delete run the command on the Work's tree
+before `lockWorkThreadTree` takes the tree's rows. That function locks rows parents
+first, by `(spawn_depth, id)`, the order the command takes a subtree in
+(`listSubtreeIds` orders by depth, then id); in id order a child with a smaller id
+than its parent deadlocked a Stop against a restore or purge of the same tree.
 
 Ownership decides the scope:
 

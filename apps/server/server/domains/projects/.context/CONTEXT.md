@@ -122,10 +122,11 @@ those children with `deletedByWorkId`. Branches and their drafts remain until
 purge, so restore clears exactly the rows marked by that deletion; independently
 trashed children remain trashed. A deleted Work cannot restore a child by a
 separate path. Document and folder cascades advance location versions. The
-deleted threads include subagent children. Work delete ends each one's run and
-subagent subtree, its open questions included, in the delete's own transaction
-(`stopThreads`), before `lockWorkThreadTree` locks the tree's rows; receipt
-reversal still ends them after its commit.
+deleted threads include subagent children. Work delete, and a receipt reversal
+that deletes a Work, ends each one's run and subagent subtree, its open questions
+included, in the delete's own transaction (`stopThreads`), before
+`lockWorkThreadTree` locks the tree's rows parents first (see the runtime's
+`.context/spawn.md` on lineage cancellation).
 
 Restore is available until `deletionPurgeAt(deletedAt)`; after that deadline it
 returns HTTP 410 `work_restore_expired` even if the purge worker has not run;

@@ -78,8 +78,6 @@ export class WorkDeleteRetryError extends Error {
 export type WorkDeletion = {
   before: Work | null;
   after: Work | null;
-  /** Threads hidden by this deletion, returned for the runtime's cancel path. */
-  threadIds: ThreadId[];
 };
 
 export type WorkRestoration = {

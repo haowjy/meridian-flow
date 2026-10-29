@@ -760,8 +760,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         document.id,
       );
 
-      const deletion = await works.softDelete(work.id);
-      expect(new Set(deletion.threadIds)).toEqual(new Set([THREAD_ID, childThreadId]));
+      await works.softDelete(work.id);
       await expect(
         resultRepository.createOrConverge({
           id: "00000000-0000-4000-8000-000000000850",
