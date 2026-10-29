@@ -1,5 +1,5 @@
 -- migration: no-transaction
--- migration: code 0112_ask_multi_question_rows.ts sha256:b585786110a98d8a9cae67542a54228b1f4d76cb25d1aeab5a6cbe05ceb743f8
+-- migration: code 0112_ask_multi_question_rows.ts sha256:30857f6b44d24223689674960a94b8cb3a66b8e6de4c3c33453be652b01fb906
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM asks WHERE kind = 'question' AND payload ? 'question')

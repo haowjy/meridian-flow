@@ -2,7 +2,8 @@
  * The chat composer's open-ask mode: the takeover to draw in the box's place, and the writer's
  * draft of the answers (which question they're on, each one's choice and typed words). The draft
  * outlives the takeover, which also hides while this device's answer sends or settles, so a failed
- * send reopens with every answer in place.
+ * send reopens with every answer in place. A refused answer isn't a failed send: it shows a
+ * message with no Retry until the writer changes something.
  *
  * Nothing typed is lost: when the ask ends, words that aren't in how it ended (left in a field
  * beside a picked option, or sent but beaten by another resolution) are added to the composer
@@ -15,7 +16,8 @@
  *
  * While the writer works on a question, the draft goes to the server as `ask.presence`, at most
  * once per `PRESENCE_INTERVAL_MS`, so the idle deadline stays off and a walk-away keeps what
- * they chose.
+ * they chose. A report waiting on that interval is sent when the writer leaves or the page hides,
+ * and one the socket couldn't carry is sent when it connects again.
  */
 import type { ThreadAsk } from "@meridian/contracts/threads";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
@@ -43,36 +45,63 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
     heldRef.current = next;
     setHeld(next);
   }, []);
+  // The ask whose last answer the server refused; any change to its draft clears it.
+  const [refusedAsk, setRefusedAsk] = useState<string | null>(null);
   const tracked = useThreadStore((state) =>
     held.askId === null ? undefined : state.syncedByThread[threadId]?.asks.byId.get(held.askId),
   );
-  const presence = useRef<{ sentAt: number; timer: ReturnType<typeof setTimeout> | null }>({
-    sentAt: Number.NEGATIVE_INFINITY,
-    timer: null,
-  });
+  // `unsent`: the last report couldn't leave (socket down), so it is owed on reconnect.
+  const presence = useRef<{
+    sentAt: number;
+    timer: ReturnType<typeof setTimeout> | null;
+    unsent: boolean;
+  }>({ sentAt: Number.NEGATIVE_INFINITY, timer: null, unsent: false });
   const stopPresence = useCallback(() => {
     if (presence.current.timer) clearTimeout(presence.current.timer);
-    presence.current = { sentAt: Number.NEGATIVE_INFINITY, timer: null };
+    presence.current = { sentAt: Number.NEGATIVE_INFINITY, timer: null, unsent: false };
   }, []);
-  /** Report the held draft now, or once the interval since the last report has passed. */
-  const reportPresence = useCallback(
+  const sendPresence = useCallback(
     (askId: string) => {
-      const send = () => {
-        const current = heldRef.current;
-        if (current.askId !== askId) return;
-        presence.current = { sentAt: Date.now(), timer: null };
-        commands.presence(
-          askId,
-          current.entries.map((entry) => entry.choice),
-        );
+      const current = heldRef.current;
+      if (current.askId !== askId) return;
+      if (presence.current.timer) clearTimeout(presence.current.timer);
+      const sent = commands.presence(
+        askId,
+        current.entries.map((entry) => entry.choice),
+      );
+      presence.current = {
+        sentAt: sent ? Date.now() : presence.current.sentAt,
+        timer: null,
+        unsent: !sent,
       };
-      const wait = presence.current.sentAt + PRESENCE_INTERVAL_MS - Date.now();
-      if (wait <= 0) send();
-      else presence.current.timer ??= setTimeout(send, wait);
     },
     [commands],
   );
-  useEffect(() => stopPresence, [stopPresence]);
+  /** Report the held draft now, or once the interval since the last report has passed. */
+  const reportPresence = useCallback(
+    (askId: string) => {
+      const wait = presence.current.sentAt + PRESENCE_INTERVAL_MS - Date.now();
+      if (wait <= 0) sendPresence(askId);
+      else presence.current.timer ??= setTimeout(() => sendPresence(askId), wait);
+    },
+    [sendPresence],
+  );
+  // Send what is owed (a report waiting on the interval, or one the socket dropped) rather than lose it.
+  const flushPresence = useCallback(() => {
+    const askId = heldRef.current.askId;
+    if (askId !== null && (presence.current.timer || presence.current.unsent)) sendPresence(askId);
+  }, [sendPresence]);
+  useEffect(() => {
+    window.addEventListener("pagehide", flushPresence);
+    const unsubscribe = commands.onConnected(() => {
+      if (presence.current.unsent) flushPresence();
+    });
+    return () => {
+      window.removeEventListener("pagehide", flushPresence);
+      unsubscribe();
+      flushPresence();
+    };
+  }, [commands, flushPresence]);
 
   useEffect(() => {
     const current = heldRef.current;
@@ -95,7 +124,9 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
     <AskTakeover
       open={open}
       draft={draft}
+      refused={refusedAsk === open.ask.id}
       onDraftChange={(next) => {
+        setRefusedAsk(null);
         write({ askId: open.ask.id, ...next });
         reportPresence(open.ask.id);
       }}
@@ -103,14 +134,14 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
       onAnswer={(answer) => {
         // The answer carries the draft; a trailing report would only repeat it.
         stopPresence();
+        setRefusedAsk(null);
         const askId = open.ask.id;
         void commands.answer(askId, answer).then((result) => {
           const current = heldRef.current;
-          if (
-            result.kind === "invalid_answer" &&
-            result.questionIndex !== undefined &&
-            current.askId === askId
-          )
+          if (result.kind !== "invalid_answer") return;
+          setRefusedAsk(askId);
+          // A draft the writer never changed isn't held yet; the seeded one is what was sent.
+          if (result.questionIndex !== undefined && current.askId === askId)
             write({ ...current, step: result.questionIndex });
         });
       }}

@@ -217,8 +217,6 @@ const GrepToolInputSchema = z
   .strict();
 export type GrepToolInput = z.output<typeof GrepToolInputSchema>;
 
-export const AskToolInputSchema = questionAskPayloadSchema;
-
 /** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "grep", "ask_user"] as const;
 
@@ -365,7 +363,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
           "Ask the writer up to four questions in one call. Ask only when an answer changes what you would write and you can't make a reasonable choice; otherwise choose, say what you chose, and continue. Don't ask permission to write: the writer can undo, and your writes aren't gated. Batch related questions into one call, because the writer answers them together. Give each question 2–4 options; the writer can also answer in their own words or skip a question. Mark one option per question recommended if you have a preference: it's used for any question the writer leaves unanswered when they walk away. Asking ends your turn, and the answers arrive as this tool's result, one entry per question.",
         inputSchema: modelToolSchema(questionAskPayloadSchema),
       },
-      input: AskToolInputSchema,
+      input: questionAskPayloadSchema,
       execution: { type: "server", handler: askUser },
       capability: "request",
     },

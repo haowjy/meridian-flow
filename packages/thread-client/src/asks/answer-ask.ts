@@ -4,7 +4,14 @@
  */
 import type { AskAnswer } from "@meridian/contracts/threads";
 import type { ThreadTransport } from "../socket/thread-transport";
-import { beginAskAnswer, type ChatAsks, failAskAnswer, markAskAnswer, receiveAsks } from "./asks";
+import {
+  beginAskAnswer,
+  type ChatAsks,
+  clearAskAnswer,
+  failAskAnswer,
+  markAskAnswer,
+  receiveAsks,
+} from "./asks";
 
 export type AnswerAskPorts = {
   transport: Pick<ThreadTransport, "answerAsk">;
@@ -47,9 +54,12 @@ export async function answerAsk(
     } else await settleAsk(ports, askId);
     return { kind: "not_open" };
   }
-  ports.update((asks) => failAskAnswer(asks, askId, submissionId));
-  if (reply.type === "ask.answer.error" && reply.code === "invalid_answer")
+  if (reply.type === "ask.answer.error" && reply.code === "invalid_answer") {
+    // Not a transport failure: the same answer would be refused again, so no Retry waits for it.
+    ports.update((asks) => clearAskAnswer(asks, askId, submissionId));
     return { kind: "invalid_answer", questionIndex: reply.questionIndex };
+  }
+  ports.update((asks) => failAskAnswer(asks, askId, submissionId));
   return { kind: "failed" };
 }
 

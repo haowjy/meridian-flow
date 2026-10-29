@@ -68,8 +68,7 @@ from the stored answers: what the writer had answered stands, and every other qu
 takes its Recommended option (`timeout{label|null}`). A presence that races the sweep
 settles under the thread lock; the sweep resolves only an ask whose deadline is still due.
 Permission asks have no deadline and take no presence.
-Migration 0112 rewrote every thread's stored `ask_user` definition to the list schema, so
-the tool has one input shape.
+The tool has one input shape (`questions`, 1-4), in every thread's stored definition too.
 
 A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
 the ask service's one creation call (`AskService.request`) opens the question or
