@@ -109,6 +109,14 @@ export function failAskAnswer(asks: ChatAsks, askId: string, submissionId: strin
   return { ...asks, attempts };
 }
 
+/** The server refused the answer outright: drop that attempt, so nothing offers to resend it. */
+export function clearAskAnswer(asks: ChatAsks, askId: string, submissionId: string): ChatAsks {
+  if (asks.attempts.get(askId)?.submissionId !== submissionId) return asks;
+  const attempts = new Map(asks.attempts);
+  attempts.delete(askId);
+  return { ...asks, attempts };
+}
+
 /** Move the ask's attempt to `state`; an ask with no attempt is left alone. */
 export function markAskAnswer(
   asks: ChatAsks,

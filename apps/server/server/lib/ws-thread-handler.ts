@@ -395,7 +395,8 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               // No reply goes back, so the log is the only trace of a client reporting a bad draft.
               if (refused)
                 emitEvent(peer.context.app.eventSink, {
-                  level: "warn",
+                  // A presence crossing an answer or the sweep is routine; a misfit or a stranger is a bug.
+                  level: refused === "not_open_question" ? "info" : "warn",
                   source: "wire.thread_ws",
                   name: "ask.presence.refused",
                   payload: { failureReason: refused, threadId },

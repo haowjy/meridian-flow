@@ -19,8 +19,10 @@ export type AskCommands = {
   answer(askId: string, answer: AskAnswer): Promise<AnswerAskResult>;
   /** Read the chat again after an answer could not learn how the ask ended. */
   settle(askId: string): void;
-  /** The writer is still answering, holding these answers so far. */
-  presence(askId: string, answers: DraftAnswers): void;
+  /** The writer is still answering, holding these answers so far; false when the frame couldn't leave. */
+  presence(askId: string, answers: DraftAnswers): boolean;
+  /** Run `listener` each time the socket connects; returns the unsubscribe. */
+  onConnected(listener: () => void): () => void;
 };
 
 export function useAnswerAsk(threadId: string): AskCommands {
@@ -42,7 +44,11 @@ export function useAnswerAsk(threadId: string): AskCommands {
     return {
       answer: (askId, answer) => answerAsk(ports, threadId, askId, answer),
       settle: (askId) => void settleAsk(ports, askId),
-      presence: (askId, answers) => void transport.sendAskPresence({ threadId, askId, answers }),
+      presence: (askId, answers) => transport.sendAskPresence({ threadId, askId, answers }),
+      onConnected: (listener) =>
+        transport.onConnectionState((state) => {
+          if (state.kind === "connected") listener();
+        }),
     };
   }, [queryClient, threadId, transport, updateAsks]);
 }

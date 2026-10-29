@@ -30,11 +30,20 @@ export type AskTakeoverProps = {
   draft: QuestionDraft;
   onDraftChange: (draft: QuestionDraft) => void;
   onAnswer: (answer: AskAnswer) => void;
+  /** The server refused the last answer; the draft is already at the question it named, if any. */
+  refused?: boolean;
   /** Read the chat again: the server closed the ask without saying how. */
   onSettle: () => void;
 };
 
-export function AskTakeover({ open, draft, onDraftChange, onAnswer, onSettle }: AskTakeoverProps) {
+export function AskTakeover({
+  open,
+  draft,
+  onDraftChange,
+  onAnswer,
+  refused,
+  onSettle,
+}: AskTakeoverProps) {
   const { ask, attempt } = open;
   if (attempt?.state === "unsettled") {
     // The ask is closed; only how it ended is unknown. Nothing here may answer it again.
@@ -64,6 +73,13 @@ export function AskTakeover({ open, draft, onDraftChange, onAnswer, onSettle }: 
   return (
     <>
       {failure ? <div className="mb-[var(--chat-space-inline)]">{failure}</div> : null}
+      {refused ? (
+        <div className="mb-[var(--chat-space-inline)]">
+          <FailureCard tone="error">
+            <p className="min-w-0 flex-1">{t`This answer couldn't be used. Choose again.`}</p>
+          </FailureCard>
+        </div>
+      ) : null}
       {ask.kind === "question" ? (
         <QuestionTakeover
           key={ask.id}
