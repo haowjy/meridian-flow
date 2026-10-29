@@ -57,7 +57,8 @@ Prefix warmth is predicted from durable facts: the resolved registry model,
 previous successful assistant response, prompt-epoch bake, complete compaction
 boundaries, image decisions, and cutoff lineage. Summary rows and handoff seeds
 never supply warmth or a token baseline. Cache age uses the previous response's
-request-start time; missing time is cold/unknown. A thread's first request
+request-start time against the TTL the thread kind requests (primary long,
+subagent short); missing time is cold/unknown. A thread's first request
 predicts cold even when the provider serves shared leading bytes from cache, and
 the first request after a compaction is cold because only an assistant turn's
 response counts as a reusable prefix. A fork routes its cache key to the thread

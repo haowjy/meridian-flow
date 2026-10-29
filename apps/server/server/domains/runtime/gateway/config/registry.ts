@@ -86,11 +86,25 @@ const DEEPSEEK_PRICING_SOURCE =
   "https://api-docs.deepseek.com/quick_start/pricing (peak fallback pinned 2026-10-13)";
 const OPENROUTER_PRICING_SOURCE = "https://openrouter.ai/docs/pricing (pinned fallback 2026-06-15)";
 
-const EXPLICIT_CACHE_1H: PromptCacheDescriptor = { kind: "explicit", ttlMs: 60 * 60 * 1_000 };
-const OPENAI_CACHE_ESTIMATE: PromptCacheDescriptor = { kind: "automatic", ttlMs: 5 * 60 * 1_000 };
+const FIVE_MINUTES_MS = 5 * 60 * 1_000;
+const ONE_HOUR_MS = 60 * 60 * 1_000;
+
+const EXPLICIT_CACHE_5M_OR_1H: PromptCacheDescriptor = {
+  kind: "explicit",
+  ttlMs: FIVE_MINUTES_MS,
+  longTtlMs: ONE_HOUR_MS,
+};
+const OPENAI_CACHE_ESTIMATE: PromptCacheDescriptor = { kind: "automatic", ttlMs: FIVE_MINUTES_MS };
+// `prompt_cache_retention: "24h"` is offered by gpt-4.1 only among our OpenAI models
+// (https://developers.openai.com/api/docs/guides/prompt-caching); others reject it.
+const OPENAI_CACHE_EXTENDED: PromptCacheDescriptor = {
+  ...OPENAI_CACHE_ESTIMATE,
+  longTtlMs: 24 * ONE_HOUR_MS,
+};
 const DEEPSEEK_CACHE_ESTIMATE: PromptCacheDescriptor = {
   kind: "automatic",
-  ttlMs: 60 * 60 * 1_000,
+  ttlMs: FIVE_MINUTES_MS,
+  longTtlMs: ONE_HOUR_MS,
 };
 const NO_PROMPT_CACHE: PromptCacheDescriptor = { kind: "none", ttlMs: null };
 
@@ -153,7 +167,7 @@ const CLAUDE_SONNET_4_6_MODEL = {
   displayName: "Claude Sonnet 4.6",
   contextWindow: 1_000_000,
   maxOutputTokens: 128_000,
-  promptCache: EXPLICIT_CACHE_1H,
+  promptCache: EXPLICIT_CACHE_5M_OR_1H,
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
   pricing: CLAUDE_SONNET_4_6_PRICING,
@@ -165,7 +179,7 @@ const CLAUDE_HAIKU_4_5_MODEL = {
   displayName: "Claude Haiku 4.5",
   contextWindow: 200_000,
   maxOutputTokens: 64_000,
-  promptCache: EXPLICIT_CACHE_1H,
+  promptCache: EXPLICIT_CACHE_5M_OR_1H,
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
   pricing: CLAUDE_HAIKU_4_5_PRICING,
@@ -177,7 +191,7 @@ const GPT_4_1_MODEL = {
   displayName: "GPT-4.1",
   contextWindow: 1_047_576,
   maxOutputTokens: 32_768,
-  promptCache: OPENAI_CACHE_ESTIMATE,
+  promptCache: OPENAI_CACHE_EXTENDED,
   capabilities: [
     "streaming",
     "tool_calling",
@@ -287,7 +301,7 @@ const OPENROUTER_CLAUDE_SONNET_4_6_MODEL = {
   displayName: "Claude Sonnet 4.6 (OpenRouter)",
   contextWindow: 1_000_000,
   maxOutputTokens: 128_000,
-  promptCache: EXPLICIT_CACHE_1H,
+  promptCache: EXPLICIT_CACHE_5M_OR_1H,
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   pricing: OPENROUTER_CLAUDE_SONNET_4_6_PRICING,
 } satisfies RegisteredModel;
@@ -357,9 +371,6 @@ export const MODEL_REGISTRY: ModelRegistry = {
   ],
 };
 
-const FIVE_MINUTES_MS = 5 * 60 * 1_000;
-const ONE_HOUR_MS = 60 * 60 * 1_000;
-
 /** Reject invalid explicit cache TTLs as soon as a registry is loaded. */
 export function validateModelRegistry(registry: ModelRegistry): void {
   for (const model of registry.providers.flatMap((provider) => provider.models)) {
@@ -372,12 +383,12 @@ export function validateModelRegistry(registry: ModelRegistry): void {
         `Input pricing tier for ${model.id} must be positive and below its context window`,
       );
     }
-    if (
-      model.promptCache.kind === "explicit" &&
-      model.promptCache.ttlMs !== FIVE_MINUTES_MS &&
-      model.promptCache.ttlMs !== ONE_HOUR_MS
-    ) {
-      throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
+    if (model.promptCache.kind === "explicit") {
+      for (const ttl of [model.promptCache.ttlMs, model.promptCache.longTtlMs ?? FIVE_MINUTES_MS]) {
+        if (ttl !== FIVE_MINUTES_MS && ttl !== ONE_HOUR_MS) {
+          throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
+        }
+      }
     }
   }
 }

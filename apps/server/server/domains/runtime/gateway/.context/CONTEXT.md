@@ -73,10 +73,15 @@ provider advertisement is not argument authority.
 
 ## Cache, limits, and persisted selections
 
-Each model declares `promptCache: { kind, ttlMs }`. Explicit descriptors produce
-provider cache marks; automatic models receive no marks and `none` models predict
-cold. A nullable TTL means unknown, not infinite. Cache-write pricing follows
-the descriptor tier. `inputTierTokens`, when present, must be positive and below
+Each model declares `promptCache: { kind, ttlMs, longTtlMs? }`: `ttlMs` is the
+short lifetime, `longTtlMs` the longer one the model offers (Claude and DeepSeek
+1h, `gpt-4.1` 24h via `prompt_cache_retention`; other OpenAI models offer none and
+never get the parameter). The request picks one with `promptCacheRetention`
+(`resolvePromptCacheTtlMs`): the loop asks `long` for primary threads and `short`
+for subagents, fixed by thread kind so the cached prefix never varies mid-thread.
+Explicit descriptors produce provider cache marks; automatic models receive no
+marks and `none` models predict cold. A nullable TTL means unknown, not infinite.
+Cache-write pricing follows the descriptor tier (5m about 1.25x input, 1h 2x). `inputTierTokens`, when present, must be positive and below
 the context window; the runtime uses it for compaction planning.
 
 Every model declares a tokenizer family with no fallback; runtime compaction

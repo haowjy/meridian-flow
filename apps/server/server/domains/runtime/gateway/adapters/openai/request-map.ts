@@ -358,6 +358,7 @@ export function toOpenAIResponsesParams(
   request: GenerateRequest,
   modelId: string,
   providerId = "openai",
+  extendedRetention = false,
 ): OpenAI.Responses.ResponseCreateParamsStreaming {
   const instructions = extractInstructions(request.messages);
   const input = flattenAssistantToolCalls(request.messages, providerId, modelId);
@@ -380,5 +381,9 @@ export function toOpenAIResponsesParams(
       ? { text: mapResponseFormat(request.responseFormat) }
       : {}),
     ...(request.promptCacheKey ? { prompt_cache_key: request.promptCacheKey } : {}),
+    // Only for models that list "24h" (descriptor.longTtlMs); others reject the parameter.
+    ...(extendedRetention && request.promptCacheRetention === "long"
+      ? { prompt_cache_retention: "24h" as const }
+      : {}),
   };
 }

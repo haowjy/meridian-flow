@@ -23,6 +23,7 @@ import type {
   ProviderConfig,
   StreamEvent,
 } from "../../domain/index.js";
+import { resolvePromptCacheTtlMs } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapProviderHttpError, providerFetch } from "../provider-http-error.js";
 import { toOpenAIChatCompletionParams } from "./request-map.js";
@@ -60,7 +61,11 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
-        const params = toOpenAIChatCompletionParams(request, model.id, model.promptCache.ttlMs);
+        const params = toOpenAIChatCompletionParams(
+          request,
+          model.id,
+          resolvePromptCacheTtlMs(model.promptCache, request.promptCacheRetention),
+        );
         const stream = await client.chat.completions.create(
           { ...params, stream: true },
           { signal: request.signal },
