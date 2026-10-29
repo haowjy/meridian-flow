@@ -152,11 +152,12 @@ second thread's lock anywhere else. What is enforced, not assumed: after a
 transaction's first thread lock, `lockThreadAsks` and the claim use `FOR UPDATE SKIP
 LOCKED`, so an ask row another transaction holds is skipped, never waited on. Its
 holder waits on a thread lock this command holds: it is a question asked during the
-command, or a transaction that locked its thread's asks and waits for that thread's
-advisory lock. After commit that holder sees the cancellation: a flagged run cancels
-its own live ask when it closes, and a writer's answer that took the row first wins,
-as any writer action does, unless the command deleted the chat: then the answer's
-claim cancels the ask as the command would have. Nothing retries `40P01`. Its
+command, a transaction that locked its thread's asks and waits for that thread's
+advisory lock, or a permission Allow that locked its ask before its first thread
+lock. After commit that holder sees the cancellation: a flagged run cancels its own
+live ask when it closes, and a writer's answer that took the row first wins, as any
+writer action does, unless the command deleted the chat: then the answer's claim
+cancels the ask as the command would have. Nothing retries `40P01`. Its
 lock-only form, `lineage.lock` (the run sessions' `lockThreads`), takes the owner's
 lock as the command and writes nothing: the permission Allow that deletes a Work
 takes its lineage owners' locks through it first (`.context/tools.md`).
