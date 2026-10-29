@@ -24,7 +24,7 @@ function toolCall(name: string, id: string, input: Record<string, unknown>): Gen
     toolCalls: [],
     finishReason: "tool_use",
     usage,
-    model: "gpt-4.1-mini",
+    model: "gpt-5.6-luna",
     provider: "openai",
   };
 }
@@ -35,7 +35,7 @@ function textResult(): GenerateResult {
     toolCalls: [],
     finishReason: "end_turn",
     usage,
-    model: "gpt-4.1-mini",
+    model: "gpt-5.6-luna",
     provider: "openai",
   };
 }
@@ -158,7 +158,7 @@ describe("document command recovery through the runtime loop", () => {
         toolCalls: [],
         finishReason: "tool_use" as const,
         usage,
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         provider: "openai",
       },
       textResult(),

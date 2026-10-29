@@ -256,6 +256,18 @@ function mapResponseFormat(
   };
 }
 
+/**
+ * Explicit effort → `reasoning_effort`. Gemini's OpenAI-compatible endpoint maps it to
+ * `thinking_level` (low/medium/high), so `max` clamps to `high`. `adaptive` and
+ * `disabled` send nothing and leave the model's default.
+ */
+function mapReasoningEffort(
+  reasoning: GenerateRequest["reasoning"],
+): "low" | "medium" | "high" | undefined {
+  if (typeof reasoning !== "object") return undefined;
+  return reasoning.effort === "max" ? "high" : reasoning.effort;
+}
+
 /** True when the loop marked the system message for explicit prompt caching. */
 function systemHasCacheBreakpoint(messages: Message[]): boolean {
   return messages.some(
@@ -290,6 +302,7 @@ export function toOpenAIChatCompletionParams(
     temperature: request.temperature,
     top_p: request.topP,
     stop: request.stopSequences,
+    reasoning_effort: mapReasoningEffort(request.reasoning),
     response_format: mapResponseFormat(request.responseFormat),
     stream: true,
     stream_options: { include_usage: true },

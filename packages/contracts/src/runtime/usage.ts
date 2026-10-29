@@ -37,8 +37,8 @@ export interface Usage {
   reasoningTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
-  /** Subset of `cacheWriteTokens` written with the 1-hour TTL; the rest are 5-minute writes. Set only by providers that split writes by TTL (Anthropic). */
-  cacheWrite1hTokens?: number;
+  /** Subset of `cacheWriteTokens` written with the model's long TTL (Anthropic 1h, OpenAI 12h); the rest use the short TTL. Set only by providers that bill writes by TTL. */
+  cacheWriteLongTokens?: number;
 }
 
 /** Throws when a Usage value violates the canonical inclusive-total contract. */
@@ -49,7 +49,7 @@ export function assertValidUsage(usage: Usage): void {
     ["reasoningTokens", usage.reasoningTokens],
     ["cacheReadTokens", usage.cacheReadTokens],
     ["cacheWriteTokens", usage.cacheWriteTokens],
-    ["cacheWrite1hTokens", usage.cacheWrite1hTokens],
+    ["cacheWriteLongTokens", usage.cacheWriteLongTokens],
   ] as const;
 
   for (const [field, count] of counts) {
@@ -59,9 +59,9 @@ export function assertValidUsage(usage: Usage): void {
   }
 
   const cacheTokens = (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
-  if ((usage.cacheWrite1hTokens ?? 0) > (usage.cacheWriteTokens ?? 0)) {
+  if ((usage.cacheWriteLongTokens ?? 0) > (usage.cacheWriteTokens ?? 0)) {
     throw new Error(
-      "Usage invariant violated: cacheWrite1hTokens must not exceed cacheWriteTokens",
+      "Usage invariant violated: cacheWriteLongTokens must not exceed cacheWriteTokens",
     );
   }
   if (cacheTokens > usage.inputTokens) {

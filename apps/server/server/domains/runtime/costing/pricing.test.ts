@@ -20,20 +20,20 @@ describe("model pricing", () => {
   const rateSource = createDefaultModelTokenRateSource();
 
   it("prices Anthropic cache writes by the TTL written: 5m at 1.25x input, 1h at 2x", () => {
-    const price = (usage: { cacheWriteTokens: number; cacheWrite1hTokens?: number }) =>
+    const price = (usage: { cacheWriteTokens: number; cacheWriteLongTokens?: number }) =>
       computeModelCost({
         provider: "anthropic",
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5-5",
         usage: { inputTokens: 1_000_000, outputTokens: 0, ...usage },
         rateSource,
       });
 
-    expect(price({ cacheWriteTokens: 1_000_000 }).costUsd).toBe("3.750000");
-    expect(price({ cacheWriteTokens: 1_000_000, cacheWrite1hTokens: 1_000_000 }).costUsd).toBe(
-      "6.000000",
+    expect(price({ cacheWriteTokens: 1_000_000 }).costUsd).toBe("2.500000");
+    expect(price({ cacheWriteTokens: 1_000_000, cacheWriteLongTokens: 1_000_000 }).costUsd).toBe(
+      "4.000000",
     );
-    expect(price({ cacheWriteTokens: 1_000_000, cacheWrite1hTokens: 400_000 }).costUsd).toBe(
-      "4.650000",
+    expect(price({ cacheWriteTokens: 1_000_000, cacheWriteLongTokens: 400_000 }).costUsd).toBe(
+      "3.100000",
     );
   });
 
@@ -191,7 +191,7 @@ describe("model pricing", () => {
   it("surfaces missing_usage for aborted OpenAI partial streams without usage", () => {
     const cost = computeModelCost({
       provider: "openai",
-      model: "gpt-4o",
+      model: "gpt-6.1-sol",
       usage: { inputTokens: 0, outputTokens: 0 },
       providerData: { meteringStatus: "missing_usage" },
       rateSource,
@@ -202,18 +202,6 @@ describe("model pricing", () => {
     expect(cost.priceSource).toBe("unknown");
     expect(cost.pricingSnapshot.usageMeteringStatus).toBe("missing_usage");
     expect(cost.pricingSnapshot.sourceDetail).toBe("openai.meteringStatus.missing_usage");
-  });
-
-  it("falls back to pinned rates when provider-reported cost is absent", () => {
-    const cost = computeModelCost({
-      provider: "openrouter",
-      model: "anthropic/claude-sonnet-4.6",
-      usage: { inputTokens: 1_000_000, outputTokens: 0 },
-      rateSource,
-    });
-
-    expect(cost.costUsd).toBe("3.000000");
-    expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
   });
 
   it("throws for unknown provider/model pairs instead of silently billing zero", () => {

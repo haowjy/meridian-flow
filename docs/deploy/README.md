@@ -98,6 +98,7 @@ Provider-conditioned model variables:
 | `FLOW_ANTHROPIC_API_KEY` | Anthropic model provider |
 | `FLOW_OPENAI_API_KEY` | OpenAI model provider |
 | `FLOW_DEEPSEEK_API_KEY` | DeepSeek/OpenAI-compatible provider |
+| `FLOW_GEMINI_API_KEY` | Google Gemini provider |
 | `FLOW_OPENROUTER_API_KEY` | OpenRouter model provider |
 | `FLOW_OPENROUTER_BASE_URL` | Optional OpenRouter base URL override |
 

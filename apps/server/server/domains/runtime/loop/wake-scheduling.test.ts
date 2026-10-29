@@ -25,7 +25,7 @@ __mergedSuite("wake-run.test.ts", () => {
       toolCalls: [],
       finishReason: "end_turn" as const,
       usage: { inputTokens: 1000000, outputTokens: 1000000 },
-      model: "gpt-4.1-mini",
+      model: "gpt-5.6-luna",
       provider: "openai",
     };
   }

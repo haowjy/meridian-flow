@@ -186,7 +186,7 @@ describe("conversation summarizer", () => {
   });
 
   it("compacts a Sonnet 4.6 assistant turn with four 100 KB document results on a 128k summarizer", async () => {
-    const sonnet = { ...threadModel, id: "claude-sonnet-4-6", contextWindow: 1_000_000 };
+    const sonnet = { ...threadModel, id: "claude-sonnet-5-5", contextWindow: 1_000_000 };
     const rig = setup({ models: [sonnet, { ...cheapModel, contextWindow: 128_000 }] });
     rig.input.requestInHand = { model: sonnet.id, messages: [], promptCacheRetention: "short" };
     rig.input.projection = projection(["Check continuity", ""]);

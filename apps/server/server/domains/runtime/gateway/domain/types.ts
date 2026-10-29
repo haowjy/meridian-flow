@@ -68,11 +68,12 @@ export function resolvePromptCacheTtlMs(
 }
 
 /**
- * OpenAI `prompt_cache_retention` values by lifetime. A long request takes the shortest
- * option of at least 1 hour; gpt-4.1's only one is "24h".
+ * OpenAI GPT-5.6+ `prompt_cache_options.ttl` values by lifetime: "30m" is the default
+ * and "12h" the only longer option (the shortest of at least 1 hour).
  */
-export function openaiRetentionWire(longTtlMs: number): "24h" | undefined {
-  return longTtlMs === 24 * 60 * 60 * 1_000 ? "24h" : undefined;
+export function openaiCacheTtlWire(ttlMs: number): "30m" | "12h" | undefined {
+  if (ttlMs === 30 * 60 * 1_000) return "30m";
+  return ttlMs === 12 * 60 * 60 * 1_000 ? "12h" : undefined;
 }
 
 /**
