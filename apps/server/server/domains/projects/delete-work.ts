@@ -21,15 +21,11 @@ export async function deleteWorkTransition(
   deps: DeleteDeps,
   workId: WorkId,
 ): Promise<DeleteWorkTransition> {
-  return runWorkLifecycleCommand(
-    { transaction: deps.works.transaction, stopThreads: deps.stopThreads },
-    async () => {
-      // The tree's runs and subagent lineages end in this same transaction.
-      const { before, after } = await deps.works.softDelete(workId, deps.stopThreads);
-      const changed = !!after?.deletedAt && !before?.deletedAt;
-      return { value: { before, after, changed }, threadIdsToStop: [] };
-    },
-  );
+  return runWorkLifecycleCommand(deps.works.transaction, async () => {
+    // The tree's runs and subagent lineages end in this same transaction.
+    const { before, after } = await deps.works.softDelete(workId, deps.stopThreads);
+    return { before, after, changed: !!after?.deletedAt && !before?.deletedAt };
+  });
 }
 
 export async function restoreWork(deps: LifecycleDeps, workId: WorkId): Promise<Work> {

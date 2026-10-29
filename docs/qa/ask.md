@@ -218,5 +218,22 @@ into the parent's script before you send. A parent woken by a report matches
     and script `work update` on it: after 30 s the row opens to "This took too long,
     so it was stopped." A stopped subagent's card reads "Stopped" under its name; a
     failed one reads "Failed".
+11. **Stop against a Work's tree lock.** In a fresh Work, have chat P spawn a
+    background child C; repeat with new Works until C's id sorts below P's. In psql,
+    `BEGIN` and lock C (`SELECT id FROM threads WHERE id = '<C>' FOR NO KEY UPDATE`).
+    Send `./mf api POST /api/works/<id>/restore` on the live Work, then
+    `./mf thread stop <P>`, then `COMMIT`. Repeat with a receipt reversal instead of
+    the restore: a chat creates the Work with the `work` tool, and
+    `./mf api POST /api/threads/<chat>/context/reverse` undoes that turn
+    (`{"direction":"undo","scope":"turn","target":"<turn>"}`). PASS: both calls
+    return, and the Postgres log (`docker logs meridian-dev-postgres-1`) has no new
+    `deadlock detected`.
+12. **An answer the delete skipped.** Put chats X and A in one Work, X's id below
+    A's, and have A ask. Make the answer hold its ask row before it takes A's lock
+    (a local pause in `resolve`, never committed), then delete the Work while it
+    waits, then release it. PASS: the answer gets `not_open`; the ask reads
+    `cancelled`/`cancelled`, its turn `cancelled`, its tool result
+    `{"cancelled":true}`; A has no undelivered `ask_resolved` row and
+    `./mf log --name wake.failed` stays empty.
 
 Stop the owned stack with `pnpm dev --stop`.

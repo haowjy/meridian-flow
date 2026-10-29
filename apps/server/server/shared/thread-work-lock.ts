@@ -1,4 +1,8 @@
-/** Canonical mutation locks: thread (NO KEY UPDATE), then primary/target Works by id. */
+/**
+ * Canonical mutation locks: thread (NO KEY UPDATE), then primary/target Works by id. Several
+ * thread rows lock parents first, by `(spawn_depth, id)`, the order lineage cancellation takes
+ * a subtree in; any other order deadlocks against a Stop.
+ */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { asks, threads, threadWorks } from "@meridian/database/schema";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
@@ -49,6 +53,12 @@ export async function lockThreadForMutation(db: DrizzleDb, threadId: ThreadId) {
   return thread ?? null;
 }
 
+const treeColumns = {
+  id: threads.id,
+  deletedAt: threads.deletedAt,
+  spawnDepth: threads.spawnDepth,
+};
+
 async function findWorkThreadTree(
   db: DrizzleDb,
   workId: WorkId,
@@ -56,14 +66,14 @@ async function findWorkThreadTree(
 ): Promise<{ threadIds: ThreadId[]; liveThreadIds: ThreadId[] }> {
   const activeDb = currentDrizzleDb(db);
   const roots = await activeDb
-    .select({ id: threads.id, deletedAt: threads.deletedAt })
+    .select(treeColumns)
     .from(threadWorks)
     .innerJoin(threads, eq(threadWorks.threadId, threads.id))
     .where(and(eq(threadWorks.workId, workId), eq(threadWorks.isPrimary, true)));
   const rows = new Map(roots.map((row) => [row.id, row]));
   if (includeMarked) {
     const marked = await activeDb
-      .select({ id: threads.id, deletedAt: threads.deletedAt })
+      .select(treeColumns)
       .from(threads)
       .where(eq(threads.deletedByWorkId, workId));
     for (const row of marked) rows.set(row.id, row);
@@ -71,7 +81,7 @@ async function findWorkThreadTree(
   let frontier = [...rows.keys()];
   while (frontier.length > 0) {
     const children = await activeDb
-      .select({ id: threads.id, deletedAt: threads.deletedAt })
+      .select(treeColumns)
       .from(threads)
       .where(inArray(threads.parentThreadId, frontier));
     frontier = [];
@@ -81,7 +91,10 @@ async function findWorkThreadTree(
       frontier.push(child.id);
     }
   }
-  const ordered = [...rows.values()].sort((a, b) => a.id.localeCompare(b.id));
+  // `spawn_depth` is the parent's plus one, so this is the cancellation's parents-first order.
+  const ordered = [...rows.values()].sort(
+    (a, b) => a.spawnDepth - b.spawnDepth || a.id.localeCompare(b.id),
+  );
   return {
     threadIds: ordered.map(({ id }) => id),
     liveThreadIds: ordered.filter(({ deletedAt }) => !deletedAt).map(({ id }) => id),
@@ -89,7 +102,8 @@ async function findWorkThreadTree(
 }
 
 /**
- * Stabilizes a Work's primary thread forest under the canonical thread-before-Work lock order.
+ * Stabilizes a Work's primary thread forest under the canonical thread-before-Work lock order,
+ * its rows parents first.
  * `changed` asks the transaction owner to retry instead of letting a newly joined tree escape.
  */
 export async function lockWorkThreadTree(

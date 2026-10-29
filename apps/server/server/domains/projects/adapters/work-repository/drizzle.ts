@@ -336,13 +336,13 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         const lockedTree = await lockWorkThreadTree(db, id, { beforeLock: endThreads });
         const before = await findWorkById(id);
         if (lockedTree.lifecycle === "missing" || lockedTree.lifecycle === "deleted" || !before) {
-          return { before, after: before, threadIds: [] };
+          return { before, after: before };
         }
         if (before.isNoWork) throw new WorkLockedError();
         if (lockedTree.changed) throw new WorkDeleteRetryError();
 
         const deletedAt = now();
-        const deletedThreadIds = await cascadeDelete(db, {
+        await cascadeDelete(db, {
           projectId: before.projectId,
           removal: deps.removal,
           projection: projectionMutation,
@@ -363,7 +363,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
         await lineageScratch.reconcile(lockedTree.threadIds);
-        return { before, after, threadIds: deletedThreadIds };
+        return { before, after };
       });
     },
     async restore(id: WorkId): Promise<WorkRestoration> {
