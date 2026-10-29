@@ -108,10 +108,15 @@ function errorResult(toolCallId: string, error: MeridianError): ToolExecutionRes
   return { toolCallId, output: renderRefusal(value), result: value, isError: true };
 }
 
-/** Codes the app reads: a caught exception is redacted there, a timeout says it timed out. */
+/**
+ * Codes the app reads: a caught exception is redacted there, a timeout says it timed out, and
+ * unparseable arguments read like a schema failure (the message is a retry instruction for the
+ * model, with the raw fragment in it).
+ */
 const EXECUTION_ERROR_CODES: Partial<Record<ToolExecutionError["kind"], string>> = {
   exception: TOOL_EXCEPTION_CODE,
   timeout: "tool_timeout",
+  arguments_parse: "tool_arguments_parse",
 };
 
 function executionErrorResult(
