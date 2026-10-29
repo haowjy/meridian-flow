@@ -76,6 +76,17 @@ export function openaiCacheTtlWire(ttlMs: number): "30m" | "12h" | undefined {
   return ttlMs === 12 * 60 * 60 * 1_000 ? "12h" : undefined;
 }
 
+export const REASONING_EFFORTS = ["low", "medium", "high", "max"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/** The requested effort, lowered to the model's ceiling. */
+export function clampReasoningEffort(
+  effort: ReasoningEffort,
+  ceiling: ReasoningEffort = "max",
+): ReasoningEffort {
+  return REASONING_EFFORTS.indexOf(effort) > REASONING_EFFORTS.indexOf(ceiling) ? ceiling : effort;
+}
+
 /**
  * Static model metadata registered per provider. `provider` is filled in by
  * buildProviderRegistry from the ProviderConfig.id, not from the model's own
@@ -83,9 +94,11 @@ export function openaiCacheTtlWire(ttlMs: number): "30m" | "12h" | undefined {
  * etc.) that the provider executes without Meridian involvement.
  */
 export interface ModelInfo {
+  /** Highest Flow effort level the model accepts; absent means `max`. Higher requests clamp to it. */
+  maxReasoningEffort?: ReasoningEffort;
   /** Whole-request input repricing threshold, if the model has one. */
   inputTierTokens?: number;
-  /** Underlying tokenizer family; OpenRouter models declare their upstream family. */
+  /** Underlying tokenizer family. */
   tokenizer: TokenizerFamily;
   id: string;
   provider: string;
@@ -269,7 +282,7 @@ export interface GenerateRequest {
   topP?: number;
   stopSequences?: string[];
   responseFormat?: ResponseFormat;
-  reasoning?: "disabled" | "adaptive" | { effort: "low" | "medium" | "high" | "max" };
+  reasoning?: "disabled" | "adaptive" | { effort: ReasoningEffort };
   providerOptions?: ProviderOptions;
   signal?: AbortSignal;
   /**
@@ -441,10 +454,9 @@ export interface ModelCallTiming {
 
 /**
  * Known adapter identifiers. String literals for the built-in adapters plus
- * a catch-all for custom adapter strings. `openrouter` reuses the openai-compatible
- * wire format against OpenRouter's API with provider-reported cost enrichment.
+ * a catch-all for custom adapter strings.
  */
-export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible" | "openrouter";
+export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible";
 
 /**
  * A configured provider entry. `adapter` selects the provider adapter factory

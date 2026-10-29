@@ -28,8 +28,6 @@
  *   reasoning from `completion_tokens_details.reasoning_tokens`.
  *
  * Optional fields: only set when the provider reports a positive (>0) value.
- * Billing ignores Usage for provider-reported cost — OpenRouter carries
- * `reportedCostUsd` on GenerateResult.providerData instead.
  */
 export interface Usage {
   inputTokens: number;

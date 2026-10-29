@@ -2,8 +2,8 @@
  * Purpose: Owns deterministic conversion from provider token usage into Meridian
  * millicredits via a layered token-rate source.
  * Key decisions: pinned rates come from the gateway registry (extractPinnedRates);
- * mock/stub fixtures live in an explicit override layer; provider-reported
- * OpenRouter costs bypass token-rate lookup. 1 credit = 1¢ = 1,000 millicredits.
+ * mock/stub fixtures live in an explicit override layer.
+ * 1 credit = 1¢ = 1,000 millicredits.
  */
 
 import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
@@ -34,7 +34,7 @@ export interface ModelTokenRate {
   source: string;
 }
 
-export type ModelTokenRateLayer = "pinned" | "override" | "provider_reported";
+export type ModelTokenRateLayer = "pinned" | "override";
 
 export interface ResolvedModelTokenRate extends ModelTokenRate {
   /** Layer that supplied the rate; persisted in pricingSnapshot for audits. */
@@ -196,72 +196,13 @@ export function meteredMillicreditsFromRaw(rawUsdMicros: bigint): bigint {
 
 function pricingSnapshotSource(rate: ResolvedModelTokenRate): string {
   if (rate.sourceLayer === "override") return `override: ${rate.source}`;
-  if (rate.sourceLayer === "provider_reported") return "provider_reported";
   return `pinned: ${rate.source}`;
-}
-
-function formatUsdFromNumber(usd: number): string {
-  return usd.toFixed(6);
-}
-
-function usdMicrosFromNumber(usd: number): bigint {
-  return parseUsdPerMillion(formatUsdFromNumber(usd));
-}
-
-function computeFromProviderReportedCost(input: {
-  provider: string;
-  model: string;
-  reportedCostUsd: number;
-}): ComputedModelCost {
-  const usdMicros = usdMicrosFromNumber(input.reportedCostUsd);
-  return {
-    costUsd: formatUsdFromMicros(usdMicros),
-    millicredits: meteredMillicreditsFromRaw(usdMicros).toString(),
-    priceSource: "provider_reported",
-    pricingSnapshot: {
-      provider: input.provider,
-      model: input.model,
-      reportedCostUsd: formatUsdFromNumber(input.reportedCostUsd),
-      source: "provider_reported",
-      sourceLayer: "provider_reported",
-      sourceDetail: "openrouter.providerData.reportedCostUsd",
-      unit: "provider_reported_usd",
-    },
-  };
-}
-
-function readOpenRouterProviderData(providerData: unknown): {
-  reportedCostUsd?: number;
-  meteringStatus?: string;
-} {
-  if (!providerData || typeof providerData !== "object") {
-    return {};
-  }
-  const record = providerData as Record<string, unknown>;
-  const reportedCostUsd = record.reportedCostUsd;
-  const meteringStatus = record.meteringStatus;
-  return {
-    ...(typeof reportedCostUsd === "number" && reportedCostUsd >= 0 ? { reportedCostUsd } : {}),
-    ...(typeof meteringStatus === "string" ? { meteringStatus } : {}),
-  };
 }
 
 function readMeteringStatusFromProviderData(providerData: unknown): string | undefined {
   if (!providerData || typeof providerData !== "object") return undefined;
   const meteringStatus = (providerData as Record<string, unknown>).meteringStatus;
   return typeof meteringStatus === "string" ? meteringStatus : undefined;
-}
-
-function readOpenRouterReportedCostUsd(
-  provider: string,
-  providerData: unknown,
-): number | undefined {
-  if (provider !== "openrouter") return undefined;
-  return readOpenRouterProviderData(providerData).reportedCostUsd;
-}
-
-function hasBillableTokenUsage(usage: Usage): boolean {
-  return usage.inputTokens > 0 || usage.outputTokens > 0;
 }
 
 function computeMissingUsageCost(input: {
@@ -307,34 +248,6 @@ export function computeModelCost(input: {
   assertValidUsage(input.usage);
 
   if (readMeteringStatusFromProviderData(input.providerData) === "missing_usage") {
-    return computeMissingUsageCost({
-      provider: input.provider,
-      model: input.model,
-      providerData: input.providerData,
-    });
-  }
-
-  const openRouterData =
-    input.provider === "openrouter" ? readOpenRouterProviderData(input.providerData) : {};
-
-  if (openRouterData.meteringStatus === "missing_usage") {
-    return computeMissingUsageCost({
-      provider: input.provider,
-      model: input.model,
-      providerData: input.providerData,
-    });
-  }
-
-  const reportedCostUsd = readOpenRouterReportedCostUsd(input.provider, input.providerData);
-  if (reportedCostUsd !== undefined) {
-    return computeFromProviderReportedCost({
-      provider: input.provider,
-      model: input.model,
-      reportedCostUsd,
-    });
-  }
-
-  if (input.provider === "openrouter" && !hasBillableTokenUsage(input.usage)) {
     return computeMissingUsageCost({
       provider: input.provider,
       model: input.model,

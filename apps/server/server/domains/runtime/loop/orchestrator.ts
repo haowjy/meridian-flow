@@ -1112,9 +1112,6 @@ async function settleCancelledResponse(input: {
   const settlement = await input.deps.gateway.settleCancelledResult?.({
     model: input.model,
     ...(input.result ? { result: input.result } : {}),
-    ...(input.result?.providerRequestId
-      ? { providerRequestId: input.result.providerRequestId }
-      : {}),
   });
 
   let currentTurn = input.currentTurn;

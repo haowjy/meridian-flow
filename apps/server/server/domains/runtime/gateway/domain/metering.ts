@@ -1,6 +1,6 @@
 /**
  * Provider-agnostic metering metadata on GenerateResult.providerData.
- * OpenRouter and direct providers flag unmetered cancelled streams the same way.
+ * Providers flag unmetered cancelled streams with it.
  */
 import type { GenerateResult } from "./types.js";
 

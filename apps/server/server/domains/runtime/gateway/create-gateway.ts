@@ -21,12 +21,6 @@
 import { createAnthropicAdapter } from "./adapters/anthropic/adapter.js";
 import { createOpenAIResponsesAdapter } from "./adapters/openai/adapter.js";
 import { createOpenAICompatibleAdapter } from "./adapters/openai-compatible/adapter.js";
-import { createOpenRouterAdapter } from "./adapters/openrouter/adapter.js";
-import { settleOpenRouterCancelledResult } from "./adapters/openrouter/cancel-settlement.js";
-import {
-  DEFAULT_OPENROUTER_BASE_URL,
-  resolveOpenRouterApiKey,
-} from "./adapters/openrouter/config.js";
 import {
   type ModelAttemptTimeoutOverrides,
   resolveModelAttemptTimeouts,
@@ -41,7 +35,6 @@ import type {
   GenerateRequest,
   GenerateResult,
   ModelInfo,
-  ProviderConfig,
   StreamEvent,
 } from "./domain/index.js";
 import type { Gateway } from "./ports/gateway.js";
@@ -61,8 +54,6 @@ function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdap
   switch (config.adapter) {
     case "openai-compatible":
       return createOpenAICompatibleAdapter(config);
-    case "openrouter":
-      return createOpenRouterAdapter(config);
     case "anthropic":
       return createAnthropicAdapter(config);
     case "openai":
@@ -70,46 +61,6 @@ function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdap
     default:
       throw new Error(`Unknown adapter: ${config.adapter}`);
   }
-}
-
-function resolveSettlementProvider(
-  registry: ProviderRegistry,
-  input: CancelledResultSettlementInput,
-  defaultModel: string | undefined,
-): ProviderConfig | undefined {
-  if (input.result) {
-    return registry.providers.find((provider) => provider.id === input.result?.provider);
-  }
-
-  try {
-    return resolveRoute(
-      registry,
-      { model: input.model, messages: [], promptCacheRetention: "short" },
-      defaultModel,
-    ).providerConfig;
-  } catch {
-    return undefined;
-  }
-}
-
-async function settleCancelledResultForGateway(
-  registry: ProviderRegistry,
-  input: CancelledResultSettlementInput,
-  defaultModel: string | undefined,
-): Promise<CancelledResultSettlement | null> {
-  const providerConfig = resolveSettlementProvider(registry, input, defaultModel);
-  if (providerConfig?.adapter === "openrouter") {
-    const apiKey = resolveOpenRouterApiKey(providerConfig.auth);
-    return settleOpenRouterCancelledResult({
-      ...input,
-      model: input.result?.model ?? input.model,
-      provider: providerConfig.id,
-      baseUrl: providerConfig.baseUrl ?? DEFAULT_OPENROUTER_BASE_URL,
-      ...(apiKey ? { apiKey } : {}),
-    });
-  }
-
-  return settleGenericCancelledResult(input);
 }
 
 /**
@@ -255,7 +206,7 @@ export function createGateway(config: GatewayConfig): Gateway {
     async settleCancelledResult(
       input: CancelledResultSettlementInput,
     ): Promise<CancelledResultSettlement | null> {
-      return settleCancelledResultForGateway(registry, input, config.defaultModel);
+      return settleGenericCancelledResult(input);
     },
 
     listModels(): ModelInfo[] {

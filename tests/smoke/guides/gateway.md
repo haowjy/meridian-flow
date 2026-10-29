@@ -12,7 +12,6 @@ End-to-end checks for `@meridian/model-gateway` via the smoke mini-server (`test
 | `FLOW_ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (adapter not in v1 spine yet) |
 | `FLOW_OPENAI_API_KEY` | Optional | Live OpenAI scenarios (adapter not in v1 spine yet) |
 | `FLOW_GEMINI_API_KEY` | Optional | Enables live Gemini scenarios |
-| `FLOW_OPENROUTER_API_KEY` | Optional | Enables live OpenRouter scenarios |
 | `MODEL_PROVIDER` | Optional | Set to `mock` to force in-process mock even if keys exist |
 | `PORT` | Optional | Fixed listen port; default is OS-assigned ephemeral |
 
