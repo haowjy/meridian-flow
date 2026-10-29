@@ -137,7 +137,11 @@ messages and hints are gone, and its report's publication projects the card but
 enqueues no parent notice. Stop decides the owner's execution from what the writer
 saw, and an execution that continues the writer's answer counts as one the writer
 asked for, so Stop cancels it; a continuation of a machine wake that started after
-the client's last view is spared and replies.
+the client's last view is spared and replies. The owner's claim takes its open
+asks and owed continuations, but a pending ask (one a run is still asking) only
+when it belongs to the execution the decision cancelled: a spared execution keeps
+its question, and a cancelled run whose session is in another process cancels its
+own pending ask when it closes.
 
 **Lock order.** A thread lock takes its thread's held ask rows (live asks and owed
 continuations) before its advisory lock (`shared/thread-work-lock.ts`,
@@ -160,7 +164,7 @@ Ownership decides the scope:
 |---|---|
 | Stop on a chat | the whole subtree, whichever turn spawned it ("stop everything") |
 | Cancelling a turn, or Send now | only subtrees whose root that turn's execution spawned (`origin_turn_id`); a turn parked on its question is cancelled by withdrawing it |
-| Deleting a thread or Work (`stopThreads`: chat trash, Work delete, the work tool, receipt reversal) | each deleted thread's run, every ask it holds and its whole subtree, one lineage per topmost thread. Trash and Work delete run it in their own transaction; receipt reversal runs it after its commit |
+| Deleting a thread or Work (`stopThreads`: chat trash, Work delete, the work tool, receipt reversal) | each deleted thread's run, its open asks and owed continuations, and its whole subtree, one lineage per topmost thread. Trash and Work delete run it in their own transaction; receipt reversal runs it after its commit |
 | A child's terminal run | its whole subtree, before its claim is released |
 
 Foreground children always follow their caller's abort signal.
