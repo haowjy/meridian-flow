@@ -336,7 +336,7 @@ const OPENROUTER_GEMINI_FLASH_MODEL = {
 } satisfies RegisteredModel;
 
 export const MODEL_REGISTRY: ModelRegistry = {
-  defaultModel: "claude-sonnet-4-6",
+  defaultModel: "deepseek-flash",
   providers: [
     {
       id: "anthropic",
