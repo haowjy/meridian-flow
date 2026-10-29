@@ -10,7 +10,6 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import {
   contextCatalogCommits,
   contextSources,
-  documentMarkdownProjections,
   documents,
   folders,
   projects,
@@ -206,12 +205,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID]);
       const beforeContentWrite = await catalog.snapshot(scope);
       await db
-        .insert(documentMarkdownProjections)
-        .values({ documentId: contentDocumentId, markdown: "new words only" })
-        .onConflictDoUpdate({
-          target: documentMarkdownProjections.documentId,
-          set: { markdown: "new words only" },
-        });
+        .update(documents)
+        .set({ sizeBytes: 14, updatedAt: new Date() })
+        .where(eq(documents.id, contentDocumentId));
       const afterContentWrite = await catalog.snapshot(scope);
       expect(afterContentWrite.headRevision).toBe(beforeContentWrite.headRevision);
       await expect(catalog.changes(scope, beforeContentWrite.cursor)).resolves.toMatchObject({

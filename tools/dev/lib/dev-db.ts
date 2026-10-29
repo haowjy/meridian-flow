@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { readAppliedMigrations as readAppliedMigrationsWithSql } from "./migration-history";
 
-/** Host port mapped in tools/dev/docker-compose.yml (postgres:16 → 54422). */
+/** Host port mapped in tools/dev/docker-compose.yml (tools/postgres image → 54422). */
 export const LOCAL_DEV_POSTGRES_PORT = 54422;
 
 const RESERVED_DATABASES = new Set(["postgres", "template0", "template1", "meridian"]);

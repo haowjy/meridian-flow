@@ -214,7 +214,7 @@ into the parent's script before you send. A parent woken by a report matches
     (`"rawArgs":"{\"command\": \"show\" \"id\"}"` on a `work` call; jsonrepair fixes
     milder breakage) give `tool_arguments_parse` and open to "The assistant called this
     tool with arguments it couldn't use.", never the retry text. A deliberate refusal opens to its
-    own message: script `search` with `"scope":"skills://"` and it reads "search
+    own message: script `grep` with `"path":"skills://"` and it reads "grep
     doesn't cover skills://. Use ls and read."; a call to a tool the agent lacks reads
     "The assistant can't use this tool here.". For a timeout, hold the Work row
     (`SELECT ... FROM works WHERE id = <w> FOR UPDATE` and `pg_sleep(40)` in psql)

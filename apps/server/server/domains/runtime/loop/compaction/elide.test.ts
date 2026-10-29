@@ -13,7 +13,7 @@ const registrations = createCoreToolRegistrations({
   write: async () => null,
   work: async () => null,
   ls: async () => null,
-  search: async () => null,
+  grep: async () => null,
 });
 const policies = (name: string) =>
   registrations.find((registration) => registration.definition.name === name)?.documentText;

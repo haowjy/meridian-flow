@@ -35,7 +35,7 @@ reversible, and that action lives on the turn edits receipt, not on this row:
 the reversal seam (`/api/threads/:id/context/reverse`) is turn-scoped and turn
 lineage owns Undo authority. This row stays a record.
 
-**The tool picks the parser.** A search hit and a listing entry are both
+**The tool picks the parser.** A grep hit and a listing entry are both
 `{uri, …}`, so a payload cannot be asked what it is: guessing from the first
 recognizable entry discards every later row that disagrees. The caller knows
 the tool, so it calls that tool's normalizer; the parsed row's own discriminant
@@ -76,7 +76,7 @@ the UI says neither "intent" nor "outcome".
 | `move` | Nothing; the verb names the source and the parameter where it went ("Moved ch4 to ch4-old"), folder or section kept only when it tells the destination apart | — | — |
 | `delete` | Nothing; the title has no door, since the old address may hold another document | — | — |
 | `remove` / `undo` / `redo` | Nothing | — | — |
-| `search` | A result card: totals, then a section per document | The document cap, with a count | Each matched passage |
+| `grep` | A result card: totals, then a section per document (passages in `content` mode; a count in `count`; the name alone in `files_with_matches`) | The document cap, with the server's total | Each matched passage |
 | `ls` | Listing rows: name plus glyph | The listing cap, with a count | Each document; folders are inert |
 | unknown | Nothing | — | — |
 
@@ -85,7 +85,7 @@ command would otherwise have opened onto. A refused `move` or `delete` is
 worded from its typed
 `refusal` (`namespace-refusal-copy.ts`) and names the move's source, not its
 destination. A failed `work` call opens onto its structured message. A failed
-`search` or `ls` opens onto nothing at all. Whether every
+`grep` or `ls` opens onto nothing at all. Whether every
 failure deserves an expand is an open design question; do not invent an answer
 in a renderer.
 
@@ -102,7 +102,7 @@ preview. Targeting is resolved server-side, so a scoped read's payload
 already *is* the region asked for: the preview rule is "show the top of what
 came back" for every read.
 
-A search expand is **a card, not a run of rows.** The transcript is a column of
+A grep expand is **a card, not a run of rows.** The transcript is a column of
 the agent's actions; eight passages loose in it read as eight more actions. The
 result set gets one recessed contained surface, its border a step firmer than
 the rules inside it so the container always outranks its own divisions.

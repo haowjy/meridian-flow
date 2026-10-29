@@ -180,7 +180,7 @@ describe("Anthropic prompt-cache breakpoints", () => {
             {
               type: "tool_use",
               toolCallId: "call_1",
-              toolName: "search",
+              toolName: "grep",
               input: {},
               cacheBreakpoint: true,
             },
@@ -198,7 +198,7 @@ describe("Anthropic prompt-cache breakpoints", () => {
             ],
           },
         ],
-        tools: [{ type: "function", name: "search", description: "Search.", inputSchema: {} }],
+        tools: [{ type: "function", name: "grep", description: "Search.", inputSchema: {} }],
       },
       "claude-sonnet-4-5",
       256,

@@ -21,7 +21,7 @@ import {
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCheckpointService } from "../checkpoints.js";
-import { createLinkBinder, createUnboundParser } from "./link-binding.js";
+import { createLinkBinder } from "./link-binding.js";
 import { createMarkdownDocumentEngine } from "./markdown-document.js";
 
 const DOCUMENT_ID = "code-document" as DocumentId;
@@ -42,9 +42,11 @@ function setup(filetype = "typescript") {
     coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
-      missingAuthorityProjection: async () => null,
+      async lacksAuthority(documentId) {
+        const snapshot = await journal.read(documentId);
+        return !snapshot.checkpoint && snapshot.updates.length === 0;
+      },
     },
-    parseStored: createUnboundParser({ codec: mdxCodec({ schema }), schema }),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     identityPreservingWrite: async () => {
       throw new Error("Identity-preserving writes are not part of this test");
@@ -70,7 +72,7 @@ function setup(filetype = "typescript") {
 }
 
 async function seedCode(setupResult: ReturnType<typeof setup>, source = "const answer = 42;") {
-  await setupResult.engine.initializeEmptyDocument(DOCUMENT_ID);
+  await setupResult.engine.ensureDocumentAuthority(DOCUMENT_ID);
   const written = await setupResult.engine.setMarkdown({
     documentId: DOCUMENT_ID,
     content: await setupResult.bind(source),
@@ -136,7 +138,7 @@ describe("checkpoint restore", () => {
         const [paragraph] = model.projectBlocks(
           toDocHandle(subject.coordinator.ensureEmpty(DOCUMENT_ID)),
         );
-        expect(paragraph?.firstChild?.attrs).toMatchObject({
+        expect(paragraph?.node.firstChild?.attrs).toMatchObject({
           src: "pending.png",
           uploadToken: "upload-1",
         });

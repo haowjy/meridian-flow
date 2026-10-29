@@ -65,7 +65,7 @@ function documentToolRegistry(dispatched: Array<{ tool: string; input: unknown }
     write: handler("write"),
     work: async () => ({ ok: true }),
     ls: async () => ({ ok: true }),
-    search: async () => ({ ok: true }),
+    grep: async () => ({ ok: true }),
   };
   return createToolRegistry({
     registrations: createCoreToolRegistrations(handlers).filter(

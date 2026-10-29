@@ -27,6 +27,8 @@ import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
+import type { AddressGlob } from "../grep/address-glob.js";
+import type { GrepMatcher } from "../grep/matcher.js";
 import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
 
 /**
@@ -170,7 +172,7 @@ export type EditableFileEntry = BaseListEntry & {
   editable: true;
   filetype: Filetype;
   schemaType: YjsTrackedSchemaType;
-  /** Words in the projection; set only when {@link ContextListOptions.wordCounts} asks. */
+  /** Words as the current derivation counted them; set only when {@link ContextListOptions.wordCounts} asks and the derivation is current. */
   wordCount?: number;
 };
 
@@ -194,7 +196,7 @@ export interface ContextListing {
 }
 
 export interface ContextListOptions {
-  /** Count each text document's words from its projection (no extra query). */
+  /** Count each text document's words from its stored block rows, when they are current. */
   wordCounts?: boolean;
 }
 
@@ -227,9 +229,9 @@ export interface BinaryFileRef extends BaseFileRef {
 /** A single-file lookup result returned by {@link ContextPort.stat}. */
 export type FileRef = TrackedFileRef | BinaryFileRef;
 
-/** One matched passage inside a {@link SearchResult}. */
-export interface SearchMatch {
-  /** Matched line or snippet. */
+/** One matched passage inside a {@link GrepFile}. */
+export interface GrepPassage {
+  /** The matching block's text, with no addressing prefix on it. */
   excerpt: string;
   /**
    * Hash of the block the excerpt came from, so a caller can navigate back to
@@ -238,32 +240,41 @@ export interface SearchMatch {
    * through a thread view); its absence elsewhere is the contract, not an error.
    */
   blockHash?: string;
+  /**
+   * Where the first match sits in `excerpt`, fixed when the match was found, so
+   * the model-facing window and compaction cut there without matching again.
+   * Absent on results stored before grep.
+   */
+  anchor?: { start: number; end: number };
+  /**
+   * The writer's text the first match covers (`excerpt` is markdown, which spells it
+   * escaped), for the app's door to find the passage again. Absent on results stored before grep.
+   */
+  term?: string;
 }
 
-/** What a search hit's passages spell, from the read binding that spelled them. */
-export interface SearchShowing {
+/** What a grep hit's passages spell, from the read binding that spelled them. */
+export interface GrepShowing {
   holderUri: string;
   view: LinkView;
-  /** Aligned with {@link SearchResult.matches}. */
+  /** Aligned with {@link GrepFile.matches}. */
   passages: readonly (readonly SpelledLinkFact[])[];
 }
 
-/** Every passage one file contributed to a {@link ContextPort.search}. */
-export interface SearchResult {
+/** One file a {@link ContextPort.grep} matched. */
+export interface GrepFile {
   /** Host-only source identity; tools strip it from model-facing output. */
   documentId: string;
+  /** The revision the passages were read at; null when none was read. */
   revision: string | null;
   /** Canonical `scheme://path` URI of the matched file. */
   uri: string;
-  /** Matching passages in file order, capped by the adapter. Never empty. */
-  matches: SearchMatch[];
-  /**
-   * How many times the query occurs in this file, including occurrences past
-   * the passage cap. This is what stays honest about what was left out.
-   */
-  matchCount: number;
-  /** Relevance score, 0-1. Adapter-dependent. */
-  score?: number;
+  /** True when the caller can't edit the file. */
+  readonly: boolean;
+  /** Matching passages in file order, capped by the adapter. Empty unless the mode is `content`. */
+  matches: GrepPassage[];
+  /** Matches in this file, including those past the passage cap; absent in `files_with_matches`. */
+  matchCount?: number;
   /**
    * Host-only: each ref-bearing link the returned passages spell, aligned with
    * `matches`, and the holder URI and view the read's binding spelled them
@@ -271,7 +282,35 @@ export interface SearchResult {
    * text the model receives shows that passage whole, and only for hits the
    * reader may see.
    */
-  shown?: SearchShowing;
+  shown?: GrepShowing;
+}
+
+export type GrepMode = "content" | "files_with_matches" | "count";
+
+export interface GrepQuery {
+  matcher: GrepMatcher;
+  /** An address prefix: a scheme, folder or document. Omit to search every searchable source. */
+  path?: string;
+  /** Filters addresses relative to the scheme root. */
+  glob?: AddressGlob;
+  mode: GrepMode;
+  /** Most files returned. */
+  headLimit: number;
+  /** Stops the scan early; the result is then not exact. */
+  signal: AbortSignal;
+  /** The documents the caller may read, asked before anything is matched or counted. */
+  readable(ids: readonly string[]): Promise<ReadonlyMap<string, "read" | "edit">>;
+}
+
+export interface GrepResult {
+  /** At most `headLimit` files, in path order. */
+  files: GrepFile[];
+  /** Files that matched, past the limit too. */
+  totalFiles: number;
+  /** False when files that need a read went uncounted past the limit, or the scan stopped: `totalFiles` is a lower bound. */
+  exact: boolean;
+  /** True when the signal stopped the scan before the last document; absent otherwise. */
+  stopped?: true;
 }
 
 export type WriteProvenance =
@@ -469,10 +508,10 @@ export interface ContextPort {
   mkdir(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>>;
 
   /**
-   * Full-text search.
+   * Regex search over document text, restricted to what `query.readable` allows.
    *
-   * When `uri` names a scheme root (e.g. `kb://`), the search is scoped to
+   * When `query.path` names a scheme root (e.g. `kb://`), the search is scoped to
    * that scheme. When omitted, it fans out across searchable schemes.
    */
-  search(query: string, uri?: string): Promise<Result<SearchResult[], ContextError>>;
+  grep(query: GrepQuery): Promise<Result<GrepResult, ContextError>>;
 }

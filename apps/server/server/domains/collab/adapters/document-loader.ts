@@ -1,7 +1,6 @@
 /** Rebuilds encoded Y.Doc state from the durable UpdateJournal. */
 
 import type { JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   bindDocumentAuthority,
@@ -9,6 +8,7 @@ import {
   RetiredDocumentHandleError,
 } from "../domain/document-handle.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
+import { storedDocument } from "../domain/stored-document.js";
 
 export async function loadDocumentState(
   journal: UpdateJournal,
@@ -29,14 +29,4 @@ export async function loadDocumentState(
   } finally {
     doc.destroy();
   }
-}
-
-/** The stored state as a document; the caller destroys it. */
-export function storedDocument(snapshot: JournalSnapshot): Y.Doc {
-  const doc = createCollabYDoc({ gc: false });
-  if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-  for (const entry of [...snapshot.updates].sort((a, b) => a.seq - b.seq)) {
-    Y.applyUpdate(doc, entry.update);
-  }
-  return doc;
 }
