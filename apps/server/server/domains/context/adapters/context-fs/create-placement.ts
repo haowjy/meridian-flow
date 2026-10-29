@@ -99,7 +99,7 @@ export interface BranchTreeCommands {
 export interface CreatePlacementDeps {
   store: ContextDocumentStore;
   executor: ResultAwareCommandExecutor<AdapterFault>;
-  documentSync: Pick<MarkdownDocumentStore, "repairDocumentAuthority">;
+  documentSync: Pick<MarkdownDocumentStore, "ensureDocumentAuthority">;
   liveCreate: LiveCreate;
 }
 
@@ -136,7 +136,7 @@ function livePlacement(
         );
         if (existing?.fileType != null) return Err(binaryTrackedWriteFault(path));
         if (existing) {
-          await deps.documentSync.repairDocumentAuthority(existing.id as DocumentId);
+          await deps.documentSync.ensureDocumentAuthority(existing.id as DocumentId);
           return Ok({ documentId: existing.id, created: false as boolean });
         }
         // Empty: a hidden document at the path is revealed with no lease (§6.3 step 3).
@@ -230,7 +230,7 @@ function draftPlacement(
           return Ok({ documentId: created.value.documentId, created: true as boolean });
         }
         if (created.value.binary) return Err(binaryTrackedWriteFault(path));
-        await deps.documentSync.repairDocumentAuthority(created.value.documentId);
+        await deps.documentSync.ensureDocumentAuthority(created.value.documentId);
         return Ok({ documentId: created.value.documentId, created: false });
       });
     },

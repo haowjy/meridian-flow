@@ -242,7 +242,7 @@ export type ListDocumentTrashResponse = {
   documents: DocumentTrashEntry[];
 };
 
-/** One trashed document with its last settled Markdown projection. */
+/** One trashed document with its Markdown, rendered from its stored Yjs state. */
 export type GetDocumentTrashResponse = DocumentTrashEntry & {
   markdown: string;
 };

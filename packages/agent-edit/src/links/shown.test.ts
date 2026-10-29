@@ -7,7 +7,7 @@ import * as Y from "yjs";
 import { toDocHandle } from "../handles.js";
 import { fullHashForItemId } from "../model/block-hash.js";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
-import { type AgentEditBlockItem, modelBlockItem } from "../tool/model-result.js";
+import type { AgentEditBlockItem } from "../tool/model-result.js";
 import { codecFactory, model, schema } from "../tool/test-support/write-tool-harness.js";
 import {
   catalogDocument,
@@ -126,10 +126,17 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
     })),
   });
   const scope = links.scopeFor(H, undefined);
-  const render = (doc: Y.Doc, codec = codecFactory.forScope(scope)) => ({
-    codec,
-    items: model.serializeBlockLines(toDocHandle(doc), codec).map(modelBlockItem),
-  });
+  const render = (doc: Y.Doc, codec = codecFactory.forScope(scope)) => {
+    const blocks = model.projectBlocks(toDocHandle(doc));
+    const bodies = codec.serializeBlocks(
+      blocks.map((block) => block.node),
+      blocks.map((block) => block.hash),
+    );
+    return {
+      codec,
+      items: blocks.map((block, index) => ({ hash: block.hash, body: bodies[index] })),
+    };
+  };
   const alpha = docFromBlocks([paragraph("See ", docLink("Alpha", A, ch("a")), " soon.")], 7000);
   const { codec, items } = render(alpha);
   const [item] = items as [AgentEditBlockItem];

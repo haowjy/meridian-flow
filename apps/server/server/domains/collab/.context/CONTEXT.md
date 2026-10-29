@@ -556,11 +556,58 @@ head's generation-local retired-through sequence. A stale checkpoint returns
 Compaction exists but has no production caller, so live journal rows are never
 deleted.
 
-`domain/document-derivations.ts` is the sole projection pipeline for search,
-listings, sizes, and the link index. It derives from a journal-locked durable
-cut. Recovery
-sweeps stale rows and retries failures without advancing certification; a
-projection is never substituted for live Yjs when serving document content.
+`domain/document-derivations.ts` is the sole pipeline from Yjs to stored text:
+block rows, the order and counts on the room row, `documents.size_bytes` and
+`updated_at`, and the link index. It derives from a journal-locked durable cut and
+projects the cut's own private doc with `projectBlocks`, with no copy. Recovery sweeps
+stale rooms and retries failures without advancing certification.
+
+Storage is `document_block_rooms` (one row per document: `block_order`, word count,
+`document_hash`, and the `cut_*` and `extractor_version` watermark) and
+`document_blocks` (one row per top-level block, keyed by its Yjs item id: `text`,
+`content_hash`). A block row never holds its position, so inserting a
+paragraph rewrites one array and no block row. Certify (`certifyDocumentDerivation`) is
+under `lockDocumentMutation` and does only this: compare-and-set the cut against the
+head and location version, read the `(block_id, content_hash)` pairs, upsert the blocks
+whose hash changed (all of them when the room's `extractor_version` is older than the cut's,
+since a hash does not cover how the text was extracted) and delete the removed ones, replace `document_links`, and write the
+room row (`block_order` only when the order moved). Text is produced and hashed before
+the transaction, so certify never reads text back and a later normalizer can run there
+too. Certify reads the project only for a new room or a moved one (`cut_location_version`
+differs): a move bumps the location version, so the re-derive corrects `project_id`.
+
+Reads of the block rows go through one port, `BlockText` (`domain/ports/block-text.ts`,
+`adapters/drizzle-block-text.ts`): `grepTexts` and `wordCounts`. The adapter owns freshness. A
+reader trusts a room only when its `cut_*` match the head and location version and its
+`extractor_version` equals the code's (`staleForReaders`); anything else is unknown to the
+reader, which reads the document itself (grep) or shows nothing (`ls -v` word counts). The
+sweep (`staleForSweep`, on the writer port's `stale`) differs on one point: it skips a room a
+newer extractor certified, because builds overlap in a deploy, the older build's certify
+refuses that room, and retrying it burns three attempts per room per sweep. A later read-side
+prefilter should extend `grepTexts` (required literals in, a skip set out) rather than add a
+second reader.
+
+One function, `grepBlocksOf` (`domain/grep-blocks.ts`), projects a doc into blocks with their
+destination-free markdown and grep text. The derivation hashes and stores it; `readHashlines`
+adds bodies and links. That shared path is why the stored and room-copy texts agree.
+
+`document_hash` is the ordered block `content_hash` list plus the certified link facts;
+`updated_at` moves only when it changes, so an extractor bump or a move is not an edit.
+`content_hash` is the hash of the block's destination-free markdown, not of its text, so
+a formatting-only edit still counts as an edit. A block's `text` is the destination-free
+markdown decoded to the text view; a code file's block is its code node's text with no
+fence (`grepBlockText` in agent-edit). Sizes are therefore destination-free byte counts.
+
+Stored text is never substituted for live Yjs when serving document content, with one
+exception: `grep` matches a document's stored text (the blocks' `text` joined with `\n`
+in `block_order`, in one statement with the freshness check, and equal byte for byte to
+the room-copy path's text) when the room is current,
+the reader's own Work has no active draft of the document, and this reply has staged no
+write to it. Bump `DOCUMENT_EXTRACTOR_VERSION` when what a block row holds changes.
+Nothing else reads stored markdown: `ls -v` word counts come from `BlockText.wordCounts`
+(current rooms only), the trash preview is the engine's `readFrozenMarkdown`, which
+serializes the stored Yjs on request, and `ensureDocumentAuthority` seeds an empty document
+when a document has no state.
 
 ## Links and tree changes
 

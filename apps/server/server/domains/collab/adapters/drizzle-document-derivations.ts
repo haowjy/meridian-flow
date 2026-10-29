@@ -1,17 +1,17 @@
 /** Journal-locked cuts and compare-and-set writes of document derived outputs. */
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
-  documentDerivations,
+  documentBlockRooms,
+  documentBlocks,
   documentLinks,
-  documentMarkdownProjections,
   documents,
   documentYjsHeads,
   projects,
   works,
 } from "@meridian/database";
-import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -21,13 +21,16 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { documentHash } from "../domain/document-derivations.js";
 import {
   type DerivationScope,
   DOCUMENT_EXTRACTOR_VERSION,
   type DocumentDerivationCut,
+  type DocumentDerivationOutputs,
   type DocumentDerivationStore,
 } from "../domain/ports/document-derivations.js";
 import { loadDocumentState } from "./document-loader.js";
+import { staleForSweep } from "./drizzle-block-text.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 /** Caller owns the document mutation lock for this transaction. */
@@ -70,11 +73,41 @@ export async function captureDocumentDerivation(
   };
 }
 
-/** Caller owns the document mutation lock for this transaction. */
+/** The project a document's source belongs to: its own, or its Work's. */
+const sourceProjectId = sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`;
+
+/** Rows per statement: bounded by the driver's parameter limit. */
+const WRITE_CHUNK = 1000;
+
+const EMPTY_DOCUMENT_HASH = documentHash([], []);
+
+function chunks<T>(rows: readonly T[]): T[][] {
+  const out: T[][] = [];
+  for (let at = 0; at < rows.length; at += WRITE_CHUNK) out.push(rows.slice(at, at + WRITE_CHUNK));
+  return out;
+}
+
+async function documentProjectId(tx: DrizzleDb, documentId: DocumentId): Promise<ProjectId> {
+  const [source] = await tx
+    .select({ projectId: sourceProjectId })
+    .from(documents)
+    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+    .leftJoin(works, eq(works.id, contextSources.workId))
+    .where(eq(documents.id, documentId))
+    .limit(1);
+  if (!source?.projectId) throw new Error(`Document ${documentId} has no project`);
+  return source.projectId;
+}
+
+/**
+ * Caller owns the document mutation lock for this transaction. The outputs arrive already
+ * normalized and hashed: nothing here reads block text back, and the block diff writes only the
+ * blocks whose content hash changed.
+ */
 export async function certifyDocumentDerivation(
   tx: DrizzleDb,
   cut: DocumentDerivationCut,
-  outputs: Parameters<DocumentDerivationStore["certify"]>[1],
+  outputs: DocumentDerivationOutputs,
   at: Date,
 ): Promise<boolean> {
   const w = cut.watermark;
@@ -95,64 +128,116 @@ export async function certifyDocumentDerivation(
     .where(eq(documents.id, cut.documentId))
     .for("no key update");
   if (!location || location.version !== w.locationVersion) return false;
-  const [existing] = await tx
+  const [room] = await tx
     .select()
-    .from(documentDerivations)
-    .where(eq(documentDerivations.documentId, cut.documentId))
+    .from(documentBlockRooms)
+    .where(eq(documentBlockRooms.documentId, cut.documentId))
     .limit(1);
+  if (room && room.extractorVersion > w.extractorVersion) return false;
   if (
-    existing &&
-    (existing.projectionExtractorVersion > w.extractorVersion ||
-      (existing.linksExtractorVersion ?? 0) > w.extractorVersion)
-  )
-    return false;
-  if (
-    existing &&
-    existing.projectionGeneration === w.generation &&
-    existing.projectionAdmissionSequence === w.admissionSequence &&
-    existing.projectionLocationVersion === w.locationVersion &&
-    existing.projectionExtractorVersion === w.extractorVersion &&
-    existing.linksGeneration === w.generation &&
-    existing.linksAdmissionSequence === w.admissionSequence &&
-    existing.linksLocationVersion === w.locationVersion &&
-    existing.linksExtractorVersion === w.extractorVersion
+    room &&
+    room.cutGeneration === w.generation &&
+    room.cutAdmissionSeq === w.admissionSequence &&
+    room.cutLocationVersion === w.locationVersion &&
+    room.extractorVersion === w.extractorVersion
   )
     return true;
+  // The project changes only with a move, which bumps the location version.
+  const projectId =
+    room && room.cutLocationVersion === w.locationVersion
+      ? room.projectId
+      : await documentProjectId(tx, cut.documentId);
+
+  // A re-derivation that changed no content (an extractor bump, a move) is not an edit:
+  // `ls` shows `updatedAt` to the model and the writer.
+  const edited = !(room?.documentHash ?? EMPTY_DOCUMENT_HASH).equals(outputs.documentHash);
   const [updated] = await tx
     .update(documents)
     .set({
-      sizeBytes: Buffer.byteLength(outputs.markdown, "utf8"),
-      updatedAt: at,
+      sizeBytes: outputs.documentBytes,
+      ...(edited ? { updatedAt: at } : {}),
     })
     .where(and(eq(documents.id, cut.documentId), eq(documents.locationVersion, w.locationVersion)))
     .returning({ id: documents.id });
   if (!updated) return false;
-  await tx
-    .insert(documentMarkdownProjections)
-    .values({ documentId: cut.documentId, markdown: outputs.markdown, updatedAt: at })
-    .onConflictDoUpdate({
-      target: documentMarkdownProjections.documentId,
-      set: { markdown: outputs.markdown, updatedAt: at },
-    });
+
+  const blockOrder = outputs.blocks.map((block) => block.id);
+  const roomValues = {
+    projectId,
+    wordCount: outputs.wordCount,
+    documentHash: outputs.documentHash,
+    cutGeneration: w.generation,
+    cutAdmissionSeq: w.admissionSequence,
+    cutLocationVersion: w.locationVersion,
+    extractorVersion: w.extractorVersion,
+  };
+  let roomId: number;
+  if (room) {
+    roomId = room.roomId;
+    // The order array is rewritten only when the order moved: an edit inside a block leaves it.
+    const orderMoved =
+      room.blockOrder.length !== blockOrder.length ||
+      room.blockOrder.some((id, index) => id !== blockOrder[index]);
+    await tx
+      .update(documentBlockRooms)
+      .set({ ...roomValues, ...(orderMoved ? { blockOrder } : {}) })
+      .where(eq(documentBlockRooms.roomId, roomId));
+  } else {
+    const [created] = await tx
+      .insert(documentBlockRooms)
+      .values({ documentId: cut.documentId, blockOrder, ...roomValues })
+      .returning({ roomId: documentBlockRooms.roomId });
+    roomId = (created as { roomId: number }).roomId;
+  }
+
+  const stored = new Map(
+    (room
+      ? await tx
+          .select({ blockId: documentBlocks.blockId, contentHash: documentBlocks.contentHash })
+          .from(documentBlocks)
+          .where(eq(documentBlocks.roomId, roomId))
+      : []
+    ).map((row) => [row.blockId, row.contentHash]),
+  );
+  if (room && room.projectId !== projectId)
+    await tx.update(documentBlocks).set({ projectId }).where(eq(documentBlocks.roomId, roomId));
+  const kept = new Set(blockOrder);
+  const removed = [...stored.keys()].filter((id) => !kept.has(id));
+  for (const ids of chunks(removed))
+    await tx
+      .delete(documentBlocks)
+      .where(and(eq(documentBlocks.roomId, roomId), inArray(documentBlocks.blockId, ids)));
+  // A content hash does not cover how the text was extracted, so rows from an older extractor
+  // certify nothing: every block is rewritten once.
+  const current = room?.extractorVersion === w.extractorVersion;
+  const written = outputs.blocks.filter(
+    (block) => !(current && stored.get(block.id)?.equals(block.contentHash)),
+  );
+  for (const rows of chunks(written))
+    await tx
+      .insert(documentBlocks)
+      .values(
+        rows.map((block) => ({
+          roomId,
+          blockId: block.id,
+          projectId,
+          text: block.text,
+          contentHash: block.contentHash,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [documentBlocks.roomId, documentBlocks.blockId],
+        set: {
+          text: sql`excluded.text`,
+          contentHash: sql`excluded.content_hash`,
+        },
+      });
+
   await tx.delete(documentLinks).where(eq(documentLinks.sourceDocumentId, cut.documentId));
   if (outputs.links.length)
     await tx
       .insert(documentLinks)
       .values(outputs.links.map((row) => ({ ...row, sourceDocumentId: cut.documentId })));
-  const values = {
-    projectionGeneration: w.generation,
-    projectionAdmissionSequence: w.admissionSequence,
-    projectionLocationVersion: w.locationVersion,
-    projectionExtractorVersion: w.extractorVersion,
-    linksGeneration: w.generation,
-    linksAdmissionSequence: w.admissionSequence,
-    linksLocationVersion: w.locationVersion,
-    linksExtractorVersion: w.extractorVersion,
-  };
-  await tx
-    .insert(documentDerivations)
-    .values({ documentId: cut.documentId, ...values })
-    .onConflictDoUpdate({ target: documentDerivations.documentId, set: values });
   return true;
 }
 
@@ -230,43 +315,22 @@ export function createDrizzleDocumentDerivationStore(
     },
     async stale(scope, page) {
       // LIMIT bounds returned stale rows, not the cross-table freshness scan.
-      const projectId = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
       const rows = await currentDrizzleDb(db)
         .select({ id: documents.id })
         .from(documents)
         .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
         .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
         .leftJoin(works, eq(works.id, contextSources.workId))
-        .leftJoin(projects, sql`${projects.id} = ${projectId}`)
-        .leftJoin(documentDerivations, eq(documentDerivations.documentId, documents.id))
+        .leftJoin(projects, sql`${projects.id} = ${sourceProjectId}`)
+        .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
         .where(
           and(
             isNull(documents.deletedAt),
-            or(
-              isNull(documentDerivations.documentId),
-              ne(documentDerivations.projectionGeneration, documentYjsHeads.authorityGeneration),
-              ne(
-                documentDerivations.projectionAdmissionSequence,
-                documentYjsHeads.nextAdmissionSequence,
-              ),
-              ne(documentDerivations.projectionLocationVersion, documents.locationVersion),
-              ne(documentDerivations.projectionExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-              isNull(documentDerivations.linksGeneration),
-              isNull(documentDerivations.linksAdmissionSequence),
-              isNull(documentDerivations.linksLocationVersion),
-              isNull(documentDerivations.linksExtractorVersion),
-              ne(documentDerivations.linksGeneration, documentYjsHeads.authorityGeneration),
-              ne(
-                documentDerivations.linksAdmissionSequence,
-                documentYjsHeads.nextAdmissionSequence,
-              ),
-              ne(documentDerivations.linksLocationVersion, documents.locationVersion),
-              ne(documentDerivations.linksExtractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-            ),
+            staleForSweep,
             scope
               ? scope.personalOwnerId
                 ? eq(projects.userId, scope.personalOwnerId)
-                : sql`${projectId} = ${scope.projectId}`
+                : sql`${sourceProjectId} = ${scope.projectId}`
               : undefined,
             page?.after ? gt(documents.id, page.after) : undefined,
           ),

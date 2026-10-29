@@ -8,7 +8,8 @@ import {
   type ToolRegistration,
 } from "../../domains/runtime/index.js";
 import { createReadHandler, createWriteHandler } from "./document-tools.js";
-import { createLsHandler, createSearchHandler } from "./listing-tools.js";
+import { createGrepHandler } from "./grep-handler.js";
+import { createLsHandler } from "./listing-tools.js";
 import type { ToolWiringDeps } from "./tool-context.js";
 import { createWorkHandler } from "./work-tool.js";
 
@@ -26,7 +27,7 @@ export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistra
       write: createWriteHandler(deps),
       work: createWorkHandler(deps),
       ls: createLsHandler(deps),
-      search: createSearchHandler(deps),
+      grep: createGrepHandler(deps),
     }),
     ...createSkillToolRegistrations(deps),
   ];

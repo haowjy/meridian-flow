@@ -1,5 +1,5 @@
 -- Permission requests: the stored command on a permission ask, and project-wide grants. The
--- coherence check is added NOT VALID here and validated in 0108, so its scan of `asks` holds no
+-- coherence check is added NOT VALID here and validated in 0110, so its scan of `asks` holds no
 -- ACCESS EXCLUSIVE lock.
 SET LOCAL lock_timeout = '2s';
 --> statement-breakpoint
