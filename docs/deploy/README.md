@@ -100,4 +100,8 @@ Provider-conditioned model variables:
 | `FLOW_DEEPSEEK_API_KEY` | DeepSeek/OpenAI-compatible provider |
 | `FLOW_GEMINI_API_KEY` | Google Gemini provider |
 
+Dev only: `LIVE_TEST_MODEL=<registry model id>` sends every model call to that model.
+Startup fails if it is set in production, names an unknown model, or names a model whose
+provider has no key. Leave it unset in deployments.
+
 No external package-execution provider is part of the Meridian Flow v3 deployment contract.

@@ -17,6 +17,8 @@ export interface GatewayEnvInput {
   MODEL_CALL_TIMEOUT_MS?: string | number;
   /** Inactivity stall window in ms; env strings and numbers both accepted. 0 disables. */
   MODEL_CALL_STALL_MS?: string | number;
+  /** Dev only: send every model call to this registry model id. See live-test-model.ts. */
+  LIVE_TEST_MODEL?: string;
   FLOW_ANTHROPIC_API_KEY?: string;
   FLOW_OPENAI_API_KEY?: string;
   FLOW_DEEPSEEK_API_KEY?: string;
