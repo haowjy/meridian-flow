@@ -40,11 +40,9 @@ export function createLineageCancellation(deps: {
   function cancel<T>(
     threadId: ThreadId,
     decide: () => Promise<LineageDecision<T>>,
-    known?: ThreadId[],
   ): Promise<LineageCancelled<T>> {
     return deps.transaction(() =>
       asMultiThreadLocker(async () => {
-        const subtree = known ?? (await deps.threads.listSubtreeIds(threadId));
         // Held to commit (Postgres) and reentrant, so the per-thread pass below locks again.
         const locked: ThreadId[] = [];
         return deps.delivery.withThreadLock(threadId, async () => {
@@ -56,11 +54,10 @@ export function createLineageCancellation(deps: {
           // Parents first. Under each thread's lock its subtree is listed again: a spawn that
           // committed before that lock is a target too, and a later one waits for this commit,
           // then finds its sender cancelled.
-          const targets =
-            reach.kind === "turn" ? await deps.threads.listSubtreeIds(threadId, reach.turnId) : [];
-          if (reach.kind !== "turn")
-            for (const id of [...subtree, ...(await deps.threads.listSubtreeIds(threadId))])
-              if (!targets.includes(id)) targets.push(id);
+          const targets = await deps.threads.listSubtreeIds(
+            threadId,
+            reach.kind === "turn" ? reach.turnId : undefined,
+          );
           for (let index = 0; index < targets.length; index += 1) {
             const target = targets[index] as ThreadId;
             await deps.delivery.withThreadLock(target, async () => {});
@@ -122,11 +119,11 @@ export function createLineageCancellation(deps: {
     async endSubtree(threadId) {
       const subtree = await deps.threads.listSubtreeIds(threadId);
       if (subtree.length === 0) return [];
-      const ended = await cancel(
-        threadId,
-        async () => ({ result: undefined, reach: { kind: "terminal" }, execution: null }),
-        subtree,
-      );
+      const ended = await cancel(threadId, async () => ({
+        result: undefined,
+        reach: { kind: "terminal" },
+        execution: null,
+      }));
       return ended.targets;
     },
   };
