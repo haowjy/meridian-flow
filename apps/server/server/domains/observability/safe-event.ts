@@ -186,6 +186,8 @@ const SAFE_MERIDIAN_ERROR_CODES = new Set([
   "stale_source",
   "stale_target",
   "tool_error",
+  "tool_exception",
+  "tool_timeout",
 ]);
 
 export function safeMeridianErrorCode(value: unknown): string | undefined {

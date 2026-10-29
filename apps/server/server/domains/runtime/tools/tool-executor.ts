@@ -64,6 +64,7 @@ import {
   type MeridianError,
   meridianErrorFromTool,
   meridianErrorToJson,
+  TOOL_EXCEPTION_CODE,
 } from "@meridian/contracts/errors";
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
@@ -107,6 +108,12 @@ function errorResult(toolCallId: string, error: MeridianError): ToolExecutionRes
   return { toolCallId, output: renderRefusal(value), result: value, isError: true };
 }
 
+/** Codes the app reads: a caught exception is redacted there, a timeout says it timed out. */
+const EXECUTION_ERROR_CODES: Partial<Record<ToolExecutionError["kind"], string>> = {
+  exception: TOOL_EXCEPTION_CODE,
+  timeout: "tool_timeout",
+};
+
 function executionErrorResult(
   toolCallId: string,
   registration: ToolRegistration | undefined,
@@ -127,7 +134,10 @@ function executionErrorResult(
       // A formatter must not break the executor's guarantee that tool failures resolve.
     }
   }
-  return errorResult(toolCallId, meridianErrorFromTool(error.message));
+  return errorResult(
+    toolCallId,
+    meridianErrorFromTool(error.message, undefined, EXECUTION_ERROR_CODES[error.kind]),
+  );
 }
 
 /**

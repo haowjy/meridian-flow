@@ -1,7 +1,10 @@
 /** Why a tool call failed, as a failed row says it: localized for codes the app knows. */
 
 import { t } from "@lingui/core/macro";
-import { meridianErrorFromStructuredToolOutput } from "@meridian/contracts/protocol";
+import {
+  meridianErrorFromStructuredToolOutput,
+  TOOL_EXCEPTION_CODE,
+} from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import type { ToolExpand } from "./tool-renderers";
 
@@ -14,8 +17,8 @@ export function errorMessageExpand(tool: ToolView): ToolExpand | null {
 }
 
 /**
- * A refusal's own message for a domain code, localized where the app knows the code. An
- * unexpected error (`tool_error`) can carry SQL or internal ids, so it reads as generic copy.
+ * A refusal's own message, localized where the app knows the code. A caught exception
+ * (`TOOL_EXCEPTION_CODE`) can carry SQL or internal ids, so it reads as generic copy.
  */
 function failureText(result: NonNullable<ToolView["result"]>): string {
   const record =
@@ -26,8 +29,10 @@ function failureText(result: NonNullable<ToolView["result"]>): string {
   const nested = record?.error && typeof record.error === "object" ? record.error : null;
   const error = meridianErrorFromStructuredToolOutput((nested ?? result) as typeof result);
   switch (error.code) {
-    case "tool_error":
+    case TOOL_EXCEPTION_CODE:
       return t`Something went wrong while running this.`;
+    case "tool_timeout":
+      return t`This took too long, so it was stopped.`;
     case "thread_stopped":
       return t`A chat was stopped, so this wasn't sent.`;
     case "one_request_at_a_time":

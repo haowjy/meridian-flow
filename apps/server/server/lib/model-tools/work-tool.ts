@@ -3,7 +3,7 @@
  * policy decides each command (D39). Work rebinding and queued write-mode
  * changes run under the calling execution's existing claim.
  */
-import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
+import { type PermissionDeniedReason, TOOL_EXCEPTION_CODE } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
@@ -376,7 +376,10 @@ export function createWorkHandler(deps: ToolWiringDeps) {
               : "This chat or Work is no longer available.",
         });
       }
-      return toolError({ message: error instanceof Error ? error.message : String(error) });
+      return toolError({
+        code: TOOL_EXCEPTION_CODE,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   };
 }
