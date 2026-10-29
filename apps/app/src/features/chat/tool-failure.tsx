@@ -32,8 +32,6 @@ function failureText(result: NonNullable<ToolView["result"]>): string {
       return t`A chat was stopped, so this wasn't sent.`;
     case "one_request_at_a_time":
       return t`Only one question can wait for an answer at a time, so this one wasn't asked.`;
-    case "request_after_result":
-      return t`The assistant had already finished its report, so this wasn't asked.`;
     default:
       return error.message;
   }

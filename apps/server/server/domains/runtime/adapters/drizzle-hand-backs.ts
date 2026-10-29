@@ -93,7 +93,7 @@ export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
             OR (${inbox.handedBackBy} IS NOT NULL AND ${inbox.seq} <= ${scope.seenThrough}))`,
         );
       }
-      // A writer's answer: an option, their own text, or Skip (not a parent's or an expiry's).
+      // A writer's answer: an option, their own text, or Skip (not an expiry).
       const [writerAnswer] = carried
         ? await db_()
             .select({ id: schema.asks.id })

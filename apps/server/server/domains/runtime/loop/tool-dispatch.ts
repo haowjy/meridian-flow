@@ -56,17 +56,9 @@ export interface ToolDispatchDeps {
 
 /**
  * One provider batch's request rule, keyed on what a call asks for, not on which tool:
- * the first request defers the batch and a later one is refused, as is any request beside a
- * `return_result`.
+ * the first request defers the batch and a later one is refused.
  */
-export type RequestBatch = {
-  readonly hasReturnResult: boolean;
-  deferred: string | null;
-};
-
-export function requestBatch(calls: readonly ToolCallInput[]): RequestBatch {
-  return { hasReturnResult: calls.some((call) => call.name === "return_result"), deferred: null };
-}
+export type RequestBatch = { deferred: string | null };
 
 export interface ToolDispatchContext {
   thread: Thread;
@@ -319,17 +311,12 @@ export async function dispatchToolCall(
   const request = async (
     asked: import("../asks/ask-service.js").AskRequest,
   ): Promise<import("../asks/ask-service.js").AskRequestOutcome> => {
-    const refused = ctx.batch.hasReturnResult
+    const refused = ctx.batch.deferred
       ? {
-          code: "request_after_result",
-          message: "You returned a result; there's no one left to answer.",
+          code: "one_request_at_a_time",
+          message: "One request at a time: make this one after the answer arrives.",
         }
-      : ctx.batch.deferred
-        ? {
-            code: "one_request_at_a_time",
-            message: "One request at a time: make this one after the answer arrives.",
-          }
-        : null;
+      : null;
     const outcome: import("../asks/ask-service.js").AskRequestOutcome = refused
       ? { kind: "refused", refusal: refused }
       : await deps.askRequests.request({

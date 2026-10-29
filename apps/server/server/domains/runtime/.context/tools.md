@@ -57,10 +57,9 @@ A tool asks through its handler's `request` capability (`RequestToolHandlerConte
 the ask service's one creation call (`AskService.request`) opens the ask the
 request names and returns the deferred disposition, which settles the execution.
 The batch rule keys on that disposition, not on the tool: the first request in a
-provider batch defers it, and a later one (`one_request_at_a_time`), or any
-request beside `return_result` (`request_after_result`), is refused as that call's
-tool result while the reply continues (`loop/tool-dispatch.ts`, `requestBatch`).
-The app maps those codes, and `thread_stopped`, to its own localized sentence on
+provider batch defers it, and a later one (`one_request_at_a_time`) is refused
+as that call's tool result while the reply continues (`loop/tool-dispatch.ts`,
+`RequestBatch`). The app maps that code, and `thread_stopped`, to its own localized sentence on
 the failed row; an unexpected `tool_error` shows generic copy, never its message.
 
 ## Document and cost boundaries

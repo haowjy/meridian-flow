@@ -4827,10 +4827,6 @@ msgstr ""
 msgid "The assistant called this tool with arguments it couldn't use."
 msgstr "助手调用这个工具时给出了无法使用的参数。"
 
-#: src/features/chat/tool-failure.tsx
-msgid "The assistant had already finished its report, so this wasn't asked."
-msgstr "助手已经完成了报告，因此这个问题没有发出。"
-
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
