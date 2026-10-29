@@ -94,7 +94,7 @@ thread lineage, not live sessions. Lineage cancellation is one durable command
    too.
 3. **One claim.** One statement cancels the targets' live asks and owed
    continuations, and the owner's live asks (a cancelled turn's own question
-   only) and owed continuations (`asks.continuation = 'pending'`).
+   only) and owed continuations (`continuationOwedSql`: `pending`, or NULL on an answered/expired ask an older server resolved).
 4. **Per locked thread:** drop a target's queued non-writer rows, a stopped
    owner's queued `agent` and `child` messages, the report notices from targets
    and the hints for claimed asks. Write each claimed ask's cancelled tool result
@@ -164,9 +164,9 @@ threads parents first, by `(spawn_depth, id)` (`parentsFirst` in
 `shared/thread-work-lock.ts`), the order the command takes a subtree in
 (`listSubtreeIds` orders by depth, then id); in id order a child with a smaller id
 than its parent deadlocked a Stop against a restore or purge of the same tree.
-`stopThreads` reorders its lineage owners itself (`orderParentsFirst`), whatever order
-the caller passed: a Work's roots need not have depth 0, since a subagent whose parent
-was rebound elsewhere stays a root of the old Work.
+`stopThreads` takes its threads already parents first and keeps that order (`lockWorkThreadTree`
+sorts a Work's tree with `parentsFirst`; a trash passes one id). A Work's roots need not have
+depth 0, since a subagent whose parent was rebound elsewhere stays a root of the old Work.
 
 Ownership decides the scope:
 

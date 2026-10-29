@@ -6,6 +6,7 @@
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { asks, threads, threadWorks } from "@meridian/database/schema";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { continuationOwedSql } from "./ask-continuation-owed.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 import {
   type LockedWorkLifecycle,
@@ -30,7 +31,7 @@ export async function lockThreadAsks(
     .where(
       and(
         inArray(asks.threadId, [...threadIds]),
-        or(inArray(asks.status, ["pending", "open"]), eq(asks.continuation, "pending")),
+        or(inArray(asks.status, ["pending", "open"]), continuationOwedSql()),
       ),
     )
     .orderBy(asc(asks.id));
@@ -54,7 +55,9 @@ export async function lockThreadForMutation(db: DrizzleDb, threadId: ThreadId) {
 }
 
 /**
- * The one order every multi-row thread locker takes threads in. `spawn_depth` is the parent's
+ * The order a thread tree is locked in, by Work lockers and by lineage cancellation within one
+ * owner's subtree (cancellation orders the owners themselves, then locks each subtree this way).
+ * `spawn_depth` is the parent's
  * plus one, so parents sort before their children; `listSubtreeIds` gives a subtree this order.
  */
 export function parentsFirst(
