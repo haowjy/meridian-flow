@@ -41,8 +41,22 @@ function failureText(result: NonNullable<ToolView["result"]>): string {
     case "thread_stopped":
       return t`A chat was stopped, so this wasn't sent.`;
     case "one_request_at_a_time":
-      return t`Only one question can wait for an answer at a time, so this one wasn't asked.`;
+      return t`Only one question or request can wait for an answer at a time, so this one wasn't asked.`;
+    case "permission_denied":
+      // The action policy's refusals (a read-only agent, a subagent that can't ask) are
+      // worded for the model; file-policy refusals keep their own message.
+      return isActionDenied(error.details)
+        ? t`This assistant isn't allowed to make this change, so it wasn't done.`
+        : error.message;
     default:
       return error.message;
   }
+}
+
+function isActionDenied(details: unknown): boolean {
+  return (
+    typeof details === "object" &&
+    details !== null &&
+    (details as { reason?: unknown }).reason === "action_denied"
+  );
 }

@@ -46,25 +46,58 @@ executor calls do not silently reapply it; callers must choose the policy seam.
 `ask_user` creates a durable question for a primary chat and ends that execution.
 The answer's tool result is written onto the asking turn before an internal
 continuation starts through ordinary request assembly. The tool and the Mars
-capability share one name. The action policy retains `ask` for future
-actions, but no current action maps to it. Subagents never get `ask_user`
+capability share one name. Subagents never get `ask_user`
 (`projectToolPolicy`): a child does its task with reasonable calls, or stops and
 says in its report what is missing (`SUBAGENT_GUIDANCE`). The parent carries on
 from the report: it does the work itself, sends the child what it needs, or asks
 the writer with its own `ask_user` (the spawn description says so).
 
 A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
-the ask service's one creation call (`AskService.request`) opens the ask the
-request names and returns the deferred disposition, which settles the execution.
-The batch rule keys on that disposition, not on the tool: the first request in a
-provider batch defers it, and a later one (`one_request_at_a_time`) is refused
-as that call's tool result while the reply continues (`loop/tool-dispatch.ts`,
-`RequestBatch`). The app maps that code, `thread_stopped`, `tool_timeout` and
-`tool_arguments_parse` (arguments that were not JSON, read like a schema failure) to its own
-localized sentence on the failed row. A caught exception, in the executor or a handler's own
-catch, carries `TOOL_EXCEPTION_CODE` (`tool_exception`), and the app shows generic copy for it,
-never its message: the message can carry SQL or internal ids. Every other failure, including a
-deliberate refusal without its own code (`tool_error`), shows its message.
+the ask service's one creation call (`AskService.request`) opens the question or
+permission request it names and returns the deferred disposition, which settles
+the execution. The batch rule keys on that disposition, not on the tool: the first
+request in a provider batch defers it, and a later one (`one_request_at_a_time`) is
+refused as that call's tool result while the reply continues (`loop/tool-dispatch.ts`,
+`RequestBatch`). So two `work` calls that each need permission in one response open
+one request; the second gets the refusal. The app maps that code, `thread_stopped`,
+`tool_timeout`, `tool_arguments_parse` (arguments that were not JSON, read like a schema
+failure) and an action-policy `permission_denied` to its own localized sentence
+on the failed row. A caught exception, in the executor or a handler's own catch,
+carries `TOOL_EXCEPTION_CODE` (`tool_exception`), and the app shows generic copy for
+it, never its message: the message can carry SQL or internal ids. Every other
+failure, including a deliberate refusal without its own code (`tool_error`), shows
+its message.
+
+The action-policy `ask` decision is separate from the question tool. The `work`
+handler holds the `request` capability: in a primary chat without a project grant
+for the action, it resolves the target and requests a permission ask. The payload
+is facts the app words in its locale (agent, action, the target Work as named
+then, the fields it sets); the server-only command pins the target by id and is
+parsed with `permissionWorkCommandSchema` when read. A subagent gets a fixed
+denial that tells it to report what it needed to its parent, and a grant never
+lifts it. Allow executes the saved command as the chat's
+writer in a savepoint of the answer transaction (the ask plan's `permission` tool
+result). A domain refusal rolls the savepoint back, writes and after-commit effects
+included, and only then becomes the error tool result, so the answer still
+commits; any other failure rolls back the answer. Allow always also stores a
+project-and-action grant, even when the action was refused. Base deny still wins.
+No current action maps to `ask`.
+
+An Allow that deletes a Work runs the delete's lineage cancellation inside the
+answer, which by then holds the asking chat's thread lock (and, through it, the ask
+row). So before that lock, the answer takes the lineage owners' locks of the Work
+tree and the asking chat together, in id order, the order a delete's `stopThreads`
+takes them (`PermissionExecutor.lockAhead`, the run sessions' `lockThreads`,
+`lineage.lock`). Its own thread lock is then a re-entry, and the delete's
+cancellations take the targets as any delete does. Without that, a writer's
+concurrent delete of the same Work, holding an earlier chat's lock and waiting on
+the asking chat's, deadlocks with it; and when the asking chat sits outside the
+deleted Work, two Allows that each delete the other's Work would lock in opposite
+orders. A loser of the first lock holds nothing while it waits, and when it gets the
+locks its claim finds the ask already cancelled or answered. When the deleted Work
+holds the asking chat, the cancellation also cancels that ask's continuation, so the
+answer writes no `ask_resolved` hint: a hint on a deleted chat would fail every wake
+sweep.
 
 ## Document and cost boundaries
 

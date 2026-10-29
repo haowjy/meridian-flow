@@ -7,6 +7,7 @@ import type {
   AskPayload,
   AskResolution,
   AskStatus,
+  PermissionWorkCommand,
 } from "@meridian/contracts/threads";
 
 export type StoredAsk = {
@@ -17,6 +18,7 @@ export type StoredAsk = {
   toolCallId: string;
   kind: AskKind;
   payload: AskPayload;
+  permissionCommand: PermissionWorkCommand | null;
   deadlineAt: Date | null;
   status: AskStatus;
   resolution: AskResolution | null;
@@ -64,7 +66,7 @@ export interface AskRepository {
   listByThread(threadId: ThreadId): Promise<StoredAsk[]>;
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
   listByTurnIds(turnIds: readonly TurnId[]): Promise<StoredAsk[]>;
-  openPending(id: string, turnId: TurnId, deadline: Date): Promise<StoredAsk | null>;
+  openPending(id: string, turnId: TurnId, deadline: Date | null): Promise<StoredAsk | null>;
   cancelPendingByTurn(turnId: TurnId): Promise<StoredAsk[]>;
   resolveOpen(input: {
     id: string;

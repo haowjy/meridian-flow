@@ -47,6 +47,8 @@ import type {
   WorkContextNotices,
   WorkRepository,
 } from "../../domains/projects/index.js";
+import type { ProjectRepository } from "../../domains/projects/ports/project-repository.js";
+import type { PermissionGrantStore } from "../../domains/runtime/index.js";
 import {
   type ShownLinkStore,
   SKILLS_URI_ROOT,
@@ -71,12 +73,16 @@ export interface ToolWiringDeps {
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
+  projects: Pick<ProjectRepository, "findById">;
+  permissionGrants: PermissionGrantStore;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
   notices: Pick<NoticePort, "record">;
   controls: Pick<ThreadControls, "enqueueControl">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
+  /** Takes `stopThreads`' locks in its order without stopping anything. */
+  lockThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
