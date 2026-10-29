@@ -76,6 +76,7 @@ export interface SetOwnedThreadTrashStateDeps {
   workContextNotices: Pick<WorkContextNotices, "threadChanged" | "materializeIdle">;
   workAuthorityResolver: import("../projects/index.js").ProjectWorkAuthorityResolver;
   works: Pick<import("../projects/index.js").WorkRepository, "findById" | "findNoWork">;
+  /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly import("@meridian/contracts/runtime").ThreadId[]): Promise<void>;
 }
 

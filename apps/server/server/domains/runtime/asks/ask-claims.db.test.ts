@@ -17,6 +17,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
+import { readContinuation } from "../spawn/run-admission.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -164,9 +165,12 @@ else
       });
       expect(ask.continuation).toBeNull();
       const admit = (turnId: TurnId) => repos.asks.admitContinuation({ id: ask.id, turnId });
+      const hint = { kind: "ask_resolved" as const, askId: ask.id };
+      expect(await readContinuation(repos.asks, ids.caller, hint)).toEqual({ ask });
       const [first, second] = await Promise.all([admit(ids.execution), admit(ids.callerTurn)]);
       expect([first, second].filter(Boolean)).toHaveLength(1);
       expect(await repos.asks.findById(ask.id)).toMatchObject({ continuation: "done" });
+      expect(await readContinuation(repos.asks, ids.caller, hint)).toBe("retire");
     });
 
     it("spares the pending question of an execution Stop did not cancel", async () => {
