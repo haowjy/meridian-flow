@@ -235,20 +235,20 @@ curl -sS -X POST "${BASE}/generate" \
 
 **Requires:** `FLOW_DEEPSEEK_API_KEY` set to a real key in `.env`. Restart server.
 
-Repeat scenarios **3**, **4**, and **5** with `"model": "deepseek-chat"` in the JSON body.
+Repeat scenarios **3**, **4**, and **5** with `"model": "deepseek-flash"` in the JSON body.
 
 ```bash
 curl -sS -X POST "${BASE}/generate" \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "deepseek-chat",
+    "model": "deepseek-flash",
     "messages": [
       { "role": "user", "content": [{ "type": "text", "text": "Reply with exactly: pong" }] }
     ]
   }' | jq .
 ```
 
-**Pass:** HTTP 200; `provider` is `"deepseek"`; `model` is `"deepseek-chat"`; text content present; usage tokens > 0.
+**Pass:** HTTP 200; `provider` is `"deepseek"`; `model` is `"deepseek-flash"`; text content present; usage tokens > 0.
 
 **Fail:** Auth/network errors, or mock provider used instead of DeepSeek.
 
@@ -260,8 +260,9 @@ curl -sS -X POST "${BASE}/generate" \
 
 **Requires:** `FLOW_ANTHROPIC_API_KEY` in `.env`.
 
-Anthropic is enabled by a real key. With no explicit model selection, General
-uses the registry default `claude-sonnet-4-6`.
+Anthropic is enabled by a real key, but the registry default is `deepseek-flash`.
+General uses `claude-sonnet-4-6` only when the chat selects it, or when
+`FLOW_DEEPSEEK_API_KEY` is unset and Anthropic is the first enabled provider.
 
 ```bash
 pnpm dev
