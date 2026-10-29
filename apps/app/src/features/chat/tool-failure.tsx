@@ -16,6 +16,9 @@ export function errorMessageExpand(tool: ToolView): ToolExpand | null {
   return () => <div className="text-compact text-destructive">{text}</div>;
 }
 
+/** A schema failure, or arguments that weren't JSON: either way the model's mistake. */
+const INVALID_ARGUMENTS = () => t`The assistant called this tool with arguments it couldn't use.`;
+
 /**
  * A refusal's own message, localized where the app knows the code. A caught exception
  * (`TOOL_EXCEPTION_CODE`) can carry SQL or internal ids, so it reads as generic copy.
@@ -23,13 +26,14 @@ export function errorMessageExpand(tool: ToolView): ToolExpand | null {
 function failureText(result: NonNullable<ToolView["result"]>): string {
   const record =
     typeof result === "object" && !Array.isArray(result) ? (result as { error?: unknown }) : null;
-  if (record?.error === "invalid_arguments")
-    return t`The assistant called this tool with arguments it couldn't use.`;
+  if (record?.error === "invalid_arguments") return INVALID_ARGUMENTS();
   if (record?.error === "permission_denied") return t`The assistant can't use this tool here.`;
   // Spawn and thread_message refusals nest their error under `error`.
   const nested = record?.error && typeof record.error === "object" ? record.error : null;
   const error = meridianErrorFromStructuredToolOutput((nested ?? result) as typeof result);
   switch (error.code) {
+    case "tool_arguments_parse":
+      return INVALID_ARGUMENTS();
     case TOOL_EXCEPTION_CODE:
       return t`Something went wrong while running this.`;
     case "tool_timeout":
