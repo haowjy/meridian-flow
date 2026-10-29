@@ -657,6 +657,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
                 name: "map.png",
                 sizeBytes: 4,
                 signedUrl: expect.any(String),
+                drawUrl: expect.any(String),
                 signedUrlExpiresAt: expect.any(String),
               },
             },
