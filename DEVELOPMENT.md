@@ -57,7 +57,7 @@ mise install                  # pinned Node and Python from .tool-versions
 eval "$(mise activate bash)"  # or add this line to ~/.bashrc
 pnpm install
 cp .env.example .env          # fill in WorkOS keys, etc.
-pnpm dev:infra                # start postgres:16 Docker container (:54422)
+pnpm dev:infra                # start the Postgres + pg_bigm Docker container (:54422) if not running
 pnpm exec lefthook install --reset-hooks-path
 pnpm bootstrap                # create the DB, migrate, apply-functions
 pnpm dev
@@ -82,7 +82,8 @@ pnpm dev
 | `.env` | Read from the main checkout (no copy into the worktree); `.env.local` here overrides it, except `DATABASE_URL` |
 | `DATABASE_URL` | Derived as `meridian_<slug>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
 | Postgres | One Docker container on `:54422`; each worktree gets its own database |
-| `pnpm dev:infra` | Shared — start once if Postgres is not already running |
+| `pnpm dev:infra` | Shared — starts Postgres only if it is not already running and healthy; never touches a running server |
+| `pnpm dev:infra:upgrade` | Shared — recreates the container onto the image tag in your checkout's compose file. Run it from a checkout that has merged `main`; an older branch's compose file would flip the server back to the image it knows |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
 | Commits | Run `git` from the worktree directory you edited in |
 | Nx task cache | Shared with the main checkout. A cache hit replays output that can name another worktree's paths; the hit still means identical inputs. `NX_SKIP_NX_CACHE=true pnpm typecheck` forces a fresh run |
@@ -96,11 +97,13 @@ not an app bug.
 
 ## Local database
 
-Postgres comes from a plain `postgres:16` Docker container (see `tools/dev/docker-compose.yml`). App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.
+Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `postgres:16` plus `pg_bigm` (btree_gin and pg_trgm are contrib), with `pg_bigm` preloaded. Writer search needs all three. Compose is `tools/dev/docker-compose.yml`. App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm dev:infra` | Start `postgres:16` Docker container (`:54422`) |
+| `pnpm dev:infra` | Start the Postgres Docker container (`:54422`) if it is not running and healthy; a running container is left alone, so any branch's `bootstrap` is safe |
+| `pnpm dev:infra:upgrade` | Build the image and recreate the container onto the tag in `docker-compose.yml`; the data volume stays. The one command that moves the shared server to a new image (e.g. after merging `main` that bumps the pg_bigm tag, or from the older plain `postgres:16`) |
+| `pnpm db:check-extensions` | Prove pg_bigm is preloaded and the search extensions install and serve a 1-character Han `LIKE` (rolled back) |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm db:apply-functions` | Sync `src/functions/*.sql` after editing PL/pgSQL |
 | `pnpm db:generate` | Generate migration SQL from schema changes |
