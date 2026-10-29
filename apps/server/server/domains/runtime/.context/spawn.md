@@ -102,8 +102,9 @@ thread lineage, not live sessions. Lineage cancellation is one durable command
    or `ask.updated`. Then set `cancel_requested` on the targets' live leases,
    stamp the **wake fence** (`threads.wake_fence_at`) on the fenced set, mark the
    targets' unpublished reports `notice_withdrawn`, and set `spawn_status =
-   'cancelled'` on every target spawn still `running` (`cancelRunningSpawns`, the
-   only writer of that value; a refused spawn writes nothing).
+   'cancelled'` on every target spawn still `running` (`cancelRunningSpawns`; a refused
+   spawn writes nothing). A thread's own spawn status is settled when its run ends, by the
+   execution finalizer, not here.
 
 The **fenced set** is the targets, plus the owner when the writer stopped a
 subagent's reply (the decision's `fenceOwner`; Send now never sets it) or deleted
@@ -176,9 +177,9 @@ Ownership decides the scope:
 
 | Trigger | Scope |
 |---|---|
-| Stop on a chat (`thread` reach) | the owner's reply only: its live execution, its open asks and owed continuations. A background child is not cancelled, claimed, fenced or has its queue or `spawn_status` touched: Stop is the button that means "this reply", and a child has its own Stop. A foreground child follows the reply's abort signal, so Stop ends it, and its ending cancels its own background children. A stopped subagent is fenced against any sender admitted before the Stop (a child report still lands: it carries no sender); a stopped primary chat is not fenced, so a surviving child's report, queued or later, wakes it |
+| Stop on a chat (`thread` reach) | the owner's reply only: its live execution, its open asks and owed continuations. A background child is not cancelled, claimed, fenced or has its queue or `spawn_status` touched: Stop is the button that means "this reply", and a child has its own Stop. A foreground child follows the reply's abort signal, so Stop ends it, and its ending cancels its own background children. The same terminal rule applies when the stopped chat is itself a subagent still in its spawn run: that run ends, so its children end with it. A stopped subagent is fenced against any sender admitted before the Stop (a child report still lands: it carries no sender); a stopped primary chat is not fenced, so a surviving child's report, queued or later, wakes it |
 | Cancelling a turn | only subtrees whose root that turn's execution spawned (`origin_turn_id`); a turn parked on its question is cancelled by withdrawing it. An explicit cancellation of that work, so it reaches what the turn started |
-| Send now (`thread` reach) | as Stop: the reply's execution and its own question; the reply's children keep running |
+| Send now (`thread` reach) | as Stop: the reply's execution and its own question; the reply's background children keep running, with the same spawn-run exception |
 | Deleting a thread or Work (`stopThreads`: chat trash, Work delete, the work tool, receipt reversal) | each deleted thread's run, its open asks and owed continuations, and its whole subtree, one lineage per topmost thread. Trash, Work delete and receipt reversal run it in their own transaction |
 | A child's terminal run | its whole subtree, before its claim is released |
 

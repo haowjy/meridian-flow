@@ -89,8 +89,8 @@ export function createLineageCancellation(deps: {
           const ownerFenced = reach.kind === "deleted" || decision.fenceOwner === true;
           const fenced = new Set<string>(ownerFenced ? [threadId, ...targets] : targets);
           // A target loses all its queued machine work; writer sends stay, as the writer's own
-          // request to that chat. A fenced owner loses the `agent` messages from above that would
-          // wake it, and a deleted one its `child` reports too: a finished child's report is
+          // request to that chat. A fenced owner loses its queued `agent` messages, and a deleted
+          // one its `child` reports too: a finished child's report is
           // work Stop keeps (Work notices never start a run, so they stay). Elsewhere only what
           // names the lineage goes: a target's report notices, and hints for asks this command claimed.
           const drops = (id: ThreadId, row: InboxMessage) =>
