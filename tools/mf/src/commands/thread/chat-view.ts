@@ -16,17 +16,25 @@ import {
   readWriteModeSwitch,
   replyProviderError,
   type Thread,
+  type ThreadAsk,
   type Turn,
 } from "@meridian/contracts/threads";
 import {
+  type AskReceipt,
+  askReceipt,
+  type ChatAsks,
   type ChatCard,
   type ChatCards,
   chatCards,
   type DeliveryEvent,
   durableControls,
+  EMPTY_CHAT_ASKS,
   type FoldDigest,
   normalizeTurns,
+  type OpenAsk,
+  openAsk,
   type RowIdentity,
+  receiveAsks,
   switchState,
   type TranscriptView,
   type TurnStats,
@@ -118,7 +126,7 @@ export type ChatItem =
       card: string | null;
       /** A plain row's body, when the block is neither a card nor an image. */
       body: string | null;
-      /** `--full`: the card's content (props and interrupt) and a direct launch's saved result. */
+      /** `--full`: the card's content and a direct launch's saved result. */
       content?: JsonValue;
       direct?: unknown;
     }
@@ -157,6 +165,8 @@ export type ChatRow = {
   /** The mode a write-mode divider switched to. */
   writeMode?: string;
   handoff?: ReturnType<typeof readHandoffSeed> & { latest: boolean; brief: string | null };
+  /** The asking turn's receipt, as the app draws it under the reply. */
+  ask?: AskReceipt;
   references?: Array<{ threadId: string; title: string | null }>;
 };
 
@@ -185,6 +195,10 @@ export type ChatViewEnvelope = {
   inputs: ChatViewInputs;
   /** The failure cards `chatCards` projects for these facts, as the app draws them (usage first). */
   cards: ChatCard[];
+  /** The durable asks in the snapshot, including resolved asks outside the selected rows. */
+  asks: ThreadAsk[];
+  /** The ask that takes over the composer, if one is open. */
+  openAsk: OpenAsk["ask"] | null;
   rows: ChatRow[];
   showing: number;
   total: number;
@@ -197,11 +211,12 @@ export type RowSelection = { full: boolean; turnId?: string; last?: number };
  * The cards are decided first, and the view keeps the rows they are anchored on, as in the app.
  */
 export function chatSnapshot(
-  snapshot: Pick<ThreadSnapshotResponse, "liveState" | "thread">,
+  snapshot: Pick<ThreadSnapshotResponse, "asks" | "liveState" | "thread">,
   turns: Turn[],
 ): { view: TranscriptView; cards: ChatCards } {
   const runState = viewOfLive(snapshot.liveState);
   const controls = durableControls(runState.record?.items ?? []);
+  const waiting = waitingWriterMessages(runState, snapshot.asks);
   const normalized = normalizeTurns({ turns });
   const cards = chatCards({
     threadId: snapshot.thread?.id ?? "",
@@ -216,7 +231,7 @@ export function chatSnapshot(
   const view = viewTranscript({
     normalized,
     activity: { awaitingSubagents: false },
-    queued: new Set(waitingWriterMessages(runState).map((item) => item.id)),
+    queued: new Set(waiting.map((item) => item.id)),
     anchoredTurnIds: cards.anchoredTurnIds,
   });
   return { view, cards };
@@ -247,6 +262,7 @@ export function projectChatView(
 ): ChatViewEnvelope {
   const { rows, total } = selectRows(view.rows, options);
   const { thread } = snapshot;
+  const asks = receiveAsks(EMPTY_CHAT_ASKS, snapshot.asks);
   return {
     chatView: CHAT_VIEW_VERSION,
     thread: {
@@ -280,13 +296,20 @@ export function projectChatView(
       changeTrails: "not fetched",
     },
     cards: cards.cards,
-    rows: rows.map((row) => chatRow(row, view, options)),
+    asks: snapshot.asks,
+    openAsk: openAsk(asks, snapshot.turns)?.ask ?? null,
+    rows: rows.map((row) => chatRow(row, view, asks, options)),
     showing: rows.length,
     total,
   };
 }
 
-function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }): ChatRow {
+function chatRow(
+  row: ViewRow,
+  view: TranscriptView,
+  asks: ChatAsks,
+  limits: { full: boolean },
+): ChatRow {
   const { turn } = row;
   const out: ChatRow = {
     identity: row.identity,
@@ -357,6 +380,10 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
     if (seed) out.handoff = { ...seed, latest: row.latest, brief: readHandoffBrief(turn) };
   }
   if (row.kind === "thread-reference") out.references = [...row.references];
+  if (turn.role === "assistant") {
+    const receipt = askReceipt(asks, turn.id);
+    if (receipt) out.ask = receipt;
+  }
   return out;
 }
 
@@ -527,6 +554,8 @@ function rowLines(row: ChatRow): string[] {
         `provider error (${row.providerError.status ?? "in-stream"}): ${row.providerError.message}`,
       ),
     );
+  // Deliveries under an asking reply arrived after its question, so they follow its receipt.
+  const deliveryLines: string[] = [];
   row.items?.forEach((item, index) => {
     const marker = index === row.finalFrom ? "answer: " : "";
     switch (item.kind) {
@@ -562,13 +591,41 @@ function rowLines(row: ChatRow): string[] {
         break;
       case "delivery":
         for (const group of item.groups)
-          lines.push(
+          deliveryLines.push(
             ...indent(`delivery:${group.id} ${group.events.map(deliveryLine).join("; ")}`),
           );
         break;
     }
   });
+  if (row.ask) lines.push(...indent(askLine(row.ask)));
+  lines.push(...deliveryLines);
   return lines;
+}
+
+function askLine({ ask, resolution }: AskReceipt): string {
+  const asked = ask.kind === "question" ? ask.payload.question : ask.payload.summary;
+  const answer =
+    resolution.kind === "option"
+      ? resolution.label
+      : resolution.kind === "text" || resolution.kind === "parent"
+        ? `${resolution.kind}: ${oneLine(resolution.text)}`
+        : resolution.kind === "timeout"
+          ? `timeout${resolution.label ? `, went with ${resolution.label}` : ""}`
+          : resolution.kind;
+  return `asked ${ask.id}: ${oneLine(asked)} -> ${answer}`;
+}
+
+function openAskLines(ask: OpenAsk["ask"]): string[] {
+  if (ask.kind === "permission")
+    return [`  open permission request ${ask.id}: ${oneLine(ask.payload.summary)}`];
+  const { question, options, recommended } = ask.payload;
+  return [
+    `  open question ${ask.id}: ${oneLine(question)}${ask.deadlineAt ? ` (continues at ${ask.deadlineAt})` : ""}`,
+    ...options.map(
+      (option) =>
+        `    - ${option.label}${option.label === recommended ? " (recommended)" : ""}${option.description ? `: ${oneLine(option.description)}` : ""}`,
+    ),
+  ];
 }
 
 function deliveryLine(event: ChatDelivery): string {
@@ -608,6 +665,7 @@ export function renderChatView(view: ChatViewEnvelope): string {
   ];
   const queued = view.rows.filter((row) => row.queued).length;
   for (const card of view.cards) lines.push(cardLine(card));
+  if (view.openAsk) lines.push(...openAskLines(view.openAsk));
   for (const row of view.rows) {
     lines.push("");
     lines.push(...rowLines(row));

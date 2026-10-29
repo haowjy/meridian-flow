@@ -28,9 +28,6 @@ export const TOOL_CATALOG = [
 /** The tool names an agent is advertised and may call. */
 export type ToolPolicy = ReadonlySet<string>;
 
-// ask_user is disabled until its rework (composer-attached input, subagent
-// semantics): https://github.com/haowjy/meridian-flow/issues/601
-const DISABLED = new Set(["ask_user"]);
 const SUBAGENT_REPORT = "return_result";
 
 /**
@@ -42,13 +39,17 @@ export function projectToolPolicy(
   configuration: Pick<ResolvedAgentConfiguration, "tools" | "disallowed-tools">,
   kind: Thread["kind"],
 ): ToolPolicy {
-  const denied = new Set(configuration["disallowed-tools"]);
+  const denied = new Set(configuration["disallowed-tools"] ?? []);
   const tools = new Set(
     (configuration.tools ?? TOOL_CATALOG).filter(
-      (name) => !denied.has(name) && !DISABLED.has(name) && name !== SUBAGENT_REPORT,
+      (name) => !denied.has(name) && name !== SUBAGENT_REPORT,
     ),
   );
-  if (kind === "subagent") tools.add(SUBAGENT_REPORT);
+  if (kind === "subagent") {
+    // Remove this temporary exclusion when the subagent-question PR adds forwarding.
+    tools.delete("ask_user");
+    tools.add(SUBAGENT_REPORT);
+  }
   return tools;
 }
 

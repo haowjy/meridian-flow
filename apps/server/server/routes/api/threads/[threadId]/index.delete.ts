@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
       workContextNotices,
       workAuthorityResolver: app.workAuthorityResolver,
       works: app.workRepo,
+      cancelAsks: (id) => app.asks.cancelForThreadLifecycle(id),
     },
     threadId,
     userId,

@@ -10,7 +10,6 @@ export const EXIT = {
   unavailable: 4,
   cancelled: 5,
   unproven: 6,
-  interrupt: 8,
   timeout: 124,
 } as const;
 
@@ -23,7 +22,6 @@ export type CliErrorCode =
   | "http_error"
   | "run_failed"
   | "cancelled"
-  | "interrupt_pending"
   | "timeout"
   | "protocol"
   | "unproven";
@@ -35,7 +33,6 @@ const EXIT_BY_CODE: Record<CliErrorCode, ExitCode> = {
   http_error: EXIT.failed,
   run_failed: EXIT.failed,
   cancelled: EXIT.cancelled,
-  interrupt_pending: EXIT.interrupt,
   timeout: EXIT.timeout,
   protocol: EXIT.failed,
   unproven: EXIT.unproven,

@@ -13,8 +13,7 @@ import type {
   SendMessageResponse,
 } from "@meridian/contracts/protocol";
 import type {
-  InterruptRespondInput,
-  InterruptRespondReceipt,
+  AskAnswerOutcome,
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
@@ -62,16 +61,6 @@ class ScenarioThreadTransport implements ThreadTransport {
     active: boolean;
   }> = [];
   cancelRequests: Array<{ threadId: string; turnId: string }> = [];
-  interruptResponses: InterruptRespondInput[] = [];
-  /** Socket generation reported on a successful interrupt write. */
-  socketGeneration = 1;
-
-  private readonly interruptErrorListeners = new Set<{
-    listener: (event: { threadId: string; error: Error }) => void;
-  }>();
-
-  private readonly socketClosedListeners = new Set<(generation: number) => void>();
-
   connect(): void {}
   subscribeCatalog(): () => void {
     return () => {};
@@ -81,7 +70,6 @@ class ScenarioThreadTransport implements ThreadTransport {
   onConnectionState(): () => void {
     return () => {};
   }
-
   subscribe(
     threadId: string,
     handlers: ThreadTransportHandlers,
@@ -94,39 +82,12 @@ class ScenarioThreadTransport implements ThreadTransport {
     };
   }
 
-  respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt {
-    this.interruptResponses.push(input);
-    return { sent: true, socketGeneration: this.socketGeneration };
-  }
-
-  onInterruptResponseError(
-    listener: (event: { threadId: string; error: Error }) => void,
-  ): () => void {
-    const entry = { listener };
-    this.interruptErrorListeners.add(entry);
-    return () => {
-      this.interruptErrorListeners.delete(entry);
-    };
-  }
-
-  emitInterruptResponseError(threadId: string, error: Error): void {
-    for (const { listener } of this.interruptErrorListeners) listener({ threadId, error });
-  }
-
-  onSocketGenerationClosed(listener: (generation: number) => void): () => void {
-    this.socketClosedListeners.add(listener);
-    return () => {
-      this.socketClosedListeners.delete(listener);
-    };
-  }
-
-  emitSocketClose(generation = this.socketGeneration): void {
-    for (const listener of this.socketClosedListeners) listener(generation);
-  }
-
   /** What the next cancels answer. */
   cancelStatus: CancelTurnResponse["status"] = "cancelled";
 
+  async answerAsk(): Promise<AskAnswerOutcome> {
+    return { type: "unconfirmed" };
+  }
   async cancel(threadId: string, turnId: string): Promise<CancelTurnResponse> {
     this.cancelRequests.push({ threadId, turnId });
     return { threadId, turnId, status: this.cancelStatus };
@@ -209,10 +170,6 @@ export class ThreadRunScenario {
       { signal: options.signal ?? new AbortController().signal, optimisticUserTurnId },
       session,
     );
-  }
-
-  closeSocket(generation = this.transport.socketGeneration): void {
-    this.transport.emitSocketClose(generation);
   }
 
   turns(threadId = "thread_1") {

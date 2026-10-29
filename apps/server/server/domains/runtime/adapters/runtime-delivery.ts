@@ -66,6 +66,7 @@ export function createDeliveryAdapter(
     work: Awaited<ReturnType<typeof workBatch>>;
     /** A due switch applies only with the reservation, so preparation must hold the thread lock. */
     requiresLock?: boolean;
+    eligibilityKey: string;
   };
   async function selectForPreparation(
     threadId: ThreadId,
@@ -81,9 +82,7 @@ export function createDeliveryAdapter(
     at: "run_start" | "boundary" | "prefix",
     retry = false,
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
-    const { pendingBatch, boundIds, eligible } = await eligiblePending(threadId);
-    // Materialization puts every waiting non-command row into the graph in seq
-    // order; it is not a request boundary, so a queued switch never yields it.
+    const { pendingBatch, boundIds, eligible, eligibilityKey } = await eligiblePending(threadId);
     const nextWork: InboxWorkSelection =
       at === "prefix" ? prefixRows(eligible) : next(eligible, at, retry);
     const control = at === "run_start" && nextWork.kind === "control" ? nextWork.control : null;
@@ -97,6 +96,9 @@ export function createDeliveryAdapter(
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
     const selectionFields = {
       batch: work.batch,
+      deferred: pendingBatch.filter(
+        (row) => row.intent === "message" && !boundIds.has(row.id) && !selectedIds.has(row.id),
+      ),
       outstanding: pendingBatch.filter(
         (row) => row.intent === "message" && (boundIds.has(row.id) || selectedIds.has(row.id)),
       ),
@@ -108,30 +110,40 @@ export function createDeliveryAdapter(
       at === "run_start"
         ? { ...selectionFields, next: nextWork }
         : { ...selectionFields, yieldReply: nextWork.kind === "yield" };
-    return { selection, pendingBatch, work };
+    return { selection, pendingBatch, work, eligibilityKey };
   }
   async function eligiblePending(threadId: ThreadId) {
     const pendingBatch = await inbox.selectPending(threadId);
     const projection = await inbox.readPendingProjection(threadId);
     const boundIds = new Set(projection.run?.messageIds ?? []);
+    const continuation = pendingBatch.find(
+      (row) => row.intent === "control" && row.body.kind === "ask_resolved",
+    );
+    const openAsk = continuation ? null : await deps.repos.asks.findOpenByThread(threadId);
     return {
       pendingBatch,
       boundIds,
-      eligible: pendingBatch.filter((row) => !boundIds.has(row.id)),
+      eligibilityKey: continuation ? `continuation:${continuation.id}` : openAsk ? "open" : "free",
+      eligible: openAsk
+        ? []
+        : continuation
+          ? pendingBatch.filter((row) => row.id === continuation.id || !boundIds.has(row.id))
+          : pendingBatch.filter((row) => !boundIds.has(row.id)),
     };
   }
   async function selectionStillCurrent(
     threadId: ThreadId,
     selected: SelectedDelivery<DeliverySelectionFields>,
   ) {
-    const [allPending, thread] = await Promise.all([
-      inbox.selectPending(threadId),
+    const [eligibility, thread] = await Promise.all([
+      eligiblePending(threadId),
       deps.repos.threads.findById(threadId),
     ]);
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
     return (
       thread.activeLeafTurnId === selected.selection.activeLeafTurnId &&
-      sameInboxBatch(allPending, selected.pendingBatch)
+      sameInboxBatch(eligibility.pendingBatch, selected.pendingBatch) &&
+      eligibility.eligibilityKey === selected.eligibilityKey
     );
   }
 
@@ -221,7 +233,8 @@ export function createDeliveryAdapter(
     };
   }
   async function materializePrefix(threadId: ThreadId) {
-    const { selection, work } = await selectForPreparation(threadId, "prefix");
+    const selected = await selectForPreparation(threadId, "prefix");
+    const { selection, work } = selected;
     const turns = await Promise.all(
       work.batch.map((message) => turnGraph(deps.repos.turns).findById(message.id)),
     );
@@ -236,12 +249,13 @@ export function createDeliveryAdapter(
       prevTurnPosition: leafTurn?.position ?? null,
       knownTurnIds: new Set(turns.flatMap((turn) => (turn ? [turn.id] : []))),
     });
-    if (plan.events.length === 0) return;
-    await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => ({
-      result: undefined,
-      events: plan.events,
-    }));
-    await ack(threadId, work.ids);
+    if (plan.events.length > 0) {
+      await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => ({
+        result: undefined,
+        events: plan.events,
+      }));
+      await ack(threadId, work.ids);
+    }
   }
   async function materializeIdle(threadId: ThreadId) {
     await deps.runClaim.withExclusiveThread(threadId, async () => {
