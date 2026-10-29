@@ -105,8 +105,8 @@ thread lineage, not live sessions. Lineage cancellation is one durable command
    'cancelled'` on every target spawn still `running` (`cancelRunningSpawns`, the
    only writer of that value; a refused spawn writes nothing).
 
-The **fenced set** is the targets, plus the owner when the writer stopped or
-deleted the chat. It is the one concept for "loses queued machine messages and
+The **fenced set** is the targets, plus the owner when the writer stopped its
+reply or deleted the chat. It is the one concept for "loses queued machine messages and
 refuses new machine wakes"; a cancelled turn or a finished run leaves the owner
 free to be woken. Work notices stay: they never start a run.
 
@@ -173,8 +173,9 @@ Ownership decides the scope:
 
 | Trigger | Scope |
 |---|---|
-| Stop on a chat | the whole subtree, whichever turn spawned it ("stop everything") |
-| Cancelling a turn, or Send now | only subtrees whose root that turn's execution spawned (`origin_turn_id`); a turn parked on its question is cancelled by withdrawing it |
+| Stop on a chat (`thread` reach) | the owner's reply only: its live execution, its open asks and owed continuations, and the owner's own fence. No descendant is cancelled, claimed, fenced or has its queue or `spawn_status` touched: Stop is the button that means "this reply", and a child has its own Stop. A surviving child's later report wakes the owner, since the fence only refuses senders admitted before the Stop |
+| Cancelling a turn | only subtrees whose root that turn's execution spawned (`origin_turn_id`); a turn parked on its question is cancelled by withdrawing it. An explicit cancellation of that work, so it reaches what the turn started |
+| Send now (`turn` reach, no `subtree`) | the reply's execution and its own question; the reply's children keep running, and the owner is not fenced, so queued reports reach the next turn |
 | Deleting a thread or Work (`stopThreads`: chat trash, Work delete, the work tool, receipt reversal) | each deleted thread's run, its open asks and owed continuations, and its whole subtree, one lineage per topmost thread. Trash, Work delete and receipt reversal run it in their own transaction |
 | A child's terminal run | its whole subtree, before its claim is released |
 

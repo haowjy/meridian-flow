@@ -187,8 +187,9 @@ into the parent's script before you send. A parent woken by a report matches
    with 40 s steps, one spawned in an earlier turn. Cancel the later turn with
    `./mf thread cancel "$root" --turn <turn>`. PASS: only that turn's child ends
    `cancelled`. Then press Stop on the root, even while it is idle. PASS: the
-   earlier child is cancelled too; Stop ends the whole subtree, and both
-   `spawn_status` values read `cancelled`.
+   earlier child keeps running and its `spawn_status` still reads `running`; Stop
+   ends only the root's own reply. Its report, when it finishes, starts a root
+   turn.
 7. **Deletion.** In a chat bound to a fresh Work, spawn a background child with a
    40 s step, then delete the Work (`./mf api DELETE /api/works/<id>`). PASS within
    about two seconds: the child's report is `cancelled`, its `spawn_status` reads
@@ -197,7 +198,7 @@ into the parent's script before you send. A parent woken by a report matches
 8. **A dying sender.** Have a background middle spawn a leaf, then re-task the
    middle with a step that waits 4 s (`delayMs`) before a background
    `thread_message` to the leaf, or before a `spawn`. While it waits, press Stop on
-   the root. PASS: the leaf starts no turn and no child appears. To reproduce a
+   the middle. PASS: the leaf starts no turn and no child appears. To reproduce a
    flagged run in another process, set the middle's
    `thread_run_leases.cancel_requested` instead of pressing Stop. PASS: the call's
    result is `thread_stopped` ("This run was stopped, so nothing was sent or

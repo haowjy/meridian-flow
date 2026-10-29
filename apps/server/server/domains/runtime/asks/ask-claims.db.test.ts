@@ -117,7 +117,7 @@ else
           asks.expireDue(new Date()),
           lineage.cancel(ids.caller, async () => ({
             result: null,
-            reach: { kind: "chat" as const },
+            reach: { kind: "thread" as const },
             execution: null,
           })),
         ]);
@@ -198,7 +198,7 @@ else
       const stop = (execution: string | null) =>
         lineage.cancel(ids.caller, async () => ({
           result: null,
-          reach: { kind: "chat" as const },
+          reach: { kind: "thread" as const },
           execution,
         }));
       await stop(null);
@@ -207,7 +207,57 @@ else
       expect(await repos.asks.findById(ask.id)).toMatchObject({ status: "cancelled" });
     });
 
-    it("drops a stopped child's queued messages and fences the run that sent them", async () => {
+    it("a parent's Stop leaves a running child alone and still hears its later report", async () => {
+      const first = await runClaim.startExecution(ids.child, crypto.randomUUID(), async () => {});
+      if (!first) throw new Error("child claim was not taken");
+      const toChild = await delivery.enqueue({
+        threadId: ids.child,
+        intent: "message",
+        provenance: { kind: "agent", threadId: ids.caller },
+        body: { kind: "text", text: "queued for the child" },
+        idempotencyKey: "queued-for-child",
+      });
+      const report = (key: string, executionId: string) =>
+        delivery.enqueue({
+          threadId: ids.caller,
+          intent: "message",
+          provenance: { kind: "agent", threadId: ids.child },
+          body: { kind: "text", text: key },
+          idempotencyKey: key,
+          sender: { threadId: ids.child, executionId },
+        });
+
+      const stopped = await lineage.cancel(ids.caller, async () => ({
+        result: null,
+        reach: { kind: "thread" as const },
+        execution: null,
+      }));
+
+      expect(stopped.targets).toEqual([]);
+      const [lease] = await db
+        .select({ cancelRequested: schema.threadRunLeases.cancelRequested })
+        .from(schema.threadRunLeases)
+        .where(eq(schema.threadRunLeases.threadId, ids.child));
+      expect(lease?.cancelRequested).toBe(false);
+      expect(await repos.threads.findById(ids.child)).toMatchObject({ spawnStatus: "running" });
+      expect(await delivery.selectPending(ids.child)).toContainEqual(
+        expect.objectContaining({ id: toChild.id }),
+      );
+      // The caller's fence refuses what the child's execution sent from before the Stop...
+      await expect(report("before-stop", first.executionId)).rejects.toBeInstanceOf(
+        WakeRefusedError,
+      );
+      // ...but not the report of an execution admitted after it.
+      await delivery.withThreadLock(ids.child, () => runClaim.release(first));
+      const later = await runClaim.startExecution(ids.child, crypto.randomUUID(), async () => {});
+      if (!later) throw new Error("child claim was not taken again");
+      await expect(report("after-stop", later.executionId)).resolves.toMatchObject({
+        threadId: ids.caller,
+      });
+      await delivery.withThreadLock(ids.child, () => runClaim.release(later));
+    });
+
+    it("a child's own Stop drops its queued messages and fences the run that sent them", async () => {
       const caller = await runClaim.startExecution(ids.caller, crypto.randomUUID(), async () => {});
       if (!caller) throw new Error("caller claim was not taken");
       const sender = { threadId: ids.caller, executionId: caller.executionId };
@@ -225,7 +275,7 @@ else
       // The writer stops the child: the caller is outside the lineage.
       await lineage.cancel(ids.child, async () => ({
         result: null,
-        reach: { kind: "chat" as const },
+        reach: { kind: "thread" as const },
         execution: null,
       }));
       expect(await delivery.selectPending(ids.child)).not.toContainEqual(

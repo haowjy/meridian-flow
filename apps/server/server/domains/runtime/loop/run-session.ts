@@ -47,14 +47,16 @@ type RunSession = {
 };
 
 /**
- * What a lineage cancellation reaches below its owner. `chat` (Stop): the whole subtree.
- * `turn`: the subtrees that turn's execution spawned, and the turn's own question.
+ * What a lineage cancellation reaches below its owner. `thread` (Stop): nothing below it; it ends
+ * the owner's reply and what that execution itself owes, and fences the owner's own wakes.
+ * `turn`: the turn's own question, and with `subtree` the subtrees that turn's execution spawned
+ * (Send now leaves them running).
  * `terminal`: a child run that ended takes its whole subtree.
  * `deleted` (trash, Work delete): the whole subtree and everything the owner holds.
  */
 export type LineageReach =
-  | { kind: "chat" }
-  | { kind: "turn"; turnId: TurnId }
+  | { kind: "thread" }
+  | { kind: "turn"; turnId: TurnId; subtree: boolean }
   | { kind: "terminal" }
   | { kind: "deleted" };
 
@@ -524,10 +526,12 @@ export function createRunSessions(deps: {
     stop: (threadId: ThreadId, request: StopRequest): Promise<StopResponse> =>
       cancelLineage(threadId, async () => {
         const response = await deps.delivery.stop(threadId, request);
-        // Stop is "stop everything": the whole subtree, whichever turn spawned it.
+        // Stop is "this reply" and nothing below it: children keep running and their reports
+        // still wake this chat (the fence only refuses senders admitted before the stop).
+        // Explicit cancellations (`cancel`, `stopThreads`) keep their reach: they cancel work.
         return {
           result: response,
-          reach: { kind: "chat" },
+          reach: { kind: "thread" },
           execution: response.cancelledExecutionId,
         };
       }),
@@ -539,18 +543,20 @@ export function createRunSessions(deps: {
       cancelLineage(threadId, async () => {
         const response = await deps.delivery.sendNow(threadId, request);
         const execution = response.cancelledExecutionId;
-        // Like cancelling that turn: it ends what the reply spawned, nothing older. Before its
-        // first turn the execution has spawned and relayed nothing.
+        // Cancels the reply so the queue runs, like Stop leaving the reply's children running
+        // (`subtree: false`), and unlike Stop leaving the owner's wake fence alone: queued
+        // reports must still reach the next turn.
         const turnId = execution ? await authority.readRunningTurnId(threadId) : null;
         return {
           result: response,
-          reach: turnId ? { kind: "turn", turnId } : null,
+          reach: turnId ? { kind: "turn", turnId, subtree: false } : null,
           execution,
         };
       }),
     /**
      * Cancels a turn: its live execution, or the question it is parked on, and the subagents
-     * that turn's execution spawned.
+     * that turn's execution spawned. An explicit cancellation of that work, so unlike the composer's
+     * Stop (this reply only) it reaches what the turn started.
      */
     async cancel(
       threadId: ThreadId,
@@ -573,7 +579,7 @@ export function createRunSessions(deps: {
           };
         return {
           result: "cancelled" as const,
-          reach: { kind: "turn", turnId },
+          reach: { kind: "turn", turnId, subtree: true },
           execution: live ? turn.executionId : null,
         };
       });
@@ -582,7 +588,8 @@ export function createRunSessions(deps: {
      * Ends deleted threads' work inside the caller's transaction: each one's live execution and
      * whole subagent subtree, one lineage per topmost thread (a deleted Work lists its threads'
      * descendants too). `threadIds` must be parents first by `(spawn_depth, id)`, the order lineage
-     * cancellation locks owners in; another order deadlocks against a Stop.
+     * cancellation locks owners in; another order deadlocks against a Stop. Deleting is an explicit
+     * cancellation of the work, so it takes the whole subtree; Stop takes only the reply.
      */
     async stopThreads(threadIds: readonly ThreadId[]): Promise<void> {
       for (const threadId of await lineageOwners(threadIds))
