@@ -6,7 +6,8 @@
  * runs, stamps the machine-wake fence on every thread it stopped, withdraws the targets' parent notices and settles their spawn status. The
  * fence is what keeps a stopped thread stopped: a message or spawn admission from an execution
  * admitted before it is refused at enqueue (`RunClaim.wakeRefusal`), so local aborts after commit
- * only make runs stop sooner. Stop (`thread` reach) ends only the owner's reply: no descendant is a target.
+ * only make runs stop sooner. Stop (`thread` reach) ends only the owner's reply: no descendant is a
+ * target, and a stopped subagent is fenced against its ancestors only (see `fenced` below).
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
@@ -27,7 +28,7 @@ import { asMultiThreadLocker } from "../loop/thread-lock.js";
 
 export function createLineageCancellation(deps: {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
-  threads: Pick<ThreadRepository, "listSubtreeIds" | "cancelRunningSpawns">;
+  threads: Pick<ThreadRepository, "findById" | "listSubtreeIds" | "cancelRunningSpawns">;
   runClaim: Pick<RunClaim, "requestCancel" | "fenceWakes">;
   delivery: Pick<RuntimeDelivery, "withThreadLock" | "selectPending">;
   asks: Pick<AskService, "recordCancelled">;
@@ -54,10 +55,9 @@ export function createLineageCancellation(deps: {
           // Parents first. Under each thread's lock its subtree is listed again: a spawn that
           // committed before that lock is a target too, and a later one waits for this commit,
           // then finds its sender cancelled.
-          // `thread` (Stop) and a `turn` without `subtree` (Send now) reach no descendant: the
-          // owner's reply is all they end.
+          // `thread` (Stop, Send now) reaches no descendant: the owner's reply is all it ends.
           const targets =
-            reach.kind === "thread" || (reach.kind === "turn" && !reach.subtree)
+            reach.kind === "thread"
               ? []
               : await deps.threads.listSubtreeIds(
                   threadId,
@@ -81,19 +81,26 @@ export function createLineageCancellation(deps: {
           });
           const claimedIds = new Set(claimed.map(({ ask }) => ask.id));
           const targetSet = new Set<string>(targets);
-          // The owner stops too when the writer stopped its reply or deleted the chat; a cancelled turn
-          // or a finished run leaves the owner free to be woken.
-          const fenced = new Set<string>(
-            reach.kind === "thread" || reach.kind === "deleted" ? [threadId, ...targets] : targets,
-          );
+          // The owner stops too when the writer deleted the chat, or stopped a subagent's reply.
+          // The fence points from ancestors down: a stopped subagent refuses the retasks and
+          // notices queued from above, but a primary chat is never fenced by Stop, since all
+          // that reaches it is from below (child reports, progress) or the system, which the
+          // ruling lets land. A cancelled turn or a finished run leaves the owner free too.
+          const ownerFenced =
+            reach.kind === "deleted" ||
+            (reach.kind === "thread" &&
+              (await deps.threads.findById(threadId))?.parentThreadId != null);
+          const fenced = new Set<string>(ownerFenced ? [threadId, ...targets] : targets);
           // A target loses all its queued machine work; writer sends stay, as the writer's own
-          // request to that chat. A stopped owner loses the machine messages that would wake it
-          // (Work notices never start a run, so they stay). Elsewhere only what names the
-          // lineage goes: a target's report notices, and hints for asks this command claimed.
+          // request to that chat. A fenced owner loses the `agent` messages from above that would
+          // wake it, and a deleted one its `child` reports too: a finished child's report is
+          // work Stop keeps (Work notices never start a run, so they stay). Elsewhere only what
+          // names the lineage goes: a target's report notices, and hints for asks this command claimed.
           const drops = (id: ThreadId, row: InboxMessage) =>
             (targetSet.has(id) && row.provenance.kind !== "writer") ||
             (fenced.has(id) &&
-              (row.provenance.kind === "agent" || row.provenance.kind === "child")) ||
+              (row.provenance.kind === "agent" ||
+                (reach.kind === "deleted" && row.provenance.kind === "child"))) ||
             (row.provenance.kind === "child" && targetSet.has(row.provenance.threadId)) ||
             (isAskResolved(row) && claimedIds.has(row.body.askId));
           for (const id of locked)

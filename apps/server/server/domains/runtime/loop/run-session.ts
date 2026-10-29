@@ -47,16 +47,18 @@ type RunSession = {
 };
 
 /**
- * What a lineage cancellation reaches below its owner. `thread` (Stop): nothing below it; it ends
- * the owner's reply and what that execution itself owes, and fences the owner's own wakes.
- * `turn`: the turn's own question, and with `subtree` the subtrees that turn's execution spawned
- * (Send now leaves them running).
+ * What a lineage cancellation reaches below its owner. `thread` (Stop, Send now): nothing below
+ * it; it ends the owner's reply and what that execution itself owes. It fences the owner only when
+ * the owner is a subagent, and only against its ancestors (retasks and notices queued from above
+ * stay stopped); a primary chat is not fenced, because everything queued for it comes from below
+ * and a surviving child's report must still wake it.
+ * `turn`: the turn's own question and the subtrees that turn's execution spawned.
  * `terminal`: a child run that ended takes its whole subtree.
  * `deleted` (trash, Work delete): the whole subtree and everything the owner holds.
  */
 export type LineageReach =
   | { kind: "thread" }
-  | { kind: "turn"; turnId: TurnId; subtree: boolean }
+  | { kind: "turn"; turnId: TurnId }
   | { kind: "terminal" }
   | { kind: "deleted" };
 
@@ -543,13 +545,10 @@ export function createRunSessions(deps: {
       cancelLineage(threadId, async () => {
         const response = await deps.delivery.sendNow(threadId, request);
         const execution = response.cancelledExecutionId;
-        // Cancels the reply so the queue runs, like Stop leaving the reply's children running
-        // (`subtree: false`), and unlike Stop leaving the owner's wake fence alone: queued
-        // reports must still reach the next turn.
-        const turnId = execution ? await authority.readRunningTurnId(threadId) : null;
+        // Cancels the reply so the queue runs, with Stop's reach: the reply's children keep running.
         return {
           result: response,
-          reach: turnId ? { kind: "turn", turnId, subtree: false } : null,
+          reach: execution ? { kind: "thread" } : null,
           execution,
         };
       }),
@@ -579,7 +578,7 @@ export function createRunSessions(deps: {
           };
         return {
           result: "cancelled" as const,
-          reach: { kind: "turn", turnId, subtree: true },
+          reach: { kind: "turn", turnId },
           execution: live ? turn.executionId : null,
         };
       });
