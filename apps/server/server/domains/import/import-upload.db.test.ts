@@ -35,8 +35,8 @@ describe.runIf(enabled)("durable upload", () => {
       reportError: (cause) => {
         throw cause;
       },
-      previewFailed: (cause) => {
-        throw cause;
+      previewFailed: (reason) => {
+        throw new Error(reason);
       },
     });
   const selection = (count = 2): ImportSelection => ({

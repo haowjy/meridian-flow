@@ -7,6 +7,7 @@ import type {
   ImportSummary,
 } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
+import type { ImagePreviewFailureReason } from "../../file-intake/image-preview.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
 import type { ImportDestination } from "../ports/import-tree-writer.js";
@@ -24,7 +25,7 @@ export function createImportUploadService(deps: {
   wake: OrganizeWake;
   reportError(cause: unknown): void;
   /** An image preview that should have been made but failed; the file shows as a card. */
-  previewFailed(cause: unknown): void;
+  previewFailed(reason: ImagePreviewFailureReason): void;
 }) {
   const repo = deps.repository;
   async function requireRecord(id: string, projectId: string, lock = false) {

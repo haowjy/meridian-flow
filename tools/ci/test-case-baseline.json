@@ -243,6 +243,7 @@
     "apps/server/server/domains/context/uploads/upload-intake.db.test.ts": 5,
     "apps/server/server/domains/context/uploads/upload-intake.test.ts": 5,
     "apps/server/server/domains/export/domain/project-export.test.ts": 7,
+    "apps/server/server/domains/file-intake/image-preview.test.ts": 3,
     "apps/server/server/domains/file-policy/adapters/drizzle-file-facts.db.test.ts": 2,
     "apps/server/server/domains/file-policy/domain/policy.test.ts": 26,
     "apps/server/server/domains/file-policy/file-access.db.test.ts": 2,

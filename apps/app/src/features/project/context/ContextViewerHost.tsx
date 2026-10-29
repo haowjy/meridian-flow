@@ -109,7 +109,10 @@ function ContextViewerContent({
             name={tab.name}
             mimeType={binary.mimeType}
             sizeBytes={binary.sizeBytes}
-            refresh={read.refetch}
+            refresh={async () => {
+              const fresh = await read.refetch();
+              return fresh?.kind === "binary" ? fresh.drawUrl : undefined;
+            }}
           />
         </ReadOnlyViewerFrame>
       ) : null;

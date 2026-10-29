@@ -4,6 +4,7 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { ImportLinkBinder, MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ContextImportRead, ContextStagedCreation } from "../../../context/index.js";
+import type { ImagePreviewFailureReason } from "../../../file-intake/image-preview.js";
 import type { ObjectStorePort } from "../../../storage/index.js";
 import type { DocumentConverterPort } from "../../ports/document-converter.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../../ports/import-repository.js";
@@ -29,7 +30,7 @@ type OrganizerDeps = {
   documents: Pick<MarkdownDocumentStore, "prepareSeed">;
   diagnostic(cause: unknown, detail: Record<string, unknown>): void;
   /** An image preview that should have been made but failed; the file shows as a card. */
-  previewFailed(cause: unknown): void;
+  previewFailed(reason: ImagePreviewFailureReason): void;
 };
 
 function samePlacement(left: ImportRecord["placement"], right: ImportRecord["placement"]): boolean {

@@ -233,12 +233,12 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         objectStore: options.objectStore,
         storageUrl: put.value.storageUrl,
         bytes: input.bytes,
-        onFailure: (error) =>
+        onFailure: (reason) =>
           emitEvent(eventSink, {
             level: "warn",
             source: "context.figures",
             name: "image_preview.failed",
-            payload: { key, ...unknownToEventPayload(error), projectId: input.projectId },
+            payload: { key, reason, projectId: input.projectId },
           }),
       });
 

@@ -26,7 +26,8 @@ export type ContextReadStatus = {
   status: "loading" | "ready" | "error" | "disabled";
   isError: boolean;
   isFetching: boolean;
-  refetch: () => void;
+  /** Re-reads, resolving to the fresh answer (null when disabled or failed). */
+  refetch: () => Promise<ContextReadResponse | null>;
 };
 
 export function contextReadQueryKey(
@@ -76,7 +77,7 @@ export function useProjectContextRead(
       status: "disabled",
       isError: false,
       isFetching: false,
-      refetch: () => {},
+      refetch: async () => null,
     };
   }
 
@@ -85,8 +86,6 @@ export function useProjectContextRead(
     status: result.isError ? "error" : result.data ? "ready" : "loading",
     isError: result.isError,
     isFetching: result.isFetching,
-    refetch: () => {
-      void result.refetch();
-    },
+    refetch: async () => (await result.refetch()).data ?? null,
   };
 }

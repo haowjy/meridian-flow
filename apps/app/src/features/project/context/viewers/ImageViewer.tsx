@@ -21,8 +21,8 @@ export type ImageViewerProps = {
   name: string;
   mimeType: string;
   sizeBytes: number | null;
-  /** Signs fresh URLs: the one recovery an `<img>` failure gets. */
-  refresh: () => void;
+  /** Signs fresh URLs, resolving to the new draw URL: the one recovery an `<img>` failure gets. */
+  refresh: () => Promise<string | undefined>;
 };
 
 export type ImageViewerFooterProps = {
@@ -44,12 +44,17 @@ export function ImageViewer({
   // Returned when a picture renders, so a later expiry gets its own refresh.
   const refreshUsed = useRef(false);
   const onError = () => {
+    const failed = drawUrl ?? null;
     if (refreshUsed.current) {
-      setFailedUrl(drawUrl ?? null);
+      setFailedUrl(failed);
       return;
     }
     refreshUsed.current = true;
-    refresh();
+    // Signing is deterministic to the second, so a refresh often returns the URL that just
+    // failed; React then sets no new `src` and no second `onError` would come.
+    void refresh().then((fresh) => {
+      if (fresh === undefined || fresh === failed) setFailedUrl(failed);
+    });
   };
   return (
     <div className="grid h-full min-h-0 place-items-center overflow-auto bg-background p-4 md:p-6">

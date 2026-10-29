@@ -8,6 +8,7 @@
  * synchronous and would freeze every request for seconds. A worker that crashes, runs out of
  * memory or hangs is replaced and its file gets the card.
  */
+import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import {
   type ObjectStorePort,
@@ -31,6 +32,19 @@ const CONVERTIBLE = new Set([
   "image/tiff",
 ]);
 
+/** Why a preview was not made, safe to log: never a decoder message or file content. */
+export type ImagePreviewFailureReason =
+  | "worker_unavailable"
+  | "timeout"
+  | "decode_failed"
+  | "too_large";
+
+class ImagePreviewError extends Error {
+  constructor(readonly reason: ImagePreviewFailureReason) {
+    super(`image preview failed: ${reason}`);
+  }
+}
+
 const POOL_SIZE = 2;
 /** A decode that outlives this is stuck; its worker is replaced and the file gets the card. */
 const JOB_TIMEOUT_MS = 60_000;
@@ -40,8 +54,8 @@ const WORKER_LIMITS = { maxOldGenerationSizeMb: 256 };
 type Job = {
   mime: string;
   bytes: Uint8Array;
-  resolve(preview: Uint8Array | null): void;
-  reject(error: Error): void;
+  resolve(preview: Uint8Array): void;
+  reject(error: ImagePreviewError): void;
 };
 type Slot = { worker: Worker; job?: Job & { id: number; timer: NodeJS.Timeout } };
 
@@ -49,12 +63,19 @@ const slots: Slot[] = [];
 const queue: Job[] = [];
 let nextJobId = 0;
 
+/**
+ * `nitro.config.ts` emits the worker at the output root, beside the entry chunk that sets
+ * `__nitro_main__`: both `nitro dev` and a production build bundle this file into a different
+ * chunk, so a path relative to `import.meta.url` is wrong in one of them. Outside Nitro (unit
+ * tests) the source file sits beside this one.
+ */
 function workerUrl(): URL {
-  return new URL("./image-preview-worker.mjs", import.meta.url);
+  const main = (globalThis as { __nitro_main__?: string }).__nitro_main__;
+  return new URL("./image-preview-worker.mjs", main ?? import.meta.url);
 }
 
 /** Ends the slot's job with `outcome` and, if the worker is gone, replaces it. */
-function settle(slot: Slot, outcome: { preview: Uint8Array | null } | { error: Error }): void {
+function settle(slot: Slot, outcome: { preview: Uint8Array } | { error: ImagePreviewError }): void {
   const job = slot.job;
   if (!job) return;
   clearTimeout(job.timer);
@@ -64,27 +85,43 @@ function settle(slot: Slot, outcome: { preview: Uint8Array | null } | { error: E
   pump();
 }
 
+function retire(slot: Slot): void {
+  const index = slots.indexOf(slot);
+  if (index >= 0) slots.splice(index, 1);
+}
+
 function spawnSlot(): Slot {
   const worker = new Worker(workerUrl(), { resourceLimits: WORKER_LIMITS });
   const slot: Slot = { worker };
-  worker.on("message", (message: { id: number; preview?: Uint8Array | null; error?: string }) => {
-    if (slot.job?.id !== message.id) return;
-    settle(
-      slot,
-      message.error === undefined
-        ? { preview: message.preview ? new Uint8Array(message.preview) : null }
-        : { error: new Error(message.error) },
-    );
-  });
+  worker.on(
+    "message",
+    (message: { id: number; preview?: Uint8Array; reason?: "decode_failed" | "too_large" }) => {
+      const job = slot.job;
+      if (job?.id !== message.id) return;
+      if (message.preview) return settle(slot, { preview: new Uint8Array(message.preview) });
+      // libheif's WASM module may be left unusable by a failed decode, so a HEIC error retires
+      // the worker; the next job starts a fresh one.
+      if (message.reason === "decode_failed" && job.mime.startsWith("image/hei")) {
+        retire(slot);
+        void slot.worker.terminate();
+      }
+      settle(slot, { error: new ImagePreviewError(message.reason ?? "decode_failed") });
+    },
+  );
   // A crash or out-of-memory kill ends the worker: fail its job and drop the slot; the next job
   // starts a fresh one.
-  const onGone = (error: Error) => {
-    const index = slots.indexOf(slot);
-    if (index >= 0) slots.splice(index, 1);
-    settle(slot, { error });
+  const onGone = (reason: ImagePreviewFailureReason) => {
+    retire(slot);
+    settle(slot, { error: new ImagePreviewError(reason) });
   };
-  worker.on("error", onGone);
-  worker.on("exit", (code) => onGone(new Error(`image preview worker exited (${code})`)));
+  worker.on("error", (error) =>
+    onGone(
+      (error as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND"
+        ? "worker_unavailable"
+        : "decode_failed",
+    ),
+  );
+  worker.on("exit", () => onGone("decode_failed"));
   // After the listeners: adding a 'message' listener re-refs the worker. Unreffed, an idle pool
   // never holds the process open; a pending job's timer does.
   worker.unref();
@@ -102,9 +139,8 @@ function pump(): void {
     if (!slot || !job) return;
     const id = nextJobId++;
     const timer = setTimeout(() => {
-      const index = slots.indexOf(slot);
-      if (index >= 0) slots.splice(index, 1);
-      settle(slot, { error: new Error("image preview timed out") });
+      retire(slot);
+      settle(slot, { error: new ImagePreviewError("timeout") });
       void slot.worker.terminate();
     }, JOB_TIMEOUT_MS);
     slot.job = { ...job, id, timer };
@@ -112,7 +148,7 @@ function pump(): void {
   }
 }
 
-function convertInWorker(mime: string, bytes: Uint8Array): Promise<Uint8Array | null> {
+function convertInWorker(mime: string, bytes: Uint8Array): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     queue.push({ mime, bytes, resolve, reject });
     pump();
@@ -120,9 +156,10 @@ function convertInWorker(mime: string, bytes: Uint8Array): Promise<Uint8Array | 
 }
 
 /**
- * A WebP preview of `bytes`, or null when the format needs none (a browser draws it), has no
- * decoder, or is over the pixel cap. Conversion runs in a worker thread, never on the event
- * loop. Rejects for a decoder failure or a dead worker, which `saveImagePreview` absorbs.
+ * A WebP preview of `bytes`, or null when the format needs none (a browser draws it) or has no
+ * decoder. Conversion runs in a worker thread, never on the event loop. Rejects with an
+ * `ImagePreviewError` for a decoder failure, a dead worker or an image over the pixel cap,
+ * which `saveImagePreview` absorbs.
  */
 export async function makeImagePreview(bytes: Uint8Array): Promise<Uint8Array | null> {
   const mime = await sniffMime(bytes);
@@ -138,7 +175,7 @@ export async function saveImagePreview(input: {
   objectStore: ObjectStorePort;
   storageUrl: string;
   bytes: Uint8Array;
-  onFailure?: (error: unknown) => void;
+  onFailure?: (reason: ImagePreviewFailureReason) => void;
 }): Promise<boolean> {
   try {
     const key = objectStoreKeyFromStorageUrl(input.storageUrl);
@@ -149,7 +186,7 @@ export async function saveImagePreview(input: {
     if (!put.ok) throw new Error(put.error.message);
     return true;
   } catch (error) {
-    input.onFailure?.(error);
+    input.onFailure?.(error instanceof ImagePreviewError ? error.reason : "decode_failed");
     return false;
   }
 }

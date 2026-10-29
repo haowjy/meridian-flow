@@ -233,12 +233,12 @@ export function createUploadIntake<Bound>(deps: {
               objectStore: deps.objectStore,
               storageUrl,
               bytes: raw.bytes,
-              onFailure: (cause) =>
+              onFailure: (reason) =>
                 emitEvent(deps.eventSink, {
                   level: "warn",
                   source: "context.upload-intake",
                   name: "image_preview.failed",
-                  payload: { documentId: reservation.documentId, ...unknownToEventPayload(cause) },
+                  payload: { documentId: reservation.documentId, reason },
                 }),
             })
           : false;
