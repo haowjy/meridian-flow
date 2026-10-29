@@ -1,5 +1,5 @@
 {
-  "id": "ea7b3b8f-de27-4dff-aa69-4866cd94cd85",
+  "id": "4da13f73-fa13-4960-bfa8-761bf019be41",
   "prevId": "e3d5b237-60c3-41ba-87df-8e0f0f1891a2",
   "version": "7",
   "dialect": "postgresql",
@@ -1801,13 +1801,6 @@
           "notNull": true,
           "default": "'none'"
         },
-        "notice_withdrawn": {
-          "name": "notice_withdrawn",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "published_at": {
           "name": "published_at",
           "type": "timestamp with time zone",
@@ -2886,12 +2879,6 @@
         "inbox_blocked_reason": {
           "name": "inbox_blocked_reason",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "wake_fence_at": {
-          "name": "wake_fence_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -5364,84 +5351,6 @@
           ]
         }
       },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.document_markdown_projections": {
-      "name": "document_markdown_projections",
-      "schema": "",
-      "columns": {
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "markdown": {
-          "name": "markdown",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_markdown_projections_fts": {
-          "name": "document_markdown_projections_fts",
-          "columns": [
-            {
-              "expression": "to_tsvector('simple', \"markdown\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        },
-        "document_markdown_projections_trgm": {
-          "name": "document_markdown_projections_trgm",
-          "columns": [
-            {
-              "expression": "\"markdown\" gin_trgm_ops",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_markdown_projections_document_id_documents_id_fk": {
-          "name": "document_markdown_projections_document_id_documents_id_fk",
-          "tableFrom": "document_markdown_projections",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -8427,18 +8336,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "continuation": {
-          "name": "continuation",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "continuation_turn_id": {
-          "name": "continuation_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8499,22 +8396,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "asks_held_by_thread": {
-          "name": "asks_held_by_thread",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"asks\".\"status\" IN ('pending', 'open') OR \"asks\".\"continuation\" = 'pending'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -9819,70 +9700,103 @@
       },
       "isRLSEnabled": false
     },
-    "public.document_derivations": {
-      "name": "document_derivations",
+    "public.document_block_rooms": {
+      "name": "document_block_rooms",
       "schema": "",
       "columns": {
+        "room_id": {
+          "name": "room_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "document_block_rooms_room_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
         "document_id": {
           "name": "document_id",
           "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "projection_generation": {
-          "name": "projection_generation",
-          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
-        "projection_admission_sequence": {
-          "name": "projection_admission_sequence",
-          "type": "bigint",
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "projection_location_version": {
-          "name": "projection_location_version",
-          "type": "bigint",
+        "block_order": {
+          "name": "block_order",
+          "type": "text[]",
           "primaryKey": false,
           "notNull": true
         },
-        "projection_extractor_version": {
-          "name": "projection_extractor_version",
+        "word_count": {
+          "name": "word_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "links_generation": {
-          "name": "links_generation",
+        "document_hash": {
+          "name": "document_hash",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cut_generation": {
+          "name": "cut_generation",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "links_admission_sequence": {
-          "name": "links_admission_sequence",
+        "cut_admission_seq": {
+          "name": "cut_admission_seq",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "links_location_version": {
-          "name": "links_location_version",
+        "cut_location_version": {
+          "name": "cut_location_version",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "links_extractor_version": {
-          "name": "links_extractor_version",
+        "extractor_version": {
+          "name": "extractor_version",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "document_block_rooms_document": {
+          "name": "document_block_rooms_document",
+          "columns": [
+            {
+              "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "document_derivations_document_id_documents_id_fk": {
-          "name": "document_derivations_document_id_documents_id_fk",
-          "tableFrom": "document_derivations",
+        "document_block_rooms_document_id_documents_id_fk": {
+          "name": "document_block_rooms_document_id_documents_id_fk",
+          "tableFrom": "document_block_rooms",
           "tableTo": "documents",
           "columnsFrom": [
             "document_id"
@@ -9895,6 +9809,71 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.document_blocks": {
+      "name": "document_blocks",
+      "schema": "",
+      "columns": {
+        "room_id": {
+          "name": "room_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "block_id": {
+          "name": "block_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "document_blocks_room_id_document_block_rooms_room_id_fk": {
+          "name": "document_blocks_room_id_document_block_rooms_room_id_fk",
+          "tableFrom": "document_blocks",
+          "tableTo": "document_block_rooms",
+          "columnsFrom": [
+            "room_id"
+          ],
+          "columnsTo": [
+            "room_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "document_blocks_room_id_block_id_pk": {
+          "name": "document_blocks_room_id_block_id_pk",
+          "columns": [
+            "room_id",
+            "block_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

@@ -54,6 +54,11 @@
       "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.ts",
       "forms": ["read", "write"],
       "reason": "Certified derive: projection and links of any row by id under its generation/location CAS"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-block-text.ts",
+      "forms": ["read"],
+      "reason": "Stored block text and word counts of the ids a caller already listed; each read is checked for freshness and a draft reader's own Work"
     }
   ]
 }

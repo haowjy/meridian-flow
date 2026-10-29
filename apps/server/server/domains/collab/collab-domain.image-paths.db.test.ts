@@ -12,6 +12,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { grepQuery } from "../../test-support/grep-query.js";
 
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
@@ -164,11 +165,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       });
-      const hits = await context.search("map.png");
+      const hits = await context.grep(grepQuery("Map"));
       expect(hits.ok).toBe(true);
       if (!hits.ok) throw new Error(JSON.stringify(hits.error));
-      expect(hits.value).toHaveLength(2);
-      for (const hit of hits.value) {
+      expect(hits.value.files).toHaveLength(2);
+      for (const hit of hits.value.files) {
         expect(JSON.stringify(hit.matches)).toContain("assets/map.png");
         expect(JSON.stringify(hit.matches)).not.toContain("art/map.png");
         expect(JSON.stringify(hit.matches)).not.toMatch(/asset:|doc:/);
@@ -178,12 +179,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           address: "manuscript://assets/map.png",
         });
       }
-      const next = await context.search("map.png");
+      const next = await context.grep(grepQuery("Map"));
       expect(next.ok).toBe(true);
       if (!next.ok) throw new Error(JSON.stringify(next.error));
-      expect(next.value).toHaveLength(2);
-      for (const hit of next.value) expect(JSON.stringify(hit.matches)).toContain("art/map.png");
-      const second = hits.value.find((hit) => hit.documentId === secondDocumentId);
+      expect(next.value.files).toHaveLength(2);
+      for (const hit of next.value.files)
+        expect(JSON.stringify(hit.matches)).toContain("art/map.png");
+      const second = hits.value.files.find((hit) => hit.documentId === secondDocumentId);
       expect(JSON.stringify(second?.matches)).toContain(
         "![Old cover](manuscript://cover.png) and ![Lost map]()",
       );
@@ -332,14 +334,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           branchWork: { id: WORK_ID as never, handle: "w1" },
         },
         documentSync: collab,
-      }).search("See created");
+      }).grep(grepQuery("See created"));
       if (!markdown.ok || !hashlines.ok || !search.ok) {
         throw new Error(JSON.stringify({ markdown, hashlines, search }));
       }
-      const hit = search.value.find((each) => each.documentId === DOC_ID);
+      const hit = search.value.files.find((each) => each.documentId === DOC_ID);
       expect.soft(JSON.stringify(read.result), "model read").toContain(spelled);
       expect.soft(markdown.value.content, "effective Markdown").toContain(spelled);
-      expect.soft(hashlines.value.content.join("\n"), "effective hashlines").toContain(spelled);
+      expect
+        .soft(hashlines.value.blocks.map((block) => block.body).join("\n"), "effective hashlines")
+        .toContain(spelled);
       expect.soft(JSON.stringify(hit?.matches), "search").toContain(spelled);
       expect.soft(read.revision).toMatch(/^y2:/);
       expect
@@ -367,7 +371,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       // Read back (pulling the thread's peer) before the process goes away.
       const before = await collab.readEffectiveHashlines(draftRead);
-      expect(before.ok && before.value.content.join("\n")).toContain("Suffix.");
+      expect(before.ok && before.value.blocks.map((block) => block.body).join("\n")).toContain(
+        "Suffix.",
+      );
       await collab.documentDerivations.stop();
       await collab.dispose();
       collab = start();
@@ -381,7 +387,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!after.ok) throw new Error(JSON.stringify(after));
       expect(undone.status).toBe("success");
       expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
-      expect.soft(after.value.content.join("\n")).toContain(spelled);
+      expect.soft(after.value.blocks.map((block) => block.body).join("\n")).toContain(spelled);
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
       // The same comparison in live. A create is a row, not a reply's in-memory set: a live
@@ -396,7 +402,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
       });
       // The host's create materializes the document before the model's command runs.
-      await collab.initializeEmptyDocument(LIVE_CREATED_ID as never);
+      await collab.ensureDocumentAuthority(LIVE_CREATED_ID as never);
       await db.insert(modelResponses).values({
         id: LIVE_RESPONSE_ID as never,
         turnId: TURN_ID as never,

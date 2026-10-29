@@ -24,7 +24,7 @@ import {
   contextPortForThread,
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
-import type { ContextPort } from "../domains/context/ports/context-port.js";
+import type { ContextPort, GrepQuery } from "../domains/context/ports/context-port.js";
 import { createTreeReader, LIVE_TREE } from "../domains/context/tree/tree-view.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
@@ -113,7 +113,7 @@ export interface ScenarioView {
   stat(path: string): ReturnType<ContextPort["stat"]>;
   ls(path: string): ReturnType<ContextPort["list"]>;
   read(path: string): ReturnType<ContextPort["read"]>;
-  search(query: string): ReturnType<ContextPort["search"]>;
+  grep(query: GrepQuery): ReturnType<ContextPort["grep"]>;
   /** Where this reader sees the document, by id: its URI, or null. */
   locate(documentId: DocumentId): Promise<string | null>;
   /** The text at `path`, or null when this reader has no file there. */
@@ -485,7 +485,7 @@ export function branchTreeCommands(
       stat: async (path) => (await port()).stat(uri(path)),
       ls: async (path) => (await port()).list(uri(path)),
       read: async (path) => (await port()).read(uri(path)),
-      search: async (query) => (await port()).search(query),
+      grep: async (query) => (await port()).grep(query),
       async locate(documentId) {
         const located = await (await port()).locate(documentId);
         if (!located.ok) throw new Error(JSON.stringify(located.error));
