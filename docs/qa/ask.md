@@ -129,6 +129,16 @@ Use the crash controller described in
    separate runs. PASS: the ask is cancelled, the asking turn is cancelled with
    `{"cancelled":true}`, the receipt reads “withdrawn,” and no continuation
    starts.
+5. **Stop spares a run that took on a later message.** Start the stack with
+   `HOOK_PAUSE_AT=ask.pending HOOK_PAUSE_FILE=<file>` and create the file. Script
+   the first message's reply with a 5 s step before an `ls`, and script a second
+   message (`./mf mock script --match`) to call `ask_user`. Send the first with
+   `--no-wait`, then the second while the step waits; the same execution takes it
+   on and parks on a `pending` ask. Post Stop with
+   `./mf thread stop --replay` and a request whose `seenThrough` is the first
+   message's seq and `seenExecutionId` is that execution. PASS:
+   `cancelledExecutionId` is null and the ask is still `pending`; delete the file
+   and the ask opens, the turn is `awaiting_answer`, and answering continues once.
 
 ## Browser confirmation
 
@@ -199,9 +209,14 @@ into the parent's script before you send. A parent woken by a report matches
 10. **Failed rows.** Expand step 9's reply in the browser. PASS: the refused row
     reads "Couldn't ask a question" and opens to "Only one question can wait for an
     answer at a time, so this one wasn't asked."; under zh it opens to the Chinese
-    sentence. A tool whose handler throws (a `read` of a document id that doesn't
-    exist, or any `tool_error`) opens to "Something went wrong while running this.",
-    never the exception text. A stopped subagent's card reads "Stopped" under its
-    name; a failed one reads "Failed".
+    sentence. A caught exception (`tool_exception`) opens to "Something went wrong
+    while running this.", never the exception text. A deliberate refusal opens to its
+    own message: script `search` with `"scope":"skills://"` and it reads "search
+    doesn't cover skills://. Use ls and read."; a call to a tool the agent lacks reads
+    "The assistant can't use this tool here.". For a timeout, hold the Work row
+    (`SELECT ... FROM works WHERE id = <w> FOR UPDATE` and `pg_sleep(40)` in psql)
+    and script `work update` on it: after 30 s the row opens to "This took too long,
+    so it was stopped." A stopped subagent's card reads "Stopped" under its name; a
+    failed one reads "Failed".
 
 Stop the owned stack with `pnpm dev --stop`.
