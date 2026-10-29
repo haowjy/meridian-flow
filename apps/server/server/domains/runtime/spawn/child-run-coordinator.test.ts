@@ -253,8 +253,6 @@ async function fixture(
   const runStarter = createInMemoryRunStarter();
   let publisher!: ReturnType<typeof createReportPublisher>;
   const reports = {
-    projectRunning: (threadId: ThreadId, execution: TurnId) =>
-      publisher.projectRunning(threadId, execution),
     publish: (threadId: ThreadId, execution: TurnId) => publisher.publish(threadId, execution),
   };
   const runtimeHarness = createRuntimeHarness({
@@ -281,11 +279,9 @@ async function fixture(
           (options.realRuntime
             ? runtimeHarness.orchestrator
             : stubOrchestrator(turns, repos, runClaim, reports.publish))),
-    repos: { executionReports: repos.executionReports, asks: repos.asks },
+    repos: { executionReports: repos.executionReports },
     eventWriter,
     readActivity,
-    // No test here waits on an answered ask's continuation.
-    watchThread: async () => () => {},
     eventSink,
   });
   const coreCoordinator = createChildRunCoordinator({
@@ -293,7 +289,6 @@ async function fixture(
     delivery,
     // These cases are about selection and cards; the fence has its own DB test.
     wakes: { wakeRefusal: async () => null },
-    relayRepos: repos,
     repos: {
       threads: repos.threads,
       turns: repos.turns,

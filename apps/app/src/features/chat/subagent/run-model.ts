@@ -5,8 +5,8 @@ import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { turnSubagentFacts } from "@meridian/thread-client";
 import { subagentCurrentToolLabel } from "./display";
 
-/** `asked`: parked on a question, neither working nor finished. */
-export type SubagentRunStatus = "running" | "asked" | "done" | "stopped" | "unknown";
+/** A finished run's outcome stays distinct: a failed run and a stopped one read differently. */
+export type SubagentRunStatus = "running" | "done" | "failed" | "cancelled" | "unknown";
 export type SubagentRun = {
   threadId: string | null;
   ref: string | null;
@@ -33,8 +33,7 @@ export function statusFromSources(input: {
   endedAt?: string | null;
 }): SubagentRunStatus {
   if (input.outcome === "succeeded") return "done";
-  if (input.outcome === "asked") return "asked";
-  if (input.outcome === "failed" || input.outcome === "cancelled") return "stopped";
+  if (input.outcome === "failed" || input.outcome === "cancelled") return input.outcome;
   if (input.live) return "running";
   if (input.endedAt) return input.savedRunning ? "unknown" : "unknown";
   return input.savedRunning ? "unknown" : "unknown";

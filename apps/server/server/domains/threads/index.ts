@@ -163,7 +163,6 @@ export {
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
 export type {
-  AskRelay,
   AskRepository,
   ClaimedAsk,
   CreateAskInput,

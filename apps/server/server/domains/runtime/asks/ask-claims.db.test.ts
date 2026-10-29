@@ -1,14 +1,14 @@
 /**
- * PostgreSQL race of an ask's three resolvers: the writer's answer, its deadline and a lineage
- * cancellation, all claiming the same ask row while the cancellation also takes thread locks;
- * and the edges a cancellation fences: a forwarded copy goes with its source, and the stopped
- * thread refuses a wake from an execution admitted before the Stop.
+ * PostgreSQL race of an ask's three resolvers: the writer's answer, its deadline and Stop's
+ * lineage cancellation, all claiming the same ask row while the cancellation also takes thread
+ * locks; and the stopped thread's fence: its queued machine messages go, and an execution admitted
+ * before the Stop can't message it, while a later one can.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a continuation's state is `asks.continuation`, and lineage cancellation claims it in one
- *   transaction, ask rows before thread locks (apps/server/server/domains/runtime/.context/spawn.md)
+ *   transaction (apps/server/server/domains/runtime/.context/spawn.md)
  * - the machine-wake fence is `threads.wake_fence_at` compared with the sender lease's
- *   `acquired_at`
+ *   `acquired_at`, both on the database clock, and the delivery enqueue checks it
  */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -42,14 +42,13 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
     const { createTestDrizzleDelivery } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
     );
-    const { createReportPublisher } = await import("../spawn/report-publisher.js");
     const { createLineageCancellation } = await import("../spawn/lineage-cancellation.js");
     const { createAskService } = await import("./ask-service.js");
+    const { WakeRefusedError } = await import("../loop/run-turn-port.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
     const db = createDb(databaseUrl, { max: 6 });
@@ -57,7 +56,7 @@ else
     const eventWriter = createQuietDrizzleJournalWriter(db);
     const delivery = createTestDrizzleDelivery(db, { repos, eventWriter });
     const runClaim = createDrizzleRunClaim(db);
-    const asks = createAskService({ repos, eventWriter, delivery, wakes: runClaim });
+    const asks = createAskService({ repos, eventWriter, delivery });
     const lineage = createLineageCancellation({
       transaction: repos.transaction,
       threads: repos.threads,
@@ -66,12 +65,6 @@ else
       asks,
       askRows: repos.asks,
       reports: repos.executionReports,
-      publisher: createReportPublisher({
-        repos,
-        eventWriter,
-        delivery,
-        eventSink: createInMemoryEventSink(),
-      }),
       refreshActivity() {},
       afterCommit: runAfterDrizzleCommit,
     });
@@ -85,11 +78,11 @@ else
     });
 
     it("leaves nothing owed and no wake hint, whichever resolver claims first", async () => {
-      let prev = ids.execution;
+      let prev = ids.callerTurn;
       for (let round = 0; round < 8; round += 1) {
         const executionId = crypto.randomUUID();
         const turn = await repos.turns.create({
-          threadId: ids.child,
+          threadId: ids.caller,
           prevTurnId: prev,
           role: "assistant",
           origin: "assistant",
@@ -98,7 +91,7 @@ else
         });
         prev = turn.id;
         const ask = await repos.asks.create({
-          threadId: ids.child,
+          threadId: ids.caller,
           askingTurnId: turn.id,
           executionId,
           toolCallId: `ask-${round}`,
@@ -109,11 +102,11 @@ else
           resolution: null,
           submissionId: null,
         });
-        // Stop on the caller reaches the child's ask whatever already resolved it.
+        // Stop on the chat reaches its ask whatever already resolved it.
         const [answer, expired] = await Promise.all([
           asks.answer({
             userId: ids.user,
-            threadId: ids.child,
+            threadId: ids.caller,
             askId: ask.id,
             submissionId: `submission-${round}`,
             answer: { kind: "option", label: "A" },
@@ -134,7 +127,7 @@ else
           .from(schema.threadInboxMessages)
           .where(
             and(
-              eq(schema.threadInboxMessages.threadId, ids.child),
+              eq(schema.threadInboxMessages.threadId, ids.caller),
               isNull(schema.threadInboxMessages.deliveredAt),
               sql`${schema.threadInboxMessages.body}->>'kind' = 'ask_resolved'`,
             ),
@@ -143,70 +136,39 @@ else
       }
     });
 
-    it("cancels a forwarded copy with its source and fences the stopped child", async () => {
+    it("drops a stopped child's queued messages and fences the run that sent them", async () => {
       const caller = await runClaim.startExecution(ids.caller, crypto.randomUUID(), async () => {});
       if (!caller) throw new Error("caller claim was not taken");
-      const childTurn = await repos.turns.create({
-        threadId: ids.child,
-        prevTurnId: ids.execution,
-        role: "assistant",
-        origin: "assistant",
-        status: "awaiting_answer",
-        executionId: crypto.randomUUID(),
-      });
-      const question = {
-        kind: "question" as const,
-        payload: { question: "Which?", options: [{ label: "A" }] },
-        deadlineAt: null,
-        status: "open" as const,
-        resolution: null,
-        submissionId: null,
-      };
-      const source = await repos.asks.create({
-        ...question,
-        threadId: ids.child,
-        askingTurnId: childTurn.id,
-        executionId: childTurn.executionId as string,
-        toolCallId: "child-ask",
-      });
-      const callerTurn = await repos.turns.create({
-        threadId: ids.caller,
-        prevTurnId: ids.callerTurn,
-        role: "assistant",
-        origin: "assistant",
-        status: "awaiting_answer",
-        executionId: caller.executionId,
-      });
-      const copy = await repos.asks.create({
-        ...question,
-        threadId: ids.caller,
-        askingTurnId: callerTurn.id,
-        executionId: caller.executionId,
-        toolCallId: "forward",
-        forwardedFromAskId: source.id,
-      });
+      const sender = { threadId: ids.caller, executionId: caller.executionId };
+      const message = (key: string, from: typeof sender) =>
+        delivery.enqueue({
+          threadId: ids.child,
+          intent: "message",
+          provenance: { kind: "agent", threadId: ids.caller },
+          body: { kind: "text", text: key },
+          idempotencyKey: key,
+          sender: from,
+        });
+      const queued = await message("before-stop", sender);
 
-      // The writer stops the child: the caller is outside the lineage, its copy is not.
+      // The writer stops the child: the caller is outside the lineage.
       await lineage.cancel(ids.child, async () => ({
         result: null,
         reach: { kind: "chat" as const },
         execution: null,
       }));
-      expect(await repos.asks.findById(copy.id)).toMatchObject({ status: "cancelled" });
-      const sender = { threadId: ids.caller, executionId: caller.executionId };
-      expect(await runClaim.wakeRefusal({ sender, receiver: ids.child })).toBe("receiver_stopped");
-      expect(await runClaim.wakeRefusal({ sender, receiver: null })).toBeNull();
+      expect(await delivery.selectPending(ids.child)).not.toContainEqual(
+        expect.objectContaining({ id: queued.id }),
+      );
+      await expect(message("after-stop", sender)).rejects.toBeInstanceOf(WakeRefusedError);
 
-      // An execution admitted after the Stop wakes the child as usual.
+      // An execution admitted after the Stop messages the child as usual.
       await delivery.withThreadLock(ids.caller, () => runClaim.release(caller));
       const later = await runClaim.startExecution(ids.caller, crypto.randomUUID(), async () => {});
       if (!later) throw new Error("caller claim was not taken again");
-      expect(
-        await runClaim.wakeRefusal({
-          sender: { threadId: ids.caller, executionId: later.executionId },
-          receiver: ids.child,
-        }),
-      ).toBeNull();
+      await expect(
+        message("later", { threadId: ids.caller, executionId: later.executionId }),
+      ).resolves.toMatchObject({ threadId: ids.child });
       await delivery.withThreadLock(ids.caller, () => runClaim.release(later));
     });
   });

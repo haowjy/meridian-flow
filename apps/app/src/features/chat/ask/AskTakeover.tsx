@@ -4,7 +4,6 @@
  * the writer learns it once; only the controls differ.
  */
 import { plural, t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { AskAnswer, ThreadAsk } from "@meridian/contracts/threads";
 import type { OpenAsk } from "@meridian/thread-client";
 import { ArrowUp } from "lucide-react";
@@ -110,7 +109,7 @@ function ClosedTakeover({ ask, agentName }: { ask: ThreadAsk; agentName: string 
     <TakeoverFrame labelledBy={titleId}>
       <TakeoverTitle id={titleId}>
         {ask.kind === "question"
-          ? questionTitle(ask)
+          ? ask.payload.question
           : t`${agentName} wants to ${ask.payload.summary}?`}
       </TakeoverTitle>
     </TakeoverFrame>
@@ -140,14 +139,14 @@ function QuestionTakeover({
   onAnswer: (answer: AskAnswer) => void;
 }) {
   const titleId = useId();
-  const { options, recommended } = ask.payload;
+  const { question, options, recommended } = ask.payload;
   const sendText = () => {
     const answer = text.trim();
     if (answer) onAnswer({ kind: "text", text: answer });
   };
   return (
     <TakeoverFrame labelledBy={titleId}>
-      <TakeoverTitle id={titleId}>{questionTitle(ask)}</TakeoverTitle>
+      <TakeoverTitle id={titleId}>{question}</TakeoverTitle>
       <ul className="flex flex-col gap-[var(--chat-space-inline)]">
         {options.map((option) => (
           <li key={option.label}>
@@ -211,17 +210,6 @@ function QuestionTakeover({
         {ask.deadlineAt ? <Countdown deadlineAt={ask.deadlineAt} /> : null}
       </div>
     </TakeoverFrame>
-  );
-}
-
-function questionTitle(ask: QuestionAsk) {
-  const forwarded = ask.payload.forwardedFrom;
-  return forwarded ? (
-    <Trans>
-      @{forwarded.handle} asks: {ask.payload.question}
-    </Trans>
-  ) : (
-    ask.payload.question
   );
 }
 

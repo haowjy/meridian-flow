@@ -32,11 +32,8 @@ export function SubagentHeader({
   const visible = ordered.filter((node) => matchesSubagentIdentity(runFromActivity(node), filter));
   if (!nodes.length) return null;
   const running = nodes.filter((node) => node.status.kind === "awake");
-  // A child parked on a question is neither running nor finished.
-  const inProgress = (node: ThreadActivityNode) =>
-    node.status.kind === "awake" || node.spawnStatus === "asked";
-  const finished = visible.filter((node) => !inProgress(node));
-  const active = visible.filter(inProgress);
+  const finished = visible.filter((node) => node.status.kind !== "awake");
+  const active = visible.filter((node) => node.status.kind === "awake");
   const show = (node: ThreadActivityNode) => {
     if (node.originTurnId) {
       requestConversationReveal({
@@ -82,7 +79,7 @@ export function SubagentHeader({
         {active.length ? (
           <>
             <h3 className="px-2 py-1 text-xs font-medium text-muted-foreground">
-              <Trans>In progress</Trans>
+              <Trans>Running</Trans>
             </h3>
             <ul>
               {active.map((node) => (

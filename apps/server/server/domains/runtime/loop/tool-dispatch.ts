@@ -51,37 +51,21 @@ export interface ToolDispatchDeps {
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
   shownLinks: Pick<ShownLinkStore, "record">;
   observationFrontiers: ObservationFrontiers;
-  asks: import("../../threads/ports/ask-repository.js").AskRepository;
   askRequests: Pick<import("../asks/ask-service.js").AskService, "request">;
 }
 
 /**
  * One provider batch's request rule, keyed on what a call asks for, not on which tool:
  * the first request defers the batch and a later one is refused, as is any request beside a
- * `return_result`. A `thread_message` to a child whose question this batch forwards goes
- * unbound, so it never answers the question going to the writer.
+ * `return_result`.
  */
 export type RequestBatch = {
   readonly hasReturnResult: boolean;
-  /**
-   * Child asks this batch forwards. Calls run in order, so a forward later in the batch counts
-   * from its arguments until its request runs; a refused one is dropped, and a message after it
-   * answers the question as usual.
-   */
-  readonly forwarding: Set<string>;
   deferred: string | null;
 };
 
 export function requestBatch(calls: readonly ToolCallInput[]): RequestBatch {
-  return {
-    hasReturnResult: calls.some((call) => call.name === "return_result"),
-    forwarding: new Set(
-      calls.flatMap((call) =>
-        typeof call.arguments.forward === "string" ? [call.arguments.forward] : [],
-      ),
-    ),
-    deferred: null,
-  };
+  return { hasReturnResult: calls.some((call) => call.name === "return_result"), deferred: null };
 }
 
 export interface ToolDispatchContext {
@@ -100,8 +84,6 @@ export interface ToolDispatchContext {
   allTurns: Turn[];
   /** The ids that credited the request that produced this call (C4's planning cut). */
   planningBlockIds: readonly string[];
-  /** Latest still-open child question whose structured evidence was in this request. */
-  boundChildQuestions?: ReadonlyMap<string, string>;
   batch: RequestBatch;
   /** The provider reply's own accepted mutations, replayed after the planning cut. */
   replyMutations: ReplyMutations;
@@ -284,10 +266,6 @@ export async function dispatchToolCall(
         }
       : undefined;
 
-  const boundAsk = (ref: string) => {
-    const askId = ctx.boundChildQuestions?.get(ref);
-    return askId && !ctx.batch.forwarding.has(askId) ? askId : undefined;
-  };
   const threadMessage =
     call.name === "thread_message"
       ? async (messageInput: ThreadMessageArgs) => {
@@ -300,7 +278,6 @@ export async function dispatchToolCall(
             ref: messageInput.ref,
             prompt: messageInput.message,
             toolCallId: call.id,
-            ...(boundAsk(messageInput.ref) ? { boundAskId: boundAsk(messageInput.ref) } : {}),
             budget: ctx.treeBudget,
             ...(messageInput.mode === "foreground"
               ? {
@@ -333,7 +310,6 @@ export async function dispatchToolCall(
               threads: deps.persistenceDeps.repos.threads,
               turns: deps.persistenceDeps.repos.turns,
               executionReports: deps.executionReports,
-              asks: deps.asks,
               readSnapshot: deps.readSnapshot,
             },
           })
@@ -344,12 +320,18 @@ export async function dispatchToolCall(
     asked: import("../asks/ask-service.js").AskRequest,
   ): Promise<import("../asks/ask-service.js").AskRequestOutcome> => {
     const refused = ctx.batch.hasReturnResult
-      ? "You returned a result; there's no one left to answer."
+      ? {
+          code: "request_after_result",
+          message: "You returned a result; there's no one left to answer.",
+        }
       : ctx.batch.deferred
-        ? "One request at a time: make this one after the answer arrives."
+        ? {
+            code: "one_request_at_a_time",
+            message: "One request at a time: make this one after the answer arrives.",
+          }
         : null;
     const outcome: import("../asks/ask-service.js").AskRequestOutcome = refused
-      ? { kind: "refused", refusal: { code: "request_refused", message: refused } }
+      ? { kind: "refused", refusal: refused }
       : await deps.askRequests.request({
           threadId: ctx.threadId,
           askingTurnId: ctx.currentTurn.id,
@@ -357,8 +339,6 @@ export async function dispatchToolCall(
           toolCallId: call.id,
           request: asked,
         });
-    if (outcome.kind === "refused" && asked.kind === "forward")
-      ctx.batch.forwarding.delete(asked.askId);
     if (outcome.kind === "deferred") {
       ctx.batch.deferred = outcome.askId;
       deferredAskId = outcome.askId;

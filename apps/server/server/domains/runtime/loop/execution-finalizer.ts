@@ -279,13 +279,11 @@ export async function finalizeExecution(
         }
         const capture = admitted.capture;
         const outcome =
-          input.cause.kind === "success"
+          input.cause.kind === "success" || input.cause.kind === "asked"
             ? "succeeded"
-            : input.cause.kind === "asked"
-              ? "asked"
-              : input.cause.kind === "cancelled"
-                ? "cancelled"
-                : "failed";
+            : input.cause.kind === "cancelled"
+              ? "cancelled"
+              : "failed";
         const responses = await deps.repos.modelResponses.listByTurn(turn.id);
         const finalResponseId = responses.at(-1)?.id ?? null;
         const content = await resolveReportContent(

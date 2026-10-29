@@ -4,16 +4,12 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadReportResult } from "@meridian/contracts/spawn";
 import type { ThreadRepositories } from "../../threads/ports/repositories.js";
 import { resolveReadableThread, threadReadError } from "./resolve-readable-thread.js";
-import { withReportOutcomes } from "./saved-report-outcome.js";
 
 export async function readThreadReport(input: {
   callerThreadId: ThreadId;
   ref: string;
   run?: number;
-  repos: Pick<
-    ThreadRepositories,
-    "threads" | "turns" | "executionReports" | "asks" | "readSnapshot"
-  >;
+  repos: Pick<ThreadRepositories, "threads" | "turns" | "executionReports" | "readSnapshot">;
 }): Promise<ThreadReportResult> {
   return input.repos.readSnapshot(async () => {
     const caller = await input.repos.threads.findById(input.callerThreadId);
@@ -30,10 +26,7 @@ export async function readThreadReport(input: {
       return threadReadError("thread_not_found", "A report requires a subagent thread");
     if (input.run !== undefined && (!Number.isSafeInteger(input.run) || input.run < 1))
       return threadReadError("invalid_run", "Run must be a positive integer");
-    const reports = await withReportOutcomes(
-      input.repos.asks,
-      await input.repos.executionReports.listFinishedByChild(child.id as ThreadId),
-    );
+    const reports = await input.repos.executionReports.listFinishedByChild(child.id as ThreadId);
     const run = input.run ?? reports.length;
     const record = reports[run - 1];
     if (!record || record.outcome === null || record.source === null || record.summary === null)

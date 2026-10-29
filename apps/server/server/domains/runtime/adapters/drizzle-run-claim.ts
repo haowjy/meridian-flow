@@ -111,7 +111,6 @@ export function createDrizzleRunClaim(
     async startExecution(threadId, executionId, settle) {
       const claim = await hold(threadId);
       if (!claim) return null;
-      const acquiredAt = new Date();
       try {
         // The claim proves the previous holder is gone: settle its row before
         // a new execution is visible beside its turns.
@@ -126,8 +125,9 @@ export function createDrizzleRunClaim(
           phase: "generating",
           cancelRequested: false,
           currentTool: null,
-          acquiredAt,
-          renewedAt: acquiredAt,
+          // The database's clock, as the wake fence uses: admission and fence order on one clock.
+          acquiredAt: sql`clock_timestamp()`,
+          renewedAt: new Date(),
           expiresAt: nextExpiry(),
         });
       } catch (cause) {
@@ -259,8 +259,8 @@ export function createDrizzleRunClaim(
 
     async fenceWakes(threadIds) {
       if (threadIds.length === 0) return;
-      // The wall clock, not the transaction's start: a lease acquired while this command
-      // waited on locks must not read as admitted before the fence.
+      // The database's wall clock, as lease admission uses, not the transaction's start: a lease
+      // acquired while this command waited on locks must not read as admitted before the fence.
       await db_()
         .update(schema.threads)
         .set({ wakeFenceAt: sql`clock_timestamp()` })
@@ -272,7 +272,6 @@ export function createDrizzleRunClaim(
       const [lease] = await db_()
         .select({
           cancelRequested: leases.cancelRequested,
-          // Compared in SQL: a JS Date would truncate the lease's microseconds.
           fenced: receiver
             ? sql<boolean>`EXISTS (SELECT 1 FROM ${schema.threads}
                 WHERE ${schema.threads.id} = ${receiver}

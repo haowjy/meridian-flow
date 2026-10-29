@@ -77,7 +77,7 @@ export const threads = pgTable(
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
     inboxBlockedReason: text("inbox_blocked_reason").$type<"credits_exhausted">(),
     /**
-     * Set when a lineage cancellation stopped this thread: a machine wake (agent message, relay,
+     * Set when a lineage cancellation stopped this thread: a machine wake (agent message,
      * spawn admission) from an execution admitted before it is refused. Writer actions pass.
      */
     wakeFenceAt: timestamp("wake_fence_at", { withTimezone: true }),
@@ -166,7 +166,7 @@ export const threads = pgTable(
     ),
     check(
       "threads_spawn_status_valid",
-      sql`${table.spawnStatus} IS NULL OR ${table.spawnStatus} IN ('running', 'asked', 'succeeded', 'failed', 'cancelled')`,
+      sql`${table.spawnStatus} IS NULL OR ${table.spawnStatus} IN ('running', 'succeeded', 'failed', 'cancelled')`,
     ),
   ],
 );
@@ -650,7 +650,7 @@ export const threadExecutionReports = pgTable(
     ),
     check(
       "thread_execution_reports_outcome_valid",
-      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('succeeded','asked','failed','cancelled')`,
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('succeeded','failed','cancelled')`,
     ),
     check(
       "thread_execution_reports_source_valid",

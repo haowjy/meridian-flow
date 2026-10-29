@@ -49,7 +49,7 @@ type RunSession = {
 /**
  * What a lineage cancellation reaches below its owner. `chat` (Stop): the whole subtree.
  * `turn`: the subtrees that turn's execution spawned, and the turn's own question.
- * `terminal`: a child run that ended takes its whole subtree, never its own asks.
+ * `terminal`: a child run that ended takes its whole subtree.
  * `deleted` (trash, Work delete): the whole subtree and everything the owner holds.
  */
 export type LineageReach =
@@ -61,7 +61,7 @@ export type LineageReach =
 /**
  * The owner's own decision, made under its thread lock inside the command's transaction:
  * how far the cancellation reaches (none, when the decision cancels nothing), and the
- * owner's execution it cancelled. Owed continuations an execution it spared admitted stay.
+ * owner's execution it cancelled.
  */
 export type LineageDecision<T> = {
   result: T;
@@ -88,9 +88,8 @@ export type LineageCancellation = {
   endSubtree(threadId: ThreadId): Promise<ThreadId[]>;
 };
 
-/** Child invocation cards: running at admission, the saved report when the run ends. */
+/** Child invocation cards: every run publishes its saved report when it ends. */
 export type RunSessionReports = {
-  projectRunning(threadId: ThreadId, executionTurnId: TurnId): Promise<void>;
   publish(threadId: ThreadId, executionTurnId: TurnId): Promise<unknown>;
 };
 
@@ -218,13 +217,13 @@ export function createRunSessions(deps: {
         .endSubtree(threadId)
         .then(abortAll)
         .catch((error) => observe(threadId, "lineage.cancel_failed", error));
-    async function cleanup(preserveDescendants = false) {
+    async function cleanup() {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
       // A child's subtree is ended by lineage cancellation before cleanup; a root
-      // run's background children outlive it, and an asked child is parked.
-      if (!preserveDescendants && !input.child) abortChildrenOf(threadId);
+      // run's background children outlive it.
+      if (!input.child) abortChildrenOf(threadId);
       let claimReleased = !lease;
       let wakeAfterRelease = false;
       try {
@@ -297,10 +296,6 @@ export function createRunSessions(deps: {
       });
       session.currentTurn = loop.currentTurn;
       const executionTurnId = loop.currentTurn.id;
-      // A projection, not an obligation: the terminal publication replaces the card.
-      await deps.reports
-        .projectRunning(threadId, executionTurnId)
-        .catch((error) => observe(threadId, "report.project_running_failed", error));
       if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       preparedRun = true;
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
@@ -317,9 +312,7 @@ export function createRunSessions(deps: {
           try {
             turn = await loop.execute();
           } catch (error) {
-            // A cancelled relay throws its abort; that is the cancellation, not a failure.
-            if (!(controller.signal.aborted && isAbortError(error)))
-              observe(threadId, "execution.failed", error);
+            observe(threadId, "execution.failed", error);
             if (error instanceof UnsettledPlaceholderError) {
               throw error;
             }
@@ -340,11 +333,8 @@ export function createRunSessions(deps: {
         await deps.reports
           .publish(threadId, executionTurnId)
           .catch((error) => observe(threadId, "report.publish_failed", error));
-        // An asked child is parked, not terminal: its descendants keep running
-        // and their notifications remain ordered behind its ask barrier.
-        const asked = outcome.status !== "failed" && outcome.turn.status === "awaiting_answer";
-        if (input.child && !asked) await cancelOwnLineage();
-        await cleanup(asked);
+        if (input.child) await cancelOwnLineage();
+        await cleanup();
         return outcome;
       }
       return {

@@ -820,7 +820,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     delivery,
-    wakes: runClaim,
   });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
@@ -1000,28 +999,18 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const childRunDriver = createChildRunDriver({
     backgroundTasks,
     orchestrator: { prepare: (input) => runner.prepare(input) },
-    repos: { executionReports: ports.threadRepos.executionReports, asks: ports.threadRepos.asks },
+    repos: { executionReports: ports.threadRepos.executionReports },
     // The live hub, not the bare journal writer: background lifecycle must reach
     // subscribers at append time, in append order. A notifier-relayed write lands
     // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
     readActivity,
-    async watchThread(threadId, onChange) {
-      const { unsubscribe } = await threadEventHub.catchupAndSubscribe(
-        threadId,
-        await threadEventHub.headSeq(threadId),
-        onChange,
-      );
-      return unsubscribe;
-    },
     eventSink: ports.eventSink,
   });
   const childRunCoordinator = createChildRunCoordinator({
     driver: childRunDriver,
     delivery,
     wakes: runClaim,
-    asks,
-    relayRepos: ports.threadRepos,
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
@@ -1077,13 +1066,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       asks,
       askRows: ports.threadRepos.asks,
       reports: ports.threadRepos.executionReports,
-      publisher: reportPublisher,
       refreshActivity: refreshSubagentActivity,
       afterCommit: runAfterDrizzleCommit,
     }),
     afterCommit: runAfterDrizzleCommit,
     askRequests: asks,
-    reports: { projectRunning: reportPublisher.projectRunning, publish: reportPublisher.publish },
+    reports: { publish: reportPublisher.publish },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
@@ -1287,12 +1275,7 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
-  const asks = createAskService({
-    repos: threadRepos,
-    eventWriter: journal,
-    delivery,
-    wakes: runClaim,
-  });
+  const asks = createAskService({ repos: threadRepos, eventWriter: journal, delivery });
   const handoffBriefs: HandoffBriefs = {
     async hold() {
       return null;

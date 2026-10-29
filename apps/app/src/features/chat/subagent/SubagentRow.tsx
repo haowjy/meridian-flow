@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { OpenSubagentChatButton } from "../OpenSubagentChatButton";
 import { Elapsed, formatSubagentElapsed, resolveSubagentName } from "./display";
-import type { SubagentRun, SubagentRunStatus } from "./run-model";
+import type { SubagentRun } from "./run-model";
 import { SubagentMark } from "./SubagentMark";
 
 export function SubagentIdentity({
@@ -22,12 +22,11 @@ export function SubagentIdentity({
   showName?: boolean;
   afterName?: ReactNode;
 }) {
-  const markStatus: SubagentRunStatus = run.status;
   return (
     <>
       <SubagentMark
         agentName={run.agentName}
-        status={markStatus}
+        status={run.status}
         className={size === "card" ? undefined : "size-5 text-[10px]"}
       />
       {agentLabel ?? <SubagentIdentityName run={run} />}

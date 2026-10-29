@@ -27,11 +27,6 @@ import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/in
 import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
-import {
-  type ForwardedRelayDeps,
-  type ForwardedRelayInput,
-  relayForwardedAnswer,
-} from "./forwarded-ask-relay.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
 import { resolveReadableThread } from "./resolve-readable-thread.js";
 import {
@@ -68,10 +63,6 @@ export interface ThreadMessageChildInput extends ChildDriveInput {
   ref: string;
   /** Tool-call id; scopes the background enqueue's idempotency key. */
   toolCallId: string;
-  /** Question evidence from the model request that produced this message. */
-  boundAskId?: string;
-  /** The parent's forwarded ask this message relays; recorded with the answer. */
-  relayFor?: string;
   signal?: AbortSignal;
 }
 
@@ -110,11 +101,8 @@ export interface ChildRunCoordinatorDeps {
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
   delivery: DeliveryProducer;
-  /** The machine-wake fence every message, relay and spawn from a parent's execution passes. */
+  /** A spawn's sender check: a stopped parent run starts no child. */
   wakes: Pick<RunClaim, "wakeRefusal">;
-  asks?: Pick<import("../asks/ask-service.js").AskService, "answerFromParent">;
-  /** The forwarded ask's tool result is rewritten in place under the parent's journal. */
-  relayRepos: ForwardedRelayDeps["repos"];
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
@@ -128,8 +116,6 @@ export interface ChildRunCoordinatorDeps {
 
 export interface ChildRunCoordinator {
   runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<ChildRunResult>;
-  /** Relays a resolved forwarded ask to its child before the parent's first request. */
-  relayForwardedAnswer(input: ForwardedRelayInput): Promise<void>;
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
@@ -405,54 +391,38 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const target = authorized.target;
     const notifiesCaller =
       target.kind === "subagent" && target.parentThreadId === request.parentThread.id;
-    const refusal = await deps.delivery.withThreadLock(target.id as ThreadId, async (producer) => {
-      const refusal = await deps.wakes.wakeRefusal({
+    try {
+      await deps.delivery.enqueue({
+        threadId: target.id as ThreadId,
+        intent: "message",
+        provenance: {
+          kind: "agent",
+          threadId: request.parentThread.id as ThreadId,
+          sender: { ref: request.parentThread.ref, title: request.parentThread.title },
+          ...(notifiesCaller
+            ? { notify: { turnId: request.parentTurnId, toolCallId: request.toolCallId } }
+            : {}),
+        },
+        body: { kind: "text", text: request.prompt },
+        idempotencyKey: `thread-message:${request.toolCallId}`,
         sender: {
           threadId: request.parentThread.id as ThreadId,
           executionId: request.parentExecutionId,
         },
-        receiver: target.id as ThreadId,
       });
-      if (refusal) return refusal;
-      await producer.enqueue(backgroundMessage(request, target, notifiesCaller));
-      return null;
-    });
-    if (refusal) return stoppedResult(refusal, target.ref);
-    // The target drives its own run in its own process, so no lease is held here
-    // and no activity frame fires from this call. The woken process emits the
-    // start and terminal frames when it acquires and releases its lease, so the
-    // strip shows the target `awake` for the whole run.
-    return backgroundResult(target, notifiesCaller);
-  }
-
-  function backgroundMessage(
-    request: ThreadMessageChildInput,
-    target: Thread,
-    notifiesCaller: boolean,
-  ): import("../loop/ports.js").MessageDraft {
-    return {
-      threadId: target.id as ThreadId,
-      intent: "message",
-      provenance: {
-        kind: "agent",
-        threadId: request.parentThread.id as ThreadId,
-        ...(request.boundAskId ? { boundAskId: request.boundAskId } : {}),
-        sender: { ref: request.parentThread.ref, title: request.parentThread.title },
-        ...(notifiesCaller
-          ? { notify: { turnId: request.parentTurnId, toolCallId: request.toolCallId } }
-          : {}),
-      },
-      body: { kind: "text", text: request.prompt },
-      idempotencyKey: `thread-message:${request.toolCallId}`,
-    };
-  }
-
-  async function backgroundResult(target: Thread, notifiesCaller: boolean): Promise<SpawnResult> {
+    } catch (error) {
+      if (error instanceof WakeRefusedError) return stoppedResult(error.refusal, target.ref);
+      throw error;
+    }
     const agentSlug =
       target.kind === "subagent"
         ? ((await deps.agentRevisions.readThreadBinding(target.id))?.revision?.slug ??
           GENERIC_SUBAGENT_SLUG)
         : target.kind;
+    // The target drives its own run in its own process, so no lease is held here
+    // and no activity frame fires from this call. The woken process emits the
+    // start and terminal frames when it acquires and releases its lease, so the
+    // strip shows the target `awake` for the whole run.
     return {
       status: "background",
       handle: target.ref ?? "",
@@ -468,34 +438,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     options: ChildRunOptions,
   ): Promise<ChildRunResult> {
     const background = options.mode === "background";
-    if (request.kind === "message" && request.boundAskId && deps.asks) {
-      const authorized = await authorizeThreadMessage({
-        callerThread: request.parentThread,
-        targetRef: request.ref,
-        mode: "background",
-        threads: deps.repos.threads,
-      });
-      if (!authorized.ok) return { status: "error", error: authorized.error };
-      const answered = await deps.asks.answerFromParent({
-        parentThreadId: request.parentThread.id as ThreadId,
-        parentExecutionId: request.parentExecutionId,
-        childThreadId: authorized.target.id as ThreadId,
-        askId: request.boundAskId,
-        submissionId: `parent-message:${request.toolCallId}`,
-        text: request.prompt,
-        delivery: background ? "background_notification" : "direct",
-        ...(request.relayFor ? { relayFor: request.relayFor } : {}),
-      });
-      if (!answered.ok && answered.code === "thread_stopped")
-        return stoppedResult(answered.refusal, authorized.target.ref);
-      // The exact question lost the race. Preserve its binding on the ordinary
-      // message; it must never be retargeted to a newer question.
-      if (!answered.ok) return sendBackgroundMessage(request);
-      if (background) return backgroundResult(authorized.target, true);
-      const prepared = await prepareForegroundMessage(request, authorized.target);
-      if ("status" in prepared) return prepared;
-      return driver.continueAnswered(prepared, request, request.boundAskId);
-    }
     if (request.kind === "message" && background) {
       return sendBackgroundMessage(request);
     }
@@ -562,7 +504,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           ...(prepared.name !== undefined ? { name: prepared.name } : {}),
         };
       } catch (error) {
-        if (request.kind === "spawn") {
+        // A refused admission is a lineage cancellation's, which already wrote `cancelled`.
+        if (request.kind === "spawn" && !(error instanceof WakeRefusedError)) {
           await deps.repos.threads.updateSpawnLifecycle(prepared.child.id, {
             spawnStatus: "failed",
           });
@@ -611,19 +554,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
   }
 
-  return {
-    runChild,
-    relayForwardedAnswer: (input) =>
-      relayForwardedAnswer(
-        {
-          repos: deps.relayRepos,
-          eventWriter: deps.eventWriter,
-          delivery: deps.delivery,
-          runChild,
-        },
-        input,
-      ),
-  };
+  return { runChild };
 }
 
 /** The tool result of a wake the fence refused: the model learns who was stopped. */

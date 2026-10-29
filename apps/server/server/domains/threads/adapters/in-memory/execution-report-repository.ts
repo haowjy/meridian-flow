@@ -34,14 +34,6 @@ export function createInMemoryExecutionReportRepository(
     if (!turn) throw new Error(`Execution report turn not found: ${executionTurnId}`);
     return turn.position;
   };
-  const finishedByChild = (child: string) =>
-    [...rows.values()]
-      .filter((row) => row.childThreadId === child && row.outcome !== null)
-      .sort(
-        (a, b) =>
-          positionForReport(a.executionTurnId) - positionForReport(b.executionTurnId) ||
-          a.executionTurnId.localeCompare(b.executionTurnId),
-      );
   return {
     async findByTurn(child, turnId) {
       let turn = deps.turns.get(turnId);
@@ -153,10 +145,13 @@ export function createInMemoryExecutionReportRepository(
       );
     },
     async listFinishedByChild(child) {
-      return finishedByChild(child);
-    },
-    async findLatestFinishedByChild(child) {
-      return finishedByChild(child).at(-1) ?? null;
+      return [...rows.values()]
+        .filter((row) => row.childThreadId === child && row.outcome !== null)
+        .sort(
+          (a, b) =>
+            positionForReport(a.executionTurnId) - positionForReport(b.executionTurnId) ||
+            a.executionTurnId.localeCompare(b.executionTurnId),
+        );
     },
     async listUnfinalized(limit, afterExecutionId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");

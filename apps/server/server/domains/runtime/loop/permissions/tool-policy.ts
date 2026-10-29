@@ -32,7 +32,8 @@ const SUBAGENT_REPORT = "return_result";
 
 /**
  * `((allow-list or full catalog) − disallowed − unavailable) + required`:
- * unavailable is the disabled tools, plus `return_result` for a primary;
+ * unavailable is the disabled tools, plus `return_result` for a primary and `ask_user` for a
+ * subagent;
  * required is `return_result` for a subagent.
  */
 export function projectToolPolicy(
@@ -46,6 +47,8 @@ export function projectToolPolicy(
     ),
   );
   if (kind === "subagent") {
+    // A subagent never asks the writer: it does the task or stops and reports what is missing.
+    tools.delete("ask_user");
     tools.add(SUBAGENT_REPORT);
   }
   return tools;

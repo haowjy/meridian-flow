@@ -141,7 +141,10 @@ __mergedSuite("tool-policy.test.ts", () => {
         "denials",
         { "disallowed-tools": ["write", "spawn", "return_result"] },
         "subagent",
-        [...PRIMARY_DEFAULT.filter((n) => n !== "write" && n !== "spawn"), "return_result"].sort(),
+        [
+          ...PRIMARY_DEFAULT.filter((n) => n !== "write" && n !== "spawn" && n !== "ask_user"),
+          "return_result",
+        ].sort(),
       ],
       [
         "a denial inside the allow-list",

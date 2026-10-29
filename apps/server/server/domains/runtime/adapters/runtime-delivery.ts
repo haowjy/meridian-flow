@@ -22,7 +22,11 @@ import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop
 import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
 import { hasReferenceEvidence } from "../loop/reference-context.js";
-import { NoPendingWakeError, ReplyRetryUnavailableError } from "../loop/run-turn-port.js";
+import {
+  NoPendingWakeError,
+  ReplyRetryUnavailableError,
+  WakeRefusedError,
+} from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -46,7 +50,7 @@ export function createDeliveryAdapter(
     handBacks?: HandBackStore;
     runClaim: Pick<
       RunClaim,
-      "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder"
+      "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder" | "wakeRefusal"
     >;
     workContext: import("../loop/work-context.js").WorkContextReader;
     notices: NoticePort;
@@ -207,7 +211,12 @@ export function createDeliveryAdapter(
       return result;
     }
   }
-  const enqueue = async (draft: MessageDraft) => {
+  // Every caller holds the receiver's thread lock, which the fence's stamp takes too.
+  const enqueue = async ({ sender, ...draft }: MessageDraft) => {
+    if (sender) {
+      const refusal = await deps.runClaim.wakeRefusal({ sender, receiver: draft.threadId });
+      if (refusal) throw new WakeRefusedError(refusal, draft.threadId);
+    }
     const message = await inbox.enqueue(draft);
     if (draft.intent === "message" || draft.intent === "control")
       schedulePostCommit(() => deps.runStarter.start(draft.threadId));
@@ -818,11 +827,6 @@ export function createDeliveryAdapter(
             if (draft.threadId !== threadId)
               throw new Error("Scoped delivery cannot enqueue another thread");
             return enqueue(draft);
-          },
-          enqueueWithoutWake(draft) {
-            if (draft.threadId !== threadId)
-              throw new Error("Scoped delivery cannot enqueue another thread");
-            return inbox.enqueue(draft);
           },
         }),
       ),
