@@ -318,6 +318,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       input: WorkCommandSchema,
       execution: { type: "server", handler: handlers.work },
+      // A command the policy asks about becomes a permission request.
+      capability: "request",
       historySummary: workHistorySummary,
       historyKind: (input) =>
         input.command === "list" || input.command === "show" ? "routine" : "receipt",

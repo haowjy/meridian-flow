@@ -30,6 +30,7 @@ async function openQuestion() {
       options: [{ label: "Left" }, { label: "Right" }],
       recommended: "Left",
     },
+    permissionCommand: null,
     deadlineAt: new Date(0),
     status: "open",
     resolution: null,

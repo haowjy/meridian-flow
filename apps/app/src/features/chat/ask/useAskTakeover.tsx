@@ -18,11 +18,7 @@ type HeldWords = { askId: string | null; field: string; sent: string | null };
 
 const NONE: HeldWords = { askId: null, field: "", sent: null };
 
-export function useAskTakeover(
-  threadId: string,
-  agentName: string,
-  composer: RefObject<ComposerHandle | null>,
-) {
+export function useAskTakeover(threadId: string, composer: RefObject<ComposerHandle | null>) {
   const open = useOpenAsk(threadId);
   const commands = useAnswerAsk(threadId);
   const openId = open?.ask.id ?? null;
@@ -64,7 +60,6 @@ export function useAskTakeover(
   return (
     <AskTakeover
       open={open}
-      agentName={agentName}
       text={held.askId === open.ask.id ? held.field : ""}
       onTextChange={(text) => write({ ...heldRef.current, askId: open.ask.id, field: text })}
       onSettle={() => commands.settle(open.ask.id)}

@@ -239,14 +239,37 @@ msgstr "{0} tok/s"
 msgid "{0} will be renamed {1}"
 msgstr "{0} will be renamed {1}"
 
-#. placeholder {0}: ask.payload.summary
-#: src/features/chat/ask/AskTakeover.tsx
-msgid "{agentName} wants to {0}?"
-msgstr "{agentName} wants to {0}?"
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to archive {work}?"
+msgstr "{agent} wants to archive {work}?"
 
-#: src/features/chat/ask/AskTakeover.tsx
-msgid "{agentName} wants to {summary}?"
-msgstr "{agentName} wants to {summary}?"
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to create the Work “{name}”?"
+msgstr "{agent} wants to create the Work “{name}”?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to move this chat to {work}?"
+msgstr "{agent} wants to move this chat to {work}?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to rename {work} to “{name}”?"
+msgstr "{agent} wants to rename {work} to “{name}”?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to switch this chat to auto-apply?"
+msgstr "{agent} wants to switch this chat to auto-apply?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to switch this chat to draft mode?"
+msgstr "{agent} wants to switch this chat to draft mode?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to unarchive {work}?"
+msgstr "{agent} wants to unarchive {work}?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to update {work}?"
+msgstr "{agent} wants to update {work}?"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -379,6 +402,10 @@ msgstr "{minutes}m"
 #: src/features/chat/document-display-name.ts
 msgid "{name} ({skill})"
 msgstr "{name} ({skill})"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{name} (@{handle})"
+msgstr "{name} (@{handle})"
 
 #: src/features/chat/derivation/SourceChatLink.tsx
 msgid "{name} (in the trash)"
@@ -1360,6 +1387,14 @@ msgstr "Choose Work for new chat, currently {0}"
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Clear the goal"
+msgstr "Clear the goal"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Clear the status"
+msgstr "Clear the status"
 
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -3448,6 +3483,7 @@ msgid "No scratch notes yet."
 msgstr "No scratch notes yet."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/ask/permission-request.ts
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "No Work"
 msgstr "No Work"
@@ -3536,8 +3572,12 @@ msgid "Only on this device"
 msgstr "Only on this device"
 
 #: src/features/chat/tool-failure.tsx
-msgid "Only one question can wait for an answer at a time, so this one wasn't asked."
-msgstr "Only one question can wait for an answer at a time, so this one wasn't asked."
+#~ msgid "Only one question can wait for an answer at a time, so this one wasn't asked."
+#~ msgstr "Only one question can wait for an answer at a time, so this one wasn't asked."
+
+#: src/features/chat/tool-failure.tsx
+msgid "Only one question or request can wait for an answer at a time, so this one wasn't asked."
+msgstr "Only one question or request can wait for an answer at a time, so this one wasn't asked."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Only part of this change could be reversed."
@@ -3964,6 +4004,10 @@ msgstr "Rename chat"
 msgid "Rename project: {title}"
 msgstr "Rename project: {title}"
 
+#: src/features/chat/ask/permission-request.ts
+msgid "Rename to “{name}”"
+msgstr "Rename to “{name}”"
+
 #: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work"
 msgstr "Rename Work"
@@ -4324,6 +4368,14 @@ msgstr "Sent a message to {line}"
 #: src/components/app/ConnectionBanner.tsx
 #~ msgid "Session expired. Please refresh."
 #~ msgstr "Session expired. Please refresh."
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Set the goal to “{goal}”"
+msgstr "Set the goal to “{goal}”"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Set the status to “{status}”"
+msgstr "Set the status to “{status}”"
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/PhoneSettings.tsx
@@ -4797,8 +4849,8 @@ msgid "That Work is no longer available. Choose another Work."
 msgstr "That Work is no longer available. Choose another Work."
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "The AI asked you a question"
-msgstr "The AI asked you a question"
+#~ msgid "The AI asked you a question"
+#~ msgstr "The AI asked you a question"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {count} documents ({names})."
@@ -4847,6 +4899,10 @@ msgstr "The AI in a chat deleted this document before this reply saved its chang
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted this document."
 msgstr "The AI in a chat deleted this document."
+
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "The AI is waiting for you"
+msgstr "The AI is waiting for you"
 
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
@@ -4966,6 +5022,10 @@ msgstr "Thinking"
 #: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "Thinking out loud?"
+
+#: src/features/chat/tool-failure.tsx
+msgid "This assistant isn't allowed to make this change, so it wasn't done."
+msgstr "This assistant isn't allowed to make this change, so it wasn't done."
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."

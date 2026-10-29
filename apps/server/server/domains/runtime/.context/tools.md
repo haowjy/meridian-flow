@@ -46,25 +46,55 @@ executor calls do not silently reapply it; callers must choose the policy seam.
 `ask_user` creates a durable question for a primary chat and ends that execution.
 The answer's tool result is written onto the asking turn before an internal
 continuation starts through ordinary request assembly. The tool and the Mars
-capability share one name. The action policy retains `ask` for future
-actions, but no current action maps to it. Subagents never get `ask_user`
+capability share one name. Subagents never get `ask_user`
 (`projectToolPolicy`): a child does its task with reasonable calls, or stops and
 says in its report what is missing (`SUBAGENT_GUIDANCE`). The parent carries on
 from the report: it does the work itself, sends the child what it needs, or asks
 the writer with its own `ask_user` (the spawn description says so).
 
 A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
-the ask service's one creation call (`AskService.request`) opens the ask the
-request names and returns the deferred disposition, which settles the execution.
-The batch rule keys on that disposition, not on the tool: the first request in a
-provider batch defers it, and a later one (`one_request_at_a_time`) is refused
-as that call's tool result while the reply continues (`loop/tool-dispatch.ts`,
-`RequestBatch`). The app maps that code, `thread_stopped`, `tool_timeout` and
-`tool_arguments_parse` (arguments that were not JSON, read like a schema failure) to its own
-localized sentence on the failed row. A caught exception, in the executor or a handler's own
-catch, carries `TOOL_EXCEPTION_CODE` (`tool_exception`), and the app shows generic copy for it,
-never its message: the message can carry SQL or internal ids. Every other failure, including a
-deliberate refusal without its own code (`tool_error`), shows its message.
+the ask service's one creation call (`AskService.request`) opens the question or
+permission request it names and returns the deferred disposition, which settles
+the execution. The batch rule keys on that disposition, not on the tool: the first
+request in a provider batch defers it, and a later one (`one_request_at_a_time`) is
+refused as that call's tool result while the reply continues (`loop/tool-dispatch.ts`,
+`RequestBatch`). So two `work` calls that each need permission in one response open
+one request; the second gets the refusal. The app maps that code, `thread_stopped`,
+`tool_timeout`, `tool_arguments_parse` (arguments that were not JSON, read like a schema
+failure) and an action-policy `permission_denied` to its own localized sentence
+on the failed row. A caught exception, in the executor or a handler's own catch,
+carries `TOOL_EXCEPTION_CODE` (`tool_exception`), and the app shows generic copy for
+it, never its message: the message can carry SQL or internal ids. Every other
+failure, including a deliberate refusal without its own code (`tool_error`), shows
+its message.
+
+The action-policy `ask` decision is separate from the question tool. The `work`
+handler holds the `request` capability. It resolves every command's target first
+(`resolveWorkCommand`), so an unknown handle or a switch's no-op answers before policy;
+then, for an action the policy asks about and the project holds no grant for, it
+requests a permission ask. A grant is the writer's own standing answer, so it holds in
+subagents too; without one a subagent gets a fixed denial that tells it to report what
+it needed. The payload is facts the app words in its locale (agent, action, the target
+Work as named then, and per action the fields it sets); the server-only command is the
+command alone with its target pinned by id, parsed with `permissionWorkCommandSchema`
+when read. The project is the asking chat's.
+
+Allow runs the saved command through the same executor as a direct call
+(`executeWorkCommand`), as the agent's action: an Allowed `write_mode` queues an agent
+switch and leaves the Work's default mode alone, and the ask's receipt records that
+the writer allowed it. `createAllowedWorkExecutor` (`lib/model-tools/work-tool.ts`)
+runs it in a savepoint of the answer transaction, and the tool executor's
+`handlerToolResult` shapes it as that call's result would be. A domain refusal rolls
+the savepoint back, writes and after-commit effects included, and only then becomes
+the error tool result, so the answer still commits; any other failure rolls back the
+answer. Allow always also stores a project-and-action grant, even when the action was
+refused. Base deny still wins, and an `ask` decision on an action that can't ask
+throws. No current action maps to `ask`.
+
+`work.delete` can't ask: it is not a `PermissionAction`, and the policy table's type
+rejects an `ask` row for it. A deleted Work restores for 30 days from its receipt.
+This also keeps an answer to one thread lock: an Allow never ends a lineage, so it
+takes only the asking chat's lock, as every answer does.
 
 ## Document and cost boundaries
 

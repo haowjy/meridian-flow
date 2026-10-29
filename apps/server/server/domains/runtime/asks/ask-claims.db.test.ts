@@ -50,7 +50,7 @@ else
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { createLineageCancellation } = await import("../spawn/lineage-cancellation.js");
-    const { createAskService } = await import("./ask-service.js");
+    const { createAskService, refusingPermissionExecutor } = await import("./ask-service.js");
     const { WakeRefusedError } = await import("../loop/run-turn-port.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -59,7 +59,12 @@ else
     const eventWriter = createQuietDrizzleJournalWriter(db);
     const delivery = createTestDrizzleDelivery(db, { repos, eventWriter });
     const runClaim = createDrizzleRunClaim(db);
-    const asks = createAskService({ repos, eventWriter, delivery });
+    const asks = createAskService({
+      repos,
+      eventWriter,
+      delivery,
+      permission: refusingPermissionExecutor,
+    });
     const lineage = createLineageCancellation({
       transaction: repos.transaction,
       threads: repos.threads,
@@ -100,6 +105,7 @@ else
           toolCallId: `ask-${round}`,
           kind: "question",
           payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+          permissionCommand: null,
           deadlineAt: new Date(0),
           status: "open",
           resolution: null,
@@ -157,6 +163,7 @@ else
         toolCallId: "ask-old-server",
         kind: "question",
         payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+        permissionCommand: null,
         deadlineAt: null,
         status: "answered",
         resolution: { kind: "option", label: "A" },
@@ -190,6 +197,7 @@ else
         toolCallId: "ask-spared",
         kind: "question",
         payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+        permissionCommand: null,
         deadlineAt: null,
         status: "pending",
         resolution: null,

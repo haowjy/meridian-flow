@@ -1,16 +1,18 @@
 /** The one line a resolved ask leaves on its asking turn, or this device's answer while it sends. */
 import { t } from "@lingui/core/macro";
+import type { PermissionAskPayload } from "@meridian/contracts/threads";
 import type { AskReceipt as AskReceiptFacts } from "@meridian/thread-client";
 import { MessageCircleQuestion, ShieldCheck } from "lucide-react";
 import { useAskReceipt } from "@/client/stores";
 import { cn } from "@/lib/utils";
+import { permissionRequestText } from "./permission-request";
 
 export function AskReceipt({ threadId, turnId }: { threadId: string; turnId: string }) {
   const receipt = useAskReceipt(threadId, turnId);
   if (!receipt) return null;
   const { ask, pending } = receipt;
   const Icon = ask.kind === "question" ? MessageCircleQuestion : ShieldCheck;
-  const asked = ask.kind === "question" ? ask.payload.question : ask.payload.summary;
+  const asked = ask.kind === "question" ? ask.payload.question : permissionAsked(ask.payload);
   return (
     <p
       className="flex min-w-0 items-start gap-[var(--chat-space-inline)] text-compact"
@@ -57,4 +59,9 @@ function answerText({ resolution }: AskReceiptFacts): string {
     case "deny":
       return t`Denied`;
   }
+}
+
+function permissionAsked(payload: PermissionAskPayload): string {
+  const { title, details } = permissionRequestText(payload);
+  return [title, ...details].join(" · ");
 }

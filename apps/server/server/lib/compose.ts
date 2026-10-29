@@ -141,7 +141,11 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
-import { type AskService, createAskService } from "../domains/runtime/asks/ask-service.js";
+import {
+  type AskService,
+  createAskService,
+  refusingPermissionExecutor,
+} from "../domains/runtime/asks/ask-service.js";
 import {
   createDetachedWorkTracker,
   type DetachedWorkTracker,
@@ -160,6 +164,7 @@ import {
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
   createDrizzleObservationFrontiers,
+  createDrizzlePermissionGrantStore,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleShownLinkStore,
@@ -263,6 +268,7 @@ import {
   createModelToolRegistrations,
   createReferenceReader,
 } from "./model-tools/index.js";
+import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -817,16 +823,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         await publishReport(report.childThreadId, report.executionTurnId);
     },
   });
-  const asks = createAskService({
-    repos: ports.threadRepos,
-    eventWriter: threadEventHub,
-    delivery,
-  });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
+  const permissionGrants = createDrizzlePermissionGrantStore(ports.db);
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -834,6 +836,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
+    permissionGrants,
     workAuthorityResolver: ports.workAuthorityResolver,
     branches: ports.documentSync,
     workContextNotices,
@@ -852,6 +855,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentRemovals: ports.documentRemovals,
     documentTrash: ports.documentTrash,
   };
+  const asks = createAskService({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    delivery,
+    permission: createAllowedWorkExecutor(
+      { ...coreToolDeps, savepoint: (operation) => runInDrizzleSavepoint(ports.db, operation) },
+      toolRegistry,
+    ),
+  });
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
@@ -1276,7 +1288,12 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
-  const asks = createAskService({ repos: threadRepos, eventWriter: journal, delivery });
+  const asks = createAskService({
+    repos: threadRepos,
+    eventWriter: journal,
+    delivery,
+    permission: refusingPermissionExecutor,
+  });
   const handoffBriefs: HandoffBriefs = {
     async hold() {
       return null;

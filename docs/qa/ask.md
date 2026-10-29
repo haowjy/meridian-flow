@@ -219,8 +219,8 @@ into the parent's script before you send. A parent woken by a report matches
    `one_request_at_a_time`, and the reply ends `awaiting_answer` on the first
    question.
 10. **Failed rows.** Expand step 9's reply in the browser. PASS: the refused row
-    reads "Couldn't ask a question" and opens to "Only one question can wait for an
-    answer at a time, so this one wasn't asked."; under zh it opens to the Chinese
+    reads "Couldn't ask a question" and opens to "Only one question or request can
+    wait for an answer at a time, so this one wasn't asked."; under zh it opens to the Chinese
     sentence. A caught exception (`tool_exception`) opens to "Something went wrong
     while running this.", never the exception text. Arguments that aren't JSON
     (`"rawArgs":"{\"command\": \"show\" \"id\"}"` on a `work` call; jsonrepair fixes
@@ -252,3 +252,75 @@ into the parent's script before you send. A parent woken by a report matches
     `./mf log --name wake.failed` stays empty.
 
 Stop the owned stack with `pnpm dev --stop`.
+
+## Permission requests
+
+No shipped action currently asks. For this probe only, change the `edit`
+entries for `work.archive`, `work.update` and `work.write_mode` in
+`runtime/loop/permissions/action-policy.ts` from `allow` to `ask`. Do not commit
+that patch. `work.delete` can't ask: an `ask` row for it fails to compile.
+`./mf thread answer` can't answer a permission request; answer in the browser.
+Create two primary chats in one project and a child chat, then exercise these
+cases:
+
+1. **Allow.** Ask the first primary chat to archive a Work, then choose Allow.
+   PASS: the saved Work id is archived, the asking turn gets the action's real
+   result (“Archived …”, with the Work receipt), the receipt says Allowed, and one
+   continuation starts.
+2. **Rename.** Ask for a rename and Allow it. PASS: the takeover names the Work as
+   “name (@handle)” and says the new name; the Work is renamed and the result reads
+   “Updated …”.
+3. **Allow always.** Repeat with another active Work and choose Allow always.
+   Ask the second primary chat to archive a third Work. PASS: it runs without a
+   takeover because the project grant applies to `work.archive`.
+4. **Deny.** In a project without that grant, choose Deny. PASS: no Work changes,
+   the tool result is `{"allowed":false}`, and the receipt says Denied.
+5. **Refused action.** Create Works named “Review target” (`w1`) and “Already
+   taken” (`w2`), then ask for a rename onto the taken name:
+
+   ```sh
+   ./mf thread send <chat> 'Rename probe' --mock \
+     '[{"toolCalls":[{"name":"work","args":{"command":"update","work":"w1","name":"Already taken"}}]},{"text":"done"}]'
+   ```
+
+   Choose Allow. PASS: the asking turn gets a `work_name_conflict` error tool
+   result, the answer is recorded (the takeover clears and no Retry appears),
+   neither Work changes, and the continuation sees the error. Archiving an
+   already archived Work is not a refusal: it is an idempotent no-op that
+   reports the Work as already up to date.
+6. **Restart.** Restart this stack while a permission request is open. PASS: it
+   remains open without a deadline and answers normally after restart.
+7. **Two requests in one response.** Script two asking `work` calls in one
+   response, then a question and an asking `work` call in either order:
+
+   ```sh
+   ./mf thread send <chat> 'Parallel probe' --mock \
+     '[{"toolCalls":[{"name":"work","args":{"command":"archive","work":"w3"}},{"name":"work","args":{"command":"archive","work":"w4"}}]},{"text":"done"}]'
+   ```
+
+   PASS: one ask row; the second call's result is `one_request_at_a_time`, and its
+   row opens to “Only one question or request can wait for an answer at a time, so
+   this one wasn't asked.”; the reply ends `awaiting_answer` on the first request.
+8. **Stop.** Stop a chat with an open request. PASS: the ask is `cancelled` and
+   nothing changes.
+9. **Child without a grant.** Have the child call a patched action the project has
+   no grant for. PASS: it receives exactly “Only the main chat can ask the writer to
+   allow this change. If your task needs it, stop and say in your report what is
+   missing.” No ask is created, and the failed row in the child chat opens to “This
+   assistant isn't allowed to make this change, so it wasn't done.” A parent's
+   `thread send --mock` script does not reach the child it spawns: queue the
+   child's script separately with
+   `./mf mock script … --match "<text from the child's prompt>"`.
+10. **Child with a grant.** After step 3's Allow always, have the child archive a
+    Work. PASS: it runs without a request, as in the main chat.
+11. **Write mode.** In an auto-apply chat, script
+    `{"name":"work","args":{"command":"write_mode","mode":"draft"}}` and Allow it.
+    PASS: the takeover asks to switch this chat to draft mode; the chat's next reply
+    runs in draft mode; the queued control row has `agent` provenance; and the Work's
+    `default_ai_write_mode` is unchanged, so a new chat in that Work starts in
+    auto-apply.
+
+In the browser, confirm permission takeovers have only Deny, Allow always, and
+Allow; no text field or countdown appears. Repeat a failed send and a stale
+answer from another tab to confirm the same Retry and `ask_not_open` behavior as
+questions. Revert the local policy patch before committing.

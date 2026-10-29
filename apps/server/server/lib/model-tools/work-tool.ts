@@ -1,11 +1,17 @@
 /**
  * The model `work` tool: list, show and change the project's Works. The action
- * policy decides each command (D39). Work rebinding and queued write-mode
- * changes run under the calling execution's existing claim.
+ * policy decides each command (D39). A direct call's Work rebinding and queued
+ * write-mode changes run under the calling execution's claim; under an Allow they run
+ * under the answer's thread lock, with no claim (an open ask blocks run selection).
  */
 import { type PermissionDeniedReason, TOOL_EXCEPTION_CODE } from "@meridian/contracts/protocol";
-import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Thread } from "@meridian/contracts/threads";
+import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import {
+  type PermissionAskPayload,
+  type PermissionWorkCommand,
+  permissionActionSchema,
+  type Thread,
+} from "@meridian/contracts/threads";
 import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
 import { workLifecycleState } from "@meridian/contracts/works";
 import {
@@ -14,17 +20,22 @@ import {
   setWorkArchived,
   updateWorkTransition,
   WorkLifecycleUnavailableError,
+  WorkLockedError,
+  WorkNameConflictError,
   WorkNameRequiredError,
   WorkStatusInvalidError,
 } from "../../domains/projects/index.js";
+import type { PermissionExecutor } from "../../domains/runtime/asks/ask-service.js";
 import {
+  type AskableAction,
   actionPolicy,
+  handlerToolResult,
   type ModelWork,
   mayChangeWorks,
-  type ToolHandlerContext,
+  type RequestToolHandlerContext,
+  type ToolRegistry,
   type WorkCommand,
   type WorkShowResult,
-  workActionRefusal,
 } from "../../domains/runtime/index.js";
 import { RebindThreadWorkError, switchThreadWork } from "../../domains/threads/index.js";
 import {
@@ -122,44 +133,76 @@ async function workByHandle(
 }
 
 /**
- * Why a `switch` can't happen, or null when it can proceed.
- * An unknown Work points to `work list` (D51), an archived one can't be
- * switched to by anyone, and the chat's current Work needs no switch.
+ * A `switch`'s target, or why it can't happen. An unknown Work points to `work list` (D51),
+ * an archived one can't be switched to by anyone, and the chat's current Work needs no switch.
  */
-async function switchPrecheck(
+async function resolveSwitch(
   deps: ToolWiringDeps,
-  projectId: string,
-  threadId: ThreadId,
+  thread: Thread,
   handle: string | null | undefined,
-): Promise<{ message: string } | ToolErrorOutput | null> {
+): Promise<Resolution> {
   let work: Work;
   if (handle) {
-    const found = await workByHandle(deps, projectId, handle);
-    if (isToolError(found)) return found;
+    const found = await workByHandle(deps, thread.projectId, handle);
+    if (isToolError(found)) return { ok: false, result: found };
     if (workLifecycleState(found) === "deleted") {
-      return toolError({
-        code: "work_not_found",
-        message: await deps.contextPorts.chatFiles.unknownWork(projectId, handle),
-        workHandle: handle,
-      });
+      return {
+        ok: false,
+        result: toolError({
+          code: "work_not_found",
+          message: await deps.contextPorts.chatFiles.unknownWork(thread.projectId, handle),
+          workHandle: handle,
+        }),
+      };
     }
     work = found;
   } else {
-    const noWork = await deps.works.findNoWork(projectId);
-    if (!noWork) return toolError({ message: "No Work is missing for this project" });
+    const noWork = await deps.works.findNoWork(thread.projectId);
+    if (!noWork)
+      return { ok: false, result: toolError({ message: "No Work is missing for this project" }) };
     work = noWork;
   }
   const named = work.handle ?? "No Work";
   if (workLifecycleState(work) === "archived") {
-    return toolError({
-      code: "work_archived",
-      message: `Work ${named} is archived. Ask the user to unarchive it before switching.`,
-    });
+    return {
+      ok: false,
+      result: toolError({
+        code: "work_archived",
+        message: `Work ${named} is archived. Ask the user to unarchive it before switching.`,
+      }),
+    };
   }
-  const current = await deps.threadWorks.findPrimary(threadId);
+  const current = await deps.threadWorks.findPrimary(thread.id as ThreadId);
   const currentId = current?.workId ?? (work.isNoWork ? work.id : null);
-  if (currentId === work.id) return { message: `This chat is already in ${named}.` };
-  return null;
+  if (currentId === work.id)
+    return { ok: false, result: { message: `This chat is already in ${named}.` } };
+  return { ok: true, command: { command: "switch", work } };
+}
+
+/**
+ * The model's command with its target resolved, before policy, so the model gets the
+ * useful target error rather than an unrelated permission refusal. `result` is the
+ * call's whole answer: a tool error, or a switch's no-op message.
+ */
+async function resolveWorkCommand(
+  deps: ToolWiringDeps,
+  thread: Thread,
+  command: WorkCommand,
+): Promise<Resolution> {
+  switch (command.command) {
+    case "list":
+    case "create":
+    case "write_mode":
+      return { ok: true, command };
+    case "switch":
+      return resolveSwitch(deps, thread, command.work);
+    default: {
+      const work = await workByHandle(deps, thread.projectId, command.work);
+      return isToolError(work)
+        ? { ok: false, result: work }
+        : { ok: true, command: { ...command, work } };
+    }
+  }
 }
 
 /**
@@ -180,47 +223,156 @@ function workLifecycleMessage(
     : `Work ${workHandle} is archived and read-only. Ask the user to unarchive ${workHandle}.`;
 }
 
-function policyRefusal(decision: "ask" | "deny"): ToolErrorOutput {
+function policyRefusal(message: string): ToolErrorOutput {
   return toolError({
     code: "permission_denied",
     reason: "action_denied" satisfies PermissionDeniedReason,
-    message: workActionRefusal(decision),
+    message,
   });
 }
 
-type CommandName = Exclude<WorkCommand["command"], "switch" | "write_mode">;
-type CommandOf<C extends CommandName> = Extract<WorkCommand, { command: C }>;
+/**
+ * A `work` command with its target resolved to a Work: from the handle the model gave, or
+ * from the id an Allow stored. `switch` to No Work resolves to the project's No Work.
+ */
+type ResolvedWorkCommand =
+  | Extract<WorkCommand, { command: "list" | "create" | "write_mode" }>
+  | (Omit<Extract<WorkCommand, { command: "show" }>, "work"> & { work: Work })
+  | (Omit<Extract<WorkCommand, { command: "update" }>, "work"> & { work: Work })
+  | { [C in "archive" | "unarchive" | "delete" | "switch"]: { command: C; work: Work } }[
+      | "archive"
+      | "unarchive"
+      | "delete"
+      | "switch"];
+
+type Resolution =
+  | { ok: true; command: ResolvedWorkCommand }
+  | { ok: false; result: ToolErrorOutput | { message: string } };
+
+type AskableCommand = AskableAction extends `work.${infer C}` ? C : never;
+type AskedWorkCommand = Extract<ResolvedWorkCommand, { command: AskableCommand }>;
+
+const ASKABLE: ReadonlySet<string> = new Set(permissionActionSchema.options);
+
+function isAskable(command: ResolvedWorkCommand): command is AskedWorkCommand {
+  return ASKABLE.has(`work.${command.command}`);
+}
+
+/**
+ * What the writer is asked to allow: the action, its target as named now, and what it
+ * sets. The client renders the sentence.
+ */
+function permissionPayload(thread: Thread, command: AskedWorkCommand): PermissionAskPayload {
+  const agent = thread.agentName?.trim() || null;
+  switch (command.command) {
+    case "create": {
+      const { name, goal } = command;
+      return { agent, action: "work.create", work: null, changes: { name, goal } };
+    }
+    case "write_mode":
+      return { agent, action: "work.write_mode", work: null, changes: { mode: command.mode } };
+    case "update": {
+      const { name, goal, status } = command;
+      return {
+        agent,
+        action: "work.update",
+        work: permissionWork(command.work),
+        changes: { name, goal, status },
+      };
+    }
+    default:
+      return {
+        agent,
+        action: `work.${command.command}`,
+        work: permissionWork(command.work),
+        changes: {},
+      };
+  }
+}
+
+function permissionWork({ handle, name }: Work): { handle: string | null; name: string } {
+  return { handle, name };
+}
+
+/** The command an Allow runs: its target pinned by id, so a later rename can't retarget it. */
+function permissionCommand(command: AskedWorkCommand): PermissionWorkCommand {
+  if (!("work" in command)) return command;
+  const { work, ...fields } = command;
+  return { ...fields, workId: work.id };
+}
+
+/** The command an Allow stored, its target loaded again by id. */
+async function resolveStored(
+  deps: ToolWiringDeps,
+  thread: Thread,
+  stored: PermissionWorkCommand,
+): Promise<Resolution> {
+  if (!("workId" in stored)) return { ok: true, command: stored };
+  const { workId, ...fields } = stored;
+  const work = await deps.works.findById(workId);
+  if (!work || work.projectId !== thread.projectId)
+    return {
+      ok: false,
+      result: toolError({
+        code: "work_not_found",
+        message: "The approved Work is no longer available.",
+      }),
+    };
+  return { ok: true, command: { ...fields, work } };
+}
+
+/**
+ * Every expected refusal the Work writer commands raise, as the model's tool
+ * error. Anything else is an infrastructure failure and propagates.
+ */
+function expectedWorkError(
+  error: unknown,
+  workHandle: string | undefined,
+  mayUnarchive: boolean,
+): ToolErrorOutput | null {
+  if (error instanceof WorkStatusInvalidError)
+    return toolError({ code: "invalid_work_status", message: error.message });
+  if (error instanceof WorkNameRequiredError)
+    return toolError({ code: "invalid_work_name", message: error.message });
+  if (error instanceof WorkNameConflictError)
+    return toolError({ code: "work_name_conflict", message: error.message });
+  if (error instanceof WorkLockedError)
+    return toolError({ code: error.code, message: error.message });
+  if (error instanceof WorkLifecycleUnavailableError)
+    return toolError({
+      code: error.state === "archived" ? "work_archived" : "work_not_found",
+      message: workLifecycleMessage(
+        `work_${error.state}`,
+        workHandle ?? error.workHandle,
+        mayUnarchive,
+      ),
+    });
+  if (error instanceof RebindThreadWorkError)
+    return toolError({
+      code: error.code === "target_work_unavailable" ? "work_archived" : "work_not_found",
+      message:
+        error.code === "target_work_unavailable"
+          ? 'That Work is no longer available. Use `work({"command":"list"})` and choose another.'
+          : "This chat or Work is no longer available.",
+    });
+  return null;
+}
+
+type CommandName = ResolvedWorkCommand["command"];
+type CommandOf<C extends CommandName> = Extract<ResolvedWorkCommand, { command: C }>;
 type CommandHandler<C extends CommandName> = (
   deps: ToolWiringDeps,
   thread: Thread,
   command: CommandOf<C>,
 ) => Promise<unknown>;
 
-/** A command on one named Work: an unknown handle points to `work list` (D51). */
-function onSelectedWork<C extends Exclude<CommandName, "list" | "create">>(
-  run: (
-    deps: ToolWiringDeps,
-    thread: Thread,
-    work: Work,
-    command: CommandOf<C>,
-  ) => Promise<unknown>,
-): CommandHandler<C> {
-  return async (deps, thread, command) => {
-    const { work: handle } = command as unknown as { work: string };
-    const selected = await workByHandle(deps, thread.projectId, handle);
-    return isToolError(selected) ? selected : run(deps, thread, selected, command);
-  };
-}
-
-function archiving<C extends "archive" | "unarchive">(archived: boolean) {
-  return onSelectedWork<C>(async (deps, thread, work) =>
-    updateReceipt(
-      await setWorkArchived(
-        { works: deps.works, workContextNotices: deps.workContextNotices },
-        work.id,
-        archived,
-        { originThreadId: thread.id },
-      ),
+async function archiving(deps: ToolWiringDeps, thread: Thread, work: Work, archived: boolean) {
+  return updateReceipt(
+    await setWorkArchived(
+      { works: deps.works, workContextNotices: deps.workContextNotices },
+      work.id,
+      archived,
+      { originThreadId: thread.id },
     ),
   );
 }
@@ -257,7 +409,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
       },
     };
   },
-  show: onSelectedWork(async (deps, thread, work) => {
+  async show(deps, thread, { work }) {
     const [threads, drafts] = await Promise.all([
       deps.threads.listRecentByWork(thread.projectId, work.id, 10),
       deps.branches.draftReview.list({ projectId: thread.projectId, workId: work.id }),
@@ -267,20 +419,20 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
       recentThreads: threads.map(({ title, updatedAt, status }) => ({ title, updatedAt, status })),
       drafts,
     } satisfies WorkShowResult;
-  }),
-  update: onSelectedWork(async (deps, thread, work, command) =>
-    updateReceipt(
+  },
+  async update(deps, thread, command) {
+    return updateReceipt(
       await updateWorkTransition(
         { works: deps.works, workContextNotices: deps.workContextNotices },
-        work.id,
+        command.work.id,
         { name: command.name, goal: command.goal, status: command.status },
         { originThreadId: thread.id },
       ),
-    ),
-  ),
-  archive: archiving(true),
-  unarchive: archiving(false),
-  delete: onSelectedWork(async (deps, _thread, work) => {
+    );
+  },
+  archive: (deps, thread, { work }) => archiving(deps, thread, work, true),
+  unarchive: (deps, thread, { work }) => archiving(deps, thread, work, false),
+  async delete(deps, _thread, { work }) {
     const transition = await deleteWorkTransition(
       { works: deps.works, stopThreads: deps.stopThreads },
       work.id,
@@ -300,82 +452,129 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
         } satisfies WorkReceipt,
       },
     };
-  }),
+  },
+  async switch(deps, thread, { work }) {
+    // Joins the answer's transaction under an Allow.
+    const rebound = await deps.transaction(() =>
+      switchThreadWork(deps, { threadId: thread.id as ThreadId, workId: work.id }),
+    );
+    return { handle: rebound.after.handle, name: rebound.after.name };
+  },
+  async write_mode(deps, thread, { mode }) {
+    // Agent provenance under an Allow too: the writer allowed this chat's switch, not a new
+    // default for the Work. The ask's receipt records the Allow.
+    await deps.controls.enqueueControl({
+      threadId: thread.id as ThreadId,
+      id: crypto.randomUUID(),
+      provenance: { kind: "agent", threadId: thread.id },
+      control: { kind: "write_mode", mode },
+    });
+    return { mode, applies: "next_reply" };
+  },
 };
 
+/**
+ * Runs a resolved `work` command, for the model's own call and for the writer's Allow alike.
+ * Returns the handler result the tool executor shapes; expected domain refusals throw, for
+ * the caller to translate with `expectedWorkError`.
+ */
+function executeWorkCommand(
+  deps: ToolWiringDeps,
+  thread: Thread,
+  command: ResolvedWorkCommand,
+): Promise<unknown> {
+  const run = COMMANDS[command.command] as CommandHandler<CommandName>;
+  return run(deps, thread, command as CommandOf<CommandName>);
+}
+
+/**
+ * Runs what the writer allowed, in a savepoint inside the answer's transaction: a domain
+ * refusal rolls back its writes and after-commit effects first, then becomes the result, so
+ * the answer still commits. Any other failure propagates and rolls back the answer. The
+ * result is shaped as the `work` call's own would be.
+ */
+export function createAllowedWorkExecutor(
+  deps: ToolWiringDeps & { savepoint<T>(operation: () => Promise<T>): Promise<T> },
+  registry: Pick<ToolRegistry, "getRegistration">,
+): PermissionExecutor {
+  async function run(thread: Thread, command: PermissionWorkCommand): Promise<unknown> {
+    const resolution = await resolveStored(deps, thread, command);
+    if (!resolution.ok) return resolution.result;
+    try {
+      return await deps.savepoint(() => executeWorkCommand(deps, thread, resolution.command));
+    } catch (error) {
+      const expected = expectedWorkError(error, undefined, true);
+      if (!expected) throw error;
+      return expected;
+    }
+  }
+
+  return {
+    async execute({ threadId, command, always }) {
+      const registration = registry.getRegistration("work");
+      if (!registration) throw new Error("The work tool is not registered");
+      // The answer found the chat under its lock; a delete in between cancels the ask instead.
+      const thread = await deps.threads.findById(threadId);
+      if (!thread) throw new Error(`Thread not found: ${threadId}`);
+      const output = await run(thread, command);
+      if (always)
+        await deps.permissionGrants.grant(thread.projectId as ProjectId, `work.${command.command}`);
+      const shaped = handlerToolResult(output, registration, { command: command.command });
+      return {
+        output: shaped.output,
+        result: shaped.result,
+        isError: shaped.isError === true,
+        ...(shaped.metadata ? { metadata: shaped.metadata } : {}),
+      };
+    },
+  };
+}
+
 export function createWorkHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, ctx: ToolHandlerContext) => {
+  return async (input: unknown, ctx: RequestToolHandlerContext) => {
     const command = input as WorkCommand;
     const thread = await deps.threads.findById(ctx.threadId);
     if (!thread) return toolError({ message: `Thread not found: ${ctx.threadId}` });
 
-    if (command.command === "switch") {
-      // Resolve lifecycle and no-op outcomes before policy, so the model gets the
-      // useful target error rather than an unrelated permission refusal.
-      const precheck = await switchPrecheck(
-        deps,
-        thread.projectId,
-        thread.id as ThreadId,
-        command.work,
-      );
-      if (precheck) return precheck;
-    }
+    const resolution = await resolveWorkCommand(deps, thread, command);
+    if (!resolution.ok) return resolution.result;
+    const resolved = resolution.command;
 
     const permission = await deps.readChainPermission(thread.id as ThreadId);
-    const decision = actionPolicy(permission, `work.${command.command}`);
-    if (decision !== "allow") return policyRefusal(decision);
+    const decision = actionPolicy(permission, `work.${resolved.command}`);
+    if (decision === "deny")
+      return policyRefusal(
+        "This agent can read but can't change Works. Ask the user to make this change.",
+      );
+    if (decision === "ask") {
+      // The policy table's type forbids `ask` for any other action; this keeps it from
+      // becoming a silent allow if that ever slips.
+      if (!isAskable(resolved))
+        throw new Error(`The action policy asks about work.${resolved.command}, which can't ask`);
+      // A grant is the writer's own standing answer, so it holds for subagents too.
+      const action = `work.${resolved.command}` as const;
+      if (!(await deps.permissionGrants.has(thread.projectId as ProjectId, action))) {
+        if (thread.kind === "subagent")
+          return policyRefusal(
+            "Only the main chat can ask the writer to allow this change. If your task needs it, stop and say in your report what is missing.",
+          );
+        const outcome = await ctx.request({
+          kind: "permission",
+          payload: permissionPayload(thread, resolved),
+          command: permissionCommand(resolved),
+        });
+        return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
+      }
+    }
     try {
-      if (command.command === "switch") {
-        const target = command.work
-          ? await workByHandle(deps, thread.projectId, command.work)
-          : await deps.works.findNoWork(thread.projectId);
-        if (!target) return toolError({ message: "No Work is missing for this project" });
-        if (isToolError(target)) return target;
-        const rebound = await deps.transaction(() =>
-          switchThreadWork(deps, {
-            threadId: thread.id as ThreadId,
-            workId: target.id,
-          }),
-        );
-        return { handle: rebound.after.handle, name: rebound.after.name };
-      }
-      if (command.command === "write_mode") {
-        await deps.controls.enqueueControl({
-          threadId: thread.id as ThreadId,
-          id: crypto.randomUUID(),
-          provenance: { kind: "agent", threadId: thread.id },
-          control: { kind: "write_mode", mode: command.mode },
-        });
-        return { mode: command.mode, applies: "next_reply" };
-      }
-      const run = COMMANDS[command.command] as CommandHandler<CommandName>;
-      return await run(deps, thread, command as CommandOf<CommandName>);
+      return await executeWorkCommand(deps, thread, resolved);
     } catch (error) {
-      if (error instanceof WorkStatusInvalidError) {
-        return toolError({ code: "invalid_work_status", message: error.message });
-      }
-      if (error instanceof WorkNameRequiredError) {
-        return toolError({ code: "invalid_work_name", message: error.message });
-      }
-      if (error instanceof WorkLifecycleUnavailableError) {
-        return toolError({
-          code: error.state === "archived" ? "work_archived" : "work_not_found",
-          message: workLifecycleMessage(
-            `work_${error.state}`,
-            "work" in command && command.work ? command.work : (error.workHandle ?? null),
-            mayChangeWorks(permission),
-          ),
-        });
-      }
-      if (error instanceof RebindThreadWorkError) {
-        return toolError({
-          code: error.code === "target_work_unavailable" ? "work_archived" : "work_not_found",
-          message:
-            error.code === "target_work_unavailable"
-              ? 'That Work is no longer available. Use `work({"command":"list"})` and choose another.'
-              : "This chat or Work is no longer available.",
-        });
-      }
+      const expected = expectedWorkError(
+        error,
+        "work" in command && command.work ? command.work : undefined,
+        mayChangeWorks(permission),
+      );
+      if (expected) return expected;
       return toolError({
         code: TOOL_EXCEPTION_CODE,
         message: error instanceof Error ? error.message : String(error),

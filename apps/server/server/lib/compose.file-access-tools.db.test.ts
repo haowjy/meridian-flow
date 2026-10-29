@@ -231,7 +231,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const { call, save } = await script.begin();
 
-      const archive = await call("work", { command: "archive", work: "rewrite" });
+      const archive = await call("work", { command: "archive", work: "w1" });
       expect(archive.isError).toBe(true);
       expect(archive.output).toBe(
         "This agent can read but can't change Works. Ask the user to make this change. (permission_denied)",

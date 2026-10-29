@@ -722,6 +722,20 @@
       "when": 1793247706432,
       "tag": "0108_lineage_cancellation",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1793249056770,
+      "tag": "0109_permission_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1793249116770,
+      "tag": "0110_permission_requests_validate",
+      "breakpoints": true
     }
   ]
 }
