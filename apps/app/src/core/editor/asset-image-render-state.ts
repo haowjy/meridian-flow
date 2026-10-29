@@ -279,6 +279,12 @@ export function useAssetImageRenderState(input: {
     state: initialState(target),
   }));
   const state = shown.picture === picture ? shown.state : initialState(target);
+  // The URL an `<img>` is drawing now, and the one whose failure triggered the automatic
+  // refresh. Signing is deterministic to the second, so the refresh often returns that same
+  // URL: React then sets no new `src` and no second error would arrive to end in the card.
+  const drawnUrlRef = useRef<string | null>(null);
+  drawnUrlRef.current = state.url;
+  const failedUrlRef = useRef<string | null>(null);
 
   const goneIsStale = gone !== null && gone.picture === picture && gone.generation !== generation;
   useEffect(() => {
@@ -295,6 +301,7 @@ export function useAssetImageRenderState(input: {
   }, [key, resolution, unanswered]);
   const imageDisplayed = useCallback(() => {
     retryStateRef.current.state = { automaticRefreshUsed: false };
+    failedUrlRef.current = null;
   }, []);
   const imageLoadFailed = useCallback(() => {
     const setState = showFor(setShown, picture);
@@ -310,6 +317,7 @@ export function useAssetImageRenderState(input: {
     retryStateRef.current.state = transition.state;
     if (transition.action === "ignore") return;
     if (transition.action === "refresh") {
+      failedUrlRef.current = drawnUrlRef.current;
       setRefreshToken((token) => token + 1);
       return;
     }
@@ -379,6 +387,8 @@ export function useAssetImageRenderState(input: {
           downloadUrl: signed.signedUrl,
         };
         fileFactsRef.current = file;
+        if (signed.drawUrl && signed.drawUrl === failedUrlRef.current)
+          undrawableRef.current = undrawable;
         const drawn = undrawableRef.current === undrawable ? undefined : signed.drawUrl;
         setState(
           drawn

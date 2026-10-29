@@ -43,10 +43,19 @@ one later.
 Conversion runs in a two-worker `worker_threads` pool (`image-preview-worker.mjs`),
 never on the event loop: libheif's WASM and `bmp-ts` are synchronous and froze the
 server for seconds per photo. The worker reads HEIC and BMP dimensions before
-decoding and refuses an image over 120 MP. A worker that crashes, runs out of
-memory or hangs for 60 s is replaced and its file gets the card. The worker is a
-plain `.mjs` that nothing imports, so `nitro.config.ts` emits it as its own chunk
-(`_chunks/image-preview-worker.mjs`, beside the chunk that starts it) and traces
+decoding and refuses an image over 50 MP (a phone photo fits; at the cap a
+BMP peaks near 360 MB RSS per worker). A worker that crashes, runs out of memory
+or hangs for 60 s is replaced and its file gets the card; a worker that fails a
+HEIC decode is also replaced, since libheif's WASM may be left unusable. A
+failed preview logs `image_preview.failed` with a `reason` code
+(`worker_unavailable`, `timeout`, `decode_failed`, `too_large`), never a decoder
+message. An import request queues at most two previews at a time, so one import
+doesn't starve other writers' previews. The worker is a plain `.mjs` that nothing
+imports, so `nitro.config.ts` emits it as its own chunk at the output root
+(`image-preview-worker.mjs`, beside the entry chunk) and `image-preview.ts` finds
+it from `globalThis.__nitro_main__`, which Nitro sets in `nitro dev` and in a
+build alike; a path relative to the chunk holding `image-preview.ts` is wrong in
+one of them. Nitro traces
 `sharp`, `heic-decode`, `libheif-js` and `bmp-ts` as external packages.
 
 Every delete of a stored object that may have a preview, compensating deletes

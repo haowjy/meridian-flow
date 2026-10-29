@@ -2,7 +2,10 @@
 
 import { createHash } from "node:crypto";
 import { IMPORT_ADMISSION, importNodeId } from "@meridian/contracts";
-import { saveImagePreview } from "../../../file-intake/image-preview.js";
+import {
+  type ImagePreviewFailureReason,
+  saveImagePreview,
+} from "../../../file-intake/image-preview.js";
 import type { ObjectStorePort } from "../../../storage/index.js";
 import type { ConvertedDocument, DocumentConverterPort } from "../../ports/document-converter.js";
 import type { ImportEntry, ImportEntryPatch } from "../../ports/import-repository.js";
@@ -60,7 +63,7 @@ export async function prepareImportEntries(
   deps: {
     objects: ObjectStorePort;
     converter: DocumentConverterPort;
-    previewFailed(cause: unknown): void;
+    previewFailed(reason: ImagePreviewFailureReason): void;
   },
   input: { importId: string; projectId: string; entries: readonly ImportEntry[] },
 ): Promise<PreparationResult> {

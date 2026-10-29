@@ -22,13 +22,9 @@ export default defineConfig({
         // its own chunk bundles it and lets Nitro trace its native packages (sharp).
         name: "emit-image-preview-worker",
         buildStart() {
-          // Beside the chunk that holds image-preview.ts: it finds the worker at
-          // `new URL("./image-preview-worker.mjs", import.meta.url)`.
-          this.emitFile({
-            type: "chunk",
-            id: previewWorker,
-            fileName: `_chunks/${previewWorkerName}`,
-          });
+          // At the output root, where image-preview.ts finds it from `__nitro_main__`; a path
+          // beside the chunk holding that file differs between `nitro dev` and a build.
+          this.emitFile({ type: "chunk", id: previewWorker, fileName: previewWorkerName });
         },
       },
     ],

@@ -41,6 +41,15 @@ a scratch directory outside the checkout:
    **Retry** appears only when the signed-URL request fails, and it recovers
    when the network returns.
 
+10. On `pnpm dev` (a fresh start: the worker location comes from `nitro.config.ts`),
+    import `map.tiff`, `plain.bmp` and `photo.heic`. `./mf api GET
+    '/api/projects/<id>/context/kb/read?path=<folder>/map.tiff'` returns a
+    `drawUrl` that differs from `url` (its key ends `.preview`), and `./mf log`
+    shows no `image_preview.failed`. A `worker_unavailable` reason there means the
+    worker file is not where `image-preview.ts` looks. Import `broken.tiff` and a
+    truncated HEIC, then another good HEIC: the broken ones log `decode_failed`
+    and the good one still gets its preview.
+
 Record the commit, date and a screenshot of each state in the active work
-item. Server-only checks without a restarted stack: the preview function over the
-three formats (`makeImagePreview`) and the DB tests in `context/` and `import/`.
+item. Server-only checks without a restarted stack: `image-preview.test.ts` (a real
+TIFF and BMP through the real worker) and the DB tests in `context/` and `import/`.

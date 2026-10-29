@@ -4,7 +4,10 @@ import { IMPORT_ADMISSION } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
 import { splitFrontmatter } from "@meridian/markup/wikilinks";
 import { frontmatterAliases } from "../../context/index.js";
-import { saveImagePreview } from "../../file-intake/image-preview.js";
+import {
+  type ImagePreviewFailureReason,
+  saveImagePreview,
+} from "../../file-intake/image-preview.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type {
   ImportEntry,
@@ -42,11 +45,13 @@ export type ReceiptCandidate =
   | { kind: "oversize"; entryId: number }
   | { kind: "unchanged"; entryId: number };
 
+const PREVIEWS_IN_FLIGHT = 2;
+
 /** Object I/O finishes before the row lock; losing candidates leave sweepable orphan puts. */
 export async function prepareReceipts(
   repo: ImportRepository,
   objects: ObjectStorePort,
-  previewFailed: (cause: unknown) => void,
+  previewFailed: (reason: ImagePreviewFailureReason) => void,
   record: ImportRecord,
   parts: ImportPart[],
   signal: AbortSignal,
@@ -75,6 +80,14 @@ export async function prepareReceipts(
   for (const part of parts)
     if (!entries.has(part.entryId)) throw new ImportError(404, "entry_not_found");
   const candidates: ReceiptCandidate[] = [];
+  // At most this many of the request's previews are queued at once, so both workers stay busy
+  // while another writer's import still gets its turn in the shared queue.
+  const queued = new Set<Promise<void>>();
+  const queuePreview = async (task: () => Promise<void>) => {
+    if (queued.size >= PREVIEWS_IN_FLIGHT) await Promise.race(queued);
+    const running: Promise<void> = task().finally(() => queued.delete(running));
+    queued.add(running);
+  };
   for (const part of parts) {
     signal.throwIfAborted();
     const entry = entries.get(part.entryId)!;
@@ -97,15 +110,7 @@ export async function prepareReceipts(
     const key = stagingKey(record.id, part.entryId);
     const put = await objects.put(key, part.bytes, facts.mimeType);
     if (!put.ok) throw new Error(put.error.message);
-    const hasPreview =
-      facts.kind === "binary" &&
-      (await saveImagePreview({
-        objectStore: objects,
-        storageUrl: put.value.storageUrl,
-        bytes: part.bytes,
-        onFailure: previewFailed,
-      }));
-    candidates.push({
+    const candidate: Extract<ReceiptCandidate, { kind: "receipt" }> = {
       kind: "receipt",
       entryId: part.entryId,
       changedAfterPick: part.changedAfterPick ?? false,
@@ -114,7 +119,7 @@ export async function prepareReceipts(
         storageUrl: put.value.storageUrl,
         receivedSize: part.bytes.byteLength,
         sha256: createHash("sha256").update(part.bytes).digest("hex"),
-        hasPreview,
+        hasPreview: false,
         facts,
         aliases:
           facts.kind === "note"
@@ -123,8 +128,19 @@ export async function prepareReceipts(
               )
             : [],
       },
-    });
+    };
+    candidates.push(candidate);
+    if (facts.kind === "binary")
+      await queuePreview(async () => {
+        candidate.receipt.hasPreview = await saveImagePreview({
+          objectStore: objects,
+          storageUrl: put.value.storageUrl,
+          bytes: part.bytes,
+          onFailure: previewFailed,
+        });
+      });
   }
+  await Promise.all(queued);
   return candidates;
 }
 
