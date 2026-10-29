@@ -84,6 +84,10 @@ msgstr "{agentName} replaced a passage"
 msgid "{agentName} deleted a passage"
 msgstr "{agentName} deleted a passage"
 
+#: src/features/chat/ask/AskReceipt.tsx
+msgid ", "
+msgstr ", "
+
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"
@@ -271,6 +275,10 @@ msgstr "{agent} wants to unarchive {work}?"
 msgid "{agent} wants to update {work}?"
 msgstr "{agent} wants to update {work}?"
 
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "{answered, plural, one {# answered} other {# answered}}"
+msgstr "{answered, plural, one {# answered} other {# answered}}"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
@@ -302,6 +310,11 @@ msgstr "{count, plural, one {# more} other {# more}}"
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "{count, plural, one {# question:} other {# questions:}}"
+msgstr "{count, plural, one {# question:} other {# questions:}}"
+
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
@@ -485,6 +498,7 @@ msgstr "{names} are back in the manuscript."
 msgid "{names} is back in the manuscript."
 msgstr "{names} is back in the manuscript."
 
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
 msgstr "{position} of {count}"
@@ -504,6 +518,10 @@ msgstr "{shown} of {total}"
 #: src/features/chat/tool-result-preview.ts
 msgid "{shown} of at least {total}"
 msgstr "{shown} of at least {total}"
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "{skipped, plural, one {# skipped} other {# skipped}}"
+msgstr "{skipped, plural, one {# skipped} other {# skipped}}"
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is a folder. Only documents can be moved or deleted."
@@ -552,6 +570,10 @@ msgstr "{title} was discarded from the draft."
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was removed when the reply that created it didn't finish."
 msgstr "{title} was removed when the reply that created it didn't finish."
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
+msgstr "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
@@ -3361,6 +3383,10 @@ msgstr "New tab"
 msgid "New Work"
 msgstr "New Work"
 
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Next"
+msgstr "Next"
+
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "Next change"
 msgstr "Next change"
@@ -4340,6 +4366,10 @@ msgstr "Select the merged cell on its own to split it."
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Send answer"
 msgstr "Send answer"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Send answers"
+msgstr "Send answers"
 
 #: src/components/app/composer/Composer.tsx
 msgid "Send message"

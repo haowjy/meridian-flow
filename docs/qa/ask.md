@@ -184,14 +184,34 @@ Use the crash controller described in
 
 ## Browser confirmation
 
-The client lane fills these steps before the combined feature ships:
+Open the chat in the browser with `agent-browser`, at desktop width and at 390 px.
 
-- [ ] composer takeover: one question at a time ("1 of N"), Back, option/text/Skip per
-  question, Send on the last, countdown that follows the deadline, and hidden Stop
-- [ ] optimistic receipt and retry after a failed answer send
-- [ ] resolution in another tab restores the draft and appends typed text
-- [ ] reload while open and reload after resolution
-- [ ] stale answer and zero-countdown “Continuing…” state
+1. **Several questions.** Open the three-question ask from "Several questions". PASS: the
+   takeover shows "1 of 3" and the countdown above the question, and no Stop. Picking an
+   option moves to the next question; typing your own words and pressing Enter or Next
+   moves on; Skip on the last question shows as pressed, and Send answers is enabled
+   only once every question has an answer. Back shows each earlier question with its
+   answer still chosen or typed.
+2. **Countdown follows interaction.** Note `continues at` in `./mf thread view`, pick an
+   option, and read it again. PASS: it moved to 4 minutes after the click, and the
+   takeover's countdown follows. Typing within 30 seconds sends one more presence when
+   the 30 seconds are up, holding the typed words.
+3. **Failed send and Retry.** Make the socket drop `ask.answer` frames (wrap
+   `WebSocket.prototype.send` in the page) and send. PASS: the receipt shows this
+   device's answers with the pending dot at once; after 20 s the takeover returns with
+   "Couldn't send your answer.", every answer in place. Let frames through and press
+   Retry: the frame carries the same `submissionId`, and the chat continues once.
+4. **Receipt.** PASS: a three-question receipt reads "3 questions: 2 answered, 1
+   skipped" and expands to each question with its answer. After a walk-away timeout
+   (Timeout case 2) it lists the held answers, and "No answer" or "No answer, went
+   with …" for the rest.
+5. **One question.** Open the one-question ask. PASS: it looks as before (no "1 of 1",
+   no Back or Next), and an option, Skip or Enter in the field answers at once. Words
+   left in the field when an option is picked, and the composer draft from before the
+   ask, are in the composer afterwards.
+
+Still to confirm in the browser: resolution in another tab, reload while open and after
+resolution, and the stale answer and zero-countdown "Continuing…" state.
 
 ## Subagents and Stop
 

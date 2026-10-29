@@ -1,7 +1,8 @@
 /**
- * The composer takeover for an open ask: a question (options, own words, Skip, the deadline) or a
- * permission request (Deny, Allow always, Allow). Both draw in one frame, in the box's place, so
- * the writer learns it once; only the controls differ.
+ * The composer takeover for an open ask: its questions (options, own words, Skip, the deadline,
+ * and for several, a step at a time with Back) or a permission request (Deny, Allow always,
+ * Allow). Both draw in one frame, in the box's place, so the writer learns it once; only the
+ * controls differ.
  */
 import { plural, t } from "@lingui/core/macro";
 import type { AskAnswer, QuestionAnswer, ThreadAsk } from "@meridian/contracts/threads";
@@ -17,17 +18,23 @@ import { permissionRequestText } from "./permission-request";
 type QuestionAsk = Extract<ThreadAsk, { kind: "question" }>;
 type PermissionAsk = Extract<ThreadAsk, { kind: "permission" }>;
 
+/** One question's place in the writer's draft: their choice, and what's in its own-words field. */
+export type QuestionEntry = { choice: QuestionAnswer | null; words: string };
+
+/** Where the writer is in a question ask. The host holds it, so it outlives the takeover. */
+export type QuestionDraft = { step: number; entries: readonly QuestionEntry[] };
+
 export type AskTakeoverProps = {
   open: OpenAsk;
-  /** The own-answer field's text. The host holds it, so it outlives the takeover. */
-  text: string;
-  onTextChange: (text: string) => void;
+  /** Empty for a permission request. */
+  draft: QuestionDraft;
+  onDraftChange: (draft: QuestionDraft) => void;
   onAnswer: (answer: AskAnswer) => void;
   /** Read the chat again: the server closed the ask without saying how. */
   onSettle: () => void;
 };
 
-export function AskTakeover({ open, text, onTextChange, onAnswer, onSettle }: AskTakeoverProps) {
+export function AskTakeover({ open, draft, onDraftChange, onAnswer, onSettle }: AskTakeoverProps) {
   const { ask, attempt } = open;
   if (attempt?.state === "unsettled") {
     // The ask is closed; only how it ended is unknown. Nothing here may answer it again.
@@ -61,9 +68,8 @@ export function AskTakeover({ open, text, onTextChange, onAnswer, onSettle }: As
         <QuestionTakeover
           key={ask.id}
           ask={ask}
-          held={failed?.answer.kind === "answers" ? failed.answer.answers : null}
-          text={text}
-          onTextChange={onTextChange}
+          draft={draft}
+          onDraftChange={onDraftChange}
           onAnswer={onAnswer}
         />
       ) : (
@@ -118,58 +124,94 @@ function TakeoverTitle({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-/** The questions one at a time; the last answer sends the whole set. */
+/**
+ * The questions one at a time. One question answers in one action, as a single question always
+ * has; several step forward on each choice, with Back to revise, and the last sends the set.
+ */
 function QuestionTakeover({
   ask,
-  held,
-  text,
-  onTextChange,
+  draft,
+  onDraftChange,
   onAnswer,
 }: {
   ask: QuestionAsk;
-  /** A failed answer set, shown as chosen while Retry is offered. */
-  held: readonly QuestionAnswer[] | null;
-  text: string;
-  onTextChange: (text: string) => void;
+  draft: QuestionDraft;
+  onDraftChange: (draft: QuestionDraft) => void;
   onAnswer: (answer: AskAnswer) => void;
 }) {
   const titleId = useId();
   const { questions } = ask.payload;
-  const [answers, setAnswers] = useState<(QuestionAnswer | null)[]>(() =>
-    questions.map((_, index) => held?.[index] ?? null),
-  );
-  const [step, setStep] = useState(held ? questions.length - 1 : 0);
+  const { step, entries } = draft;
   const { question, options, recommended } = questions[step];
-  const picked = answers[step]?.kind === "option" ? answers[step].label : null;
-  const record = (answer: QuestionAnswer) => {
-    const next = answers.map((held, index) => (index === step ? answer : held));
-    setAnswers(next);
-    onTextChange("");
-    if (step < questions.length - 1) setStep(step + 1);
-    else onAnswer({ kind: "answers", answers: next as QuestionAnswer[] });
+  const entry = entries[step];
+  const count = questions.length;
+  const position = step + 1;
+  const several = count > 1;
+  const last = position === count;
+  const choices = entries.map((held) => held.choice);
+  const complete = choices.every((choice) => choice !== null);
+  const send = (held: readonly QuestionEntry[]) =>
+    onAnswer({ kind: "answers", answers: held.map((item) => item.choice as QuestionAnswer) });
+  // Words stay in the field when an option is picked: they go back to the composer if unused.
+  const choose = (choice: QuestionAnswer) => {
+    const next = entries.map((held, index) => (index === step ? { ...held, choice } : held));
+    if (!several) return send(next);
+    onDraftChange({ step: last ? step : step + 1, entries: next });
   };
-  const back = () => {
-    const earlier = answers[step - 1];
-    onTextChange(earlier?.kind === "text" ? earlier.text : "");
-    setStep(step - 1);
+  const type = (words: string) => {
+    const typed = words.trim();
+    const choice: QuestionAnswer | null = typed
+      ? { kind: "text", text: typed }
+      : entry.choice?.kind === "text"
+        ? null
+        : entry.choice;
+    onDraftChange({
+      step,
+      entries: entries.map((held, index) => (index === step ? { choice, words } : held)),
+    });
   };
-  const sendText = () => {
-    const answer = text.trim();
-    if (answer) record({ kind: "text", text: answer });
+  const forward = () => {
+    if (entry.choice === null) return;
+    if (!several || last) {
+      if (complete) send(entries);
+    } else onDraftChange({ step: step + 1, entries });
   };
+  const picked = entry.choice?.kind === "option" ? entry.choice.label : null;
+  const countdown = ask.deadlineAt ? <Countdown deadlineAt={ask.deadlineAt} /> : null;
+  const optionList = useRef<HTMLUListElement>(null);
+  const shownStep = useRef(step);
+  // A step replaces the controls under the writer's hand; their place is the new question's options.
+  // Never the field: on a phone that would raise the keyboard on every step. Compared with the
+  // step last shown, not a first-run flag, so a remount or a repeated effect moves nothing.
+  useEffect(() => {
+    if (shownStep.current === step) return;
+    shownStep.current = step;
+    const target =
+      optionList.current?.querySelector<HTMLElement>("[aria-pressed=true]") ??
+      optionList.current?.querySelector<HTMLElement>("button");
+    target?.focus({ preventScroll: true });
+  }, [step]);
   return (
-    <TakeoverFrame key={step} labelledBy={titleId}>
+    <TakeoverFrame labelledBy={titleId}>
+      {several ? (
+        <div className="-mb-[var(--chat-space-inline)] flex items-baseline gap-[var(--chat-space-block)] px-[var(--chat-space-inline)]">
+          <p className="text-caption text-muted-foreground tabular-nums">
+            {t`${position} of ${count}`}
+          </p>
+          {countdown}
+        </div>
+      ) : null}
       <TakeoverTitle id={titleId}>{question}</TakeoverTitle>
-      <ul className="flex flex-col gap-[var(--chat-space-inline)]">
+      <ul ref={optionList} className="flex flex-col gap-[var(--chat-space-inline)]">
         {options.map((option) => (
           <li key={option.label}>
             <button
               type="button"
-              aria-pressed={picked === option.label ? true : undefined}
-              onClick={() => record({ kind: "option", label: option.label })}
+              aria-pressed={several ? picked === option.label : undefined}
+              onClick={() => choose({ kind: "option", label: option.label })}
               className={cn(
                 "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-field border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-border-focus hover:bg-accent",
-                picked === option.label && "border-border-focus",
+                picked === option.label && "border-border-focus bg-accent",
               )}
             >
               <span className="min-w-0 flex-1">
@@ -191,41 +233,82 @@ function QuestionTakeover({
           </li>
         ))}
       </ul>
-      <div className="flex items-end gap-[var(--chat-space-inline)] rounded-field border border-border-subtle bg-background py-1 pr-1 pl-[var(--chat-space-block)] focus-within:border-border-focus">
+      <div
+        className={cn(
+          "flex items-end gap-[var(--chat-space-inline)] rounded-field border border-border-subtle bg-background py-1 pl-[var(--chat-space-block)] focus-within:border-border-focus",
+          several ? "pr-[var(--chat-space-block)]" : "pr-1",
+          entry.choice?.kind === "text" && several && "border-border-focus",
+        )}
+      >
         <textarea
           aria-label={t`Your own answer`}
           placeholder={t`Or type your own answer`}
           rows={1}
-          value={text}
-          onChange={(event) => onTextChange(event.target.value)}
+          value={entry.words}
+          onChange={(event) => type(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
             event.preventDefault();
-            sendText();
+            if (entry.choice?.kind === "text") forward();
           }}
           className="field-sizing-content max-h-40 min-h-8 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-compact outline-none placeholder:text-muted-foreground"
         />
+        {several ? null : (
+          <Button
+            type="button"
+            size="icon-sm"
+            className="rounded-field"
+            aria-label={t`Send answer`}
+            disabled={entry.choice?.kind !== "text"}
+            onClick={forward}
+          >
+            <ArrowUp className="size-4" />
+          </Button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)]">
         <Button
           type="button"
-          size="icon-sm"
-          className="rounded-field"
-          aria-label={t`Send answer`}
-          disabled={!text.trim()}
-          onClick={sendText}
+          variant="quiet"
+          size="sm"
+          aria-pressed={several ? entry.choice?.kind === "skipped" : undefined}
+          className={cn(
+            several && entry.choice?.kind === "skipped" && "bg-sidebar-accent text-foreground",
+          )}
+          onClick={() => choose({ kind: "skipped" })}
         >
-          <ArrowUp className="size-4" />
-        </Button>
-      </div>
-      <div className="flex items-center gap-[var(--chat-space-block)]">
-        {step > 0 ? (
-          <Button type="button" variant="quiet" size="sm" onClick={back}>
-            {t`Back`}
-          </Button>
-        ) : null}
-        <Button type="button" variant="quiet" size="sm" onClick={() => record({ kind: "skipped" })}>
           {t`Skip`}
         </Button>
-        {ask.deadlineAt ? <Countdown deadlineAt={ask.deadlineAt} /> : null}
+        {several ? null : countdown}
+        {several ? (
+          <div className="ml-auto flex items-center gap-[var(--chat-space-inline)]">
+            {step > 0 ? (
+              <Button
+                type="button"
+                variant="quiet"
+                size="sm"
+                onClick={() => onDraftChange({ step: step - 1, entries })}
+              >
+                {t`Back`}
+              </Button>
+            ) : null}
+            {last ? (
+              <Button type="button" size="sm" disabled={!complete} onClick={forward}>
+                {t`Send answers`}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={entry.choice === null}
+                onClick={forward}
+              >
+                {t`Next`}
+              </Button>
+            )}
+          </div>
+        ) : null}
       </div>
     </TakeoverFrame>
   );
