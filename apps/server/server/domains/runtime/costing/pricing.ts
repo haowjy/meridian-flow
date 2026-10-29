@@ -13,6 +13,7 @@ import {
   MODEL_REGISTRY,
   type PinnedModelRate,
 } from "../gateway/config/registry.js";
+import { readMeteringStatus } from "../gateway/domain/metering.js";
 
 export interface ModelTokenRate {
   provider: string;
@@ -63,29 +64,8 @@ const ZERO_FIXTURE_SOURCE = "in-process test/mock fixture";
 const COST_MULTIPLIER_NUMERATOR = 115n;
 const COST_MULTIPLIER_DENOMINATOR = 1000n;
 
-/** Margin applied to raw provider cost before metering writer usage. */
-export const COST_MULTIPLIER = 1.15;
-
-/** Mock and stub models intentionally excluded from MODEL_REGISTRY. */
+/** Mock models intentionally excluded from MODEL_REGISTRY. */
 export const MOCK_FIXTURE_TOKEN_RATES: readonly ModelTokenRate[] = [
-  {
-    provider: "stub",
-    model: "stub",
-    inputUsdPerMillionTokens: "0",
-    cachedInputUsdPerMillionTokens: "0",
-    cacheWriteUsdPerMillionTokens: "0",
-    outputUsdPerMillionTokens: "0",
-    source: ZERO_FIXTURE_SOURCE,
-  },
-  {
-    provider: "stub",
-    model: "stub-model",
-    inputUsdPerMillionTokens: "0",
-    cachedInputUsdPerMillionTokens: "0",
-    cacheWriteUsdPerMillionTokens: "0",
-    outputUsdPerMillionTokens: "0",
-    source: ZERO_FIXTURE_SOURCE,
-  },
   {
     provider: "mock",
     model: "mock-llm-v1",
@@ -162,10 +142,6 @@ export function modelTokenRateSource(): ModelTokenRateSource {
   return defaultRateSource;
 }
 
-export function configureModelTokenRateSource(source: ModelTokenRateSource): void {
-  defaultRateSource = source;
-}
-
 function parseUsdPerMillion(decimal: string): bigint {
   const [whole, fraction = ""] = decimal.split(".");
   const paddedFraction = `${fraction}000000`.slice(0, 6);
@@ -199,17 +175,7 @@ function pricingSnapshotSource(rate: ResolvedModelTokenRate): string {
   return `pinned: ${rate.source}`;
 }
 
-function readMeteringStatusFromProviderData(providerData: unknown): string | undefined {
-  if (!providerData || typeof providerData !== "object") return undefined;
-  const meteringStatus = (providerData as Record<string, unknown>).meteringStatus;
-  return typeof meteringStatus === "string" ? meteringStatus : undefined;
-}
-
-function computeMissingUsageCost(input: {
-  provider: string;
-  model: string;
-  providerData: unknown;
-}): ComputedModelCost {
+function computeMissingUsageCost(input: { provider: string; model: string }): ComputedModelCost {
   return {
     costUsd: "0.000000",
     millicredits: "0",
@@ -218,7 +184,7 @@ function computeMissingUsageCost(input: {
       provider: input.provider,
       model: input.model,
       source: "unknown",
-      sourceLayer: "provider_reported",
+      sourceLayer: "unmetered",
       sourceDetail: `${input.provider}.meteringStatus.missing_usage`,
       usageMeteringStatus: "missing_usage",
       unit: "unmetered",
@@ -226,7 +192,7 @@ function computeMissingUsageCost(input: {
   };
 }
 
-export function findModelTokenRate(
+function findModelTokenRate(
   provider: string,
   model: string,
   rateSource: ModelTokenRateSource = modelTokenRateSource(),
@@ -247,12 +213,8 @@ export function computeModelCost(input: {
 }): ComputedModelCost {
   assertValidUsage(input.usage);
 
-  if (readMeteringStatusFromProviderData(input.providerData) === "missing_usage") {
-    return computeMissingUsageCost({
-      provider: input.provider,
-      model: input.model,
-      providerData: input.providerData,
-    });
+  if (readMeteringStatus(input.providerData) === "missing_usage") {
+    return computeMissingUsageCost({ provider: input.provider, model: input.model });
   }
 
   const rate = findModelTokenRate(input.provider, input.model, input.rateSource);

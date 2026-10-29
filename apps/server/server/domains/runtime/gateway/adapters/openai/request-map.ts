@@ -29,7 +29,6 @@ import type OpenAI from "openai";
 import {
   type ContentPart,
   clampReasoningEffort,
-  type FunctionTool,
   type GenerateRequest,
   type Message,
   type ModelInfo,
@@ -232,8 +231,7 @@ function extractInstructions(messages: Message[]): string | undefined {
 // ── Tool mapping ──────────────────────────────────────────────────
 //
 // Canonical Tool[] → OpenAI Responses Tool[]. Function tools become `function`
-// tools; hosted tools map to web_search_preview, code_interpreter, or
-// file_search with vector_store_ids from providerOptions.
+// tools.
 //
 
 type ResponsesTool = OpenAI.Responses.Tool;
@@ -241,32 +239,16 @@ type ResponsesTool = OpenAI.Responses.Tool;
 function mapTools(tools: Tool[] | undefined): ResponsesTool[] | undefined {
   if (!tools?.length) return undefined;
 
-  const mapped: ResponsesTool[] = [];
-  for (const tool of tools) {
-    if (tool.type === "function") {
-      const ft = tool as FunctionTool;
-      mapped.push({
+  return tools.map(
+    (tool) =>
+      ({
         type: "function",
-        name: ft.name,
-        description: ft.description,
-        parameters: ft.inputSchema,
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
         strict: false,
-      } as any);
-    } else if (tool.type === "hosted") {
-      if (tool.kind === "web_search") {
-        mapped.push({ type: "web_search_preview" } as any);
-      } else if (tool.kind === "code_execution") {
-        mapped.push({ type: "code_interpreter" } as any);
-      } else if (tool.kind === "file_search") {
-        const vectorStoreIds = (tool.providerOptions?.openai?.vectorStoreIds ?? []) as string[];
-        mapped.push({
-          type: "file_search",
-          vector_store_ids: vectorStoreIds,
-        } as any);
-      }
-    }
-  }
-  return mapped.length > 0 ? mapped : undefined;
+      }) as ResponsesTool,
+  );
 }
 
 // ── Tool choice mapping ───────────────────────────────────────────

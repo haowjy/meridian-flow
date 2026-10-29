@@ -136,6 +136,7 @@ function buildRequest(corpus: CorpusDefinition, imageData: string): GenerateRequ
     ...(corpus.id === "image-heavy" ? {} : { tools: [TOOL] }),
     maxTokens: 8,
     reasoning: "disabled",
+    promptCacheRetention: "short",
   };
 }
 
@@ -324,7 +325,7 @@ for (const [provider, key] of providerKeys) {
           : await completeToolTranscript(gateway, corpus, template, model.id);
     } catch (error) {
       const estimate = estimateRequestTokens({
-        request: { ...template, model: model.id },
+        request: template,
         baseline: null,
         tokenizer: model.tokenizer,
       });

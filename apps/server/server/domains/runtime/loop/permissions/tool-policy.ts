@@ -55,9 +55,7 @@ export function projectToolPolicy(
 }
 
 export function advertiseTools(tools: Tool[] | undefined, policy: ToolPolicy): Tool[] {
-  return (tools ?? []).filter((tool) =>
-    policy.has(tool.type === "function" ? tool.name : tool.kind),
-  );
+  return (tools ?? []).filter((tool) => policy.has(tool.name));
 }
 
 /** What the model reads when it calls a tool outside its policy (D53). */

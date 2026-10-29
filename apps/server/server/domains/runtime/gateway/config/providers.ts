@@ -19,6 +19,9 @@ export interface GatewayEnvInput {
   MODEL_CALL_STALL_MS?: string | number;
   /** Dev only: send every model call to this registry model id. See live-test-model.ts. */
   LIVE_TEST_MODEL?: string;
+  /** With `APP_ENV`, tells production (refuses LIVE_TEST_MODEL) from staging (allows it). */
+  NODE_ENV?: string;
+  APP_ENV?: string;
   FLOW_ANTHROPIC_API_KEY?: string;
   FLOW_OPENAI_API_KEY?: string;
   FLOW_DEEPSEEK_API_KEY?: string;
@@ -41,7 +44,7 @@ const MOCK_MODEL: ModelInfo = {
   contextWindow: 128_000,
   maxOutputTokens: 4096,
   promptCache: { kind: "none", ttlMs: null },
-  capabilities: new Set(["streaming", "tool_calling"]),
+  capabilities: new Set(),
 };
 
 export function mockProviderConfig(baseUrl: string): ProviderConfig {
@@ -68,21 +71,6 @@ export function buildProviderConfigs(
   });
 }
 
-/**
- * Model router — STUB. Future per-request model selection lives here.
- * Today defaultModel is the first model of the first enabled provider, DeepSeek first.
- */
-export function selectModelStub(providers: ProviderConfig[]): string | undefined {
-  return (
-    providers.find((p) => p.id === "deepseek")?.models[0]?.id ??
-    providers.find((p) => p.id === "anthropic")?.models[0]?.id ??
-    providers.find((p) => p.id === "openai")?.models[0]?.id ??
-    providers.find((p) => p.id === "gemini")?.models[0]?.id ??
-    providers.find((p) => p.id === "mock")?.models[0]?.id ??
-    providers[0]?.models[0]?.id
-  );
-}
-
 export function defaultGatewayOptions(
   providers: ProviderConfig[],
   defaultModel?: string,
@@ -91,7 +79,8 @@ export function defaultGatewayOptions(
   "defaultModel" | "retry" | "fallback" | "attemptStallMs" | "attemptCeilingMs"
 > {
   return {
-    defaultModel: defaultModel ?? selectModelStub(providers),
+    // Only the local mock fallback reaches here without a registry default.
+    defaultModel: defaultModel ?? providers[0]?.models[0]?.id,
     attemptStallMs: DEFAULT_ATTEMPT_STALL_MS,
     attemptCeilingMs: DEFAULT_ATTEMPT_CEILING_MS,
     retry: { maxAttempts: 3, initialDelayMs: 500, maxDelayMs: 8_000 },

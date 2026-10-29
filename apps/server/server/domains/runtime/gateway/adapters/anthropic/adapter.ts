@@ -20,7 +20,7 @@ import type {
   ProviderConfig,
   StreamEvent,
 } from "../../domain/index.js";
-import { resolvePromptCacheTtlMs } from "../../domain/index.js";
+import { requestsLongCacheWrites, resolvePromptCacheTtlMs } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import {
   mapProviderHttpError,
@@ -66,14 +66,17 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
     async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
       // Create a fresh accumulator per stream call — each generate request
       // gets its own streaming state.
-      const acc = createStreamAccumulator(model.id, providerId);
+      const acc = createStreamAccumulator(
+        model.id,
+        providerId,
+        requestsLongCacheWrites(model.promptCache, request.promptCacheRetention),
+      );
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
         const params = toAnthropicMessageParams(
           request,
-          model.id,
-          model.maxOutputTokens,
+          model,
           providerId,
           resolvePromptCacheTtlMs(model.promptCache, request.promptCacheRetention),
         );

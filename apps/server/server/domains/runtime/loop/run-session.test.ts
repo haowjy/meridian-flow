@@ -107,8 +107,6 @@ describe("RunSession", () => {
           },
         };
       };
-      deps.gateway.settleCancelledResult = async ({ result }) =>
-        result ? { result, persist: true } : null;
     });
 
     const balanceBefore = await f.deps.creditLedger.getBalance({ userId: f.thread.userId });

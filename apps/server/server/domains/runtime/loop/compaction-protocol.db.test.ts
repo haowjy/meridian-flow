@@ -1907,7 +1907,7 @@ else
         contextWindow: 6_000,
         maxOutputTokens: 100,
         promptCache: { kind: "automatic" as const, ttlMs: 60_000 },
-        capabilities: new Set<import("../gateway/index.js").Capability>(["tool_calling"]),
+        capabilities: new Set<import("../gateway/index.js").Capability>(),
       };
       rig.deps.gateway.listModels = () => [model];
       const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);

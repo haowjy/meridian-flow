@@ -97,7 +97,7 @@ Provider-conditioned model variables:
 |---|---|
 | `FLOW_ANTHROPIC_API_KEY` | Anthropic model provider |
 | `FLOW_OPENAI_API_KEY` | OpenAI model provider |
-| `FLOW_DEEPSEEK_API_KEY` | DeepSeek/OpenAI-compatible provider |
+| `FLOW_DEEPSEEK_API_KEY` | DeepSeek provider (Anthropic-compatible endpoint) |
 | `FLOW_GEMINI_API_KEY` | Google Gemini provider |
 
 Dev only: `LIVE_TEST_MODEL=<registry model id>` sends every model call to that model.

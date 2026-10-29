@@ -6,29 +6,20 @@
 import { hasBillableTokenUsage, readMeteringStatus } from "./metering.js";
 import type { GenerateResult } from "./types.js";
 
-export interface CancelledResultSettlementInput {
-  /** Partial result produced by adapter drain, when the provider returned one. */
-  result?: GenerateResult;
-  /** Resolved model used for the interrupted call. */
-  model: string;
-}
-
 export interface CancelledResultSettlement {
   result: GenerateResult;
   persist: boolean;
 }
 
 /** Whether a provider-neutral cancelled model call has billable usage worth persisting. */
-export function shouldPersistCancelledResult(result: GenerateResult): boolean {
+function shouldPersistCancelledResult(result: GenerateResult): boolean {
   return (
     hasBillableTokenUsage(result.usage) ||
     readMeteringStatus(result.providerData) === "missing_usage"
   );
 }
 
-export function settleGenericCancelledResult(
-  input: CancelledResultSettlementInput,
-): CancelledResultSettlement | null {
-  if (!input.result || !shouldPersistCancelledResult(input.result)) return null;
-  return { result: input.result, persist: true };
+/** The result to persist for an interrupted call, or null when there is nothing billable. */
+export function settleCancelledResult(result?: GenerateResult): CancelledResultSettlement | null {
+  return result && shouldPersistCancelledResult(result) ? { result, persist: true } : null;
 }

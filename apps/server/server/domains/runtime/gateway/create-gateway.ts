@@ -13,9 +13,8 @@
  *    b. With fallback: iterate the provider list; for each, streamForProvider()
  *       runs streamWithRetry(). On a retryable error before committed output,
  *       move to the next provider. After committed output, propagate.
- * 4. Per-attempt timeout policy is resolved per model through
- *    resolveModelAttemptTimeouts (model override, then gateway config, then the
- *    process default) and handed to streamWithRetry.
+ * 4. Per-attempt timeout policy is resolved through
+ *    resolveAttemptTimeouts (gateway config, then the process default) and handed to streamWithRetry.
  * 5. gateway.generate() is the convenience wrapper: consumeStream(gateway.stream()).
  */
 import { createAnthropicAdapter } from "./adapters/anthropic/adapter.js";
@@ -23,14 +22,11 @@ import { createOpenAIResponsesAdapter } from "./adapters/openai/adapter.js";
 import { createOpenAICompatibleAdapter } from "./adapters/openai-compatible/adapter.js";
 import {
   type ModelAttemptTimeoutOverrides,
-  resolveModelAttemptTimeouts,
+  resolveAttemptTimeouts,
   streamWithRetry,
 } from "./attempt-stream.js";
 import { consumeStream } from "./consume-stream.js";
-import { settleGenericCancelledResult } from "./domain/cancel-settlement.js";
 import type {
-  CancelledResultSettlement,
-  CancelledResultSettlementInput,
   GatewayConfig,
   GenerateRequest,
   GenerateResult,
@@ -105,7 +101,7 @@ async function* streamForProvider(
     request,
     route.model,
     retry,
-    resolveModelAttemptTimeouts(route.model, timeoutOverrides),
+    resolveAttemptTimeouts(timeoutOverrides),
   );
 }
 
@@ -139,7 +135,7 @@ export function createGateway(config: GatewayConfig): Gateway {
             request,
             route.model,
             retry,
-            resolveModelAttemptTimeouts(route.model, timeoutOverrides),
+            resolveAttemptTimeouts(timeoutOverrides),
           );
         } catch (err) {
           yield {
@@ -201,12 +197,6 @@ export function createGateway(config: GatewayConfig): Gateway {
 
     async generate(request: GenerateRequest): Promise<GenerateResult> {
       return consumeStream(gateway.stream(request));
-    },
-
-    async settleCancelledResult(
-      input: CancelledResultSettlementInput,
-    ): Promise<CancelledResultSettlement | null> {
-      return settleGenericCancelledResult(input);
     },
 
     listModels(): ModelInfo[] {

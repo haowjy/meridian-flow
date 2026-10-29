@@ -31,7 +31,6 @@ export type ApiStartupEnv = {
   WORKOS_COOKIE_PASSWORD?: string;
   API_REPLICA_COUNT?: number;
   DURABLE_EVENT_BACKEND: string;
-  LIVE_TEST_MODEL?: string;
 };
 
 function hasValue(value: string | undefined | null): value is string {
@@ -120,10 +119,6 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
     );
   }
 
-  if (hasValue(config.LIVE_TEST_MODEL) && (isProduction || config.APP_ENV === "production")) {
-    errors.push("LIVE_TEST_MODEL: dev only; unset it in production.");
-  }
-
   const replicaCount = config.API_REPLICA_COUNT ?? null;
   const durableEventBackend = config.DURABLE_EVENT_BACKEND;
 
@@ -162,7 +157,6 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
       ? Number(process.env.API_REPLICA_COUNT)
       : undefined,
     DURABLE_EVENT_BACKEND: process.env.DURABLE_EVENT_BACKEND ?? "none",
-    LIVE_TEST_MODEL: process.env.LIVE_TEST_MODEL,
   });
   if (outcome.errors.length > 0) {
     const details = outcome.errors.map((error) => `  - ${error}`).join("\n");
