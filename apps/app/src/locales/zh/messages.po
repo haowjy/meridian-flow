@@ -4502,6 +4502,10 @@ msgstr ""
 msgid "Stop"
 msgstr "停止"
 
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Stop \"{name}\""
+msgstr "停止“{name}”"
+
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Stop compaction"
@@ -4539,9 +4543,14 @@ msgstr "已取消"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/subagent/useSubagentStop.ts
 #: src/features/chat/useChatStop.ts
 msgid "Stopping"
 msgstr ""
+
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Stopping \"{name}\""
+msgstr "正在停止“{name}”"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Stopping compaction"
@@ -5360,6 +5369,7 @@ msgid "Trash"
 msgstr ""
 
 #: src/features/chat/ChatCards.tsx
+#: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"

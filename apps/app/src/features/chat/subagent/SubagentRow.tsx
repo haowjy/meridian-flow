@@ -128,6 +128,7 @@ export function SubagentRow({
   expandable = false,
   door = true,
   threadIds,
+  trailing,
   detail,
   children,
   className,
@@ -144,6 +145,8 @@ export function SubagentRow({
   expandable?: boolean;
   door?: boolean;
   threadIds?: string;
+  /** Row controls before the door, e.g. a running child's Stop. */
+  trailing?: ReactNode;
   detail?: ReactNode;
   children?: ReactNode;
   className?: string;
@@ -177,6 +180,7 @@ export function SubagentRow({
         ) : (
           <div className={cn("flex min-w-0 items-center", gap, fill)}>{identity}</div>
         )}
+        {trailing}
         {door ? (
           <OpenSubagentChatButton
             threadId={run.threadId}
