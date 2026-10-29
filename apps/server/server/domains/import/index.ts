@@ -79,6 +79,13 @@ export function createProductionImportOrganizer(deps: {
         }),
       };
     },
+    previewFailed: (cause) =>
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "import.organize",
+        name: "image_preview.failed",
+        payload: unknownToEventPayload(cause),
+      }),
     diagnostic: (cause, detail) =>
       emitEvent(deps.eventSink, {
         level: "error",
@@ -109,6 +116,13 @@ export function createProductionImportService(
         level: "warn",
         source: "import.upload",
         name: "activity_failed",
+        payload: unknownToEventPayload(cause),
+      }),
+    previewFailed: (cause) =>
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "import.upload",
+        name: "image_preview.failed",
         payload: unknownToEventPayload(cause),
       }),
   });

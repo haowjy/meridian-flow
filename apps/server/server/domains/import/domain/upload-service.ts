@@ -23,6 +23,8 @@ export function createImportUploadService(deps: {
   admission: ImportAdmission;
   wake: OrganizeWake;
   reportError(cause: unknown): void;
+  /** An image preview that should have been made but failed; the file shows as a card. */
+  previewFailed(cause: unknown): void;
 }) {
   const repo = deps.repository;
   async function requireRecord(id: string, projectId: string, lock = false) {
@@ -129,7 +131,14 @@ export function createImportUploadService(deps: {
         async (record, signal) => {
           // Lost final responses replay even after completion without replacing received bytes.
           const parts = await readParts(signal);
-          const candidates = await prepareReceipts(repo, deps.objects, record, parts, signal);
+          const candidates = await prepareReceipts(
+            repo,
+            deps.objects,
+            deps.previewFailed,
+            record,
+            parts,
+            signal,
+          );
           const entryIds = parts.map((part) => part.entryId);
           await repo.transaction(async () => {
             const current = await requireRecord(id, projectId, true);

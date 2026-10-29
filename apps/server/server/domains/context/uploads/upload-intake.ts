@@ -21,7 +21,7 @@ export { classifyUpload } from "../../file-intake/index.js";
 
 import { saveImagePreview } from "../../file-intake/image-preview.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { type ObjectStorePort, previewObjectKey } from "../../storage/index.js";
+import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 
 export interface UploadIntakeInput {
@@ -146,32 +146,12 @@ function fingerprint(input: {
     .digest("hex");
 }
 
-async function cleanupObject(
-  objectStore: ObjectStorePort,
-  eventSink: EventSink,
-  key: string,
-  documentId: string,
-): Promise<void> {
-  try {
-    const result = await objectStore.delete(key);
-    if (!result.ok) throw new Error(result.error.message);
-    // Most uploads have no preview, so its absence is not a failure.
-    const preview = await objectStore.delete(previewObjectKey(key));
-    if (!preview.ok && preview.error.code !== "not_found") throw new Error(preview.error.message);
-  } catch (cause) {
-    emitEvent(eventSink, {
-      level: "warn",
-      source: "context.upload-intake",
-      name: "object_compensation.failed",
-      payload: { documentId, key, ...unknownToEventPayload(cause) },
-    });
-  }
-}
-
 export function createUploadIntake<Bound>(deps: {
   repository: UploadIntakeRepository;
   content: UploadContentPort<Bound>;
   objectStore: ObjectStorePort;
+  /** Deletes an object (and its preview) the intake stored but could not finish committing. */
+  release: ObjectRelease;
   eventSink: EventSink;
   catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
 }): UploadIntake {
@@ -300,12 +280,7 @@ export function createUploadIntake<Bound>(deps: {
             ? cause.definite === true
             : false;
         if (storedThisAttempt && definite) {
-          await cleanupObject(
-            deps.objectStore,
-            deps.eventSink,
-            reservation.objectKey,
-            reservation.documentId,
-          );
+          await deps.release.keys([reservation.objectKey]);
           await deps.repository.resetObjectStored(raw.owner.projectId, raw.intakeId);
         } else if (!definite) {
           emitEvent(deps.eventSink, {
@@ -337,7 +312,7 @@ export function createUploadIntake<Bound>(deps: {
         };
       });
       if (deleted.objectKey) {
-        await cleanupObject(deps.objectStore, deps.eventSink, deleted.objectKey, input.documentId);
+        await deps.release.keys([deleted.objectKey]);
       }
       return deleted.result;
     },

@@ -54,7 +54,7 @@ import {
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery.js";
-import type { ObjectStorePort } from "../../domains/storage/index.js";
+import type { ObjectRelease, ObjectStorePort } from "../../domains/storage/index.js";
 import type {
   ThreadRepository,
   ThreadWorksRepository,
@@ -82,6 +82,8 @@ export interface ToolWiringDeps {
   eventSink: EventSink;
   /** Binary copies duplicate the stored object (D24). */
   objectStore: ObjectStorePort;
+  /** Deletes the duplicate when the copy's destination write fails. */
+  release: ObjectRelease;
   /** Every model read and write asks the file policy first (file-access §1). */
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "historyAccess">;
   /** The removal record behind a missing file the model already addresses by id. */

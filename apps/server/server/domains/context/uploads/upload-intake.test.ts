@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { createNoopEventSink } from "../../observability/index.js";
+import { createObjectRelease } from "../../storage/index.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
 import type { UploadIntakeRepository, UploadReservation } from "./upload-intake.js";
@@ -97,6 +98,7 @@ function harness() {
       repository,
       content,
       objectStore,
+      release: createObjectRelease({ objectStore, onFailure() {} }),
       eventSink: createNoopEventSink(),
       catalog: { refreshSources: async () => "1" },
     }),

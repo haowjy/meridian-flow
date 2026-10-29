@@ -208,6 +208,7 @@ export async function copyBinary(
   const copied = await copyBinaryDocument({
     port: context.port,
     objectStore: deps.objectStore,
+    release: deps.release,
     source,
     sourceGrant,
     origin: { type: "agent", agentSlug: ctx.agentSlug, threadId: ctx.threadId, turnId: ctx.turnId },

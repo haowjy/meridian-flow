@@ -12,6 +12,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { saveImagePreview } from "../../file-intake/image-preview.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { ObjectRelease } from "../../storage/object-release.js";
 import {
   drawObjectKey,
   objectStoreKeyFromStorageUrl,
@@ -61,6 +62,8 @@ export interface GetFigureSignedUrlInput {
 
 export interface FigureAssetServiceOptions {
   objectStore: ObjectStorePort;
+  /** Deletes the object (and its preview) when the asset document is not created. */
+  release: ObjectRelease;
   documents: FigureDocumentRepository;
   contextPorts: Pick<UnifiedContextPortFactory, "forProject">;
   signedUrlExpiresAt: () => string;
@@ -85,32 +88,6 @@ function err(code: FigureAssetErrorCode, message: string): FigureAssetResult<nev
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
-}
-
-async function deleteObjectBestEffort(
-  eventSink: EventSink,
-  objectStore: ObjectStorePort,
-  key: string,
-  context: Record<string, unknown>,
-): Promise<void> {
-  try {
-    const deleted = await objectStore.delete(key);
-    if (!deleted.ok) {
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "context.figures",
-        name: "object_cleanup.failed",
-        payload: { key, error: deleted.error, ...context },
-      });
-    }
-  } catch (error) {
-    emitEvent(eventSink, {
-      level: "warn",
-      source: "context.figures",
-      name: "object_cleanup.threw",
-      payload: { key, ...unknownToEventPayload(error), ...context },
-    });
-  }
 }
 
 async function signObjectUrlBestEffort(
@@ -264,7 +241,6 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
             payload: { key, ...unknownToEventPayload(error), projectId: input.projectId },
           }),
       });
-      const cleanupKeys = hasPreview ? [key, previewObjectKey(key)] : [key];
 
       let assetDocumentId: string | undefined;
       try {
@@ -280,21 +256,11 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
           });
         if (created.ok) assetDocumentId = created.value.documentId;
       } catch (error) {
-        for (const cleanupKey of cleanupKeys)
-          await deleteObjectBestEffort(eventSink, options.objectStore, cleanupKey, {
-            projectId: input.projectId,
-            hostDocumentId: input.hostDocumentId,
-            phase: "asset_create_throw",
-          });
+        await options.release.keys([key]);
         return err("repository_error", errorMessage(error, "Failed to create figure asset"));
       }
       if (!assetDocumentId) {
-        for (const cleanupKey of cleanupKeys)
-          await deleteObjectBestEffort(eventSink, options.objectStore, cleanupKey, {
-            projectId: input.projectId,
-            hostDocumentId: input.hostDocumentId,
-            phase: "asset_create_failed",
-          });
+        await options.release.keys([key]);
         return err("repository_error", "Failed to create figure asset document");
       }
       let asset: DocumentFileRecord | null;

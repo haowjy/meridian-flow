@@ -19,6 +19,7 @@ import {
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
 import {
+  type ObjectRelease,
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
   previewObjectKey,
@@ -87,6 +88,8 @@ interface BinaryCopyInput {
   /** The copier's own port: where the destination path must be free and the file is created. */
   port: ContextPort;
   objectStore: ObjectStorePort;
+  /** Deletes the duplicated object, and its preview, when the destination write fails. */
+  release: ObjectRelease;
   source: BinaryFileRef;
   /** Proof the copier may read the source (file-access §2); a copy can't skip it. */
   sourceGrant: FileGrant<"read">;
@@ -144,7 +147,7 @@ export async function copyBinaryDocument(
     metadata: { copiedFrom: input.copiedFrom },
     ...(input.origin ? { origin: input.origin } : {}),
   });
-  if (!written.ok) await input.objectStore.delete(prepared.value.key);
+  if (!written.ok) await input.release.keys([prepared.value.key]);
   return written;
 }
 

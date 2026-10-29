@@ -27,6 +27,19 @@ pnpm --filter @meridian/www build
 
 Nx `build`, `test`, and `typecheck` targets wrap package scripts for orchestration.
 
+### Native dependency: sharp
+
+The server converts HEIC, BMP and TIFF images to WebP previews with `sharp`, which ships a
+native `.node` binding and libvips as per-platform packages (`@img/sharp-<os>-<arch>`,
+`@img/sharp-libvips-<os>-<arch>`). Run `pnpm install` and the server build on the target OS,
+libc (glibc or musl) and architecture, or build in an image that matches it. Never copy
+`node_modules` or `apps/server/.output` across platforms: the traced
+`.output/server/node_modules` holds only the builder's platform packages.
+
+The previews are made in a worker thread (`image-preview-worker.mjs`, which the build emits
+into `.output/server/_chunks/`). A worker that dies leaves its file with a file card, not a
+failed save.
+
 ## Database
 
 Production uses Postgres. Dev uses a plain `postgres:16` Docker container for

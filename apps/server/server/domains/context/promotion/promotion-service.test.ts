@@ -9,7 +9,7 @@ import { describe as __mergedSuite, expect, it, vi } from "vitest";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { createInMemoryEventSink, createNoopEventSink } from "../../observability/index.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
-import { createInMemoryObjectStore } from "../../storage/index.js";
+import { createInMemoryObjectStore, createObjectRelease } from "../../storage/index.js";
 import {
   type createInMemoryResultRepository,
   InMemoryResultRepository,
@@ -37,16 +37,18 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
       ok: true as const,
       value: { storageUrl: "storage://result" },
     }));
-    const remove = vi.fn(async () => ({ ok: true as const, value: undefined }));
+    const remove = vi.fn(async (_key: string) => ({ ok: true as const, value: undefined }));
     const sink = createInMemoryEventSink();
+    const objectStore = {
+      put,
+      delete: remove,
+      get: vi.fn() as never,
+      list: vi.fn() as never,
+      getSignedUrl: vi.fn() as never,
+    };
     const service = createPromotionService({
-      objectStore: {
-        put,
-        delete: remove,
-        get: vi.fn() as never,
-        list: vi.fn() as never,
-        getSignedUrl: vi.fn() as never,
-      },
+      objectStore,
+      release: createObjectRelease({ objectStore, onFailure() {} }),
       results: {
         createOrConverge: vi.fn(async () => outcome),
       },
@@ -80,7 +82,9 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
         error: { code: "repository_error" },
       });
       expect(test.put).toHaveBeenCalledOnce();
-      expect(test.remove).toHaveBeenCalledOnce();
+      // The stored object once (plus its preview key, which the release always pairs with it).
+      const deleted = test.remove.mock.calls.map(([key]) => key);
+      expect(deleted.filter((key) => !key.endsWith(".preview"))).toHaveLength(1);
     });
     it("retains bytes and diagnoses an unknown commit outcome", async () => {
       const test = harness({ kind: "unknown", error: "commit uncertain" });
@@ -92,14 +96,16 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
     });
     it("performs zero puts when exact Work resolution is unavailable", async () => {
       const test = harness({ kind: "unknown", error: "unused" });
+      const objectStore = {
+        put: test.put,
+        delete: test.remove,
+        get: vi.fn() as never,
+        list: vi.fn() as never,
+        getSignedUrl: vi.fn() as never,
+      };
       test.service = createPromotionService({
-        objectStore: {
-          put: test.put,
-          delete: test.remove,
-          get: vi.fn() as never,
-          list: vi.fn() as never,
-          getSignedUrl: vi.fn() as never,
-        },
+        objectStore,
+        release: createObjectRelease({ objectStore, onFailure() {} }),
         results: { createOrConverge: vi.fn() as never },
         eventSink: test.sink,
         workAuthorityResolver: {
@@ -133,6 +139,7 @@ __mergedSuite("promotion-and-flush.test.ts", () => {
     results: ReturnType<typeof createInMemoryResultRepository>,
   ) => ({
     objectStore,
+    release: createObjectRelease({ objectStore, onFailure() {} }),
     results,
     eventSink: createNoopEventSink(),
     workAuthorityResolver: {

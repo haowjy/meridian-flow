@@ -241,6 +241,7 @@ import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-brief
 import {
   createObjectRelease,
   type LocalObjectStoreAdapter,
+  type ObjectRelease,
   type ObjectStorePort,
 } from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
@@ -428,6 +429,8 @@ export type ProductionAppPorts = {
   modelRequestDebug: ModelRequestDebugStore;
   mockModelScript: MockScriptQueue | null;
   objectStore: ObjectStorePort;
+  /** Deletes stored objects with their previews; every compensating delete goes through it. */
+  objectRelease: ObjectRelease;
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
@@ -552,13 +555,14 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
-  // A discarded or repaired hidden image's bytes go once its tombstone commits (§12.2).
+  // Every compensating or post-commit object delete goes through this; a key's preview goes
+  // with it. A discarded or repaired hidden image's bytes go once its tombstone commits (§12.2).
   const objectRelease = createObjectRelease({
     objectStore,
     onFailure(key, error) {
       emitEvent(eventSink, {
         level: "warn",
-        source: "context.hidden-node",
+        source: "storage.object-release",
         name: "object_delete.failed",
         payload: { key, error },
       });
@@ -616,6 +620,7 @@ export async function createProductionAppPorts(input: {
   const promotionService = createPromotionService({
     lineages: createDrizzleScratchLineages(db),
     objectStore,
+    release: objectRelease,
     results,
     workAuthorityResolver,
     eventSink,
@@ -638,6 +643,7 @@ export async function createProductionAppPorts(input: {
     repository: createDrizzleUploadIntakeRepository(db),
     content: createContextUploadContentPort(contextPorts),
     objectStore,
+    release: objectRelease,
     eventSink,
     catalog: contextCatalog,
   });
@@ -646,6 +652,7 @@ export async function createProductionAppPorts(input: {
   // context ports.
   const figureAssets = createFigureAssetService({
     objectStore,
+    release: objectRelease,
     documents: createDrizzleFigureDocumentRepository({ db }),
     contextPorts,
     signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
@@ -757,6 +764,7 @@ export async function createProductionAppPorts(input: {
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
     mockModelScript: debugPaths ? (mockScript ?? null) : null,
     objectStore,
+    objectRelease,
     localObjectStore,
     uploadIntake,
     uploadIdentity,
@@ -891,6 +899,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     objectStore: ports.objectStore,
+    release: ports.objectRelease,
     fileAccess: ports.fileAccess,
     agentRevisions: ports.agentRevisions,
     readAgentChain: ports.readAgentChain,
