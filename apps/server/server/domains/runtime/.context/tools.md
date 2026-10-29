@@ -78,7 +78,9 @@ action, the target Work as named then, the fields it sets); the server-only comm
 pins the target by id and is parsed with `permissionWorkCommandSchema` when read.
 
 Allow runs the saved command through the same executor as a direct call
-(`executeWorkCommand`, with the writer as actor), in a savepoint of the answer
+(`executeWorkCommand`), as the agent's action: an Allowed `write_mode` queues an agent
+switch and leaves the Work's default mode alone, and the ask's receipt records that
+the writer allowed it. It runs in a savepoint of the answer
 transaction (the ask plan's `permission` tool result), and the tool executor's
 `handlerToolResult` shapes it as that call's result would be. A domain refusal rolls
 the savepoint back, writes and after-commit effects included, and only then becomes

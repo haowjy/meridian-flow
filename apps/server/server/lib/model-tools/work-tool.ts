@@ -4,7 +4,7 @@
  * changes run under the calling execution's existing claim.
  */
 import { type PermissionDeniedReason, TOOL_EXCEPTION_CODE } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import {
   type PermissionAskPayload,
   type PermissionWorkCommand,
@@ -207,9 +207,6 @@ type ResolvedWorkCommand =
       | "delete"
       | "switch"];
 
-/** Who runs the command: the model's own call, or the writer's Allow. */
-type WorkActor = "agent" | "writer";
-
 type AskableCommand = AskableAction extends `work.${infer C}` ? C : never;
 type AskedWorkCommand = Extract<ResolvedWorkCommand, { command: AskableCommand }>;
 
@@ -332,7 +329,6 @@ type CommandHandler<C extends CommandName> = (
   deps: ToolWiringDeps,
   thread: Thread,
   command: CommandOf<C>,
-  actor: WorkActor,
 ) => Promise<unknown>;
 
 async function archiving(deps: ToolWiringDeps, thread: Thread, work: Work, archived: boolean) {
@@ -429,14 +425,13 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
     );
     return { handle: rebound.after.handle, name: rebound.after.name };
   },
-  async write_mode(deps, thread, { mode }, actor) {
+  async write_mode(deps, thread, { mode }) {
+    // Agent provenance under an Allow too: the writer allowed this chat's switch, not a new
+    // default for the Work. The ask's receipt records the Allow.
     await deps.controls.enqueueControl({
       threadId: thread.id as ThreadId,
       id: crypto.randomUUID(),
-      provenance:
-        actor === "writer"
-          ? { kind: "writer", actorId: thread.userId as UserId }
-          : { kind: "agent", threadId: thread.id },
+      provenance: { kind: "agent", threadId: thread.id },
       control: { kind: "write_mode", mode },
     });
     return { mode, applies: "next_reply" };
@@ -452,14 +447,13 @@ function executeWorkCommand(
   deps: ToolWiringDeps,
   thread: Thread,
   command: ResolvedWorkCommand,
-  actor: WorkActor,
 ): Promise<unknown> {
   const run = COMMANDS[command.command] as CommandHandler<CommandName>;
-  return run(deps, thread, command as CommandOf<CommandName>, actor);
+  return run(deps, thread, command as CommandOf<CommandName>);
 }
 
 /**
- * Runs what the writer allowed, as the chat's writer, in a savepoint inside the answer's
+ * Runs what the writer allowed in a savepoint inside the answer's
  * transaction: a domain refusal rolls back its writes and after-commit effects first, then
  * becomes the result, so the answer still commits. Any other failure propagates and rolls
  * back the answer. Returns a handler result, as the `work` tool's handler does.
@@ -484,7 +478,7 @@ export async function runAllowedWorkCommand(
   const resolved = await resolveStored(deps, input.command);
   if (isToolError(resolved)) return resolved;
   try {
-    return await deps.savepoint(() => executeWorkCommand(deps, thread, resolved, "writer"));
+    return await deps.savepoint(() => executeWorkCommand(deps, thread, resolved));
   } catch (error) {
     const expected = expectedWorkError(error, undefined, true);
     if (!expected) throw error;
@@ -557,7 +551,7 @@ export function createWorkHandler(deps: ToolWiringDeps) {
       return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
     }
     try {
-      return await executeWorkCommand(deps, thread, resolved, "agent");
+      return await executeWorkCommand(deps, thread, resolved);
     } catch (error) {
       const expected = expectedWorkError(
         error,
