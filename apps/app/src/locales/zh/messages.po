@@ -5263,6 +5263,10 @@ msgstr ""
 msgid "This switch already happened."
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "This took too long, so it was stopped."
+msgstr "耗时太久，已停止。"
+
 #: src/features/editor/SchemaNotices.tsx
 msgid "This version of Meridian can't display it."
 msgstr ""

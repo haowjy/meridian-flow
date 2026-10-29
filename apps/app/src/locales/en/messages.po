@@ -5263,6 +5263,10 @@ msgstr "This stored figure needs a project before it can be rendered."
 msgid "This switch already happened."
 msgstr "This switch already happened."
 
+#: src/features/chat/tool-failure.tsx
+msgid "This took too long, so it was stopped."
+msgstr "This took too long, so it was stopped."
+
 #: src/features/editor/SchemaNotices.tsx
 msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
