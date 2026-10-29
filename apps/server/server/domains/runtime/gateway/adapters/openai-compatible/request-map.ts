@@ -13,27 +13,20 @@
  *   text-only messages use the simpler string content format.
  * - `stream_options: { include_usage: true }` is always set so the final
  *   chunk carries cumulative token usage (per OpenAI streaming docs).
- * - Prompt caching (OpenRouter's Anthropic-family models only — descriptor-
- *   gated in the model registry, so a plain OpenAI-Chat-Compatible endpoint
- *   never sees any of this): the loop's canonical `ContentPart.cacheBreakpoint`
- *   is only honored on the *system* message, as an explicit per-part
- *   `cache_control` (OpenRouter's own wire shape, identical to Anthropic's).
- *   Whenever the system message carries a mark, this mapper also sets a
- *   top-level, request-wide `cache_control` — OpenRouter's "automatic
- *   caching" toggle, which places a breakpoint on the last cacheable block
- *   for us. That one field does the job of the read-point/tail marks the
- *   loop also leaves on other messages (deliberately unread here — see
- *   `mapMessage`), so the rest of the conversation never needs an explicit
- *   per-part mark. Both use the TTL declared by the registered model.
+ * - Reasoning: an explicit effort goes out as `reasoning_effort`, lowered to the
+ *   model's `maxReasoningEffort`. `adaptive` and `disabled` send nothing.
+ * - No prompt-cache marks are sent: the models on this adapter cache automatically.
  */
 import type OpenAI from "openai";
 
-import type {
-  ContentPart,
-  FunctionTool,
-  GenerateRequest,
-  Message,
-  Tool,
+import {
+  type ContentPart,
+  clampReasoningEffort,
+  type FunctionTool,
+  type GenerateRequest,
+  type Message,
+  type ModelInfo,
+  type Tool,
 } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 
@@ -44,40 +37,12 @@ function textFromParts(parts: ContentPart[]): string {
     .join("");
 }
 
-type CacheControl = { type: "ephemeral"; ttl: "5m" | "1h" };
-
-function cacheControlForTtl(ttlMs: number | null | undefined): CacheControl | undefined {
-  switch (ttlMs) {
-    case 5 * 60 * 1_000:
-      return { type: "ephemeral", ttl: "5m" };
-    case 60 * 60 * 1_000:
-      return { type: "ephemeral", ttl: "1h" };
-    default:
-      return undefined;
-  }
-}
-
-/** OpenRouter's per-part `cache_control` passthrough uses Anthropic's own block shape. */
-type CacheControllableTextPart = OpenAI.Chat.Completions.ChatCompletionContentPartText & {
-  cache_control?: CacheControl;
-};
-
-/**
- * OpenRouter-only request-level field: "automatic caching" (breakpoint on the
- * last cacheable block), documented for Anthropic/Vertex/Azure/Bedrock
- * providers. Not part of the OpenAI SDK's own ChatCompletionCreateParams type.
- */
-type ChatCompletionCreateParamsWithCache = OpenAI.Chat.Completions.ChatCompletionCreateParams & {
-  cache_control?: CacheControl;
-};
-
 /**
  * Map canonical ContentPart[] to Chat Completions content.
  * Text-only messages use the string shorthand; messages with images use the
  * array format (text + image_url blocks). Non-text/non-image parts are
  * silently dropped because Chat Completions has no native reasoning_part or
- * tool_use_part in user/assistant message content. Cache-agnostic: only the
- * dedicated system-message mapping below ever emits `cache_control`.
+ * tool_use_part in user/assistant message content.
  */
 function mapContentParts(
   parts: ContentPart[],
@@ -110,29 +75,11 @@ function mapContentParts(
   return mapped;
 }
 
-/**
- * Map the canonical system message. This is the one place the loop's
- * `cacheBreakpoint` mark is honored per-part (see the file header): each
- * marked text part gets an explicit `cache_control`.
- */
 function mapSystemMessage(
   message: Message,
-  cacheControl: CacheControl | undefined,
 ): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
-  const textParts = message.content.filter(
-    (p): p is Extract<ContentPart, { type: "text" }> => p.type === "text" && p.text.length > 0,
-  );
-  if (textParts.length === 0) return null;
-  if (!textParts.some((p) => p.cacheBreakpoint)) {
-    return { role: "system", content: textFromParts(textParts) };
-  }
-  if (!cacheControl) throw new Error("Prompt cache breakpoint requires a supported registry TTL");
-  const content: CacheControllableTextPart[] = textParts.map((p) => ({
-    type: "text",
-    text: p.text,
-    ...(p.cacheBreakpoint ? { cache_control: cacheControl } : {}),
-  }));
-  return { role: "system", content };
+  const text = textFromParts(message.content.filter((p) => p.type === "text" && p.text.length > 0));
+  return text ? { role: "system", content: text } : null;
 }
 
 function hasContent(
@@ -151,18 +98,12 @@ function hasContent(
  * other roles pass through directly. Messages with empty content are
  * filtered out (null return).
  */
-function mapMessage(
-  message: Message,
-  cacheControl: CacheControl | undefined,
-): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
-  if (message.role === "system") return mapSystemMessage(message, cacheControl);
+function mapMessage(message: Message): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
+  if (message.role === "system") return mapSystemMessage(message);
 
   if (message.role === "tool") {
     const result = message.content.find((p) => p.type === "tool_result");
     if (!result) return null;
-    // Never cache-marked here even if the loop marked this message's tail:
-    // the top-level automatic `cache_control` (see toOpenAIChatCompletionParams)
-    // already extends the cache over the rest of the conversation.
     return {
       role: "tool",
       tool_call_id: result.toolCallId,
@@ -257,22 +198,17 @@ function mapResponseFormat(
 }
 
 /**
- * Explicit effort → `reasoning_effort`. Gemini's OpenAI-compatible endpoint maps it to
- * `thinking_level` (low/medium/high), so `max` clamps to `high`. `adaptive` and
+ * Explicit effort → `reasoning_effort`, lowered to the model's ceiling (Google's
+ * OpenAI endpoint maps it to `thinking_level`: low, medium, high). `adaptive` and
  * `disabled` send nothing and leave the model's default.
  */
 function mapReasoningEffort(
   reasoning: GenerateRequest["reasoning"],
-): "low" | "medium" | "high" | undefined {
+  model: ModelInfo,
+): OpenAI.Chat.Completions.ChatCompletionCreateParams["reasoning_effort"] {
   if (typeof reasoning !== "object") return undefined;
-  return reasoning.effort === "max" ? "high" : reasoning.effort;
-}
-
-/** True when the loop marked the system message for explicit prompt caching. */
-function systemHasCacheBreakpoint(messages: Message[]): boolean {
-  return messages.some(
-    (m) => m.role === "system" && m.content.some((p) => p.type === "text" && p.cacheBreakpoint),
-  );
+  // The SDK type predates `max`; models whose row allows it accept it.
+  return clampReasoningEffort(reasoning.effort, model.maxReasoningEffort) as "high";
 }
 
 /**
@@ -283,18 +219,12 @@ function systemHasCacheBreakpoint(messages: Message[]): boolean {
  */
 export function toOpenAIChatCompletionParams(
   request: GenerateRequest,
-  modelId: string,
-  promptCacheTtlMs?: number | null,
-): ChatCompletionCreateParamsWithCache {
-  const cacheControl = cacheControlForTtl(promptCacheTtlMs);
-  const systemHasCacheMark = systemHasCacheBreakpoint(request.messages);
-  if (systemHasCacheMark && !cacheControl) {
-    throw new Error("Prompt cache breakpoint requires a supported registry TTL");
-  }
+  model: ModelInfo,
+): OpenAI.Chat.Completions.ChatCompletionCreateParams {
   return {
-    model: modelId,
+    model: model.id,
     messages: request.messages
-      .map((message) => mapMessage(message, cacheControl))
+      .map(mapMessage)
       .filter((m): m is OpenAI.Chat.Completions.ChatCompletionMessageParam => m !== null),
     tools: mapTools(request.tools),
     tool_choice: mapToolChoice(request.toolChoice),
@@ -302,10 +232,9 @@ export function toOpenAIChatCompletionParams(
     temperature: request.temperature,
     top_p: request.topP,
     stop: request.stopSequences,
-    reasoning_effort: mapReasoningEffort(request.reasoning),
+    reasoning_effort: mapReasoningEffort(request.reasoning, model),
     response_format: mapResponseFormat(request.responseFormat),
     stream: true,
     stream_options: { include_usage: true },
-    ...(systemHasCacheMark && cacheControl ? { cache_control: cacheControl } : {}),
   };
 }

@@ -21,8 +21,6 @@ export interface GatewayEnvInput {
   FLOW_OPENAI_API_KEY?: string;
   FLOW_DEEPSEEK_API_KEY?: string;
   FLOW_GEMINI_API_KEY?: string;
-  FLOW_OPENROUTER_API_KEY?: string;
-  FLOW_OPENROUTER_BASE_URL?: string;
 }
 
 /** Parse an env override to a millisecond count. Unset, empty, or NaN yields undefined. */
@@ -60,37 +58,24 @@ export function buildProviderConfigs(
     return { providers: [], defaultModel: undefined };
   }
 
-  const gatewayConfig = buildFromRegistry(MODEL_REGISTRY, {
+  return buildFromRegistry(MODEL_REGISTRY, {
     FLOW_ANTHROPIC_API_KEY: env.FLOW_ANTHROPIC_API_KEY,
     FLOW_OPENAI_API_KEY: env.FLOW_OPENAI_API_KEY,
     FLOW_DEEPSEEK_API_KEY: env.FLOW_DEEPSEEK_API_KEY,
     FLOW_GEMINI_API_KEY: env.FLOW_GEMINI_API_KEY,
-    FLOW_OPENROUTER_API_KEY: env.FLOW_OPENROUTER_API_KEY,
   });
-
-  if (!env.FLOW_OPENROUTER_BASE_URL) return gatewayConfig;
-
-  return {
-    ...gatewayConfig,
-    providers: gatewayConfig.providers.map((provider) =>
-      provider.id === "openrouter"
-        ? { ...provider, baseUrl: env.FLOW_OPENROUTER_BASE_URL }
-        : provider,
-    ),
-  };
 }
 
 /**
  * Model router — STUB. Future per-request model selection lives here.
- * Today defaultModel comes from the registry (anthropic-first when enabled).
+ * Today defaultModel is the first model of the first enabled provider, DeepSeek first.
  */
 export function selectModelStub(providers: ProviderConfig[]): string | undefined {
   return (
+    providers.find((p) => p.id === "deepseek")?.models[0]?.id ??
     providers.find((p) => p.id === "anthropic")?.models[0]?.id ??
     providers.find((p) => p.id === "openai")?.models[0]?.id ??
-    providers.find((p) => p.id === "deepseek")?.models[0]?.id ??
     providers.find((p) => p.id === "gemini")?.models[0]?.id ??
-    providers.find((p) => p.id === "openrouter")?.models[0]?.id ??
     providers.find((p) => p.id === "mock")?.models[0]?.id ??
     providers[0]?.models[0]?.id
   );

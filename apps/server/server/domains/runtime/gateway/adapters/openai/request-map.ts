@@ -26,14 +26,16 @@
  *   default.
  */
 import type OpenAI from "openai";
-import type {
-  ContentPart,
-  FunctionTool,
-  GenerateRequest,
-  Message,
-  Tool,
+import {
+  type ContentPart,
+  clampReasoningEffort,
+  type FunctionTool,
+  type GenerateRequest,
+  type Message,
+  type ModelInfo,
+  openaiCacheTtlWire,
+  type Tool,
 } from "../../domain/index.js";
-import { openaiCacheTtlWire } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 
 // ── Content parts mapping ─────────────────────────────────────────
@@ -290,26 +292,21 @@ function mapToolChoice(
 // ── Reasoning config ──────────────────────────────────────────────
 //
 // Canonical reasoning → OpenAI Responses reasoning config.
-// `adaptive` maps to effort=medium + summary=auto. `max` effort is clamped
-// to `high` because the Responses API only supports low/medium/high.
-// The summary field requests auto-summarization of reasoning.
+// `adaptive` maps to effort=medium + summary=auto. An explicit effort is sent as
+// is, lowered to the model's `maxReasoningEffort`; GPT-5.6 and GPT-6.1 accept
+// low…max. The summary field requests auto-summarization of reasoning.
 //
 
 function mapReasoning(
   reasoning: GenerateRequest["reasoning"],
-):
-  | { effort?: "low" | "medium" | "high" | null; summary?: "auto" | "concise" | "detailed" | null }
-  | undefined {
+  model: ModelInfo,
+): { effort: string; summary: "auto" } | undefined {
   if (!reasoning || reasoning === "disabled") return undefined;
-
-  if (reasoning === "adaptive") {
-    return { effort: "medium", summary: "auto" };
-  }
-
-  const effort = typeof reasoning === "object" ? reasoning.effort : "medium";
-  // OpenAI only supports low/medium/high, not "max"
-  const mappedEffort = effort === "max" ? "high" : effort;
-  return { effort: mappedEffort as "low" | "medium" | "high", summary: "auto" };
+  if (reasoning === "adaptive") return { effort: "medium", summary: "auto" };
+  return {
+    effort: clampReasoningEffort(reasoning.effort, model.maxReasoningEffort),
+    summary: "auto",
+  };
 }
 
 // ── Response format mapping ───────────────────────────────────────
@@ -354,10 +351,10 @@ function mapResponseFormat(
 
 export function toOpenAIResponsesParams(
   request: GenerateRequest,
-  modelId: string,
-  providerId = "openai",
-  longTtlMs?: number,
+  model: ModelInfo,
 ): OpenAI.Responses.ResponseCreateParamsStreaming {
+  const { id: modelId, provider: providerId } = model;
+  const longTtlMs = model.promptCache.longTtlMs;
   const instructions = extractInstructions(request.messages);
   const input = flattenAssistantToolCalls(request.messages, providerId, modelId);
 
@@ -374,7 +371,9 @@ export function toOpenAIResponsesParams(
     ...(request.maxTokens ? { max_output_tokens: request.maxTokens } : {}),
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     ...(request.topP !== undefined ? { top_p: request.topP } : {}),
-    ...(mapReasoning(request.reasoning) ? { reasoning: mapReasoning(request.reasoning) } : {}),
+    ...(mapReasoning(request.reasoning, model)
+      ? { reasoning: mapReasoning(request.reasoning, model) }
+      : {}),
     ...(mapResponseFormat(request.responseFormat)
       ? { text: mapResponseFormat(request.responseFormat) }
       : {}),

@@ -10,7 +10,10 @@ normalization, cancellation settlement, and provider-error mapping.
 `settleCancelledResult()`, and `listModels()` complete the port. A registry maps
 model IDs to provider adapters and is the single source for model context,
 pricing, cache descriptor, and required tokenizer family. Duplicate model IDs
-warn during construction rather than silently replacing an entry.
+warn during construction rather than silently replacing an entry. Registry model
+facts (limits, prices, modalities, effort ranges) come from
+[models.dev](https://models.dev/api.json); a provider's API docs are only for what
+models.dev lacks, such as per-TTL cache-write rates and wire parameters.
 
 `attempt-stream.ts` is the only retry layer. Provider SDK retries are disabled.
 Retry/fallback occurs only before committed text or tool output; reasoning-only
@@ -28,8 +31,7 @@ port and never enters EventSink, thread snapshots, journal rows, or JSONL.
 
 Adapters normalize provider usage into the shared `Usage` contract and validate
 it before returning. Provider counters differ, so adapters—not billing or the
-loop—own cache-counter conversion. OpenRouter-specific cost enrichment and
-cancel settlement stay in its adapter; generic cancellation reconciliation is
+loop—own cache-counter conversion. Cancelled-call settlement is generic and
 owned by the gateway.
 
 A close is `ok`, `error`, or `cancelled`. `cancelled` requires causal abort
@@ -102,8 +104,10 @@ above 272K). Registry rates are pinned at standard prices; Gemini 4 Argon's intr
 discount ends 2026-11-30 and the registry has no effective dates.
 
 Gemini 4 Argon uses the `openai-compatible` adapter against Google's OpenAI endpoint;
-an explicit effort goes out as `reasoning_effort` (Google maps it to `thinking_level`;
-`max` clamps to `high`), while `adaptive` and `disabled` send nothing. Claude Opus 5.5 and
+an explicit effort goes out as `reasoning_effort` (Google maps it to `thinking_level`),
+while `adaptive` and `disabled` send nothing. Each mapper lowers the effort to the registry
+row's `maxReasoningEffort` (absent means `max`): Gemini's row says `high`; the GPT rows
+accept every Flow level, so `max` goes out as `max`. Claude Opus 5.5 and
 Fable 5.1 think adaptively and cannot disable it; nothing in Flow sends a disabled or
 fixed-budget `thinking` for them (the loop sets no `reasoning`, and the summarizer's
 `disabled` sends no `thinking` field).

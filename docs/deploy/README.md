@@ -99,7 +99,5 @@ Provider-conditioned model variables:
 | `FLOW_OPENAI_API_KEY` | OpenAI model provider |
 | `FLOW_DEEPSEEK_API_KEY` | DeepSeek/OpenAI-compatible provider |
 | `FLOW_GEMINI_API_KEY` | Google Gemini provider |
-| `FLOW_OPENROUTER_API_KEY` | OpenRouter model provider |
-| `FLOW_OPENROUTER_BASE_URL` | Optional OpenRouter base URL override |
 
 No external package-execution provider is part of the Meridian Flow v3 deployment contract.

@@ -57,12 +57,7 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
-        const params = toOpenAIResponsesParams(
-          request,
-          model.id,
-          providerId,
-          model.promptCache.longTtlMs,
-        );
+        const params = toOpenAIResponsesParams(request, model);
         const stream = await client.responses.create(params, { signal: request.signal });
 
         for await (const event of stream) {

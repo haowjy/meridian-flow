@@ -13,6 +13,7 @@ import {
   openaiCacheTtlWire,
   type PromptCacheDescriptor,
   type ProviderConfig,
+  type ReasoningEffort,
   type TokenizerFamily,
 } from "../domain/index.js";
 
@@ -44,6 +45,8 @@ export interface RegisteredModel {
   /** JSON-natural capability list; converted to Set only at the gateway boundary. */
   capabilities: readonly Capability[];
   promptCache: PromptCacheDescriptor;
+  /** Highest effort level the model accepts; absent means `max`. */
+  maxReasoningEffort?: ReasoningEffort;
   /** Provider-side tools that Meridian advertises but does not execute itself. */
   hostedTools?: readonly string[];
   /** Per-model inactivity window override in ms. 0 disables the stall guard. */
@@ -297,7 +300,7 @@ const DEEPSEEK_FLASH_MODEL = {
   tokenizer: "deepseek",
   displayName: "DeepSeek V4.1 Flash",
   contextWindow: 1_048_576,
-  maxOutputTokens: 384_000,
+  maxOutputTokens: 393_216,
   promptCache: AUTOMATIC_CACHE_ESTIMATE,
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   pricing: DEEPSEEK_FLASH_PRICING,
@@ -308,8 +311,10 @@ const GEMINI_4_ARGON_MODEL = {
   tokenizer: "gemini",
   displayName: "Gemini 4 Argon",
   contextWindow: 1_048_576,
-  maxOutputTokens: 65_536,
+  maxOutputTokens: 32_768,
   promptCache: AUTOMATIC_CACHE_ESTIMATE,
+  // Google's OpenAI endpoint maps `reasoning_effort` to `thinking_level`: low, medium, high.
+  maxReasoningEffort: "high",
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   pricing: GEMINI_4_ARGON_PRICING,
 } satisfies RegisteredModel;
@@ -398,6 +403,7 @@ function toModelInfo(provider: RegisteredProvider, model: RegisteredModel): Mode
     inputTierTokens: model.pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
     promptCache: model.promptCache,
+    maxReasoningEffort: model.maxReasoningEffort,
     capabilities: new Set(model.capabilities),
     hostedTools: model.hostedTools ? new Set(model.hostedTools) : undefined,
     stallTimeoutMs: model.stallTimeoutMs,
