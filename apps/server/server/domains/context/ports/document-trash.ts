@@ -21,7 +21,7 @@ export type DocumentTrash = {
   ): Promise<ReadonlySet<DocumentId>>;
   /** Lists current restorable removals, newest first. */
   list(projectId: ProjectId): Promise<readonly DocumentTrashEntry[]>;
-  /** Reads one restorable removal and its last settled text. */
+  /** Reads one restorable removal and its text, serialized from its frozen Yjs. */
   read(projectId: ProjectId, documentId: DocumentId): Promise<GetDocumentTrashResponse | null>;
   /** Whether a missing trash entry belonged here and has since been permanently purged. */
   wasPurged(projectId: ProjectId, documentId: DocumentId): Promise<boolean>;

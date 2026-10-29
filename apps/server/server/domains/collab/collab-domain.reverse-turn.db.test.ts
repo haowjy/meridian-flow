@@ -31,7 +31,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const { draftWriteJournal, documentMarkdownProjections, documents, modelResponses } =
+    const { draftWriteJournal, documentBlockRooms, documentBlocks, documents, modelResponses } =
       await import("@meridian/database/schema");
     const db = createDb(DATABASE_URL, { max: 4 });
     const { hocuspocus, createTestCollab, reset, dispose } = createWorkBranchFixture(db);
@@ -102,18 +102,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ok: true,
         });
         const [row] = await db
-          .select({
-            sizeBytes: documents.sizeBytes,
-            markdown: documentMarkdownProjections.markdown,
-          })
+          .select({ sizeBytes: documents.sizeBytes, text: documentBlocks.text })
           .from(documents)
-          .leftJoin(
-            documentMarkdownProjections,
-            eq(documentMarkdownProjections.documentId, documents.id),
-          )
+          .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
+          .leftJoin(documentBlocks, eq(documentBlocks.roomId, documentBlockRooms.roomId))
           .where(eq(documents.id, created.value.documentId));
-        expect(row?.markdown).toBe("Current café.\n");
-        expect(row?.sizeBytes).toBe(Buffer.byteLength("Current café.\n", "utf8"));
+        expect(row?.text).toBe("Current café.");
+        expect(row?.sizeBytes).toBe(Buffer.byteLength("Current café.", "utf8"));
       } finally {
         await collab.documentDerivations.stop();
       }

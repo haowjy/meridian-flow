@@ -34,7 +34,7 @@ function nodesJson(doc: Y.Doc, from = 0, to?: number): unknown[] {
   return model
     .projectBlocks(doc as never)
     .slice(from, to)
-    .map((node) => node.toJSON());
+    .map((block) => block.node.toJSON());
 }
 
 async function sourceNodes(

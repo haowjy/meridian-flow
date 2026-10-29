@@ -1642,10 +1642,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
 }
 
 function serializeMarkdown(doc: Y.Doc): string {
-  const blocks = model.getBlocks(toDocHandle(doc));
-  return blocks.length === 0
-    ? ""
-    : markupCodec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
+  const nodes = model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
+  return nodes.length === 0 ? "" : markupCodec.serialize(nodes, UNSCOPED_DOCUMENT_LINKS);
 }
 
 function replaceMarkdown(doc: Y.Doc, markdown: string): void {

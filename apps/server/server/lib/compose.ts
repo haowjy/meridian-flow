@@ -688,6 +688,7 @@ export async function createProductionAppPorts(input: {
       objectStore,
       eventSink,
       drafts: documentSync.documentPurgeDraftDisposal,
+      readMarkdown: documentSync.readFrozenMarkdown,
     }),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({

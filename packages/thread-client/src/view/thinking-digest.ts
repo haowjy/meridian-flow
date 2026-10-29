@@ -66,7 +66,7 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
     if (!documentToolFailed(tool) && path && isEditCommand(command)) {
       continue;
     }
-    // Failed, non-document (`search`, `ls`, `work`, a `skills://` read) and
+    // Failed, non-document (`grep`, `ls`, `work`, a `skills://` read) and
     // pathless operations are uncountable: they contribute a step instead.
     steps += 1;
   }

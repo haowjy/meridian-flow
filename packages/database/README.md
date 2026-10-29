@@ -1,6 +1,6 @@
 # @meridian/database
 
-Drizzle schema and migrations for the v3 Meridian Postgres database (plain `postgres:16` Docker container in dev).
+Drizzle schema and migrations for the v3 Meridian Postgres database (Docker container in dev: `postgres:16` plus pg_bigm, `tools/postgres/Dockerfile`).
 
 **Schema spec:** v3-fullstack-rebuild work dir `schema/` + `specs/` (see `meridian work current`; repo mirror at `.meridian/context/orange-channel-vale/work/v3-fullstack-rebuild/`).
 

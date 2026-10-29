@@ -36,7 +36,7 @@ chat and use the returned ID, rather than assuming a global `cN` handle:
    Chinese text and the dragon emoji for intact rendering. With `repeat: 2`,
    expect two copies separated by a blank line.
 5. **Real tools.** Send `mock-tools.json`, expand the process folds, and inspect
-   write, read, ls and search. Open the resulting Scratch document and verify its
+   write, read, ls and grep. Open the resulting Scratch document and verify its
    content. The final answer must follow the tool results. Repeat to exercise
    overwrite. Send `./mf thread send <id> "invalid write probe" --mock
    '[{"toolCalls":[{"name":"write","args":{"command":"nope","path":"scratch://Bad"}}]},{"text":"Refusal probe finished."}]'`.

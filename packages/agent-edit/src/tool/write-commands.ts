@@ -2,7 +2,7 @@
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
-import { snapshotBlocks } from "../apply/echo.js";
+import { snapshotBlocks, snapshotProjected } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
@@ -11,6 +11,7 @@ import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
@@ -138,18 +139,26 @@ export function createWriteCommands(deps: {
             address.filePath,
             selection.documentBlocks,
           );
-        return withEvidence(links, room, address.documentId, context, {
-          ...readSuccess(
-            renderer.renderRead(
-              toDocHandle(room.doc),
-              links.codec,
-              selection.blocks,
-              command.format === "outline" ? "outline" : "full",
+        return withEvidence(
+          links,
+          room,
+          address.documentId,
+          context,
+          {
+            ...readSuccess(
+              renderer.renderRead(
+                selection,
+                links.codec,
+                command.format === "outline" ? "outline" : "full",
+              ),
             ),
-          ),
-          revision: options.links.revision(room.doc, links.scope),
-          ...(context.includeNodes ? { nodes: selectedNodes(room.doc, selection.blocks) } : {}),
-        });
+            revision: options.links.revision(room.doc, links.scope),
+            ...(context.includeNodes
+              ? { nodes: selection.selected.map((block) => block.node) }
+              : {}),
+          },
+          { projected: selection.projected },
+        );
       },
     );
   }
@@ -191,20 +200,6 @@ export function createWriteCommands(deps: {
     } finally {
       view?.destroy();
     }
-  }
-
-  /** The selected blocks as nodes, in document order; a copy gets fresh identity when inserted. */
-  function selectedNodes(doc: Y.Doc, selected: readonly BlockRef[]): Block[] {
-    const handle = toDocHandle(doc);
-    const nodes = options.model.projectBlocks(handle);
-    const indexByBlock = new Map(
-      options.model.getBlocks(handle).map((block, index) => [block, index]),
-    );
-    return selected.flatMap((block) => {
-      const index = indexByBlock.get(block);
-      const node = index === undefined ? undefined : nodes[index];
-      return node ? [node] : [];
-    });
   }
 
   /**
@@ -660,6 +655,7 @@ export function createWriteCommands(deps: {
     const recorded = phase === "staged" ? { ...context, frontiers: undefined } : context;
     const ownRemoved = new Set(deletedBlocks.map((block) => `${block.clientID}:${block.clock}`));
     try {
+      const echoProjected = options.model.projectBlocks(toDocHandle(room.doc));
       return await withEvidence(
         links,
         room,
@@ -675,10 +671,10 @@ export function createWriteCommands(deps: {
             copied,
           },
           planned,
-          snapshotBlocks(toDocHandle(room.doc), options.model, links.codec),
+          snapshotProjected(echoProjected, links.codec),
           outcome,
         ),
-        { ownRemoved, written: [update] },
+        { ownRemoved, written: [update], projected: echoProjected },
       );
     } catch {
       return withEvidence(
@@ -703,7 +699,7 @@ export function createWriteCommands(deps: {
     documentId: string,
     context: WriteContext,
     result: InternalWriteResult,
-    own?: Pick<ListingSource, "ownRemoved" | "written">,
+    own?: Pick<ListingSource, "ownRemoved" | "written" | "projected">,
   ): Promise<InternalWriteResult> {
     const written = [
       ...(context.frontiers?.reply?.updates(documentId) ?? []),
@@ -719,6 +715,7 @@ export function createWriteCommands(deps: {
         ...(room.position === undefined ? {} : { position: room.position }),
         ...(own?.ownRemoved ? { ownRemoved: own.ownRemoved } : {}),
         ...(written.length ? { written } : {}),
+        ...(own?.projected ? { projected: own.projected } : {}),
         ...(context.turnId ? { ownActorTurnIds: new Set([context.turnId]) } : {}),
         ...(options.coordinator.concurrentUpdatesForReport
           ? {

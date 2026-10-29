@@ -2,7 +2,6 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
-import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block, Span } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 
@@ -16,11 +15,6 @@ export interface ContentLineage {
   clock: number;
   length: number;
 }
-
-export type BlockLookup =
-  | { ok: true; block: BlockRef }
-  | { ok: false; reason: "not_found" }
-  | { ok: false; reason: "ambiguous"; matches: BlockRef[] };
 
 export type InlineReplacementResult =
   | { ok: true }
@@ -56,9 +50,6 @@ export interface DocumentModel {
 
   /** Canonical ordered hash list for a full document. */
   getDocumentBlockIds(doc: DocHandle): string[];
-
-  /** Resolve an agent-visible block hash against the current document. */
-  lookupBlock(doc: DocHandle, hash: string): BlockLookup;
 
   /** True when the block reference still points at a live integrated block. */
   isLive(block: BlockRef): boolean;
@@ -119,20 +110,26 @@ export interface AgentEditModel extends DocumentModel {
   /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
   applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
 
-  /** Adapter-owned block projection for codec-bound residual paths. */
-  projectBlocks(doc: DocHandle): Block[];
+  /**
+   * Every top-level block with its display hash and ProseMirror node, built in one walk so
+   * `ref`, `id`, `hash` and `node` always describe the same block.
+   *
+   * Projects on the document it is given. An element the schema can't build is deleted from
+   * that document (y-prosemirror's repair) and left out of the result, so callers must hand
+   * over a private copy (one no other peer writes to), never a shared document. Hashes cover the surviving
+   * blocks only.
+   */
+  projectBlocks(doc: DocHandle): ProjectedBlock[];
+}
 
-  /** Hash-prefixed block lines for agent-facing document views and echo. */
-  serializeBlockLines(
-    doc: DocHandle,
-    codec: AgentEditCodec,
-    blocks?: readonly BlockRef[],
-  ): string[];
-
-  /** Hashless block bodies for resolver matching. */
-  serializeBlockBodies(
-    doc: DocHandle,
-    codec: AgentEditCodec,
-    blocks: readonly BlockRef[],
-  ): string[];
+/** One top-level block, aligned across its handle, identity, display hash and node. */
+export interface ProjectedBlock {
+  ref: BlockRef;
+  /** The block's own CRDT item id (what `getCanonicalBlockIdentity` returns). */
+  id: CanonicalBlockIdentity;
+  /** Display hash, unique among the projected blocks and origin-aware. */
+  hash: string;
+  /** Immutable full hash behind `hash`, origin-aware; what a held hash prefix resolves against. */
+  fullHash: string;
+  node: Block;
 }

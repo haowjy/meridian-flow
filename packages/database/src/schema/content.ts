@@ -391,26 +391,6 @@ export const documentForwards = pgTable(
   (table) => [index("document_forwards_to").on(table.toDocumentId)],
 );
 
-/** Markdown projection kept separate so location writes never rebuild its GIN indexes. */
-export const documentMarkdownProjections = pgTable(
-  "document_markdown_projections",
-  {
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .primaryKey()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    markdown: text("markdown").notNull().default(""),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    index("document_markdown_projections_fts").using(
-      "gin",
-      sql`to_tsvector('simple', ${t.markdown})`,
-    ),
-    index("document_markdown_projections_trgm").using("gin", sql`${t.markdown} gin_trgm_ops`),
-  ],
-);
-
 export const uploadIntakes = pgTable(
   "upload_intakes",
   {
