@@ -7,7 +7,7 @@ and AI runtime that understands narrative context.
 ## System topology
 
 ```
-apps/app ──HTTPS/WS──▶ apps/server ──▶ Postgres (plain Docker postgres:16 in dev) + public.users
+apps/app ──HTTPS/WS──▶ apps/server ──▶ Postgres (Docker postgres:16 + pg_bigm in dev) + public.users
    │                         │
    │                         ├── Drizzle app schema
    │                         ├── Yjs document updates
