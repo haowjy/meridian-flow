@@ -209,7 +209,7 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   `meridian.write_mode.switched` divider installs after its anchor turn. When the anchor is a user
   turn the stream never carried, the sync holds the divider out and asks for a read; it never
   inserts the divider at the tail. `./mf` has no recovery code of its own.
-- `thread answer` uses the shared durable-ask command over the socket and prints the resolved ask.
+- `thread answer` uses the shared durable-ask command over the socket and prints the resolved ask. Its answers are one `--answer option:<label>|text:<words>|skip` per question, in order, or `--answers` JSON. `thread presence` sends the takeover's `ask.presence` (held answers, `none` for unanswered) over the same socket and waits 300 ms for it to flush, since the server sends no reply.
   `events` on a replay gap is 6 `replay_truncated` after printing. Tool results distinguish staged
   `tool.completed` from committed `tool.settled`.
 - Message admission builds one paragraph with `buildMessageDoc` and

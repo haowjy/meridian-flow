@@ -9,7 +9,7 @@ import type {
   WsGapCause,
 } from "@meridian/contracts/protocol";
 
-import type { AskAnswer } from "@meridian/contracts/threads";
+import type { AskAnswer, DraftAnswers } from "@meridian/contracts/threads";
 import type { SocketClose } from "./socket-ports";
 
 /** Transport connection state surfaced to active subscribers. */
@@ -91,6 +91,12 @@ export interface ThreadTransport {
 
   /** Answer an open ask over the socket; resolves once, never rejects. */
   answerAsk(input: AskAnswerInput): Promise<AskAnswerOutcome>;
+
+  /**
+   * Tell the server the writer is interacting with an open question, holding `answers` so far:
+   * it moves the ask's deadline out. Fire and forget; false when the frame couldn't leave.
+   */
+  sendAskPresence(input: { threadId: string; askId: string; answers: DraftAnswers }): boolean;
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;

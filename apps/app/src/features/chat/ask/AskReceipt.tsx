@@ -1,6 +1,6 @@
 /** The one line a resolved ask leaves on its asking turn, or this device's answer while it sends. */
 import { t } from "@lingui/core/macro";
-import type { PermissionAskPayload } from "@meridian/contracts/threads";
+import type { PermissionAskPayload, ResolvedQuestionAnswer } from "@meridian/contracts/threads";
 import type { AskReceipt as AskReceiptFacts } from "@meridian/thread-client";
 import { MessageCircleQuestion, ShieldCheck } from "lucide-react";
 import { useAskReceipt } from "@/client/stores";
@@ -12,7 +12,10 @@ export function AskReceipt({ threadId, turnId }: { threadId: string; turnId: str
   if (!receipt) return null;
   const { ask, pending } = receipt;
   const Icon = ask.kind === "question" ? MessageCircleQuestion : ShieldCheck;
-  const asked = ask.kind === "question" ? ask.payload.question : permissionAsked(ask.payload);
+  const asked =
+    ask.kind === "question"
+      ? ask.payload.questions.map((item) => item.question).join(" · ")
+      : permissionAsked(ask.payload);
   return (
     <p
       className="flex min-w-0 items-start gap-[var(--chat-space-inline)] text-compact"
@@ -42,14 +45,9 @@ export function AskReceipt({ threadId, turnId }: { threadId: string; turnId: str
 
 function answerText({ resolution }: AskReceiptFacts): string {
   switch (resolution.kind) {
-    case "option":
-      return resolution.label;
-    case "text":
-      return resolution.text;
-    case "skipped":
-      return t`Skipped`;
+    case "answers":
     case "timeout":
-      return resolution.label ? t`No answer, went with ${resolution.label}` : t`No answer`;
+      return resolution.answers.map(questionAnswerText).join(" · ");
     case "cancelled":
       return t`Withdrawn`;
     case "allow":
@@ -58,6 +56,19 @@ function answerText({ resolution }: AskReceiptFacts): string {
       return t`Allowed always`;
     case "deny":
       return t`Denied`;
+  }
+}
+
+function questionAnswerText(answer: ResolvedQuestionAnswer): string {
+  switch (answer.kind) {
+    case "option":
+      return answer.label;
+    case "text":
+      return answer.text;
+    case "skipped":
+      return t`Skipped`;
+    case "timeout":
+      return answer.label ? t`No answer, went with ${answer.label}` : t`No answer`;
   }
 }
 

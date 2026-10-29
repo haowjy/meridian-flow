@@ -10,10 +10,31 @@ const askOptionSchema = z.strictObject({
   description: z.string().min(1).optional(),
 });
 
+const askQuestionSchema = z
+  .strictObject({
+    question: z.string().min(1),
+    options: z.array(askOptionSchema).min(2).max(4),
+    recommended: z.string().min(1).optional(),
+  })
+  .superRefine((item, ctx) => {
+    if (
+      item.recommended !== undefined &&
+      !item.options.some((option) => option.label === item.recommended)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recommended"],
+        message: "Recommended option must match an option label",
+      });
+    }
+  });
+
+/** The most questions one `ask_user` call carries. */
+export const MAX_ASK_QUESTIONS = 4;
+
+/** What a question ask holds, and what the model passes to `ask_user`: 1–4 questions. */
 export const questionAskPayloadSchema = z.strictObject({
-  question: z.string().min(1),
-  options: z.array(askOptionSchema).min(2).max(4),
-  recommended: z.string().min(1).optional(),
+  questions: z.array(askQuestionSchema).min(1).max(MAX_ASK_QUESTIONS),
 });
 
 /**
@@ -100,10 +121,41 @@ export const askContentSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("permission"), payload: permissionAskPayloadSchema }),
 ]);
 
+const optionAnswerSchema = z.strictObject({ kind: z.literal("option"), label: z.string().min(1) });
+const textAnswerSchema = z.strictObject({ kind: z.literal("text"), text: z.string().min(1) });
+const skippedAnswerSchema = z.strictObject({ kind: z.literal("skipped") });
+
+/** The writer's answer to one question. */
+export const questionAnswerSchema = z.discriminatedUnion("kind", [
+  optionAnswerSchema,
+  textAnswerSchema,
+  skippedAnswerSchema,
+]);
+
+/** One question's outcome in a resolved ask: the writer's answer, or the timeout's pick. */
+export const resolvedQuestionAnswerSchema = z.discriminatedUnion("kind", [
+  optionAnswerSchema,
+  textAnswerSchema,
+  skippedAnswerSchema,
+  z.strictObject({ kind: z.literal("timeout"), label: z.string().nullable() }),
+]);
+
+/**
+ * Answers the writer had chosen so far, by question index (null: not answered yet). The
+ * server keeps them with the ask so a timeout resolves from them.
+ */
+export const draftAnswersSchema = z.array(questionAnswerSchema.nullable()).max(MAX_ASK_QUESTIONS);
+
+const timeoutResolutionSchema = z.strictObject({
+  kind: z.literal("timeout"),
+  answers: z.array(resolvedQuestionAnswerSchema).min(1).max(MAX_ASK_QUESTIONS),
+});
+
 export const answeredAskResolutionSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("option"), label: z.string().min(1) }),
-  z.strictObject({ kind: z.literal("text"), text: z.string().min(1) }),
-  z.strictObject({ kind: z.literal("skipped") }),
+  z.strictObject({
+    kind: z.literal("answers"),
+    answers: z.array(questionAnswerSchema).min(1).max(MAX_ASK_QUESTIONS),
+  }),
   z.strictObject({ kind: z.literal("allow") }),
   z.strictObject({ kind: z.literal("allow_always") }),
   z.strictObject({ kind: z.literal("deny") }),
@@ -111,7 +163,7 @@ export const answeredAskResolutionSchema = z.discriminatedUnion("kind", [
 
 export const askResolutionSchema = z.union([
   answeredAskResolutionSchema,
-  z.strictObject({ kind: z.literal("timeout"), label: z.string().nullable() }),
+  timeoutResolutionSchema,
   z.strictObject({ kind: z.literal("cancelled") }),
 ]);
 
@@ -125,7 +177,7 @@ export const askLifecycleSchema = z.discriminatedUnion("status", [
   }),
   z.object({
     status: z.literal("expired"),
-    resolution: z.strictObject({ kind: z.literal("timeout"), label: z.string().nullable() }),
+    resolution: timeoutResolutionSchema,
     resolvedAt: z.string().datetime(),
   }),
   z.object({
@@ -144,21 +196,10 @@ const threadAskIdentitySchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-export const threadAskSchema = z
-  .intersection(z.intersection(threadAskIdentitySchema, askContentSchema), askLifecycleSchema)
-  .superRefine((ask, ctx) => {
-    if (
-      ask.kind === "question" &&
-      ask.payload.recommended !== undefined &&
-      !ask.payload.options.some((option) => option.label === ask.payload.recommended)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["payload", "recommended"],
-        message: "Recommended option must match an option label",
-      });
-    }
-  });
+export const threadAskSchema = z.intersection(
+  z.intersection(threadAskIdentitySchema, askContentSchema),
+  askLifecycleSchema,
+);
 
 export type QuestionAskPayload = z.infer<typeof questionAskPayloadSchema>;
 export type PermissionAction = z.infer<typeof permissionActionSchema>;
@@ -176,12 +217,17 @@ export type AskStatus = z.infer<typeof askLifecycleSchema>["status"];
 export type AskContinuationState = "pending" | "done" | "cancelled";
 export type ThreadAsk = z.infer<typeof threadAskSchema>;
 
+/** A question ask is answered as a set, one entry per question in order; a permission ask by one decision. */
 export const askAnswerSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("option"), label: z.string().min(1) }),
-  z.strictObject({ kind: z.literal("text"), text: z.string().min(1) }),
-  z.strictObject({ kind: z.literal("skip") }),
+  z.strictObject({
+    kind: z.literal("answers"),
+    answers: z.array(questionAnswerSchema).min(1).max(MAX_ASK_QUESTIONS),
+  }),
   z.strictObject({ kind: z.literal("allow") }),
   z.strictObject({ kind: z.literal("allow_always") }),
   z.strictObject({ kind: z.literal("deny") }),
 ]);
 export type AskAnswer = z.infer<typeof askAnswerSchema>;
+export type QuestionAnswer = z.infer<typeof questionAnswerSchema>;
+export type ResolvedQuestionAnswer = z.infer<typeof resolvedQuestionAnswerSchema>;
+export type DraftAnswers = z.infer<typeof draftAnswersSchema>;

@@ -20,7 +20,7 @@ import {
   renderAgentEditResult,
   WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
-import { type AskToolInput, askToolInputSchema } from "@meridian/contracts/components";
+import { type QuestionAskPayload, questionAskPayloadSchema } from "@meridian/contracts/threads";
 import {
   aiWriteModeSchema,
   INVALID_WORK_NAME,
@@ -217,7 +217,18 @@ const GrepToolInputSchema = z
   .strict();
 export type GrepToolInput = z.output<typeof GrepToolInputSchema>;
 
-export const AskToolInputSchema = askToolInputSchema;
+/**
+ * A thread's frozen prefix keeps advertising the tool as it was when the thread started, so a
+ * thread from before multi-question ask still calls with one `{question, options}`. Dispatch takes
+ * that as a list of one; new threads are told the list shape.
+ */
+export const AskToolInputSchema = z.preprocess(
+  (input) =>
+    typeof input === "object" && input !== null && "question" in input
+      ? { questions: [input] }
+      : input,
+  questionAskPayloadSchema,
+);
 
 /** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "grep", "ask_user"] as const;
@@ -235,7 +246,7 @@ export type CoreToolHandlers = {
 };
 
 async function askUser(input: unknown, ctx: RequestToolHandlerContext) {
-  const outcome = await ctx.request({ kind: "question", payload: input as AskToolInput });
+  const outcome = await ctx.request({ kind: "question", payload: input as QuestionAskPayload });
   return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
 }
 
@@ -362,8 +373,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "ask_user",
         description:
-          "Ask only when the answer changes what you do and you can't make a reasonable choice. Otherwise choose, say what you chose, and continue. Give 2–4 options; the writer can also answer in their own words. Mark one recommended if you have a preference: it's used if no one answers within a few minutes. Asking ends your turn, and the answer arrives as this tool's result.",
-        inputSchema: modelToolSchema(AskToolInputSchema),
+          "Ask the writer up to four questions in one call. Ask only when an answer changes what you would write and you can't make a reasonable choice; otherwise choose, say what you chose, and continue. Don't ask permission to write: the writer can undo, and your writes aren't gated. Batch related questions into one call, because the writer answers them together. Give each question 2–4 options; the writer can also answer in their own words or skip a question. Mark one option per question recommended if you have a preference: it's used for any question the writer leaves unanswered when they walk away. Asking ends your turn, and the answers arrive as this tool's result, one entry per question.",
+        inputSchema: modelToolSchema(questionAskPayloadSchema),
       },
       input: AskToolInputSchema,
       execution: { type: "server", handler: askUser },

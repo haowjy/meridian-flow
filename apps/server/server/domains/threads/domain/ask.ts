@@ -1,6 +1,11 @@
 /** Durable ask serialization and model-result rendering. */
 
-import type { JsonObject, ThreadAsk } from "@meridian/contracts/threads";
+import type {
+  JsonObject,
+  QuestionAskPayload,
+  ResolvedQuestionAnswer,
+  ThreadAsk,
+} from "@meridian/contracts/threads";
 import type { StoredAsk } from "../ports/ask-repository.js";
 
 export function threadAsk(ask: StoredAsk): ThreadAsk {
@@ -19,18 +24,33 @@ export function threadAsk(ask: StoredAsk): ThreadAsk {
   } as ThreadAsk;
 }
 
-export function askToolResult(ask: Pick<StoredAsk, "resolution">): JsonObject {
+/** One entry per question, in order, with the question's text so the model needn't line answers up by position. */
+function questionResult(question: string, answer: ResolvedQuestionAnswer): JsonObject {
+  switch (answer.kind) {
+    case "option":
+      return { question, answer: answer.label };
+    case "text":
+      return { question, answer: answer.text, free_text: true };
+    case "skipped":
+      return { question, answer: null, skipped: true };
+    case "timeout":
+      return { question, answer: answer.label, timed_out: true };
+  }
+}
+
+export function askToolResult(ask: Pick<StoredAsk, "payload" | "resolution">): JsonObject {
   const resolution = ask.resolution;
   if (!resolution) throw new Error("Resolved ask has no resolution");
   switch (resolution.kind) {
-    case "option":
-      return { answer: resolution.label };
-    case "text":
-      return { answer: resolution.text, free_text: true };
-    case "skipped":
-      return { answer: null, skipped: true };
-    case "timeout":
-      return { answer: resolution.label, timed_out: true };
+    case "answers":
+    case "timeout": {
+      const { questions } = ask.payload as QuestionAskPayload;
+      return {
+        answers: resolution.answers.map((answer, index) =>
+          questionResult((questions[index] as { question: string }).question, answer),
+        ),
+      };
+    }
     case "cancelled":
       return { cancelled: true };
     case "allow":

@@ -44,13 +44,29 @@ allow the target, and the action policy must allow the operation.
 Advertisement and the per-turn gate use this policy. Dispatch and direct
 executor calls do not silently reapply it; callers must choose the policy seam.
 `ask_user` creates a durable question for a primary chat and ends that execution.
-The answer's tool result is written onto the asking turn before an internal
+One call carries 1–4 questions (`questionAskPayloadSchema`, the one schema for the tool's
+input and the stored payload), each with 2–4 options and an optional `recommended`. They
+are one ask row: the writer answers the set with one submission, and the tool result is
+`{answers: [{question, answer, free_text?, skipped?, timed_out?}]}`, one entry per question
+in order, each echoing its question text. The answer's tool result is written onto the asking turn before an internal
 continuation starts through ordinary request assembly. The tool and the Mars
 capability share one name. Subagents never get `ask_user`
 (`projectToolPolicy`): a child does its task with reasonable calls, or stops and
 says in its report what is missing (`SUBAGENT_GUIDANCE`). The parent carries on
 from the report: it does the work itself, sends the child what it needs, or asks
 the writer with its own `ask_user` (the spawn description says so).
+
+A question ask times out on a clock the server owns (`asks/ask-deadline.ts`): 4 minutes
+idle, restarted by each `ask.presence` message the takeover sends while the writer
+interacts, and never past 55 minutes after the ask opened (`asks.opened_at`). A presence
+message also stores the writer's held answers (`asks.draft_answers`); it publishes
+`ask.updated` only when the deadline moved. When the deadline passes, `expireDue` resolves
+from the stored answers: what the writer had answered stands, and every other question
+takes its Recommended option (`timeout{label|null}`). A presence that races the sweep
+settles under the thread lock; the sweep resolves only an ask whose deadline is still due.
+Permission asks have no deadline and take no presence.
+A thread's frozen prefix keeps the tool's old one-question schema, so dispatch also takes
+`{question, options, recommended}` as a list of one.
 
 A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
 the ask service's one creation call (`AskService.request`) opens the question or

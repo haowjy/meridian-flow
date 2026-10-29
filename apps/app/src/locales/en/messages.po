@@ -998,6 +998,7 @@ msgstr "Auto-apply"
 #~ msgstr "auto-selected"
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Back"
 msgstr "Back"
@@ -3376,7 +3377,7 @@ msgstr "No agents available."
 msgid "No answer"
 msgstr "No answer"
 
-#. placeholder {0}: resolution.label
+#. placeholder {0}: answer.label
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "No answer, went with {0}"
 msgstr "No answer, went with {0}"

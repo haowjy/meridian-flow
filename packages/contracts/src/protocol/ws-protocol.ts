@@ -6,7 +6,12 @@
 import { z } from "zod";
 
 import { type MeridianError, meridianErrorSchema } from "../errors/index.js";
-import { askAnswerSchema, type ThreadAsk, threadAskSchema } from "../threads/asks.js";
+import {
+  askAnswerSchema,
+  draftAnswersSchema,
+  type ThreadAsk,
+  threadAskSchema,
+} from "../threads/asks.js";
 import { controlBodySchema } from "../threads/control-body.js";
 import type { RunState } from "../threads/run-state.js";
 import { aiWriteModeSchema } from "../works/ai-write-mode.js";
@@ -84,11 +89,23 @@ const wsAskAnswerMessageSchema = z.object({
   answer: askAnswerSchema,
 });
 
+/**
+ * The writer is interacting with an open question ask, holding `answers` so far. No reply:
+ * the server moves the ask's deadline out and publishes it only if the deadline moved.
+ */
+const wsAskPresenceMessageSchema = z.object({
+  type: z.literal("ask.presence"),
+  threadId: z.string().min(1),
+  askId: z.string().min(1),
+  answers: draftAnswersSchema,
+});
+
 export const wsClientMessageSchema = z.discriminatedUnion("type", [
   wsSubscribeMessageSchema,
   wsUnsubscribeMessageSchema,
   wsPongMessageSchema,
   wsAskAnswerMessageSchema,
+  wsAskPresenceMessageSchema,
   wsCatalogSubscribeMessageSchema,
   wsCatalogUnsubscribeMessageSchema,
 ]);
@@ -103,6 +120,7 @@ export type AskAnswerReply =
       threadId: string;
       code: "ask_not_open" | "invalid_answer";
       ask?: ThreadAsk;
+      questionIndex?: number;
     };
 
 export const wsGapCauseSchema = z.enum(["replay_limit_exceeded", "server_restart"]);

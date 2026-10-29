@@ -4,7 +4,7 @@
  * the writer learns it once; only the controls differ.
  */
 import { plural, t } from "@lingui/core/macro";
-import type { AskAnswer, ThreadAsk } from "@meridian/contracts/threads";
+import type { AskAnswer, QuestionAnswer, ThreadAsk } from "@meridian/contracts/threads";
 import type { OpenAsk } from "@meridian/thread-client";
 import { ArrowUp } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
@@ -59,8 +59,9 @@ export function AskTakeover({ open, text, onTextChange, onAnswer, onSettle }: As
       {failure ? <div className="mb-[var(--chat-space-inline)]">{failure}</div> : null}
       {ask.kind === "question" ? (
         <QuestionTakeover
+          key={ask.id}
           ask={ask}
-          picked={failed?.answer.kind === "option" ? failed.answer.label : null}
+          held={failed?.answer.kind === "answers" ? failed.answer.answers : null}
           text={text}
           onTextChange={onTextChange}
           onAnswer={onAnswer}
@@ -101,7 +102,9 @@ function ClosedTakeover({ ask }: { ask: ThreadAsk }) {
   return (
     <TakeoverFrame labelledBy={titleId}>
       <TakeoverTitle id={titleId}>
-        {ask.kind === "question" ? ask.payload.question : permissionRequestText(ask.payload).title}
+        {ask.kind === "question"
+          ? ask.payload.questions.map((item) => item.question).join(" · ")
+          : permissionRequestText(ask.payload).title}
       </TakeoverTitle>
     </TakeoverFrame>
   );
@@ -115,28 +118,47 @@ function TakeoverTitle({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
+/** The questions one at a time; the last answer sends the whole set. */
 function QuestionTakeover({
   ask,
-  picked,
+  held,
   text,
   onTextChange,
   onAnswer,
 }: {
   ask: QuestionAsk;
-  /** The option a failed answer picked, shown as picked while Retry is offered. */
-  picked: string | null;
+  /** A failed answer set, shown as chosen while Retry is offered. */
+  held: readonly QuestionAnswer[] | null;
   text: string;
   onTextChange: (text: string) => void;
   onAnswer: (answer: AskAnswer) => void;
 }) {
   const titleId = useId();
-  const { question, options, recommended } = ask.payload;
+  const { questions } = ask.payload;
+  const [answers, setAnswers] = useState<(QuestionAnswer | null)[]>(() =>
+    questions.map((_, index) => held?.[index] ?? null),
+  );
+  const [step, setStep] = useState(held ? questions.length - 1 : 0);
+  const { question, options, recommended } = questions[step];
+  const picked = answers[step]?.kind === "option" ? answers[step].label : null;
+  const record = (answer: QuestionAnswer) => {
+    const next = answers.map((held, index) => (index === step ? answer : held));
+    setAnswers(next);
+    onTextChange("");
+    if (step < questions.length - 1) setStep(step + 1);
+    else onAnswer({ kind: "answers", answers: next as QuestionAnswer[] });
+  };
+  const back = () => {
+    const earlier = answers[step - 1];
+    onTextChange(earlier?.kind === "text" ? earlier.text : "");
+    setStep(step - 1);
+  };
   const sendText = () => {
     const answer = text.trim();
-    if (answer) onAnswer({ kind: "text", text: answer });
+    if (answer) record({ kind: "text", text: answer });
   };
   return (
-    <TakeoverFrame labelledBy={titleId}>
+    <TakeoverFrame key={step} labelledBy={titleId}>
       <TakeoverTitle id={titleId}>{question}</TakeoverTitle>
       <ul className="flex flex-col gap-[var(--chat-space-inline)]">
         {options.map((option) => (
@@ -144,7 +166,7 @@ function QuestionTakeover({
             <button
               type="button"
               aria-pressed={picked === option.label ? true : undefined}
-              onClick={() => onAnswer({ kind: "option", label: option.label })}
+              onClick={() => record({ kind: "option", label: option.label })}
               className={cn(
                 "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-field border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-border-focus hover:bg-accent",
                 picked === option.label && "border-border-focus",
@@ -195,7 +217,12 @@ function QuestionTakeover({
         </Button>
       </div>
       <div className="flex items-center gap-[var(--chat-space-block)]">
-        <Button type="button" variant="quiet" size="sm" onClick={() => onAnswer({ kind: "skip" })}>
+        {step > 0 ? (
+          <Button type="button" variant="quiet" size="sm" onClick={back}>
+            {t`Back`}
+          </Button>
+        ) : null}
+        <Button type="button" variant="quiet" size="sm" onClick={() => record({ kind: "skipped" })}>
           {t`Skip`}
         </Button>
         {ask.deadlineAt ? <Countdown deadlineAt={ask.deadlineAt} /> : null}

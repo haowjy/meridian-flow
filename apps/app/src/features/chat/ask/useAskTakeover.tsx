@@ -33,8 +33,6 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
   const tracked = useThreadStore((state) =>
     held.askId === null ? undefined : state.syncedByThread[threadId]?.asks.byId.get(held.askId),
   );
-  const failed = open?.attempt?.state === "failed" ? open.attempt : null;
-  const failedText = failed?.answer.kind === "text" ? failed.answer.text : null;
 
   useEffect(() => {
     const current = heldRef.current;
@@ -47,14 +45,9 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
       return;
     }
     if (openId !== null && current.askId === null) {
-      write({ askId: openId, field: failedText ?? "", sent: null });
-      return;
+      write({ askId: openId, field: "", sent: null });
     }
-    // A failed own-words answer comes back into the field, which owns it again.
-    if (failedText !== null && current.sent === failedText) {
-      write({ ...current, field: current.field || failedText, sent: null });
-    }
-  }, [composer, openId, tracked, failedText, write]);
+  }, [composer, openId, tracked, write]);
 
   if (!open) return null;
   return (
@@ -65,14 +58,23 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
       onSettle={() => commands.settle(open.ask.id)}
       onAnswer={(next) => {
         // Sent words leave the field but stay held until the ask says whether they won.
-        if (next.kind === "text") write({ askId: open.ask.id, field: "", sent: next.text });
+        if (next.kind === "answers")
+          write({ askId: open.ask.id, field: "", sent: ownWords(next.answers) });
         commands.answer(open.ask.id, next);
       }}
     />
   );
 }
 
+/** The own words in an answer set, one per line; null when it has none. */
+function ownWords(answers: readonly { kind: string; text?: string }[]): string | null {
+  const words = answers.flatMap((answer) =>
+    answer.kind === "text" && answer.text ? [answer.text] : [],
+  );
+  return words.length > 0 ? words.join("\n") : null;
+}
+
 /** Whether the ask ended with exactly these words of this device's. */
 function wonWith(ask: ThreadAsk | undefined, words: string): boolean {
-  return ask?.resolution?.kind === "text" && ask.resolution.text === words;
+  return ask?.resolution?.kind === "answers" && ownWords(ask.resolution.answers) === words;
 }
