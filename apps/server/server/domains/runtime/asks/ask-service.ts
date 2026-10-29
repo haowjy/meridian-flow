@@ -64,6 +64,11 @@ export type AskToolResult = {
 /** `resume` continues the asking run with the answer's tool result; `cancel` ends its turn. */
 export type AskResolutionPlan = { kind: "resume" } | { kind: "cancel" };
 
+export type PresenceRefusal = "not_owner" | "not_open_question" | "draft_misfit";
+
+/** A presence moves the published deadline only when it moves this far; smaller moves stay in the row. */
+const PRESENCE_PUBLISH_MS = 30_000;
+
 type AskClaim = { kind: "claimed"; ask: StoredAsk } | { kind: "finished"; result: AskAnswerResult };
 
 export interface AskService {
@@ -84,9 +89,10 @@ export interface AskService {
   }): Promise<AskAnswerResult>;
   /**
    * The writer is interacting with an open question ask: stores the answers they hold and
-   * moves its deadline out. Publishes the ask only when the deadline moved. Refused (nothing
-   * changes) for a thread the user doesn't own, a closed or permission ask, or draft answers
-   * that don't fit the questions.
+   * moves its deadline out. Publishes the ask only when the stored answers changed or the
+   * deadline moved by `PRESENCE_PUBLISH_MS`. Refused (nothing changes, the reason returned)
+   * for a thread the user doesn't own, a closed or permission ask, or draft answers that don't
+   * fit the questions.
    */
   presence(input: {
     userId: string;
@@ -94,7 +100,7 @@ export interface AskService {
     askId: string;
     answers: DraftAnswers;
     now?: Date;
-  }): Promise<void>;
+  }): Promise<PresenceRefusal | null>;
   /**
    * Resolves every open question ask past its deadline: what the writer had answered stands,
    * and each other question takes its Recommended option.
@@ -149,8 +155,8 @@ function timeoutResolution(ask: StoredAsk): AskResolution {
   return { kind: "timeout", answers };
 }
 
-function resolutionPlan(resolution: AskResolution): AskResolutionPlan {
-  return { kind: resolution.kind === "cancelled" ? "cancel" : "resume" };
+function resolutionPlan(resolution: AskResolution | null): AskResolutionPlan {
+  return { kind: resolution?.kind === "cancelled" ? "cancel" : "resume" };
 }
 
 /** Runs what the writer allowed. */
@@ -196,7 +202,8 @@ export function createAskService(deps: {
     askId: string;
     threadId: ThreadId;
     status: "answered" | "expired";
-    resolution: AskResolution;
+    /** Built from the row as the thread lock holds it, so a draft stored since a listing counts. */
+    resolution: (current: StoredAsk) => AskResolution;
     submissionId?: string;
     dueBy?: Date;
   }): Promise<AskClaim> {
@@ -214,7 +221,7 @@ export function createAskService(deps: {
       const claimed = await deps.repos.asks.resolveOpen({
         id: input.askId,
         status: input.status,
-        resolution: input.resolution,
+        resolution: input.resolution(existing),
         submissionId: input.submissionId,
         resolvedAt: new Date(),
         dueBy: input.dueBy,
@@ -337,7 +344,7 @@ export function createAskService(deps: {
     askId: string;
     threadId: ThreadId;
     status: "answered" | "expired";
-    resolution: AskResolution;
+    resolution: (current: StoredAsk) => AskResolution;
     submissionId?: string;
     dueBy?: Date;
   }): Promise<AskAnswerResult> {
@@ -346,7 +353,7 @@ export function createAskService(deps: {
       deps.delivery.withThreadLock(input.threadId, async (producer) => {
         const claimed = await claim(input);
         if (claimed.kind === "finished") return claimed.result;
-        const plan = resolutionPlan(input.resolution);
+        const plan = resolutionPlan(claimed.ask.resolution);
         await writeToolResult({ ask: claimed.ask, threadId: input.threadId, plan });
         if (plan.kind === "resume") await continueResolution(producer, claimed.ask);
         return { ok: true, ask: threadAsk(claimed.ask) };
@@ -391,7 +398,7 @@ export function createAskService(deps: {
         askId: input.askId,
         threadId: input.threadId,
         status: "answered",
-        resolution: checked.resolution,
+        resolution: () => checked.resolution,
         submissionId: input.submissionId,
       });
       if (result.ok) await testHook("ask.answer.afterCommit");
@@ -399,12 +406,12 @@ export function createAskService(deps: {
     },
     async presence(input) {
       const thread = await deps.repos.threads.findById(input.threadId);
-      if (!thread || thread.userId !== input.userId) return;
+      if (!thread || thread.userId !== input.userId) return "not_owner";
       const now = input.now ?? new Date();
       // The thread lock serializes this with a resolution; a timeout whose deadline this moves
       // then loses on its `dueBy` check.
-      await deps.repos.transaction(() =>
-        deps.delivery.withThreadLock(input.threadId, async () => {
+      return deps.repos.transaction(() =>
+        deps.delivery.withThreadLock(input.threadId, async (): Promise<PresenceRefusal | null> => {
           const stored = await deps.repos.asks.findById(input.askId);
           if (
             stored?.threadId !== input.threadId ||
@@ -412,20 +419,26 @@ export function createAskService(deps: {
             stored.kind !== "question" ||
             !stored.openedAt
           )
-            return;
+            return "not_open_question";
           const { questions } = stored.payload as QuestionAskPayload;
           if (input.answers.length > questions.length || firstMisfit(questions, input.answers) >= 0)
-            return;
+            return "draft_misfit";
+          const deadline = askDeadline(now, stored.openedAt);
           const updated = await deps.repos.asks.recordPresence({
             id: stored.id,
-            deadline: askDeadline(now, stored.openedAt),
+            deadline,
             draftAnswers: input.answers,
           });
-          if (!updated || updated.deadlineAt?.getTime() === stored.deadlineAt?.getTime()) return;
+          if (!updated) return "not_open_question";
+          const moved = (updated.deadlineAt?.getTime() ?? 0) - (stored.deadlineAt?.getTime() ?? 0);
+          const draftChanged =
+            JSON.stringify(updated.draftAnswers) !== JSON.stringify(stored.draftAnswers);
+          if (!draftChanged && moved < PRESENCE_PUBLISH_MS) return null;
           await persistAndAppendEvents(deps, input.threadId, async () => ({
             result: undefined,
             events: [{ type: "ask.updated" as const, ask: threadAsk(updated) }],
           }));
+          return null;
         }),
       );
     },
@@ -438,7 +451,7 @@ export function createAskService(deps: {
           askId: ask.id,
           threadId: ask.threadId,
           status: "expired",
-          resolution: timeoutResolution(ask),
+          resolution: timeoutResolution,
           dueBy: now,
         });
         if (result.ok) expired += 1;

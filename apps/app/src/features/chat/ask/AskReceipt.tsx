@@ -182,5 +182,5 @@ function questionAnswerText(answer: ResolvedQuestionAnswer): string {
 
 function permissionAsked(payload: PermissionAskPayload): string {
   const { title, details } = permissionRequestText(payload);
-  return [title, ...details].join(" · ");
+  return [title, ...details].join(t`, `);
 }

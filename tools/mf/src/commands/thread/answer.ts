@@ -124,7 +124,7 @@ export const threadAnswerCommand: CommandSpec = {
       ctx.out.result(
         {
           type: "thread.answer",
-          outcome: result,
+          outcome: result.kind,
           askId,
           status: ask?.status ?? null,
           resolution: ask?.resolution ?? null,
@@ -132,9 +132,9 @@ export const threadAnswerCommand: CommandSpec = {
         (value) =>
           `${value.askId} ${value.outcome}${value.resolution ? ` ${JSON.stringify(value.resolution)}` : ""}`,
       );
-      return result === "answered"
+      return result.kind === "answered"
         ? EXIT.ok
-        : result === "not_open"
+        : result.kind === "not_open"
           ? EXIT.notFound
           : EXIT.unproven;
     } finally {

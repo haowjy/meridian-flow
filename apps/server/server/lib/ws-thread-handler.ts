@@ -386,12 +386,20 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               const threadId = parseRequestId(message.threadId) as ThreadId | null;
               const askId = parseRequestId(message.askId);
               if (!threadId || !askId) return;
-              await peer.context.app.asks.presence({
+              const refused = await peer.context.app.asks.presence({
                 userId: peer.context.userId,
                 threadId,
                 askId,
                 answers: message.answers,
               });
+              // No reply goes back, so the log is the only trace of a client reporting a bad draft.
+              if (refused)
+                emitEvent(peer.context.app.eventSink, {
+                  level: "warn",
+                  source: "wire.thread_ws",
+                  name: "ask.presence.refused",
+                  payload: { failureReason: refused, threadId },
+                });
               return;
             }
             case "subscribe":

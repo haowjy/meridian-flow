@@ -60,13 +60,16 @@ A question ask times out on a clock the server owns (`asks/ask-deadline.ts`): 4 
 idle, restarted by each `ask.presence` message the takeover sends while the writer
 interacts, and never past 55 minutes after the ask opened (`asks.opened_at`). A presence
 message also stores the writer's held answers (`asks.draft_answers`); it publishes
-`ask.updated` only when the deadline moved. When the deadline passes, `expireDue` resolves
+`ask.updated` only when the answers changed or the deadline moved 30 s or more (the
+deadline is whole seconds). The stored answers go to the owner's clients as
+`ThreadAsk.draftAnswers`. A refused presence is logged (`ask.presence.refused`, with its reason); no frame goes
+back. When the deadline passes, `expireDue` resolves
 from the stored answers: what the writer had answered stands, and every other question
 takes its Recommended option (`timeout{label|null}`). A presence that races the sweep
 settles under the thread lock; the sweep resolves only an ask whose deadline is still due.
 Permission asks have no deadline and take no presence.
-A thread's frozen prefix keeps the tool's old one-question schema, so dispatch also takes
-`{question, options, recommended}` as a list of one.
+Migration 0112 rewrote every thread's stored `ask_user` definition to the list schema, so
+the tool has one input shape.
 
 A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
 the ask service's one creation call (`AskService.request`) opens the question or

@@ -193,6 +193,8 @@ const threadAskIdentitySchema = z.object({
   turnId: z.string().min(1),
   toolCallId: z.string().min(1),
   deadlineAt: z.string().datetime().nullable(),
+  /** The answers the owner's client last reported holding; a timeout keeps them. Owner-only data. */
+  draftAnswers: draftAnswersSchema.nullable().optional(),
   createdAt: z.string().datetime(),
 });
 

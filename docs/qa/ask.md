@@ -69,8 +69,7 @@ PASS: `./mf thread view "$chat"` lists the three questions numbered while open a
 shows each with its answer after; the tool result is `{"answers":[…]}` with three
 entries in order, each carrying its question text, the second `free_text:true`, the
 third `skipped:true`; one continuation. A fourth question is accepted; a fifth, or
-none, fails the call's arguments (`invalid_arguments`). A call in the old one-question
-shape (`question`, `options` at the top) is still accepted as one question.
+none, fails the call's arguments (`invalid_arguments`).
 
 ## Timeout
 
@@ -98,7 +97,8 @@ and revert before committing.
    and the ask expires at the limit, from the held answers.
 4. **Refused presence.** Send presence for a chat the signed-in user doesn't own, an
    ask that is already resolved, a permission request, and a draft that names an unknown
-   option. PASS: none changes `deadline_at` or `draft_answers`.
+   option. PASS: none changes `deadline_at` or `draft_answers`, and the server log has an
+   `ask.presence.refused` event with the reason for each.
 5. **Restart.** Send presence with a held answer, restart the stack, and wait out the
    idle time. PASS: the ask still expires on its stored deadline, and the held answer
    stands in the result.
