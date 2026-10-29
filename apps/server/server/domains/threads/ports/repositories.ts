@@ -305,8 +305,6 @@ export interface ThreadRepository {
    * subtrees whose root the execution that reserved that turn spawned.
    */
   listSubtreeIds(threadId: ThreadId, spawnedByTurnId?: TurnId): Promise<ThreadId[]>;
-  /** These threads in lock order, parents first by `(spawn_depth, id)`; missing ids drop out. */
-  orderParentsFirst(threadIds: readonly ThreadId[]): Promise<ThreadId[]>;
   /**
    * A lineage cancellation's one write of `spawn_status`: every spawn among these threads whose
    * run has not finished becomes `cancelled`.

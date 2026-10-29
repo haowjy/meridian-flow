@@ -118,7 +118,7 @@ export function createRunSessions(deps: {
   handoffBriefs: HandoffBriefStopper;
   repos: {
     turns: TurnRepository;
-    threads: Pick<ThreadRepository, "findById" | "listSubtreeIds" | "orderParentsFirst">;
+    threads: Pick<ThreadRepository, "findById" | "listSubtreeIds">;
   };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
@@ -581,7 +581,8 @@ export function createRunSessions(deps: {
     /**
      * Ends deleted threads' work inside the caller's transaction: each one's live execution and
      * whole subagent subtree, one lineage per topmost thread (a deleted Work lists its threads'
-     * descendants too).
+     * descendants too). `threadIds` must be parents first by `(spawn_depth, id)`, the order lineage
+     * cancellation locks owners in; another order deadlocks against a Stop.
      */
     async stopThreads(threadIds: readonly ThreadId[]): Promise<void> {
       for (const threadId of await lineageOwners(threadIds))
@@ -594,8 +595,7 @@ export function createRunSessions(deps: {
   };
 
   /**
-   * The topmost threads of a set, parents first by `(spawn_depth, id)` whatever order the caller
-   * passed them in. A Work's roots need not have depth 0: a subagent whose parent was rebound
+   * The topmost threads of a set, in the caller's order (parents first; see `stopThreads`). A Work's roots need not have depth 0: a subagent whose parent was rebound
    * elsewhere stays a root of the old Work.
    */
   async function lineageOwners(threadIds: readonly ThreadId[]): Promise<ThreadId[]> {
@@ -603,7 +603,7 @@ export function createRunSessions(deps: {
       threadIds.map((threadId) => deps.repos.threads.listSubtreeIds(threadId)),
     );
     const covered = new Set(subtrees.flat());
-    return deps.repos.threads.orderParentsFirst(threadIds.filter((id) => !covered.has(id)));
+    return threadIds.filter((id) => !covered.has(id));
   }
 }
 

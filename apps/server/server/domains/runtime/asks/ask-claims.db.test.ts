@@ -7,6 +7,8 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a continuation's state is `asks.continuation`, and lineage cancellation claims it in one
  *   transaction (apps/server/server/domains/runtime/.context/spawn.md)
+ * - an answered ask with NULL `continuation` (resolved by a server from before migration 0108)
+ *   still owes its continuation, and exactly one claim admits it (shared/ask-continuation-owed.ts)
  * - the machine-wake fence is `threads.wake_fence_at` compared with the sender lease's
  *   `acquired_at`, both on the database clock, and the delivery enqueue checks it
  */
@@ -134,6 +136,37 @@ else
           );
         expect(hints).toEqual([]);
       }
+    });
+
+    it("admits the continuation of an ask an older server answered, once", async () => {
+      const executionId = crypto.randomUUID();
+      const turn = await repos.turns.create({
+        threadId: ids.caller,
+        prevTurnId: ids.callerTurn,
+        role: "assistant",
+        origin: "assistant",
+        status: "awaiting_answer",
+        executionId,
+      });
+      // The older server writes status and resolution only, so `continuation` stays NULL.
+      const ask = await repos.asks.create({
+        threadId: ids.caller,
+        askingTurnId: turn.id,
+        executionId,
+        toolCallId: "ask-old-server",
+        kind: "question",
+        payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+        deadlineAt: null,
+        status: "answered",
+        resolution: { kind: "option", label: "A" },
+        submissionId: "old-server-submission",
+        resolvedAt: new Date(),
+      });
+      expect(ask.continuation).toBeNull();
+      const admit = (turnId: TurnId) => repos.asks.admitContinuation({ id: ask.id, turnId });
+      const [first, second] = await Promise.all([admit(ids.execution), admit(ids.callerTurn)]);
+      expect([first, second].filter(Boolean)).toHaveLength(1);
+      expect(await repos.asks.findById(ask.id)).toMatchObject({ continuation: "done" });
     });
 
     it("spares the pending question of an execution Stop did not cancel", async () => {
