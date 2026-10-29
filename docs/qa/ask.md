@@ -140,112 +140,69 @@ The client lane fills these steps before the combined feature ships:
 - [ ] reload while open and reload after resolution
 - [ ] stale answer and zero-countdown “Continuing…” state
 
+## Subagents and Stop
+
+A subagent has no `ask_user`: it does its task or stops and reports what is
+missing, and its parent carries on. These cases check that path and the wake
+fence that keeps a stopped subagent stopped. Save thread ids and refs from
+`./mf thread create --json` and `./mf thread list --json`; mock scripts can't
+interpolate ids, so write the child's ref (the parent's `cN` plus one, as `pN+1`)
+into the parent's script before you send. A parent woken by a report matches
+`--match "finished (succeeded)"`.
+
+1. **No `ask_user` for a child.** Spawn a background child and run
+   `./mf thread context <child> --view raw --json`. PASS: the request's tools list
+   `return_result` and no `ask_user`.
+2. **A child that stops.** Script the child to call `return_result` with a summary
+   that says what it is missing, and the parent's wake to send that child a
+   background `thread_message` with the missing detail. Script the child's re-task
+   (match the message text) to report again. PASS: the child's report wakes the
+   parent as any report does, the parent's message re-tasks the child, the child
+   reports, and the parent's next turn reads it.
+3. **The parent asks the writer.** As step 2, but the parent's wake calls its own
+   `ask_user`. Answer with `./mf thread answer`. PASS: the parent's continuation
+   messages the child, the child continues and reports, and the parent replies.
+4. **Stopped while the parent decides.** As step 2, with the parent's wake step
+   delayed (`"delayMs":12000`) before its `thread_message`. During the delay run
+   `./mf thread stop <child>`. PASS: the message's result is `thread_stopped` ("@pN
+   was stopped, so the message wasn't sent."), the child starts no turn (its
+   re-task script stays queued in `./mf mock list`), and the parent's turn goes on.
+5. **Queued messages go with Stop.** Spawn a background child whose first step
+   waits 25 s, and in the same parent reply send it a background `thread_message`.
+   While the child runs, `./mf thread stop <child>`. PASS: the child's run ends
+   `cancelled`, its inbox row for the message is acknowledged with no turn, the
+   child's `spawn_status` is `cancelled` and `wake_fence_at` is set, and no child
+   turn starts afterwards.
+6. **Turn cancel and Stop on the root.** Give the root two background children
+   with 40 s steps, one spawned in an earlier turn. Cancel the later turn with
+   `./mf thread cancel "$root" --turn <turn>`. PASS: only that turn's child ends
+   `cancelled`. Then press Stop on the root, even while it is idle. PASS: the
+   earlier child is cancelled too; Stop ends the whole subtree, and both
+   `spawn_status` values read `cancelled`.
+7. **Deletion.** In a chat bound to a fresh Work, spawn a background child with a
+   40 s step, then delete the Work (`./mf api DELETE /api/works/<id>`). PASS within
+   about two seconds: the child's report is `cancelled`, its `spawn_status` reads
+   `cancelled`, and no lease or agent row is left. Repeat by trashing a No Work
+   chat (`./mf api DELETE /api/threads/<id>`).
+8. **A dying sender.** Have a background middle spawn a leaf, then re-task the
+   middle with a step that waits 4 s (`delayMs`) before a background
+   `thread_message` to the leaf, or before a `spawn`. While it waits, press Stop on
+   the root. PASS: the leaf starts no turn and no child appears. To reproduce a
+   flagged run in another process, set the middle's
+   `thread_run_leases.cancel_requested` instead of pressing Stop. PASS: the call's
+   result is `thread_stopped` ("This run was stopped, so nothing was sent or
+   started.").
+9. **Two requests in one batch.** Script one primary reply with two `ask_user`
+   calls. PASS: one ask row exists, the second call's result is
+   `one_request_at_a_time`, and the reply ends `awaiting_answer` on the first
+   question. An `ask_user` beside `return_result` is refused as
+   `request_after_result`.
+10. **Failed rows.** Expand step 9's reply in the browser. PASS: the refused row
+    reads "Couldn't ask a question" and opens to "Only one question can wait for an
+    answer at a time, so this one wasn't asked."; under zh it opens to the Chinese
+    sentence. A tool whose handler throws (a `read` of a document id that doesn't
+    exist, or any `tool_error`) opens to "Something went wrong while running this.",
+    never the exception text. A stopped subagent's card reads "Stopped" under its
+    name; a failed one reads "Failed".
+
 Stop the owned stack with `pnpm dev --stop`.
-
-## Subagent questions
-
-Use fresh child runs for each case and inspect both chats after every step. Save
-child refs and ask ids from `./mf thread view <thread> --json --full`; mock
-scripts cannot interpolate the ids returned by an earlier tool call.
-
-1. Have a foreground child call `ask_user`. PASS: the parent call returns
-   `@child asks (ask …)` and the parent inbox has no duplicate. Answer with a
-   foreground `thread_message`. The child receives a `parent` tool result and
-   the original parent card finishes with the continuation's report.
-2. Have a background child ask. PASS: the durable question wakes an idle
-   parent. Answer from the child chat as the writer, then repeat by leaving the
-   question to its deadline. Both continuations report to the original card;
-   only the child chat is action-required.
-3. Forward an open child question with `ask_user({"forward":"$childAsk"})`. Answer
-   before the child deadline. PASS: the parent continuation waits for the child
-   and sees one enriched result with `relayed_to` and `report`.
-4. Repeat after forcing the child deadline first. PASS: the parent's later
-   answer becomes an ordinary child message and its result says `late: true`.
-5. While the forwarded copy remains open, answer in the child chat. Have the
-   child's continuation ask a new question before answering the forwarded copy.
-   PASS: the eventual forwarded answer is late, remains bound to the old ask,
-   and does not answer the new one. Repeat with three levels of children; each
-   parent owns one question and relays one level down.
-6. Race a parent answer with a writer answer in the child chat. PASS: one answer
-   wins. The losing parent text remains an ordinary queued message with its
-   original ask binding.
-7. Forward a descendant's question so the root also has an open ask. Cancel the
-   root asking turn with `./mf thread cancel "$root" --turn "$rootAskingTurn"`.
-   PASS: every open ask in the subtrees that turn's execution spawned becomes
-   cancelled, including children absent from the live session map, each parked
-   child's card and `spawn_status` read cancelled, and no continuation starts. A
-   background child spawned in an earlier root turn keeps its open question.
-   Then press Stop on the root, even while it is idle. PASS: that earlier child is
-   cancelled too; Stop ends the whole subtree.
-8. Hold a background child's continuation with a slow mock step. PASS: the same
-   parent card moves from “Asked a question” while the ask is open, to running
-   as soon as the continuation starts, to its final outcome. The primary chat
-   never becomes action-required for the child question.
-9. Open a forwarded question in the primary chat at 390 px wide. PASS: the
-   takeover attributes the question as `@child asks: …`; the options, own-answer
-   field, Skip and countdown remain usable.
-10. Park a middle child on a question while its background leaf runs a 40 s mock
-    step, then press Stop on the root. PASS within about two seconds: the leaf's
-    report is `cancelled`, the middle's ask is cancelled, both cards and
-    `spawn_status` read cancelled, the middle's inbox has no pending notice, and
-    no middle turn starts after Stop. Repeat with a middle that finishes instead
-    of asking: its running and parked leaves end the same way.
-11. Crash windows. Start the stack with
-    `HOOK_CRASH_AT=ask.parentAnswer.afterCommit HOOK_CRASH_ARM=<file>`, arm it,
-    and answer a forwarded question. PASS after the worker restarts: the child's
-    `direct` `ask_resolved` row is still there, the relay replays, and the parent's
-    result carries the child's continuation report. Separately, `kill -9` the
-    server while that child continuation runs, then restart the stack with the
-    same environment (`pnpm dev:restart` drops it). PASS: the continuation settles
-    `failed` (`orphaned`), and the parent's replayed relay carries that report.
-12. Redelivery. Set a consumed `ask_resolved` row back to undelivered
-    (`UPDATE thread_inbox_messages SET delivered_at = NULL WHERE id = …`), for a
-    plain child question and for a forwarded middle whose relay finished. PASS: the
-    wake sweep acknowledges the row and starts no turn (the ask's `continuation` is
-    already `done`), emits no `wake.failed`, and a later writer message to that
-    child still runs.
-13. Cancel during a relay. Have the root forward a background child's question
-    whose continuation holds a 35 s mock step, answer the root's copy, and once the
-    child continuation runs press Stop on the root. PASS: the root's `ask_resolved`
-    row is acknowledged, the root's and the child's asks read `continuation =
-    cancelled`, both turns end `cancelled`, and no root turn starts in the next 10 s. Repeat with `./mf thread cancel "$root" --turn <relaying turn>`.
-    Then launch the answer and Stop together, Stop 0–100 ms later, at least ten
-    times. PASS each time: no turn stays streaming and no agent row stays pending.
-    When the child's ask is answered with no continuation report, its card,
-    `spawn_status` and `thread_report` read cancelled, and a full restart starts no
-    turn. Stop also cancels a continuation that started after the client's last
-    view when it continues the writer's answer, so no child run starts after the
-    Stop commits (a child continuation admitted before it ends `cancelled`).
-    Finally repeat step 7's turn cancel with a running 40 s leaf under the middle.
-    PASS: no root turn answers the withdrawn `@child asks` notice, and the root's
-    ask is the last one cancelled.
-14. Deletion. In a chat bound to a fresh Work, spawn a background child with a
-    40 s mock step and a background child that asks, then delete the Work
-    (`./mf api DELETE /api/works/<id>`). PASS within about two seconds: the slow
-    child's report is `cancelled`, the asker's question is cancelled, both
-    `spawn_status` read cancelled, and no lease or agent row is left. Repeat by
-    trashing a No Work chat (`./mf api DELETE /api/threads/<id>`).
-15. Two requests in one batch. Script one model response with two `ask_user`
-    calls. PASS: one ask row exists, the second call's result is the refusal
-    `One request at a time…`, and the reply still ends `awaiting_answer` on the
-    first question. Then script a parent response with `ask_user({"forward":
-    "$childAsk"})` and a `thread_message` to that child. PASS: the child's
-    question stays open, the primary shows the forwarded question, and the child
-    receives the message as an ordinary queued message.
-16. Stop a child whose question the root forwarded. Run `./mf thread stop "$child"`
-    while the root's copy is open. PASS: the root's copy reads `cancelled`
-    (`asks.forwarded_from_ask_id` names the child's ask), the root's asking turn
-    ends `cancelled`, answering the copy returns `not_open`, and the child starts no
-    turn. A later root reply that messages the child still wakes it.
-17. A dying sender. Have a background middle spawn a leaf, then re-task the middle
-    with a script whose next step waits 4 s (`delayMs`) before a background
-    `thread_message` to the leaf, or before a `spawn`. While it waits, press Stop on
-    the root. PASS: the leaf starts no turn and no child appears. To reproduce a
-    flagged run in another process, which keeps calling tools until its next
-    heartbeat, set the middle's `thread_run_leases.cancel_requested` instead of
-    pressing Stop. PASS: the call's result is `thread_stopped` ("This run was
-    stopped, so nothing was sent or started."), and nothing wakes.
-18. Failed rows. Repeat step 15's two `ask_user` calls and expand the reply's step.
-    PASS: the row reads "Couldn't ask a question" and opens to "One request at a
-    time: make this one after the answer arrives." A stopped subagent's card reads
-    "Stopped" under its name.

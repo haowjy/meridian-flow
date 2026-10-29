@@ -43,26 +43,25 @@ allow the target, and the action policy must allow the operation.
 
 Advertisement and the per-turn gate use this policy. Dispatch and direct
 executor calls do not silently reapply it; callers must choose the policy seam.
-`ask_user` creates a durable question and ends that execution.
+`ask_user` creates a durable question for a primary chat and ends that execution.
 The answer's tool result is written onto the asking turn before an internal
 continuation starts through ordinary request assembly. The tool and the Mars
 capability share one name. The action policy retains `ask` for future
-actions, but no current action maps to it. A primary question goes to the
-writer. A child question becomes an `asked` report to its parent; the parent
-can answer with a request-bound `thread_message` or forward the question with
-`ask_user({forward})`. The tool description and the child-question notice
-nudge toward forwarding; the parent answers itself only when its own context
-already settles the question.
+actions, but no current action maps to it. Subagents never get `ask_user`
+(`projectToolPolicy`): a child does its task with reasonable calls, or stops and
+says in its report what is missing (`SUBAGENT_GUIDANCE`). The parent carries on
+from the report: it does the work itself, sends the child what it needs, or asks
+the writer with its own `ask_user` (the spawn description says so).
 
 A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
-the ask service's one creation call (`AskService.request`) opens a question or a
-forward and returns the deferred disposition, which settles the execution. The
-batch rule keys on that disposition, not on the tool: the first request in a
-provider batch defers it, and a later one, or any request beside `return_result`,
-is refused as that call's tool result while the reply continues
-(`loop/tool-dispatch.ts`, `requestBatch`). A `thread_message` to a child whose
-question the same batch forwards goes unbound: a plain message that leaves the
-question open for the writer.
+the ask service's one creation call (`AskService.request`) opens the ask the
+request names and returns the deferred disposition, which settles the execution.
+The batch rule keys on that disposition, not on the tool: the first request in a
+provider batch defers it, and a later one (`one_request_at_a_time`), or any
+request beside `return_result` (`request_after_result`), is refused as that call's
+tool result while the reply continues (`loop/tool-dispatch.ts`, `requestBatch`).
+The app maps those codes, and `thread_stopped`, to its own localized sentence on
+the failed row; an unexpected `tool_error` shows generic copy, never its message.
 
 ## Document and cost boundaries
 
