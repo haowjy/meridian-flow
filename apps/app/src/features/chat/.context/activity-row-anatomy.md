@@ -153,3 +153,10 @@ message box. The parent holds no live copy of the child's record, so each press
 first reads the child's snapshot into the store; `stopRequest` needs that
 record's execution and watermark. A failed Stop is a card under that row, from
 `handBackCards`, with Try again in Stop's place.
+
+Each child's row sits at one keyed position in the strip's list, whether it is
+the only child, one of several, or under a collapsed list; a collapsed list
+hides its rows instead of unmounting them. The press's first step (the snapshot
+read) is local to that row, so a row that remounted mid-read would drop the
+press with "Stopping" already announced. A hidden row that owes a card shows
+anyway, so a failed Stop stays visible under the collapsed header.
