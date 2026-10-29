@@ -18,7 +18,11 @@ export type StoredAsk = {
   toolCallId: string;
   kind: AskKind;
   payload: AskPayload;
-  permissionCommand: PermissionWorkCommand | null;
+  /**
+   * Raw stored JSON, unvalidated: a stored command is data an earlier release may have written
+   * in another shape, so the one reader that runs it parses it, and reading a thread never fails.
+   */
+  permissionCommand: Record<string, unknown> | null;
   deadlineAt: Date | null;
   status: AskStatus;
   resolution: AskResolution | null;
@@ -36,9 +40,11 @@ export type ClaimedAsk = { ask: StoredAsk; wasLive: boolean };
 
 export type CreateAskInput = Omit<
   StoredAsk,
-  "id" | "createdAt" | "resolvedAt" | "continuation" | "continuationTurnId"
+  "id" | "createdAt" | "resolvedAt" | "continuation" | "continuationTurnId" | "permissionCommand"
 > & {
   id?: string;
+  /** New requests are written in the current shape, even though reads do not check it. */
+  permissionCommand: PermissionWorkCommand | null;
   resolvedAt?: Date | null;
 };
 
