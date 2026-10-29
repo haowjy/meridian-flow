@@ -35,8 +35,22 @@ import receive and DOCX-image extraction, chat Uploads intake, pasted or dropped
 figures. A copy duplicates the stored preview instead. It never throws: a file
 with no preview is drawn as a file card. Decoders: `sharp` (TIFF and other
 libvips formats), `heic-decode` (HEVC HEIC/HEIF; the bundled libvips has no
-HEVC), `bmp-ts`. EMF/WMF have no maintained decoder and stay cards. Files saved
-before previews existed have none and show the card; nothing generates one later.
+HEVC), `bmp-ts`. EMF, WMF, ICO and PSD have no decoder; `makeImagePreview`
+returns null for them without trying, so they stay cards and log nothing. Files
+saved before previews existed have none and show the card; nothing generates
+one later.
+
+Conversion runs in a two-worker `worker_threads` pool (`image-preview-worker.mjs`),
+never on the event loop: libheif's WASM and `bmp-ts` are synchronous and froze the
+server for seconds per photo. The worker reads HEIC and BMP dimensions before
+decoding and refuses an image over 120 MP. A worker that crashes, runs out of
+memory or hangs for 60 s is replaced and its file gets the card. The worker is a
+plain `.mjs` that nothing imports, so `nitro.config.ts` emits it as its own chunk
+(`_chunks/image-preview-worker.mjs`, beside the chunk that starts it) and traces
+`sharp`, `heic-decode`, `libheif-js` and `bmp-ts` as external packages.
+
+Every delete of a stored object that may have a preview, compensating deletes
+included, goes through `ObjectRelease`, so a key's preview never outlives it.
 
 ## Adapters and composition
 

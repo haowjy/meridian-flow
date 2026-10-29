@@ -28,6 +28,8 @@ type OrganizerDeps = {
   binder: ImportLinkBinder;
   documents: Pick<MarkdownDocumentStore, "prepareSeed">;
   diagnostic(cause: unknown, detail: Record<string, unknown>): void;
+  /** An image preview that should have been made but failed; the file shows as a card. */
+  previewFailed(cause: unknown): void;
 };
 
 function samePlacement(left: ImportRecord["placement"], right: ImportRecord["placement"]): boolean {

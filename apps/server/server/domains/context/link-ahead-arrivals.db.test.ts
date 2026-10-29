@@ -21,7 +21,7 @@ import { composeAppServices, createProductionAppPorts } from "../../lib/compose.
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
-import { createInMemoryObjectStore } from "../storage/index.js";
+import { createInMemoryObjectStore, createObjectRelease } from "../storage/index.js";
 import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 import { createContextUploadContentPort } from "./uploads/context-upload-content.js";
@@ -211,10 +211,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
 
       // Deleting a finalized upload keeps the identity it settled; a new upload at the same
       // address never captures the ref.
+      const intakeStore = createInMemoryObjectStore();
       const intake = createUploadIntake({
         repository: createDrizzleUploadIntakeRepository(db),
         content: createContextUploadContentPort(app.contextPorts),
-        objectStore: createInMemoryObjectStore(),
+        objectStore: intakeStore,
+        release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
         catalog: { refreshSources: async () => "1" },
       });

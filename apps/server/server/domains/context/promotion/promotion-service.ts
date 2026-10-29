@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type CanonicalContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ProjectWorkAuthorityResolver } from "../../projects/index.js";
+import type { ObjectRelease } from "../../storage/object-release.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
 import { objectStoreKeyForResult, resultsUriForSourcePath } from "./artifact-paths.js";
 import type { ResultRepository } from "./ports/result-repository.js";
@@ -43,6 +44,8 @@ export interface PromotionService {
 }
 export interface PromotionServiceDeps {
   objectStore: ObjectStorePort;
+  /** Deletes the stored object when the promotion fails after the put. */
+  release: ObjectRelease;
   results: ResultRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   eventSink: EventSink;
@@ -61,28 +64,6 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
       name,
       payload,
     });
-
-  async function cleanup(
-    prepared: { projectId: string; resultId: string; objectKey: string; resultsUri: string },
-    primaryError: string,
-  ): Promise<void> {
-    try {
-      const deleted = await deps.objectStore.delete(prepared.objectKey);
-      if (!deleted.ok) {
-        diagnose("compensation.failed", {
-          ...prepared,
-          primaryError,
-          cleanupError: deleted.error,
-        });
-      }
-    } catch (cause) {
-      diagnose("compensation.failed", {
-        ...prepared,
-        primaryError,
-        cleanupError: unknownToEventPayload(cause),
-      });
-    }
-  }
 
   return {
     async promoteArtifact(input): Promise<PromotionResult> {
@@ -138,7 +119,7 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
       try {
         put = await deps.objectStore.put(objectKey, input.bytes, policy.mimeType);
       } catch (cause) {
-        await cleanup(prepared, cause instanceof Error ? cause.message : "Object put threw");
+        await deps.release.keys([objectKey]);
         return err(
           "object_store_error",
           cause instanceof Error ? cause.message : "Object put failed",
@@ -158,7 +139,7 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
           provenance,
         });
         if (outcome.kind === "definitely_not_committed") {
-          await cleanup(prepared, outcome.error);
+          await deps.release.keys([objectKey]);
           return err("repository_error", outcome.error);
         }
         if (outcome.kind === "unknown") {

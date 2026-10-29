@@ -57,7 +57,11 @@ async function convertBesideTaken(
 }
 
 export async function prepareImportEntries(
-  deps: { objects: ObjectStorePort; converter: DocumentConverterPort },
+  deps: {
+    objects: ObjectStorePort;
+    converter: DocumentConverterPort;
+    previewFailed(cause: unknown): void;
+  },
   input: { importId: string; projectId: string; entries: readonly ImportEntry[] },
 ): Promise<PreparationResult> {
   const patches: PreparationPatch[] = [];
@@ -145,6 +149,7 @@ export async function prepareImportEntries(
         objectStore: deps.objects,
         storageUrl: put.value.storageUrl,
         bytes: image.bytes,
+        onFailure: deps.previewFailed,
       });
       images.push({
         id: importNodeId({

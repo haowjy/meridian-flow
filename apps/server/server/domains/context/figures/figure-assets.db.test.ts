@@ -18,6 +18,7 @@ import { createTestDocumentRemoval } from "../../../test-support/document-remova
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
+import { createObjectRelease } from "../../storage/object-release.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
@@ -111,6 +112,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const service = createFigureAssetService({
         objectStore,
+        release: createObjectRelease({ objectStore, onFailure() {} }),
         documents: createDrizzleFigureDocumentRepository({ db }),
         contextPorts,
         generateId: () => ASSET_KEY_ID,

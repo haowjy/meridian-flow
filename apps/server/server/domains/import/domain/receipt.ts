@@ -46,6 +46,7 @@ export type ReceiptCandidate =
 export async function prepareReceipts(
   repo: ImportRepository,
   objects: ObjectStorePort,
+  previewFailed: (cause: unknown) => void,
   record: ImportRecord,
   parts: ImportPart[],
   signal: AbortSignal,
@@ -102,6 +103,7 @@ export async function prepareReceipts(
         objectStore: objects,
         storageUrl: put.value.storageUrl,
         bytes: part.bytes,
+        onFailure: previewFailed,
       }));
     candidates.push({
       kind: "receipt",

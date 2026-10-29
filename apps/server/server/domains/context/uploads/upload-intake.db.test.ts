@@ -34,7 +34,11 @@ import {
 } from "../../collab/test-support/document-link-scopes.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { createNoopEventSink } from "../../observability/index.js";
-import { createInMemoryObjectStore } from "../../storage/index.js";
+import {
+  createInMemoryObjectStore,
+  createObjectRelease,
+  type ObjectStorePort,
+} from "../../storage/index.js";
 import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
@@ -77,6 +81,7 @@ if (!RUN) {
     /** Deletion through the aggregate; `removed` records arrived uploads it soft-deleted. */
     function deletion(repository: ReturnType<typeof createDrizzleUploadIntakeRepository>) {
       const removed: string[] = [];
+      const intakeStore = createInMemoryObjectStore();
       const intake = createUploadIntake({
         repository,
         content: {
@@ -87,7 +92,8 @@ if (!RUN) {
             return { ok: true };
           },
         },
-        objectStore: createInMemoryObjectStore(),
+        objectStore: intakeStore,
+        release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
         catalog: { refreshSources: async () => "1" },
       });
@@ -132,6 +138,7 @@ if (!RUN) {
             repository: createDrizzleUploadIntakeRepository(db),
             content: createContextUploadContentPort(contextPorts),
             objectStore,
+            release: createObjectRelease({ objectStore, onFailure() {} }),
             eventSink: createNoopEventSink(),
             catalog: { refreshSources: async () => "1" },
           });
@@ -278,10 +285,12 @@ if (!RUN) {
           branches: collab.branches,
           catalogMutations: catalog,
         });
+        const intakeStore = createInMemoryObjectStore();
         const service = createUploadIntake({
           repository: createDrizzleUploadIntakeRepository(db),
           content: createContextUploadContentPort(contextPorts),
-          objectStore: createInMemoryObjectStore(),
+          objectStore: intakeStore,
+          release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
           eventSink: createNoopEventSink(),
           catalog: { refreshSources: async () => "1" },
         });
@@ -351,26 +360,28 @@ if (!RUN) {
         branches: collab.branches,
         catalogMutations: catalog,
       });
+      const unusedStore: ObjectStorePort = {
+        async put() {
+          return { ok: true, value: { storageUrl: "object://unused" } };
+        },
+        async delete() {
+          return { ok: true, value: undefined };
+        },
+        async get() {
+          return { ok: false, error: { code: "not_found", message: "missing" } };
+        },
+        async list() {
+          return { ok: true, value: { keys: [] } };
+        },
+        async getSignedUrl() {
+          return { ok: false, error: { code: "not_found", message: "missing" } };
+        },
+      };
       const service = createUploadIntake({
         repository: createDrizzleUploadIntakeRepository(database.current),
         content: createContextUploadContentPort(contextPorts),
-        objectStore: {
-          async put() {
-            return { ok: true, value: { storageUrl: "object://unused" } };
-          },
-          async delete() {
-            return { ok: true, value: undefined };
-          },
-          async get() {
-            return { ok: false, error: { code: "not_found", message: "missing" } };
-          },
-          async list() {
-            return { ok: true, value: { keys: [] } };
-          },
-          async getSignedUrl() {
-            return { ok: false, error: { code: "not_found", message: "missing" } };
-          },
-        },
+        objectStore: unusedStore,
+        release: createObjectRelease({ objectStore: unusedStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
         catalog,
       });
