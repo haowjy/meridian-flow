@@ -71,10 +71,6 @@ export const asks = pgTable(
       sql`${table.status} IN ('pending', 'open', 'answered', 'expired', 'cancelled')`,
     ),
     check(
-      "asks_continuation_valid",
-      sql`(${table.status} IN ('pending', 'open') AND ${table.continuation} IS NULL) OR (${table.status} IN ('answered', 'expired') AND ${table.continuation} IN ('pending', 'done', 'cancelled')) OR (${table.status} = 'cancelled' AND ${table.continuation} = 'cancelled')`,
-    ),
-    check(
       "asks_resolution_coherent",
       sql`(${table.status} IN ('pending', 'open') AND ${table.resolution} IS NULL AND ${table.resolvedAt} IS NULL) OR (${table.status} IN ('answered', 'expired', 'cancelled') AND ${table.resolution} IS NOT NULL AND ${table.resolvedAt} IS NOT NULL)`,
     ),
