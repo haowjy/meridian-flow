@@ -6,7 +6,7 @@
  * runs, stamps the machine-wake fence on every thread it stopped, withdraws the targets' parent notices and settles their spawn status. The
  * fence is what keeps a stopped thread stopped: a message or spawn admission from an execution
  * admitted before it is refused at enqueue (`RunClaim.wakeRefusal`), so local aborts after commit
- * only make runs stop sooner.
+ * only make runs stop sooner. Stop (`thread` reach) ends only the owner's reply: no descendant is a target.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
@@ -54,10 +54,15 @@ export function createLineageCancellation(deps: {
           // Parents first. Under each thread's lock its subtree is listed again: a spawn that
           // committed before that lock is a target too, and a later one waits for this commit,
           // then finds its sender cancelled.
-          const targets = await deps.threads.listSubtreeIds(
-            threadId,
-            reach.kind === "turn" ? reach.turnId : undefined,
-          );
+          // `thread` (Stop) and a `turn` without `subtree` (Send now) reach no descendant: the
+          // owner's reply is all they end.
+          const targets =
+            reach.kind === "thread" || (reach.kind === "turn" && !reach.subtree)
+              ? []
+              : await deps.threads.listSubtreeIds(
+                  threadId,
+                  reach.kind === "turn" ? reach.turnId : undefined,
+                );
           for (let index = 0; index < targets.length; index += 1) {
             const target = targets[index] as ThreadId;
             await deps.delivery.withThreadLock(target, async () => {});
@@ -76,10 +81,10 @@ export function createLineageCancellation(deps: {
           });
           const claimedIds = new Set(claimed.map(({ ask }) => ask.id));
           const targetSet = new Set<string>(targets);
-          // The owner stops too when the writer stopped or deleted the chat; a cancelled turn
+          // The owner stops too when the writer stopped its reply or deleted the chat; a cancelled turn
           // or a finished run leaves the owner free to be woken.
           const fenced = new Set<string>(
-            reach.kind === "chat" || reach.kind === "deleted" ? [threadId, ...targets] : targets,
+            reach.kind === "thread" || reach.kind === "deleted" ? [threadId, ...targets] : targets,
           );
           // A target loses all its queued machine work; writer sends stay, as the writer's own
           // request to that chat. A stopped owner loses the machine messages that would wake it
