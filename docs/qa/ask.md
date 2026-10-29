@@ -244,7 +244,7 @@ Stop the owned stack with `pnpm dev --stop`.
 ## Permission requests
 
 No shipped action currently asks. For this probe only, change the `edit`
-entries for `work.archive` and `work.update` in
+entries for `work.archive`, `work.update` and `work.write_mode` in
 `runtime/loop/permissions/action-policy.ts` from `allow` to `ask`. Do not commit
 that patch. `work.delete` can't ask: an `ask` row for it fails to compile.
 `./mf thread answer` can't answer a permission request; answer in the browser.
@@ -301,6 +301,12 @@ cases:
    `./mf mock script … --match "<text from the child's prompt>"`.
 10. **Child with a grant.** After step 3's Allow always, have the child archive a
     Work. PASS: it runs without a request, as in the main chat.
+11. **Write mode.** In an auto-apply chat, script
+    `{"name":"work","args":{"command":"write_mode","mode":"draft"}}` and Allow it.
+    PASS: the takeover asks to switch this chat to draft mode; the chat's next reply
+    runs in draft mode; the queued control row has `agent` provenance; and the Work's
+    `default_ai_write_mode` is unchanged, so a new chat in that Work starts in
+    auto-apply.
 
 In the browser, confirm permission takeovers have only Deny, Allow always, and
 Allow; no text field or countdown appears. Repeat a failed send and a stale
