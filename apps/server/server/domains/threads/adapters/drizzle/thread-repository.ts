@@ -18,11 +18,7 @@ import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
-import {
-  lockThreadAndWorks,
-  lockThreadForMutation,
-  parentsFirst,
-} from "../../../../shared/thread-work-lock.js";
+import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type { LineageScratchLifecycle } from "../../../context/index.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
@@ -464,14 +460,6 @@ export function createDrizzleThreadRepository(
         SELECT id FROM subtree ORDER BY depth, id
       `);
       return rows.map((row) => row.id as ThreadId);
-    },
-    async orderParentsFirst(threadIds) {
-      if (threadIds.length === 0) return [];
-      const rows = await currentDrizzleDb(db)
-        .select({ id: schema.threads.id, spawnDepth: schema.threads.spawnDepth })
-        .from(schema.threads)
-        .where(inArray(schema.threads.id, [...threadIds]));
-      return rows.sort(parentsFirst).map(({ id }) => id as ThreadId);
     },
     async cancelRunningSpawns(threadIds) {
       if (threadIds.length === 0) return;

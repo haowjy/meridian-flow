@@ -21,8 +21,8 @@ import {
   isPendingPlaceholder,
 } from "@meridian/contracts/threads";
 import { workLifecycleState } from "@meridian/contracts/works";
+import { isContinuationOwed } from "../../../../shared/ask-continuation-owed.js";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
-import { parentsFirst } from "../../../../shared/thread-work-lock.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -421,12 +421,6 @@ export function createInMemoryRepositories(
         );
       }
       return result;
-    },
-    async orderParentsFirst(threadIds) {
-      return [...new Set(threadIds)]
-        .flatMap((id) => threads.get(id) ?? [])
-        .sort(parentsFirst)
-        .map((thread) => thread.id as ThreadId);
     },
     async cancelRunningSpawns(threadIds) {
       for (const id of threadIds) {
@@ -1490,7 +1484,7 @@ export function createInMemoryRepositories(
       async claimLineage(input) {
         const targets = new Set<string>(input.threadIds);
         const live = (ask: StoredAsk) => ask.status === "pending" || ask.status === "open";
-        const owed = (ask: StoredAsk) => ask.continuation === "pending";
+        const owed = isContinuationOwed;
         const { owner } = input;
         const claimed = [...asks.values()]
           .filter((ask) => {
@@ -1523,7 +1517,7 @@ export function createInMemoryRepositories(
       },
       async admitContinuation(input) {
         const ask = asks.get(input.id);
-        if (ask?.continuation !== "pending") return null;
+        if (!ask || !isContinuationOwed(ask)) return null;
         const row: StoredAsk = {
           ...ask,
           continuation: "done",
