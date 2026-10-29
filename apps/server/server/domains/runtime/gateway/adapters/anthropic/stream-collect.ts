@@ -151,6 +151,12 @@ export function mapUsage(
 
   if (cacheRead > 0) result.cacheReadTokens = cacheRead;
   if (cacheWrite > 0) result.cacheWriteTokens = cacheWrite;
+  // The split arrives on message_start and may be absent on message_delta; keep the earlier value.
+  const cacheWrite1h =
+    ("cache_creation" in usage ? usage.cache_creation?.ephemeral_1h_input_tokens : undefined) ??
+    fallback?.cacheWrite1hTokens ??
+    0;
+  if (cacheWrite1h > 0) result.cacheWrite1hTokens = cacheWrite1h;
 
   // Anthropic calls reasoning "thinking"; expose it as canonical
   // Usage.reasoningTokens without leaking the provider term downstream.

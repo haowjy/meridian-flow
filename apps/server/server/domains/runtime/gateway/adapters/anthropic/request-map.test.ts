@@ -26,6 +26,7 @@ const skillTool = {
 
 function requestWithToolPair() {
   return {
+    promptCacheRetention: "short" as const,
     messages: [
       user("/creative-writing-modes"),
       assistant([
@@ -76,6 +77,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   it("leaves signed thinking in place", () => {
     const params = toAnthropicMessageParams(
       {
+        promptCacheRetention: "short" as const,
         messages: [
           user("hi"),
           assistant([
@@ -113,6 +115,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   it("fills empty thinking after unsigned reasoning is dropped", () => {
     const params = toAnthropicMessageParams(
       {
+        promptCacheRetention: "short" as const,
         messages: [
           user("hi"),
           assistant([
@@ -140,6 +143,7 @@ describe("Anthropic message alternation", () => {
   it("merges adjacent delivery user messages after a tool result", () => {
     const params = toAnthropicMessageParams(
       {
+        promptCacheRetention: "short" as const,
         messages: [
           assistant([
             { type: "tool_use", toolCallId: "call_delivery", toolName: "spawn", input: {} },
@@ -171,6 +175,7 @@ describe("Anthropic prompt-cache breakpoints", () => {
   it("translates a cacheBreakpoint into ephemeral cache_control with a 1h ttl for system, tool_use, and tool_result blocks", () => {
     const params = toAnthropicMessageParams(
       {
+        promptCacheRetention: "short" as const,
         messages: [
           {
             ...system("You are Writer."),
@@ -233,6 +238,7 @@ describe("Anthropic prompt-cache breakpoints", () => {
 
 it("keeps implicit thinking and cached content unchanged when only the output cap changes", () => {
   const request = {
+    promptCacheRetention: "short" as const,
     messages: [
       {
         role: "user" as const,
@@ -262,7 +268,11 @@ it("preserves real Work and Write command instructions only when projecting for 
   for (const input of [WorkCommandSchema, WriteToolInputSchema]) {
     const inputSchema = modelToolSchema(input);
     const original = structuredClone(inputSchema);
-    const request = { messages: [user("Hello")], tools: [{ ...skillTool, inputSchema }] };
+    const request = {
+      promptCacheRetention: "short" as const,
+      messages: [user("Hello")],
+      tools: [{ ...skillTool, inputSchema }],
+    };
     const params = toAnthropicMessageParams(request, "claude-sonnet-4-6", 128_000, "anthropic");
     const advertised = params.tools?.[0] as {
       input_schema: { properties: Record<string, { description: string }>; required: string[] };

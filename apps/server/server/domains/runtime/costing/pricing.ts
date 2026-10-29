@@ -21,8 +21,10 @@ export interface ModelTokenRate {
   inputUsdPerMillionTokens: string;
   /** USD per 1,000,000 cache-read input tokens, when the provider reports them separately. */
   cachedInputUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 cache-write input tokens, when the provider reports them separately. */
+  /** USD per 1,000,000 cache-write input tokens (the 5-minute rate for providers that split by TTL). */
   cacheWriteUsdPerMillionTokens?: string;
+  /** USD per 1,000,000 1-hour cache-write tokens; only for providers that report writes by TTL. */
+  cacheWrite1hUsdPerMillionTokens?: string;
   /** USD per 1,000,000 output tokens, including reasoning tokens counted in output. */
   outputUsdPerMillionTokens: string;
   source: string;
@@ -111,6 +113,7 @@ function pinnedModelRateToTokenRate(rate: PinnedModelRate): ModelTokenRate {
     inputUsdPerMillionTokens: rate.inputUsdPerMillionTokens,
     cachedInputUsdPerMillionTokens: rate.cachedInputUsdPerMillionTokens,
     cacheWriteUsdPerMillionTokens: rate.cacheWriteUsdPerMillionTokens,
+    cacheWrite1hUsdPerMillionTokens: rate.cacheWrite1hUsdPerMillionTokens,
     outputUsdPerMillionTokens: rate.outputUsdPerMillionTokens,
     source: rate.source,
   };
@@ -336,14 +339,17 @@ export function computeModelCost(input: {
   const rate = findModelTokenRate(input.provider, input.model, input.rateSource);
   const cacheReadTokens = input.usage.cacheReadTokens ?? 0;
   const cacheWriteTokens = input.usage.cacheWriteTokens ?? 0;
+  const cacheWrite1hTokens = input.usage.cacheWrite1hTokens ?? 0;
   const uncachedInputTokens = input.usage.inputTokens - cacheReadTokens - cacheWriteTokens;
   const cachedInputRate = rate.cachedInputUsdPerMillionTokens ?? rate.inputUsdPerMillionTokens;
   const cacheWriteRate = rate.cacheWriteUsdPerMillionTokens ?? rate.inputUsdPerMillionTokens;
+  const cacheWrite1hRate = rate.cacheWrite1hUsdPerMillionTokens ?? cacheWriteRate;
 
   const usdMicros =
     usdMicrosForTokens(uncachedInputTokens, rate.inputUsdPerMillionTokens) +
     usdMicrosForTokens(cacheReadTokens, cachedInputRate) +
-    usdMicrosForTokens(cacheWriteTokens, cacheWriteRate) +
+    usdMicrosForTokens(cacheWriteTokens - cacheWrite1hTokens, cacheWriteRate) +
+    usdMicrosForTokens(cacheWrite1hTokens, cacheWrite1hRate) +
     usdMicrosForTokens(input.usage.outputTokens, rate.outputUsdPerMillionTokens);
 
   return {
@@ -356,6 +362,7 @@ export function computeModelCost(input: {
       inputUsdPerMillionTokens: rate.inputUsdPerMillionTokens,
       cachedInputUsdPerMillionTokens: rate.cachedInputUsdPerMillionTokens ?? null,
       cacheWriteUsdPerMillionTokens: rate.cacheWriteUsdPerMillionTokens ?? null,
+      cacheWrite1hUsdPerMillionTokens: rate.cacheWrite1hUsdPerMillionTokens ?? null,
       outputUsdPerMillionTokens: rate.outputUsdPerMillionTokens,
       source: pricingSnapshotSource(rate),
       sourceLayer: rate.sourceLayer,
