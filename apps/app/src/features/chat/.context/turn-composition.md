@@ -71,11 +71,16 @@ mounted and hidden, and text left in an own-answer field when the ask closes is
 appended to the draft. The hook, not the takeover, holds the writer's draft of the
 answers (the step, and each question's choice and typed words), because the
 takeover unmounts while an answer sends and must reopen with every answer after a
-failed send. Each draft change also reports `ask.presence`, at most every 30 s
-with a trailing send, so the server's idle deadline follows the writer. The server keeps those
-answers and sends them back as `ThreadAsk.draftAnswers`; a takeover that opens with no local
-draft (a reload, another tab) starts from them. With two tabs on one ask the last to report wins.
-A send refused as `invalid_answer` moves the draft to the question the refusal names. The asking turn draws its receipt after its items and
+failed send. Every answer, a single question's included, passes through that draft
+before it sends. The hook keeps the draft in the tab's session storage, one per chat, so typed
+words survive leaving the chat; an ask that ended meanwhile closes, and adds the words, when the
+chat opens again. Each draft change also reports `ask.presence`, at most every 30 s with a
+trailing send, so the server's idle deadline follows the writer; a report still owed is sent on
+pagehide and unmount, and one the socket dropped is sent on reconnect. The server keeps those
+answers and sends them back as `ThreadAsk.draftAnswers`. A takeover the writer hasn't touched (a
+reload, another tab) follows them as they change, until the writer's first change makes the
+draft theirs. With two tabs on one ask the last to report wins. A send refused as
+`invalid_answer` moves the draft to the question the refusal names. The asking turn draws its receipt after its items and
 before its deliveries (`ask/AskReceipt.tsx`): a delivery placed under the asking
 turn arrived after the question. The `ask_user` tool row itself is hidden. Ask
 state and the answer command are `@meridian/thread-client`'s (`asks/`).

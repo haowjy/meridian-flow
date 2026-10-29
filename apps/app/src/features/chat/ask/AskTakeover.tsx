@@ -98,14 +98,7 @@ export function AskTakeover({
 function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children: ReactNode }) {
   const frame = useRef<HTMLDivElement>(null);
   // The box this replaces may have held focus; hiding it would drop focus on the page.
-  useEffect(() => {
-    const active = document.activeElement;
-    if (active && active !== document.body && !active.closest("[data-composer]")) return;
-    const target =
-      frame.current?.querySelector<HTMLElement>("textarea") ??
-      frame.current?.querySelector<HTMLElement>("button");
-    target?.focus({ preventScroll: true });
-  }, []);
+  useEffect(() => focusControls(frame.current), []);
   return (
     <section
       ref={frame}
@@ -118,6 +111,21 @@ function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children:
   );
 }
 
+/**
+ * Focus the answer the writer holds, else the first control, unless they are working elsewhere on
+ * the page (another tab's answer moves a takeover nobody is using). Never the field: on a phone
+ * that would raise the keyboard each time the controls change.
+ */
+function focusControls(root: HTMLElement | null) {
+  const active = document.activeElement;
+  if (active && active !== document.body && !active.closest("[data-composer], [data-ask-takeover]"))
+    return;
+  const target =
+    root?.querySelector<HTMLElement>("[aria-pressed=true]") ??
+    root?.querySelector<HTMLElement>("button");
+  target?.focus({ preventScroll: true });
+}
+
 /** The ask's title alone: it can no longer be answered here. */
 function ClosedTakeover({ ask }: { ask: ThreadAsk }) {
   const titleId = useId();
@@ -125,7 +133,12 @@ function ClosedTakeover({ ask }: { ask: ThreadAsk }) {
     <TakeoverFrame labelledBy={titleId}>
       <TakeoverTitle id={titleId}>
         {ask.kind === "question"
-          ? ask.payload.questions.map((item) => item.question).join(" · ")
+          ? ask.payload.questions.map((item, index) => (
+              // Questions are fixed for the ask's life; their order is their identity.
+              <span key={index} className="block">
+                {item.question}
+              </span>
+            ))
           : permissionRequestText(ask.payload).title}
       </TakeoverTitle>
     </TakeoverFrame>
@@ -156,6 +169,7 @@ function QuestionTakeover({
   onAnswer: (answer: AskAnswer) => void;
 }) {
   const titleId = useId();
+  const positionId = useId();
   const { questions } = ask.payload;
   const { step, entries } = draft;
   const { question, options, recommended } = questions[step];
@@ -166,8 +180,11 @@ function QuestionTakeover({
   const last = position === count;
   const choices = entries.map((held) => held.choice);
   const complete = choices.every((choice) => choice !== null);
-  const send = (held: readonly QuestionEntry[]) =>
+  // Every answer is held before it sends, so a failed send reopens with it picked.
+  const send = (held: readonly QuestionEntry[]) => {
+    onDraftChange({ step, entries: held });
     onAnswer({ kind: "answers", answers: held.map((item) => item.choice as QuestionAnswer) });
+  };
   // Words stay in the field when an option is picked: they go back to the composer if unused.
   const choose = (choice: QuestionAnswer) => {
     const next = entries.map((held, index) => (index === step ? { ...held, choice } : held));
@@ -194,66 +211,65 @@ function QuestionTakeover({
   };
   const picked = entry.choice?.kind === "option" ? entry.choice.label : null;
   const countdown = ask.deadlineAt ? <Countdown deadlineAt={ask.deadlineAt} /> : null;
-  const optionList = useRef<HTMLUListElement>(null);
+  const optionList = useRef<HTMLFieldSetElement>(null);
   const shownStep = useRef(step);
   // A step replaces the controls under the writer's hand; their place is the new question's options.
-  // Never the field: on a phone that would raise the keyboard on every step. Compared with the
-  // step last shown, not a first-run flag, so a remount or a repeated effect moves nothing.
+  // Compared with the step last shown, not a first-run flag, so a remount or a repeated effect
+  // moves nothing.
   useEffect(() => {
     if (shownStep.current === step) return;
     shownStep.current = step;
-    const target =
-      optionList.current?.querySelector<HTMLElement>("[aria-pressed=true]") ??
-      optionList.current?.querySelector<HTMLElement>("button");
-    target?.focus({ preventScroll: true });
+    focusControls(optionList.current);
   }, [step]);
   return (
     <TakeoverFrame labelledBy={titleId}>
       {several ? (
         <div className="-mb-[var(--chat-space-inline)] flex items-baseline gap-[var(--chat-space-block)] px-[var(--chat-space-inline)]">
-          <p className="text-caption text-muted-foreground tabular-nums">
+          <p id={positionId} className="text-caption text-muted-foreground tabular-nums">
             {t`${position} of ${count}`}
           </p>
           {countdown}
         </div>
       ) : null}
       <TakeoverTitle id={titleId}>{question}</TakeoverTitle>
-      <ul ref={optionList} className="flex flex-col gap-[var(--chat-space-inline)]">
+      <fieldset
+        ref={optionList}
+        aria-labelledby={titleId}
+        aria-describedby={several ? positionId : undefined}
+        className="flex min-w-0 flex-col gap-[var(--chat-space-inline)]"
+      >
         {options.map((option) => (
-          <li key={option.label}>
-            <button
-              type="button"
-              aria-pressed={several ? picked === option.label : undefined}
-              onClick={() => choose({ kind: "option", label: option.label })}
-              className={cn(
-                "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-field border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-border-focus hover:bg-accent",
-                picked === option.label && "border-border-focus bg-accent",
-              )}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block text-compact font-medium text-foreground">
-                  {option.label}
+          <button
+            key={option.label}
+            type="button"
+            aria-pressed={picked === option.label}
+            onClick={() => choose({ kind: "option", label: option.label })}
+            className={cn(
+              "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-field border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-border-focus hover:bg-accent",
+              picked === option.label && "border-border-focus bg-accent",
+            )}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-compact font-medium text-foreground">{option.label}</span>
+              {option.description ? (
+                <span className="block text-caption text-muted-foreground">
+                  {option.description}
                 </span>
-                {option.description ? (
-                  <span className="block text-caption text-muted-foreground">
-                    {option.description}
-                  </span>
-                ) : null}
-              </span>
-              {option.label === recommended ? (
-                <Badge variant="label" className="mt-0.5">
-                  {t`Recommended`}
-                </Badge>
               ) : null}
-            </button>
-          </li>
+            </span>
+            {option.label === recommended ? (
+              <Badge variant="label" className="mt-0.5">
+                {t`Recommended`}
+              </Badge>
+            ) : null}
+          </button>
         ))}
-      </ul>
+      </fieldset>
       <div
         className={cn(
           "flex items-end gap-[var(--chat-space-inline)] rounded-field border border-border-subtle bg-background py-1 pl-[var(--chat-space-block)] focus-within:border-border-focus",
           several ? "pr-[var(--chat-space-block)]" : "pr-1",
-          entry.choice?.kind === "text" && several && "border-border-focus",
+          entry.choice?.kind === "text" && "border-border-focus",
         )}
       >
         <textarea
@@ -287,9 +303,10 @@ function QuestionTakeover({
           type="button"
           variant="quiet"
           size="sm"
-          aria-pressed={several ? entry.choice?.kind === "skipped" : undefined}
+          aria-pressed={entry.choice?.kind === "skipped"}
           className={cn(
-            several && entry.choice?.kind === "skipped" && "bg-sidebar-accent text-foreground",
+            "border border-transparent",
+            entry.choice?.kind === "skipped" && "border-border-focus bg-accent text-foreground",
           )}
           onClick={() => choose({ kind: "skipped" })}
         >
