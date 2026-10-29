@@ -262,19 +262,35 @@ function isAskable(command: ResolvedWorkCommand): command is AskedWorkCommand {
  * sets. The client renders the sentence.
  */
 function permissionPayload(thread: Thread, command: AskedWorkCommand): PermissionAskPayload {
-  const { command: verb, ...fields } = command;
-  const changes =
-    verb === "create" || verb === "update" || verb === "write_mode"
-      ? Object.fromEntries(
-          Object.entries(fields).filter(([key, value]) => key !== "work" && value !== undefined),
-        )
-      : {};
   const agent = thread.agentName?.trim() || null;
-  if ("work" in command) {
-    const { handle, name } = command.work;
-    return { agent, action: `work.${command.command}`, work: { handle, name }, changes };
+  switch (command.command) {
+    case "create": {
+      const { name, goal } = command;
+      return { agent, action: "work.create", work: null, changes: { name, goal } };
+    }
+    case "write_mode":
+      return { agent, action: "work.write_mode", work: null, changes: { mode: command.mode } };
+    case "update": {
+      const { name, goal, status } = command;
+      return {
+        agent,
+        action: "work.update",
+        work: permissionWork(command.work),
+        changes: { name, goal, status },
+      };
+    }
+    default:
+      return {
+        agent,
+        action: `work.${command.command}`,
+        work: permissionWork(command.work),
+        changes: {},
+      };
   }
-  return { agent, action: `work.${command.command}`, work: null, changes };
+}
+
+function permissionWork({ handle, name }: Work): { handle: string | null; name: string } {
+  return { handle, name };
 }
 
 /** The command an Allow runs: its target pinned by id, so a later rename can't retarget it. */

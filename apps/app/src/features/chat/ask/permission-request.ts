@@ -11,11 +11,10 @@ export function permissionRequestText(payload: PermissionAskPayload): {
   details: string[];
 } {
   const agent = payload.agent ?? DEFAULT_AGENT_NAME;
-  const { name, goal, status, mode } = payload.changes;
   switch (payload.action) {
     case "work.create": {
-      const created = name ?? "";
-      return { title: t`${agent} wants to create the Work “${created}”?`, details: [] };
+      const { name } = payload.changes;
+      return { title: t`${agent} wants to create the Work “${name}”?`, details: [] };
     }
     case "work.archive": {
       const work = workLabel(payload.work);
@@ -32,13 +31,14 @@ export function permissionRequestText(payload: PermissionAskPayload): {
     case "work.write_mode":
       return {
         title:
-          mode === "draft"
+          payload.changes.mode === "draft"
             ? t`${agent} wants to switch this chat to draft mode?`
             : t`${agent} wants to switch this chat to auto-apply?`,
         details: [],
       };
     case "work.update": {
       const work = workLabel(payload.work);
+      const { name, goal, status } = payload.changes;
       const details = [
         name !== undefined ? t`Rename to “${name}”` : null,
         goal !== undefined ? (goal ? t`Set the goal to “${goal}”` : t`Clear the goal`) : null,
