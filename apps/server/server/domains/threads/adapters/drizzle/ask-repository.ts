@@ -2,6 +2,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { asks } from "@meridian/database/schema";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { continuationOwedSql } from "../../../../shared/ask-continuation-owed.js";
 import type { AskRepository, StoredAsk } from "../../ports/ask-repository.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
@@ -90,7 +91,8 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
       return row ? storedAsk(row) : null;
     },
     async claimLineage(input) {
-      const held = sql`(a.status IN ('pending', 'open') OR a.continuation = 'pending')`;
+      const owedSql = continuationOwedSql(sql`a`);
+      const held = sql`(a.status IN ('pending', 'open') OR ${owedSql})`;
       const targets =
         input.threadIds.length > 0
           ? sql`(a.thread_id IN (${sql.join(
@@ -104,7 +106,7 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
             ((a.status = 'open' OR (a.status = 'pending' AND ${
               owner.execution ? sql`a.execution_id = ${owner.execution}::uuid` : sql`false`
             })) AND ${owner.turnId ? sql`a.asking_turn_id = ${owner.turnId}::uuid` : sql`true`})
-            OR a.continuation = 'pending'
+            OR ${owedSql}
           ))`
         : sql`false`;
       // Rows this command already holds lock again at once. A row another transaction holds
@@ -137,7 +139,7 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
       const [row] = await currentDrizzleDb(db)
         .update(asks)
         .set({ continuation: "done", continuationTurnId: input.turnId })
-        .where(and(eq(asks.id, input.id), eq(asks.continuation, "pending")))
+        .where(and(eq(asks.id, input.id), continuationOwedSql()))
         .returning();
       return row ? storedAsk(row) : null;
     },

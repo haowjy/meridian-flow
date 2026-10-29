@@ -6,6 +6,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation } from "@meridian/contracts/spawn";
 import type { Thread } from "@meridian/contracts/threads";
+import { isContinuationOwed } from "../../../shared/ask-continuation-owed.js";
 import type { StoredAsk, ThreadRepositories } from "../../threads/index.js";
 import type { AskResolvedBody, InboxMessage } from "../loop/ports.js";
 import type { RunLoopInput } from "../loop/run-turn-port.js";
@@ -35,7 +36,7 @@ export async function readContinuation(
   const ask = await asks.findById(hint.askId);
   if (ask?.threadId !== threadId)
     throw new Error("Ask continuation is not backed by this thread's ask");
-  if (ask.continuation !== "pending") return "retire";
+  if (!isContinuationOwed(ask)) return "retire";
   return { ask };
 }
 
