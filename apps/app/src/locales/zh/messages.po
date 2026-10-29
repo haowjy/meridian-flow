@@ -315,7 +315,6 @@ msgstr ""
 msgid "{count, plural, one {# question:} other {# questions:}}"
 msgstr "{count, plural, other {# 个问题：}}"
 
-
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
 msgstr ""
@@ -5053,6 +5052,10 @@ msgstr "思考"
 #: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "边想边说？"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "This answer couldn't be used. Choose again."
+msgstr ""
 
 #: src/features/chat/tool-failure.tsx
 msgid "This assistant isn't allowed to make this change, so it wasn't done."
