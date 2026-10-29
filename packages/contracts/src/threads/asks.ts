@@ -16,34 +16,52 @@ export const questionAskPayloadSchema = z.strictObject({
   recommended: z.string().min(1).optional(),
 });
 
-/** The actions a permission request can hold: each changing `work` command. */
+/**
+ * The actions a permission request can hold: each changing `work` command but delete. A
+ * deleted Work restores for 30 days from its receipt, so delete never asks.
+ */
 export const permissionActionSchema = z.enum([
   "work.create",
   "work.update",
   "work.archive",
   "work.unarchive",
-  "work.delete",
   "work.switch",
   "work.write_mode",
 ]);
 
-/**
- * What the writer is asked to allow, as facts the client renders in its own locale: who
- * asks (null: the default agent), the action, the Work it targets as named when asked (`handle: null` is No Work),
- * and the values it sets. `changes` holds only the fields the action sets; a null goal or
- * status clears it.
- */
-export const permissionAskPayloadSchema = z.strictObject({
+const permissionAskFields = {
   agent: z.string().min(1).nullable(),
-  action: permissionActionSchema,
-  work: z.strictObject({ handle: z.string().nullable(), name: z.string() }).nullable(),
   changes: z.strictObject({
     name: z.string().optional(),
     goal: z.string().nullable().optional(),
     status: z.string().nullable().optional(),
     mode: aiWriteModeSchema.optional(),
   }),
-});
+};
+
+/**
+ * What the writer is asked to allow, as facts the client renders in its own locale: who
+ * asks (null: the default agent), the action, the Work it targets as named when asked
+ * (`handle: null` is No Work), and the values it sets. Create and write_mode target no
+ * Work. `changes` holds only the fields the action sets; a null goal or status clears it.
+ */
+export const permissionAskPayloadSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    ...permissionAskFields,
+    action: permissionActionSchema.extract(["work.create", "work.write_mode"]),
+    work: z.null(),
+  }),
+  z.strictObject({
+    ...permissionAskFields,
+    action: permissionActionSchema.extract([
+      "work.update",
+      "work.archive",
+      "work.unarchive",
+      "work.switch",
+    ]),
+    work: z.strictObject({ handle: z.string().nullable(), name: z.string() }),
+  }),
+]);
 
 const workIdSchema = z.string().uuid();
 
@@ -69,7 +87,6 @@ export const permissionWorkCommandSchema = z.strictObject({
     }),
     z.strictObject({ command: z.literal("archive"), workId: workIdSchema }),
     z.strictObject({ command: z.literal("unarchive"), workId: workIdSchema }),
-    z.strictObject({ command: z.literal("delete"), workId: workIdSchema }),
     z.strictObject({ command: z.literal("switch"), workId: workIdSchema }),
     z.strictObject({ command: z.literal("write_mode"), mode: aiWriteModeSchema }),
   ]),

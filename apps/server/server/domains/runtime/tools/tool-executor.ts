@@ -196,17 +196,18 @@ function isStructuredHandlerResult(
  * Handler-owned errors keep their JSON value verbatim while the executor
  * forwards `isError`. Thrown and executor-owned failures use the registration's
  * formatter or the generic Meridian error protocol.
+ *
+ * Exported for a handler result produced outside a call, such as a permission
+ * request's Allow running the tool's command, so it reads as the call would.
  */
-function successResult(
-  toolCallId: string,
+export function handlerToolResult(
   output: unknown,
   registration: ToolRegistration,
   input: JsonObject,
-): ToolExecutionResult {
+): Omit<ToolExecutionResult, "toolCallId"> {
   const evidence = hostEvidence(output);
   if (isHandlerErrorResult(output)) {
     return {
-      toolCallId,
       ...modelOutput(registration, toJsonValue(withoutHostOnly(output.output)), input),
       isError: true,
       ...evidence,
@@ -220,7 +221,6 @@ function successResult(
   }
   value = withoutHostOnly(value);
   return {
-    toolCallId,
     ...modelOutput(registration, toJsonValue(value), input),
     ...(metadata ? { metadata } : {}),
     ...(registration.capability === "return_result" && isReturnResultOutcome(value)
@@ -480,7 +480,10 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
             arguments: call.arguments,
           });
         }
-        return successResult(call.id, outcome.result, registration, inputObject(input));
+        return {
+          toolCallId: call.id,
+          ...handlerToolResult(outcome.result, registration, inputObject(input)),
+        };
       }
 
       const handler = registration.execution.handler as (
@@ -501,7 +504,10 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
           arguments: call.arguments,
         });
       }
-      return successResult(call.id, outcome.result, registration, inputObject(input));
+      return {
+        toolCallId: call.id,
+        ...handlerToolResult(outcome.result, registration, inputObject(input)),
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return executionErrorResult(call.id, registration, {

@@ -193,6 +193,7 @@ import {
   createWriterTurnProducer,
   type DeliveryProducer,
   type Gateway,
+  handlerToolResult,
   InvalidAdmissionError,
   type ObservationFrontiers,
   type RunClaim,
@@ -268,10 +269,7 @@ import {
   createModelToolRegistrations,
   createReferenceReader,
 } from "./model-tools/index.js";
-import {
-  lockAheadOfPermissionWorkCommand,
-  permissionWorkToolResult,
-} from "./model-tools/work-tool.js";
+import { runAllowedWorkCommand } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -847,7 +845,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     controls: delivery,
     transaction: ports.threadRepos.transaction,
     stopThreads,
-    lockThreads: (threadIds: readonly ThreadId[]) => runner.lockThreads(threadIds),
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     objectStore: ports.objectStore,
@@ -865,12 +862,22 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     permission: {
       grants: permissionGrants,
-      lockAhead: (input) => lockAheadOfPermissionWorkCommand(coreToolDeps, input),
-      execute: (input) =>
-        permissionWorkToolResult(
-          { ...coreToolDeps, savepoint: (operation) => runInDrizzleSavepoint(ports.db, operation) },
-          input,
-        ),
+      async execute(input) {
+        const registration = toolRegistry.getRegistration("work");
+        if (!registration) throw new Error("The work tool is not registered");
+        const { output, result, isError, metadata } = handlerToolResult(
+          await runAllowedWorkCommand(
+            {
+              ...coreToolDeps,
+              savepoint: (operation) => runInDrizzleSavepoint(ports.db, operation),
+            },
+            input,
+          ),
+          registration,
+          { command: input.command.command.command },
+        );
+        return { output, result, isError: isError === true, ...(metadata ? { metadata } : {}) };
+      },
     },
   });
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
@@ -1581,9 +1588,6 @@ export function createInMemoryAppServices(): AppServices {
       async softDelete() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async listThreadTree() {
-        throw new Error("in-memory work repository is not implemented");
-      },
       async restore() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1668,9 +1672,6 @@ export function createInMemoryAppServices(): AppServices {
       async softDelete() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async listThreadTree() {
-        throw new Error("in-memory work repository is not implemented");
-      },
       async restore() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1734,7 +1735,6 @@ export function createInMemoryAppServices(): AppServices {
         return "not_found" as const;
       },
       async stopThreads() {},
-      async lockThreads() {},
     },
     async stopThreads() {},
     runStarter,

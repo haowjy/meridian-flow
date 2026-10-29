@@ -11,25 +11,24 @@ export function permissionRequestText(payload: PermissionAskPayload): {
   details: string[];
 } {
   const agent = payload.agent ?? DEFAULT_AGENT_NAME;
-  const work = payload.work
-    ? payload.work.handle
-      ? `${payload.work.name} (@${payload.work.handle})`
-      : t`No Work`
-    : "";
   const { name, goal, status, mode } = payload.changes;
   switch (payload.action) {
     case "work.create": {
       const created = name ?? "";
       return { title: t`${agent} wants to create the Work “${created}”?`, details: [] };
     }
-    case "work.archive":
+    case "work.archive": {
+      const work = workLabel(payload.work);
       return { title: t`${agent} wants to archive ${work}?`, details: [] };
-    case "work.unarchive":
+    }
+    case "work.unarchive": {
+      const work = workLabel(payload.work);
       return { title: t`${agent} wants to unarchive ${work}?`, details: [] };
-    case "work.delete":
-      return { title: t`${agent} wants to delete ${work}?`, details: [] };
-    case "work.switch":
+    }
+    case "work.switch": {
+      const work = workLabel(payload.work);
       return { title: t`${agent} wants to move this chat to ${work}?`, details: [] };
+    }
     case "work.write_mode":
       return {
         title:
@@ -39,6 +38,7 @@ export function permissionRequestText(payload: PermissionAskPayload): {
         details: [],
       };
     case "work.update": {
+      const work = workLabel(payload.work);
       const details = [
         name !== undefined ? t`Rename to “${name}”` : null,
         goal !== undefined ? (goal ? t`Set the goal to “${goal}”` : t`Clear the goal`) : null,
@@ -54,4 +54,11 @@ export function permissionRequestText(payload: PermissionAskPayload): {
       return { title: t`${agent} wants to update ${work}?`, details };
     }
   }
+}
+
+/** A Work as the request names it; its punctuation is the locale's. */
+function workLabel(work: { handle: string | null; name: string }): string {
+  if (!work.handle) return t`No Work`;
+  const { name, handle } = work;
+  return t`${name} (@${handle})`;
 }

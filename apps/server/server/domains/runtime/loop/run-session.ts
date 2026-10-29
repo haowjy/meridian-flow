@@ -84,12 +84,6 @@ export type LineageCancellation = {
     threadId: ThreadId,
     decide: () => Promise<LineageDecision<T>>,
   ): Promise<LineageCancelled<T>>;
-  /**
-   * Takes the lock `cancel` takes before its decision, the owner's thread lock (with its held
-   * ask rows), and writes nothing. Joins the caller's transaction, and counts as the command
-   * for the one-thread-lock rule.
-   */
-  lock(threadId: ThreadId): Promise<void>;
   /** A child run that ended (`terminal`): free when it has no subtree, as most don't. */
   endSubtree(threadId: ThreadId): Promise<ThreadId[]>;
 };
@@ -596,14 +590,6 @@ export function createRunSessions(deps: {
           reach: { kind: "deleted" },
           execution: running.get(threadId)?.executionId ?? null,
         }));
-    },
-    /**
-     * Takes the locks `stopThreads` takes for each lineage, in its order, and changes nothing.
-     * A transaction that will stop some of these threads and also lock others passes them all
-     * here before any other ask row or thread lock, so it orders with a concurrent stop.
-     */
-    async lockThreads(threadIds: readonly ThreadId[]): Promise<void> {
-      for (const threadId of await lineageOwners(threadIds)) await deps.lineage.lock(threadId);
     },
   };
 

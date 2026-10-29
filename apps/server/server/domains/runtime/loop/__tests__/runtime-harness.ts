@@ -174,7 +174,6 @@ export function createRuntimeHarness(
         const { result, execution } = await decide();
         return { result, execution, targets: [] };
       },
-      async lock() {},
       async endSubtree() {
         return [];
       },
