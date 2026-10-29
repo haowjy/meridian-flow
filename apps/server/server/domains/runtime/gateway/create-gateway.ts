@@ -82,8 +82,11 @@ function resolveSettlementProvider(
   }
 
   try {
-    return resolveRoute(registry, { model: input.model, messages: [] }, defaultModel)
-      .providerConfig;
+    return resolveRoute(
+      registry,
+      { model: input.model, messages: [], promptCacheRetention: "short" },
+      defaultModel,
+    ).providerConfig;
   } catch {
     return undefined;
   }

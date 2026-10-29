@@ -61,7 +61,7 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
           request,
           model.id,
           providerId,
-          model.promptCache.longTtlMs !== undefined,
+          model.promptCache.longTtlMs,
         );
         const stream = await client.responses.create(params, { signal: request.signal });
 

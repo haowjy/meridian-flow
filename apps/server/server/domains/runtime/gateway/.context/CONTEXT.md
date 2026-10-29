@@ -74,15 +74,26 @@ provider advertisement is not argument authority.
 ## Cache, limits, and persisted selections
 
 Each model declares `promptCache: { kind, ttlMs, longTtlMs? }`: `ttlMs` is the
-short lifetime, `longTtlMs` the longer one the model offers (Claude and DeepSeek
-1h, `gpt-4.1` 24h via `prompt_cache_retention`; other OpenAI models offer none and
-never get the parameter). The request picks one with `promptCacheRetention`
+short lifetime, `longTtlMs` the longer one the model offers (Claude 1h; `gpt-4.1`
+24h, the shortest option of at least 1 hour, sent as `prompt_cache_retention` via
+`openaiRetentionWire`; other OpenAI models offer none and never get the parameter).
+`GenerateRequest.promptCacheRetention` is required and picks one
 (`resolvePromptCacheTtlMs`): the loop asks `long` for primary threads and `short`
-for subagents, fixed by thread kind so the cached prefix never varies mid-thread.
+for subagents, fixed by thread kind so the cached prefix never varies mid-thread;
+the rolling summarizer passes `short` explicitly. `validateModelRegistry` requires
+`longTtlMs > ttlMs` and an OpenAI wire value for any OpenAI `longTtlMs`.
 Explicit descriptors produce provider cache marks; automatic models receive no
-marks and `none` models predict cold. A nullable TTL means unknown, not infinite.
-Cache-write pricing follows the descriptor tier (5m about 1.25x input, 1h 2x). `inputTierTokens`, when present, must be positive and below
-the context window; the runtime uses it for compaction planning.
+marks and `none` models predict cold. DeepSeek is automatic with no TTL choice: its
+descriptor holds one assumed 5-minute `ttlMs` for both chat kinds. A nullable TTL
+means unknown, not infinite.
+
+Claude bills cache writes by the TTL written. `Usage.cacheWrite1hTokens` (from
+Anthropic's `cache_creation.ephemeral_1h_input_tokens`) is the 1h part of
+`cacheWriteTokens`; pricing bills it at `cacheWrite1hUsdPerMillionTokens` (2x input)
+and the rest at `cacheWriteUsdPerMillionTokens` (the 5m rate, 1.25x input).
+Providers that do not split writes use the single rate. `inputTierTokens`, when
+present, must be positive and below the context window; the runtime uses it for
+compaction planning.
 
 Every model declares a tokenizer family with no fallback; runtime compaction
 uses it for CJK estimates. Output limits are provider defaults unless a request

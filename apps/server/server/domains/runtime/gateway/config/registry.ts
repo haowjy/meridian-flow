@@ -5,14 +5,15 @@
  * provider's apiKeyEnv, and gateway-local PinnedModelRate (G4 — billing consumes
  * structurally in B2, no billing import here).
  */
-import type {
-  BuiltinAdapter,
-  Capability,
-  GatewayConfig,
-  ModelInfo,
-  PromptCacheDescriptor,
-  ProviderConfig,
-  TokenizerFamily,
+import {
+  type BuiltinAdapter,
+  type Capability,
+  type GatewayConfig,
+  type ModelInfo,
+  openaiRetentionWire,
+  type PromptCacheDescriptor,
+  type ProviderConfig,
+  type TokenizerFamily,
 } from "../domain/index.js";
 
 export interface ModelPricing {
@@ -24,8 +25,10 @@ export interface ModelPricing {
   outputUsdPerMillionTokens: string;
   /** USD per 1,000,000 cache-read input tokens, when published separately. */
   cachedInputUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 cache-write input tokens, when published separately. */
+  /** USD per 1,000,000 cache-write input tokens, when published separately (the 5-minute rate when a 1-hour rate is also set). */
   cacheWriteUsdPerMillionTokens?: string;
+  /** USD per 1,000,000 1-hour cache-write tokens, for providers that bill writes by TTL. */
+  cacheWrite1hUsdPerMillionTokens?: string;
   /** Human-readable attribution for the pinned price. */
   source: string;
 }
@@ -75,6 +78,7 @@ export interface PinnedModelRate {
   inputUsdPerMillionTokens: string;
   cachedInputUsdPerMillionTokens?: string;
   cacheWriteUsdPerMillionTokens?: string;
+  cacheWrite1hUsdPerMillionTokens?: string;
   outputUsdPerMillionTokens: string;
   source: string;
 }
@@ -95,25 +99,31 @@ const EXPLICIT_CACHE_5M_OR_1H: PromptCacheDescriptor = {
   longTtlMs: ONE_HOUR_MS,
 };
 const OPENAI_CACHE_ESTIMATE: PromptCacheDescriptor = { kind: "automatic", ttlMs: FIVE_MINUTES_MS };
-// `prompt_cache_retention: "24h"` is offered by gpt-4.1 only among our OpenAI models
-// (https://developers.openai.com/api/docs/guides/prompt-caching); others reject it.
+// gpt-4.1 offers `prompt_cache_retention: "24h"` as its only longer option among our OpenAI
+// models (https://developers.openai.com/api/docs/guides/prompt-caching); others reject it.
+// A long request takes the shortest option of at least 1 hour. GPT-5.6+ models would use
+// `prompt_cache_options.ttl: "12h"` instead; add that wire value with the first such model.
 const OPENAI_CACHE_EXTENDED: PromptCacheDescriptor = {
   ...OPENAI_CACHE_ESTIMATE,
   longTtlMs: 24 * ONE_HOUR_MS,
 };
+// DeepSeek's cache is automatic: we send no cache_control (its Anthropic-compatible
+// endpoint ignores it) and cannot pick a lifetime, so 5 minutes is an assumed minimum
+// for both chat kinds.
 const DEEPSEEK_CACHE_ESTIMATE: PromptCacheDescriptor = {
   kind: "automatic",
   ttlMs: FIVE_MINUTES_MS,
-  longTtlMs: ONE_HOUR_MS,
 };
 const NO_PROMPT_CACHE: PromptCacheDescriptor = { kind: "none", ttlMs: null };
 
-// `cacheWriteUsdPerMillionTokens` matches the TTL on each model's prompt-cache
-// descriptor; the adapters translate that descriptor into provider wire format.
+// Claude bills cache writes by the TTL written: 5m at 1.25x input, 1h at 2x. Anthropic's
+// usage reports the split, so `cacheWriteUsdPerMillionTokens` is the 5m rate and
+// `cacheWrite1hUsdPerMillionTokens` the 1h one.
 const CLAUDE_SONNET_4_6_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "3.00",
   cachedInputUsdPerMillionTokens: "0.30",
-  cacheWriteUsdPerMillionTokens: "6.00",
+  cacheWriteUsdPerMillionTokens: "3.75",
+  cacheWrite1hUsdPerMillionTokens: "6.00",
   outputUsdPerMillionTokens: "15.00",
   source: ANTHROPIC_PRICING_SOURCE,
 };
@@ -121,7 +131,8 @@ const CLAUDE_SONNET_4_6_PRICING: ModelPricing = {
 const CLAUDE_HAIKU_4_5_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "1.00",
   cachedInputUsdPerMillionTokens: "0.10",
-  cacheWriteUsdPerMillionTokens: "2.00",
+  cacheWriteUsdPerMillionTokens: "1.25",
+  cacheWrite1hUsdPerMillionTokens: "2.00",
   outputUsdPerMillionTokens: "5.00",
   source: ANTHROPIC_PRICING_SOURCE,
 };
@@ -373,7 +384,9 @@ export const MODEL_REGISTRY: ModelRegistry = {
 
 /** Reject invalid explicit cache TTLs as soon as a registry is loaded. */
 export function validateModelRegistry(registry: ModelRegistry): void {
-  for (const model of registry.providers.flatMap((provider) => provider.models)) {
+  for (const { adapter, model } of registry.providers.flatMap((provider) =>
+    provider.models.map((model) => ({ adapter: provider.adapter, model })),
+  )) {
     const tier = model.pricing.inputTierTokens;
     if (
       tier !== undefined &&
@@ -382,6 +395,17 @@ export function validateModelRegistry(registry: ModelRegistry): void {
       throw new Error(
         `Input pricing tier for ${model.id} must be positive and below its context window`,
       );
+    }
+    const { ttlMs, longTtlMs } = model.promptCache;
+    if (longTtlMs !== undefined && (ttlMs === null || longTtlMs <= ttlMs)) {
+      throw new Error(`Long prompt cache TTL for ${model.id} must exceed its short TTL`);
+    }
+    if (
+      longTtlMs !== undefined &&
+      adapter === "openai" &&
+      openaiRetentionWire(longTtlMs) === undefined
+    ) {
+      throw new Error(`OpenAI long prompt cache TTL for ${model.id} has no known wire value`);
     }
     if (model.promptCache.kind === "explicit") {
       for (const ttl of [model.promptCache.ttlMs, model.promptCache.longTtlMs ?? FIVE_MINUTES_MS]) {
@@ -455,6 +479,7 @@ export function extractPinnedRates(registry: ModelRegistry): PinnedModelRate[] {
       inputUsdPerMillionTokens: model.pricing.inputUsdPerMillionTokens,
       cachedInputUsdPerMillionTokens: model.pricing.cachedInputUsdPerMillionTokens,
       cacheWriteUsdPerMillionTokens: model.pricing.cacheWriteUsdPerMillionTokens,
+      cacheWrite1hUsdPerMillionTokens: model.pricing.cacheWrite1hUsdPerMillionTokens,
       outputUsdPerMillionTokens: model.pricing.outputUsdPerMillionTokens,
       source: model.pricing.source,
     })),

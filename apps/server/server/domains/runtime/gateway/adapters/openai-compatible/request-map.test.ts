@@ -11,6 +11,7 @@ describe("toOpenAIChatCompletionParams prompt-cache passthrough", () => {
   it("uses the registered descriptor TTL for explicit cache marks", () => {
     const params = toOpenAIChatCompletionParams(
       {
+        promptCacheRetention: "short",
         messages: [
           {
             role: "system",
@@ -30,6 +31,7 @@ describe("toOpenAIChatCompletionParams prompt-cache passthrough", () => {
     // and the request-level automatic mark now covers the conversation tail.
     const params = toOpenAIChatCompletionParams(
       {
+        promptCacheRetention: "short",
         messages: [
           {
             role: "system",

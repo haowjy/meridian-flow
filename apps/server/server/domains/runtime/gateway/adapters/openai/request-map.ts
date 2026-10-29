@@ -28,7 +28,6 @@
  *   (defers to the account's own default) rather than guessing.
  */
 import type OpenAI from "openai";
-
 import type {
   ContentPart,
   FunctionTool,
@@ -36,6 +35,7 @@ import type {
   Message,
   Tool,
 } from "../../domain/index.js";
+import { openaiRetentionWire } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 
 // ── Content parts mapping ─────────────────────────────────────────
@@ -358,7 +358,7 @@ export function toOpenAIResponsesParams(
   request: GenerateRequest,
   modelId: string,
   providerId = "openai",
-  extendedRetention = false,
+  longTtlMs?: number,
 ): OpenAI.Responses.ResponseCreateParamsStreaming {
   const instructions = extractInstructions(request.messages);
   const input = flattenAssistantToolCalls(request.messages, providerId, modelId);
@@ -381,9 +381,9 @@ export function toOpenAIResponsesParams(
       ? { text: mapResponseFormat(request.responseFormat) }
       : {}),
     ...(request.promptCacheKey ? { prompt_cache_key: request.promptCacheKey } : {}),
-    // Only for models that list "24h" (descriptor.longTtlMs); others reject the parameter.
-    ...(extendedRetention && request.promptCacheRetention === "long"
-      ? { prompt_cache_retention: "24h" as const }
+    // Only for models with a longer option (descriptor.longTtlMs); others reject the parameter.
+    ...(longTtlMs !== undefined && request.promptCacheRetention === "long"
+      ? { prompt_cache_retention: openaiRetentionWire(longTtlMs) }
       : {}),
   };
 }

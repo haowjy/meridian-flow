@@ -19,21 +19,22 @@ const REGISTRY_PINNED_RATES = extractPinnedRates(MODEL_REGISTRY);
 describe("model pricing", () => {
   const rateSource = createDefaultModelTokenRateSource();
 
-  it("prices an Anthropic 1h cache write at 2x input, not the 5m tier's 1.25x", () => {
-    // loop/prompt-cache-marks.ts + the Anthropic adapter always request
-    // ttl: "1h" (the owner-chosen default), so every cache-write token this
-    // codebase produces must price at Anthropic's 1h tier (2x input), never
-    // the 5m tier (1.25x) — see the registry's cacheWriteUsdPerMillionTokens
-    // comment.
-    const cost = computeModelCost({
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-      usage: { inputTokens: 1_000_000, cacheWriteTokens: 1_000_000, outputTokens: 0 },
-      rateSource,
-    });
+  it("prices Anthropic cache writes by the TTL written: 5m at 1.25x input, 1h at 2x", () => {
+    const price = (usage: { cacheWriteTokens: number; cacheWrite1hTokens?: number }) =>
+      computeModelCost({
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        usage: { inputTokens: 1_000_000, outputTokens: 0, ...usage },
+        rateSource,
+      });
 
-    expect(cost.costUsd).toBe("6.000000");
-    expect(cost.pricingSnapshot.cacheWriteUsdPerMillionTokens).toBe("6.00");
+    expect(price({ cacheWriteTokens: 1_000_000 }).costUsd).toBe("3.750000");
+    expect(price({ cacheWriteTokens: 1_000_000, cacheWrite1hTokens: 1_000_000 }).costUsd).toBe(
+      "6.000000",
+    );
+    expect(price({ cacheWriteTokens: 1_000_000, cacheWrite1hTokens: 400_000 }).costUsd).toBe(
+      "4.650000",
+    );
   });
 
   it("prices OpenAI's inclusive cache counters without double-counting input", () => {

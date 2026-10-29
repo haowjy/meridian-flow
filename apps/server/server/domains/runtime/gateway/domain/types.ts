@@ -62,9 +62,17 @@ export type PromptCacheRetention = "short" | "long";
 /** The TTL a request with this retention gets from a model, for adapters and warm/cold prediction. */
 export function resolvePromptCacheTtlMs(
   cache: PromptCacheDescriptor,
-  retention: PromptCacheRetention | undefined,
+  retention: PromptCacheRetention,
 ): number | null {
   return retention === "long" ? (cache.longTtlMs ?? cache.ttlMs) : cache.ttlMs;
+}
+
+/**
+ * OpenAI `prompt_cache_retention` values by lifetime. A long request takes the shortest
+ * option of at least 1 hour; gpt-4.1's only one is "24h".
+ */
+export function openaiRetentionWire(longTtlMs: number): "24h" | undefined {
+  return longTtlMs === 24 * 60 * 60 * 1_000 ? "24h" : undefined;
 }
 
 /**
@@ -272,7 +280,7 @@ export interface GenerateRequest {
    */
   promptCacheKey?: string;
   /** Cache lifetime wanted; fixed per thread kind so the cached prefix never changes mid-thread. */
-  promptCacheRetention?: PromptCacheRetention;
+  promptCacheRetention: PromptCacheRetention;
   /** Observability-only context; adapters must never map it into provider requests. */
   correlation?: {
     /** Preallocated by callers that need to join request content to lifecycle evidence. */

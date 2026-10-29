@@ -26,7 +26,7 @@ const MODEL: ModelInfo = {
   capabilities: new Set(["streaming"]),
 };
 
-const REQUEST: GenerateRequest = { messages: [] };
+const REQUEST: GenerateRequest = { messages: [], promptCacheRetention: "short" };
 
 const END_RESULT: GenerateResult = {
   content: [],
