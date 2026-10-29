@@ -21,12 +21,16 @@ export interface ModelTokenRate {
   inputUsdPerMillionTokens: string;
   /** USD per 1,000,000 cache-read input tokens, when the provider reports them separately. */
   cachedInputUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 cache-write input tokens (the 5-minute rate for providers that split by TTL). */
+  /** USD per 1,000,000 cache-write input tokens (the short-TTL rate for providers that split by TTL). */
   cacheWriteUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 1-hour cache-write tokens; only for providers that report writes by TTL. */
-  cacheWrite1hUsdPerMillionTokens?: string;
+  /** USD per 1,000,000 long-TTL cache-write tokens (Anthropic 1h, OpenAI 12h); only for providers that report writes by TTL. */
+  cacheWriteLongUsdPerMillionTokens?: string;
   /** USD per 1,000,000 output tokens, including reasoning tokens counted in output. */
   outputUsdPerMillionTokens: string;
+  /** Input size above which the provider reprices the whole request by `aboveTierMultipliers`. */
+  inputTierTokens?: number;
+  /** Whole-request multipliers: `input` scales every input-side rate (cache included), `output` the output rate. */
+  aboveTierMultipliers?: { input: number; output: number };
   source: string;
 }
 
@@ -113,8 +117,10 @@ function pinnedModelRateToTokenRate(rate: PinnedModelRate): ModelTokenRate {
     inputUsdPerMillionTokens: rate.inputUsdPerMillionTokens,
     cachedInputUsdPerMillionTokens: rate.cachedInputUsdPerMillionTokens,
     cacheWriteUsdPerMillionTokens: rate.cacheWriteUsdPerMillionTokens,
-    cacheWrite1hUsdPerMillionTokens: rate.cacheWrite1hUsdPerMillionTokens,
+    cacheWriteLongUsdPerMillionTokens: rate.cacheWriteLongUsdPerMillionTokens,
     outputUsdPerMillionTokens: rate.outputUsdPerMillionTokens,
+    inputTierTokens: rate.inputTierTokens,
+    aboveTierMultipliers: rate.aboveTierMultipliers,
     source: rate.source,
   };
 }
@@ -339,18 +345,31 @@ export function computeModelCost(input: {
   const rate = findModelTokenRate(input.provider, input.model, input.rateSource);
   const cacheReadTokens = input.usage.cacheReadTokens ?? 0;
   const cacheWriteTokens = input.usage.cacheWriteTokens ?? 0;
-  const cacheWrite1hTokens = input.usage.cacheWrite1hTokens ?? 0;
+  const cacheWriteLongTokens = input.usage.cacheWriteLongTokens ?? 0;
   const uncachedInputTokens = input.usage.inputTokens - cacheReadTokens - cacheWriteTokens;
   const cachedInputRate = rate.cachedInputUsdPerMillionTokens ?? rate.inputUsdPerMillionTokens;
   const cacheWriteRate = rate.cacheWriteUsdPerMillionTokens ?? rate.inputUsdPerMillionTokens;
-  const cacheWrite1hRate = rate.cacheWrite1hUsdPerMillionTokens ?? cacheWriteRate;
+  const cacheWriteLongRate = rate.cacheWriteLongUsdPerMillionTokens ?? cacheWriteRate;
+
+  const surcharge =
+    rate.inputTierTokens !== undefined && input.usage.inputTokens > rate.inputTierTokens
+      ? rate.aboveTierMultipliers
+      : undefined;
+  const scaled = (micros: bigint, multiplier = 1) =>
+    (micros * BigInt(Math.round(multiplier * 100))) / 100n;
 
   const usdMicros =
-    usdMicrosForTokens(uncachedInputTokens, rate.inputUsdPerMillionTokens) +
-    usdMicrosForTokens(cacheReadTokens, cachedInputRate) +
-    usdMicrosForTokens(cacheWriteTokens - cacheWrite1hTokens, cacheWriteRate) +
-    usdMicrosForTokens(cacheWrite1hTokens, cacheWrite1hRate) +
-    usdMicrosForTokens(input.usage.outputTokens, rate.outputUsdPerMillionTokens);
+    scaled(
+      usdMicrosForTokens(uncachedInputTokens, rate.inputUsdPerMillionTokens) +
+        usdMicrosForTokens(cacheReadTokens, cachedInputRate) +
+        usdMicrosForTokens(cacheWriteTokens - cacheWriteLongTokens, cacheWriteRate) +
+        usdMicrosForTokens(cacheWriteLongTokens, cacheWriteLongRate),
+      surcharge?.input,
+    ) +
+    scaled(
+      usdMicrosForTokens(input.usage.outputTokens, rate.outputUsdPerMillionTokens),
+      surcharge?.output,
+    );
 
   return {
     costUsd: formatUsdFromMicros(usdMicros),
@@ -362,8 +381,10 @@ export function computeModelCost(input: {
       inputUsdPerMillionTokens: rate.inputUsdPerMillionTokens,
       cachedInputUsdPerMillionTokens: rate.cachedInputUsdPerMillionTokens ?? null,
       cacheWriteUsdPerMillionTokens: rate.cacheWriteUsdPerMillionTokens ?? null,
-      cacheWrite1hUsdPerMillionTokens: rate.cacheWrite1hUsdPerMillionTokens ?? null,
+      cacheWriteLongUsdPerMillionTokens: rate.cacheWriteLongUsdPerMillionTokens ?? null,
       outputUsdPerMillionTokens: rate.outputUsdPerMillionTokens,
+      inputTierTokens: rate.inputTierTokens ?? null,
+      aboveTierMultipliers: rate.aboveTierMultipliers ?? null,
       source: pricingSnapshotSource(rate),
       sourceLayer: rate.sourceLayer,
       sourceDetail: rate.source,

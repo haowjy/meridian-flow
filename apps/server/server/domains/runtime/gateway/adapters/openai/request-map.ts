@@ -21,11 +21,9 @@
  *   explicit breakpoints, so this mapper only forwards `GenerateRequest.
  *   promptCacheKey` as `prompt_cache_key` (a stable per-thread routing hint
  *   that improves cache-affinity — OpenAI's own docs recommend one per
- *   thread/session). The installed `openai` SDK (6.45.0) has no
- *   `prompt_cache_options`/ttl field for the Responses API — only the
- *   documented `prompt_cache_retention: "in_memory" | "24h"`, neither of
- *   which is the owner-chosen 1h default, so retention is left unset
- *   (defers to the account's own default) rather than guessing.
+ *   thread/session). A long retention request adds
+ *   `prompt_cache_options: { ttl: "12h" }`; the short one relies on the 30m
+ *   default.
  */
 import type OpenAI from "openai";
 import type {
@@ -35,7 +33,7 @@ import type {
   Message,
   Tool,
 } from "../../domain/index.js";
-import { openaiRetentionWire } from "../../domain/index.js";
+import { openaiCacheTtlWire } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 
 // ── Content parts mapping ─────────────────────────────────────────
@@ -381,9 +379,9 @@ export function toOpenAIResponsesParams(
       ? { text: mapResponseFormat(request.responseFormat) }
       : {}),
     ...(request.promptCacheKey ? { prompt_cache_key: request.promptCacheKey } : {}),
-    // Only for models with a longer option (descriptor.longTtlMs); others reject the parameter.
+    // The 30m default needs no parameter. The SDK (6.45.0) predates `prompt_cache_options`.
     ...(longTtlMs !== undefined && request.promptCacheRetention === "long"
-      ? { prompt_cache_retention: openaiRetentionWire(longTtlMs) }
+      ? { prompt_cache_options: { ttl: openaiCacheTtlWire(longTtlMs) } }
       : {}),
-  };
+  } as OpenAI.Responses.ResponseCreateParamsStreaming;
 }

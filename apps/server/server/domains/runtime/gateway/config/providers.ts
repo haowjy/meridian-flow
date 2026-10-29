@@ -20,6 +20,7 @@ export interface GatewayEnvInput {
   FLOW_ANTHROPIC_API_KEY?: string;
   FLOW_OPENAI_API_KEY?: string;
   FLOW_DEEPSEEK_API_KEY?: string;
+  FLOW_GEMINI_API_KEY?: string;
   FLOW_OPENROUTER_API_KEY?: string;
   FLOW_OPENROUTER_BASE_URL?: string;
 }
@@ -63,6 +64,7 @@ export function buildProviderConfigs(
     FLOW_ANTHROPIC_API_KEY: env.FLOW_ANTHROPIC_API_KEY,
     FLOW_OPENAI_API_KEY: env.FLOW_OPENAI_API_KEY,
     FLOW_DEEPSEEK_API_KEY: env.FLOW_DEEPSEEK_API_KEY,
+    FLOW_GEMINI_API_KEY: env.FLOW_GEMINI_API_KEY,
     FLOW_OPENROUTER_API_KEY: env.FLOW_OPENROUTER_API_KEY,
   });
 
@@ -87,6 +89,7 @@ export function selectModelStub(providers: ProviderConfig[]): string | undefined
     providers.find((p) => p.id === "anthropic")?.models[0]?.id ??
     providers.find((p) => p.id === "openai")?.models[0]?.id ??
     providers.find((p) => p.id === "deepseek")?.models[0]?.id ??
+    providers.find((p) => p.id === "gemini")?.models[0]?.id ??
     providers.find((p) => p.id === "openrouter")?.models[0]?.id ??
     providers.find((p) => p.id === "mock")?.models[0]?.id ??
     providers[0]?.models[0]?.id

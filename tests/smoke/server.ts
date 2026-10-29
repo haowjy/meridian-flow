@@ -204,6 +204,7 @@ export async function startSmokeServer(options?: { port?: number }): Promise<Smo
     FLOW_ANTHROPIC_API_KEY: process.env.FLOW_ANTHROPIC_API_KEY,
     FLOW_OPENAI_API_KEY: process.env.FLOW_OPENAI_API_KEY,
     FLOW_DEEPSEEK_API_KEY: process.env.FLOW_DEEPSEEK_API_KEY,
+    FLOW_GEMINI_API_KEY: process.env.FLOW_GEMINI_API_KEY,
     FLOW_OPENROUTER_API_KEY: process.env.FLOW_OPENROUTER_API_KEY,
   });
 

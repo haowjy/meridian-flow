@@ -58,7 +58,7 @@ async function fixture(
   });
   const agentCatalog = createBoundAgentCatalog({
     store: agentRevisions,
-    defaultModel: () => "gpt-4.1-mini",
+    defaultModel: () => "gpt-5.6-luna",
     unavailableReasons: () => [],
   });
   const original = await agentCatalog.save("user-1", {
@@ -164,7 +164,7 @@ describe("frozen prompt provider requests", () => {
         >,
     );
     const model: ModelInfo = {
-      id: "gpt-4.1-mini",
+      id: "gpt-5.6-luna",
       provider: "openai",
       tokenizer: "o200k" as const,
       displayName: "Fixture",
@@ -227,7 +227,7 @@ describe("frozen prompt provider requests", () => {
       {
         listModels: () => [
           {
-            id: "gpt-4.1-mini",
+            id: "gpt-5.6-luna",
             provider: "openai" as const,
             tokenizer: "o200k" as const,
             displayName: "Fixture",
@@ -294,7 +294,7 @@ describe("frozen prompt provider requests", () => {
 
   it("isolates image inclusion and eviction decisions between fork and source", async () => {
     const model: ModelInfo = {
-      id: "gpt-4.1-mini",
+      id: "gpt-5.6-luna",
       provider: "openai",
       tokenizer: "o200k" as const,
       displayName: "Fixture",
@@ -657,7 +657,7 @@ describe("frozen prompt provider requests", () => {
       child.id,
       agent.selection.definitionRevisionId,
       {
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         skills: { load: [], available: [] },
         namedTargets: [],
         permission: "edit",

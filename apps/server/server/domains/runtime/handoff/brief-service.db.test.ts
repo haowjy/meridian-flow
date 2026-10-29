@@ -172,7 +172,7 @@ else
         creditLedger,
         agentRevisions:
           agentRevisions ??
-          createTestAgentBinding("gpt-4.1-mini", "Write stories.", () => [fixture.destination.id]),
+          createTestAgentBinding("gpt-5.6-luna", "Write stories.", () => [fixture.destination.id]),
         gateway: scriptedGateway({ usage: { inputTokens: 1, outputTokens: 1 } }),
       });
       return { backgroundTasks, delivery, runClaim, runStarter, runtime };
@@ -259,7 +259,7 @@ else
             outcome: {
               kind: "complete",
               text: "The jade gate is open.",
-              model: "gpt-4.1-mini",
+              model: "gpt-5.6-luna",
               modelResponses: [],
               summarizer: { path: "branch", segments: 1 },
             },
@@ -453,7 +453,7 @@ else
         turnId: fixture.seed.id,
         sequence: 0,
         provider: "openai",
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         inputTokens: 1_000,
         outputTokens: 10,
         requestMessageCount: 1,

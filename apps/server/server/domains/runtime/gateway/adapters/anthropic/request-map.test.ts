@@ -249,14 +249,14 @@ it("keeps implicit thinking and cached content unchanged when only the output ca
   };
   const original = toAnthropicMessageParams(
     request,
-    "claude-sonnet-4-6",
+    "claude-sonnet-5-5",
     16384,
     "anthropic",
     3600000,
   );
   const capped = toAnthropicMessageParams(
     { ...request, maxTokens: 4096 + 300 },
-    "claude-sonnet-4-6",
+    "claude-sonnet-5-5",
     16384,
     "anthropic",
     3600000,
@@ -273,7 +273,7 @@ it("preserves real Work and Write command instructions only when projecting for 
       messages: [user("Hello")],
       tools: [{ ...skillTool, inputSchema }],
     };
-    const params = toAnthropicMessageParams(request, "claude-sonnet-4-6", 128_000, "anthropic");
+    const params = toAnthropicMessageParams(request, "claude-sonnet-5-5", 128_000, "anthropic");
     const advertised = params.tools?.[0] as {
       input_schema: { properties: Record<string, { description: string }>; required: string[] };
     };
@@ -303,7 +303,7 @@ it("preserves real Work and Write command instructions only when projecting for 
       tools: [{ ...skillTool, inputSchema: { ...root, anyOf: oneOf } }],
     };
     expect(
-      toAnthropicMessageParams(anyOfRequest, "claude-sonnet-4-6", 128_000, "anthropic").tools?.[0],
+      toAnthropicMessageParams(anyOfRequest, "claude-sonnet-5-5", 128_000, "anthropic").tools?.[0],
     ).toHaveProperty("input_schema", advertised.input_schema);
     expect(
       toAnthropicMessageParams(request, "deepseek-flash", 65_536, "deepseek").tools?.[0],
