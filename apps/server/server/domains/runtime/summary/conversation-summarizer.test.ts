@@ -27,6 +27,7 @@ const threadModel: ModelInfo = {
   contextWindow: 10000,
   maxOutputTokens: 1000,
   promptCache: { kind: "explicit", ttlMs: 3600000 },
+  reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };
 const cheapModel = {
@@ -102,6 +103,7 @@ function setup(
     instruction: "compaction",
     requestInHand: {
       model: threadModel.id,
+      promptCacheRetention: "short",
       messages: [{ role: "user", content: [{ type: "text", text: "Task" }] }],
     },
     projection: projection(["Facts"]),
@@ -132,6 +134,7 @@ describe("conversation summarizer", () => {
     const rig = setup({ warm: true });
     rig.input.requestInHand = {
       model: threadModel.id,
+      promptCacheRetention: "short",
       messages: [
         { role: "system", content: [{ type: "text", text: "Frozen", cacheBreakpoint: true }] },
         { role: "user", content: [{ type: "text", text: "Task", cacheBreakpoint: true }] },
@@ -184,9 +187,9 @@ describe("conversation summarizer", () => {
   });
 
   it("compacts a Sonnet 4.6 assistant turn with four 100 KB document results on a 128k summarizer", async () => {
-    const sonnet = { ...threadModel, id: "claude-sonnet-4-6", contextWindow: 1_000_000 };
+    const sonnet = { ...threadModel, id: "claude-sonnet-5-5", contextWindow: 1_000_000 };
     const rig = setup({ models: [sonnet, { ...cheapModel, contextWindow: 128_000 }] });
-    rig.input.requestInHand = { model: sonnet.id, messages: [] };
+    rig.input.requestInHand = { model: sonnet.id, messages: [], promptCacheRetention: "short" };
     rig.input.projection = projection(["Check continuity", ""]);
     rig.input.projection.turns[1].role = "assistant";
     rig.input.projection.blocks = [

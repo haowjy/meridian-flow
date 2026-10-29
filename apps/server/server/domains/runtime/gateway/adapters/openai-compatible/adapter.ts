@@ -1,7 +1,7 @@
 /**
  * OpenAI-compatible (Chat Completions) provider adapter: implements the
  * provider-adapter port over any OpenAI-Chat-Completions-shaped endpoint
- * (deepseek, mock, self-hosted). Owns the chat-completions streaming wiring;
+ * (gemini, mock, self-hosted). Owns the chat-completions streaming wiring;
  * depends on its request-map/stream-collect/errors siblings.
  *
  * Streaming lifecycle:
@@ -21,6 +21,7 @@ import type {
   GenerateRequest,
   ModelInfo,
   ProviderConfig,
+  ResolvedCall,
   StreamEvent,
 } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
@@ -53,14 +54,18 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
 
   return {
     providerId,
-    async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
+    async *stream(
+      request: GenerateRequest,
+      model: ModelInfo,
+      call: ResolvedCall,
+    ): AsyncIterable<StreamEvent> {
       // Create a fresh accumulator per stream call — each generate request
       // gets its own streaming state.
       const acc = createStreamAccumulator(model.id, providerId);
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
-        const params = toOpenAIChatCompletionParams(request, model.id, model.promptCache.ttlMs);
+        const params = toOpenAIChatCompletionParams(request, model, call);
         const stream = await client.chat.completions.create(
           { ...params, stream: true },
           { signal: request.signal },

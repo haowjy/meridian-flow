@@ -43,7 +43,7 @@ function textResult(text = "done"): GenerateResult {
     toolCalls: [],
     finishReason: "end_turn",
     usage: { inputTokens: 1000, outputTokens: 100 },
-    model: "gpt-4.1-mini",
+    model: "gpt-5.6-luna",
     provider: "openai",
   };
 }
@@ -58,7 +58,7 @@ function toolCallResult(
     toolCalls: [],
     finishReason: "tool_use",
     usage: { inputTokens: 1000, outputTokens: 100 },
-    model: "gpt-4.1-mini",
+    model: "gpt-5.6-luna",
     provider: "openai",
   };
 }
@@ -154,13 +154,14 @@ async function setup(
       ...gateway,
       listModels: () => [
         {
-          id: "gpt-4.1-mini",
+          id: "gpt-5.6-luna",
           provider: "openai",
           tokenizer: "o200k" as const,
           displayName: "Test model",
           contextWindow: 128_000,
           maxOutputTokens: 16_384,
           promptCache: { kind: "none", ttlMs: null },
+          reasoning: { efforts: ["low", "medium", "high", "max"] },
           capabilities: new Set(options.supportsImageInput === false ? [] : ["image_input"]),
         },
       ],
@@ -172,7 +173,7 @@ async function setup(
     ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
     ...(options.imageAssets ? { imageAssets: options.imageAssets } : {}),
     ...(options.notices ? { notices: options.notices } : {}),
-    agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [
+    agentRevisions: createTestAgentBinding("gpt-5.6-luna", "", () => [
       thread.id,
       ...(thread.parentThreadId ? [thread.parentThreadId] : []),
     ]),

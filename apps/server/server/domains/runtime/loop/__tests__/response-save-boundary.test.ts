@@ -38,7 +38,7 @@ describe("reply save boundaries", () => {
           toolCalls: [],
           finishReason: "tool_use",
           usage: { inputTokens: 10, outputTokens: 1 },
-          model: "gpt-4.1-mini",
+          model: "gpt-5.6-luna",
           provider: "openai",
         },
       ],

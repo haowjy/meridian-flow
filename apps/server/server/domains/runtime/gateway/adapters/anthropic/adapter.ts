@@ -18,6 +18,7 @@ import type {
   GenerateRequest,
   ModelInfo,
   ProviderConfig,
+  ResolvedCall,
   StreamEvent,
 } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
@@ -26,7 +27,7 @@ import {
   type ProviderErrorPatterns,
   providerFetch,
 } from "../provider-http-error.js";
-import { toAnthropicMessageParams } from "./request-map.js";
+import { assertCacheTtlsOnWire, toAnthropicMessageParams } from "./request-map.js";
 import {
   accumulatorHasPartialResult,
   buildGenerateResult,
@@ -48,6 +49,7 @@ export const ANTHROPIC_ERROR_PATTERNS: Partial<ProviderErrorPatterns> = {
 };
 
 export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter {
+  for (const model of config.models) assertCacheTtlsOnWire(model);
   const apiKey = resolveApiKey(config.auth);
   const client = new Anthropic({
     apiKey: apiKey ?? "not-needed",
@@ -62,20 +64,18 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
 
   return {
     providerId,
-    async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
+    async *stream(
+      request: GenerateRequest,
+      model: ModelInfo,
+      call: ResolvedCall,
+    ): AsyncIterable<StreamEvent> {
       // Create a fresh accumulator per stream call — each generate request
       // gets its own streaming state.
-      const acc = createStreamAccumulator(model.id, providerId);
+      const acc = createStreamAccumulator(model.id, providerId, call.longCacheWrites);
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
-        const params = toAnthropicMessageParams(
-          request,
-          model.id,
-          model.maxOutputTokens,
-          providerId,
-          model.promptCache.ttlMs,
-        );
+        const params = toAnthropicMessageParams(request, model, call, providerId);
         const stream = await client.messages.create(params, { signal: request.signal });
 
         for await (const event of stream) {

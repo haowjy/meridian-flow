@@ -33,37 +33,56 @@ export type ProviderOptions = Record<string, Record<string, unknown>>;
 export type TokenizerFamily = "anthropic" | "o200k" | "gemini" | "deepseek";
 
 /**
- * Declared LLM capability flags. Used by the orchestrator and context builder
- * to decide whether to include images, enable tool calling, etc. Each adapter
- * reports capabilities from its static model catalog in config/providers.ts.
+ * Declared LLM capability flags, from the model's row in config/registry.ts.
+ * Only `image_input` is read today (the context builder keeps images for models
+ * that take them); add a value when something branches on it.
  */
-export type Capability =
-  | "streaming"
-  | "tool_calling"
-  | "parallel_tool_calls"
-  | "image_input"
-  | "image_output"
-  | "file_input"
-  | "structured_output"
-  | "reasoning";
+export type Capability = "image_input";
 
 /** Registry-declared provider cache behavior and its best-known retention window. */
 export interface PromptCacheDescriptor {
   kind: "explicit" | "automatic" | "none";
-  /** Best-known TTL in milliseconds; null means the provider does not publish one. */
+  /** Best-known TTL in milliseconds of the default (short) retention; null means the provider does not publish one. */
   ttlMs: number | null;
+  /** TTL when a request asks for long retention; absent when the model offers no longer option. */
+  longTtlMs?: number;
+}
+
+/** Which cache lifetime a request wants: primary chats ask for long, subagents for short. */
+export type PromptCacheRetention = "short" | "long";
+
+/** The TTL a request with this retention gets from a model, for adapters and warm/cold prediction. */
+export function resolvePromptCacheTtlMs(
+  cache: PromptCacheDescriptor,
+  retention: PromptCacheRetention,
+): number | null {
+  return retention === "long" ? (cache.longTtlMs ?? cache.ttlMs) : cache.ttlMs;
+}
+
+export const REASONING_EFFORTS = ["low", "medium", "high", "max"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/**
+ * A model's reasoning controls, copied from its models.dev `reasoning_options`
+ * (`xhigh`, which Flow never requests, is omitted from `efforts`).
+ */
+export interface ReasoningSupport {
+  /** Effort levels the model accepts. */
+  efforts: readonly ReasoningEffort[];
+  /** Whether reasoning can be turned off: a `toggle` option or a `none` effort. */
+  canDisable?: true;
 }
 
 /**
  * Static model metadata registered per provider. `provider` is filled in by
  * buildProviderRegistry from the ProviderConfig.id, not from the model's own
- * definition. `hostedTools` lists server-side tools (web_search, code_execution,
- * etc.) that the provider executes without Meridian involvement.
+ * definition.
  */
 export interface ModelInfo {
+  reasoning: ReasoningSupport;
   /** Whole-request input repricing threshold, if the model has one. */
   inputTierTokens?: number;
-  /** Underlying tokenizer family; OpenRouter models declare their upstream family. */
+  /** Underlying tokenizer family. */
   tokenizer: TokenizerFamily;
   id: string;
   provider: string;
@@ -72,11 +91,6 @@ export interface ModelInfo {
   maxOutputTokens: number;
   promptCache: PromptCacheDescriptor;
   capabilities: Set<Capability>;
-  hostedTools?: Set<string>;
-  /** Per-model inactivity window override. 0 disables the stall guard. */
-  stallTimeoutMs?: number;
-  /** Per-model absolute ceiling override. 0 disables the ceiling backstop. */
-  ceilingTimeoutMs?: number;
 }
 
 /**
@@ -197,20 +211,8 @@ export interface FunctionTool {
   providerOptions?: ProviderOptions;
 }
 
-/**
- * Hosted (server-side) tools executed by the provider itself. Meridian does not
- * execute these — Anthropic's `web_search`, `code_execution`, `text_editor`,
- * `computer_use` and OpenAI's `web_search`, `code_interpreter`, `file_search`.
- */
-export type HostedToolKind = "web_search" | "code_execution" | "file_search";
-
-export interface HostedTool {
-  type: "hosted";
-  kind: HostedToolKind | string;
-  providerOptions?: ProviderOptions;
-}
-
-export type Tool = FunctionTool | HostedTool;
+/** Every tool the model sees is a function tool Flow executes. */
+export type Tool = FunctionTool;
 
 export type ResponseFormat =
   | { type: "text" }
@@ -247,7 +249,7 @@ export interface GenerateRequest {
   topP?: number;
   stopSequences?: string[];
   responseFormat?: ResponseFormat;
-  reasoning?: "disabled" | "adaptive" | { effort: "low" | "medium" | "high" | "max" };
+  reasoning?: "disabled" | "adaptive" | { effort: ReasoningEffort };
   providerOptions?: ProviderOptions;
   signal?: AbortSignal;
   /**
@@ -258,6 +260,8 @@ export interface GenerateRequest {
    * ignores it.
    */
   promptCacheKey?: string;
+  /** Cache lifetime wanted; fixed per thread kind so the cached prefix never changes mid-thread. */
+  promptCacheRetention: PromptCacheRetention;
   /** Observability-only context; adapters must never map it into provider requests. */
   correlation?: {
     /** Preallocated by callers that need to join request content to lifecycle evidence. */
@@ -417,10 +421,9 @@ export interface ModelCallTiming {
 
 /**
  * Known adapter identifiers. String literals for the built-in adapters plus
- * a catch-all for custom adapter strings. `openrouter` reuses the openai-compatible
- * wire format against OpenRouter's API with provider-reported cost enrichment.
+ * a catch-all for custom adapter strings.
  */
-export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible" | "openrouter";
+export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible";
 
 /**
  * A configured provider entry. `adapter` selects the provider adapter factory
@@ -455,8 +458,7 @@ export interface ProviderConfig {
  *   event re-arms it, so a slow-but-streaming model is never killed. 0 disables.
  * - `attemptCeilingMs`: absolute backstop for one provider attempt (default
  *   10 min), fixed from attempt start. Not the normal terminator; 0 disables it
- *   for self-hosted models. Per-model `stallTimeoutMs`/`ceilingTimeoutMs`
- *   override these. Timeouts are retryable.
+ *   for self-hosted models. Timeouts are retryable.
  * - `retry`: controls per-provider retry with exponential backoff. Only
  *   retries before committed output (visible text or a tool call) has been
  *   emitted to the caller; reasoning-only attempts are retryable.

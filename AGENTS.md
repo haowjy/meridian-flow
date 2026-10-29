@@ -127,10 +127,12 @@ changes included. `./mf` output never stands in for that run.
 
 **Live model calls go to `deepseek-flash`.** These runs check Flow, not model
 behavior: use the mock provider when the model's output doesn't matter, and
-`deepseek-flash` when a run needs a real model. Don't call other providers to
-confirm a model exists or works. Model facts (limits, prices, modalities) come
-from [models.dev](https://models.dev); read a provider's API docs only for what
-models.dev lacks.
+`deepseek-flash` when a run needs a real model. Set `LIVE_TEST_MODEL=deepseek-flash`
+for live runs (on the command line or in `.env.local`): every model call goes there,
+whatever an Agent or chat names. Don't
+call other providers to confirm a model exists or works. Model facts (limits,
+prices, modalities) come from [models.dev](https://models.dev); read a provider's
+API docs only for what models.dev lacks.
 
 ## Build and test
 

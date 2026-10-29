@@ -46,7 +46,7 @@ export function createCompactionFixture(db: Database) {
     let threshold: number | undefined = 2500;
     // A child reads its spawner's binding for the chain's permission.
     const boundThreadIds = new Set([threadId, ...(options.child ? [ids.caller] : [])]);
-    const source = createTestAgentBinding("gpt-4.1-mini", "Write stories.", () => [
+    const source = createTestAgentBinding("gpt-5.6-luna", "Write stories.", () => [
       ...boundThreadIds,
     ]);
     const binding = {
@@ -73,13 +73,14 @@ export function createCompactionFixture(db: Database) {
         ...gateway,
         listModels: () => [
           {
-            id: "gpt-4.1-mini",
+            id: "gpt-5.6-luna",
             provider: "openai",
             tokenizer: "o200k" as const,
             displayName: "Fixture",
             contextWindow: 128000,
             maxOutputTokens: 100,
             promptCache: { kind: "automatic", ttlMs: 60000 },
+            reasoning: { efforts: ["low", "medium", "high", "max"] },
             capabilities: new Set(["image_input"]),
           },
         ],

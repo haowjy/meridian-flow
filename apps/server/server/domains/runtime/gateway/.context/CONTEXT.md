@@ -12,11 +12,20 @@ prefix.
 
 ## Port and attempt policy
 
-`Gateway.stream()` yields canonical `StreamEvent`s; `generate()`, optional
-`settleCancelledResult()`, and `listModels()` complete the port. A registry maps
+`Gateway.stream()` yields canonical `StreamEvent`s; `generate()` and `listModels()`
+complete the port; the orchestrator persists a cancelled call's result when
+`shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable usage.
+Where the routed model is known, `attempt-stream.ts` calls `resolveCall()`
+(`domain/resolve-call.ts`) once and hands the adapter a `ResolvedCall`:
+`{ cacheTtlMs, longCacheWrites, reasoning: "default" | "off" | { effort } }`. Adapters
+only map it to wire fields and reject at construction (`assertCacheTtlsOnWire`) a model
+whose cache lifetimes they cannot send. A registry maps
 model IDs to provider adapters and is the single source for model context,
 pricing, cache descriptor, and required tokenizer family. Duplicate model IDs
-warn during construction rather than silently replacing an entry.
+warn during construction rather than silently replacing an entry. Registry model
+facts (limits, prices, modalities, effort ranges) come from
+[models.dev](https://models.dev/api.json); a provider's API docs are only for what
+models.dev lacks, such as per-TTL cache-write rates and wire parameters.
 
 `attempt-stream.ts` is the only retry layer. Provider SDK retries are disabled.
 Retry/fallback occurs only before committed text or tool output; reasoning-only
@@ -34,8 +43,7 @@ port and never enters EventSink, thread snapshots, journal rows, or JSONL.
 
 Adapters normalize provider usage into the shared `Usage` contract and validate
 it before returning. Provider counters differ, so adapters—not billing or the
-loop—own cache-counter conversion. OpenRouter-specific cost enrichment and
-cancel settlement stay in its adapter; generic cancellation reconciliation is
+loop—own cache-counter conversion. Cancelled-call settlement is generic and
 owned by the gateway.
 
 A close is `ok`, `error`, or `cancelled`. `cancelled` requires causal abort
@@ -79,11 +87,51 @@ provider advertisement is not argument authority.
 
 ## Cache, limits, and persisted selections
 
-Each model declares `promptCache: { kind, ttlMs }`. Explicit descriptors produce
-provider cache marks; automatic models receive no marks and `none` models predict
-cold. A nullable TTL means unknown, not infinite. Cache-write pricing follows
-the descriptor tier. `inputTierTokens`, when present, must be positive and below
-the context window; the runtime uses it for compaction planning.
+Each model declares `promptCache: { kind, ttlMs, longTtlMs? }`: `ttlMs` is the
+short lifetime, `longTtlMs` the longer one the model offers (Claude 1h; GPT-5.6+ 12h,
+the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl` by the
+OpenAI adapter; the 30m default is never sent). When a provider omits the
+cache-write split by lifetime, the adapters attribute all writes to the lifetime the
+request asked for (`ResolvedCall.longCacheWrites`). DeepSeek and Gemini cache
+automatically with an assumed 5-minute `ttlMs`.
+`GenerateRequest.promptCacheRetention` is required and picks one
+(`resolvePromptCacheTtlMs`): the loop asks `long` for primary threads and `short`
+for subagents, fixed by thread kind so the cached prefix never varies mid-thread;
+the rolling summarizer passes `short` explicitly. `validateModelRegistry` (adapter-neutral)
+requires `longTtlMs > ttlMs`; the OpenAI adapter requires 30m/12h when a model has a
+`longTtlMs`, and the Anthropic adapter 5m/1h for explicit models, both when a gateway is created.
+Explicit descriptors produce provider cache marks; automatic models receive no
+marks and `none` models predict cold. DeepSeek is automatic with no TTL choice: its
+descriptor holds one assumed 5-minute `ttlMs` for both chat kinds. A nullable TTL
+means unknown, not infinite.
+
+Claude and GPT-5.6+ bill cache writes by the TTL written. `Usage.cacheWriteLongTokens`
+(Anthropic's `cache_creation.ephemeral_1h_input_tokens`; OpenAI's
+`cache_write_tokens_details.ttl_12h_tokens`) is the long part of `cacheWriteTokens`;
+pricing bills it at `cacheWriteLongUsdPerMillionTokens` (Claude 2x input, OpenAI 2.5x)
+and the rest at `cacheWriteUsdPerMillionTokens` (the short rate: Claude 1.25x, OpenAI
+1.25x). Providers that do not split writes use the single rate. `inputTierTokens`, when
+present, must be positive and below the context window; the runtime uses it for
+compaction planning, and with `aboveTierMultipliers` costing reprices a request whose
+input exceeds it (OpenAI GPT-5.6+: whole request at 2x input and cache, 1.5x output
+above 272K). Registry rates are pinned at standard prices; Gemini 4 Argon's intro
+discount ends 2026-11-30 and the registry has no effective dates.
+
+Each model row's `reasoning: { efforts, canDisable? }` is copied from models.dev
+`reasoning_options` (minus `xhigh`, which Flow never requests): `canDisable` is a
+`toggle` option or a `none` effort. `resolveReasoning()` turns the request into
+`default` (absent or `adaptive`: send no effort, on every adapter), `off` (`disabled`,
+only when the model `canDisable`; otherwise the lowest supported effort), or the nearest
+supported effort (a tie goes up: DeepSeek has no `medium`, so `medium` becomes `high`).
+Wire mapping: the Anthropic adapter (Claude and DeepSeek) sends an effort as
+`output_config.effort` and `off` as `thinking: {type: "disabled"}`; the OpenAI Responses
+adapter sends `reasoning.effort` (`none` for `off`) with `summary: "auto"`; the
+`openai-compatible` adapter (Gemini 4 Argon, Google maps `reasoning_effort` to
+`thinking_level`) sends `reasoning_effort`. Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 have
+no toggle, so they never resolve to `off`: `thinking: disabled` and `budget_tokens` are a
+400 on them, and no registered model gets a thinking budget. Models that think by default
+(`canDisable`, such as DeepSeek) get an empty thinking block before a replayed `tool_use`
+unless reasoning is `off`.
 
 Every model declares a tokenizer family with no fallback; runtime compaction
 uses it for CJK estimates. Output limits are provider defaults unless a request
@@ -101,3 +149,15 @@ one object envelope carrying each command's purpose, required and allowed
 fields, and command-tagged descriptions generated from the Zod branches.
 DeepSeek receives the canonical unions unchanged, and a root `allOf` is refused
 at tool registration.
+
+## LIVE_TEST_MODEL (dev only)
+
+`LIVE_TEST_MODEL=<registry model id>` sends every gateway call to that model, whatever
+the request, chat binding or Agent names. `createGatewayFromEnv` validates it (known id,
+provider key set) and wraps the gateway once (`config/live-test-model.ts`); it also refuses it in production (not staging). The wrapper rewrites the request's model, drops its provider,
+and lists every registry id, keyed or not, with the override's facts, because
+availability checks, compaction, image support, tokenizer and cache prediction look models
+up by the stored id. `getDefaultModel()` stays the real default, so seeding and child
+bindings never record the override. Costing needs no hook: it prices the provider and model the response reports.
+Stored bindings, Agent files and the catalog still show the model they name. The name has
+no `FLOW_` prefix because it is not a provider key.

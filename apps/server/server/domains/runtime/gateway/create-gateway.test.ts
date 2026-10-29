@@ -23,6 +23,7 @@ it("propagates context overflow through the provider fallback router", async () 
     });
     const events = [];
     for await (const event of gateway.stream({
+      promptCacheRetention: "short",
       messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
     }))
       events.push(event);

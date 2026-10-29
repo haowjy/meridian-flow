@@ -17,12 +17,13 @@ import type {
   GenerateRequest,
   ModelInfo,
   ProviderConfig,
+  ResolvedCall,
   StreamEvent,
 } from "../../domain/index.js";
 import { hasBillableTokenUsage, withMissingUsageMetering } from "../../domain/metering.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapProviderHttpError, providerFetch } from "../provider-http-error.js";
-import { toOpenAIResponsesParams } from "./request-map.js";
+import { assertCacheTtlsOnWire, toOpenAIResponsesParams } from "./request-map.js";
 import {
   accumulatorHasPartialResult,
   buildGenerateResult,
@@ -36,6 +37,7 @@ function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
 }
 
 export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAdapter {
+  for (const model of config.models) assertCacheTtlsOnWire(model);
   const apiKey = resolveApiKey(config.auth);
   const client = new OpenAI({
     apiKey: apiKey ?? "not-needed",
@@ -50,14 +52,18 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
 
   return {
     providerId,
-    async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
+    async *stream(
+      request: GenerateRequest,
+      model: ModelInfo,
+      call: ResolvedCall,
+    ): AsyncIterable<StreamEvent> {
       // Create a fresh accumulator per stream call — each generate request
       // gets its own streaming state.
-      const acc = createStreamAccumulator(model.id, providerId);
+      const acc = createStreamAccumulator(model.id, providerId, call.longCacheWrites);
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
-        const params = toOpenAIResponsesParams(request, model.id, providerId);
+        const params = toOpenAIResponsesParams(request, model, call);
         const stream = await client.responses.create(params, { signal: request.signal });
 
         for await (const event of stream) {

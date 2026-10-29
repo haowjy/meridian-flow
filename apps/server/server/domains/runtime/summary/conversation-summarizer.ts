@@ -145,7 +145,7 @@ export function createConversationSummarizer(
       // The one catch spans every path/segment so a later failure cannot lose a paid row.
       try {
         input.signal.throwIfAborted();
-        const models = gateway.listModels?.() ?? [];
+        const models = gateway.listModels();
         const cheapModel = models.find((model) => model.id === config.model);
         const threadModelId =
           input.requestInHand?.model ??
@@ -264,17 +264,6 @@ export function createConversationSummarizer(
               error instanceof Error ? error.message : String(error),
             );
           }
-          if (input.signal.aborted && gateway.settleCancelledResult) {
-            try {
-              const settled = await gateway.settleCancelledResult({ result, model: row.model });
-              if (settled?.persist) {
-                result = settled.result;
-                usage = result.usage;
-              }
-            } catch (error) {
-              failure = error;
-            }
-          }
           Object.assign(row, {
             inputTokens: usage.inputTokens,
             outputTokens: usage.outputTokens,
@@ -361,6 +350,8 @@ export function createConversationSummarizer(
         const requestFor = (segment: string[]): GenerateRequest => ({
           model: model.id,
           reasoning: "disabled",
+          // Rolling summaries carry no cache marks; the short lifetime is explicit, not defaulted.
+          promptCacheRetention: "short",
           messages: [
             { role: "system", content: [{ type: "text", text: prompt }] },
             {

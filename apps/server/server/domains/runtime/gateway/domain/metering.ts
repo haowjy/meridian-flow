@@ -1,12 +1,10 @@
 /**
  * Provider-agnostic metering metadata on GenerateResult.providerData.
- * OpenRouter and direct providers flag unmetered cancelled streams the same way.
+ * Providers flag unmetered cancelled streams with it.
  */
 import type { GenerateResult } from "./types.js";
 
-export type MeteringStatus = "missing_usage";
-
-export function readMeteringStatus(providerData: unknown): MeteringStatus | undefined {
+export function readMeteringStatus(providerData: unknown): "missing_usage" | undefined {
   if (!providerData || typeof providerData !== "object") return undefined;
   const status = (providerData as Record<string, unknown>).meteringStatus;
   return status === "missing_usage" ? "missing_usage" : undefined;

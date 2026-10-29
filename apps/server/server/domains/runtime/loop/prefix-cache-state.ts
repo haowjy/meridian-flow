@@ -18,12 +18,22 @@ import {
   type ThreadRepository,
   type TurnRepository,
 } from "../../threads/index.js";
-import type { ModelInfo, PromptCacheDescriptor } from "../gateway/index.js";
+import {
+  type ModelInfo,
+  type PromptCacheDescriptor,
+  type PromptCacheRetention,
+  resolvePromptCacheTtlMs,
+} from "../gateway/index.js";
 
 type CacheHistoryThread = Pick<
   Thread,
-  "id" | "initialPromptBakeId" | "originType" | "originTurnId"
+  "id" | "kind" | "initialPromptBakeId" | "originType" | "originTurnId"
 >;
+
+/** Primary chats ask for the long cache; subagents are short-lived and take the cheaper short one. */
+export function promptCacheRetentionFor(threadKind: Thread["kind"]): PromptCacheRetention {
+  return threadKind === "subagent" ? "short" : "long";
+}
 
 export interface PrefixCacheHistory {
   thread: CacheHistoryThread;
@@ -192,7 +202,10 @@ export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): Pref
   const selected = selectReusablePrefixResponse(input);
   if (!selected.response) return cold(selected.reason);
   const response = selected.response;
-  const ttlMs = input.promptCache.ttlMs;
+  const ttlMs = resolvePromptCacheTtlMs(
+    input.promptCache,
+    promptCacheRetentionFor(input.history.thread.kind),
+  );
   if (ttlMs === null) return cold("ttl_unknown");
   if (response.requestStartedAt === null) return cold("facts_unavailable");
   const responseTimeMs = Date.parse(response.requestStartedAt);

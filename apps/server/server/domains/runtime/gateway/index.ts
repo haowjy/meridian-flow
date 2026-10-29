@@ -20,7 +20,7 @@ export {
 export type {
   ModelPricing,
   ModelRegistry,
-  PinnedModelRate,
+  ModelTokenRate,
   RegisteredModel,
   RegisteredProvider,
 } from "./config/registry.js";
@@ -33,7 +33,6 @@ export {
 export { consumeStream, GatewayStreamError } from "./consume-stream.js";
 export { createGateway } from "./create-gateway.js";
 export * from "./domain/index.js";
-export { thinkingBudgetTokens } from "./domain/thinking-budget.js";
 export { assistant, image, system, text, toolResult, user } from "./helpers/messages.js";
 export { createInstrumentedGateway } from "./instrumented-gateway.js";
 export type { Gateway } from "./ports/gateway.js";

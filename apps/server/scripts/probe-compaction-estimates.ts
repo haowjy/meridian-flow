@@ -136,6 +136,7 @@ function buildRequest(corpus: CorpusDefinition, imageData: string): GenerateRequ
     ...(corpus.id === "image-heavy" ? {} : { tools: [TOOL] }),
     maxTokens: 8,
     reasoning: "disabled",
+    promptCacheRetention: "short",
   };
 }
 
@@ -275,7 +276,6 @@ const providerKeys = [
   ["anthropic", process.env.FLOW_ANTHROPIC_API_KEY],
   ["openai", process.env.FLOW_OPENAI_API_KEY],
   ["deepseek", process.env.FLOW_DEEPSEEK_API_KEY],
-  ["openrouter", process.env.FLOW_OPENROUTER_API_KEY],
 ] as const;
 const corpusFile = JSON.parse(await readFile(corpusUrl, "utf8")) as CorpusFile;
 const png = makeProbePng(1024, 1024);
@@ -305,7 +305,6 @@ for (const [provider, key] of providerKeys) {
     ...(provider === "anthropic" ? { FLOW_ANTHROPIC_API_KEY: key } : {}),
     ...(provider === "openai" ? { FLOW_OPENAI_API_KEY: key } : {}),
     ...(provider === "deepseek" ? { FLOW_DEEPSEEK_API_KEY: key } : {}),
-    ...(provider === "openrouter" ? { FLOW_OPENROUTER_API_KEY: key } : {}),
   };
   const { gateway, cleanup } = await createGatewayFromEnv(env);
   const models = gateway.listModels?.() ?? [];
@@ -326,7 +325,7 @@ for (const [provider, key] of providerKeys) {
           : await completeToolTranscript(gateway, corpus, template, model.id);
     } catch (error) {
       const estimate = estimateRequestTokens({
-        request: { ...template, model: model.id },
+        request: template,
         baseline: null,
         tokenizer: model.tokenizer,
       });

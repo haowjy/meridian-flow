@@ -11,7 +11,7 @@ End-to-end checks for `@meridian/model-gateway` via the smoke mini-server (`test
 | `FLOW_DEEPSEEK_API_KEY` | Optional | Enables live DeepSeek scenarios |
 | `FLOW_ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (adapter not in v1 spine yet) |
 | `FLOW_OPENAI_API_KEY` | Optional | Live OpenAI scenarios (adapter not in v1 spine yet) |
-| `FLOW_OPENROUTER_API_KEY` | Optional | Enables live OpenRouter scenarios |
+| `FLOW_GEMINI_API_KEY` | Optional | Enables live Gemini scenarios |
 | `MODEL_PROVIDER` | Optional | Set to `mock` to force in-process mock even if keys exist |
 | `PORT` | Optional | Fixed listen port; default is OS-assigned ephemeral |
 
@@ -235,20 +235,20 @@ curl -sS -X POST "${BASE}/generate" \
 
 **Requires:** `FLOW_DEEPSEEK_API_KEY` set to a real key in `.env`. Restart server.
 
-Repeat scenarios **3**, **4**, and **5** with `"model": "deepseek-chat"` in the JSON body.
+Repeat scenarios **3**, **4**, and **5** with `"model": "deepseek-flash"` in the JSON body.
 
 ```bash
 curl -sS -X POST "${BASE}/generate" \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "deepseek-chat",
+    "model": "deepseek-flash",
     "messages": [
       { "role": "user", "content": [{ "type": "text", "text": "Reply with exactly: pong" }] }
     ]
   }' | jq .
 ```
 
-**Pass:** HTTP 200; `provider` is `"deepseek"`; `model` is `"deepseek-chat"`; text content present; usage tokens > 0.
+**Pass:** HTTP 200; `provider` is `"deepseek"`; `model` is `"deepseek-flash"`; text content present; usage tokens > 0.
 
 **Fail:** Auth/network errors, or mock provider used instead of DeepSeek.
 
@@ -260,8 +260,9 @@ curl -sS -X POST "${BASE}/generate" \
 
 **Requires:** `FLOW_ANTHROPIC_API_KEY` in `.env`.
 
-Anthropic is enabled by a real key. With no explicit model selection, General
-uses the registry default `claude-sonnet-4-6`.
+Anthropic is enabled by a real key, but the registry default is `deepseek-flash`.
+General uses `claude-sonnet-5-5` only when the chat selects it, or when
+`FLOW_DEEPSEEK_API_KEY` is unset and Anthropic is the first enabled provider.
 
 ```bash
 pnpm dev
@@ -275,7 +276,7 @@ pnpm dev --stop
 
 **Pass:** text deltas and a completed reply; the durable transcript includes
 that reply. Gateway `stream.open` / successful `stream.close` correlation names
-`anthropic` and `claude-sonnet-4-6`. Command-union tools (write and work) must
+`anthropic` and `claude-sonnet-5-5`. Command-union tools (write and work) must
 not cause Anthropic's root `oneOf` / `anyOf` schema rejection.
 
 Also exercise valid command selection, not just a text reply:
@@ -302,15 +303,16 @@ allowed fields; shared field descriptions identify their commands.
 
 ---
 
-## 9. OpenAI live (optional)
+## 9. OpenAI and Gemini live (optional)
 
-**Requires:** `FLOW_OPENAI_API_KEY` in `.env`.
+**Requires:** `FLOW_OPENAI_API_KEY` (models `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-5.6-luna`, Responses
+adapter) or `FLOW_GEMINI_API_KEY` (`gemini-4-argon`, OpenAI-compatible adapter) in `.env`.
 
-**Note:** OpenAI Responses adapter is scaffold-only in v1; provider is not registered yet.
+Repeat scenarios 3–5 with one of those model ids. For OpenAI, a primary-chat request sends
+`prompt_cache_options.ttl: "12h"`; check that the second turn reports `cacheReadTokens` and that
+a write splits `cacheWriteTokens` / `cacheWriteLongTokens`.
 
-When supported, repeat scenarios 3–5 with a configured OpenAI model id.
-
-**Skip** until adapter is implemented.
+**Skip** if neither key is set.
 
 ---
 

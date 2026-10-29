@@ -15,8 +15,8 @@ function pricedTextResult(text = "done"): GenerateResult {
     content: [{ type: "text", text }],
     toolCalls: [],
     finishReason: "end_turn",
-    usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-    model: "gpt-4.1-mini",
+    usage: { inputTokens: 100_000, outputTokens: 1_650_000 },
+    model: "gpt-5.6-luna",
     provider: "openai",
   };
 }

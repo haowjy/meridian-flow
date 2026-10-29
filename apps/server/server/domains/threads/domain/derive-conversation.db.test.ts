@@ -75,7 +75,7 @@ else
       };
       const agentCatalog = createBoundAgentCatalog({
         store: revisions,
-        defaultModel: () => "gpt-4.1-mini",
+        defaultModel: () => "gpt-5.6-luna",
         unavailableReasons: () => [],
       });
       const agent = await agentCatalog.save(ids.userId, {
@@ -237,7 +237,7 @@ else
         role: "compaction",
         origin: "system",
         status: "complete",
-        compactionModel: "gpt-4.1-mini",
+        compactionModel: "gpt-5.6-luna",
         metadata: {
           kind: "prompt_epoch_boundary",
           cause: "compaction",
@@ -598,7 +598,7 @@ else
         role: "compaction",
         origin: "system",
         status: "complete",
-        compactionModel: "gpt-4.1-mini",
+        compactionModel: "gpt-5.6-luna",
         prevTurnId: writer.id,
       });
       await expect(
@@ -695,6 +695,7 @@ else
         contextWindow: 100_000,
         maxOutputTokens: 4_096,
         promptCache: { kind: "explicit" as const, ttlMs: 60_000 },
+        reasoning: { efforts: ["low", "medium", "high", "max"] },
         capabilities: new Set(),
       };
       const summaryRequests: import("../../runtime/gateway/index.js").GenerateRequest[] = [];

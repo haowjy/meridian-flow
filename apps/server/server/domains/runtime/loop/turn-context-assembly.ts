@@ -53,6 +53,7 @@ import {
   projectImageBlocksForModel,
 } from "./image-context.js";
 import type { ToolPolicy } from "./permissions/tool-policy.js";
+import { promptCacheRetentionFor } from "./prefix-cache-state.js";
 import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
 
@@ -119,7 +120,7 @@ export interface AssembledNextTurnContext {
   pendingBake?: PromptBakeContent;
   generateRequest: Pick<
     GenerateRequest,
-    "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
+    "messages" | "tools" | "model" | "reasoning" | "promptCacheKey" | "promptCacheRetention"
   >;
   activeHistory: ProjectedActiveHistory;
   /** The block ids whose observation frontiers may credit the model on this request (C10). */
@@ -237,7 +238,7 @@ export async function prepareNextTurnContext(
 
   const gatewayParams = agentContext.gatewayParams;
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
-  const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
+  const resolvedModel = input.gateway?.listModels().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
@@ -334,6 +335,7 @@ export function renderPreparedTurnContext(
       tools: built.tools,
       // Forks route to the owner of their cutoff; each adapter decides whether to forward it.
       promptCacheKey,
+      promptCacheRetention: promptCacheRetentionFor(context.thread.kind),
       ...context.gatewayParams,
     },
   };

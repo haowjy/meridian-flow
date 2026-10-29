@@ -19,31 +19,35 @@ const REGISTRY_PINNED_RATES = extractPinnedRates(MODEL_REGISTRY);
 describe("model pricing", () => {
   const rateSource = createDefaultModelTokenRateSource();
 
-  it("prices an Anthropic 1h cache write at 2x input, not the 5m tier's 1.25x", () => {
-    // loop/prompt-cache-marks.ts + the Anthropic adapter always request
-    // ttl: "1h" (the owner-chosen default), so every cache-write token this
-    // codebase produces must price at Anthropic's 1h tier (2x input), never
-    // the 5m tier (1.25x) — see the registry's cacheWriteUsdPerMillionTokens
-    // comment.
-    const cost = computeModelCost({
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-      usage: { inputTokens: 1_000_000, cacheWriteTokens: 1_000_000, outputTokens: 0 },
-      rateSource,
-    });
+  it("prices Anthropic cache writes by the TTL written: 5m at 1.25x input, 1h at 2x", () => {
+    const price = (usage: { cacheWriteTokens: number; cacheWriteLongTokens?: number }) =>
+      computeModelCost({
+        provider: "anthropic",
+        model: "claude-sonnet-5-5",
+        usage: { inputTokens: 1_000_000, outputTokens: 0, ...usage },
+        rateSource,
+      });
 
-    expect(cost.costUsd).toBe("6.000000");
-    expect(cost.pricingSnapshot.cacheWriteUsdPerMillionTokens).toBe("6.00");
+    expect(price({ cacheWriteTokens: 1_000_000 }).costUsd).toBe("2.500000");
+    expect(price({ cacheWriteTokens: 1_000_000, cacheWriteLongTokens: 1_000_000 }).costUsd).toBe(
+      "4.000000",
+    );
+    expect(price({ cacheWriteTokens: 1_000_000, cacheWriteLongTokens: 400_000 }).costUsd).toBe(
+      "3.100000",
+    );
   });
 
   it("prices OpenAI's inclusive cache counters without double-counting input", () => {
-    const usage = mapOpenAIUsage({
-      input_tokens: 1_903,
-      input_tokens_details: { cached_tokens: 1_792 },
-      output_tokens: 74,
-      output_tokens_details: { reasoning_tokens: 0 },
-      total_tokens: 1_977,
-    });
+    const usage = mapOpenAIUsage(
+      {
+        input_tokens: 1_903,
+        input_tokens_details: { cached_tokens: 1_792 },
+        output_tokens: 74,
+        output_tokens_details: { reasoning_tokens: 0 },
+        total_tokens: 1_977,
+      },
+      false,
+    );
 
     expect(usage).toEqual({
       inputTokens: 1_903,
@@ -80,13 +84,16 @@ describe("model pricing", () => {
       computeModelCost({
         provider: "deepseek",
         model: "deepseek-flash",
-        usage: mapAnthropicUsage({
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          cache_read_input_tokens: cacheReadTokens,
-          cache_creation_input_tokens: 0,
-          output_tokens_details: null,
-        } as Parameters<typeof mapAnthropicUsage>[0]),
+        usage: mapAnthropicUsage(
+          {
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            cache_read_input_tokens: cacheReadTokens,
+            cache_creation_input_tokens: 0,
+            output_tokens_details: null,
+          } as Parameters<typeof mapAnthropicUsage>[0],
+          false,
+        ),
         rateSource,
       }),
     );
@@ -101,13 +108,16 @@ describe("model pricing", () => {
   });
 
   it("retains Anthropic input categories when the terminal delta only updates output", () => {
-    const initial = mapAnthropicUsage({
-      input_tokens: 111,
-      output_tokens: 1,
-      cache_read_input_tokens: 1_792,
-      cache_creation_input_tokens: 0,
-      output_tokens_details: null,
-    } as Parameters<typeof mapAnthropicUsage>[0]);
+    const initial = mapAnthropicUsage(
+      {
+        input_tokens: 111,
+        output_tokens: 1,
+        cache_read_input_tokens: 1_792,
+        cache_creation_input_tokens: 0,
+        output_tokens_details: null,
+      } as Parameters<typeof mapAnthropicUsage>[0],
+      false,
+    );
     const terminal = mapAnthropicUsage(
       {
         input_tokens: null,
@@ -116,6 +126,7 @@ describe("model pricing", () => {
         cache_creation_input_tokens: null,
         output_tokens_details: null,
       } as Parameters<typeof mapAnthropicUsage>[0],
+      false,
       initial,
     );
 
@@ -143,54 +154,10 @@ describe("model pricing", () => {
     );
   });
 
-  it("uses OpenRouter providerData.reportedCostUsd when provider is openrouter", () => {
-    const cost = computeModelCost({
-      provider: "openrouter",
-      model: "anthropic/claude-sonnet-4.6",
-      usage: { inputTokens: 0, outputTokens: 0 },
-      providerData: { reportedCostUsd: 0.0042, enrichmentSource: "stream_usage" },
-      rateSource,
-    });
-
-    expect(cost.costUsd).toBe("0.004200");
-    expect(cost.millicredits).toBe("483");
-    expect(cost.priceSource).toBe("provider_reported");
-    expect(cost.pricingSnapshot.sourceLayer).toBe("provider_reported");
-    expect(cost.pricingSnapshot.source).toBe("provider_reported");
-  });
-
-  it("ignores providerData.reportedCostUsd for non-openrouter providers", () => {
-    const cost = computeModelCost({
-      provider: "stub",
-      model: "stub-model",
-      usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-      providerData: { reportedCostUsd: 0.0042 },
-      rateSource,
-    });
-
-    expect(cost.costUsd).toBe("0.000000");
-    expect(cost.priceSource).toBe("computed");
-    expect(cost.pricingSnapshot.sourceLayer).toBe("override");
-  });
-
-  it("surfaces missing_usage instead of silently billing zero for openrouter", () => {
-    const cost = computeModelCost({
-      provider: "openrouter",
-      model: "anthropic/claude-sonnet-4.6",
-      usage: { inputTokens: 0, outputTokens: 0 },
-      providerData: { meteringStatus: "missing_usage", generationId: "gen-missing" },
-      rateSource,
-    });
-
-    expect(cost.costUsd).toBe("0.000000");
-    expect(cost.priceSource).toBe("unknown");
-    expect(cost.pricingSnapshot.usageMeteringStatus).toBe("missing_usage");
-  });
-
   it("surfaces missing_usage for aborted OpenAI partial streams without usage", () => {
     const cost = computeModelCost({
       provider: "openai",
-      model: "gpt-4o",
+      model: "gpt-6.1-sol",
       usage: { inputTokens: 0, outputTokens: 0 },
       providerData: { meteringStatus: "missing_usage" },
       rateSource,
@@ -201,18 +168,6 @@ describe("model pricing", () => {
     expect(cost.priceSource).toBe("unknown");
     expect(cost.pricingSnapshot.usageMeteringStatus).toBe("missing_usage");
     expect(cost.pricingSnapshot.sourceDetail).toBe("openai.meteringStatus.missing_usage");
-  });
-
-  it("falls back to pinned rates when provider-reported cost is absent", () => {
-    const cost = computeModelCost({
-      provider: "openrouter",
-      model: "anthropic/claude-sonnet-4.6",
-      usage: { inputTokens: 1_000_000, outputTokens: 0 },
-      rateSource,
-    });
-
-    expect(cost.costUsd).toBe("3.000000");
-    expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
   });
 
   it("throws for unknown provider/model pairs instead of silently billing zero", () => {

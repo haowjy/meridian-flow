@@ -238,34 +238,6 @@ function writeCancelBillingStream(
   req.on("close", finish);
 }
 
-/** OpenRouter hard-cancel: partial stream with generation id but no usage chunk before abort. */
-function writeOpenRouterHardCancelStream(
-  req: import("node:http").IncomingMessage,
-  res: import("node:http").ServerResponse,
-  model: string,
-): void {
-  const generationId = "gen-hard-cancel";
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-  });
-  res.write(
-    sseLine({
-      id: generationId,
-      object: "chat.completion.chunk",
-      model,
-      choices: [{ index: 0, delta: { content: "x" }, finish_reason: null }],
-    }),
-  );
-  const finish = () => {
-    if (res.destroyed || res.writableEnded) return;
-    res.end();
-  };
-  req.on("aborted", finish);
-  req.on("close", finish);
-}
-
 function selectResponse(body: ChatCompletionRequest): MockModelStep | undefined {
   const userText = lastUserMessageText(body.messages);
   if (wantsBackgroundWriterHelperSpawn(body)) {
@@ -362,11 +334,6 @@ export function createMockOpenAICompatibleServer(options?: {
         }
 
         if (body.stream) {
-          if (messageText(body.messages).includes("openrouter hard cancel")) {
-            writeOpenRouterHardCancelStream(req, res, model);
-            return;
-          }
-
           if (messageText(body.messages).includes("hang cancel drain")) {
             writeHangCancelDrainStream(res, id, model);
             return;

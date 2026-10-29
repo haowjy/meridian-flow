@@ -13,7 +13,8 @@ const record = (event: string) => appendFileSync(tracePath, `${event}\n`);
 const keepAlive = setInterval(() => {}, 1_000);
 
 const gateway: Gateway = {
-  getDefaultModel: () => "gpt-4.1-mini",
+  listModels: () => [],
+  getDefaultModel: () => "gpt-5.6-luna",
   async *stream(request) {
     request.signal?.addEventListener(
       "abort",
@@ -35,16 +36,13 @@ const gateway: Gateway = {
         toolCalls: [],
         finishReason: "end_turn",
         usage: { inputTokens: 10, outputTokens: 10 },
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         provider: "openai",
       },
     } satisfies StreamEvent;
   },
   async generate() {
     throw new Error("The shutdown fixture only streams");
-  },
-  async settleCancelledResult({ result }) {
-    return result ? { result, persist: true } : null;
   },
 };
 

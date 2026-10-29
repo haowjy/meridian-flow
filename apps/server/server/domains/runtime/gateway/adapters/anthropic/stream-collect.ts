@@ -43,6 +43,8 @@ import { parseToolCallArguments } from "../../helpers/parse-tool-arguments.js";
 // ── Accumulator ───────────────────────────────────────────────────
 
 interface StreamAccumulator {
+  // The request asked for the long cache lifetime: the attribution when the provider omits the write split.
+  longCacheWrites: boolean;
   // Unindexed fallback content. Anthropic's normal assistant output is block-
   // indexed; this exists for any future provider event that must be preserved
   // but cannot be placed in source order.
@@ -85,8 +87,13 @@ function emptyUsage(): Usage {
   return { inputTokens: 0, outputTokens: 0 };
 }
 
-export function createStreamAccumulator(model: string, provider: string): StreamAccumulator {
+export function createStreamAccumulator(
+  model: string,
+  provider: string,
+  longCacheWrites: boolean,
+): StreamAccumulator {
   return {
+    longCacheWrites,
     contentParts: [],
     textBlocks: new Map(),
     reasoningBlocks: new Map(),
@@ -133,6 +140,7 @@ export function mapStopReason(reason: string | null | undefined): FinishReason {
 
 export function mapUsage(
   usage: Anthropic.Messages.Usage | Anthropic.Messages.MessageDeltaUsage,
+  longCacheWrites: boolean,
   fallback?: Usage,
 ): Usage {
   // Anthropic's input_tokens excludes cache reads and cache creation. Meridian's
@@ -151,6 +159,12 @@ export function mapUsage(
 
   if (cacheRead > 0) result.cacheReadTokens = cacheRead;
   if (cacheWrite > 0) result.cacheWriteTokens = cacheWrite;
+  // The split arrives on message_start and may be absent on message_delta; keep the earlier value.
+  const cacheWriteLong =
+    ("cache_creation" in usage ? usage.cache_creation?.ephemeral_1h_input_tokens : undefined) ??
+    fallback?.cacheWriteLongTokens ??
+    (longCacheWrites ? cacheWrite : 0);
+  if (cacheWriteLong > 0) result.cacheWriteLongTokens = cacheWriteLong;
 
   // Anthropic calls reasoning "thinking"; expose it as canonical
   // Usage.reasoningTokens without leaking the provider term downstream.
@@ -180,7 +194,7 @@ export function* eventsFromAnthropicStreamEvent(
       // initial request processing). Keep it so usage is available even before
       // the terminal message_delta arrives with final token totals.
       if (event.message.usage) {
-        acc.usage = mapUsage(event.message.usage);
+        acc.usage = mapUsage(event.message.usage, acc.longCacheWrites);
         yield { type: "usage", usage: acc.usage };
       }
       break;
@@ -296,7 +310,7 @@ export function* eventsFromAnthropicStreamEvent(
 
       // Update usage with delta (has final token counts).
       if (event.usage) {
-        acc.usage = mapUsage(event.usage, acc.usage);
+        acc.usage = mapUsage(event.usage, acc.longCacheWrites, acc.usage);
 
         yield { type: "usage", usage: acc.usage };
       }

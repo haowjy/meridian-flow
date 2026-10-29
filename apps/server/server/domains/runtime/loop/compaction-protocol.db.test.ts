@@ -688,7 +688,7 @@ else
               toolCalls: [],
               finishReason: "end_turn",
               usage: { inputTokens: 100, outputTokens: 10 },
-              model: "gpt-4.1-mini",
+              model: "gpt-5.6-luna",
               provider: "openai",
             },
           };
@@ -702,7 +702,7 @@ else
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
-        config: { model: "gpt-4.1-mini" },
+        config: { model: "gpt-5.6-luna" },
       });
       const summaryInputs: Parameters<typeof realSummarizer.summarize>[0][] = [];
       rig.deps.summarizer = {
@@ -776,7 +776,7 @@ else
               toolCalls: [],
               finishReason: "end_turn",
               usage: { inputTokens: 100, outputTokens: 10 },
-              model: "gpt-4.1-mini",
+              model: "gpt-5.6-luna",
               provider: "openai",
             },
           };
@@ -799,7 +799,7 @@ else
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
-        config: { model: "gpt-4.1-mini" },
+        config: { model: "gpt-5.6-luna" },
       });
       const inputs: Parameters<typeof real.summarize>[0][] = [];
       rig.deps.summarizer = {
@@ -870,7 +870,7 @@ else
           yield {
             type: "end",
             result: {
-              model: "gpt-4.1-mini",
+              model: "gpt-5.6-luna",
               provider: "openai",
               content: [{ type: "text", text: "Story facts and writer preferences." }],
               toolCalls: [],
@@ -946,14 +946,14 @@ else
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
         kind: "complete",
         text: "Earlier facts.",
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         modelResponses: [
           {
             id: crypto.randomUUID(),
             turnId,
             sequence: 0,
             provider: "openai",
-            model: "gpt-4.1-mini",
+            model: "gpt-5.6-luna",
             inputTokens: 100_000,
             outputTokens: 20,
             requestMessageCount: 7,
@@ -1094,7 +1094,7 @@ else
             toolCalls: [],
             finishReason: "tool_use",
             usage: { inputTokens: 10, outputTokens: 10 },
-            model: "gpt-4.1-mini",
+            model: "gpt-5.6-luna",
             provider: "openai",
           },
         ],
@@ -1298,7 +1298,7 @@ else
               turnId,
               sequence: 0,
               provider: "openai",
-              model: "gpt-4.1-mini",
+              model: "gpt-5.6-luna",
               inputTokens: 100,
               outputTokens: 10,
               requestMessageCount: 2,
@@ -1483,7 +1483,7 @@ else
               turnId,
               sequence: 0,
               provider: "openai",
-              model: "gpt-4.1-mini",
+              model: "gpt-5.6-luna",
               inputTokens: 100,
               outputTokens: 10,
               requestMessageCount: 7,
@@ -1545,7 +1545,7 @@ else
         toolCalls: [],
         finishReason: "tool_use" as const,
         usage: { inputTokens: 10000, outputTokens: 10 },
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         provider: "openai",
       });
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
@@ -1574,7 +1574,7 @@ else
             toolCalls: [],
             finishReason: "end_turn",
             usage: { inputTokens: 10000, outputTokens: 10 },
-            model: "gpt-4.1-mini",
+            model: "gpt-5.6-luna",
             provider: "openai",
           },
           {
@@ -1712,14 +1712,14 @@ else
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
         kind: "complete",
         text: "Summary.",
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         modelResponses: [
           {
             id: crypto.randomUUID(),
             turnId,
             sequence: 0,
             provider: "openai",
-            model: "gpt-4.1-mini",
+            model: "gpt-5.6-luna",
             inputTokens: 100,
             outputTokens: 10,
             requestMessageCount: 7,
@@ -1766,14 +1766,14 @@ else
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
         kind: "complete",
         text: "Summary.",
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         modelResponses: [
           {
             id: responseId,
             turnId,
             sequence: 0,
             provider: "openai",
-            model: "gpt-4.1-mini",
+            model: "gpt-5.6-luna",
             inputTokens: 100,
             outputTokens: 10,
             requestMessageCount: 7,
@@ -1853,7 +1853,7 @@ else
               turnId,
               sequence: 0,
               provider: "openai",
-              model: "gpt-4.1-mini",
+              model: "gpt-5.6-luna",
               inputTokens: 100,
               outputTokens: 10,
               requestMessageCount: 7,
@@ -1900,14 +1900,15 @@ else
     it("includes every cold segment response in a child report's cost", async () => {
       const rig = await fixture({ child: true, history: "short history ".repeat(100) });
       const model = {
-        id: "gpt-4.1-mini",
+        id: "gpt-5.6-luna",
         provider: "openai",
         tokenizer: "o200k" as const,
         displayName: "Fixture",
         contextWindow: 6_000,
         maxOutputTokens: 100,
         promptCache: { kind: "automatic" as const, ttlMs: 60_000 },
-        capabilities: new Set<import("../gateway/index.js").Capability>(["tool_calling"]),
+        reasoning: { efforts: ["low", "medium", "high", "max"] as const },
+        capabilities: new Set<import("../gateway/index.js").Capability>(),
       };
       rig.deps.gateway.listModels = () => [model];
       const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);
@@ -2037,7 +2038,7 @@ else
             turnId,
             sequence: 0,
             provider: "openai",
-            model: "gpt-4.1-mini",
+            model: "gpt-5.6-luna",
             inputTokens: 100,
             outputTokens: 10,
             requestMessageCount: 7,

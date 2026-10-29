@@ -104,7 +104,12 @@ import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { AskService } from "../asks/ask-service.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
-import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
+import {
+  type GenerateRequest,
+  type GenerateResult,
+  type Gateway as LlmGateway,
+  shouldPersistCancelledResult,
+} from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
@@ -1105,26 +1110,17 @@ async function settleCancelledResponse(input: {
   blockSeq: number;
   allBlocks: Block[];
   result: GenerateResult | undefined;
-  model: string;
   requestMessageCount: number;
   predictedCacheState: PrefixCacheState;
 }): Promise<Turn> {
-  const settlement = await input.deps.gateway.settleCancelledResult?.({
-    model: input.model,
-    ...(input.result ? { result: input.result } : {}),
-    ...(input.result?.providerRequestId
-      ? { providerRequestId: input.result.providerRequestId }
-      : {}),
-  });
-
   let currentTurn = input.currentTurn;
-  if (settlement?.persist) {
+  if (input.result && shouldPersistCancelledResult(input.result)) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
       runInput: input.runInput,
       thread: input.thread,
       currentTurn,
-      result: settlement.result,
+      result: input.result,
       requestMessageCount: input.requestMessageCount,
       predictedCacheState: input.predictedCacheState,
       treeBudget: input.treeBudget,
@@ -2326,7 +2322,6 @@ async function executeLoop({
         // usage can be persisted before turn.cancelled.
         await publishPhase("generating");
         let result: GenerateResult | undefined;
-        let streamModel = request.model ?? "unknown";
         const partialToolCalls = new Map<
           string,
           { toolName: string; arguments: string; targetRecorded: boolean }
@@ -2395,10 +2390,6 @@ async function executeLoop({
                   if (hasTarget) partialCall.arguments = "";
                 }
               }
-            }
-
-            if (event.type === "start") {
-              streamModel = event.model;
             }
 
             const mapped = mapStreamEvent(event);
@@ -2496,7 +2487,6 @@ async function executeLoop({
               .length,
             allBlocks,
             result,
-            model: result?.model ?? streamModel,
             requestMessageCount: request.messages.length,
             predictedCacheState,
           });

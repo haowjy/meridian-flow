@@ -325,19 +325,14 @@ export function createInstrumentedGateway(
       }
     },
 
+    listModels() {
+      return gateway.listModels();
+    },
+
     getDefaultModel() {
       return gateway.getDefaultModel();
     },
   };
-
-  const settleCancelledResult = gateway.settleCancelledResult;
-  if (settleCancelledResult) {
-    instrumented.settleCancelledResult = (input) => settleCancelledResult.call(gateway, input);
-  }
-  const listModels = gateway.listModels;
-  if (listModels) {
-    instrumented.listModels = () => listModels.call(gateway);
-  }
 
   return instrumented;
 }

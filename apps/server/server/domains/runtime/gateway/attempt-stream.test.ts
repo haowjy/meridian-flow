@@ -23,10 +23,11 @@ const MODEL: ModelInfo = {
   contextWindow: 128_000,
   maxOutputTokens: 4_096,
   promptCache: { kind: "none", ttlMs: null },
-  capabilities: new Set(["streaming"]),
+  reasoning: { efforts: ["low", "medium", "high", "max"] },
+  capabilities: new Set(),
 };
 
-const REQUEST: GenerateRequest = { messages: [] };
+const REQUEST: GenerateRequest = { messages: [], promptCacheRetention: "short" };
 
 const END_RESULT: GenerateResult = {
   content: [],
