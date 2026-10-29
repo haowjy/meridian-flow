@@ -6,8 +6,8 @@
  * runs, stamps the machine-wake fence on every thread it stopped, withdraws the targets' parent notices and settles their spawn status. The
  * fence is what keeps a stopped thread stopped: a message or spawn admission from an execution
  * admitted before it is refused at enqueue (`RunClaim.wakeRefusal`), so local aborts after commit
- * only make runs stop sooner. Stop (`thread` reach) ends only the owner's reply: no descendant is a
- * target, and a stopped subagent is fenced against its ancestors only (see `fenced` below).
+ * only make runs stop sooner. A `thread` reach (Stop, Send now) ends only the owner's reply: no
+ * descendant is a target. Whether the owner is fenced is the decision's `fenceOwner`, not the reach.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
@@ -28,7 +28,7 @@ import { asMultiThreadLocker } from "../loop/thread-lock.js";
 
 export function createLineageCancellation(deps: {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
-  threads: Pick<ThreadRepository, "findById" | "listSubtreeIds" | "cancelRunningSpawns">;
+  threads: Pick<ThreadRepository, "listSubtreeIds" | "cancelRunningSpawns">;
   runClaim: Pick<RunClaim, "requestCancel" | "fenceWakes">;
   delivery: Pick<RuntimeDelivery, "withThreadLock" | "selectPending">;
   asks: Pick<AskService, "recordCancelled">;
@@ -81,15 +81,12 @@ export function createLineageCancellation(deps: {
           });
           const claimedIds = new Set(claimed.map(({ ask }) => ask.id));
           const targetSet = new Set<string>(targets);
-          // The owner stops too when the writer deleted the chat, or stopped a subagent's reply.
-          // The fence points from ancestors down: a stopped subagent refuses the retasks and
-          // notices queued from above, but a primary chat is never fenced by Stop, since all
-          // that reaches it is from below (child reports, progress) or the system, which the
-          // ruling lets land. A cancelled turn or a finished run leaves the owner free too.
-          const ownerFenced =
-            reach.kind === "deleted" ||
-            (reach.kind === "thread" &&
-              (await deps.threads.findById(threadId))?.parentThreadId != null);
+          // The owner is fenced when the writer deleted the chat, or when the decision asks for it
+          // (Stop on a subagent). The fence refuses a wake from ANY sender admitted before the Stop,
+          // not only ancestors: a surviving child's mid-run `thread_message` is refused too, while a
+          // child's report lands, since a report row carries no sender. A stopped primary chat is
+          // not fenced, so reports wake it. Send now never fences: it runs the queue next.
+          const ownerFenced = reach.kind === "deleted" || decision.fenceOwner === true;
           const fenced = new Set<string>(ownerFenced ? [threadId, ...targets] : targets);
           // A target loses all its queued machine work; writer sends stay, as the writer's own
           // request to that chat. A fenced owner loses the `agent` messages from above that would

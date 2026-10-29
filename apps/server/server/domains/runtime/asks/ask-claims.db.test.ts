@@ -290,11 +290,25 @@ else
         });
       const queued = await message("before-stop", sender);
 
+      // Send now has the same reach but never fences: the parent's retask stays queued and sends go on.
+      await lineage.cancel(ids.child, async () => ({
+        result: null,
+        reach: { kind: "thread" as const },
+        execution: null,
+      }));
+      expect(await delivery.selectPending(ids.child)).toContainEqual(
+        expect.objectContaining({ id: queued.id }),
+      );
+      await expect(message("after-send-now", sender)).resolves.toMatchObject({
+        threadId: ids.child,
+      });
+
       // The writer stops the child: the caller is outside the lineage.
       await lineage.cancel(ids.child, async () => ({
         result: null,
         reach: { kind: "thread" as const },
         execution: null,
+        fenceOwner: true,
       }));
       expect(await delivery.selectPending(ids.child)).not.toContainEqual(
         expect.objectContaining({ id: queued.id }),

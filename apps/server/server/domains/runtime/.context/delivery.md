@@ -206,7 +206,9 @@ successor). At run start, pending non-command rows win unless a write-mode
 switch precedes work (`switch`, applied at the admitted run start); a lone
 switch stays pending, and otherwise the oldest command runs alone. See
 [controls](controls.md). Stop ends only the current reply of its own chat and what
-that execution owes; its subagents keep running (see
+that execution owes; its background subagents keep running (a foreground child
+ends with the reply that was waiting on it, and takes its own background children
+along; see
 [lineage cancellation](spawn.md#lineage-cancellation)). A notice-only queue
 does not start a run. `wakeIfRunnable` rereads after release and setup
 cancellation; the periodic sweep is the durable backstop, and an empty reread
