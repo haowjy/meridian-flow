@@ -1,7 +1,7 @@
 /**
  * Canonical mutation locks: thread (NO KEY UPDATE), then primary/target Works by id. Several
- * thread rows lock parents first, by `(spawn_depth, id)`, the order lineage cancellation takes
- * a subtree in; any other order deadlocks against a Stop.
+ * thread rows lock parents first, by `(spawn_depth, id)` (`parentsFirst`), the order lineage
+ * cancellation takes a subtree in; any other order deadlocks against a Stop.
  */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { asks, threads, threadWorks } from "@meridian/database/schema";
@@ -53,6 +53,17 @@ export async function lockThreadForMutation(db: DrizzleDb, threadId: ThreadId) {
   return thread ?? null;
 }
 
+/**
+ * The one order every multi-row thread locker takes threads in. `spawn_depth` is the parent's
+ * plus one, so parents sort before their children; `listSubtreeIds` gives a subtree this order.
+ */
+export function parentsFirst(
+  a: { id: string; spawnDepth: number },
+  b: { id: string; spawnDepth: number },
+): number {
+  return a.spawnDepth - b.spawnDepth || a.id.localeCompare(b.id);
+}
+
 const treeColumns = {
   id: threads.id,
   deletedAt: threads.deletedAt,
@@ -91,10 +102,7 @@ async function findWorkThreadTree(
       frontier.push(child.id);
     }
   }
-  // `spawn_depth` is the parent's plus one, so this is the cancellation's parents-first order.
-  const ordered = [...rows.values()].sort(
-    (a, b) => a.spawnDepth - b.spawnDepth || a.id.localeCompare(b.id),
-  );
+  const ordered = [...rows.values()].sort(parentsFirst);
   return {
     threadIds: ordered.map(({ id }) => id),
     liveThreadIds: ordered.filter(({ deletedAt }) => !deletedAt).map(({ id }) => id),

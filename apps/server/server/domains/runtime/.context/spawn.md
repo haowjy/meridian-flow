@@ -159,10 +159,14 @@ as any writer action does, unless the command deleted the chat: then the answer'
 claim cancels the ask as the command would have. Nothing retries `40P01`.
 
 Work delete and a Work receipt reversal's delete run the command on the Work's tree
-before `lockWorkThreadTree` takes the tree's rows. That function locks rows parents
-first, by `(spawn_depth, id)`, the order the command takes a subtree in
+before `lockWorkThreadTree` takes the tree's rows. Every multi-row thread locker takes
+threads parents first, by `(spawn_depth, id)` (`parentsFirst` in
+`shared/thread-work-lock.ts`), the order the command takes a subtree in
 (`listSubtreeIds` orders by depth, then id); in id order a child with a smaller id
 than its parent deadlocked a Stop against a restore or purge of the same tree.
+`stopThreads` reorders its lineage owners itself (`orderParentsFirst`), whatever order
+the caller passed: a Work's roots need not have depth 0, since a subagent whose parent
+was rebound elsewhere stays a root of the old Work.
 
 Ownership decides the scope:
 
@@ -170,7 +174,7 @@ Ownership decides the scope:
 |---|---|
 | Stop on a chat | the whole subtree, whichever turn spawned it ("stop everything") |
 | Cancelling a turn, or Send now | only subtrees whose root that turn's execution spawned (`origin_turn_id`); a turn parked on its question is cancelled by withdrawing it |
-| Deleting a thread or Work (`stopThreads`: chat trash, Work delete, the work tool, receipt reversal) | each deleted thread's run, its open asks and owed continuations, and its whole subtree, one lineage per topmost thread. Trash and Work delete run it in their own transaction; receipt reversal runs it after its commit |
+| Deleting a thread or Work (`stopThreads`: chat trash, Work delete, the work tool, receipt reversal) | each deleted thread's run, its open asks and owed continuations, and its whole subtree, one lineage per topmost thread. Trash, Work delete and receipt reversal run it in their own transaction |
 | A child's terminal run | its whole subtree, before its claim is released |
 
 Foreground children always follow their caller's abort signal.

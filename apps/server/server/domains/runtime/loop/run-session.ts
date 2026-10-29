@@ -118,7 +118,7 @@ export function createRunSessions(deps: {
   handoffBriefs: HandoffBriefStopper;
   repos: {
     turns: TurnRepository;
-    threads: Pick<ThreadRepository, "findById" | "listSubtreeIds">;
+    threads: Pick<ThreadRepository, "findById" | "listSubtreeIds" | "orderParentsFirst">;
   };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
@@ -584,20 +584,27 @@ export function createRunSessions(deps: {
      * descendants too).
      */
     async stopThreads(threadIds: readonly ThreadId[]): Promise<void> {
-      const subtrees = await Promise.all(
-        threadIds.map((threadId) => deps.repos.threads.listSubtreeIds(threadId)),
-      );
-      const covered = new Set(subtrees.flat());
-      for (const threadId of [...threadIds].sort()) {
-        if (covered.has(threadId)) continue;
+      for (const threadId of await lineageOwners(threadIds))
         await cancelLineage(threadId, async () => ({
           result: undefined,
           reach: { kind: "deleted" },
           execution: running.get(threadId)?.executionId ?? null,
         }));
-      }
     },
   };
+
+  /**
+   * The topmost threads of a set, parents first by `(spawn_depth, id)` whatever order the caller
+   * passed them in. A Work's roots need not have depth 0: a subagent whose parent was rebound
+   * elsewhere stays a root of the old Work.
+   */
+  async function lineageOwners(threadIds: readonly ThreadId[]): Promise<ThreadId[]> {
+    const subtrees = await Promise.all(
+      threadIds.map((threadId) => deps.repos.threads.listSubtreeIds(threadId)),
+    );
+    const covered = new Set(subtrees.flat());
+    return deps.repos.threads.orderParentsFirst(threadIds.filter((id) => !covered.has(id)));
+  }
 }
 
 export function isAbortError(error: unknown): boolean {
