@@ -195,6 +195,12 @@ into the parent's script before you send. A parent woken by a report matches
    the running-subagents bar. PASS: the other child keeps running and its
    `spawn_status` reads `running`; the stopped one is `cancelled`, and its queued
    writer message comes back to that child's composer.
+   Then the layout race: with one background child, hold its snapshot read in the
+   browser (wrap `fetch` so `/snapshot` requests wait), press its strip Stop, start a
+   second child so the strip becomes a list, collapse and expand the list, then
+   release the read. PASS: exactly one `/stop` post is sent, the child reads
+   Stopped, and its row leaves. Failing the held read instead leaves "Couldn't stop
+   the reply." under that row even with the list collapsed.
 7. **Deletion.** In a chat bound to a fresh Work, spawn a background child with a
    40 s step, then delete the Work (`./mf api DELETE /api/works/<id>`). PASS within
    about two seconds: the child's report is `cancelled`, its `spawn_status` reads
