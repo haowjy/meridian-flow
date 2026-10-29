@@ -70,7 +70,7 @@ const treeColumns = {
   spawnDepth: threads.spawnDepth,
 };
 
-export async function findWorkThreadTree(
+async function findWorkThreadTree(
   db: DrizzleDb,
   workId: WorkId,
   includeMarked: boolean,

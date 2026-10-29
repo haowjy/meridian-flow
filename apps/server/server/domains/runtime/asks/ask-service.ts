@@ -120,12 +120,6 @@ function resolutionPlan(ask: StoredAsk, resolution: AskResolution): AskResolutio
 export interface PermissionExecutor {
   grants: Pick<PermissionGrantStore, "grant">;
   /**
-   * Takes the thread locks the command's stop will take first, with the asking thread's, in a
-   * stop's order, before the answer takes any other lock. Runs whether or not the answer wins
-   * the claim.
-   */
-  lockAhead(input: { threadId: ThreadId; command: PermissionWorkCommand }): Promise<void>;
-  /**
    * Runs the stored command as the thread's writer, inside the answer's transaction; a
    * domain refusal rolls back the command's own writes and becomes an error result.
    */
@@ -134,9 +128,6 @@ export interface PermissionExecutor {
 
 /** For compositions that run no model tools, so no permission request can open. */
 export const refusingPermissionExecutor: PermissionExecutor = {
-  async lockAhead() {
-    throw new Error("This composition runs no permission requests");
-  },
   grants: {
     async grant() {
       throw new Error("This composition runs no permission requests");
@@ -304,36 +295,6 @@ export function createAskService(deps: {
     });
   }
 
-  /**
-   * An allowed action can end the asking chat's own lineage (deleting its Work), which
-   * cancels this continuation; a hint written after that would wake a deleted chat.
-   */
-  async function stillOwed(ask: StoredAsk, plan: AskResolutionPlan): Promise<boolean> {
-    if (plan.toolResult.kind !== "permission") return true;
-    return (await deps.repos.asks.findById(ask.id))?.continuation === "pending";
-  }
-
-  /**
-   * An allowed action that stops threads (a Work delete) takes their lineage owners' locks
-   * before the asking thread's, or it deadlocks with a concurrent stop of the same threads.
-   * The asking thread locks in the same pass, so its own lock below is a re-entry.
-   *
-   * The ask row locks first, before any thread lock. When an earlier owner's lock comes first,
-   * the asking thread's lock skips its held asks, and a Stop of the asking thread may hold this
-   * row while it waits for that thread's lock: the claim would wait on it under the lock.
-   */
-  async function lockAhead(input: {
-    askId: string;
-    threadId: ThreadId;
-    resolution: AskResolution;
-  }) {
-    if (input.resolution.kind !== "allow" && input.resolution.kind !== "allow_always") return;
-    const ask = await deps.repos.asks.findById(input.askId);
-    if (!ask?.permissionCommand || ask.threadId !== input.threadId) return;
-    await deps.repos.asks.findLiveByTurnForUpdate(ask.askingTurnId);
-    await deps.permission.lockAhead({ threadId: input.threadId, command: ask.permissionCommand });
-  }
-
   async function resolve(input: {
     askId: string;
     threadId: ThreadId;
@@ -341,20 +302,17 @@ export function createAskService(deps: {
     resolution: AskResolution;
     submissionId?: string;
   }): Promise<AskAnswerResult> {
-    return deps.repos.transaction(async () => {
-      await lockAhead(input);
-      // The thread lock takes its held ask rows, this one included, before its own lock; an
-      // Allow that took other threads' locks first locked this row in `lockAhead`.
-      return deps.delivery.withThreadLock(input.threadId, async (producer) => {
+    return deps.repos.transaction(() =>
+      // The thread lock takes its held ask rows, this one included, before its own lock.
+      deps.delivery.withThreadLock(input.threadId, async (producer) => {
         const claimed = await claim(input);
         if (claimed.kind === "finished") return claimed.result;
         const plan = resolutionPlan(claimed.ask, input.resolution);
         await writeToolResult({ ask: claimed.ask, threadId: input.threadId, plan });
-        if (plan.kind === "resume" && (await stillOwed(claimed.ask, plan)))
-          await continueResolution(producer, claimed.ask);
+        if (plan.kind === "resume") await continueResolution(producer, claimed.ask);
         return { ok: true, ask: threadAsk(claimed.ask) };
-      });
-    });
+      }),
+    );
   }
 
   return {

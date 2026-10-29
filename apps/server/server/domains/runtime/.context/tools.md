@@ -69,43 +69,27 @@ failure, including a deliberate refusal without its own code (`tool_error`), sho
 its message.
 
 The action-policy `ask` decision is separate from the question tool. The `work`
-handler holds the `request` capability: in a primary chat without a project grant
-for the action, it resolves the target and requests a permission ask. The payload
-is facts the app words in its locale (agent, action, the target Work as named
-then, the fields it sets); the server-only command pins the target by id and is
-parsed with `permissionWorkCommandSchema` when read. A subagent gets a fixed
-denial that tells it to report what it needed to its parent, and a grant never
-lifts it. Allow executes the saved command as the chat's
-writer in a savepoint of the answer transaction (the ask plan's `permission` tool
-result). A domain refusal rolls the savepoint back, writes and after-commit effects
-included, and only then becomes the error tool result, so the answer still
-commits; any other failure rolls back the answer. Allow always also stores a
-project-and-action grant, even when the action was refused. Base deny still wins.
-No current action maps to `ask`.
+handler holds the `request` capability. It resolves the model's handle to a Work
+first; then, for an action the policy asks about and the project holds no grant for,
+it requests a permission ask. A grant is the writer's own standing answer, so it
+holds in subagents too; without one a subagent gets a fixed denial that tells it to
+report what it needed. The payload is facts the app words in its locale (agent,
+action, the target Work as named then, the fields it sets); the server-only command
+pins the target by id and is parsed with `permissionWorkCommandSchema` when read.
 
-An Allow that deletes a Work runs the delete's lineage cancellation inside the
-answer, which by then holds the asking chat's thread lock. So the answer first locks
-its ask row, then takes the lineage owners' locks of the Work tree and the asking
-chat together, in id order, the order a delete's `stopThreads` takes them
-(`PermissionExecutor.lockAhead`, the run sessions' `lockThreads`, `lineage.lock`).
-Its own thread lock is then a re-entry, and the delete's cancellations take the
-targets as any delete does.
+Allow runs the saved command through the same executor as a direct call
+(`executeWorkCommand`, with the writer as actor), in a savepoint of the answer
+transaction (the ask plan's `permission` tool result), and the tool executor's
+`handlerToolResult` shapes it as that call's result would be. A domain refusal rolls
+the savepoint back, writes and after-commit effects included, and only then becomes
+the error tool result, so the answer still commits; any other failure rolls back the
+answer. Allow always also stores a project-and-action grant, even when the action was
+refused. Base deny still wins. No current action maps to `ask`.
 
-- **Owner locks in id order.** A writer's concurrent delete of the same Work holds an
-  earlier chat's lock and then takes the asking chat's; an answer that took the asking
-  chat's lock first would deadlock with it. When the asking chat sits outside the
-  deleted Work, two Allows that each delete the other's Work would lock in opposite
-  orders.
-- **The ask row before any thread lock.** When an earlier chat's lock comes first, the
-  asking chat's lock skips asks another transaction holds. A Stop of the asking chat
-  can hold the row while it waits for the lock the answer then holds, so a claim that
-  waited on the row would deadlock.
-- **Who wins.** A transaction queued ahead of the answer skips the row the answer
-  holds. If that was a writer's delete, the answer's claim finds the chat deleted and
-  cancels the ask as the delete would have; a Stop or answer queued on the row finds
-  the ask settled. When the answer's own delete holds the asking chat, it cancels that
-  ask's continuation, so the answer writes no `ask_resolved` hint: a hint on a deleted
-  chat would fail every wake sweep.
+`work.delete` can't ask: it is not a `PermissionAction`, and the policy table's type
+rejects an `ask` row for it. A deleted Work restores for 30 days from its receipt.
+This also keeps an answer to one thread lock: an Allow never ends a lineage, so it
+takes only the asking chat's lock, as every answer does.
 
 ## Document and cost boundaries
 

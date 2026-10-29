@@ -248,10 +248,6 @@ msgid "{agent} wants to create the Work “{created}”?"
 msgstr "{agent} 想要创建 Work「{created}」，是否允许？"
 
 #: src/features/chat/ask/permission-request.ts
-msgid "{agent} wants to delete {work}?"
-msgstr "{agent} 想要删除 {work}，是否允许？"
-
-#: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to move this chat to {work}?"
 msgstr "{agent} 想要将此对话移到 {work}，是否允许？"
 
@@ -402,6 +398,10 @@ msgstr "{minutes}分钟"
 #: src/features/chat/document-display-name.ts
 msgid "{name} ({skill})"
 msgstr ""
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{name} (@{handle})"
+msgstr "{name}（@{handle}）"
 
 #: src/features/chat/derivation/SourceChatLink.tsx
 msgid "{name} (in the trash)"

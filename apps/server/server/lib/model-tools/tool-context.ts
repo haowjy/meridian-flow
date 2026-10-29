@@ -81,8 +81,6 @@ export interface ToolWiringDeps {
   controls: Pick<ThreadControls, "enqueueControl">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
-  /** Takes `stopThreads`' locks in its order without stopping anything. */
-  lockThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;

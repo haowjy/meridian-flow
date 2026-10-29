@@ -122,8 +122,6 @@ export interface WorkRepository {
     id: WorkId,
     endThreads?: (threadIds: readonly ThreadId[]) => Promise<void>,
   ): Promise<WorkDeletion>;
-  /** The Work's chats and their subagents, as `softDelete` hands them to `endThreads`. */
-  listThreadTree(id: WorkId): Promise<ThreadId[]>;
   /** Restores a soft-deleted Work and exactly its marked children, with an exact receipt. */
   restore(id: WorkId): Promise<WorkRestoration>;
   touch(id: WorkId): Promise<void>;

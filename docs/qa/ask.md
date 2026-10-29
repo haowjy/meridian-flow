@@ -244,21 +244,26 @@ Stop the owned stack with `pnpm dev --stop`.
 ## Permission requests
 
 No shipped action currently asks. For this probe only, change the `edit`
-entries for `work.archive`, `work.update` and `work.delete` in
+entries for `work.archive` and `work.update` in
 `runtime/loop/permissions/action-policy.ts` from `allow` to `ask`. Do not commit
-that patch. `./mf thread answer` can't answer a permission request; answer in the
-browser. Create two primary chats in one project and a child chat, then
-exercise these cases:
+that patch. `work.delete` can't ask: an `ask` row for it fails to compile.
+`./mf thread answer` can't answer a permission request; answer in the browser.
+Create two primary chats in one project and a child chat, then exercise these
+cases:
 
 1. **Allow.** Ask the first primary chat to archive a Work, then choose Allow.
    PASS: the saved Work id is archived, the asking turn gets the action's real
-   result, the receipt says Allowed, and one continuation starts.
-2. **Allow always.** Repeat with another active Work and choose Allow always.
+   result (“Archived …”, with the Work receipt), the receipt says Allowed, and one
+   continuation starts.
+2. **Rename.** Ask for a rename and Allow it. PASS: the takeover names the Work as
+   “name (@handle)” and says the new name; the Work is renamed and the result reads
+   “Updated …”.
+3. **Allow always.** Repeat with another active Work and choose Allow always.
    Ask the second primary chat to archive a third Work. PASS: it runs without a
    takeover because the project grant applies to `work.archive`.
-3. **Deny.** In a project without that grant, choose Deny. PASS: no Work changes,
+4. **Deny.** In a project without that grant, choose Deny. PASS: no Work changes,
    the tool result is `{"allowed":false}`, and the receipt says Denied.
-4. **Refused action.** Create Works named “Review target” (`w1`) and “Already
+5. **Refused action.** Create Works named “Review target” (`w1`) and “Already
    taken” (`w2`), then ask for a rename onto the taken name:
 
    ```sh
@@ -271,9 +276,9 @@ exercise these cases:
    neither Work changes, and the continuation sees the error. Archiving an
    already archived Work is not a refusal: it is an idempotent no-op that
    reports the Work as already up to date.
-5. **Restart.** Restart this stack while a permission request is open. PASS: it
+6. **Restart.** Restart this stack while a permission request is open. PASS: it
    remains open without a deadline and answers normally after restart.
-6. **Two requests in one response.** Script two asking `work` calls in one
+7. **Two requests in one response.** Script two asking `work` calls in one
    response, then a question and an asking `work` call in either order:
 
    ```sh
@@ -284,36 +289,18 @@ exercise these cases:
    PASS: one ask row; the second call's result is `one_request_at_a_time`, and its
    row opens to “Only one question or request can wait for an answer at a time, so
    this one wasn't asked.”; the reply ends `awaiting_answer` on the first request.
-7. **Delete the asking chat's own Work.** Ask a chat in a Work with other chats
-   (and a subagent) to delete that Work, then Allow. PASS: the Work and every
-   chat in its tree are deleted, the app leaves the chat, the ask is
-   `answered {allow}` with continuation `cancelled`, the chat has no undelivered
-   inbox row, and `./mf log --name wake.failed` stays empty.
 8. **Stop.** Stop a chat with an open request. PASS: the ask is `cancelled` and
    nothing changes.
-9. **Child.** Have the child call the patched action. PASS: it receives exactly
-   “Only the main chat can ask the writer to allow this change. If your task needs
-   it, stop and say in your report what is missing.” No ask is created, and the
-   failed row in the child chat opens to “This assistant isn't allowed to make this
-   change, so it wasn't done.” A parent's `thread send --mock` script does not
-   reach the child it spawns: queue the child's script separately with
+9. **Child without a grant.** Have the child call a patched action the project has
+   no grant for. PASS: it receives exactly “Only the main chat can ask the writer to
+   allow this change. If your task needs it, stop and say in your report what is
+   missing.” No ask is created, and the failed row in the child chat opens to “This
+   assistant isn't allowed to make this change, so it wasn't done.” A parent's
+   `thread send --mock` script does not reach the child it spawns: queue the
+   child's script separately with
    `./mf mock script … --match "<text from the child's prompt>"`.
-10. **Allow-delete races.** Put two chats in one Work and have the one with the
-    higher id ask to delete it. `psql` stands in for the other side. A thread's lock
-    is `pg_advisory_xact_lock(hashtextextended('meridian:thread-lock:<chat id>', 82))`.
-    Answers need a local `--decision allow` patch to `./mf thread answer`. Never
-    commit that patch.
-    - **Stop.** In psql, `BEGIN` and lock the ask row (`SELECT … FROM asks WHERE id=…
-      FOR UPDATE`), then Allow. Then take the asking chat's lock in psql. PASS: psql
-      gets the lock and no `deadlock detected` appears. The answer then deletes the
-      Work.
-    - **Writer delete.** In psql, hold the lower chat's lock. Queue the Allow and
-      `./mf api DELETE /api/works/<id>` behind it in either order, then commit. PASS:
-      when the answer is first, it deletes the Work (`allow`, continuation
-      `cancelled`). When the delete is first, the ask is `cancelled`/`cancelled` and
-      the answer gets `not_open`, as in a question's step 12 under "Subagents and
-      Stop". Either way the chat has no undelivered inbox row and `wake.failed` stays
-      empty.
+10. **Child with a grant.** After step 3's Allow always, have the child archive a
+    Work. PASS: it runs without a request, as in the main chat.
 
 In the browser, confirm permission takeovers have only Deny, Allow always, and
 Allow; no text field or countdown appears. Repeat a failed send and a stale
