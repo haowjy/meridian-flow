@@ -42,7 +42,10 @@ function setup(filetype = "typescript") {
     coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
-      lacksAuthority: async () => false,
+      async lacksAuthority(documentId) {
+        const snapshot = await journal.read(documentId);
+        return !snapshot.checkpoint && snapshot.updates.length === 0;
+      },
     },
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     identityPreservingWrite: async () => {
