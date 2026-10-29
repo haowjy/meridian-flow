@@ -7,6 +7,7 @@ export type {
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
 export { createDrizzleObservationFrontiers } from "./adapters/drizzle/observation-frontiers.js";
+export { createDrizzlePermissionGrantStore } from "./adapters/drizzle/permission-grants.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
 export { createDrizzleShownLinkStore } from "./adapters/drizzle/shown-links.js";
 export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";

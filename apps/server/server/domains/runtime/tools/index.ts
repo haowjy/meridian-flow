@@ -51,6 +51,7 @@ export {
 export { createToolExecutor, type ToolExecutorWithBatch } from "./tool-executor.js";
 export { createToolRegistry } from "./tool-registry.js";
 export type {
+  RequestToolHandlerContext,
   ResultEvidence,
   ToolCallInput,
   ToolExecutionContext,

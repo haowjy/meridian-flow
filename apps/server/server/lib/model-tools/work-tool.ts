@@ -4,8 +4,12 @@
  * changes run under the calling execution's existing claim.
  */
 import { type PermissionDeniedReason, TOOL_EXCEPTION_CODE } from "@meridian/contracts/protocol";
-import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Thread } from "@meridian/contracts/threads";
+import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type {
+  PermissionAskPayload,
+  PermissionWorkCommand,
+  Thread,
+} from "@meridian/contracts/threads";
 import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
 import { workLifecycleState } from "@meridian/contracts/works";
 import {
@@ -14,18 +18,21 @@ import {
   setWorkArchived,
   updateWorkTransition,
   WorkLifecycleUnavailableError,
+  WorkLockedError,
+  WorkNameConflictError,
   WorkNameRequiredError,
   WorkStatusInvalidError,
 } from "../../domains/projects/index.js";
 import {
+  type AgentAction,
   actionPolicy,
   type ModelWork,
   mayChangeWorks,
-  type ToolHandlerContext,
+  type RequestToolHandlerContext,
   type WorkCommand,
   type WorkShowResult,
-  workActionRefusal,
 } from "../../domains/runtime/index.js";
+import { renderWorkResult } from "../../domains/runtime/tools/work-result.js";
 import { RebindThreadWorkError, switchThreadWork } from "../../domains/threads/index.js";
 import {
   isToolError,
@@ -180,12 +187,256 @@ function workLifecycleMessage(
     : `Work ${workHandle} is archived and read-only. Ask the user to unarchive ${workHandle}.`;
 }
 
-function policyRefusal(decision: "ask" | "deny"): ToolErrorOutput {
+function policyRefusal(message: string): ToolErrorOutput {
   return toolError({
     code: "permission_denied",
     reason: "action_denied" satisfies PermissionDeniedReason,
-    message: workActionRefusal(decision),
+    message,
   });
+}
+
+/** A `work` command that changes something, the only kind the policy can ask about. */
+type AskedWorkCommand = Exclude<WorkCommand, { command: "list" | "show" }>;
+
+/**
+ * What the writer is asked to allow: the action, its target as named now, and what it
+ * sets. The client renders the sentence.
+ */
+function permissionPayload(
+  thread: Thread,
+  command: AskedWorkCommand,
+  target: Work | null,
+): PermissionAskPayload {
+  const { command: verb, ...fields } = command;
+  const changes =
+    verb === "create" || verb === "update" || verb === "write_mode"
+      ? Object.fromEntries(
+          Object.entries(fields).filter(([key, value]) => key !== "work" && value !== undefined),
+        )
+      : {};
+  return {
+    agent: thread.agentName?.trim() || null,
+    action: `work.${verb}`,
+    work: target ? { handle: target.handle, name: target.name } : null,
+    changes,
+  };
+}
+
+/** The command an Allow runs: its target pinned by id, so a later rename can't retarget it. */
+function permissionCommand(
+  thread: Thread,
+  command: AskedWorkCommand,
+  target: Work | null,
+): PermissionWorkCommand {
+  const projectId = thread.projectId;
+  if (command.command === "create")
+    return {
+      tool: "work",
+      projectId,
+      command: { command: "create", name: command.name, goal: command.goal },
+    };
+  if (command.command === "write_mode")
+    return { tool: "work", projectId, command: { command: "write_mode", mode: command.mode } };
+  if (!target) throw new Error(`work.${command.command} asked with no resolved target`);
+  if (command.command === "update")
+    return {
+      tool: "work",
+      projectId,
+      command: {
+        command: "update",
+        workId: target.id,
+        name: command.name,
+        goal: command.goal,
+        status: command.status,
+      },
+    };
+  return { tool: "work", projectId, command: { command: command.command, workId: target.id } };
+}
+
+/**
+ * Every expected refusal the Work writer commands raise, as the model's tool
+ * error. Anything else is an infrastructure failure and propagates.
+ */
+function expectedWorkError(
+  error: unknown,
+  workHandle: string | undefined,
+  mayUnarchive: boolean,
+): ToolErrorOutput | null {
+  if (error instanceof WorkStatusInvalidError)
+    return toolError({ code: "invalid_work_status", message: error.message });
+  if (error instanceof WorkNameRequiredError)
+    return toolError({ code: "invalid_work_name", message: error.message });
+  if (error instanceof WorkNameConflictError)
+    return toolError({ code: "work_name_conflict", message: error.message });
+  if (error instanceof WorkLockedError)
+    return toolError({ code: error.code, message: error.message });
+  if (error instanceof WorkLifecycleUnavailableError)
+    return toolError({
+      code: error.state === "archived" ? "work_archived" : "work_not_found",
+      message: workLifecycleMessage(
+        `work_${error.state}`,
+        workHandle ?? error.workHandle,
+        mayUnarchive,
+      ),
+    });
+  if (error instanceof RebindThreadWorkError)
+    return toolError({
+      code: error.code === "target_work_unavailable" ? "work_archived" : "work_not_found",
+      message:
+        error.code === "target_work_unavailable"
+          ? 'That Work is no longer available. Use `work({"command":"list"})` and choose another.'
+          : "This chat or Work is no longer available.",
+    });
+  return null;
+}
+
+/** Runs the approved command as the chat's writer. Domain refusals throw. */
+async function runPermissionWorkCommand(
+  deps: ToolWiringDeps,
+  input: { threadId: ThreadId; command: PermissionWorkCommand },
+): Promise<unknown> {
+  const stored = input.command;
+  const thread = await deps.threads.findById(input.threadId);
+  const project = await deps.projects.findById(stored.projectId);
+  if (
+    !thread ||
+    !project ||
+    project.deletedAt ||
+    project.userId !== thread.userId ||
+    thread.projectId !== stored.projectId
+  )
+    return toolError({
+      code: "work_not_found",
+      message: "This chat or project is no longer available.",
+    });
+  const userId = thread.userId as UserId;
+  const command = stored.command;
+  if (command.command === "create") {
+    const work = await createWork(
+      { works: deps.works },
+      {
+        projectId: stored.projectId,
+        createdByUserId: userId,
+        name: command.name,
+        goal: command.goal,
+      },
+    );
+    return {
+      output: modelWork(work),
+      metadata: {
+        workReceipt: {
+          operation: "create",
+          changed: true,
+          workId: work.id,
+          workName: work.name,
+          before: null,
+          after: receiptState(work),
+          inverse: { command: "delete", workId: work.id },
+        } satisfies WorkReceipt,
+      },
+    };
+  }
+  if (command.command === "write_mode") {
+    await deps.controls.enqueueControl({
+      threadId: input.threadId,
+      id: crypto.randomUUID(),
+      provenance: { kind: "writer", actorId: userId },
+      control: { kind: "write_mode", mode: command.mode },
+    });
+    return { mode: command.mode, applies: "next_reply" };
+  }
+  const workId = command.workId;
+  const work = await deps.works.findById(workId);
+  if (!work || work.projectId !== stored.projectId)
+    return toolError({
+      code: "work_not_found",
+      message: "The approved Work is no longer available.",
+    });
+  if (command.command === "switch") {
+    const rebound = await switchThreadWork(deps, { threadId: input.threadId, workId });
+    return { handle: rebound.after.handle, name: rebound.after.name };
+  }
+  if (command.command === "update")
+    return updateReceipt(
+      await updateWorkTransition(
+        { works: deps.works, workContextNotices: deps.workContextNotices },
+        workId,
+        { name: command.name, goal: command.goal, status: command.status },
+        { originThreadId: input.threadId },
+      ),
+    );
+  if (command.command === "archive" || command.command === "unarchive")
+    return updateReceipt(
+      await setWorkArchived(
+        { works: deps.works, workContextNotices: deps.workContextNotices },
+        workId,
+        command.command === "archive",
+        { originThreadId: input.threadId },
+      ),
+    );
+  const transition = await deleteWorkTransition(
+    { works: deps.works, stopThreads: deps.stopThreads },
+    workId,
+  );
+  const before = transition.before ?? work;
+  return {
+    output: modelWork(transition.after ?? before),
+    metadata: {
+      workReceipt: {
+        operation: "delete",
+        changed: transition.changed,
+        workId: before.id,
+        workName: before.name,
+        before: receiptState(before),
+        after: null,
+        inverse: transition.changed ? { command: "restore", workId: before.id } : null,
+      } satisfies WorkReceipt,
+    },
+  };
+}
+
+/**
+ * Before the answer locks its ask: a delete ends the Work's threads while the answer holds
+ * the asking chat's locks, so it takes the tree's lineage locks and the asking chat's
+ * together, in the order a concurrent delete takes them.
+ */
+export async function lockAheadOfPermissionWorkCommand(
+  deps: Pick<ToolWiringDeps, "works" | "lockThreads">,
+  input: { threadId: ThreadId; command: PermissionWorkCommand },
+): Promise<void> {
+  const { command } = input.command;
+  if (command.command !== "delete") return;
+  await deps.lockThreads([input.threadId, ...(await deps.works.listThreadTree(command.workId))]);
+}
+
+/**
+ * The approved action's tool result. The action runs in a savepoint inside the
+ * caller's answer transaction: a domain refusal rolls back its writes and
+ * after-commit effects first, then becomes the tool result, so the answer
+ * still commits. Any other failure propagates and rolls back the answer.
+ */
+export async function permissionWorkToolResult(
+  deps: ToolWiringDeps & { savepoint<T>(operation: () => Promise<T>): Promise<T> },
+  input: { threadId: ThreadId; command: PermissionWorkCommand },
+) {
+  let executed: unknown;
+  try {
+    executed = await deps.savepoint(() => runPermissionWorkCommand(deps, input));
+  } catch (error) {
+    executed = expectedWorkError(error, undefined, true);
+    if (!executed) throw error;
+  }
+  const structured =
+    typeof executed === "object" && executed !== null && "output" in executed
+      ? (executed as { output: unknown; metadata?: Record<string, unknown>; isError?: boolean })
+      : null;
+  const result = JSON.parse(JSON.stringify(structured ? structured.output : executed));
+  return {
+    result,
+    output: renderWorkResult(result, input.command.command as never),
+    isError: structured?.isError === true,
+    ...(structured?.metadata ? { metadata: structured.metadata as never } : {}),
+  };
 }
 
 type CommandName = Exclude<WorkCommand["command"], "switch" | "write_mode">;
@@ -304,12 +555,21 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
 };
 
 export function createWorkHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, ctx: ToolHandlerContext) => {
+  return async (input: unknown, ctx: RequestToolHandlerContext) => {
     const command = input as WorkCommand;
     const thread = await deps.threads.findById(ctx.threadId);
     if (!thread) return toolError({ message: `Thread not found: ${ctx.threadId}` });
 
+    let resolvedTarget: Work | null = null;
     if (command.command === "switch") {
+      if (command.work) {
+        const selected = await workByHandle(deps, thread.projectId, command.work);
+        if (isToolError(selected)) return selected;
+        resolvedTarget = selected;
+      } else {
+        resolvedTarget = await deps.works.findNoWork(thread.projectId);
+        if (!resolvedTarget) return toolError({ message: "No Work is missing for this project" });
+      }
       // Resolve lifecycle and no-op outcomes before policy, so the model gets the
       // useful target error rather than an unrelated permission refusal.
       const precheck = await switchPrecheck(
@@ -322,8 +582,35 @@ export function createWorkHandler(deps: ToolWiringDeps) {
     }
 
     const permission = await deps.readChainPermission(thread.id as ThreadId);
-    const decision = actionPolicy(permission, `work.${command.command}`);
-    if (decision !== "allow") return policyRefusal(decision);
+    const action: AgentAction = `work.${command.command}`;
+    const baseDecision = actionPolicy(permission, action);
+    if (baseDecision === "deny")
+      return policyRefusal(
+        "This agent can read but can't change Works. Ask the user to make this change.",
+      );
+    // Only the main chat reaches the writer; a grant never lifts a child.
+    if (baseDecision === "ask" && thread.kind === "subagent")
+      return policyRefusal(
+        "Only the main chat can ask the writer to allow this change. If your task needs it, stop and say in your report what is missing.",
+      );
+    if (
+      baseDecision === "ask" &&
+      command.command !== "list" &&
+      command.command !== "show" &&
+      !(await deps.permissionGrants.has(thread.projectId as ProjectId, action))
+    ) {
+      if ("work" in command && command.work && !resolvedTarget) {
+        const selected = await workByHandle(deps, thread.projectId, command.work);
+        if (isToolError(selected)) return selected;
+        resolvedTarget = selected;
+      }
+      const outcome = await ctx.request({
+        kind: "permission",
+        payload: permissionPayload(thread, command, resolvedTarget),
+        command: permissionCommand(thread, command, resolvedTarget),
+      });
+      return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
+    }
     try {
       if (command.command === "switch") {
         const target = command.work
@@ -351,31 +638,12 @@ export function createWorkHandler(deps: ToolWiringDeps) {
       const run = COMMANDS[command.command] as CommandHandler<CommandName>;
       return await run(deps, thread, command as CommandOf<CommandName>);
     } catch (error) {
-      if (error instanceof WorkStatusInvalidError) {
-        return toolError({ code: "invalid_work_status", message: error.message });
-      }
-      if (error instanceof WorkNameRequiredError) {
-        return toolError({ code: "invalid_work_name", message: error.message });
-      }
-      if (error instanceof WorkLifecycleUnavailableError) {
-        return toolError({
-          code: error.state === "archived" ? "work_archived" : "work_not_found",
-          message: workLifecycleMessage(
-            `work_${error.state}`,
-            "work" in command && command.work ? command.work : (error.workHandle ?? null),
-            mayChangeWorks(permission),
-          ),
-        });
-      }
-      if (error instanceof RebindThreadWorkError) {
-        return toolError({
-          code: error.code === "target_work_unavailable" ? "work_archived" : "work_not_found",
-          message:
-            error.code === "target_work_unavailable"
-              ? 'That Work is no longer available. Use `work({"command":"list"})` and choose another.'
-              : "This chat or Work is no longer available.",
-        });
-      }
+      const expected = expectedWorkError(
+        error,
+        "work" in command && command.work ? command.work : undefined,
+        mayChangeWorks(permission),
+      );
+      if (expected) return expected;
       return toolError({
         code: TOOL_EXCEPTION_CODE,
         message: error instanceof Error ? error.message : String(error),

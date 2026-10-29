@@ -116,6 +116,11 @@ export function createLineageCancellation(deps: {
 
   return {
     cancel,
+    lock(threadId) {
+      return deps.transaction(() =>
+        asMultiThreadLocker(() => deps.delivery.withThreadLock(threadId, async () => {})),
+      );
+    },
     async endSubtree(threadId) {
       const subtree = await deps.threads.listSubtreeIds(threadId);
       if (subtree.length === 0) return [];

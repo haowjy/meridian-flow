@@ -1,5 +1,6 @@
 /** Durable question and permission-request contracts shared by thread clients and the server. */
 import { z } from "zod";
+import { aiWriteModeSchema } from "../works/ai-write-mode.js";
 
 /** The AG-UI CUSTOM event name carrying an `ask.updated` frame; its value is the whole `ThreadAsk`. */
 export const ASK_UPDATED_EVENT = "meridian.ask" as const;
@@ -15,9 +16,63 @@ export const questionAskPayloadSchema = z.strictObject({
   recommended: z.string().min(1).optional(),
 });
 
+/** The actions a permission request can hold: each changing `work` command. */
+export const permissionActionSchema = z.enum([
+  "work.create",
+  "work.update",
+  "work.archive",
+  "work.unarchive",
+  "work.delete",
+  "work.switch",
+  "work.write_mode",
+]);
+
+/**
+ * What the writer is asked to allow, as facts the client renders in its own locale: who
+ * asks (null: the default agent), the action, the Work it targets as named when asked (`handle: null` is No Work),
+ * and the values it sets. `changes` holds only the fields the action sets; a null goal or
+ * status clears it.
+ */
 export const permissionAskPayloadSchema = z.strictObject({
-  action: z.string().min(1),
-  summary: z.string().min(1),
+  agent: z.string().min(1).nullable(),
+  action: permissionActionSchema,
+  work: z.strictObject({ handle: z.string().nullable(), name: z.string() }).nullable(),
+  changes: z.strictObject({
+    name: z.string().optional(),
+    goal: z.string().nullable().optional(),
+    status: z.string().nullable().optional(),
+    mode: aiWriteModeSchema.optional(),
+  }),
+});
+
+const workIdSchema = z.string().uuid();
+
+/**
+ * The resolved command an Allow runs, stored on the ask and never sent to a client. Rows
+ * are parsed with this on read: Allow executes them.
+ */
+export const permissionWorkCommandSchema = z.strictObject({
+  tool: z.literal("work"),
+  projectId: z.string().uuid(),
+  command: z.discriminatedUnion("command", [
+    z.strictObject({
+      command: z.literal("create"),
+      name: z.string(),
+      goal: z.string().nullable().optional(),
+    }),
+    z.strictObject({
+      command: z.literal("update"),
+      workId: workIdSchema,
+      name: z.string().optional(),
+      goal: z.string().nullable().optional(),
+      status: z.string().nullable().optional(),
+    }),
+    z.strictObject({ command: z.literal("archive"), workId: workIdSchema }),
+    z.strictObject({ command: z.literal("unarchive"), workId: workIdSchema }),
+    z.strictObject({ command: z.literal("delete"), workId: workIdSchema }),
+    z.strictObject({ command: z.literal("switch"), workId: workIdSchema }),
+    z.strictObject({ command: z.literal("write_mode"), mode: aiWriteModeSchema }),
+  ]),
 });
 
 export const askContentSchema = z.discriminatedUnion("kind", [
@@ -86,7 +141,9 @@ export const threadAskSchema = z
   });
 
 export type QuestionAskPayload = z.infer<typeof questionAskPayloadSchema>;
+export type PermissionAction = z.infer<typeof permissionActionSchema>;
 export type PermissionAskPayload = z.infer<typeof permissionAskPayloadSchema>;
+export type PermissionWorkCommand = z.infer<typeof permissionWorkCommandSchema>;
 export type AskPayload = QuestionAskPayload | PermissionAskPayload;
 export type AskKind = z.infer<typeof askContentSchema>["kind"];
 export type AskResolution = z.infer<typeof askResolutionSchema>;

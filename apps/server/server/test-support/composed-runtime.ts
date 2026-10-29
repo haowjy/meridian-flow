@@ -134,6 +134,11 @@ export function useComposedRuntimes(db: () => Database) {
             ...thread,
             responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
             agentSlug: null,
+            // No one answers here: a `work` call the policy asks about gets the refusal.
+            request: async () => ({
+              kind: "refused",
+              refusal: { code: "request_refused", message: "No one answers requests here." },
+            }),
           },
         );
       const save = () =>

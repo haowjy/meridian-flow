@@ -245,6 +245,10 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       return { ...row };
     },
 
+    // Thread trees live in the thread repositories; this adapter never ends threads.
+    async listThreadTree() {
+      return [];
+    },
     async softDelete(id: WorkId) {
       return repo.transaction(async () => {
         const row = rows.get(id);

@@ -239,14 +239,41 @@ msgstr "{0} 词元/秒"
 msgid "{0} will be renamed {1}"
 msgstr ""
 
-#. placeholder {0}: ask.payload.summary
-#: src/features/chat/ask/AskTakeover.tsx
-msgid "{agentName} wants to {0}?"
-msgstr "{agentName} 想要{0}？"
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to archive {work}?"
+msgstr "{agent} 想要归档 {work}，是否允许？"
 
-#: src/features/chat/ask/AskTakeover.tsx
-msgid "{agentName} wants to {summary}?"
-msgstr "{agentName} 想要{summary}？"
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to create the Work “{created}”?"
+msgstr "{agent} 想要创建 Work「{created}」，是否允许？"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to delete {work}?"
+msgstr "{agent} 想要删除 {work}，是否允许？"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to move this chat to {work}?"
+msgstr "{agent} 想要将此对话移到 {work}，是否允许？"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to rename {work} to “{name}”?"
+msgstr "{agent} 想要将 {work} 重命名为「{name}」，是否允许？"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to switch this chat to auto-apply?"
+msgstr "{agent} 想要将此对话切换为自动应用，是否允许？"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to switch this chat to draft mode?"
+msgstr "{agent} 想要将此对话切换为草稿模式，是否允许？"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to unarchive {work}?"
+msgstr "{agent} 想要取消归档 {work}，是否允许？"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to update {work}?"
+msgstr "{agent} 想要更新 {work}，是否允许？"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -1344,6 +1371,14 @@ msgstr ""
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr ""
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Clear the goal"
+msgstr "清除目标"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Clear the status"
+msgstr "清除状态"
 
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -3428,9 +3463,10 @@ msgid "No scratch notes yet."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/ask/permission-request.ts
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "No Work"
-msgstr ""
+msgstr "无 Work"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work matches your search."
@@ -3516,8 +3552,12 @@ msgid "Only on this device"
 msgstr ""
 
 #: src/features/chat/tool-failure.tsx
-msgid "Only one question can wait for an answer at a time, so this one wasn't asked."
-msgstr "一次只能有一个问题等待回答，因此这个问题没有发出。"
+#~ msgid "Only one question can wait for an answer at a time, so this one wasn't asked."
+#~ msgstr "一次只能有一个问题等待回答，因此这个问题没有发出。"
+
+#: src/features/chat/tool-failure.tsx
+msgid "Only one question or request can wait for an answer at a time, so this one wasn't asked."
+msgstr "一次只能有一个问题或请求等待回答，因此这一个没有发出。"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Only part of this change could be reversed."
@@ -3944,6 +3984,10 @@ msgstr ""
 msgid "Rename project: {title}"
 msgstr ""
 
+#: src/features/chat/ask/permission-request.ts
+msgid "Rename to “{name}”"
+msgstr "重命名为「{name}」"
+
 #: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work"
 msgstr ""
@@ -4304,6 +4348,14 @@ msgstr ""
 #: src/components/app/ConnectionBanner.tsx
 #~ msgid "Session expired. Please refresh."
 #~ msgstr ""
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Set the goal to “{goal}”"
+msgstr "将目标设为「{goal}」"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Set the status to “{status}”"
+msgstr "将状态设为「{status}」"
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/PhoneSettings.tsx
@@ -4768,8 +4820,8 @@ msgid "That Work is no longer available. Choose another Work."
 msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "The AI asked you a question"
-msgstr ""
+#~ msgid "The AI asked you a question"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {count} documents ({names})."
@@ -4818,6 +4870,10 @@ msgstr "某个对话中的 AI 在此回复保存其更改之前删除了这份�
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted this document."
 msgstr "某个对话中的 AI 删除了这份文档。"
+
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "The AI is waiting for you"
+msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
@@ -4937,6 +4993,10 @@ msgstr "思考"
 #: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "边想边说？"
+
+#: src/features/chat/tool-failure.tsx
+msgid "This assistant isn't allowed to make this change, so it wasn't done."
+msgstr "这个助手无权做这项更改，因此没有执行。"
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."

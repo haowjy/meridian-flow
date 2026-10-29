@@ -21,7 +21,7 @@ import {
   runInRootDrizzleReadSnapshot,
 } from "../../../../shared/drizzle-transaction.js";
 import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
-import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
+import { findWorkThreadTree, lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
 import {
@@ -329,6 +329,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const unarchived = await updateWork(id, { archivedAt: null });
       await deps.fileAccessChanges.publish({ workId: id });
       return unarchived;
+    },
+    async listThreadTree(id: WorkId) {
+      return (await findWorkThreadTree(db, id, false)).threadIds;
     },
     async softDelete(id: WorkId, endThreads) {
       return runInDrizzleTransaction(db, async () => {

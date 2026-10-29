@@ -156,7 +156,10 @@ command, or a transaction that locked its thread's asks and waits for that threa
 advisory lock. After commit that holder sees the cancellation: a flagged run cancels
 its own live ask when it closes, and a writer's answer that took the row first wins,
 as any writer action does, unless the command deleted the chat: then the answer's
-claim cancels the ask as the command would have. Nothing retries `40P01`.
+claim cancels the ask as the command would have. Nothing retries `40P01`. Its
+lock-only form, `lineage.lock` (the run sessions' `lockThreads`), takes the owner's
+lock as the command and writes nothing: the permission Allow that deletes a Work
+takes its lineage owners' locks through it first (`.context/tools.md`).
 
 Work delete and a Work receipt reversal's delete run the command on the Work's tree
 before `lockWorkThreadTree` takes the tree's rows. Every multi-row thread locker takes
