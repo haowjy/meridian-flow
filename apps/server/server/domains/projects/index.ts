@@ -208,7 +208,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
           name: "Chapter 1",
           extension: "",
           filetype: "markdown",
-          markdown: "",
         });
         return (claimed?.document.id ?? null) as DocumentId | null;
       },

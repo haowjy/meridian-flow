@@ -83,7 +83,7 @@ const INVERSE_COUNT = z
 /**
  * Which version of a document to read (D3, D14). It has no default: omitted
  * means the version this thread's writes change, which the host decides per
- * document. `read`, `search`, `ls` and `from` share this one description.
+ * document. `read`, `grep`, `ls` and `from` share this one description.
  */
 export const DocumentVersionSchema = z
   .enum(["draft", "live"])

@@ -38,14 +38,14 @@ import {
   boundLabel,
   type CappedList,
   capList,
+  type GrepHitRow,
+  type GrepResultRows,
+  grepCardSummary,
   LISTING_CAP,
   matchCountLabel,
   moreMatchesLabel,
+  normalizeGrepResult,
   normalizeListing,
-  normalizeSearchHits,
-  type SearchHitRow,
-  type SearchResultRows,
-  searchCardSummary,
   type ToolResultRow,
   type ToolResultRows,
 } from "./tool-result-preview";
@@ -99,44 +99,53 @@ function rowKey(row: ToolResultRow, index: number): string {
   return `${index}:${row.uri}`;
 }
 
-function ResultRows({ results }: { results: SearchResultRows }) {
+function ResultRows({ results }: { results: GrepResultRows }) {
   const bound = boundLabel(results);
   return (
     <div className="chat-card bg-result-card">
-      <p className="border-border-subtle border-b pb-2 text-meta text-ink-subtle">
-        {searchCardSummary(results)}
+      <p
+        className={cn(
+          "text-meta text-ink-subtle",
+          results.rows.length > 0 && "border-border-subtle border-b pb-2",
+        )}
+      >
+        {grepCardSummary(results)}
       </p>
-      <ul>
-        {results.rows.map((row, index) => (
-          <li
-            key={`${index}:${row.uri}`}
-            className={cn(
-              "py-[var(--chat-card-pad-y)]",
-              index > 0 && "border-border-subtle border-t",
-            )}
-          >
-            <SearchHit row={row} />
-          </li>
-        ))}
-      </ul>
+      {results.rows.length > 0 ? (
+        <ul>
+          {results.rows.map((row, index) => (
+            <li
+              key={`${index}:${row.uri}`}
+              className={cn(
+                "py-[var(--chat-card-pad-y)]",
+                index > 0 && "border-border-subtle border-t",
+              )}
+            >
+              <GrepHit row={row} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {bound ? <BoundLine>{bound}</BoundLine> : null}
     </div>
   );
 }
 
 /** One document's section: its name, how much of the query it holds, its best passage, and a way to see the rest without leaving the transcript. */
-function SearchHit({ row }: { row: SearchHitRow }) {
+function GrepHit({ row }: { row: GrepHitRow }) {
   const [open, setOpen] = useState(false);
   const [best, ...rest] = row.passages;
   return (
     <>
       <div className="flex min-w-0 items-baseline gap-[var(--chat-space-inline)] text-compact font-medium text-prose-foreground">
         <DocumentName path={row.uri} />
-        <MatchCount count={row.matchCount} />
+        {row.matchCount === undefined ? null : <MatchCount count={row.matchCount} />}
       </div>
-      <div className="mt-0.5">
-        <PassageDoor path={row.uri} excerpt={best.excerpt} passage={best.passage} />
-      </div>
+      {best ? (
+        <div className="mt-0.5">
+          <PassageDoor path={row.uri} excerpt={best.excerpt} passage={best.passage} />
+        </div>
+      ) : null}
       {rest.length > 0 ? (
         <>
           <button
@@ -538,17 +547,17 @@ function listingOrNothing(tool: ToolView): ToolExpand | null {
 }
 
 function resultRowsOrNothing(tool: ToolView): ToolExpand | null {
-  // A chevron is a promise, and here the contract keeps it: a search hit that
-  // cannot fill a section is refused at normalization, so a non-empty payload
-  // IS content. That lets the closed row answer "is there anything here?" by
-  // looking at the array, and leaves every section — and the totals scan —
-  // for the writer who actually opens it. A settled turn holds a dozen closed
-  // rows; none of them should be parsing search results.
-  const hits = tool.result;
-  if (!Array.isArray(hits) || hits.length === 0) return null;
-  return () => (
-    <ResultRows results={normalizeSearchHits(hits, stringInput(inputObject(tool), "pattern"))} />
-  );
+  // A chevron is a promise, and here the contract keeps it: a non-empty
+  // `files` IS content. That lets the closed row answer "is there anything
+  // here?" by looking at the array, and leaves every section — and the totals
+  // scan — for the writer who actually opens it. A settled turn holds a dozen
+  // closed rows; none of them should be parsing grep results. A search that stopped
+  // before it finished opens too, even with no files: its card says it stopped.
+  const result = tool.result;
+  if (typeof result !== "object" || result === null || Array.isArray(result)) return null;
+  const hasFiles = Array.isArray(result.files) && result.files.length > 0;
+  if (!hasFiles && result.stopped !== true) return null;
+  return () => <ResultRows results={normalizeGrepResult(result)} />;
 }
 
 function QuotedPreview({ markup, path }: { markup: string; path?: string }) {
@@ -632,7 +641,7 @@ const RENDERERS: Record<string, ToolRenderer> = {
     title: phraseTitle,
     expand: listingOrNothing,
   },
-  search: {
+  grep: {
     title: phraseTitle,
     expand: resultRowsOrNothing,
   },

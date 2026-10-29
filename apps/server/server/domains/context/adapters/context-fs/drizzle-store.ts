@@ -7,8 +7,7 @@
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections } from "@meridian/database/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -238,7 +237,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
             filetype: input.filetype,
             ...(input.metadata ? { metadata: input.metadata } : {}),
           },
-          markdown: input.markdown,
           ...(input.id ? { id: input.id as DocumentId } : {}),
           ...(input.provisionalName ? { provisionalName: true } : {}),
         },
@@ -310,13 +308,19 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  async readProjections(ids: string[]): Promise<Map<string, string>> {
-    if (!ids.length) return new Map();
-    const rows = await this.db
-      .select()
-      .from(documentMarkdownProjections)
-      .where(inArray(documentMarkdownProjections.documentId, ids as DocumentId[]));
-    return new Map(rows.map((row) => [row.documentId, row.markdown]));
+  async listTree(
+    view: TreeView,
+  ): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }> {
+    const vf = visibleFolders(view);
+    const vd = visibleDocuments(view);
+    const [folders, docs] = await Promise.all([
+      this.db
+        .select({ id: vf.id, parentId: vf.parentId, name: vf.name })
+        .from(vf)
+        .where(eq(vf.contextSourceId, this.sourceId)),
+      this.db.select().from(vd).where(eq(vd.contextSourceId, this.sourceId)),
+    ]);
+    return { folders: folders.map(mapFolder), documents: docs.map(mapDocument) };
   }
 
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {

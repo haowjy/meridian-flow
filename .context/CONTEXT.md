@@ -54,7 +54,7 @@ domains/runtime + domains/threads + domains/packages + domains/projects + domain
 | `domains/packages` | Agent/package catalog, retained package sources, and export |
 | `domains/projects` | Project/work ownership, personal-project bootstrap with locked No Work, project CRUD, Work catalogs, and owner gates for project-scoped routes |
 | `domains/context` | ContextPort router/adapters for agent-readable writing context |
-| `domains/collab` | Yjs document sync and markdown projection |
+| `domains/collab` | Yjs document sync and the per-block text projection |
 | `domains/file-policy` | The one file-access decision for people and agents (level and live-or-draft destination), the edit grants every write seam confirms under lock, and live-room access changes |
 
 ## DI wiring pattern
