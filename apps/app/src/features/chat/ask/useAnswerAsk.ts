@@ -1,5 +1,8 @@
-/** Binds the shared answer and settle commands to this chat's store, its snapshot read and the socket. */
-import type { AskAnswer } from "@meridian/contracts/threads";
+/**
+ * Binds the shared answer and settle commands to this chat's store, its snapshot read and the
+ * socket, plus the still-answering signal that holds a question's deadline off.
+ */
+import type { AskAnswer, DraftAnswers } from "@meridian/contracts/threads";
 import { type AnswerAskPorts, answerAsk, settleAsk } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -11,6 +14,8 @@ export type AskCommands = {
   answer(askId: string, answer: AskAnswer): void;
   /** Read the chat again after an answer could not learn how the ask ended. */
   settle(askId: string): void;
+  /** The writer is still answering, holding these answers so far. */
+  presence(askId: string, answers: DraftAnswers): void;
 };
 
 export function useAnswerAsk(threadId: string): AskCommands {
@@ -32,6 +37,7 @@ export function useAnswerAsk(threadId: string): AskCommands {
     return {
       answer: (askId, answer) => void answerAsk(ports, threadId, askId, answer),
       settle: (askId) => void settleAsk(ports, askId),
+      presence: (askId, answers) => void transport.sendAskPresence({ threadId, askId, answers }),
     };
   }, [queryClient, threadId, transport, updateAsks]);
 }
