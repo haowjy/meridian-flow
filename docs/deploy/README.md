@@ -29,7 +29,8 @@ Nx `build`, `test`, and `typecheck` targets wrap package scripts for orchestrati
 
 ## Database
 
-Production uses Postgres. Dev uses a plain `postgres:16` Docker container for
+Production uses Postgres. Dev uses a Docker container built from `tools/postgres/Dockerfile`
+(`postgres:16` plus pg_bigm) for
 Postgres only; the app schema remains Drizzle-owned in `@meridian/database`.
 Auth is WorkOS AuthKit with `public.users` as the identity table.
 
@@ -37,6 +38,32 @@ Auth is WorkOS AuthKit with `public.users` as the identity table.
 pnpm --filter @meridian/database db:migrate
 pnpm --filter @meridian/database db:apply-functions
 ```
+
+### Production Postgres needs the pg_bigm image
+
+Writer project search ([#1173](https://github.com/haowjy/meridian-flow/issues/1173)) indexes
+block text with the pg_bigm extension, which stock `postgres:16` and Railway's default Postgres
+lack. The release whose migration runs `CREATE EXTENSION pg_bigm` fails on a host without it,
+so switch the production Postgres service to an image built from `tools/postgres/Dockerfile`
+before that release deploys. Releases before it run on either image.
+
+1. **Back up first.** Take a dump or a platform snapshot of the database you can restore from.
+2. **Build and publish the image.** Railway pulls a database image from a registry, so push
+   the image built from `tools/postgres/Dockerfile` to one Railway can reach. Per
+   [release promotion](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/hosting/release-promotion.md),
+   the release pipeline builds that file and promotes it by digest.
+3. **Change only the image.** Stay on Postgres 16 and keep the existing data volume. A major
+   version change or a new, empty service means a dump and restore instead.
+4. **Keep the preload.** The image starts Postgres with `shared_preload_libraries=pg_bigm` on
+   its command line, so a data volume with an older `postgresql.conf` still loads it. A start
+   command set on the service replaces that flag and has to repeat it.
+5. **Check it.** `select name, default_version from pg_available_extensions where name in
+   ('pg_bigm', 'btree_gin', 'pg_trgm')` returns all three, and `show shared_preload_libraries`
+   includes `pg_bigm`.
+
+Dev and CI already run pg_bigm: dev builds the same Dockerfile (`pnpm dev:infra:upgrade` moves
+an existing dev container onto it), and CI installs it on the runner's Postgres.
+`pnpm db:check-extensions` checks that an index on it is used.
 
 Some migrations require every application writer stopped while they run. Their
 header comment says so, and `packages/database/.context/CONTEXT.md` explains

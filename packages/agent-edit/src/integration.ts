@@ -85,7 +85,6 @@ export type {
 } from "./ports/document-links.js";
 export type {
   AgentEditModel,
-  BlockLookup,
   CanonicalBlockIdentity,
   DocumentModel,
 } from "./ports/model.js";

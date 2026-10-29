@@ -22,9 +22,10 @@ import type {
   LiveWriterAppend,
   LiveWriterJournal,
 } from "../../domain/ports/live-writer-journal.js";
+import { storedDocument } from "../../domain/stored-document.js";
 import { mintCheckpointCut, resolveCheckpointCut } from "../checkpoint-capability.js";
 import { materializeCheckpoint } from "../checkpoint-materialization.js";
-import { loadDocumentState, storedDocument } from "../document-loader.js";
+import { loadDocumentState } from "../document-loader.js";
 import { emptyWhenMissing, liveRoomFor, liveSave, withStaged } from "../hocuspocus-coordinator.js";
 
 export type InMemoryCheckpointRecord = {

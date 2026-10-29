@@ -175,9 +175,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # The runner's own server: nothing to download, so no registry rate limit.
-      # Local dev runs the postgres:16 image (tools/dev/docker-compose.yml).
+      # Dev and release run tools/postgres/Dockerfile (postgres:16 + pg_bigm). PGDG has no
+      # pg_bigm package, so build the same pinned version against the runner's server.
+      - name: Install pg_bigm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-server-dev-16 libicu-dev
+          SUDO=sudo tools/postgres/install-pg-bigm.sh
       - name: Start Postgres
         run: |
+          echo "shared_preload_libraries = 'pg_bigm'" | sudo tee /etc/postgresql/16/main/conf.d/pg_bigm.conf
           sudo systemctl start postgresql.service
           for _ in $(seq 1 30); do
             pg_isready -h 127.0.0.1 -U postgres && break
@@ -197,6 +204,8 @@ jobs:
         run: pnpm db:migrate
       - name: Install database functions
         run: pnpm db:apply-functions
+      - name: Prove search extensions install
+        run: pnpm db:check-extensions
       - name: Run required DB suites
         run: pnpm test:db
 

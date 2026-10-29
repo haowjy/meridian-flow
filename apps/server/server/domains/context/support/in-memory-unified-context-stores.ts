@@ -4,11 +4,8 @@
  * per Work. Not part of the runtime export surface — tests import via test-support.
  */
 
-import type { Filetype } from "@meridian/contracts/protocol";
-import type { DocumentId } from "@meridian/contracts/runtime";
 import {
   createInMemoryContextDocumentStoreBacking,
-  findInMemoryContextDocumentsById,
   InMemoryContextDocumentStore,
   type InMemoryContextDocumentStoreBacking,
 } from "../adapters/context-fs/in-memory-store.js";
@@ -79,24 +76,4 @@ export function getInMemoryContextTreeMutationStore(
   registry: InMemoryUnifiedContextStoreRegistry,
 ): ContextTreeMutationStore {
   return registry.mutationStore;
-}
-
-function projectionFromStore(
-  registry: InMemoryUnifiedContextStoreRegistry,
-  documentId: DocumentId,
-): { markdown: string; filetype: Filetype } | null {
-  const doc = findInMemoryContextDocumentsById(registry.backing, [documentId])[0];
-  if (!doc) return null;
-  return {
-    markdown: registry.backing.projections.get(documentId) ?? "",
-    filetype: doc.filetype ?? "markdown",
-  };
-}
-
-/** Resolve markdown projection for a document id across all in-memory context stores. */
-export function findInMemoryDocumentProjection(
-  registry: InMemoryUnifiedContextStoreRegistry,
-  documentId: DocumentId,
-): { markdown: string; filetype: Filetype } | null {
-  return projectionFromStore(registry, documentId);
 }

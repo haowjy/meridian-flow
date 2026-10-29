@@ -6,7 +6,8 @@
  * search and the click the writer may have edited, moved or deleted that
  * block, so arriving means re-deciding, against live text, whether the promise
  * can still be kept. Three outcomes, and no fourth: the passage is where it
- * said, the passage is somewhere unambiguous, or we say it changed. Landing on
+ * said, the passage is somewhere unambiguous, or we say it changed. (An empty term
+ * means the server had no text to give: the block alone is the landing.) Landing on
  * a nearby-but-wrong paragraph is the failure this module exists to refuse.
  *
  * Pure over a ProseMirror document: no editor, no Yjs, no timing.
@@ -37,7 +38,6 @@ export function resolvePassage(
   block: TextRange | null,
   term: string,
 ): PassageResolution {
-  if (term.length === 0) return { kind: "stale" };
   if (block) {
     const inside = findTerm(doc, term, block);
     if (inside.length > 0) return { kind: "block", ranges: inside };
@@ -45,7 +45,10 @@ export function resolvePassage(
   // Outline's resilience without its "first duplicate wins": one occurrence is
   // an answer, several are a coin flip about the writer's own prose.
   const everywhere = findTerm(doc, term, { from: 0, to: doc.content.size });
-  return everywhere.length === 1 ? { kind: "refound", ranges: everywhere } : { kind: "stale" };
+  if (everywhere.length === 1) return { kind: "refound", ranges: everywhere };
+  // The block is still there but the term isn't found in it: the server's term is the writer's
+  // text, which formatting marks can split across nodes. The block is the promise left to keep.
+  return block ? { kind: "block", ranges: [block] } : { kind: "stale" };
 }
 
 /**

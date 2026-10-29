@@ -14,7 +14,7 @@ export const TOOL_CATALOG = [
   "write",
   "work",
   "ls",
-  "search",
+  "grep",
   "skill",
   "ask_user",
   "spawn",
