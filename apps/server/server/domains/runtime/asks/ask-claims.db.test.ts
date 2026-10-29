@@ -207,7 +207,7 @@ else
       expect(await repos.asks.findById(ask.id)).toMatchObject({ status: "cancelled" });
     });
 
-    it("a parent's Stop leaves a running child alone and still hears its later report", async () => {
+    it("a primary chat's Stop leaves a running child alone and keeps every report from it", async () => {
       const first = await runClaim.startExecution(ids.child, crypto.randomUUID(), async () => {});
       if (!first) throw new Error("child claim was not taken");
       const toChild = await delivery.enqueue({
@@ -216,6 +216,21 @@ else
         provenance: { kind: "agent", threadId: ids.caller },
         body: { kind: "text", text: "queued for the child" },
         idempotencyKey: "queued-for-child",
+      });
+      // A finished child's report already waiting in the parent's queue when Stop lands.
+      const queuedReport = await delivery.enqueue({
+        threadId: ids.caller,
+        intent: "message",
+        provenance: {
+          kind: "child",
+          threadId: ids.child,
+          reportId: "report-1",
+          handle: "child",
+          outcome: "completed",
+          agentName: "worker",
+        },
+        body: { kind: "text", text: "child finished" },
+        idempotencyKey: "queued-report",
       });
       const report = (key: string, executionId: string) =>
         delivery.enqueue({
@@ -243,11 +258,14 @@ else
       expect(await delivery.selectPending(ids.child)).toContainEqual(
         expect.objectContaining({ id: toChild.id }),
       );
-      // The caller's fence refuses what the child's execution sent from before the Stop...
-      await expect(report("before-stop", first.executionId)).rejects.toBeInstanceOf(
-        WakeRefusedError,
+      // The primary caller is not fenced: the queued report survives, and so does what the
+      // child's execution sent from before the Stop.
+      expect(await delivery.selectPending(ids.caller)).toContainEqual(
+        expect.objectContaining({ id: queuedReport.id }),
       );
-      // ...but not the report of an execution admitted after it.
+      await expect(report("before-stop", first.executionId)).resolves.toMatchObject({
+        threadId: ids.caller,
+      });
       await delivery.withThreadLock(ids.child, () => runClaim.release(first));
       const later = await runClaim.startExecution(ids.child, crypto.randomUUID(), async () => {});
       if (!later) throw new Error("child claim was not taken again");

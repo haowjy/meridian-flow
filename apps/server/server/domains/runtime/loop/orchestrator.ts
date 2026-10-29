@@ -259,7 +259,7 @@ export interface OrchestratorDeps {
   headSeq(threadId: ThreadId): Promise<bigint>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
-  /** Ends a subtree across processes: Stop, turn cancel, and a child's terminal run. */
+  /** Lineage cancellation across processes: turn cancel, delete, and a child's terminal run end a subtree; Stop and Send now end only the reply. */
   lineage: LineageCancellation;
   askRequests: Pick<AskService, "request">;
   /** Runs after the ambient transaction commits, or at once outside one. */

@@ -96,8 +96,8 @@ thread lineage, not live sessions. Lineage cancellation is one durable command
    continuations, and the owner's live asks (a cancelled turn's own question
    only) and owed continuations (`continuationOwedSql`: `pending`, or NULL on an
    answered/expired ask an older server resolved).
-4. **Per locked thread:** drop a target's queued non-writer rows, a stopped
-   owner's queued `agent` and `child` messages, the report notices from targets
+4. **Per locked thread:** drop a target's queued non-writer rows, a fenced
+   owner's queued `agent` messages (a deleted owner's `child` reports too), the report notices from targets
    and the hints for claimed asks. Write each claimed ask's cancelled tool result
    or `ask.updated`. Then set `cancel_requested` on the targets' live leases,
    stamp the **wake fence** (`threads.wake_fence_at`) on the fenced set, mark the
@@ -105,8 +105,10 @@ thread lineage, not live sessions. Lineage cancellation is one durable command
    'cancelled'` on every target spawn still `running` (`cancelRunningSpawns`, the
    only writer of that value; a refused spawn writes nothing).
 
-The **fenced set** is the targets, plus the owner when the writer stopped its
-reply or deleted the chat. It is the one concept for "loses queued machine messages and
+The **fenced set** is the targets, plus the owner when the writer stopped a
+subagent's reply or deleted the chat. A stopped primary chat is not fenced: all
+that is queued for it comes from below or the system, and a child's report must
+still wake it. It is the one concept for "loses queued machine messages and
 refuses new machine wakes"; a cancelled turn or a finished run leaves the owner
 free to be woken. Work notices stay: they never start a run.
 
@@ -173,9 +175,9 @@ Ownership decides the scope:
 
 | Trigger | Scope |
 |---|---|
-| Stop on a chat (`thread` reach) | the owner's reply only: its live execution, its open asks and owed continuations, and the owner's own fence. No descendant is cancelled, claimed, fenced or has its queue or `spawn_status` touched: Stop is the button that means "this reply", and a child has its own Stop. A surviving child's later report wakes the owner, since the fence only refuses senders admitted before the Stop |
+| Stop on a chat (`thread` reach) | the owner's reply only: its live execution, its open asks and owed continuations. A background child is not cancelled, claimed, fenced or has its queue or `spawn_status` touched: Stop is the button that means "this reply", and a child has its own Stop. A foreground child follows the reply's abort signal, so Stop ends it, and its ending cancels its own background children. A stopped subagent is fenced against its ancestors; a stopped primary chat is not fenced, so a surviving child's report, queued or later, wakes it |
 | Cancelling a turn | only subtrees whose root that turn's execution spawned (`origin_turn_id`); a turn parked on its question is cancelled by withdrawing it. An explicit cancellation of that work, so it reaches what the turn started |
-| Send now (`turn` reach, no `subtree`) | the reply's execution and its own question; the reply's children keep running, and the owner is not fenced, so queued reports reach the next turn |
+| Send now (`thread` reach) | as Stop: the reply's execution and its own question; the reply's children keep running |
 | Deleting a thread or Work (`stopThreads`: chat trash, Work delete, the work tool, receipt reversal) | each deleted thread's run, its open asks and owed continuations, and its whole subtree, one lineage per topmost thread. Trash, Work delete and receipt reversal run it in their own transaction |
 | A child's terminal run | its whole subtree, before its claim is released |
 
