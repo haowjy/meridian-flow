@@ -52,7 +52,8 @@ export interface AskRepository {
    * `execution` (the owner's execution the decision cancelled; a run the decision spared keeps
    * the question it is asking) and owed continuations. Live asks become cancelled; every claimed continuation becomes `cancelled`.
    * Rows another transaction holds are skipped: it waits on a thread lock the command holds and
-   * then sees the cancellation (a flagged run cancels its own ask; a writer's answer wins).
+   * then sees the cancellation (a flagged run cancels its own ask; a writer's answer wins, unless
+   * the command deleted its chat: then the answer's claim cancels it).
    */
   claimLineage(input: {
     threadIds: readonly ThreadId[];
