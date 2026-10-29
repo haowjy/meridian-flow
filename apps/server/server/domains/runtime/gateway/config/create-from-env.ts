@@ -13,6 +13,7 @@ import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
 import { createGateway } from "../create-gateway.js";
 import type { ProviderConfig, TraceSpan } from "../domain/index.js";
 import type { Gateway } from "../ports/gateway.js";
+import { withLiveTestModel } from "./live-test-model.js";
 import {
   buildProviderConfigs,
   defaultGatewayOptions,
@@ -20,6 +21,7 @@ import {
   mockProviderConfig,
   parseEnvMs,
 } from "./providers.js";
+import { MODEL_REGISTRY } from "./registry.js";
 
 export interface GatewayFromEnv {
   gateway: Gateway;
@@ -51,12 +53,16 @@ function resolveDefaultProvider(
 function formatGatewayStartupInfo(
   providers: ProviderConfig[],
   defaultModel: string | undefined,
+  liveTestModel?: string,
 ): GatewayStartupInfo {
   const provider = resolveDefaultProvider(providers, defaultModel) ?? "unknown";
-  const message =
+  const base =
     provider === "mock" || !defaultModel
       ? `gateway: ${provider}`
       : `gateway: ${provider}/${defaultModel}`;
+  const message = liveTestModel
+    ? `${base} (LIVE_TEST_MODEL on: every call goes to ${liveTestModel})`
+    : base;
   return {
     provider,
     model: defaultModel,
@@ -106,7 +112,19 @@ export async function createGatewayFromEnv(
   const gatewayOptions = defaultGatewayOptions(providers, registryDefaultModel);
   const defaultModel = gatewayOptions.defaultModel;
   if (!defaultModel) throw new Error("Gateway configuration has no default model");
-  const startupInfo = formatGatewayStartupInfo(providers, defaultModel);
+  const liveTestModel = env.LIVE_TEST_MODEL;
+  if (liveTestModel && !providers.some((p) => p.models.some((m) => m.id === liveTestModel))) {
+    const inRegistry = MODEL_REGISTRY.providers.some((p) =>
+      p.models.some((m) => m.id === liveTestModel),
+    );
+    await cleanup?.();
+    throw new Error(
+      inRegistry
+        ? `LIVE_TEST_MODEL=${liveTestModel}: its provider has no API key set`
+        : `LIVE_TEST_MODEL=${liveTestModel}: not a registry model id`,
+    );
+  }
+  const startupInfo = formatGatewayStartupInfo(providers, defaultModel, liveTestModel);
   if (options?.onInfo) {
     options.onInfo(startupInfo);
   }
@@ -119,5 +137,10 @@ export async function createGatewayFromEnv(
     onWarning: options?.onWarning,
   });
 
-  return { gateway, defaultModel, cleanup, ...(mockScript ? { mockScript } : {}) };
+  return {
+    gateway: liveTestModel ? withLiveTestModel(gateway, liveTestModel) : gateway,
+    defaultModel: liveTestModel ?? defaultModel,
+    cleanup,
+    ...(mockScript ? { mockScript } : {}),
+  };
 }

@@ -128,3 +128,15 @@ one object envelope carrying each command's purpose, required and allowed
 fields, and command-tagged descriptions generated from the Zod branches.
 DeepSeek receives the canonical unions unchanged, and a root `allOf` is refused
 at tool registration.
+
+## LIVE_TEST_MODEL (dev only)
+
+`LIVE_TEST_MODEL=<registry model id>` sends every gateway call to that model, whatever
+the request, chat binding or Agent names. `createGatewayFromEnv` validates it (known id,
+provider key set) and wraps the gateway once (`config/live-test-model.ts`); `startup-guards`
+refuses it in production. The wrapper rewrites the request's model, drops its provider,
+and answers every `listModels()` entry with the override's facts under the listed id,
+because compaction, image support, tokenizer and cache prediction look models up by the
+stored id. Costing needs no hook: it prices the provider and model the response reports.
+Stored bindings, Agent files and the catalog still show the model they name. The name has
+no `FLOW_` prefix because it is not a provider key.
