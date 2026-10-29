@@ -9,9 +9,11 @@
  * beside a picked option, or sent but beaten by another resolution) are added to the composer
  * draft once. Closure follows the ask's lifecycle, not the takeover.
  *
- * A takeover that opens with no local draft (a reload, another device) starts from the answers
- * the server holds for the ask (`draftAnswers`), the ones a timeout would use. With two tabs open
- * the last one to report wins. A send the server refuses as `invalid_answer` moves the draft to
+ * A takeover the writer hasn't touched (a reload, another device, coming back to a chat) shows
+ * the answers the server holds for the ask (`draftAnswers`), the ones a timeout would use, and
+ * follows them as newer ones arrive: a chat left open re-reads them on return. The draft becomes
+ * the writer's own at their first change, and no later `ask.updated` replaces it. With two tabs
+ * open the last one to report wins. A send the server refuses as `invalid_answer` moves the draft to
  * the question it names.
  *
  * While the writer works on a question, the draft goes to the server as `ask.presence`, at most
@@ -111,12 +113,8 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
       if (words) composer.current?.appendText(words);
       stopPresence();
       write(NONE);
-      return;
     }
-    if (openId !== null && current.askId === null && open) {
-      write({ askId: openId, ...seedDraft(open.ask) });
-    }
-  }, [composer, open, openId, stopPresence, tracked, write]);
+  }, [composer, openId, stopPresence, tracked, write]);
 
   if (!open) return null;
   const draft = held.askId === open.ask.id ? held : seedDraft(open.ask);
