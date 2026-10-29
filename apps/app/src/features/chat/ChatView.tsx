@@ -688,7 +688,11 @@ export function ChatView({
                   <SubagentDisclosureProvider>
                     <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
                       <div className="relative flex min-h-0 flex-1 flex-col">
-                        <RunningSubagentsStrip threadId={threadId} />
+                        <RunningSubagentsStrip
+                          threadId={threadId}
+                          accountId={accountId}
+                          scope={stopScope}
+                        />
                         <TurnList
                           threadId={threadId}
                           uploadsChat={topChat.chatRef ?? undefined}

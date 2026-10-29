@@ -26,6 +26,9 @@ out of usage.
   request; a refused request offers Dismiss only. A queued `/compact` or switch
   whose Stop failed is a card in that control's row ("Couldn't stop the
   compaction.", with Try again in Stop's place).
+- A running subagent's Stop pressed from the strip fails on that child's row,
+  with the same hand-back cards (`handBackCards`) drawn by the strip, not by
+  `chatCards`: the failure is the child's, not this chat's.
 
 ## Lifetime
 
