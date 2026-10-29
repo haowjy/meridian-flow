@@ -104,7 +104,10 @@ thread lineage, not live sessions. Lineage cancellation is one durable command
    targets' unpublished reports `notice_withdrawn`, and set `spawn_status =
    'cancelled'` on every target spawn still `running` (`cancelRunningSpawns`; a refused
    spawn writes nothing). A thread's own spawn status is settled when its run ends, by the
-   execution finalizer, not here.
+   execution finalizer, not here, and only for a spawn-origin run: a re-task run
+   never writes it. So `spawn_status` is the spawn run's outcome, not the child's
+   current state. Read liveness from the lease and a later run's outcome from its
+   turns and report (#1194).
 
 The **fenced set** is the targets, plus the owner when the writer stopped a
 subagent's reply (the decision's `fenceOwner`; Send now never sets it) or deleted
