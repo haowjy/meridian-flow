@@ -244,8 +244,8 @@ msgid "{agent} wants to archive {work}?"
 msgstr "{agent} wants to archive {work}?"
 
 #: src/features/chat/ask/permission-request.ts
-msgid "{agent} wants to create the Work “{created}”?"
-msgstr "{agent} wants to create the Work “{created}”?"
+msgid "{agent} wants to create the Work “{name}”?"
+msgstr "{agent} wants to create the Work “{name}”?"
 
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to move this chat to {work}?"

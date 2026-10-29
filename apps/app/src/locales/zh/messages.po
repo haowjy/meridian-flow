@@ -244,8 +244,8 @@ msgid "{agent} wants to archive {work}?"
 msgstr "{agent} 想要归档 {work}，是否允许？"
 
 #: src/features/chat/ask/permission-request.ts
-msgid "{agent} wants to create the Work “{created}”?"
-msgstr "{agent} 想要创建 Work「{created}」，是否允许？"
+msgid "{agent} wants to create the Work “{name}”?"
+msgstr "{agent} 想要创建 Work「{name}」，是否允许？"
 
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to move this chat to {work}?"

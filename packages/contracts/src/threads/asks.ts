@@ -29,37 +29,43 @@ export const permissionActionSchema = z.enum([
   "work.write_mode",
 ]);
 
-const permissionAskFields = {
-  agent: z.string().min(1).nullable(),
-  changes: z.strictObject({
-    name: z.string().optional(),
-    goal: z.string().nullable().optional(),
-    status: z.string().nullable().optional(),
-    mode: aiWriteModeSchema.optional(),
-  }),
-};
+const agentSchema = z.string().min(1).nullable();
+const permissionWorkSchema = z.strictObject({ handle: z.string().nullable(), name: z.string() });
 
 /**
  * What the writer is asked to allow, as facts the client renders in its own locale: who
  * asks (null: the default agent), the action, the Work it targets as named when asked
  * (`handle: null` is No Work), and the values it sets. Create and write_mode target no
- * Work. `changes` holds only the fields the action sets; a null goal or status clears it.
+ * Work. An update's `changes` holds only the fields it sets; a null goal or status clears it.
  */
 export const permissionAskPayloadSchema = z.discriminatedUnion("action", [
   z.strictObject({
-    ...permissionAskFields,
-    action: permissionActionSchema.extract(["work.create", "work.write_mode"]),
+    agent: agentSchema,
+    action: z.literal("work.create"),
     work: z.null(),
+    changes: z.strictObject({ name: z.string(), goal: z.string().nullable().optional() }),
   }),
   z.strictObject({
-    ...permissionAskFields,
-    action: permissionActionSchema.extract([
-      "work.update",
-      "work.archive",
-      "work.unarchive",
-      "work.switch",
-    ]),
-    work: z.strictObject({ handle: z.string().nullable(), name: z.string() }),
+    agent: agentSchema,
+    action: z.literal("work.write_mode"),
+    work: z.null(),
+    changes: z.strictObject({ mode: aiWriteModeSchema }),
+  }),
+  z.strictObject({
+    agent: agentSchema,
+    action: z.literal("work.update"),
+    work: permissionWorkSchema,
+    changes: z.strictObject({
+      name: z.string().optional(),
+      goal: z.string().nullable().optional(),
+      status: z.string().nullable().optional(),
+    }),
+  }),
+  z.strictObject({
+    agent: agentSchema,
+    action: permissionActionSchema.extract(["work.archive", "work.unarchive", "work.switch"]),
+    work: permissionWorkSchema,
+    changes: z.strictObject({}),
   }),
 ]);
 
