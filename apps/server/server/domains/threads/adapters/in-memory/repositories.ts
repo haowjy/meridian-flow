@@ -1484,18 +1484,17 @@ export function createInMemoryRepositories(
       async claimLineage(input) {
         const targets = new Set<string>(input.threadIds);
         const live = (ask: StoredAsk) => ask.status === "pending" || ask.status === "open";
-        const owed = isContinuationOwed;
         const { owner } = input;
         const claimed = [...asks.values()]
           .filter((ask) => {
-            if (targets.has(ask.threadId)) return live(ask) || owed(ask);
+            if (targets.has(ask.threadId)) return live(ask) || isContinuationOwed(ask);
             if (ask.threadId !== owner?.threadId) return false;
             if (live(ask))
               return (
                 (ask.status === "open" || ask.executionId === owner.execution) &&
                 (!owner.turnId || ask.askingTurnId === owner.turnId)
               );
-            return owed(ask);
+            return isContinuationOwed(ask);
           })
           .sort((a, b) => a.id.localeCompare(b.id));
         return claimed.map((ask) => {

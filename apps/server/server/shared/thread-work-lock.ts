@@ -57,8 +57,8 @@ export async function lockThreadForMutation(db: DrizzleDb, threadId: ThreadId) {
 /**
  * The order a thread tree is locked in, by Work lockers and by lineage cancellation within one
  * owner's subtree (cancellation orders the owners themselves, then locks each subtree this way).
- * `spawn_depth` is the parent's
- * plus one, so parents sort before their children; `listSubtreeIds` gives a subtree this order.
+ * `spawn_depth` is the parent's plus one, so parents sort before their children;
+ * `listSubtreeIds` gives a subtree this order.
  */
 export function parentsFirst(
   a: { id: string; spawnDepth: number },
@@ -122,7 +122,10 @@ export async function lockWorkThreadTree(
   workId: WorkId,
   options: {
     includeMarked?: boolean;
-    /** Runs on the tree before its rows lock; a thread that joins meanwhile reads as `changed`. */
+    /**
+     * Runs on the tree before its rows lock, receiving the ids parents first (`parentsFirst`); a
+     * thread that joins meanwhile reads as `changed`.
+     */
     beforeLock?: (threadIds: readonly ThreadId[]) => Promise<void>;
   } = {},
 ): Promise<{
