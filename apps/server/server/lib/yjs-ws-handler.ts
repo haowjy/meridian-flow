@@ -305,9 +305,9 @@ async function classifyYjsConnectionAdmission(input: {
     if (!(await hasLiveDocument(services.liveDocuments, documentId))) {
       throw permissionDenied("permission-denied");
     }
-    // The room's explicit touch: a living document missing its authority is repaired from
-    // its projection before the first generation read, which never creates one.
-    await services.documentSync.repairDocumentAuthority(documentId);
+    // The room's explicit touch: a living document missing its authority is seeded empty
+    // before the first generation read, which never creates one.
+    await services.documentSync.ensureDocumentAuthority(documentId);
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
     const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);

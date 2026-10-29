@@ -3,7 +3,7 @@
 // The serializer escapes text that would otherwise parse as syntax: `LIVE_ONLY`
 // becomes `LIVE\_ONLY` and a leading space becomes `&#x20;`. A model types the
 // writer's words, or copies the escaped form from a `read`, so `find` and
-// `search` compare both sides in this view. Each view character maps to the
+// `grep` compare both sides in this view. Each view character maps to the
 // whole markdown unit it came from, so a match never splits an escape.
 
 /** One left-to-right unit: a backslash escape, a numeric character reference, or a character with its combining marks. */
@@ -23,14 +23,11 @@ export function markdownTextView(markdown: string): MarkdownTextView {
   const start: number[] = [];
   const end: number[] = [];
   let text = "";
-  for (const match of markdown.matchAll(UNIT)) {
-    const unit = match[0];
-    const unitStart = match.index;
-    const decoded = decodeUnit(unit, match[1], match[2]).normalize("NFC");
+  for (const { decoded, at, length } of units(markdown)) {
     text += decoded;
     for (let index = 0; index < decoded.length; index += 1) {
-      start.push(unitStart);
-      end.push(unitStart + unit.length);
+      start.push(at);
+      end.push(at + length);
     }
   }
   return { text, start, end };
@@ -38,7 +35,20 @@ export function markdownTextView(markdown: string): MarkdownTextView {
 
 /** The writer's text for a query, so escaped and unescaped queries compare alike. */
 export function markdownPlainText(markdown: string): string {
-  return markdownTextView(markdown).text;
+  let text = "";
+  for (const { decoded } of units(markdown)) text += decoded;
+  return text;
+}
+
+function* units(markdown: string) {
+  for (const match of markdown.matchAll(UNIT)) {
+    const unit = match[0];
+    yield {
+      decoded: decodeUnit(unit, match[1], match[2]).normalize("NFC"),
+      at: match.index,
+      length: unit.length,
+    };
+  }
 }
 
 function decodeUnit(unit: string, hex: string | undefined, decimal: string | undefined): string {

@@ -1,8 +1,8 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
 
-import {
-  type AgentEditCodecFactory,
-  type YProsemirrorDocumentModel,
+import type {
+  AgentEditCodecFactory,
+  YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -26,6 +26,7 @@ import { createBranches } from "../../domain/branches.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { readHashlines } from "../../domain/document-revision.js";
+import { isCodeDocument } from "../../domain/document-schema-type.js";
 import { DraftNotFoundError } from "../../domain/draft-resolver.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
@@ -57,6 +58,8 @@ import {
 } from "./static-document-link-scopes.js";
 
 export function createInMemoryCollabDomain(): CollabDomain {
+  // Nothing in memory carries a filetype: every document is prose.
+  const resolveDocumentFiletype = async () => null;
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const documentCreation = createDocumentCreationAggregate({
@@ -78,13 +81,13 @@ export function createInMemoryCollabDomain(): CollabDomain {
     agentCoordinator: coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
-      async missingAuthorityProjection(documentId) {
+      async lacksAuthority(documentId) {
         const snapshot = await journal.read(documentId);
-        return snapshot.checkpoint || snapshot.updates.length > 0 ? null : "";
+        return !snapshot.checkpoint && snapshot.updates.length === 0;
       },
     },
     runDocumentWriteHook,
-    resolveDocumentFiletype: async () => null,
+    resolveDocumentFiletype,
     observability: createAgentEditObservabilityOptions({}),
   });
   const branches = createBranches({
@@ -194,9 +197,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
-      initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
-      repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
+      ensureDocumentAuthority: runtime.markdownDocuments.ensureDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      readFrozenMarkdown: runtime.markdownDocuments.readFrozenMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
@@ -242,6 +245,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       runtime.model,
       runtime.codec,
       links,
+      resolveDocumentFiletype,
     ),
     branches: createInMemoryBranchStub(),
     branchResolver: {
@@ -274,6 +278,7 @@ function createInMemoryDraftPeerStub(
   model: YProsemirrorDocumentModel,
   codec: AgentEditCodecFactory,
   links: DocumentLinkScopes,
+  resolveFiletype: (documentId: DocumentId) => Promise<string | null>,
 ): DraftPeerShadowAccess {
   return {
     async readEffectiveRevision(input) {
@@ -281,11 +286,15 @@ function createInMemoryDraftPeerStub(
       return read.ok ? read.value.revision : null;
     },
     async flushDraftLivePull() {},
+    // Nothing is derived in memory.
+    readStoredGrepTexts: async () => new Map(),
+    readStoredWordCounts: async () => new Map(),
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
         const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
-        return Ok(readHashlines(doc, scope, model, codec));
+        const verbatim = await isCodeDocument(resolveFiletype, input.documentId);
+        return Ok(readHashlines(doc, scope, model, codec, verbatim));
       }),
     async ensureCreatedDocumentDraft() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");

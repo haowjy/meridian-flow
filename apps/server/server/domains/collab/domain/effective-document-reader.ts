@@ -20,9 +20,11 @@ import type {
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import { documentRevision, readHashlines } from "./document-revision.js";
+import { isCodeDocument } from "./document-schema-type.js";
 import type { DraftPullService } from "./draft-pulls.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
+import type { BlockText } from "./ports/block-text.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
@@ -33,6 +35,7 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
+  blockText: BlockText;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
@@ -40,6 +43,7 @@ export function createEffectiveDocumentReader(input: {
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
   branches: Pick<Branches, "viewForWork">;
+  resolveFiletype(documentId: DocumentId): Promise<string | null>;
 }): DraftPeerShadowAccess {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
@@ -96,6 +100,18 @@ export function createEffectiveDocumentReader(input: {
         return null;
       }
     },
+    async readStoredGrepTexts({ documentIds, responseId, ...version }) {
+      const texts = await input.blockText.grepTexts(documentIds, {
+        draftWorkId: version.destination === "draft" ? version.workId : null,
+      });
+      // A reply's writes to a document stay in its room until a commit and leave no draft row,
+      // so the stored text can lag the reply's own view.
+      if (responseId)
+        for (const id of texts.keys())
+          if (input.agentEdit.hasResponseDocument(responseId, id)) texts.delete(id);
+      return texts;
+    },
+    readStoredWordCounts: (documentIds) => input.blockText.wordCounts(documentIds),
     flushDraftLivePull(documentId) {
       return input.draftPulls.flushLivePull(documentId);
     },
@@ -112,7 +128,8 @@ export function createEffectiveDocumentReader(input: {
       return readEffective(command, async (handle): Promise<HashlineRead> => {
         const doc = unwrapDoc(handle);
         const scope = await spelling(command, doc);
-        return readHashlines(doc, scope, input.model, input.codec);
+        const verbatim = await isCodeDocument(input.resolveFiletype, command.documentId);
+        return readHashlines(doc, scope, input.model, input.codec, verbatim);
       });
     },
     ensureCreatedDocumentDraft(command) {

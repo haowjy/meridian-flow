@@ -9,8 +9,8 @@ import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import {
   branchTreeChanges,
+  documentBlockRooms,
   documentDrafts,
-  documentMarkdownProjections,
   documents,
   documentYjsCheckpoints,
   documentYjsHeads,
@@ -124,10 +124,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             ),
         ),
         projection: await count(
-          db
-            .select()
-            .from(documentMarkdownProjections)
-            .where(eq(documentMarkdownProjections.documentId, id)),
+          db.select().from(documentBlockRooms).where(eq(documentBlockRooms.documentId, id)),
         ),
       };
     }

@@ -21,7 +21,7 @@ each entry names its owner, evidence, and safe follow-up.
   (500-document seed) measured 112–176 ms for a first draft write and
   117–159 ms for later writes. The span is aggregate: it covers grant checks and
   `ContextFS.ensureTrackedDocument`, which calls
-  `documentSync.repairDocumentAuthority` even for an existing visible document
+  `documentSync.ensureDocumentAuthority` even for an existing visible document
   (the repair is a no-op when the head exists, but still reads it). The span
   predates E2, when this was an implicit ensure; re-measure before acting.
   Split authorization from ensure before claiming a fix. Likely direction: an

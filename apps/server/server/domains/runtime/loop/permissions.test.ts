@@ -119,7 +119,7 @@ __mergedSuite("tool-policy.test.ts", () => {
     "ask_user",
     "ls",
     "read",
-    "search",
+    "grep",
     "skill",
     "spawn",
     "thread_history",
