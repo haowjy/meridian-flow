@@ -47,11 +47,11 @@ type RunSession = {
 };
 
 /**
- * What a lineage cancellation reaches below its owner. `thread` (Stop, Send now): nothing below
- * it; it ends the owner's reply and what that execution itself owes. It fences the owner only when
- * the owner is a subagent, and only against its ancestors (retasks and notices queued from above
- * stay stopped); a primary chat is not fenced, because everything queued for it comes from below
- * and a surviving child's report must still wake it.
+ * What a lineage cancellation reaches below its owner. `thread` (Stop, Send now): no descendant;
+ * it ends the owner's reply and what that execution itself owes. Background subagents keep
+ * running; a foreground child ends with the reply that was waiting on it, and takes its own
+ * background children with it. Whether the owner is fenced is not the reach's business: see
+ * `LineageDecision.fenceOwner`.
  * `turn`: the turn's own question and the subtrees that turn's execution spawned.
  * `terminal`: a child run that ended takes its whole subtree.
  * `deleted` (trash, Work delete): the whole subtree and everything the owner holds.
@@ -71,6 +71,13 @@ export type LineageDecision<T> = {
   result: T;
   reach: LineageReach | null;
   execution: string | null;
+  /**
+   * Fence the owner: it drops its queued `agent` messages and refuses a wake from any sender
+   * admitted before now (a surviving child's report carries no sender, so it still lands). Only
+   * Stop on a subagent sets it, so a parent's queued retasks don't restart the stopped child; a
+   * stopped primary chat is not fenced, and Send now never is. A `deleted` reach fences regardless.
+   */
+  fenceOwner?: boolean;
 };
 
 export type LineageCancelled<T> = {
@@ -531,10 +538,12 @@ export function createRunSessions(deps: {
         // Stop is "this reply" and nothing below it: children keep running and their reports
         // still wake this chat (the fence only refuses senders admitted before the stop).
         // Explicit cancellations (`cancel`, `stopThreads`) keep their reach: they cancel work.
+        const thread = await deps.repos.threads.findById(threadId);
         return {
           result: response,
           reach: { kind: "thread" },
           execution: response.cancelledExecutionId,
+          fenceOwner: thread?.parentThreadId != null,
         };
       }),
     /** The queue's x and Cancel queue: decided under the thread lock; never cancels a reply. */
@@ -545,7 +554,7 @@ export function createRunSessions(deps: {
       cancelLineage(threadId, async () => {
         const response = await deps.delivery.sendNow(threadId, request);
         const execution = response.cancelledExecutionId;
-        // Cancels the reply so the queue runs, with Stop's reach: the reply's children keep running.
+        // Cancels the reply so the queue runs. Never fences the owner: the queue, retasks included, runs next.
         return {
           result: response,
           reach: execution ? { kind: "thread" } : null,

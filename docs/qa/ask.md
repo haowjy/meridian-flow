@@ -190,6 +190,11 @@ into the parent's script before you send. A parent woken by a report matches
    earlier child keeps running and its `spawn_status` still reads `running`; Stop
    ends only the root's own reply. Its report, when it finishes, starts a root
    turn.
+   Then stop one from the strip: spawn two background children of the root with
+   40 s steps, queue a writer message to each, and press Stop on one child's row in
+   the running-subagents bar. PASS: the other child keeps running and its
+   `spawn_status` reads `running`; the stopped one is `cancelled`, and its queued
+   writer message comes back to that child's composer.
 7. **Deletion.** In a chat bound to a fresh Work, spawn a background child with a
    40 s step, then delete the Work (`./mf api DELETE /api/works/<id>`). PASS within
    about two seconds: the child's report is `cancelled`, its `spawn_status` reads
