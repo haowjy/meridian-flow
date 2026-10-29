@@ -62,6 +62,11 @@ Contracts:
 - **Repair receipts**: a failed placement remains `needs-repair` in the journal.
   Only a provisional draft's placement refusal reopens the identity field with
   the writer's name and recovery note, automatically or through its failure mark.
+  A refused create counts: the document stays local in Unfiled and the labelled mark reads
+  "Couldn't create this document. Try another place.", the same sentence as the field's note.
+  The mark sits on a line of its own under the path, wrapping, so a phone-width bar never cuts
+  it. Committing a home files it with a new create under the same id. A read-only bar shows
+  the mark as an icon whose tooltip is that same sentence.
   Homed documents show a passive failure mark whose tooltip names the failed
   move destination (or rename) and directs retry to Move… (or Rename) in the
   file list. The mark never opens a field. Retry settles the failed attempt and

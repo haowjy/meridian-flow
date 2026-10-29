@@ -152,8 +152,8 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     refuse();
     await vi.waitFor(async () => {
       const record = await writer.readResource(reservation.key);
-      expect(record?.intents.find((intent) => intent.desired.kind === "set-location")?.state).toBe(
-        "needs-repair",
+      expect(record?.intents.find((intent) => intent.state === "needs-repair")?.desired.kind).toBe(
+        "set-location",
       );
     });
     const record = await writer.readResource(reservation.key);

@@ -1,4 +1,35 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { DevMode } from "./dev-mode";
+
+/** Portless's default HTTPS proxy port. Its URLs omit this port. */
+const DEFAULT_PROXY_PORT = 443;
+
+function isPort(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= 65_535;
+}
+
+/**
+ * The port Portless's proxy is using. `portless list` renders URLs from the
+ * running proxy's `proxy.port`, so that file wins over `PORTLESS_PORT`, which
+ * only asks a new proxy to start on a port.
+ */
+export function resolvePortlessProxyPort(env: NodeJS.ProcessEnv = process.env): number {
+  const stateDir = env.PORTLESS_STATE_DIR ?? path.join(os.homedir(), ".portless");
+  try {
+    const recorded = Number.parseInt(
+      fs.readFileSync(path.join(stateDir, "proxy.port"), "utf8").trim(),
+      10,
+    );
+    if (isPort(recorded)) return recorded;
+  } catch {
+    // A missing state file means the proxy has not run yet; fall through.
+  }
+
+  const requested = Number.parseInt(env.PORTLESS_PORT ?? "", 10);
+  return isPort(requested) ? requested : DEFAULT_PROXY_PORT;
+}
 
 /** Canonical names used by command rendering, route checks and internal origins. */
 const SERVICE_PORTLESS_NAMES = {
@@ -65,7 +96,7 @@ export interface ParsedPortlessList {
 }
 
 const ROUTE_LINE_RE =
-  /^https:\/\/(\S+)\s+->\s+(?:http:\/\/)?[^\s:]+:(\d+)(?:\s+\(pid\s+(\d+)\))?(?:\s*\(alias\))?(?:\s+up\s+\S+)?\s*$/i;
+  /^https:\/\/([^\s:]+)(?::(\d+))?\s+->\s+(?:http:\/\/)?[^\s:]+:(\d+)(?:\s+\(pid\s+(\d+)\))?(?:\s*\(alias\))?(?:\s+up\s+\S+)?\s*$/i;
 const SHARE_LINE_RE = /^(tailscale|funnel):\s*(.+)$/i;
 
 export function parsePortlessListOutput(output: string): ParsedPortlessList {
@@ -82,7 +113,8 @@ export function parsePortlessListOutput(output: string): ParsedPortlessList {
     const routeMatch = ROUTE_LINE_RE.exec(line);
     if (routeMatch) {
       rawLines.push(line);
-      const [, host, portString, pidString] = routeMatch;
+      const [, hostname, proxyPortString, portString, pidString] = routeMatch;
+      const host = proxyPortString ? `${hostname}:${proxyPortString}` : hostname;
       const route: PortlessRoute = {
         host,
         url: `https://${host}`,
@@ -139,8 +171,21 @@ export function expectedPortlessName(
   return worktreePrefix ? `${worktreePrefix}.${name}` : name;
 }
 
-export function expectedServiceHost(service: ExpectedServiceName, worktreePrefix?: string): string {
-  return `${expectedPortlessName(service, worktreePrefix)}.localhost`;
+export function expectedServiceHost(
+  service: ExpectedServiceName,
+  worktreePrefix?: string,
+  proxyPort: number = DEFAULT_PROXY_PORT,
+): string {
+  const host = `${expectedPortlessName(service, worktreePrefix)}.localhost`;
+  return proxyPort === DEFAULT_PROXY_PORT ? host : `${host}:${proxyPort}`;
+}
+
+export function expectedServiceOrigin(
+  service: ExpectedServiceName,
+  worktreePrefix?: string,
+  proxyPort: number = DEFAULT_PROXY_PORT,
+): string {
+  return `https://${expectedServiceHost(service, worktreePrefix, proxyPort)}`;
 }
 
 function readPortlessRoutes(output: string): PortlessRoute[] {
@@ -150,10 +195,11 @@ function readPortlessRoutes(output: string): PortlessRoute[] {
 function findRouteForService(
   routes: PortlessRoute[],
   service: { name: string; host: string },
-  worktreePrefix?: string,
+  worktreePrefix: string | undefined,
+  proxyPort: number,
 ): PortlessRoute | undefined {
   const expectedHost = isExpectedServiceName(service.name)
-    ? expectedServiceHost(service.name, worktreePrefix)
+    ? expectedServiceHost(service.name, worktreePrefix, proxyPort)
     : service.host;
 
   return routes.find((route) => route.host === expectedHost);
@@ -176,16 +222,18 @@ export function resolveExpectedRouteUrls({
   output,
   mode,
   worktreePrefix,
+  proxyPort = DEFAULT_PROXY_PORT,
 }: {
   output: string;
   mode: DevMode;
   worktreePrefix?: string;
+  proxyPort?: number;
 }): Partial<Record<ExpectedServiceName, string>> {
   const routes = readPortlessRoutes(output);
   const urls: Partial<Record<ExpectedServiceName, string>> = {};
 
   for (const service of getExpectedServicesForMode(mode)) {
-    const route = findRouteForService(routes, service, worktreePrefix);
+    const route = findRouteForService(routes, service, worktreePrefix, proxyPort);
     if (route) urls[service.name] = route.url;
   }
 
@@ -198,6 +246,7 @@ export function formatDevRouteLines(
   mode: DevMode,
   worktreePrefix?: string,
   externalRoutes: ReadonlyArray<ExternalDevRoute> = [],
+  proxyPort: number = DEFAULT_PROXY_PORT,
 ): string[] {
   const expected = new Set(getExpectedServicesForMode(mode).map((service) => service.name));
   const routes = readPortlessRoutes(output);
@@ -212,6 +261,7 @@ export function formatDevRouteLines(
       routes,
       { name, host: expectedServiceHost(name) },
       worktreePrefix,
+      proxyPort,
     );
     if (!route) {
       continue;
@@ -242,6 +292,7 @@ export function validateExpectedRoutes({
   mode,
   expectedServices = getExpectedServicesForMode(mode),
   worktreePrefix,
+  proxyPort = DEFAULT_PROXY_PORT,
   expectedPorts = {},
   ownsPid,
 }: {
@@ -249,6 +300,7 @@ export function validateExpectedRoutes({
   mode: DevMode;
   expectedServices?: ReadonlyArray<ExpectedServiceDescriptor>;
   worktreePrefix?: string;
+  proxyPort?: number;
   expectedPorts?: Partial<Record<ExpectedServiceName, number>>;
   ownsPid?: (pid: number) => boolean;
 }): RouteValidation {
@@ -256,11 +308,11 @@ export function validateExpectedRoutes({
   const routes = readPortlessRoutes(output);
 
   for (const service of expectedServices) {
-    const route = findRouteForService(routes, service, worktreePrefix);
+    const route = findRouteForService(routes, service, worktreePrefix, proxyPort);
 
     if (!route) {
       const hostHint = isExpectedServiceName(service.name)
-        ? expectedServiceHost(service.name, worktreePrefix)
+        ? expectedServiceHost(service.name, worktreePrefix, proxyPort)
         : service.host;
       errors.push(`missing route for ${service.name} (${hostHint})`);
       continue;

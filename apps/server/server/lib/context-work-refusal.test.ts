@@ -93,8 +93,8 @@ it("finally refuses a missing Work locator before dispatch, identically on repla
           destinationScheme: scheme,
           destinationFolderPath: "",
           ...(missingSide === "source"
-            ? { sourceWorkId: "deleted-work" }
-            : { destinationWorkId: "deleted-work" }),
+            ? { sourceWorkId: "0f9c1a52-6d1c-4e0a-8a52-3b6f2e1d9c10" }
+            : { destinationWorkId: "0f9c1a52-6d1c-4e0a-8a52-3b6f2e1d9c10" }),
         },
       };
       for (let attempt = 0; attempt < 2; attempt++) {

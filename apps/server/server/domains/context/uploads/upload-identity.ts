@@ -16,6 +16,7 @@ export interface UploadIdentity {
   mimeType: string | null;
   sizeBytes: number | null;
   storageUrl: string | null;
+  hasPreview: boolean;
   updatedAt: string;
   /** Derived from the owning chat's current handle; chat-relative until the chat's row exists. */
   uri: string;
@@ -58,6 +59,7 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
         mimeType: document.mimeType,
         sizeBytes: document.sizeBytes,
         storageUrl: document.storageUrl,
+        hasPreview: document.hasPreview,
         updatedAt: document.updatedAt.toISOString(),
         uri: intake
           ? canonicalContextUri(

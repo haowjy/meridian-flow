@@ -32,7 +32,7 @@ import {
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
 import { branches } from "./branches";
-import { documents, works } from "./content";
+import { documents, projects, works } from "./content";
 import { documentEdits } from "./document-edits";
 import { users } from "./users";
 
@@ -557,5 +557,26 @@ export const applyCommandEffects = pgTable(
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),
     uniqueIndex("apply_command_effects_group").on(table.commandId, table.groupId),
+  ],
+);
+
+/** Private initial states; no live document exists until Context reveals the stage. */
+export const collabStagedStates = pgTable(
+  "collab_staged_states",
+  {
+    stagingId: uuid("staging_id").notNull(),
+    documentId: uuid("document_id").$type<DocumentId>().notNull(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    generation: integer("generation").notNull(),
+    state: byteaColumn("state").notNull(),
+    stateVector: byteaColumn("state_vector").notNull(),
+    attributionManifest: jsonb("attribution_manifest").notNull(),
+    markdown: text("markdown").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.stagingId, table.documentId] }),
+    index("collab_staged_states_project_idx").on(table.projectId),
   ],
 );

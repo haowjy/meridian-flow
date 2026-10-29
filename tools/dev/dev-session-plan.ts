@@ -9,7 +9,8 @@ import {
 import {
   type ExpectedServiceName,
   expectedPortlessName,
-  expectedServiceHost,
+  expectedServiceOrigin,
+  resolvePortlessProxyPort,
 } from "./portless-routes";
 
 const logPath = "logs/portless.log";
@@ -52,6 +53,7 @@ const DEV_SERVICES: ReadonlyArray<DevServiceSpec> = [
 const PORTLESS_ENV_KEYS = [
   "PORTLESS_LAN",
   "PORTLESS_HTTPS",
+  "PORTLESS_PORT",
   "PORTLESS_TLD",
   "PORTLESS_WILDCARD",
   "PORTLESS_SYNC_HOSTS",
@@ -96,11 +98,15 @@ function sharedPortsByService(
   return new Map(sharedPorts.map((ports) => [ports.service, ports]));
 }
 
-export function resolveInternalApiOrigin(worktreePrefix?: string): string {
-  return `https://${expectedServiceHost("server", worktreePrefix)}`;
+export function resolveInternalApiOrigin(
+  worktreePrefix?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return expectedServiceOrigin("server", worktreePrefix, resolvePortlessProxyPort(env));
 }
 
 export function createDevSessionCommand({
+  repoRoot,
   mode,
   clientBuild = "development",
   sharedPorts,
@@ -108,6 +114,7 @@ export function createDevSessionCommand({
   worktreePrefix,
   force = false,
 }: {
+  repoRoot: string;
   mode: DevMode;
   clientBuild?: DevSessionMetadata["clientBuild"];
   sharedPorts: ReadonlyArray<SharedDevServicePorts>;
@@ -115,7 +122,7 @@ export function createDevSessionCommand({
   worktreePrefix?: string;
   force?: boolean;
 }): DevSessionCommand {
-  const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix);
+  const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix, env);
   const portsByService = sharedPortsByService(sharedPorts);
   const commands = DEV_SERVICES.filter(
     (service) => mode !== "local" || !service.sharedModeOnly,
@@ -137,7 +144,9 @@ export function createDevSessionCommand({
   // checkout's DATABASE_URL in the pane: unset it so the loader derives this one.
   const stack = `(unset DATABASE_URL PORTLESS_TAILSCALE PORTLESS_FUNNEL; ${stackEnvExports(env, internalApiOrigin)}${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
   return {
-    line: `mkdir -p logs logs/events && ${stack} 2>&1 | tee ${logPath}`,
+    // tmux ignores `new-session -c` once its server's cwd has been deleted, so the
+    // command anchors itself; every path below is relative to the checkout.
+    line: `cd ${shellQuote(repoRoot)} && mkdir -p logs logs/events && ${stack} 2>&1 | tee ${logPath}`,
     internalApiOrigin,
   };
 }
@@ -172,6 +181,7 @@ export function createDevSessionPlan({
       sharedPorts.map((entry) => [entry.service, entry.appBackendPort]),
     ),
     command: createDevSessionCommand({
+      repoRoot,
       mode: session.mode,
       clientBuild: session.clientBuild,
       sharedPorts,

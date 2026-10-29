@@ -8,6 +8,7 @@ import { resolveCheckoutPortlessPrefix } from "./portless-prefix";
 import {
   type ExternalDevRoute,
   resolveExpectedRouteUrls,
+  resolvePortlessProxyPort,
   validateExpectedRoutes,
 } from "./portless-routes";
 import { TmuxSessionStore } from "./tmux-session-store";
@@ -117,7 +118,8 @@ export function resolveCheckoutRouteUrls(
 ): { app: string; server: string } {
   const { active } = readDevSessionState(repoRoot);
   const worktreePrefix = active ? active.worktreePrefix : resolveCheckoutPortlessPrefix(repoRoot);
-  const input = { output, mode: "local" as const, worktreePrefix };
+  const proxyPort = resolvePortlessProxyPort();
+  const input = { output, mode: "local" as const, worktreePrefix, proxyPort };
   const validation = validateExpectedRoutes({
     ...input,
     ownsPid: (pid) => pidBelongsToCheckout(pid, repoRoot),

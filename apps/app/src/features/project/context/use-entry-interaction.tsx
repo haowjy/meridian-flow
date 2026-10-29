@@ -8,19 +8,34 @@ import { ContextEntryMenu, type DeleteTarget, type EntryAction } from "./Context
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
-import { EntryMovePicker } from "./EntryMovePicker";
+import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { useRenameOperation } from "./LinkUpdateNote";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
 import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
-export type EntryCapabilities = readonly Exclude<EntryAction, "new-file" | "new-folder">[];
+export type EntryCapabilities = readonly Exclude<
+  EntryAction,
+  "new-file" | "new-folder" | "import-folder" | "import-files"
+>[];
 export type EntryCreation = (kind: ContextCreateKind, parentPath: string) => void;
+
+/** Starts an import into a folder; `folders` is false where the browser cannot pick one. */
+export type ImportHere = { start: (kind: "folder" | "files") => void; folders: boolean };
 
 export function entryActions(
   capabilities: EntryCapabilities,
   create?: EntryCreation,
+  importHere?: ImportHere,
 ): readonly EntryAction[] {
-  return create ? ["new-file", "new-folder", ...capabilities] : capabilities;
+  return create
+    ? [
+        "new-file",
+        "new-folder",
+        ...(importHere?.folders ? (["import-folder"] as const) : []),
+        ...(importHere ? (["import-files"] as const) : []),
+        ...capabilities,
+      ]
+    : capabilities;
 }
 
 export function useEntryInteraction({
@@ -34,6 +49,7 @@ export function useEntryInteraction({
   siblings,
   requestRename,
   onRenameDone,
+  importHere,
 }: {
   projectId: string;
   node: CatalogNode;
@@ -46,9 +62,13 @@ export function useEntryInteraction({
   /** Creation may ask an arriving row to open its naming field. */
   requestRename?: boolean;
   onRenameDone?: () => void;
+  /** Opens the OS picker for an import into this folder; only folders offer it. */
+  importHere?: ImportHere;
+  /** Sends a file whose import failed again; a failed file's menu leads with it. */
 }) {
   const [renaming, setRenaming] = useState(false);
-  const [moving, setMoving] = useState(false);
+  // The picker is one component for both; which action opened it decides what a pick does.
+  const [picking, setPicking] = useState<"move" | "copy" | null>(null);
   const id = node.kind === "file" ? node.documentId : node.entryId;
   const kind: "file" | "folder" = node.kind === "file" ? "file" : "folder";
   const { operationId, remember } = useRenameOperation(projectId, { kind, id });
@@ -63,13 +83,17 @@ export function useEntryInteraction({
     if (!rootThreadRef) throw new Error("Scratch lineage entry requires its URI authority");
     resolvedOwner = { rootThreadId: owner.rootThreadId, rootThreadRef };
   }
-  const actions =
-    node.kind === "dir" && node.navigationOnly ? [] : entryActions(capabilities, create);
+  const actions: readonly EntryAction[] =
+    node.kind === "dir" && node.navigationOnly
+      ? []
+      : [...entryActions(capabilities, create, node.kind === "dir" ? importHere : undefined)];
   useEntryRenameRepair(node, () => setRenaming(true), actions.includes("rename"));
   const onAction = (action: EntryAction) => {
     if (!actions.includes(action)) return;
     if (action === "rename") setRenaming(true);
-    else if (action === "move") setMoving(true);
+    else if (action === "move" || action === "copy") setPicking(action);
+    else if (action === "import-folder") importHere?.start("folder");
+    else if (action === "import-files") importHere?.start("files");
     else if (action === "new-file" || action === "new-folder")
       create?.(
         action === "new-file" ? "file" : "folder",
@@ -110,14 +134,17 @@ export function useEntryInteraction({
     operationId,
     actions,
     onAction,
-    movePicker: {
+    picker: {
       projectId,
-      owner: resolvedOwner,
-      scheme,
-      entry: { id, name: node.name, path: node.path, kind },
+      // Closed, it still names the action it would open for.
+      action: picking ?? "move",
+      from: { scheme, owner: resolvedOwner },
+      entries: [{ id, name: node.name, path: node.path, kind }],
       repairMove: node.namespaceRepairMove,
-      open: moving && actions.includes("move"),
-      onOpenChange: setMoving,
+      open: picking !== null && actions.includes(picking),
+      onOpenChange: (open: boolean) => {
+        if (!open) setPicking(null);
+      },
     },
   };
 }
@@ -132,7 +159,7 @@ export function EntryInteractionShell({
   contextMenu?: boolean;
 }) {
   return (
-    <EntryMovePicker {...interaction.movePicker}>
+    <EntryDestinationPicker {...interaction.picker}>
       {contextMenu ? (
         <ContextEntryMenu allowedActions={interaction.actions} onAction={interaction.onAction}>
           {children}
@@ -140,6 +167,6 @@ export function EntryInteractionShell({
       ) : (
         children
       )}
-    </EntryMovePicker>
+    </EntryDestinationPicker>
   );
 }

@@ -102,19 +102,35 @@ function ContextViewerContent({
           header={header}
           footer={imageViewerFooter({ url: binary.url, name: tab.name })}
         >
-          <ImageViewer url={binary.url} name={tab.name} />
+          <ImageViewer
+            key={`${tab.scheme}:${tab.path}`}
+            url={binary.url}
+            drawUrl={binary.drawUrl}
+            name={tab.name}
+            mimeType={binary.mimeType}
+            sizeBytes={binary.sizeBytes}
+            refresh={async () => {
+              const fresh = await read.refetch();
+              return fresh?.kind === "binary" ? fresh.drawUrl : undefined;
+            }}
+          />
         </ReadOnlyViewerFrame>
       ) : null;
     case "pdf":
       return binary ? (
         <ReadOnlyViewerFrame header={header}>
-          <PdfViewer url={binary.url} name={tab.name} />
+          <PdfViewer url={binary.url} name={tab.name} sizeBytes={binary.sizeBytes} />
         </ReadOnlyViewerFrame>
       ) : null;
     case "binary":
       return binary ? (
         <ReadOnlyViewerFrame header={header}>
-          <BinaryFallbackViewer url={binary.url} mimeType={binary.mimeType} name={tab.name} />
+          <BinaryFallbackViewer
+            url={binary.url}
+            mimeType={binary.mimeType}
+            name={tab.name}
+            sizeBytes={binary.sizeBytes}
+          />
         </ReadOnlyViewerFrame>
       ) : null;
   }

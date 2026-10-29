@@ -2,7 +2,15 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { NamespaceIntent, ResourceProjectionSnapshot } from "@meridian/resource-replica";
+import {
+  type NamespaceIntent,
+  type ParentRef,
+  placementTakenSince,
+  type ResourceProjectionSnapshot,
+  resourceIdentityIndex,
+  resourcePlacementForSnapshot,
+  resourceVisibleInProject,
+} from "@meridian/resource-replica";
 import { type QueryClient, queryOptions, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -17,12 +25,13 @@ import {
 import { getContextOperationReceipt, restoreContextDocuments } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { announce, announceError, getContextTabs } from "@/client/stores";
+import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { documentLocationName } from "../../chat/document-display-name";
 import { useDockDocumentStore } from "../dock/dock-document-store";
 import {
+  NoticePlacement,
   type NoticeSurface,
   SurfaceNotice,
-  type SurfaceNoticeModel,
   useNoticeSlot,
 } from "../shell/SurfaceNotice";
 import {
@@ -31,6 +40,13 @@ import {
   useOptionalRemovedNotices,
 } from "./account-feature-context";
 import type { DeleteTarget } from "./ContextEntryActions";
+import { moveRows, type NamingView } from "./entry-drag/execute-move";
+import {
+  positionFromWitness,
+  type SiblingPositionWitness,
+  sameParent,
+  siblingPositionWitness,
+} from "./entry-drag/move-plan";
 
 type RestoreFeedback =
   | { kind: "restoring" }
@@ -39,6 +55,7 @@ type RestoreFeedback =
 type DeleteWindow = {
   label: string;
   kind: "file" | "folder";
+  restorePlacement?: DeletedPlacement;
   /** "restoring" from the Undo click: the restore runs once the replica shows the delete landed. */
   feedback?: RestoreFeedback;
 };
@@ -50,7 +67,13 @@ type PresentedDeleteWindow = DeleteWindow & {
   shown: boolean;
 };
 
-type DeleteOperationState = "pending" | "landed" | "refused" | "settled-locally";
+/**
+ * `local`: settled on this device because the server never held the entry, and its content and
+ * place still wait out the Undo window. `closed`: refused, superseded (an Undo included), or expired.
+ */
+type DeleteOperationState = "pending" | "landed" | "local" | "closed";
+
+type DeleteOperation = { intent: NamespaceIntent; restorable: boolean; notBefore?: number };
 
 type ProviderLifetime = {
   controller: AbortController;
@@ -67,6 +90,12 @@ type DeleteUndoContextValue = {
 
 type RemovedDocument = { documentId: string; removal: { locationVersion: string } };
 
+type DeletedPlacement = {
+  documentId: string;
+  parent: ParentRef;
+  position: SiblingPositionWitness;
+};
+
 /** One removal of one document; a later delete of the same document is a different removal. */
 function removalKey({ documentId, removal }: RemovedDocument): string {
   return `${documentId}@${removal.locationVersion}`;
@@ -76,34 +105,64 @@ const DeleteUndoContext = createContext<DeleteUndoContextValue | null>(null);
 
 function deleteOperationIndex(
   snapshot: ResourceProjectionSnapshot | null,
-): ReadonlyMap<string, NamespaceIntent> {
-  const index = new Map<string, NamespaceIntent>();
+  now: number,
+): ReadonlyMap<string, DeleteOperation> {
+  const index = new Map<string, DeleteOperation>();
   if (!snapshot) return index;
-  for (const intent of [
-    ...snapshot.records.flatMap((record) => record.intents),
-    ...snapshot.folders.flatMap((folder) => folder.intents),
-  ]) {
-    if (intent.operationId && intent.desired.kind === "delete")
-      index.set(intent.operationId, intent);
+  const add = (operation: DeleteOperation) => {
+    const operationId = operation.intent.operationId;
+    if (!operationId) return;
+    const previous = index.get(operationId);
+    index.set(operationId, {
+      ...operation,
+      // A local folder delete settles one operation over its subtree: one restorable child is
+      // enough for the window's Undo to bring the whole subtree back.
+      restorable: operation.restorable || Boolean(previous?.restorable),
+      ...(previous?.notBefore !== undefined && operation.notBefore === undefined
+        ? { notBefore: previous.notBefore }
+        : {}),
+    });
+  };
+  for (const record of snapshot.records) {
+    for (const intent of record.intents) {
+      if (!intent.operationId || intent.desired.kind !== "delete") continue;
+      const cleanup = record.resource.obligations.cleanup;
+      const restorable =
+        cleanup?.obligationId === intent.intentId &&
+        (cleanup.notBefore === undefined || cleanup.notBefore > now);
+      add({
+        intent,
+        restorable,
+        ...(cleanup?.notBefore !== undefined ? { notBefore: cleanup.notBefore } : {}),
+      });
+    }
+  }
+  for (const folder of snapshot.folders) {
+    for (const intent of folder.intents) {
+      if (!intent.operationId || intent.desired.kind !== "delete") continue;
+      const window = folder.localDeletion;
+      const restorable = window?.obligationId === intent.intentId && window.notBefore > now;
+      add({ intent, restorable, ...(window ? { notBefore: window.notBefore } : {}) });
+    }
   }
   return index;
 }
 
 function deleteOperationState(
-  intents: ReadonlyMap<string, NamespaceIntent>,
+  operations: ReadonlyMap<string, DeleteOperation>,
   operationId: string,
 ): DeleteOperationState {
-  const intent = intents.get(operationId);
-  switch (intent?.state) {
+  const operation = operations.get(operationId);
+  switch (operation?.intent.state) {
     case "settled":
       return "landed";
     case "settled-locally":
-      return "settled-locally";
+      return operation.restorable ? "local" : "closed";
     case "needs-repair":
     case "cancelled":
     case "superseded":
     case "unexecutable-after-terminal":
-      return "refused";
+      return "closed";
     default:
       return "pending";
   }
@@ -129,6 +188,121 @@ function ownDeletedDocumentIds(projectId: string, target: DeleteTarget): string[
   );
 }
 
+async function captureDeletedPlacement(
+  resources: AccountResourceReplica,
+  projectId: string,
+  target: DeleteTarget,
+): Promise<DeletedPlacement | undefined> {
+  if (target.kind !== "file") return undefined;
+  const snapshot = await resources.readProjection(projectId);
+  const placement = resourcePlacementForSnapshot(projectId, snapshot);
+  const record = resourceIdentityIndex(snapshot.records).byDocumentId(target.documentId);
+  const parent = record ? placement.parentForResource(record) : null;
+  return record && parent
+    ? {
+        documentId: target.documentId,
+        parent,
+        position: siblingPositionWitness(
+          { records: snapshot.records, placement },
+          parent,
+          target.documentId,
+        ),
+      }
+    : undefined;
+}
+
+function restoredFileView(
+  snapshot: ResourceProjectionSnapshot,
+  projectId: string,
+  documentId: string,
+): { name: string; parent: ParentRef; view: NamingView } | null {
+  const record = resourceIdentityIndex(snapshot.records).byDocumentId(documentId);
+  if (!record || !resourceVisibleInProject(projectId, record, snapshot.catalogs)) return null;
+  const placement = resourcePlacementForSnapshot(projectId, snapshot);
+  const location = placement.resourceLocation(record);
+  const parent = placement.parentForResource(record);
+  return location && parent
+    ? {
+        name: location.name,
+        parent,
+        view: { records: snapshot.records, folders: snapshot.folders, placement },
+      }
+    : null;
+}
+
+async function waitForRestoredFile(
+  resources: AccountResourceReplica,
+  projectId: string,
+  documentId: string,
+  signal: AbortSignal,
+) {
+  const current = restoredFileView(
+    await resources.readProjection(projectId),
+    projectId,
+    documentId,
+  );
+  if (current) return current;
+  if (signal.aborted) throw signal.reason;
+  return new Promise<NonNullable<ReturnType<typeof restoredFileView>>>((resolve, reject) => {
+    const stop = resources.observeProjection(
+      projectId,
+      (snapshot) => {
+        const restored = restoredFileView(snapshot, projectId, documentId);
+        if (!restored) return;
+        cleanup();
+        resolve(restored);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      },
+    );
+    const abort = () => {
+      cleanup();
+      reject(signal.reason);
+    };
+    function cleanup() {
+      signal.removeEventListener("abort", abort);
+      stop();
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+async function restoreDeletedPosition(
+  resources: AccountResourceReplica,
+  projectId: string,
+  deleted: DeletedPlacement,
+  deleteOperationId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const restored = await waitForRestoredFile(resources, projectId, deleted.documentId, signal);
+  if (!sameParent(restored.parent, deleted.parent)) return;
+  // Seeing the row again does not mean the restoration still owns it: a placement the writer
+  // admitted after the delete is newer than the position this Undo would put back.
+  const journal = resourceIdentityIndex(restored.view.records).byDocumentId(deleted.documentId);
+  const deletion = journal?.intents.find((intent) => intent.operationId === deleteOperationId);
+  if (journal && deletion && placementTakenSince(journal.intents, deletion)) return;
+  const siblings = restored.view.placement
+    .childrenAt(deleted.parent, restored.view.records)
+    .map((entry) => entry.entryId)
+    .filter((entryId) => entryId !== deleted.documentId);
+  const result = await moveRows(
+    [
+      {
+        entry: { kind: "file", id: deleted.documentId },
+        name: restored.name,
+        before: restored.parent,
+        after: deleted.parent,
+        position: positionFromWitness(deleted.position, siblings),
+      },
+    ],
+    { resources, projectId },
+    restored.view,
+  );
+  if (result.failed.length > 0) throw new Error("Restored document position was refused");
+}
+
 export function DocumentDeleteUndoProvider({
   projectId,
   children,
@@ -141,7 +315,25 @@ export function DocumentDeleteUndoProvider({
   const queryClient = useQueryClient();
   const slots = useNoticeSlot();
   const { snapshot } = useAccountResourceProjection(projectId);
-  const deleteIntents = useMemo(() => deleteOperationIndex(snapshot), [snapshot]);
+  // The local Undo window is time-bounded, so the index is read against a clock that the
+  // nearest expiry wakes; otherwise a closed window would keep its notice until a replica change.
+  const [clock, setClock] = useState(0);
+  const deleteOperations = useMemo(
+    () => deleteOperationIndex(snapshot, Date.now()),
+    [snapshot, clock],
+  );
+  useEffect(() => {
+    const expiries = [...deleteOperations.values()].flatMap((operation) =>
+      operation.notBefore === undefined ? [] : [operation.notBefore],
+    );
+    if (expiries.length === 0) return;
+    const next = Math.min(...expiries);
+    const timer = setTimeout(
+      () => setClock((current) => current + 1),
+      Math.max(0, next - Date.now()) + 1,
+    );
+    return () => clearTimeout(timer);
+  }, [deleteOperations]);
   // By operation: a notice replaced on its surface while its Undo runs stays here, unshown,
   // until the restore finishes.
   const [windows, setWindows] = useState<ReadonlyMap<string, PresentedDeleteWindow>>(
@@ -216,6 +408,7 @@ export function DocumentDeleteUndoProvider({
         (() => undefined);
       void (async () => {
         try {
+          const restorePlacement = await captureDeletedPlacement(resources, projectId, target);
           const result =
             target.kind === "file"
               ? await (async () => {
@@ -230,6 +423,7 @@ export function DocumentDeleteUndoProvider({
           const window: DeleteWindow = {
             label: target.name,
             kind: target.kind === "file" ? "file" : "folder",
+            ...(restorePlacement ? { restorePlacement } : {}),
           };
           setWindows((current) =>
             new Map(current).set(operationId, { ...window, operationId, surface, shown: true }),
@@ -298,6 +492,23 @@ export function DocumentDeleteUndoProvider({
             });
             return;
           }
+          const placementResult = window.restorePlacement
+            ? response.documents.find(
+                (result) => result.documentId === window.restorePlacement?.documentId,
+              )
+            : undefined;
+          if (
+            window.restorePlacement &&
+            (placementResult?.outcome === "restored" ||
+              placementResult?.outcome === "already_living")
+          )
+            await restoreDeletedPosition(
+              resources,
+              projectId,
+              window.restorePlacement,
+              operationId,
+              owner.controller.signal,
+            );
           if (
             response.documents.some(
               (result) => result.outcome === "superseded" || result.outcome === "already_living",
@@ -329,11 +540,42 @@ export function DocumentDeleteUndoProvider({
         }
       })();
     },
-    [dismiss, projectId, queryClient, updateFeedback],
+    [dismiss, projectId, queryClient, resources, updateFeedback],
   );
 
-  // Delete progress is read from the replica, never copied: a refused or local-only delete
-  // closes its notice, a requested Undo restores once its delete has landed, and a landed
+  /** An entry only this device held comes back from the replica itself; there is no Trash to read. */
+  const runLocalRestore = useCallback(
+    (window: PresentedDeleteWindow, owner: ProviderLifetime) => {
+      const { operationId } = window;
+      restores.current.add(operationId);
+      void (async () => {
+        try {
+          // On success the superseded deletion closes the notice through the replica.
+          if (await resources.restoreLocalDeletion(projectId, operationId)) return;
+          if (!isActive(owner)) return;
+          updateFeedback(operationId, {
+            kind: "failed",
+            retryable: false,
+            message: t`Couldn't restore ${window.label}.`,
+          });
+        } catch {
+          if (!isActive(owner)) return;
+          updateFeedback(operationId, {
+            kind: "failed",
+            retryable: true,
+            message: t`Couldn't restore ${window.label}. Try again.`,
+          });
+        } finally {
+          restores.current.delete(operationId);
+        }
+      })();
+    },
+    [projectId, resources, updateFeedback],
+  );
+
+  // Delete progress is read from the replica, never copied: a refused delete closes its notice,
+  // a requested Undo restores once its delete has landed (or, for an entry only this device
+  // held, at once while its content and place are kept), and a landed
   // delete whose removals are all back (an empty folder, or restored from Trash) has
   // nothing left for Undo. That check reruns on every replica change, so a receipt that
   // failed to load is read again rather than leaving Undo offered.
@@ -342,9 +584,14 @@ export function DocumentDeleteUndoProvider({
     if (!owner) return;
     for (const window of windows.values()) {
       const { operationId } = window;
-      const state = deleteOperationState(deleteIntents, operationId);
-      if (state === "refused" || state === "settled-locally") {
+      const state = deleteOperationState(deleteOperations, operationId);
+      if (state === "closed") {
         dismiss(operationId);
+        continue;
+      }
+      if (state === "local") {
+        if (window.feedback?.kind === "restoring" && !restores.current.has(operationId))
+          runLocalRestore(window, owner);
         continue;
       }
       if (state !== "landed") continue;
@@ -365,7 +612,16 @@ export function DocumentDeleteUndoProvider({
         );
       }
     }
-  }, [deleteIntents, dismiss, windows, restored, projectId, queryClient, runRestore]);
+  }, [
+    deleteOperations,
+    dismiss,
+    windows,
+    restored,
+    projectId,
+    queryClient,
+    runRestore,
+    runLocalRestore,
+  ]);
 
   useEffect(() => {
     if (windows.size === 0 && restored.size > 0) setRestored(new Set());
@@ -420,24 +676,29 @@ export function DocumentDeleteUndoNotice({
 }) {
   const { notices, undo, dismiss } = useDocumentDeleteUndo();
   const notice = notices.find((candidate) => candidate.surface === surface);
-  const model: SurfaceNoticeModel | null = notice
-    ? {
-        message:
-          notice.feedback?.kind === "restoring" ? (
-            <Trans>Restoring {notice.label}</Trans>
-          ) : (
-            <Trans>Deleted {notice.label}</Trans>
-          ),
-        undo:
-          notice.feedback?.kind === "failed" && !notice.feedback.retryable
-            ? null
-            : () => undo(notice.operationId),
-        dismiss: () => dismiss(notice.operationId),
-        failure: notice.feedback?.kind === "failed" ? notice.feedback.message : undefined,
-        undoing: notice.feedback?.kind === "restoring",
-      }
-    : null;
-  return <SurfaceNotice notice={model} className={className} />;
+  if (!notice) return null;
+  return (
+    <NoticePlacement id={`delete:${notice.operationId}`}>
+      <SurfaceNotice
+        className={className}
+        notice={{
+          message:
+            notice.feedback?.kind === "restoring" ? (
+              <Trans>Restoring {notice.label}</Trans>
+            ) : (
+              <Trans>Deleted {notice.label}</Trans>
+            ),
+          undo:
+            notice.feedback?.kind === "failed" && !notice.feedback.retryable
+              ? null
+              : () => undo(notice.operationId),
+          dismiss: () => dismiss(notice.operationId),
+          failure: notice.feedback?.kind === "failed" ? notice.feedback.message : undefined,
+          undoing: notice.feedback?.kind === "restoring",
+        }}
+      />
+    </NoticePlacement>
+  );
 }
 
 /** The removals a landed delete recorded in its receipt; null while no successful delete receipt exists. */

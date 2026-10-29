@@ -68,9 +68,10 @@ the resource handle, persistence database, Y.Doc, editor ancestry, tab instance,
 cursor, and undo history.
 
 `contextTabFromResource` is the single optimistic tab projection. An unnamed
-local resource is `new`; an explicitly filed local resource immediately becomes
-a route-owning `tracked` tab even while offline; acknowledgement keeps it tracked
-and preserves whether its name is still provisional. Projection reconciliation
+local resource (`materialization.unnamed`) is `new`; an explicitly filed local
+resource immediately becomes a route-owning `tracked` tab even while offline;
+acknowledgement keeps it tracked, and from then on the catalog's `provisionalName`
+says whether its name is still provisional. Projection reconciliation
 targets the resource handle, so a delayed old document ID cannot replace a
 reopened member. Closing a tab removes only browser-local membership. It never
 deletes the durable resource.
@@ -143,14 +144,16 @@ Apply completed.
 
 A new document is an account resource exposed to its creating project before it
 has a server row. Reservation atomically records a stable handle, document ID,
-exact persistence name, provisional Unfiled location, and a create intent whose
-eligibility is initially null. Local persistence initialization completes before
-the editor receives the handle.
+exact persistence name, its untitled materialization, provisional Unfiled location,
+and a first `set-location` placement whose eligibility is initially null. Local
+persistence initialization completes before the editor receives the handle.
 
 First content marks eligibility once. Explicit filing both marks eligibility and
-appends a location intent. The runner persists immutable request bytes before
-HTTP, records outcomes before applying them, and resumes after response loss or
-reload. Creation acknowledgement records canonical metadata and transfers the
+appends a location intent. Dispatch sends a create while the record has no canonical
+place and a move afterwards, so a refused first placement is repaired by placing it
+again rather than by a different intent kind. The runner persists immutable request
+bytes before HTTP, records outcomes before applying them, and resumes after response
+loss or reload. Creation acknowledgement records canonical metadata and transfers the
 same Y.Doc into registry transport. Closing every tab leaves the resource in the
 sidebar; explicit Delete is the only writer command that removes it.
 

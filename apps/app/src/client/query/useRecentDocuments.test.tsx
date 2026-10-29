@@ -33,6 +33,7 @@ it("hides a pending folder descendant, restores refusal, and refetches after acc
   if (!deletion) throw new Error("Missing deletion");
   observation.snapshot = {
     records: [],
+    operations: [],
     folders: [deletion.next],
     catalogs: [
       {
@@ -78,6 +79,7 @@ it("hides a pending folder descendant, restores refusal, and refetches after acc
             filetype: "markdown",
             schemaType: "document",
             aliases: [],
+            hasProperties: false,
             provisionalName: false,
           },
         ],
@@ -150,6 +152,7 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
   if (!deletion) throw new Error("Missing deletion");
   const snapshot: ResourceProjectionSnapshot = {
     records: [],
+    operations: [],
     folders: [
       deletion.next,
       {
@@ -157,6 +160,8 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
         handle: "folder:A",
         folderId: "A",
         revision: 1,
+        serverHold: "held",
+        observationVersion: "0",
         canonical: { scheme: "kb", path: "/P/A", name: "A", workId: null },
         canonicalParent: { kind: "folder", folderId: "P" },
         intents: [],
@@ -235,6 +240,7 @@ it("marks a pending file delete suppressed even without a loaded catalog", () =>
   }).next;
   record.resource.canonical = { scheme: "kb", path: "/doc.md", name: "doc.md", workId: null };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  record.resource.serverHold = "held";
   record.intents = [];
   const deletion = planResourceDeletion(record, "project", "delete");
   if (!deletion) throw new Error("Missing deletion");
@@ -242,6 +248,7 @@ it("marks a pending file delete suppressed even without a loaded catalog", () =>
   deletion.next.resource.aliases = { "old-doc": { introducedAtIdentityRevision: 2 } };
   const snapshot: ResourceProjectionSnapshot = {
     records: [deletion.next],
+    operations: [],
     folders: [],
     catalogs: [],
   };
@@ -268,6 +275,7 @@ it.each([
   record.resource.canonical = { scheme: "kb", path: "/P/A/doc.md", name: "doc.md", workId: null };
   record.resource.canonicalParent = { kind: "folder", folderId: "A" };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  record.resource.serverHold = "held";
   record.intents = [];
   const deletion = planFolderDeletion({
     projectId: "project",
@@ -281,6 +289,7 @@ it.each([
   const scope = { kind: "project" as const, projectId: "project" };
   const snapshot: ResourceProjectionSnapshot = {
     records: [record],
+    operations: [],
     folders: [
       deletion.next,
       {
@@ -288,6 +297,8 @@ it.each([
         handle: "folder:A",
         folderId: "A",
         revision: 1,
+        serverHold: "held",
+        observationVersion: "0",
         canonical: { scheme: "kb", path: "/P/A", name: "A", workId: null },
         canonicalParent: { kind: "folder", folderId: "P" },
         intents: [],

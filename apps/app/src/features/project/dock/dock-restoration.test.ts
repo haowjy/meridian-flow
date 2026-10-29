@@ -10,6 +10,7 @@ import {
   emptyCatalogView,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
+  untitledDestination,
 } from "@meridian/resource-replica";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
@@ -85,7 +86,12 @@ const renamedAvailability = {
     },
   ],
 };
-const empty: ResourceProjectionSnapshot = { records: [], folders: [], catalogs: [] };
+const empty: ResourceProjectionSnapshot = {
+  records: [],
+  folders: [],
+  operations: [],
+  catalogs: [],
+};
 function resources(snapshot = empty) {
   return {
     admitReview: vi.fn(
@@ -112,6 +118,7 @@ function resources(snapshot = empty) {
                 parentId: "manuscript",
                 aliases: [],
                 provisionalName: false,
+                hasProperties: false,
                 observationVersion: "1",
                 editable: true as const,
                 filetype: "markdown" as const,
@@ -132,7 +139,14 @@ function localRecord(): ResourceRecord {
       identity: { documentId: "doc", revision: 1 },
       content: { kind: "exact", databaseName: "local", schema: null },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      materialization: {
+        kind: "untitled",
+        folderPath: "",
+        provisionalName: "Untitled",
+        unnamed: true,
+      },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: {},
@@ -144,7 +158,11 @@ function localRecord(): ResourceRecord {
         intentId: "create",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "create", folderPath: "" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },

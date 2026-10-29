@@ -1,6 +1,6 @@
 /** Shared authoritative row-to-file mapping for catalog and project availability. */
 
-import type { DocumentId } from "@meridian/contracts";
+import { type DocumentId, hasDisplayableProperties } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
@@ -33,6 +33,8 @@ export type CatalogFileRow = {
   mimeType: string | null;
   metadata: unknown;
   provisionalName: boolean;
+  rank: string | null;
+  locationVersion?: bigint;
   /** Ids a device's create forwarded into this document (a join). */
   joinedFrom?: readonly string[];
 };
@@ -108,12 +110,16 @@ export function mapAuthoritativeFile(input: {
   return {
     kind: "file",
     observationVersion: input.observationVersion,
+    ...(document.locationVersion !== undefined
+      ? { locationVersion: document.locationVersion.toString() }
+      : {}),
     entryId: document.id,
     scope,
     sourceId: document.contextSourceId,
     parentId: document.folderId ?? document.contextSourceId,
     name: filename,
-    aliases: documentAliases(document.metadata as never),
+    aliases: documentAliases(document.metadata),
+    hasProperties: hasDisplayableProperties(document.metadata),
     path,
     uri: canonicalContextUri(
       scheme,
@@ -128,6 +134,7 @@ export function mapAuthoritativeFile(input: {
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,
+    rank: document.rank,
     ...(input.upload
       ? {
           upload: {

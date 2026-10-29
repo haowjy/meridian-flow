@@ -105,20 +105,52 @@ export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 export type ProjectContextTreeScheme = ContextUriScheme;
 
 /**
- * Where the writer's create lands, the same identity-based address a move carries. The
- * server joins a branch's hidden document waiting there; omitted, the create is nameless
- * and lands in `folderPath` as `Untitled N`.
+ * Where the writer's create lands (a document or a folder), the same identity-based address a
+ * move carries. For a document the server joins a branch's hidden document waiting there;
+ * omitted, a document create is nameless and lands in `folderPath` as `Untitled N`.
  */
-export type CreateUntitledDestination = {
+export type ContextCreateDestination = {
   parent: ContextDestinationParent;
-  /** The leaf filename as the writer typed it. */
+  /** The leaf name as the writer typed it. */
   name: string;
+  /**
+   * Where among the parent's children the new document goes; the server resolves it under the
+   * namespace lock a move uses. An anchor it can't find leaves the document at the parent's end.
+   */
+  position?: ContextSiblingPosition;
 };
+
+/**
+ * A folder under an id the device minted, so the writer's next command can name it before the
+ * server has answered. A visible name taken at the destination leaves the folder at the first
+ * free name; a hidden folder a branch holds there is absorbed into it.
+ */
+export type CreateContextFolderRequest = {
+  folderId: string;
+  destination: ContextCreateDestination;
+};
+
+/**
+ * The folder at its address. `already-exists` answers a replay: the id is the identity.
+ * `conflict` means the id is held where this create cannot use it (deleted, hidden, foreign,
+ * or a document's): the device's folder stays local and needs repair.
+ */
+export type CreateContextFolderResponse =
+  | {
+      status: "created" | "already-exists";
+      folderId: string;
+      scheme: ProjectContextTreeScheme;
+      path: string;
+      name: string;
+      /** Present only when the canonical location is Work-scoped. */
+      workId?: string | null;
+    }
+  | { status: "conflict" };
 
 export type CreateUntitledContextDocumentRequest = {
   documentId: string;
   folderPath?: string;
-  destination?: CreateUntitledDestination;
+  destination?: ContextCreateDestination;
 };
 
 /** A document's current canonical address. */
@@ -265,8 +297,17 @@ export type ContextDestinationParent = {
     }
 );
 
+/** Relative position within one explicit destination parent. The server resolves it under lock. */
+export type ContextSiblingPosition =
+  | { kind: "before" | "after"; siblingId: string }
+  | { kind: "start" | "end" };
+
+/** Whether a parent's children follow default name order or stored sibling ranks. */
+export type ContextParentOrderPolicy = "default" | "manual";
+
 export type MoveContextEntryRequest = {
   destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
   operationId: string;
   path: string;
   expected: { kind: "file" | "folder"; nodeId: string };
@@ -318,6 +359,93 @@ export type MoveContextEntryResult =
   | MoveContextEntrySuccess
   | MoveContextEntryConflict
   | MoveContextEntryRetry;
+
+/** Which version of a source Copy reads: what the writer's surface shows (D24, 2c). */
+export type CopyContextEntryView =
+  /** The live document; what a sidebar row shows. */
+  | { kind: "live" }
+  /**
+   * The Work's draft of the document, the one its active branch holds. A Work with no draft of
+   * it refuses the Copy; it never reads the live document instead.
+   */
+  | { kind: "draft"; workId: WorkId };
+
+/** One selected root: what Copy copies, where it comes from, and how to read it. */
+export type CopyContextEntrySource = {
+  scheme: ProjectContextTreeScheme;
+  /** Scheme-relative root path: a file's path, or a folder's. */
+  path: string;
+  /** The identity the writer meant; a different one there is a gone source. */
+  expected: { kind: "file" | "folder"; nodeId: string };
+  /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
+  workId?: WorkId | null;
+  rootThreadId?: string | null;
+  /** An `uploads` source names the chat that owns it. */
+  chatRef?: string | null;
+  /** Defaults to the live document. */
+  view?: CopyContextEntryView;
+  /**
+   * The device's identity for this root's copy, when the client minted one: a UUID. The root
+   * takes it and descendants keep server-minted ids, so a replay or a replan keeps the root's
+   * identity. An id another row already holds is a `conflict`, the same answer a document or
+   * folder create gives for a held id.
+   */
+  copyId?: string;
+  /**
+   * A document the writer holds open sends its Yjs state vector (base64) with the view that
+   * room is: the live room for a live view, the draft room for a draft view. A folder has no
+   * room of its own, and a vector on one is a 400, as is one that does not decode. The server
+   * waits about two seconds for the room to hold those updates; if it still does not, the
+   * answer is `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
+   * and the same operation ID may be sent again.
+   */
+  stateVector?: string;
+};
+
+/**
+ * One drop: every selected root copied into one destination, atomically. `destinationParent`
+ * is the identity-based destination the writer chose; without it, `destinationFolderPath`
+ * names the folder path under `destinationScheme`.
+ */
+export type CopyContextEntriesRequest = {
+  operationId: string;
+  /** Ordered roots; the copies land in this order. */
+  sources: CopyContextEntrySource[];
+  destinationScheme: ProjectContextTreeScheme;
+  /** Scheme-relative parent folder; the empty string means the scheme root. */
+  destinationFolderPath: string;
+  destinationRootThreadId?: string | null;
+  destinationWorkId?: WorkId | null;
+  destinationParent?: ContextDestinationParent;
+  /** Where the roots land: the first there, the rest after it in order. Omitted appends. */
+  position?: ContextSiblingPosition;
+};
+
+/** One created identity in a copy's receipt; `copiedFrom` names the source it came from. */
+export type CopyContextEntryCreated = {
+  kind: "file" | "folder";
+  id: string;
+  /** Scheme-relative path the copy landed at, including its name. */
+  path: string;
+  name: string;
+  /** The source identity: a document id for a file, a folder id for a folder. */
+  copiedFrom: string;
+};
+
+/** Every identity one Copy created, roots first, then each root's subtree in order. */
+export const copyContextEntriesResultSchema = z.object({
+  status: z.literal("copied"),
+  entries: z.array(
+    z.object({
+      kind: z.enum(["file", "folder"]),
+      id: z.string().min(1),
+      path: z.string(),
+      name: z.string(),
+      copiedFrom: z.string().min(1),
+    }),
+  ),
+});
+export type CopyContextEntriesResult = z.infer<typeof copyContextEntriesResultSchema>;
 
 export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
   return (
@@ -509,10 +637,16 @@ export type ContextReadBinaryResponse = {
   kind: "binary";
   /** Slash-prefixed display/routing path, e.g. `/project/report.pdf`. */
   path: string;
-  /** Short-lived URL for browser preview/download; clients must not persist it. */
+  /** Short-lived URL of the stored file, for download; clients must not persist it. */
   url: string;
+  /**
+   * Short-lived URL of what to draw for an image: the server's preview, or the original when
+   * browsers draw it. Absent when nothing can be drawn: the client shows the file card.
+   */
+  drawUrl?: string;
   fileType: DocumentFileType;
   mimeType: string;
+  sizeBytes: number | null;
 };
 
 export const contextReadResponseSchema = z.discriminatedUnion("kind", [
@@ -527,48 +661,13 @@ export const contextReadResponseSchema = z.discriminatedUnion("kind", [
     kind: z.literal("binary"),
     path: z.string(),
     url: z.string().min(1),
+    drawUrl: z.string().min(1).optional(),
     fileType: z.enum(["docx", "image", "pdf", "binary"]),
     mimeType: z.string(),
+    sizeBytes: z.number().nullable(),
   }),
 ]) satisfies z.ZodType<ContextReadResponse>;
 export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinaryResponse;
-
-export type CorpusImportSourceKind = "upload" | "google_drive_fixture" | "google_drive";
-
-export type CorpusImportItemResponse =
-  | {
-      status: "imported";
-      filename: string;
-      title: string;
-      uri: string;
-      documentId?: string;
-      source: { kind: CorpusImportSourceKind };
-      messages: string[];
-    }
-  | {
-      status: "skipped";
-      filename: string;
-      title: string;
-      reason: string;
-      source: { kind: CorpusImportSourceKind };
-    }
-  | {
-      status: "failed";
-      filename: string;
-      title: string;
-      reason: string;
-      source: { kind: CorpusImportSourceKind };
-    };
-
-export type CorpusImportResponse = {
-  projectId: string;
-  targetScheme: "kb";
-  requestedCount: number;
-  importedCount: number;
-  skippedCount: number;
-  failedCount: number;
-  items: CorpusImportItemResponse[];
-};
 
 export type CreateThreadRequest = {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
@@ -804,27 +903,30 @@ export interface FigureNodeReference {
   caption: string | null;
 }
 
-export interface FigureAssetReference {
-  assetDocumentId: string;
-  /** Project-relative markdown path for codec and clipboard translation. */
-  assetPath: string;
-  storageUrl: string;
-  mimeType: string;
-  fileType: BinaryDocumentFileType;
-  sizeBytes: number;
-  figure: FigureNodeReference;
-  /** Short-lived URL for immediate browser preview/rendering. Do not persist in Yjs. */
-  signedUrl: string;
-  signedUrlExpiresAt: string;
-}
-
-export type UploadFigureAssetResponse = FigureAssetReference;
-
+/** A stored image document and the short-lived URLs that draw or download it. */
 export type GetFigureSignedUrlResponse = {
   assetDocumentId: string;
   storageUrl: string;
   mimeType: string;
   fileType: BinaryDocumentFileType;
+  /** The file name, for the file card shown when the image can't be drawn. */
+  name: string;
+  sizeBytes: number;
+  /** Short-lived URL of the original: what Download serves. Do not persist in Yjs. */
   signedUrl: string;
+  /**
+   * Short-lived URL of what to draw: the server's preview of an image browsers can't draw
+   * (TIFF, HEIC, ...), or the original when browsers draw it. Absent when nothing can be
+   * drawn, which shows the file card.
+   */
+  drawUrl?: string;
   signedUrlExpiresAt: string;
 };
+
+export interface FigureAssetReference extends GetFigureSignedUrlResponse {
+  /** Project-relative markdown path for codec and clipboard translation. */
+  assetPath: string;
+  figure: FigureNodeReference;
+}
+
+export type UploadFigureAssetResponse = FigureAssetReference;

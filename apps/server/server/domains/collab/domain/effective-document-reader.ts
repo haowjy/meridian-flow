@@ -8,19 +8,22 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { spelledLinks } from "@meridian/markup/links";
-import type * as Y from "yjs";
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import { settledAheads, spelledLinks } from "@meridian/markup/links";
+import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
   DraftPeerShadowAccess,
+  EffectiveBlocksRead,
   EffectiveReadVersion,
   HashlineRead,
   SyncError,
+  WorkDraftMissing,
 } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import { documentRevision, versioned } from "./document-revision.js";
+import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftPullService } from "./draft-pulls.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
@@ -34,6 +37,7 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
+  draftCoordinator: Pick<DraftCoordinator, "copyDraft">;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
@@ -85,6 +89,26 @@ export function createEffectiveDocumentReader(input: {
     }
   }
 
+  /**
+   * A Work's draft room as the Work holds it: found by the Work and the document alone, with
+   * no reading chat and no reply's staged writes. A Work without a draft of the document is
+   * `draft_not_found`; the read never falls back to live.
+   */
+  async function readWorkDraft<T>(
+    command: { documentId: DocumentId; workId: WorkId },
+    read: (doc: DocHandle) => Promise<T>,
+  ): Promise<Result<T, WorkDraftMissing>> {
+    await input.draftPulls.flushLivePull(command.documentId);
+    const draft = await input.drafts.findWorkDraft(command.documentId, command.workId);
+    if (!draft) return Err({ code: "draft_not_found", documentId: command.documentId });
+    const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
+    try {
+      return Ok(await read(toDocHandle(doc)));
+    } finally {
+      doc.destroy();
+    }
+  }
+
   return {
     async readEffectiveRevision(command) {
       try {
@@ -108,6 +132,23 @@ export function createEffectiveDocumentReader(input: {
           await viewOf(command),
         ),
       );
+    },
+    readEffectiveBlocks(command) {
+      const project = async (handle: DocHandle): Promise<EffectiveBlocksRead> => {
+        const doc = unwrapDoc(handle);
+        const scope = await spelling(command, doc);
+        const blocks = [...input.model.projectBlocks(toDocHandle(doc))];
+        return {
+          content: blocks,
+          revision: documentRevision(doc, scope),
+          holderUri: scope.holder.uri,
+          stateVector: Y.encodeStateVector(doc),
+          aheadSettlements: settledAheads(blocks, scope),
+        };
+      };
+      return command.destination === "draft"
+        ? readWorkDraft(command, project)
+        : readEffective(command, project);
     },
     readEffectiveHashlines(command) {
       return readEffective(command, async (handle): Promise<HashlineRead> => {

@@ -17,7 +17,9 @@ import type {
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
+import type { ContextCopyAdapter } from "./context-copy.js";
 import type {
+  AdapterCreateFolderOptions,
   AdapterCreateUntitledOptions,
   ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
@@ -118,12 +120,20 @@ export type AdapterUntitledDocumentResult = {
   name: string;
 };
 
+export type AdapterCreatedFolder = {
+  status: "created" | "already-exists";
+  folderId: string;
+  path: string;
+  name: string;
+};
+
 export type AdapterLocatedDocument = Omit<AdapterUntitledDocumentResult, "status">;
 
 export type AdapterMoveResult = {
   linkUpdate?: { links: number; documents: number };
   movedNodeId?: string;
   path: string;
+  locationVersion?: string;
 };
 
 export type AdapterDeleteResult = {
@@ -163,6 +173,7 @@ export interface ContextBranchTreeAdapter {
       from: { path: string; filetype: Filetype | null; sourceId: string };
       changedBy: BranchChangeAuthor;
       record(change: RecordedBranchTreeChange): Promise<void>;
+      position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
     },
   ): Promise<Result<{ moved: boolean; path: string }, AdapterFault>>;
   delete(
@@ -186,6 +197,8 @@ export interface ContextSchemeAdapter {
   readonly tree?: ContextTreeAdapter;
   /** Only a draft placement has one. */
   readonly branchTree?: ContextBranchTreeAdapter;
+  /** Copy's source read and destination insert (`context/copy/` orchestrates a drop). */
+  readonly copy?: ContextCopyAdapter;
 
   stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>>;
   read(path: string): Promise<Result<AdapterContextReadResult | null, AdapterFault>>;
@@ -244,5 +257,10 @@ export interface ContextSchemeAdapter {
     options?: ContextListOptions,
   ): Promise<Result<AdapterFileEntry[], AdapterFault>>;
   mkdir(path: string, options?: ContextWriteOptions): Promise<Result<void, AdapterFault>>;
+  /** A folder under a device-minted id in the folder at `path`; see `AdapterCreateFolderOptions`. */
+  createFolder(
+    path: string,
+    options: AdapterCreateFolderOptions,
+  ): Promise<Result<AdapterCreatedFolder, AdapterFault>>;
   search(query: string, pathPrefix?: string): Promise<Result<AdapterSearchHit[], AdapterFault>>;
 }

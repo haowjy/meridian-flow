@@ -49,6 +49,7 @@ export class ReplicaHarness {
     return structuredClone({
       records: [...this.records.values()],
       folders: [...this.folders.values()],
+      operations: [],
       catalogs: this.checkpoint ? [this.checkpoint] : [],
     });
   }
@@ -124,7 +125,7 @@ export class ReplicaHarness {
       projectId: this.projectId,
       handle: record.handle,
       folderId,
-      source: record.canonical,
+      source: record.canonical ?? undefined,
       intentId: `folder-delete-${id}`,
       operationId,
     });

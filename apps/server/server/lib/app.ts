@@ -4,6 +4,7 @@
  * and pure service wiring.
  */
 
+import { createImportObjectSweeper } from "../domains/import/index.js";
 import { listenForThreadEvents } from "../domains/threads/adapters/drizzle/event-relay.js";
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
 import { getDb } from "./db.js";
@@ -47,6 +48,16 @@ async function createAppServices(): Promise<AppServices> {
   await ports.fileAccessChanges.listen();
   const scheduler = startRecoveryScheduler(
     [
+      {
+        name: "import-object-sweep",
+        delayMs: WAKE_SWEEP_INTERVAL_MS,
+        run: createImportObjectSweeper(db, ports.objectStore, ports.documentSync),
+      },
+      {
+        name: "import-organize",
+        delayMs: WAKE_SWEEP_INTERVAL_MS,
+        run: app.importOrganizer.runPass,
+      },
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
       { name: "ask-expiry", delayMs: ASK_EXPIRY_SWEEP_MS, run: app.recovery.expireAsks },
@@ -80,6 +91,7 @@ async function createAppServices(): Promise<AppServices> {
     ],
     eventSink,
   );
+  app.organizeWake.bind(() => scheduler.wake("import-organize"));
   registerProcessShutdownCallback(async () => {
     await Promise.all([scheduler.stop(), app.shutdown()]);
   });

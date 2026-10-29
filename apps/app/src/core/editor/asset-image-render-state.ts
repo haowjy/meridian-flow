@@ -18,6 +18,15 @@
  * resolver's for a ref, the signed-URL route's 404 for a document (which also
  * hides an unreadable one, so a stored id is never a capability). A gone
  * document is asked again when the catalog changes, so restoring it draws it.
+ *
+ * The signed-URL answer names what to draw (`drawUrl`: the server's preview,
+ * or the original when browsers draw it). With none, the file card stands in.
+ * An `<img>` failure gets one automatic URL refresh, then the card, and that
+ * picture is then known undrawable: later re-signs only renew the card's
+ * Download and never try the `<img>` again. The card keeps re-signing before
+ * expiry, as a drawn picture does, so Download works however long the chapter
+ * stays open. Retry is only for a signed-URL request that failed, which a
+ * second try can fix.
  */
 
 import { t } from "@lingui/core/macro";
@@ -46,10 +55,21 @@ import {
   pictureKeyOfNode,
 } from "./links";
 
+/** What the file card shows for a stored picture that can't be drawn. */
+export type AssetFileFacts = {
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** The stored original, which Download serves. */
+  downloadUrl: string;
+};
+
 export type AssetImageRenderState =
   | { kind: "idle"; url: string | null; message?: string }
   | { kind: "loading"; url: string | null; message?: string }
   | { kind: "ready"; url: string; expiresAt?: string }
+  /** Stored, but not drawable by this browser: the file card stands in. */
+  | { kind: "file"; url: null; file: AssetFileFacts }
   | { kind: "error"; url: string | null; message: string }
   /**
    * Nothing to draw, and nothing to retry: an address nothing has been
@@ -236,6 +256,11 @@ export function useAssetImageRenderState(input: {
   // rendered state: an `<img>` error arrives between renders, and what it has
   // to be judged against is the request in flight at that instant.
   const loadInFlightRef = useRef(false);
+  // The facts of the picture last signed, for the card an `<img>` failure ends in.
+  const fileFactsRef = useRef<AssetFileFacts | null>(null);
+  // The picture and document whose `<img>` failed past its refresh: a settled
+  // fact, so a re-sign renews the card instead of drawing it again.
+  const undrawableRef = useRef<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const generation = useLinkGeneration(resolution);
   const generationRef = useRef(generation);
@@ -254,6 +279,12 @@ export function useAssetImageRenderState(input: {
     state: initialState(target),
   }));
   const state = shown.picture === picture ? shown.state : initialState(target);
+  // The URL an `<img>` is drawing now, and the one whose failure triggered the automatic
+  // refresh. Signing is deterministic to the second, so the refresh often returns that same
+  // URL: React then sets no new `src` and no second error would arrive to end in the card.
+  const drawnUrlRef = useRef<string | null>(null);
+  drawnUrlRef.current = state.url;
+  const failedUrlRef = useRef<string | null>(null);
 
   const goneIsStale = gone !== null && gone.picture === picture && gone.generation !== generation;
   useEffect(() => {
@@ -270,11 +301,13 @@ export function useAssetImageRenderState(input: {
   }, [key, resolution, unanswered]);
   const imageDisplayed = useCallback(() => {
     retryStateRef.current.state = { automaticRefreshUsed: false };
+    failedUrlRef.current = null;
   }, []);
   const imageLoadFailed = useCallback(() => {
     const setState = showFor(setShown, picture);
     if (!assetDocumentId) {
-      setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
+      // A web URL that won't draw: asking again can't change a stored source.
+      setState({ kind: "unavailable", url: null, message: t`Image could not be displayed.` });
       return;
     }
     const transition = reduceAssetImageLoadFailure(
@@ -284,10 +317,17 @@ export function useAssetImageRenderState(input: {
     retryStateRef.current.state = transition.state;
     if (transition.action === "ignore") return;
     if (transition.action === "refresh") {
+      failedUrlRef.current = drawnUrlRef.current;
       setRefreshToken((token) => token + 1);
       return;
     }
-    setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
+    undrawableRef.current = `${picture}\u0000${assetDocumentId}`;
+    const file = fileFactsRef.current;
+    setState(
+      file
+        ? { kind: "file", url: null, file }
+        : { kind: "unavailable", url: null, message: t`Image could not be displayed.` },
+    );
   }, [assetDocumentId, picture]);
 
   // Keyed by `targetIdentity`, the target's value: the object is rebuilt
@@ -306,7 +346,7 @@ export function useAssetImageRenderState(input: {
     // A new resolution generation (every catalog change) asks again, and the
     // same picture stays on screen while it does, as a signed-URL refresh's does.
     if (target.kind === "resolving") {
-      setState((kept) => ({ kind: "loading", url: kept }));
+      setState((kept) => ({ kind: "loading", url: kept?.url ?? null }));
       return;
     }
 
@@ -319,6 +359,7 @@ export function useAssetImageRenderState(input: {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const routeProjectId = projectId;
     const routeAssetDocumentId = target.documentId;
+    const undrawable = `${picture}\u0000${routeAssetDocumentId}`;
 
     async function loadSignedUrl(skipCache: boolean) {
       loadInFlightRef.current = true;
@@ -326,7 +367,10 @@ export function useAssetImageRenderState(input: {
       // The previous URL stays on screen: a refresh must not blink the picture
       // out of the manuscript. It is also the URL about to expire, which is
       // why an error arriving now belongs to the request, not to the picture.
-      setState((kept) => ({ kind: "loading", url: kept }));
+      // A card stays a card while its Download is renewed.
+      setState((kept) =>
+        kept?.kind === "file" ? kept : { kind: "loading", url: kept?.url ?? null },
+      );
 
       try {
         const signed = await getFigureSignedUrl({
@@ -336,7 +380,21 @@ export function useAssetImageRenderState(input: {
           skipCache,
         });
         if (cancelled) return;
-        setState({ kind: "ready", url: signed.signedUrl, expiresAt: signed.signedUrlExpiresAt });
+        const file = {
+          name: signed.name,
+          mimeType: signed.mimeType,
+          sizeBytes: signed.sizeBytes,
+          downloadUrl: signed.signedUrl,
+        };
+        fileFactsRef.current = file;
+        if (signed.drawUrl && signed.drawUrl === failedUrlRef.current)
+          undrawableRef.current = undrawable;
+        const drawn = undrawableRef.current === undrawable ? undefined : signed.drawUrl;
+        setState(
+          drawn
+            ? { kind: "ready", url: drawn, expiresAt: signed.signedUrlExpiresAt }
+            : { kind: "file", url: null, file },
+        );
         const delay = signedUrlRefreshDelayMs(signed.signedUrlExpiresAt);
         refreshTimer = setTimeout(() => void loadSignedUrl(true), delay);
       } catch (error) {
@@ -369,19 +427,21 @@ export function useAssetImageRenderState(input: {
 }
 
 /**
- * Sets the state shown for one picture. An update may keep the URL already
- * on screen only when that URL is this same picture's.
+ * Sets the state shown for one picture. An update may keep what is already
+ * on screen only when it is this same picture's.
  */
 function showFor(
   setShown: Dispatch<SetStateAction<{ picture: string; state: AssetImageRenderState }>>,
   picture: string,
 ) {
-  return (next: AssetImageRenderState | ((keptUrl: string | null) => AssetImageRenderState)) =>
+  return (
+    next: AssetImageRenderState | ((kept: AssetImageRenderState | null) => AssetImageRenderState),
+  ) =>
     setShown((current) => ({
       picture,
       state:
         typeof next === "function"
-          ? next(current.picture === picture ? current.state.url : null)
+          ? next(current.picture === picture ? current.state : null)
           : next,
     }));
 }

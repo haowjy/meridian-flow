@@ -16,9 +16,33 @@ export function splitPath(path: string): { dir: string[]; filename: string } {
   return { dir: segments, filename };
 }
 
-import { renderFilename } from "@meridian/contracts/protocol";
+import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 
 export { renderFilename } from "@meridian/contracts/protocol";
+
+export type FilenameOccupancy = {
+  files: ReadonlySet<string>;
+  folders: ReadonlySet<string>;
+  folderAliases: ReadonlySet<string>;
+};
+
+/** Smallest available name; the caller owns atomic claims and batch reservations. */
+export async function allocateFilename(
+  parts: { name: string; extension: string; kind?: "file" | "folder" },
+  occupied: ((filename: string) => boolean | Promise<boolean>) | FilenameOccupancy,
+): Promise<string> {
+  for (let suffix = 1; ; suffix += 1) {
+    const name = suffix === 1 ? parts.name : `${parts.name} (${suffix})`;
+    const filename = renderFilename(name, parts.extension);
+    const taken =
+      typeof occupied === "function"
+        ? await occupied(filename)
+        : parts.kind === "folder"
+          ? occupied.folders.has(name) || occupied.files.has(folderDocumentName(name))
+          : occupied.files.has(filename) || occupied.folderAliases.has(filename);
+    if (!taken) return filename;
+  }
+}
 
 /** File output is the only place prose gains a suffix; persisted names stay unchanged. */
 export function exportFilename(name: string, extension: string, fileType: string): string {

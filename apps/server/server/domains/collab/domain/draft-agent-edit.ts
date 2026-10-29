@@ -6,7 +6,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditJournal,
-  bindBlockOrigins,
   type ConcurrentUpdateOrigin,
   type DocumentAccess,
   DocumentAccessLostError,
@@ -182,18 +181,12 @@ export function createDraftAgentEditCoordinator(input: {
     return input.drafts.resolveWorkDraftForThread(documentId, input.threadId);
   }
 
-  function bindSeedAddresses(doc: Y.Doc, snapshot: DraftSnapshot): void {
-    const origins = blockOriginsFromDraftSeed(snapshot.seed);
-    if (origins) bindBlockOrigins(doc, origins);
-  }
-
   return {
     async readRoom(docId, staged, access) {
       const peer = access?.pinnedDraftId;
       const read = async (workDraftId: string, bound: boolean) => {
         const { doc, snapshot, position } = await drafts.copyDraft(workDraftId);
         try {
-          bindSeedAddresses(doc, snapshot);
           if (bound && snapshot.status !== "active")
             throw new DraftStaleUpdateError(`Draft ${workDraftId}`);
           const replay = staged

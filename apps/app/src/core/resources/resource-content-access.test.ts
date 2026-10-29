@@ -5,7 +5,11 @@
  */
 import "fake-indexeddb/auto";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
-import type { ResourceKey, ResourceRecord } from "@meridian/resource-replica";
+import {
+  type ResourceKey,
+  type ResourceRecord,
+  untitledDestination,
+} from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { LocalDocumentSessionFactory } from "@/core/editor/document-session-registry";
@@ -135,7 +139,9 @@ function resource(
         initialization: options.initialization,
       },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: 1 } },
@@ -147,7 +153,11 @@ function resource(
         intentId: `create-${handle}`,
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "create", folderPath: "" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },
@@ -409,6 +419,7 @@ it("releases every project registry ownership after the final shared-content lea
   const metadata = openMetadata();
   const record = resource("registry-shared");
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: null };
+  record.resource.serverHold = "held";
   record.intents = [];
   await initialize(record);
   const key = await install(metadata, record);
@@ -431,6 +442,7 @@ it("releases every project registry ownership after the final shared-content lea
       parentId: "user-source",
       name: "shared.md",
       aliases: [],
+      hasProperties: false,
       path: ["shared.md"],
       uri: "user://shared.md" as const,
       provisionalName: false,

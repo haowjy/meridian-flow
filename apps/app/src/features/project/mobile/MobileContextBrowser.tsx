@@ -10,7 +10,7 @@ import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { useDeleteContextEntry } from "../context/document-delete-undo";
-import { MoveFeedbackProvider } from "../context/entry-drag/move-notice";
+import { OperationFeedbackProvider } from "../context/entry-drag/operation-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { SurfaceNotices } from "../context/project-notices";
 import { treeFolderIds } from "../context/tree-expansion-state";
@@ -135,9 +135,10 @@ function MobileFolderTree({
             owner: {},
             scheme,
             catalog,
-            capabilities: ["rename", "move", "delete"],
+            capabilities: ["rename", "move", "copy", "delete"],
             activeScheme: null,
             activePath: null,
+            refusalNotice: true,
             isExpanded,
             toggleEntry,
             onRequestDelete: deletion.requestDelete,
@@ -163,13 +164,13 @@ function MobileFolderTree({
             },
           }}
         >
-          <MoveFeedbackProvider feedback={{ surface: "mobile" }}>
+          <OperationFeedbackProvider feedback={{ surface: "mobile" }}>
             <TreeChildren
               parentId={dir.entryId}
               parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
               depth={0}
             />
-          </MoveFeedbackProvider>
+          </OperationFeedbackProvider>
           {!pending && catalog.children(dir.entryId).length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
               <Trans>This folder is empty.</Trans>

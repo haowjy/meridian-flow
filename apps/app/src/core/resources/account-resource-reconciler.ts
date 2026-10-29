@@ -1,23 +1,38 @@
 /**
- * Account-scoped background reconciliation of resource metadata: one runner per handle that
- * dispatches namespace work, follows joins and reminted creates, adopts sessions and cleans up
- * deleted content. Retry triggers and projection observations feed it; the replica composes it.
+ * Account-scoped background reconciliation of resource metadata: one runner per handle (a
+ * resource's, a folder's or an operation's) that dispatches namespace work, follows joins and
+ * reminted creates, adopts sessions and cleans up deleted content. Retry triggers and projection
+ * observations feed it; the replica composes it.
+ * Runners are independent: a placement waits only for the predecessors its journal admission
+ * names (`placementDispatchVerdict`), so unrelated work never queues behind a held request.
  */
 import {
   acknowledgeLocalResourceCleanup,
+  awaitsRemint,
   type FolderNamespaceRecord,
   folderNeedsBackgroundReconciliation,
   joinReservation,
+  latestAdmittedPlacement,
+  type NamespaceIntent,
+  type OperationRecord,
+  operationNeedsBackgroundReconciliation,
+  type PlacementPredecessor,
+  type PlacementVerdict,
+  pendingJoinProject,
   pendingJoinTarget,
+  placementDispatchVerdict,
   type ResourceKey,
   type ResourceNamespaceLock,
   type ResourceRecord,
   type ResourceWrite,
   reconcileFolderNamespace,
+  reconcileOperationNamespace,
   reconcileResourceNamespace,
-  remintCreateConflict,
+  remintFolder,
+  remintResource,
   resourceIdentityIndex,
   resourceNeedsBackgroundReconciliation,
+  retiredOperations,
   settleNamespaceOutcome,
 } from "@meridian/resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
@@ -99,6 +114,9 @@ export class AccountResourceReconciler {
   private readonly reruns = new Map<string, () => void>();
   private readonly observedResourceRevisions = new Map<string, number>();
   private readonly observedFolderRevisions = new Map<string, number>();
+  private readonly observedOperationRevisions = new Map<string, number>();
+  /** Handles holding a placement behind predecessors, woken when a journal they wait on changes. */
+  private readonly waiting = new Map<string, { rerun: () => void; on: ReadonlySet<string> }>();
   private stopHints: (() => void) | null = null;
   private retryTimer: number | null = null;
 
@@ -132,19 +150,40 @@ export class AccountResourceReconciler {
   reconcileProjection(
     records: readonly ResourceRecord[],
     folders: readonly FolderNamespaceRecord[],
+    operations: readonly OperationRecord[],
   ): void {
+    const changed = new Set<string>();
     for (const record of records) {
       const { handle, revision } = record.resource;
       if (this.observedResourceRevisions.get(handle) === revision) continue;
       this.observedResourceRevisions.set(handle, revision);
+      changed.add(handle);
       this.ports.content.reconcileMetadata(record);
       this.schedule(record.resource);
     }
     for (const folder of folders) {
       if (this.observedFolderRevisions.get(folder.handle) === folder.revision) continue;
       this.observedFolderRevisions.set(folder.handle, folder.revision);
+      changed.add(folder.handle);
       if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
     }
+    for (const operation of operations) {
+      const { operationId, revision } = operation;
+      if (this.observedOperationRevisions.get(operationId) === revision) continue;
+      this.observedOperationRevisions.set(operationId, revision);
+      changed.add(operationId);
+      if (operationNeedsBackgroundReconciliation(operation)) this.scheduleOperation(operation);
+    }
+    // A change from any tab may resolve a predecessor; only its waiters look again.
+    for (const { rerun, on } of [...this.waiting.values()])
+      if ([...on].some((handle) => changed.has(handle))) rerun();
+    this.retireOperations({ records, folders, operations });
+  }
+
+  /** Drops the operations nothing reads any more. Another tab may win the race; its drop is the same. */
+  private retireOperations(snapshot: Parameters<typeof retiredOperations>[0]): void {
+    for (const { operationId, revision } of retiredOperations(snapshot, Date.now()))
+      void this.ports.metadata.retireOperation(operationId, revision).catch(() => undefined);
   }
 
   schedule(key: ResourceKey): void {
@@ -163,16 +202,28 @@ export class AccountResourceReconciler {
     );
   }
 
+  /** An operation's handle is its id: `key.handle` and `operationId` are the same string. */
+  private scheduleOperation(operation: Pick<OperationRecord, "operationId">): void {
+    const key = { handle: operation.operationId };
+    this.scheduleOnce(
+      key,
+      () => this.runOperation(key),
+      () => this.scheduleOperation(operation),
+    );
+  }
+
   private readonly retryAll = () => {
     void this.ports.metadata
       .readProjection("")
-      .then(({ records, folders }) => {
-        for (const record of records) {
+      .then(({ records, folders, operations }) => {
+        for (const record of records)
           if (resourceNeedsBackgroundReconciliation(record)) this.schedule(record.resource);
-        }
-        for (const folder of folders) {
+        for (const folder of folders)
           if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
-        }
+        for (const operation of operations)
+          if (operationNeedsBackgroundReconciliation(operation)) this.scheduleOperation(operation);
+        // A notice window closes with no projection change, so the sweep also runs here.
+        this.retireOperations({ records, folders, operations });
       })
       .catch(() => undefined);
   };
@@ -185,6 +236,7 @@ export class AccountResourceReconciler {
       this.reruns.set(id, rerun);
       return;
     }
+    this.waiting.delete(id);
     const runner = start()
       .catch(() => undefined)
       .finally(() => {
@@ -206,6 +258,24 @@ export class AccountResourceReconciler {
         transport,
         lock,
         newAttemptIds,
+        gate: this.gate(key, () => this.scheduleFolder(key)),
+      });
+      if ((result === "needs-repair" || result === "blocked") && (await this.remintFolder(key)))
+        continue;
+      if (result !== "progressed") return;
+    }
+  }
+
+  private async runOperation(key: ResourceKey): Promise<void> {
+    const { metadata, namespace: transport, lock } = this.ports;
+    for (let step = 0; step < 100 && !this.ports.isClosing(); step += 1) {
+      const result = await reconcileOperationNamespace({
+        key,
+        metadata,
+        transport,
+        lock,
+        newAttemptId: () => crypto.randomUUID(),
+        gate: this.gate(key, () => this.scheduleOperation({ operationId: key.handle })),
       });
       if (result !== "progressed") return;
     }
@@ -220,15 +290,94 @@ export class AccountResourceReconciler {
         transport,
         lock,
         newAttemptIds,
+        gate: this.gate(key, () => this.schedule(key)),
       });
       if (namespace === "needs-join" && (await this.commitIdentity(key, (c) => this.planJoin(c))))
         continue;
-      if (namespace === "needs-repair" && (await this.commitIdentity(key, planRemint))) continue;
+      if (
+        (namespace === "needs-repair" || namespace === "blocked") &&
+        (await this.commitIdentity(key, planRemint))
+      )
+        continue;
       await this.ports.capturesSettled(key.handle);
       const adopted = await adoption.reconcile(key);
       const cleanup = await this.reconcileLocalCleanup(key);
       if (namespace !== "progressed" && adopted !== "adopted" && !cleanup) return;
     }
+  }
+
+  /**
+   * Replaces a spent folder id. The store commits the remint together with the unsent placements
+   * that named the old id, so no child reaches the server naming a folder it cannot use.
+   */
+  private async remintFolder(key: ResourceKey): Promise<boolean> {
+    const current = await this.ports.metadata.readFolder(key);
+    if (!current) return false;
+    const write = remintFolder({
+      record: current,
+      folderId: crypto.randomUUID(),
+      retryIntentId: crypto.randomUUID(),
+      rebasedIntentIds: Object.fromEntries(
+        current.intents
+          .filter((intent) => intent.state === "pending" && intent.attempts.length === 0)
+          .map((intent) => [intent.intentId, crypto.randomUUID()]),
+      ),
+    });
+    return write !== null && (await this.ports.metadata.commitFolder(write)) === "committed";
+  }
+
+  /**
+   * Holds a placement behind its predecessors. The handle is registered as waiting before the
+   * predecessors are read, so a change that lands while reading still wakes it. A predecessor on a
+   * spent id waits too: it is being replaced, and its replacement carries the same placement.
+   */
+  private gate(key: ResourceKey, rerun: () => void) {
+    const id = encodeURIComponent(key.handle);
+    return async (intent: NamespaceIntent): Promise<PlacementVerdict> => {
+      const predecessors = intent.admission?.predecessors ?? [];
+      if (predecessors.length === 0) return "go";
+      this.waiting.set(id, { rerun, on: new Set(predecessors.map((ref) => ref.handle)) });
+      const found = new Map<number, NamespaceIntent | undefined>();
+      let replacing = false;
+      for (const ref of predecessors) {
+        const journal = await this.predecessorJournal(ref);
+        found.set(
+          ref.order,
+          journal ? latestAdmittedPlacement(journal.intents, ref.order) : undefined,
+        );
+        if (journal?.replacing) replacing = true;
+      }
+      const verdict = replacing
+        ? "wait"
+        : placementDispatchVerdict(intent, (ref) => found.get(ref.order));
+      if (verdict !== "wait") this.waiting.delete(id);
+      return verdict;
+    };
+  }
+
+  /** The journal a predecessor names, and whether it is mid-replacement (a spent id: an operation never is). */
+  private async predecessorJournal(
+    ref: PlacementPredecessor,
+  ): Promise<{ intents: readonly NamespaceIntent[]; replacing: boolean } | null> {
+    const { metadata } = this.ports;
+    if (ref.kind === "operation") {
+      const operation = await metadata.readOperation(ref.handle);
+      return operation && { intents: operation.intents, replacing: false };
+    }
+    if (ref.kind === "folder") {
+      const folder = await metadata.readFolder({ handle: ref.handle });
+      return folder && { intents: folder.intents, replacing: awaitsRemint(folder) };
+    }
+    const record = await metadata.readResource({ handle: ref.handle });
+    return (
+      record && {
+        intents: record.intents,
+        replacing: awaitsRemint({
+          serverHold: record.resource.serverHold,
+          intents: record.intents,
+        }),
+      }
+    );
   }
 
   /** Returns whether a plan applied or a conflict was settled, so the runner takes another pass. */
@@ -250,7 +399,7 @@ export class AccountResourceReconciler {
    */
   private async planJoin(current: ResourceRecord): Promise<IdentityPlan | null> {
     const target = pendingJoinTarget(current);
-    const projectId = current.intents.find((intent) => intent.desired.kind === "create")?.projectId;
+    const projectId = pendingJoinProject(current);
     if (!target || !projectId) return null;
     const { records } = await this.ports.metadata.readProjection(projectId);
     const owner = resourceIdentityIndex(records).byDocumentId(target.documentId);
@@ -274,6 +423,8 @@ export class AccountResourceReconciler {
           intent.intentId === cleanup?.obligationId,
       );
       if (!record || !cleanup || !deletion) return false;
+      // A local deletion's content waits out its Undo window; the 30 s retry finds it due.
+      if (cleanup.notBefore !== undefined && Date.now() < cleanup.notBefore) return false;
       await content.clearExactContent({
         projectId: deletion.projectId,
         key,
@@ -305,7 +456,7 @@ function planRemint(current: ResourceRecord): IdentityPlan | null {
       )
       .map((intent) => [intent.intentId, crypto.randomUUID()]),
   );
-  const write = remintCreateConflict({
+  const write = remintResource({
     record: current,
     documentId: nextDocumentId,
     retryIntentId: crypto.randomUUID(),

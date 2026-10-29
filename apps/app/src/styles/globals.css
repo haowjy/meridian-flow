@@ -18,6 +18,15 @@
 @theme {
   --container-chat-column: 48rem;
   --container-project-screen: 60rem;
+  --animate-progress-slide: progress-slide 1.4s ease-in-out infinite;
+  @keyframes progress-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(333%);
+    }
+  }
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */
@@ -518,6 +527,21 @@
 @media (hover: none), (pointer: coarse) {
   [data-turn-role="user"] .user-turn-actions { opacity: 1; }
 }
+/* A rail area header's New file / New folder / Import… follow the same rule;
+   an open Import… menu keeps them shown. */
+@media (hover: hover) {
+  [data-rail-pane-header] .rail-pane-actions {
+    opacity: 0;
+  }
+  [data-rail-pane-header]:hover .rail-pane-actions,
+  [data-rail-pane-header] .rail-pane-actions:focus-within,
+  [data-rail-pane-header]:has(.rail-pane-actions [aria-expanded="true"]) .rail-pane-actions {
+    opacity: 1;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  [data-rail-pane-header] .rail-pane-actions { opacity: 1; }
+}
 
 @utility chat-card {
   padding: var(--chat-card-pad-y) var(--chat-card-pad-x);
@@ -847,6 +871,14 @@
   .mobile-top-bar {
     padding-top: env(safe-area-inset-top);
   }
+}
+
+/* The phone's compact activity bar: 8px margins, directly under MobileTopBar
+   (its h-14 row plus the standalone status-bar inset) and over the content. */
+.activity-phone-bar {
+  top: calc(env(safe-area-inset-top) + 3.5rem + 0.5rem);
+  left: calc(0.5rem + env(safe-area-inset-left));
+  right: calc(0.5rem + env(safe-area-inset-right));
 }
 
 @keyframes block-reveal {

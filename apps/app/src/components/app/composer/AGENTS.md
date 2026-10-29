@@ -23,6 +23,10 @@ is the authoring boundary; admission and server authority live outside it.
 - A context row drop resolves through the same live catalog as `@` and
   inserts the same `composerReference` atom. The shared editor drop extension
   owns word snapping, spacing, one-step Undo, and the drop caret.
+- A desktop file dropped on the composer or the chat's transcript attaches through
+  `attachFiles`, the paperclip's one door into the chat's Uploads (`useFileDrop`
+  claims `Files` drags only; tree entries stay with the reference drop above). A
+  dropped folder is a failed chip: the intake takes files only.
 
 Reference spelling, commands, Stop and Send states and copy, draft restore:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

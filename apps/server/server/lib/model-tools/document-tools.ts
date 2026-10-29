@@ -23,6 +23,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { createCopyIdentityMap, remapCopiedBlocks } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -433,7 +434,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         ctx,
       );
       if (isToolError(read)) return read;
-      copied = read;
+      const { properties, aliases } = source.ref;
+      copied = {
+        ...read,
+        inherited: { ...(properties ? { properties } : {}), ...(aliases ? { aliases } : {}) },
+      };
     } else if ((parsed.command === "insert" || parsed.command === "replace") && parsed.from) {
       const read = await readCopySource(deps, principal, parsed.command, parsed.from, ctx);
       if (isToolError(read)) return read;
@@ -452,7 +457,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             },
             ...(parsed.command === "copy" && copied
               ? {
-                  metadata: { copiedFrom: copied.copiedFrom },
+                  metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
                   sourceExtension: sourceExtension(copied.copiedFrom.uri),
                 }
               : {}),
@@ -482,6 +487,33 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
           : null;
       return removed ?? address;
+    }
+
+    if (parsed.command === "copy" && copied) {
+      // The copy's new identity is known now: a whole document's own links name the copy, not
+      // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
+      // A selection is not the copied set: its links to the whole source keep naming it.
+      copied = {
+        ...copied,
+        nodes: remapCopiedBlocks({
+          blocks: copied.nodes,
+          sourceHolderUri: copied.copiedFrom.uri,
+          aheadSettlements: copied.aheadSettlements,
+          map: createCopyIdentityMap({
+            documents: copied.wholeDocument
+              ? [
+                  {
+                    sourceDocumentId: copied.sourceDocumentId,
+                    sourceUri: copied.copiedFrom.uri,
+                    documentId: address.documentId,
+                    uri: address.uri,
+                  },
+                ]
+              : [],
+            folders: [],
+          }),
+        }),
+      };
     }
 
     let outcome = await writeUnderGrant(

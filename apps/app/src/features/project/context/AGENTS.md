@@ -26,11 +26,18 @@ chat resources rather than ordinary Editor tabs.
   identity-based refusal (`moveRefusal` in `move-plan.ts`: inside itself;
   already there is a quiet no-op), and arrive at the next free name that
   `execute-move.ts` predicts. The hover hint and Move… warn with that same
-  prediction before a row arrives renamed. Don't place entries anywhere else.
+  prediction before a row arrives renamed. Order goes the same way: a row-edge
+  drop and Move…'s "Change position" send a sibling position (before/after a
+  sibling, start, end), never a rank. Don't place entries anywhere else.
 - Selection and dragging (`entry-drag/`): one desktop list is one selection,
   one drop route and one drop scope (`useEntryList`/`EntryList`). They carry
-  identities, never placement; plans read placement from the replica at hover,
-  drop and Undo. Rows move within one system only. A writing surface may copy
+  identities, never placement or grants; plans read placement from the replica at hover,
+  drop and Undo. A list row dropped within one system moves at once; one across systems, and
+  every other source naming a document or folder (chips, tabs, crumbs, Recent rows, receipts,
+  Uploads entries, selected links) asks first, at the pointer (`entry-drag/drop-choice.ts`).
+  Those sources start their drag through `entry-drag/reference-source.ts` and nothing else; what a drag may do (Move is refused out
+  of an archived or unlisted Work's Scratch) is judged in `resolveDrop`. Contract in
+  `.context/tree-interactions.md`. A writing surface may copy
   those identities into references through its own drop extension; that drop
   never enters the tree's move route. Desktop only; phones publish Move… directly
   to their notice surface, and every move drop also has that menu path.
@@ -42,6 +49,10 @@ chat resources rather than ordinary Editor tabs.
   catalogs.
 - Tree expansion is tab-local, account/project scoped session state. Resolved
   catalogs prune missing folders; active-document reveal expands once.
+- A section's pane states are distinct: rows, an error row with Retry when the
+  catalog query failed, "Loading files…" while the catalog is not installed yet
+  (`isComplete` false), and "No context files yet." only once it is. A failed or
+  in-flight load must never read as an empty project.
 - Document opening records the active tab, not the intent. The device record
   updates before the server request, which waits for `whenOnServer`; restored
   parked tabs do not count as opens.

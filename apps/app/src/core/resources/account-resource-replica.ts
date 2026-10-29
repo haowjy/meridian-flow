@@ -1,16 +1,32 @@
 /** Sole browser account owner for durable resource metadata, content, catalogs, and namespace work. */
-import type { CatalogScope } from "@meridian/contracts/protocol";
+import type {
+  CatalogScope,
+  ContextSiblingPosition,
+  CopyContextEntryView,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeResourceTerminalCleanup,
+  type CopyRoot,
+  capturePlacementAdmission,
+  copyScopeKeys,
+  deleteNeedsServer,
+  type FolderNamespaceRecord,
   type FolderNamespaceWrite,
   installedFolderObservation,
   markResourceCreateEligible,
   ownerOf,
   type ParentRef,
+  type PlacementAdmission,
+  type PlacementSpec,
   planCachedSessionAdoption,
+  planCopy,
+  planFolderCreate,
   planFolderDeletion,
+  planFolderLocalDeletionUndo,
   planFolderLocation,
+  planLocalDeletionUndo,
   planResourceDeletion,
   planResourceLocation,
   publishResourceTerminal,
@@ -18,10 +34,12 @@ import {
   type ResourceDestination,
   type ResourceKey,
   type ResourceLocation,
+  type ResourcePlacement,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
   recordAcquiredResourceContent,
   reserveResourceDocument,
+  resolveRefusedCopy,
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
   sameOwner,
@@ -45,11 +63,6 @@ import { type ResourceIdentityChange, ResourceIdentityFeed } from "./resource-id
 import { createResourceNamespaceLock } from "./resource-namespace-lock";
 import { createResourceNamespaceTransport } from "./resource-namespace-transport";
 import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption";
-
-/** Folders share the account journal under a handle that can never collide with a document's. */
-function folderKey(folderId: string): ResourceKey {
-  return { handle: `folder:${folderId}` };
-}
 
 function exactPersistenceName(accountId: string, persistenceId: string): string {
   return `meridian:resource:${collabSchemaKeyTag()}:${encodeURIComponent(accountId)}:${encodeURIComponent(persistenceId)}`;
@@ -100,8 +113,8 @@ export class AccountResourceReplica {
     }
   >();
   private readonly serverSessionCaptures = new Map<string, Promise<void>>();
-  private reservationTail: Promise<void> = Promise.resolve();
-  private readonly reservationLocks = nativeLocks();
+  private readonly exclusiveTails = new Map<string, Promise<void>>();
+  private readonly locks = nativeLocks();
   private readonly locationOperations = new ResourceLocationOperationQueue();
   private started = false;
   private stopReconciliation: (() => void) | null = null;
@@ -172,6 +185,65 @@ export class AccountResourceReplica {
     };
   }
 
+  /** One section at a time per name: across browser contexts where Web Locks exist, else in this one. */
+  private async exclusive<T>(name: string, run: () => Promise<T>): Promise<T> {
+    if (this.locks)
+      return this.locks.request(
+        `meridian:resource:v2:${name}`,
+        { mode: "exclusive", signal: this.lockLifetime.signal },
+        async (lock) => {
+          if (!lock) throw new Error("Resource exclusive lock is unavailable");
+          this.requireOpen();
+          return run();
+        },
+      );
+    const before = this.exclusiveTails.get(name) ?? Promise.resolve();
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.exclusiveTails.set(name, turn);
+    await before;
+    try {
+      return await run();
+    } finally {
+      release();
+      if (this.exclusiveTails.get(name) === turn) this.exclusiveTails.delete(name);
+    }
+  }
+
+  /**
+   * Admit a placement behind everything it conflicts with, atomically across this account's
+   * browser contexts: the snapshot that fixes its order and predecessors is read, and the intent
+   * committed, inside one lock. Two tabs therefore never assign contradictory local order.
+   */
+  private admitPlacement<T>(
+    projectId: string,
+    subject: ResourceKey | null,
+    describe: (view: {
+      snapshot: ResourceProjectionSnapshot;
+      placement: ResourcePlacement;
+    }) => PlacementSpec,
+    commit: (admission: PlacementAdmission) => Promise<T>,
+  ): Promise<T> {
+    this.requireOpen();
+    return this.exclusive(`placement-admission/${encodeURIComponent(this.accountId)}`, async () => {
+      const { highWater, ...snapshot } = await this.metadata.readPlacementAdmissionView(
+        projectId,
+        subject ?? undefined,
+      );
+      const placement = resourcePlacementForSnapshot(projectId, snapshot);
+      return commit(
+        capturePlacementAdmission({
+          snapshot,
+          highWater,
+          placement,
+          spec: describe({ snapshot, placement }),
+        }),
+      );
+    });
+  }
+
   /**
    * Reserve a document under a client-minted id. `destination` is where the writer put it (the
    * sidebar's New file, a link's Create): it goes out with the create so the server can join a
@@ -188,28 +260,10 @@ export class AccountResourceReplica {
     content: ResourceContentOpenResult;
   }> {
     this.requireOpen();
-    if (this.reservationLocks) {
-      return this.reservationLocks.request(
-        `meridian:resource:v2:reservation/${encodeURIComponent(this.accountId)}/${encodeURIComponent(projectId)}`,
-        { mode: "exclusive", signal: this.lockLifetime.signal },
-        async (lock) => {
-          if (!lock) throw new Error("Resource reservation lock is unavailable");
-          this.requireOpen();
-          return this.reserveDocumentSerial(projectId, folderPath, destination);
-        },
-      );
-    }
-    const before = this.reservationTail;
-    let release!: () => void;
-    this.reservationTail = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await before;
-    try {
-      return await this.reserveDocumentSerial(projectId, folderPath, destination);
-    } finally {
-      release();
-    }
+    return this.exclusive(
+      `reservation/${encodeURIComponent(this.accountId)}/${encodeURIComponent(projectId)}`,
+      () => this.reserveDocumentSerial(projectId, folderPath, destination),
+    );
   }
 
   private async reserveDocumentSerial(
@@ -238,19 +292,34 @@ export class AccountResourceReplica {
       ordinal += 1;
       name = `Untitled ${ordinal}`;
     }
-    const write = reserveResourceDocument({
-      projectId,
-      handle: key.handle,
-      documentId,
-      databaseName: exactPersistenceName(this.accountId, crypto.randomUUID()),
-      schema: collabSchemaKeyTag(),
-      intentId: crypto.randomUUID(),
-      folderPath,
-      provisionalName: destination?.name ?? name,
-      ...(destination ? { destination: { value: destination, eligibleAt: Date.now() } } : {}),
-    });
-    if ((await this.metadata.commitResource(write)) !== "committed")
-      throw new Error("Resource identity reservation collided");
+    const reserve = (admission?: PlacementAdmission) =>
+      reserveResourceDocument({
+        projectId,
+        handle: key.handle,
+        documentId,
+        databaseName: exactPersistenceName(this.accountId, crypto.randomUUID()),
+        schema: collabSchemaKeyTag(),
+        intentId: crypto.randomUUID(),
+        ...(admission ? { admission } : {}),
+        folderPath,
+        provisionalName: destination?.name ?? name,
+        ...(destination ? { destination: { value: destination, eligibleAt: Date.now() } } : {}),
+      });
+    const committed = destination
+      ? await this.admitPlacement(
+          projectId,
+          null,
+          () => ({
+            projectId,
+            subject: documentId,
+            source: null,
+            destination: destination.parent,
+            position: destination.position,
+          }),
+          async (admission) => this.metadata.commitResource(reserve(admission)),
+        )
+      : await this.metadata.commitResource(reserve());
+    if (committed !== "committed") throw new Error("Resource identity reservation collided");
     const content = await this.content.open(projectId, key, `reservation:${key.handle}`);
     return { key, name: destination?.name ?? name, content };
   }
@@ -263,10 +332,10 @@ export class AccountResourceReplica {
     // Reconciliation belongs to the account lifetime, not mounted catalog consumers.
     this.stopReconciliation = this.metadata.observeProjection(
       "",
-      ({ records, folders }) => {
+      ({ records, folders, operations }) => {
         if (this.closing) return;
         this.identities.observe(records);
-        this.reconciler.reconcileProjection(records, folders);
+        this.reconciler.reconcileProjection(records, folders, operations);
       },
       () => undefined,
     );
@@ -343,6 +412,11 @@ export class AccountResourceReplica {
   ): Promise<{ key: ResourceKey; record: ResourceRecord } | null> {
     const record = await this.metadata.resolveAccessibleResource(projectId, documentId);
     return record ? { key: { handle: record.resource.handle }, record } : null;
+  }
+
+  /** The folder record an id names, the id it was minted under included (`folderForId`). */
+  readKnownFolder(folderId: string): Promise<FolderNamespaceRecord | null> {
+    return this.metadata.readFolderById(folderId);
   }
 
   async canAcquireRemoteDocument(projectId: string, documentId: string): Promise<boolean> {
@@ -576,16 +650,24 @@ export class AccountResourceReplica {
       return { kind: "root", scheme: location.scheme, owner: ownerOf(location) };
     const snapshot = await this.readProjection(projectId);
     const placement = resourcePlacementForSnapshot(projectId, snapshot);
-    for (const entry of snapshot.catalogs.flatMap((catalog) => catalog.entries)) {
-      if (entry.kind !== "folder" || entry.navigationOnly) continue;
-      const home = placement.folderLocation(entry.entryId);
+    // A folder only this device holds yet is a parent like any other.
+    const folderIds = [
+      ...snapshot.catalogs
+        .flatMap((catalog) => catalog.entries)
+        .flatMap((entry) =>
+          entry.kind === "folder" && !entry.navigationOnly ? [entry.entryId] : [],
+        ),
+      ...snapshot.folders.map((folder) => folder.folderId),
+    ];
+    for (const folderId of folderIds) {
+      const home = placement.folderLocation(folderId);
       if (
         home &&
         home.scheme === location.scheme &&
         sameOwner(home, location) &&
         home.path === location.path
       )
-        return { kind: "folder", folderId: entry.entryId };
+        return { kind: "folder", folderId };
     }
     return null;
   }
@@ -615,20 +697,169 @@ export class AccountResourceReplica {
     let admitted = false;
     const { isLatest } = await this.locationOperations.run(key, async () => {
       admitted =
-        (await this.commitPlan(key, (record) =>
-          planResourceLocation({
-            record,
-            projectId,
-            intentId: crypto.randomUUID(),
-            operationId,
-            eligibleAt: Date.now(),
-            destination,
-            typedName,
-          }),
+        (await this.admitPlacement(
+          projectId,
+          key,
+          ({ snapshot, placement }) => {
+            const record = snapshot.records.find((r) => r.resource.handle === key.handle);
+            return {
+              projectId,
+              subject: record?.resource.identity.documentId ?? key.handle,
+              source: record ? placement.parentForResource(record) : null,
+              destination: destination.parent,
+              position: destination.position,
+            };
+          },
+          (admission) =>
+            this.commitPlan(key, (record) =>
+              planResourceLocation({
+                record,
+                projectId,
+                intentId: crypto.randomUUID(),
+                operationId,
+                eligibleAt: Date.now(),
+                admission,
+                destination,
+                typedName,
+              }),
+            ),
         )) === "committed";
       this.reconciler.schedule(key);
     });
     return { isLatest, ...(admitted ? { operationId } : {}) };
+  }
+
+  /**
+   * Copy entries into one destination. The roots are listed there at once under their predicted
+   * names (`overlayCopyRoots`); the server's answer places them, or a refusal removes them. A
+   * document the device holds open sends its state vector, so the copy waits for edits the server
+   * has not received. `view` is what the copy reads: the live document, or the draft a tab shows.
+   */
+  async copyEntries(
+    projectId: string,
+    input: {
+      sources: readonly {
+        kind: "file" | "folder";
+        id: string;
+        predictedName: string;
+        view?: CopyContextEntryView;
+        /** A draft tab's room vector; a live document's comes from its open session. */
+        stateVector?: string;
+      }[];
+      /** The destination's scheme: an account-owned `user` folder belongs to no project. */
+      scheme: ProjectContextTreeScheme;
+      destination: { parent: ParentRef; position?: ContextSiblingPosition };
+      /** Where the writer started it; a refusal shows there when the destination is gone. */
+      origin?: string;
+    },
+  ): Promise<{ operationId: string; roots: readonly CopyRoot[] }> {
+    this.requireOpen();
+    const operationId = crypto.randomUUID();
+    const roots = await Promise.all(
+      input.sources.map(async (source) => {
+        const view = source.view ?? { kind: "live" as const };
+        const known =
+          source.kind === "file" ? await this.readKnownDocument(projectId, source.id) : null;
+        if (source.kind === "file" && !known) throw new Error("Document is not in the replica");
+        const stateVector =
+          source.stateVector ??
+          (source.kind === "file" && view.kind === "live"
+            ? this.content.stateVector(source.id)
+            : null);
+        return {
+          kind: source.kind,
+          handle: crypto.randomUUID(),
+          copyId: crypto.randomUUID(),
+          sourceId: source.id,
+          view,
+          ...(stateVector ? { stateVector } : {}),
+          predictedName: source.predictedName,
+          classification: known?.record.resource.classification ?? null,
+        };
+      }),
+    );
+    await this.admitPlacement(
+      projectId,
+      null,
+      () => ({
+        projectId,
+        subject: operationId,
+        source: null,
+        destination: input.destination.parent,
+        position: input.destination.position,
+        touches: copyScopeKeys(roots),
+      }),
+      async (admission) => {
+        const committed = await this.metadata.commitOperation(
+          planCopy({
+            projectId,
+            operationId,
+            intentId: crypto.randomUUID(),
+            admission,
+            scheme: input.scheme,
+            roots,
+            destination: input.destination,
+            origin: input.origin,
+          }),
+        );
+        if (committed !== "committed") throw new Error("Copy operation identity collided");
+      },
+    );
+    return { operationId, roots: roots.map(({ classification: _, ...root }) => root) };
+  }
+
+  /** The writer is done with a refused Copy: dismissed, or sent again as a new one. */
+  async resolveCopyRefusal(operationId: string): Promise<void> {
+    this.requireOpen();
+    for (;;) {
+      const current = await this.metadata.readOperation(operationId);
+      const write = current && resolveRefusedCopy(current);
+      if (!write) return;
+      if ((await this.metadata.commitOperation(write)) === "committed") return;
+    }
+  }
+
+  /**
+   * Create a folder under an id this device mints. The writer sees it at once and can place
+   * documents and folders in it; the server's answer arrives in the background, and a refusal
+   * stays on the folder.
+   */
+  async createFolder(
+    projectId: string,
+    scheme: ProjectContextTreeScheme,
+    destination: ResourceDestination,
+  ): Promise<{ folderId: string }> {
+    this.requireOpen();
+    const folderId = crypto.randomUUID();
+    // A handle names the record, never the id: a remint changes the id and keeps the handle.
+    const key: ResourceKey = { handle: crypto.randomUUID() };
+    await this.admitPlacement(
+      projectId,
+      null,
+      () => ({
+        projectId,
+        subject: folderId,
+        source: null,
+        destination: destination.parent,
+        position: destination.position,
+      }),
+      async (admission) => {
+        const committed = await this.metadata.commitFolder(
+          planFolderCreate({
+            projectId,
+            scheme,
+            handle: key.handle,
+            folderId,
+            intentId: crypto.randomUUID(),
+            admission,
+            destination,
+          }),
+        );
+        if (committed !== "committed") throw new Error("Folder identity reservation collided");
+      },
+    );
+    this.reconciler.scheduleFolder(key);
+    return { folderId };
   }
 
   /**
@@ -641,41 +872,74 @@ export class AccountResourceReplica {
     destination: ResourceDestination,
     typedName?: string,
   ): Promise<{ operationId?: string }> {
-    return this.commitFolderPlan(projectId, folderId, (input) =>
+    return this.commitFolderPlan(projectId, folderId, destination, (input) =>
       planFolderLocation({ ...input, destination, typedName }),
     );
   }
 
   async deleteFolder(projectId: string, folderId: string): Promise<{ operationId?: string }> {
-    return this.commitFolderPlan(projectId, folderId, planFolderDeletion);
+    const result = await this.commitFolderPlan(projectId, folderId, null, planFolderDeletion);
+    // A folder only this device held settles its delete here; its pending children go with it
+    // and the same Undo window brings the subtree back.
+    if (result.operationId)
+      await this.settleLocalFolderChildren(projectId, folderId, result.operationId);
+    return result;
   }
 
-  private async commitFolderPlan(
+  private commitFolderPlan(
     projectId: string,
     folderId: string,
+    destination: ResourceDestination | null,
     plan: (input: Parameters<typeof planFolderDeletion>[0]) => FolderNamespaceWrite | null,
   ): Promise<{ operationId?: string }> {
     this.requireOpen();
-    const key = folderKey(folderId);
+    return this.admitPlacement(
+      projectId,
+      null,
+      ({ placement }) => ({
+        projectId,
+        subject: folderId,
+        source: placement.parentForFolder(folderId),
+        destination: destination?.parent ?? null,
+        position: destination?.position,
+      }),
+      (admission) => this.commitFolderPlanAdmitted(projectId, folderId, admission, plan),
+    );
+  }
+
+  private async commitFolderPlanAdmitted(
+    projectId: string,
+    folderId: string,
+    admission: PlacementAdmission,
+    plan: (input: Parameters<typeof planFolderDeletion>[0]) => FolderNamespaceWrite | null,
+  ): Promise<{ operationId?: string }> {
     const operationId = crypto.randomUUID();
     for (;;) {
       const [current, projection] = await Promise.all([
-        this.metadata.readFolder(key),
+        this.metadata.readFolderById(folderId),
         this.metadata.readProjection(projectId),
       ]);
-      const observation = installedFolderObservation(projection.catalogs, projectId, folderId);
-      const source = current?.canonical ?? observation?.location;
-      if (!source) throw new Error("Folder is unavailable");
+      // The id the writer acted on may be a former one: the record keeps its handle through a remint.
+      if (!current) throw new Error("Folder is unavailable");
+      const key: ResourceKey = { handle: current.handle };
+      const observation = installedFolderObservation(
+        projection.catalogs,
+        projectId,
+        current.folderId,
+      );
+      // A folder only this device holds has no place yet, until a catalog lists it.
+      const source = current.canonical ?? observation?.location;
       const write = plan({
         record: current,
         projectId,
         handle: key.handle,
-        folderId,
+        folderId: current.folderId,
         source,
-        sourceParent: current?.canonicalParent ?? observation?.parent,
-        sourceObservationVersion: current?.observationVersion ?? observation?.observationVersion,
+        sourceParent: current.canonicalParent ?? observation?.parent,
+        sourceObservationVersion: current.observationVersion ?? observation?.observationVersion,
         intentId: crypto.randomUUID(),
         operationId,
+        admission,
       });
       if (!write) return {};
       if ((await this.metadata.commitFolder(write)) !== "committed") continue;
@@ -684,19 +948,221 @@ export class AccountResourceReplica {
     }
   }
 
+  /**
+   * A local folder delete is one operation over its local subtree: every never-accepted folder
+   * and document under it settles its own delete under the same operation, so its pending
+   * creates stop and one Undo restores them all. Server-held descendants keep their own
+   * lifecycle and are not deleted by their local parent.
+   */
+  private async settleLocalFolderChildren(
+    projectId: string,
+    folderId: string,
+    operationId: string,
+  ): Promise<void> {
+    const root = await this.metadata.readFolderById(folderId);
+    const local = root?.intents.some(
+      (intent) =>
+        intent.operationId === operationId &&
+        intent.desired.kind === "delete" &&
+        intent.state === "settled-locally",
+    );
+    if (!local) return;
+    const projection = await this.metadata.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, projection);
+    const descendants = new Map<string, FolderNamespaceRecord>();
+    for (let added = true; added; ) {
+      added = false;
+      for (const folder of projection.folders) {
+        if (descendants.has(folder.folderId)) continue;
+        const parent = placement.parentForFolder(folder.folderId);
+        if (
+          parent?.kind === "folder" &&
+          (parent.folderId === root?.folderId || descendants.has(parent.folderId))
+        ) {
+          descendants.set(folder.folderId, folder);
+          added = true;
+        }
+      }
+    }
+    for (const folder of descendants.values())
+      await this.settleLocalFolderDeletion(projectId, folder, operationId);
+    for (const record of projection.records) {
+      const parent = placement.parentForResource(record);
+      if (
+        parent?.kind === "folder" &&
+        (parent.folderId === root?.folderId || descendants.has(parent.folderId))
+      )
+        await this.settleLocalDocumentDeletion(projectId, record.resource.handle, operationId);
+    }
+  }
+
+  private async settleLocalFolderDeletion(
+    projectId: string,
+    folder: FolderNamespaceRecord,
+    operationId: string,
+  ): Promise<boolean> {
+    const key: ResourceKey = { handle: folder.handle };
+    return this.withResourceLock(key, async () => {
+      for (;;) {
+        const current = await this.metadata.readFolder(key);
+        if (!current || deleteNeedsServer(current.serverHold)) return false;
+        const write = planFolderDeletion({
+          record: current,
+          projectId,
+          handle: key.handle,
+          folderId: current.folderId,
+          intentId: crypto.randomUUID(),
+          operationId,
+        });
+        if (!write?.next.localDeletion) return false;
+        if ((await this.metadata.commitFolder(write)) === "committed") {
+          this.reconciler.scheduleFolder(key);
+          return true;
+        }
+      }
+    });
+  }
+
+  private async settleLocalDocumentDeletion(
+    projectId: string,
+    handle: string,
+    operationId: string,
+  ): Promise<boolean> {
+    const key: ResourceKey = { handle };
+    return this.withResourceLock(key, async () => {
+      for (;;) {
+        const current = await this.metadata.readResource(key);
+        if (!current || deleteNeedsServer(current.resource.serverHold)) return false;
+        const write = planResourceDeletion(current, projectId, crypto.randomUUID(), operationId);
+        const settled = write?.next.intents.some(
+          (intent) =>
+            intent.operationId === operationId &&
+            intent.desired.kind === "delete" &&
+            intent.state === "settled-locally",
+        );
+        if (!write || !settled) return false;
+        if ((await this.metadata.commitResource(write)) === "committed") {
+          this.reconciler.schedule(key);
+          return true;
+        }
+      }
+    });
+  }
+
+  private async withResourceLock(
+    key: ResourceKey,
+    commit: () => Promise<boolean>,
+  ): Promise<boolean> {
+    for (let busy = 0; busy < 20; busy += 1) {
+      const result = await this.lock.run(key, commit);
+      if (result.kind === "acquired") return result.value;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
+  }
+
   async deleteDocument(projectId: string, key: ResourceKey): Promise<{ operationId?: string }> {
     const operationId = crypto.randomUUID();
-    let undoable = false;
-    const admitted = await this.commitPlan(key, (record) => {
-      const write = planResourceDeletion(record, projectId, crypto.randomUUID(), operationId);
-      undoable =
-        write?.next.intents.some(
-          (intent) => intent.operationId === operationId && intent.state !== "settled-locally",
-        ) ?? false;
-      return write;
-    });
+    let planned = false;
+    const admitted = await this.admitPlacement(
+      projectId,
+      key,
+      ({ snapshot, placement }) => {
+        const record = snapshot.records.find((r) => r.resource.handle === key.handle);
+        return {
+          projectId,
+          subject: record?.resource.identity.documentId ?? key.handle,
+          source: record ? placement.parentForResource(record) : null,
+          destination: null,
+        };
+      },
+      (admission) =>
+        this.commitPlan(key, (record) => {
+          const write = planResourceDeletion(
+            record,
+            projectId,
+            crypto.randomUUID(),
+            operationId,
+            admission,
+          );
+          planned = write !== null;
+          return write;
+        }),
+    );
     this.reconciler.schedule(key);
-    return admitted === "committed" && undoable ? { operationId } : {};
+    return admitted === "committed" && planned ? { operationId } : {};
+  }
+
+  /**
+   * Undo of a local deletion while its window is open: a document comes back with its text, a
+   * folder with the children the same operation took down. False once the window has closed or
+   * when no such deletion is held. Document content stays under the lock cleanup holds while it
+   * clears it, so Undo never revives a document whose text was just cleared.
+   */
+  async restoreLocalDeletion(projectId: string, operationId: string): Promise<boolean> {
+    this.requireOpen();
+    const projection = await this.metadata.readProjection(projectId);
+    let restored = false;
+    for (const folder of projection.folders) {
+      if (
+        !folder.intents.some(
+          (intent) => intent.operationId === operationId && intent.desired.kind === "delete",
+        )
+      )
+        continue;
+      if (await this.restoreFolderLocalDeletion(folder.folderId, operationId)) restored = true;
+    }
+    for (const record of projection.records) {
+      if (
+        !record.intents.some(
+          (intent) => intent.operationId === operationId && intent.desired.kind === "delete",
+        )
+      )
+        continue;
+      const key = { handle: record.resource.handle };
+      const restoredRecord = await this.withResourceLock(key, async () => {
+        let restored = false;
+        await this.commitPlan(key, (current) => {
+          const write = planLocalDeletionUndo(current, {
+            operationId,
+            createIntentId: crypto.randomUUID(),
+            now: Date.now(),
+          });
+          restored = write !== null;
+          return write;
+        });
+        return restored;
+      });
+      if (restoredRecord) {
+        this.reconciler.schedule(key);
+        restored = true;
+      }
+    }
+    return restored;
+  }
+
+  private async restoreFolderLocalDeletion(
+    folderId: string,
+    operationId: string,
+  ): Promise<boolean> {
+    const folder = await this.metadata.readFolderById(folderId);
+    if (!folder) return false;
+    const key: ResourceKey = { handle: folder.handle };
+    const restored = await this.withResourceLock(key, async () => {
+      for (;;) {
+        const current = await this.metadata.readFolder(key);
+        if (!current) return false;
+        const write = planFolderLocalDeletionUndo(current, {
+          operationId,
+          createIntentId: crypto.randomUUID(),
+          now: Date.now(),
+        });
+        if (!write) return false;
+        if ((await this.metadata.commitFolder(write)) === "committed") return true;
+      }
+    });
+    if (restored) this.reconciler.scheduleFolder(key);
+    return restored;
   }
 
   private async commitPlan(

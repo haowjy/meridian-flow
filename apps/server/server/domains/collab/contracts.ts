@@ -43,7 +43,7 @@ import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
-import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
+import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 
@@ -257,6 +257,7 @@ export type HashlineRead = VersionedDocumentRead<string[]> & {
  * (contract §6.2).
  */
 export type MarkdownDocumentStore = LinkBinder & {
+  readForExport: import("./domain/markdown-document.js").MarkdownDocumentEngine["readForExport"];
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
@@ -274,6 +275,16 @@ export type MarkdownDocumentStore = LinkBinder & {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
+  prepareSeed: import("./domain/markdown-document.js").MarkdownDocumentEngine["prepareSeed"];
+  stageInitialStates: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["stageInitialStates"];
+  commitStagedStates(stagingId: string): Promise<void>;
+  discardStagedStates: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["discardStagedStates"];
+  /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
+  encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
+  /** Installs `encodeSeed`'s states as the first of documents the caller's transaction created. */
+  installSeeds(
+    seeds: readonly { documentId: DocumentId; state: Uint8Array | null }[],
+  ): Promise<void>;
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;
@@ -461,6 +472,23 @@ export type EffectiveReadVersion =
   | { destination: "live"; workId?: never }
   | { destination: "draft"; workId: WorkId };
 
+/** A draft read of a Work that holds no draft of the document. */
+export type WorkDraftMissing = { code: "draft_not_found"; documentId: string };
+
+/** A copy's source cut: the blocks, the revision they had, how they spelled, and its vector. */
+export type EffectiveBlocksRead = VersionedDocumentRead<
+  readonly import("@meridian/markup").PMNode[]
+> & {
+  /** Canonical address the cut's links spell from; null for a chat with no holder. */
+  holderUri: string | null;
+  stateVector: Uint8Array;
+  /**
+   * The document each `ahead:` ref in this cut now settles to. A ref minted before its target
+   * existed still reads as its target, so a copy has to remap it like a `doc:` ref.
+   */
+  aheadSettlements: ReadonlyMap<string, string>;
+};
+
 export type DraftPeerShadowAccess = {
   readEffectiveRevision(
     input: {
@@ -477,6 +505,16 @@ export type DraftPeerShadowAccess = {
       responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
+  /**
+   * One document's frozen cut for a copy: the blocks a whole-document write would see,
+   * the revision a `read` of that version reports, the holder those links spell from, and
+   * the Yjs state vector of the cut (what a client's own vector is compared against). A draft
+   * read is of the named Work's draft, whatever chat reads it; a Work that holds no draft of
+   * the document is `draft_not_found`, never the live document.
+   */
+  readEffectiveBlocks(
+    input: { documentId: DocumentId } & EffectiveReadVersion,
+  ): Promise<Result<EffectiveBlocksRead, SyncError | WorkDraftMissing>>;
   /**
    * One hashline per block, and per block the ref-bearing links it spells
    * (`spelledLinks`), computed with the same scope in the same synchronous block.
@@ -546,6 +584,6 @@ export type CollabDomain = CollabTransport &
   DraftPeerShadowAccess &
   CollabBranches &
   CollabBranchResolver &
-  DocumentCreationAggregate;
+  DocumentCreationAggregate & { importBinder: ImportLinkBinder };
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";

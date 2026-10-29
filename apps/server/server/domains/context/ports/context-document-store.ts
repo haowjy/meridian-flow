@@ -9,9 +9,15 @@
  * `parentId`/`folderId` of `null` denotes the source root.
  */
 import type { ProjectId } from "@meridian/contracts";
-import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type {
+  ContextParentOrderPolicy,
+  ContextSiblingPosition,
+  DocumentFileType,
+  Filetype,
+} from "@meridian/contracts/protocol";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { LiveClaim, LiveCreateCandidate } from "../tree/hidden-node-types.js";
+import type { NewTreeNode } from "../tree/new-tree.js";
 import type { PathResolution, TreeView } from "../tree/tree-view.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
@@ -26,6 +32,8 @@ export interface ContextFolder {
   id: string;
   parentId: string | null;
   name: string;
+  rank?: string | null;
+  orderPolicy?: ContextParentOrderPolicy;
 }
 
 export interface ContextDocument {
@@ -38,8 +46,12 @@ export interface ContextDocument {
   storageUrl: string | null;
   mimeType: string | null;
   sizeBytes: number | null;
+  hasPreview: boolean;
   updatedAt: string;
   provisionalName: boolean;
+  /** `documents.metadata` as stored; read through `document-metadata.ts`. */
+  metadata: unknown;
+  rank?: string | null;
 }
 
 export interface LocatedContextDocument {
@@ -57,6 +69,8 @@ export interface CreateDocumentInput {
   markdown: string;
   filetype: Filetype;
   provisionalName?: boolean;
+  /** Where among the folder's children a newly inserted row goes; a reveal keeps its place. */
+  position?: ContextSiblingPosition;
   /**
    * A device's create id this reveal forwards to the revealed document: written with the
    * reveal, before the catalog refresh that reads it, so a join and its forward commit together.
@@ -75,6 +89,7 @@ export interface CreateBinaryDocumentInput {
   storageUrl: string;
   mimeType: string;
   sizeBytes: number;
+  hasPreview?: boolean;
   metadata?: DocumentCreationMetadata;
 }
 
@@ -123,6 +138,7 @@ export interface ContextDocumentStore {
     documentId: string,
   ): Promise<{ path: string; name: string; deleted: boolean } | null>;
   readProjections(ids: string[]): Promise<Map<string, string>>;
+  parentOrderPolicy(view: TreeView, parentId: string | null): Promise<"default" | "manual">;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]>;
   /**
@@ -130,6 +146,34 @@ export interface ContextDocumentStore {
    * throws {@link ContextEntryConflictError} when a document holds a segment's path.
    */
   ensureFolderPath(dir: readonly string[]): Promise<string | null>;
+  /**
+   * A live folder under the device-minted `id` in `parentId`, at `name` or the first free
+   * name. A replay answers `already-exists` with the folder's address now; an id a deleted
+   * or foreign folder holds throws {@link ContextEntryConflictError}.
+   */
+  createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: ContextSiblingPosition;
+  }): Promise<{
+    status: "created" | "already-exists";
+    folderId: string;
+    /** Source-relative path segments, the folder's own name last. */
+    path: readonly string[];
+  }>;
+  /**
+   * Insert a tree of new live nodes under `parentId`, in the caller's transaction and namespace
+   * lock, in set-based statements: a Copy's result, minted before it is written. The caller has
+   * proven that no live or hidden node holds a root's name, so nothing is checked per node. The
+   * roots arrive as a run by the parent's ordinary rule, then move to `position` when one is
+   * given (`stale-anchor` when the sibling it names is gone).
+   */
+  insertNewTree(input: {
+    parentId: string | null;
+    roots: readonly NewTreeNode[];
+    position?: ContextSiblingPosition;
+  }): Promise<"inserted" | "stale-anchor">;
   /** What a live create at this path would reveal, holding nothing (§6.3 step 1). */
   findLiveCreateCandidate(
     dir: readonly string[],

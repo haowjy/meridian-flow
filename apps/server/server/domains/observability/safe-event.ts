@@ -58,7 +58,7 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
 ]);
 /**
  * Finite diagnostic codes, allowed by key and by exactly these values (the
- * settlement, reply-pin and hidden-node repair events). Default-deny stays: any
+ * settlement, reply-pin, hidden-node repair and `image_preview.failed` events). Default-deny stays: any
  * other value under these keys is redacted.
  */
 const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -95,7 +95,15 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   originType: new Set(["fork", "handoff"]),
   outcome: new Set(["cancelled", "error", "ok"]),
   phase: new Set(["committed", "skeleton", "staged"]),
-  reason: new Set(["client-schema-superseded", "document-schema-stale", "record_byte_limit"]),
+  reason: new Set([
+    "client-schema-superseded",
+    "decode_failed",
+    "document-schema-stale",
+    "record_byte_limit",
+    "timeout",
+    "too_large",
+    "worker_unavailable",
+  ]),
   rewrite: new Set(["checkpoint", "compact", "pull", "reset"]),
   ...DIAGNOSTIC_CODE_ENUMS,
   source: new Set([

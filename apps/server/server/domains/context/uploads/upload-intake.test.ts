@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { createNoopEventSink } from "../../observability/index.js";
+import { createObjectRelease } from "../../storage/index.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
 import type { UploadIntakeRepository, UploadReservation } from "./upload-intake.js";
@@ -97,6 +98,7 @@ function harness() {
       repository,
       content,
       objectStore,
+      release: createObjectRelease({ objectStore, onFailure() {} }),
       eventSink: createNoopEventSink(),
       catalog: { refreshSources: async () => "1" },
     }),
@@ -149,7 +151,8 @@ describe("UploadIntake", () => {
     expect(await service.intake(request)).toEqual({ ok: false, error: { code: "storage_failed" } });
     const recovered = await service.intake(request);
     expect(recovered.ok && recovered.value.documentId).toBe("00000000-0000-4000-8000-000000000001");
-    expect(objectStore.delete).toHaveBeenCalledOnce();
+    // The object and its (absent) preview.
+    expect(objectStore.delete).toHaveBeenCalledTimes(2);
     expect(objectStore.put).toHaveBeenCalledTimes(2);
   });
 
@@ -170,15 +173,19 @@ describe("UploadIntake", () => {
     expect(objectStore.put).toHaveBeenCalledOnce();
   });
 
-  it("classifies text, images, and designation-only binaries on the server", () => {
-    expect(classifyUpload({ filename: "notes.unknown", mimeType: "text/plain", bytes })).toBe(
+  it("classifies text, images, and designation-only binaries on the server", async () => {
+    expect(await classifyUpload({ filename: "notes.unknown", mimeType: "text/plain", bytes })).toBe(
       "markdown",
     );
     expect(
-      classifyUpload({ filename: "cover.png", mimeType: "image/png", bytes: new Uint8Array([0]) }),
+      await classifyUpload({
+        filename: "cover.png",
+        mimeType: "image/png",
+        bytes: new Uint8Array([0]),
+      }),
     ).toBe("image");
     expect(
-      classifyUpload({
+      await classifyUpload({
         filename: "archive.bin",
         mimeType: "application/octet-stream",
         bytes: new Uint8Array([0]),
@@ -220,6 +227,7 @@ it("rejects a committed address different from the reservation", async () => {
       bytes: new Uint8Array(),
       mimeType: "text/plain",
       storageUrl: null,
+      hasPreview: false,
     }),
   ).toEqual({ ok: false, definite: true });
 });

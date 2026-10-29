@@ -4,6 +4,7 @@ import { t } from "@lingui/core/macro";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
+import { useHasActivityToast } from "@/components/app/toast-registry";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
@@ -34,8 +35,8 @@ import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcru
 import { MobileChatHost } from "./MobileChatHost";
 import { MobileChatSheetHeader } from "./MobileChatSheetHeader";
 import { MobileContextBrowser } from "./MobileContextBrowser";
-import { MobileCreateEntryMenu } from "./MobileCreateEntryMenu";
 import { MobileDocumentHost } from "./MobileDocumentHost";
+import { MobileFilesActions } from "./MobileFilesActions";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
@@ -54,6 +55,7 @@ export function MobileProject(props: MobileProjectProps) {
     setChatOpen(true);
   };
   useDockReveal(openChatSheet);
+  const hasActivity = useHasActivityToast();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -69,7 +71,7 @@ export function MobileProject(props: MobileProjectProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}`;
   useEffect(() => setCreating(null), [contextLocation]);
-  const crumbs = contextBreadcrumbSegments(props);
+  const crumbs = contextBreadcrumbSegments(props, localTab?.name);
   const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
   const work = useWorkChrome(
     props.projectId,
@@ -135,6 +137,7 @@ export function MobileProject(props: MobileProjectProps) {
           ) : undefined
         }
       />
+      {hasActivity ? <div aria-hidden className="h-16 shrink-0" /> : null}
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
         <ProjectRouteBoundary
           destinationKey={props.routeLocationKey}
@@ -211,7 +214,15 @@ function trailingAction(
     !props.activeContextPath &&
     !props.activeLocalDocumentId
   ) {
-    return <MobileCreateEntryMenu onSelect={onRequestCreate} />;
+    return (
+      <MobileFilesActions
+        projectId={props.projectId}
+        editorWorkId={props.editorWorkId}
+        scheme={props.activeContextScheme}
+        folder={props.activeContextFolder}
+        onSelect={onRequestCreate}
+      />
+    );
   }
   return undefined;
 }
@@ -294,7 +305,10 @@ function renderActiveView(
   }
 }
 
-function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(
+  props: ReviewScopedProjectProps,
+  localName?: string,
+): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
   // `t` resolves at render time (this runs per render), matching how
   // schemeLabel localizes — both produce plain strings for the segment.
@@ -302,7 +316,7 @@ function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBread
   if (props.activeLocalDocumentId)
     return [
       { label: filesLabel, onSelect: () => props.onExitContextScheme() },
-      { label: t`Untitled` },
+      { label: localName ?? t`Untitled` },
     ];
   if (!props.activeContextScheme) {
     // Files root: nothing is drilled in, so "Files" is the current location.

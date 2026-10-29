@@ -40,6 +40,9 @@ class MemoryFolders implements FolderNamespaceStore {
   async readFolders(): Promise<readonly FolderNamespaceRecord[]> {
     throw new Error("Not used by reconciliation");
   }
+  async readOperation() {
+    return null;
+  }
   async commitFolder(write: FolderNamespaceWrite) {
     if (write.expectedRevision !== (this.record?.revision ?? null)) return "stale" as const;
     validateFolderNamespaceUpdate(this.record, write.next);
@@ -460,6 +463,8 @@ it.each([
       path: ["A", "Child", "doc.md"],
       uri: "manuscript://A/Child/doc.md",
       aliases: [],
+
+      hasProperties: false,
       provisionalName: false,
       editable: true,
       filetype: "markdown",
@@ -557,6 +562,7 @@ it.each([
         },
         canonical: loc("w1", "B/doc.md"),
         canonicalParent: { kind: "folder" as const, folderId: "B" },
+        serverHold: "held" as const,
         lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "1" },
         aliases: {},
         obligations: {},

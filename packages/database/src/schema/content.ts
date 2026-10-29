@@ -154,6 +154,7 @@ export const contextSources = pgTable(
     description: text("description"),
     isPrimary: boolean("is_primary").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
+    orderPolicy: text("order_policy").$type<"default" | "manual">().notNull().default("default"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -207,6 +208,7 @@ export const contextSources = pgTable(
       "context_sources_adapter_type_valid",
       sql`${table.adapterType} IN ('local', 'google_drive', 'dropbox', 'notion')`,
     ),
+    check("context_sources_order_policy_valid", sql`${table.orderPolicy} IN ('default', 'manual')`),
   ],
 );
 
@@ -224,6 +226,8 @@ export const folders = pgTable(
     documentAlias: text("document_alias").notNull(),
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
+    rank: text("rank"),
+    orderPolicy: text("order_policy").$type<"default" | "manual">().notNull().default("default"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -246,6 +250,10 @@ export const folders = pgTable(
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
       .where(sql`${table.deletedAt} IS NULL`),
+    index("folders_sibling_rank_live")
+      .on(table.contextSourceId, table.parentId, sql`${table.rank} COLLATE "C"`, table.id)
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
+    check("folders_order_policy_valid", sql`${table.orderPolicy} IN ('default', 'manual')`),
     index("folders_context_parent_alias_active")
       .on(table.contextSourceId, table.parentId, table.documentAlias)
       .where(sql`${table.deletedAt} IS NULL`),
@@ -290,8 +298,11 @@ export const documents = pgTable(
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
+    /** A browser-drawable preview sits beside the original object (`previewObjectKey`). */
+    hasPreview: boolean("has_preview").notNull().default(false),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
     provisionalName: boolean("provisional_name").notNull().default(false),
+    rank: text("rank"),
     metadata: jsonbDefault("metadata"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -345,6 +356,9 @@ export const documents = pgTable(
       table.name,
       table.extension,
     ),
+    index("documents_sibling_rank_live")
+      .on(table.contextSourceId, table.folderId, sql`${table.rank} COLLATE "C"`, table.id)
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
     // Hidden documents occupy no live path; nothing makes them unique.
     uniqueIndex("documents_context_folder_name_live")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
@@ -403,9 +417,12 @@ export const documentMarkdownProjections = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index("document_markdown_projections_fts").using(
+    // Postgres refuses a tsvector over 1 MB, and the refusal aborts the writing transaction.
+    // 150,000 characters stays under it even for distinct two-character CJK words (4.7 bytes
+    // per character); text past that is not in the full-text index. Nothing queries this index yet.
+    index("document_markdown_projections_fts_head").using(
       "gin",
-      sql`to_tsvector('simple', ${t.markdown})`,
+      sql`to_tsvector('simple', left(${t.markdown}, 150000))`,
     ),
     index("document_markdown_projections_trgm").using("gin", sql`${t.markdown} gin_trgm_ops`),
   ],
@@ -448,8 +465,8 @@ export const uploadIntakes = pgTable(
   (table) => [
     unique("upload_intakes_project_intake_unique").on(table.projectId, table.intakeId),
     unique("upload_intakes_document_unique").on(table.documentId),
-    uniqueIndex("upload_intakes_source_path_live")
-      .on(table.contextSourceId, sql`lower(${table.finalPath})`)
+    uniqueIndex("upload_intakes_source_path_exact_live")
+      .on(table.contextSourceId, table.finalPath)
       .where(sql`${table.state} <> 'deleted'`),
     check(
       "upload_intakes_state_valid",

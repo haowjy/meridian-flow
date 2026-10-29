@@ -15,7 +15,15 @@ atomically commits the received checkpoint and only those resource observations
 whose captured revision is still current. A late response cannot regress a newer
 canonical location. Scope disappearance and invalidation change projection
 membership only; they never imply global deletion. Resource aliases are obsolete
-local identities after remint, not catalog identity aliases.
+local identities after remint, not catalog identity aliases. A folder's `aliases` are the
+same thing: the record keeps its handle (opaque, like a document's: nothing derives it from an id),
+its `folderId` is the current id, and requests are matched against the current id or an alias.
+Catalog discovery gives a folder it lists its own handle (`catalog-folder:<entry id>`), so a spent
+id that comes back in a catalog is a second folder beside the reminted record, not a collision.
+One acquisition attempt (a page) that leaves the checkpoint revision, applied
+revision and observed head exactly where they were made no progress, so eight of
+them in a row reject the acquisition instead of spending the page budget: a
+catalog that cannot install is an error the UI can retry, not a longer wait.
 A join (`resource-join.ts`) is the same re-identification triggered by a `joined`
 create answer or a catalog entry's `joinedFrom`: a create that carries its
 destination landed on a document that already existed (a branch's, hidden live until
@@ -109,6 +117,22 @@ document id, classification or content database. The browser account owner
 implements `FolderNamespaceStore` alongside its file metadata; it must observe
 folder commits through that same projection owner, not a second cache writer.
 
+A folder made here is local until the server accepts it, as a new document is: its record is
+`serverHold: "local"` (see "What the server holds" below), has no `canonical` place
+(`canonical: null`), and its first intention is a `set-folder-location` placed under a
+device-minted folder id (`planFolderCreate`). Dispatch (`prepareFolderNamespaceAttempt`) turns a
+placement over a `local` record into a `create-folder` request carrying the folder id and
+destination; `namespaceRequestId` is that folder id, so a replay is the same request. An accepted
+answer sets `canonical` from the answered path; a typed refusal leaves the record needing repair
+(`create`), listed in Unfiled under the name last typed, as a refused document is. Later intentions
+queue behind the create like any placement, and its admission makes the folder a predecessor of
+whatever is put inside or after it. Deleting a folder the server may not hold
+(`!deleteNeedsServer`: `local` or `spent`) settles locally with the same Undo
+window a document gets (`localDeletion.notBefore`); the replica settles every local
+folder and document under it under that one operation, so one Undo restores the subtree.
+`folderListedLocally` keeps a row in the projection beside the catalog's until a catalog
+read observes the folder.
+
 File and folder records share immutable journal validation, receipt matching,
 account-bound transport and the CAS replay loop. `owningLocationIntent` is the
 placement ownership rule for both projection and admission; superseded rejected
@@ -145,8 +169,61 @@ lowers its deletion version.
 `unexecutable-after-terminal` history survives revival. `publishResourceTerminal` and
 its cleanup acknowledgement are no-ops at or below `revivedFrom`'s generation.
 
-Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name }`, where a
-parent is a picked folder identity or qualified area root. Linked creation alone
+Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name,
+position? }`, where `position` is one of start, end, before a sibling identity, or after a sibling
+identity. The destination parent remains explicit: an anchor that moves cannot retarget the command.
+The server resolves this intent and mints the stored rank under the namespace lock. A parent owns an
+explicit default/manual order policy; ranks affect display only for manual parents.
+`sibling-order.ts` is the one comparator: the catalog projection, folder projection and the
+server's tree readers and `ls` all import it, so the tree, Move… and the model see one order. Ranks
+compare bytewise there and `COLLATE "C"` in SQL; a locale collator would order them differently on
+each side. Don't add a surface-local sort.
+Canonical ranks and folder child-order policy are retained with canonical identity metadata as
+checkpoints reload or temporarily disappear. Synthetic ranks are projection-only: transport sends the
+relative position, and a newer catalog observation replaces the prediction.
+
+### Placement journal (`placement-journal.ts`)
+
+A position reads the list earlier placements produced ("put B after A" means after A *as moved*), so
+placements across file and folder journals have a causal order that no single entry's journal holds.
+Each placement-bearing intent (move, reorder, delete, create with a destination) carries a
+`PlacementAdmission`, written once under the account's cross-tab admission lock and immutable after:
+a sequence `order`, conflict `scope` keys (subject; the sibling sequences it leaves and joins; its
+anchor; the destination's folder ancestry) and `predecessors`, the intents still unresolved at that
+moment with an overlapping scope. The lock covers reading the snapshot and committing the intent, so
+two tabs cannot assign contradictory order. Admission reads only what is in flight: unresolved intents and the
+accepted one an outstanding canonical refresh waits on, found by index
+(`readPlacementAdmissionView`), never a handle's whole journal. The high-water mark is a stored
+counter raised in the commit that stores an admitted intent, so it is read inside that lock without
+a scan. Folder records (embedded histories, needed for parent resolution) and the reactive account
+projection still load complete journals, which Undo and receipts read. A predecessor reference names the admission `order`, the placement's
+logical identity, and resolves to the newest intent carrying it, so a remint's replacements stay
+waited on. Project area roots are qualified by project in the scope; the User area is shared.
+
+Three consumers read that record and nothing else:
+
+- **Projection** folds every unresolved placement in `order` over canonical state: membership,
+  parent-policy promotion and sequence position together (`optimistic-sibling-order.ts`). An accepted
+  placement leaves the fold when its canonical refresh installs.
+- **Dispatch** sends an intent only after every predecessor is resolved (`placementDispatchVerdict`).
+  Unrelated intents share no scope and never wait on each other. A predecessor that never took effect
+  (refused, cancelled) while this intent's position was anchored on its subject sends this intent to
+  typed repair instead of executing it against a different list. A pending folder create is a
+  predecessor of every intent that names the folder as its destination parent or position anchor;
+  if the create is refused, those intents settle to repair with it.
+- **Undo** is a compensating placement batch. It asks which operation owns a subject's placement
+  (the newest live placement intent; after a receipt, the canonical `locationVersion`), never whether
+  a sibling gap still looks the same.
+
+Transport waits are bounded (`NAMESPACE_REQUEST_DEADLINE_MS`), but a deadline ends only the wait: the
+attempt stays `submitted`, the next pass reads its receipt or re-sends the identical recorded request
+with its operation id, and dependents keep waiting on it. A new operation is never minted because a
+response was lost.
+
+Exact replay of one client's intents is guaranteed. Its predicted final list under arbitrary peer
+changes is not: the server resolves each command against the current list.
+
+The `parent` is a picked folder identity or qualified area root. Linked creation alone
 captures the deepest existing identity and missing folder names beneath it.
 Projection appends that suffix to the anchor's current home and reuses navigation-only
 ancestor completion until real catalog identities arrive. Preparation carries both
@@ -227,8 +304,66 @@ concurrent commands but are not server freshness.
 
 Typed non-retryable HTTP 4xx refusals settle a namespace attempt when route intake
 rejects before any server receipt exists: persist the refusal against the
-submitted operation id and never invent a receipt. Bare HTTP or network failures
-still need receipt evidence and stay replayable.
+submitted request's identity (`namespaceRequestId`) and never invent a receipt.
+Bare HTTP or network failures still need receipt evidence and stay replayable.
+The journal accepts a refusal on every request kind, so a request kind added later
+(folder create, Copy) settles the same way and only has to say what its identity is.
+
+### What the server holds (`serverHold`)
+
+One state per id, on `ResourceDescriptor` and `FolderNamespaceRecord`, written once and set only
+by what the server answered (`server-hold.ts`, `holdAfterAttempt`). Nothing derives it from
+`canonical`, `lifecycle` or the shape of an attempt's outcome, so a document and a folder cannot
+disagree about it.
+
+| `serverHold` | Means | Next placement | Delete |
+| --- | --- | --- | --- |
+| `local` | no answer shows the server holds the id: never sent, or every create sent was refused | `create` | settles on this device |
+| `uncertain` | a create was sent and not answered; it may have landed | waits (replays the same create) | goes to the server |
+| `held` | the server accepted the id, or a catalog lists it | a move | goes to the server |
+| `spent` | the server holds the id where the writer cannot reach it (deleted, hidden, archived or deleted Work, lost grant, another kind) | none: the id is replaced | settles on this device |
+
+Only a create attempt changes it: sending one makes it `uncertain`; a typed refusal frees the id
+(`local`: the create routes answer a held id before any refusal); an accepted answer makes it
+`held`; a `conflict` answer makes it `spent`. A refused move leaves a held id held. Held never
+leaves held (`resource-records-policy.ts`).
+
+A `spent` id never succeeds again, so its work moves to a new one (`awaitsRemint`: spent and a
+placement is `needs-repair` or queued unsent). The runner does it, not the writer: it mints an id
+and calls `remintResource` or `remintFolder`, which share `remintJournal` (the failed placement is
+superseded, a retry carries the same admission order, unsent dependents are cancelled and queued
+again, and every copy's admission scope names the new id, so a placement admitted into the
+replacement waits on it; admission also resolves an id a remint retired to its replacement,
+`currentSpec`). The writer's repair after a refusal is an ordinary placement over a `local` id. A folder
+remint keeps the record and its handle, takes a new `folderId`, and rewrites the unsent
+placements in other records that named the old folder (destination parent or sibling) in the
+same IndexedDB transaction (`planFolderRemintDependents`, applied by `commitFolder`), so work
+queued inside the folder lands wherever the folder does. A journal that `awaitsRemint` is a
+predecessor the app gate waits on, not one it releases into a refusal. `joined` is not a hold:
+the id was taken by a document that already existed, the join re-identifies the record
+(`resource-join.ts`) and it is `held`.
+
+A refused first placement is the first placement refused. How the server materializes a
+document identity is a property of the resource (`ResourceDescriptor.materialization`: an
+untitled document the server names, with `unnamed` for the editor's create), and the placement
+is always `set-location` / `set-folder-location`, naming its destination. Copy is one operation
+over several roots and does not ride this seam: it is an operation journal (see "Operations").
+A `local` document sends a `create`; once `held`, the same intent sends a move
+(`prepareNamespaceAttempt`). The intent is `needs-repair`, never
+resent and not woken by the 30-second retry; the document stays local (lifecycle
+`local`, no canonical place), shown in Unfiled at its provisional name with its text and
+exact content. Queued moves behind it are cancelled (`resolveRefusedLocationChain`) and the
+newest one is offered back as the repair destination (`namespaceRepairDestination`). The
+writer repairs it by placing it: `planResourceLocation` supersedes the refused intent
+and files the same `set-location` again at the picked destination, with its sibling
+`position` (a refusal frees the id: the create route answers an id it holds before it checks
+authority, so a refused create means the server holds none; an id held where the writer can
+no longer edit answers `conflict`, which is `spent`). Deleting it settles locally
+(`!deleteNeedsServer`), including a delete queued behind the
+in-flight create when the refusal arrives (`prepareNamespaceAttempt`). The local deletion keeps
+the exact content for `LOCAL_DELETION_UNDO_MS` (`cleanup.notBefore`); `planLocalDeletionUndo`
+supersedes it and files the last placement again inside the window. A refusal is the writer's
+to repair; a `conflict` is the runner's to replace (above).
 
 Folder deletion shares the folder namespace journal. Only a delete receipt's exact
 document IDs authorize atomic descendant terminalization with the folder
@@ -250,3 +385,82 @@ authoritative upserts. Entries absent after replay are absent from that scope.
 The server republishes all surviving affected identities, even if another
 repair already published them. Checkpoints contain only the resulting complete
 tree; there is no hidden-entry set or subtree-refetch lifecycle.
+
+### Operations (`operation-journal.ts`, `first-place.ts`)
+
+An action that spans several records (Copy) is journaled once, in an `OperationRecord`:
+`operationId`, `projectId`, `revision` and ordinary `NamespaceIntent`s (attempts, admission, state)
+whose `handle` is the operation id. It is the third journal kind beside a resource's and a folder's
+and shares their machinery.
+
+- **Store and stream.** The browser store keeps operations in the `operations` table (Dexie version 6,
+  keyed by `operationId`, indexed by `projectId`). `ResourceProjectionSnapshot.operations`, the one
+  `liveQuery` and the placement admission view carry them, so a placement can name an operation as a
+  predecessor (`PlacementPredecessor.kind: "operation"`, `handle` = operation id) and wait on it.
+- **Replay.** `reconcileOperationNamespace` runs the generic `reconcileNamespaceJournal`. The account
+  reconciler schedules it as a third `scheduleOnce` arm (a runner per operation after a reload,
+  `retryAll`, the wake set that reruns waiting placements). An operation is sent under its own
+  operation id and no other: the validator refuses an attempt whose request names another, and the
+  runner hands `prepare` only an attempt id. The one id keys the replay, the receipt, each root's
+  refresh barrier and retention.
+- **Roots.** A record an operation made carries `copiedBy: { operationId, projectId }`. It holds no create of its
+  own (no `materialization`, no create eligibility; a folder may hold no intents), and it is born
+  `uncertain`. The validators refuse `local` and `spent` for it and a change of operation, because
+  `local` means the next placement is a create and a delete settles on this device: a missed dispatch
+  gate would send a create under the operation's id, or settle a delete while the operation may still
+  land. Only the operation's receipt moves a root to `held`.
+- **First place.** `first-place.ts` answers which accepted answer stands behind a record's place
+  (`firstPlaceWitnessed`) and behind a canonical-refresh barrier (`refreshWitness`): its own create or
+  move, or the Copy receipt of the operation `copiedBy` names. The folder and document validators and
+  both refresh hooks ask it. The store reads the operation inside the transaction that validates a
+  record, so an install the receipt does not support is refused. The refresh hooks take the project
+  for the exact-ID lookup from the witness, which is the operation's project for a root.
+- **Retention.** Every projection emit reads the whole store, so `retiredOperations` names what to drop
+  (`retireOperation`, a revision-checked delete): a settled operation after its notice window
+  (`NAMESPACE_RECEIPT_NOTE_TTL_MS`) and once no root's refresh barrier names it, a cancelled or
+  superseded one at once. Unresolved and `needs-repair` operations stay; a refusal outlives a reload
+  until the writer dismisses it. The sweep runs on every projection emit and on `retryAll`.
+
+### Copy (`copy-roots.ts`, `operation-journal.ts`)
+
+One Copy is one operation record holding a single `copy` intent (`CopyDesired`: the roots, each with
+its source identity, read view, optional state vector and predicted name, and one destination
+parent with an optional position). `planCopy` admits it with a root record per selected entry, in
+one transaction (`OperationWrite.roots.created`); the roots are the selection's outermost entries as
+this device sees them at the drop.
+
+- **Dispatch** (`prepareCopyAttempt`) finds every source and the destination by identity
+  (`lookupIdentity`), never by a stored path, so a source renamed or moved since the drop still
+  copies. A source or destination that is gone is a refusal sent nowhere. The server copies a
+  selection through its outermost roots, judged by the places it holds now (`outermostRoots` in the
+  Copy command), and another peer can nest one selected row inside another between the drop and the
+  send. So dispatch applies that same rule to the looked-up places: the request names only the
+  outermost roots, and the roots it leaves out are dropped with their records in the write that
+  submits the attempt. Every `copyId` sent comes back in the receipt. The request carries the
+  device's `copyId` per root and each document's state vector captured at the drop, so the server
+  waits for the room to hold the writer's unsent edits and a resend after more typing is the same
+  Copy.
+- **Answer.** `settleCopy` writes the operation's outcome and every root in one transaction. A
+  receipt places each root (`placeResourceRoot`, `placeFolderRoot`): `held`, `canonical` and
+  `canonicalParent` from the receipt and the request's owner, and a canonical refresh keyed to the
+  operation id so queued moves wait for a catalog read. A refusal of any kind (a typed 4xx, a
+  `conflict` receipt, `source_behind` past its bound) drops the roots and their intents; the
+  operation goes `needs-repair` and stays until the writer resolves it
+  (`resolveRefusedCopy`: `superseded`, for Dismiss and for Copy to…, which sends a new Copy).
+  An accepted answer the roots cannot take is a refusal too, not a throw: a receipt that leaves
+  out a root it was sent for (`settleCopy`), or a store that refuses a root's place
+  (`reconcileOperationNamespace` refuses the operation in a second commit). Nothing that fails
+  while settling may leave the operation `received`, because it holds its admission keys and
+  every later placement waits behind it. The refusal keeps the accepted outcome, so the
+  journal validator lets a `needs-repair` intent with one be superseded.
+- **`source_behind`** is resent under the same operation id for `SOURCE_BEHIND_BOUND_MS` from the
+  first one (`OperationRecord.behindSince`), then refused. The server recorded nothing, so
+  retrying is a new Copy.
+- **Projection.** `overlayCopyRoots` shows a root at its operation's destination under its predicted
+  name while the operation is unanswered, as if the root held one pending placement; the store
+  applies it to the projection stream and to nothing else, so admission and dispatch read the stored
+  records. Queued work on the root (a rename, a move, a delete) is newer than the overlay and
+  wins. A folder root shows no children until the catalog lists them.
+- **Admission scope** (`copyScopeKeys`): `entry:<copyId>` and `parent:folder:<copyId>` for every
+  root, `entry:<sourceId>` for every source, and the destination's. Later work on a copy waits for
+  the Copy; the Copy waits behind a pending move or create of its source.

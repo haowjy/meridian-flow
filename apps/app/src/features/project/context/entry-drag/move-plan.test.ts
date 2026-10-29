@@ -1,14 +1,15 @@
 /**
  * A drop is planned from where the replica places each dragged row now, not
  * from what the drag recorded: rows are found by identity in any catalog, a
- * selection that spans systems moves nowhere, a folder carries what's inside
- * it, and a folder never lands inside itself.
+ * selection that spans systems asks (the list asks before
+ * moving it), a folder carries what's inside it, and a folder never lands
+ * inside itself.
  */
 import type { ParentRef, ResourceLocation, ResourceRecord } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import type { DragEntry, EntryRef } from "./entry";
-import { type MoveArea, type MoveView, planMove } from "./move-plan";
+import { type EntryDrag, type EntryRef, LIVE_VIEW } from "./entry";
+import { type MoveArea, type MoveView, planMove, resolveDrop } from "./move-plan";
 
 const location = (
   scheme: ResourceLocation["scheme"],
@@ -79,12 +80,13 @@ const area = (
   scheme,
   owner: { workId: null },
   catalog: catalog(rootId, folders),
-  movable: true,
+  accepts: true,
 });
 
 const view = (areas: MoveArea[]): MoveView => ({
   records: [record("ch1", ["local-ch1"]), record("note")],
-  works: [],
+  // The Work `note` sits in must be listed: a Scratch row of an unlisted Work may not Move.
+  works: [{ id: "w1", handle: null, archivedAt: null }],
   noWork: null,
   placement: {
     resourceLocation: (r: ResourceRecord) =>
@@ -97,18 +99,23 @@ const view = (areas: MoveArea[]): MoveView => ({
   areas,
 });
 
-const drag = (...refs: EntryRef[]): DragEntry[] =>
-  refs.map((ref) => ({ ref, name: keyOf(ref), uri: "", movable: true }));
+const planDrop = (view: MoveView, drag: EntryDrag, target: Parameters<typeof resolveDrop>[2]) =>
+  planMove(view, resolveDrop(view, drag, target));
+
+const drag = (...refs: EntryRef[]): EntryDrag => ({
+  entries: refs.map((ref) => ({ ref, name: keyOf(ref), view: LIVE_VIEW })),
+  source: "list-row",
+});
 const file = (id: string): EntryRef => ({ kind: "file", id });
 const folder = (id: string): EntryRef => ({ kind: "folder", id });
 const into = (rootId: string, scheme: "manuscript" | "kb", entryId: string, name: string) => ({
   scheme,
   catalogRootId: rootId,
-  folder: { entryId, path: `/${name}`, name },
+  folder: { entryId, path: `/${name}`, uri: `${scheme}://${name}/`, name },
 });
 
 it("finds a dragged row by identity in a catalog the destination list doesn't show", () => {
-  const plan = planMove(
+  const plan = planDrop(
     view([area("kb", "kb-root", { characters: "characters" })]),
     drag(file("local-ch1")),
     into("kb-root", "kb", "characters", "characters"),
@@ -126,18 +133,20 @@ it("finds a dragged row by identity in a catalog the destination list doesn't sh
   });
 });
 
-it("moves nowhere when the dragged rows span systems", () => {
-  const plan = planMove(
-    view([area("kb", "kb-root", { characters: "characters" })]),
-    drag(file("ch1"), file("note")),
-    into("kb-root", "kb", "characters", "characters"),
-  );
-  expect(plan.kind).toBe("none");
+it("asks about a selection that spans systems and still plans every row", () => {
+  const kb = view([area("kb", "kb-root", { characters: "characters" })]);
+  const target = into("kb-root", "kb", "characters", "characters");
+  const rows = drag(file("ch1"), file("note"));
+  expect(resolveDrop(kb, rows, target)).toMatchObject({ asks: true });
+  expect(planDrop(kb, rows, target)).toMatchObject({
+    kind: "ready",
+    moves: [{ entry: file("ch1") }, { entry: file("note") }],
+  });
 });
 
 it("carries a folder's contents with it and refuses it inside itself", () => {
   const manuscript = view([area("manuscript", "m-root", { part: "Part", act: "Act" })]);
-  const carried = planMove(manuscript, drag(folder("part"), file("ch1"), folder("act")), {
+  const carried = planDrop(manuscript, drag(folder("part"), file("ch1"), folder("act")), {
     scheme: "manuscript",
     catalogRootId: "m-root",
     folder: null,
@@ -145,6 +154,6 @@ it("carries a folder's contents with it and refuses it inside itself", () => {
   // Everything rode along with Part, which already sits at the top level.
   expect(carried.kind).toBe("none");
   expect(
-    planMove(manuscript, drag(folder("part")), into("m-root", "manuscript", "act", "Act")),
+    planDrop(manuscript, drag(folder("part")), into("m-root", "manuscript", "act", "Act")),
   ).toEqual({ kind: "inside-itself" });
 });

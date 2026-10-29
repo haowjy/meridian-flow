@@ -43,6 +43,8 @@ function snapshot(path = "chapter.md", revision = "1"): CatalogSnapshot {
         parentId: "source",
         name: path,
         aliases: [],
+
+        hasProperties: false,
         path: [path],
         uri: `manuscript://${path}`,
         provisionalName: false,
@@ -63,6 +65,7 @@ function resource(path: string, revision: number, refresh = false): ResourceReco
       content: { kind: "exact", databaseName: "exact", schema: "0.5" },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: { scheme: "manuscript", path: `/${path}`, name: path, workId: null },
+      serverHold: "held",
       lifecycle: { kind: "acknowledged", availabilityGeneration: "generation" },
       aliases: {},
       obligations: refresh
@@ -91,10 +94,15 @@ class MemoryMetadata implements ResourceMetadataStore {
     return this.readResource(key);
   }
 
+  async readOperation() {
+    return null;
+  }
+
   async readProjection(project: string): Promise<ResourceProjectionSnapshot> {
     return structuredClone({
       records: [...this.records.values()],
       folders: [],
+      operations: [],
       catalogs: [...this.catalogs.values()].filter((catalog) => catalog.projectId === project),
     });
   }

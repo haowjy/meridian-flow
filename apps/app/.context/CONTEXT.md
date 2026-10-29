@@ -236,3 +236,21 @@ authenticated API or SQL, but never write Yjs content or
 derived cache. Teardown removes context sources and relies on cascades.
 
 Related server contracts live in [the server context](../../server/server/domains/threads/.context/CONTEXT.md).
+
+## Showing a saved file
+
+Every saved file is displayed. An image browsers can't draw has a server-made
+preview. The read answers carry the original's URL (Download) and `drawUrl`,
+what to draw: the preview, the original, or nothing. The server decides; the
+client keeps no list of drawable types. The context viewer and the editor's
+`image` and `figure` nodes draw `drawUrl`; with none, or when an unknown
+binary, an image with no preview, or a decode failure leaves nothing drawable,
+a `FileCard` shows name, type, size, Download. An `<img>` failure gets one
+automatic URL refresh, then the card, and the editor then treats that picture
+as undrawable: it keeps re-signing the card's Download before expiry and never
+retries the `<img>`. Retry stays only for a signed-URL request that failed. Draft review opens any
+binary draft (`ThreadDraftListItem.binary`) in the same preview.
+
+## Import activity
+
+The authenticated app root owns one account-keyed import coordinator and the app-wide activity toast registry. They survive project navigation, so uploads continue and their status remains reviewable after the initiating tree unmounts. On desktop the region (`ToastRegion`) sits at the window's bottom-right; F8 focuses it. The open project's Undo notices (delete, move, copy, refused copy) join it as registry slots (`useToastSlot`): the registry orders and folds them with the import toasts, and the notice owner portals its card in, so the card keeps the project's React context. Desktop has one notice place for every surface, so a newer Undo notice replaces the older. On a phone the region is a bar under the top bar with a bottom sheet, and project notices stay inline at the foot of the surface that made them. The phone shell needs a coarse pointer (`usePhoneShell`): a 390px window with a fine pointer is the desktop shell, so a phone probe must emulate touch.

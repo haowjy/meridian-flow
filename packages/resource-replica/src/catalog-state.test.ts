@@ -318,6 +318,7 @@ describe("catalog cache reducer", () => {
         identity: { documentId: "document", revision: 1 },
         content: { kind: "exact", databaseName: "exact", schema: "0.5" },
         canonical: null,
+        serverHold: "local",
         lifecycle: { kind: "local" },
         aliases: {},
         obligations: {},
@@ -350,6 +351,7 @@ describe("catalog cache reducer", () => {
   describe("planCatalogInstallation", () => {
     it("does not overwrite canonical location until a post-receipt observation", () => {
       const current = record({
+        serverHold: "held",
         lifecycle: { kind: "acknowledged", availabilityGeneration: "authority" },
         canonical: { scheme: "manuscript", path: "/old.md", name: "old.md", workId: null },
         obligations: { canonicalRefresh: { operationId: "move", identityRevision: 1 } },
@@ -512,7 +514,7 @@ describe("catalog cache reducer", () => {
     expect(writes).toHaveLength(3);
     for (const write of writes) validateFolderNamespaceUpdate(null, write.next);
     expect(writes.find((write) => write.next.folderId === "A")?.next).toMatchObject({
-      handle: "folder:A",
+      handle: "catalog-folder:A",
       canonical: loc("P/A"),
       canonicalParent: { kind: "folder", folderId: "P" },
       intents: [],
@@ -644,6 +646,7 @@ describe("catalog cache reducer", () => {
     let state: ResourceProjectionSnapshot = {
       records: [],
       folders,
+      operations: [],
       catalogs: [planCatalogInstallation({ projectId, records: [], view }).checkpoint],
     };
     const metadata = {
@@ -653,7 +656,12 @@ describe("catalog cache reducer", () => {
         expect(state.catalogs[0]!.revision).toBe(input.expectedRevision);
         const byId = new Map(state.folders.map((f) => [f.handle, f]));
         for (const w of input.folders) byId.set(w.next.handle, w.next);
-        state = { records: [], folders: [...byId.values()], catalogs: [input.next] };
+        state = {
+          records: [],
+          folders: [...byId.values()],
+          operations: [],
+          catalogs: [input.next],
+        };
         return "committed" as const;
       },
     } as unknown as ResourceMetadataStore;
@@ -750,6 +758,7 @@ describe("catalog cache reducer", () => {
         observationVersion: "3",
         classification: { editable: true, filetype: "markdown", schemaType: "document" },
         content: { kind: "unacquired" },
+        serverHold: "held",
         lifecycle: { kind: "acknowledged", availabilityGeneration: null },
         aliases: {},
         obligations: {},

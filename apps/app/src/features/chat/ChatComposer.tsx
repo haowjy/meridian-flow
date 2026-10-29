@@ -39,6 +39,8 @@ type ChatComposerProps = {
   writeMode: AiWriteMode;
   onWriteModeChange: (mode: AiWriteMode) => void;
   composerStrip?: ReactNode;
+  /** A desktop file drag is over the transcript; the composer is where the files will go. */
+  fileDropActive: boolean;
   availableSkills: ReturnType<typeof useThreadAvailableSkills>["skills"];
   referenceCatalog: ReturnType<typeof useReferenceBrowserCatalog>;
   chatCommands: readonly ComposerChatCommand[];
@@ -62,6 +64,7 @@ function ChatComposerComponent({
   writeMode,
   onWriteModeChange,
   composerStrip,
+  fileDropActive,
   availableSkills,
   referenceCatalog,
   chatCommands,
@@ -100,6 +103,7 @@ function ChatComposerComponent({
         ref={composerRef}
         takeover={takeover}
         variant="pinned"
+        fileDropActive={fileDropActive}
         attached={
           <>
             {composerStrip ? (

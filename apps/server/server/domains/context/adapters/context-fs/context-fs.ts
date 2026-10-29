@@ -19,6 +19,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
+import { compareCatalogSiblings } from "@meridian/resource-replica";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
@@ -40,7 +41,9 @@ import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
+import { documentMetadataFacts } from "../../document-metadata.js";
 import type {
+  AdapterCreatedFolder,
   AdapterDeleteResult,
   AdapterFault,
   AdapterFileEntry,
@@ -55,12 +58,14 @@ import type {
 } from "../../ports/context-adapter.js";
 import { schemeCapabilities } from "../../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../../ports/context-command-transaction.js";
+import type { ContextCopyAdapter } from "../../ports/context-copy.js";
 import {
   type ContextDocument,
   type ContextDocumentStore,
   ContextEntryConflictError,
 } from "../../ports/context-document-store.js";
 import type {
+  AdapterCreateFolderOptions,
   AdapterCreateUntitledOptions,
   ContextListOptions,
   ContextScheme,
@@ -78,6 +83,7 @@ import type {
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
 import { BoundWrites, binaryTrackedWriteFault, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
+import { createContextFsCopyAdapter } from "./copy-adapter.js";
 import {
   AMBIGUOUS_PATH_FAULT,
   type ContextPlacement,
@@ -212,6 +218,8 @@ export class ContextFS implements ContextSchemeAdapter {
     commitRecursiveDelete: (command) => this.commitRecursiveDelete(command),
   };
   readonly branchTree?: ContextBranchTreeAdapter;
+  /** Copy's read and insert halves (`context/copy/` decides what to copy). */
+  readonly copy: ContextCopyAdapter;
 
   constructor(deps: ContextFSDeps) {
     this.links = deps.links;
@@ -271,6 +279,13 @@ export class ContextFS implements ContextSchemeAdapter {
       executor: this.commandExecutor,
       documentSync: deps.documentSync,
       liveCreate: this.liveCreate,
+    });
+    this.copy = createContextFsCopyAdapter({
+      store: deps.store,
+      documentCreation,
+      documentSync: deps.documentSync,
+      holderUri: (path) => this.holderUri(path),
+      refuseReceive: () => this.placement.refuse("receive a copy"),
     });
     const branchTree = this.placement.branchTree;
     if (branchTree) {
@@ -382,6 +397,7 @@ export class ContextFS implements ContextSchemeAdapter {
       documentId: doc.id,
       sizeBytes: doc.sizeBytes ?? undefined,
       updatedAt: doc.updatedAt,
+      ...documentMetadataFacts(doc.metadata),
     };
     if (doc.fileType === null) {
       const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
@@ -406,6 +422,7 @@ export class ContextFS implements ContextSchemeAdapter {
       fileType: doc.fileType,
       storageUrl: doc.storageUrl,
       mimeType: doc.mimeType ?? undefined,
+      hasPreview: doc.hasPreview,
     });
   }
 
@@ -587,6 +604,7 @@ export class ContextFS implements ContextSchemeAdapter {
       leaf,
       documentId: options.documentId as DocumentId,
       ...(options.expectFolderId ? { expectFolderId: options.expectFolderId } : {}),
+      ...(options.position ? { position: options.position } : {}),
       options: { origin: options.origin },
     });
     if (!created.ok) return created;
@@ -627,6 +645,34 @@ export class ContextFS implements ContextSchemeAdapter {
     return this.placement.writeBinary(path, options);
   }
 
+  async createFolder(
+    path: string,
+    options: AdapterCreateFolderOptions,
+  ): Promise<Result<AdapterCreatedFolder, AdapterFault>> {
+    const refused = this.placement.refuse("make an empty folder");
+    if (refused) return Err(refused);
+    if (!isUuid(options.folderId)) {
+      return Err({ code: "invalid_operation", message: "folderId must be a UUID" });
+    }
+    return this.commandExecutor.run(async () => {
+      const parentId = await this.store.ensureFolderPath(path.split("/").filter(Boolean));
+      if (options.expectFolderId !== undefined && parentId !== options.expectFolderId)
+        return Err({ code: "stale_target" });
+      const created = await this.store.createFolderIfAbsent({
+        parentId,
+        name: options.name,
+        id: options.folderId,
+        ...(options.position ? { position: options.position } : {}),
+      });
+      return Ok({
+        status: created.status,
+        folderId: created.folderId,
+        path: created.path.join("/"),
+        name: created.path.at(-1) ?? options.name,
+      });
+    });
+  }
+
   async mkdir(path: string, _options?: ContextWriteOptions): Promise<Result<void, AdapterFault>> {
     const segments = path.split("/").filter(Boolean);
     // The source root always exists — empty `mkdir` is a no-op.
@@ -660,11 +706,40 @@ export class ContextFS implements ContextSchemeAdapter {
           documents.filter((doc) => doc.fileType === null).map((doc) => doc.id),
         )
       : new Map<string, string>();
-    const entries: AdapterFileEntry[] = folders.map((folder) => ({
-      path: joinPath(path, folder.name),
-      kind: "directory" as const,
-    }));
-    for (const doc of documents) {
+    const orderPolicy = await this.store.parentOrderPolicy(view, folderId);
+    const siblings = [
+      ...folders.map((folder) => ({
+        order: {
+          kind: "folder" as const,
+          name: folder.name,
+          rank: folder.rank,
+          entryId: folder.id,
+        },
+        folder,
+      })),
+      ...documents.map((document) => ({
+        order: {
+          kind: "file" as const,
+          name: renderFilename(document.name, document.extension),
+          rank: document.rank,
+          entryId: document.id,
+        },
+        document,
+      })),
+    ].sort((left, right) =>
+      compareCatalogSiblings(orderPolicy === "manual", left.order, right.order),
+    );
+    const entries: AdapterFileEntry[] = [];
+    for (const sibling of siblings) {
+      if ("folder" in sibling) {
+        entries.push({
+          path: joinPath(path, sibling.folder.name),
+          kind: "directory",
+          folderId: sibling.folder.id,
+        });
+        continue;
+      }
+      const doc = sibling.document;
       const trackedSchema =
         doc.fileType === null
           ? trackedSchemaForPersistedFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE)
@@ -883,6 +958,7 @@ export class ContextFS implements ContextSchemeAdapter {
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
         overwrite: prepared.overwrite,
+        position: prepared.position,
         graduateProvisionalName:
           "graduateProvisionalName" in prepared && prepared.graduateProvisionalName === true,
         destinationFiletype: destinationFiletype.value,
@@ -891,6 +967,9 @@ export class ContextFS implements ContextSchemeAdapter {
       return Ok({
         movedNodeId: committed.value.movedNodeId,
         ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
+        ...(committed.value.locationVersion
+          ? { locationVersion: committed.value.locationVersion }
+          : {}),
         path: committed.value.destinationPath,
       });
     }
@@ -905,11 +984,15 @@ export class ContextFS implements ContextSchemeAdapter {
       destinationPath: prepared.destinationPath,
       expectedTarget: prepared.expectedTarget,
       overwrite: prepared.overwrite,
+      position: prepared.position,
     });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
       ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
+      ...(committed.value.locationVersion
+        ? { locationVersion: committed.value.locationVersion }
+        : {}),
       path: committed.value.destinationPath,
     });
   }

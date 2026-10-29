@@ -12,6 +12,7 @@ import {
   type ResourceNamespaceTransport,
   type ResourceRecord,
   reconcileResourceNamespace,
+  untitledDestination,
 } from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -163,7 +164,9 @@ function local(): ResourceRecord {
       identity: { documentId: "document", revision: 1 },
       content: { kind: "exact", databaseName: "content", schema: null },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: 1 } },
@@ -175,7 +178,11 @@ function local(): ResourceRecord {
         intentId: "create",
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "create", folderPath: "" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },
@@ -262,6 +269,7 @@ it("recovers a committed remote create after response loss and browser restart",
         name: "Untitled.md",
         workId: null,
       },
+      serverHold: "held",
       lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     },
     intents: [{ state: "settled" }],

@@ -21,6 +21,8 @@ import {
   API_PROJECTS_PATH,
   apiProjectChatFeedPath,
   apiProjectContextCatalogPath,
+  apiProjectContextCopyPath,
+  apiProjectContextCreateFolderPath,
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
@@ -38,7 +40,11 @@ import {
   type CatalogScope,
   type CatalogSnapshot,
   type ContextReadResponse,
+  type CopyContextEntriesRequest,
+  type CopyContextEntriesResult,
   type CreateContextEntryResult,
+  type CreateContextFolderRequest,
+  type CreateContextFolderResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
   type CreateThreadRequest,
@@ -366,6 +372,20 @@ export async function createUntitledContextDocument(
     path: response.path.startsWith("/") ? response.path : `/${response.path}`,
   };
 }
+export async function createContextFolder(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  body: CreateContextFolderRequest,
+  opts?: ProjectContextRequestOptions,
+  init?: RequestInitOptions,
+): Promise<CreateContextFolderResponse> {
+  return postJson(urlFor(apiProjectContextCreateFolderPath(projectId, scheme, opts), init), body, {
+    acceptErrorResponse: acceptsContextConflict,
+    headers: init?.headers,
+    signal: init?.signal,
+  });
+}
+
 /**
  * Move (and optionally rename) a context entry across folders or schemes.
  * Paths in the request/response are scheme-relative WITHOUT a leading slash
@@ -379,6 +399,22 @@ export async function moveContextEntry(
 ): Promise<MoveContextEntryResult> {
   return postJson(urlFor(apiProjectContextMovePath(projectId, sourceScheme), init), body, {
     acceptErrorResponse: acceptsContextConflict,
+    headers: init?.headers,
+    signal: init?.signal,
+  });
+}
+
+/**
+ * One Copy: every selected root into one destination, atomically. The answer is the receipt's
+ * result; a refusal is a typed 4xx and a source that has not caught up is a retryable 502 whose
+ * details name `source_behind`.
+ */
+export async function copyContextEntries(
+  projectId: string,
+  body: CopyContextEntriesRequest,
+  init?: RequestInitOptions,
+): Promise<CopyContextEntriesResult> {
+  return postJson(urlFor(apiProjectContextCopyPath(projectId), init), body, {
     headers: init?.headers,
     signal: init?.signal,
   });

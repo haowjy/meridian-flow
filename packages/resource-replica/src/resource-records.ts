@@ -4,6 +4,12 @@ import type {
   CatalogFileClassification,
   CatalogScope,
   ContextOperationReceipt,
+  ContextParentOrderPolicy,
+  ContextSiblingPosition,
+  CopyContextEntriesRequest,
+  CopyContextEntryView,
+  CreateContextFolderRequest,
+  CreateContextFolderResponse,
   CreateUntitledContextDocumentAnswer,
   CreateUntitledContextDocumentRequest,
   DeleteContextEntryRequest,
@@ -12,6 +18,7 @@ import type {
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import type { CatalogCacheView } from "./catalog";
+import type { ServerHold } from "./server-hold";
 
 /** Account-global identity. Project access belongs to catalogs and namespace intentions. */
 export type ResourceKey = Readonly<{ handle: string }>;
@@ -72,8 +79,41 @@ export type ResourceDestination = Readonly<{
   parent: ParentRef;
   createFolders?: string[];
   name: string;
+  position?: ContextSiblingPosition;
 }>;
 export type DestinationParentLookup = (folderId: string) => ResourceLocation | null;
+
+/**
+ * How the server first makes a document identity it does not hold yet, while the writer's first
+ * placement of that one document carries the request. Placement says where it goes; this says
+ * what the server makes there, so a new kind of single-document materialization adds an arm here
+ * and nowhere else. Copy is not one: one Copy names several roots and answers with an operation
+ * receipt, so it is an `OperationRecord`, and each root it makes carries `copiedBy` instead of a
+ * materialization.
+ */
+export type DocumentMaterialization = {
+  kind: "untitled";
+  /** Where an unnamed create lands; empty is Unfiled's root. */
+  folderPath: string;
+  /** The row's name until the server names the document. */
+  provisionalName: string;
+  /**
+   * The editor's nameless create: the writer has not chosen a name or place, so the document
+   * keeps inviting a home until the catalog publishes the server's `provisionalName`. A writer
+   * placement clears it; the server chooses where this create lands.
+   */
+  unnamed?: true;
+};
+
+/** The home a document the writer has not placed lands at, as its first placement names it. */
+export function untitledDestination(folderPath: string, name: string): ResourceDestination {
+  const createFolders = folderPath.split("/").filter(Boolean);
+  return {
+    parent: { kind: "root", scheme: "unfiled", owner: { workId: null } },
+    ...(createFolders.length ? { createFolders } : {}),
+    name,
+  };
+}
 
 /** Resolve only canonical observations when preparing immutable transport evidence. */
 export function destinationParentLocation(
@@ -103,6 +143,13 @@ export function destinationLocation(
     : null;
 }
 
+/**
+ * The operation that made a record: the record is one root of it (a Copy), and the operation's
+ * receipt, not a create of the record's own, gives it its first place (`first-place.ts`). The
+ * project is the operation's, so the record is visible there before any catalog lists it.
+ */
+export type CopiedBy = { operationId: string; projectId: string };
+
 export type ResourceDescriptor = ResourceKey & {
   revision: number;
   identity: { documentId: string; revision: number };
@@ -117,9 +164,24 @@ export type ResourceDescriptor = ResourceKey & {
     | { kind: "unacquired" };
   /** Stable editor/viewer classification retained when no catalog checkpoint is available. */
   classification: CatalogFileClassification;
+  /**
+   * How the server first materializes this identity, while it holds no such document: an untitled
+   * document. Placement is separate and always a location intent, so a refused first placement is
+   * repaired by placing it again, not by a new request kind. Absent for a document installed from
+   * the catalog.
+   */
+  materialization?: DocumentMaterialization;
+  /** What the server holds under this document id, as its answers prove (`server-hold.ts`). */
+  serverHold: ServerHold;
+  /** Set when an operation made this document; absent for one that holds its own create. */
+  copiedBy?: CopiedBy;
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
+  /** Sibling rank from the same canonical observation; meaningful when its parent is manual. */
+  canonicalRank?: string | null;
+  /** Per-entry namespace mutation revision from the same canonical observation. */
+  canonicalLocationVersion?: string;
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   lifecycle:
@@ -153,13 +215,24 @@ export type ResourceDescriptor = ResourceKey & {
       identityRevision: number;
       exactDatabaseName: string;
     };
-    cleanup?: { obligationId: string; exactDatabaseName: string };
+    cleanup?: {
+      obligationId: string;
+      exactDatabaseName: string;
+      /** A local deletion's Undo window: the content is kept until then (epoch ms). */
+      notBefore?: number;
+    };
   };
 };
 
 /** The endpoint's authority is part of the submitted request, not inferred from current UI state. */
 export type NamespaceRequest =
   | { kind: "create"; body: CreateUntitledContextDocumentRequest }
+  | {
+      kind: "create-folder";
+      /** Owner of the destination parent when sent, so the answer's path becomes a full location. */
+      owner: ResourceOwner;
+      body: CreateContextFolderRequest;
+    }
   | {
       kind: "move";
       scheme: ProjectContextTreeScheme;
@@ -178,22 +251,99 @@ export type NamespaceRequest =
       rootThreadId?: string | null;
       rootThreadRef?: string | null;
       body: DeleteContextEntryRequest;
+    }
+  | {
+      kind: "copy";
+      /** Owner of the destination parent when sent, so each root's answered path becomes a full location. */
+      owner: ResourceOwner;
+      body: CopyContextEntriesRequest;
     };
 
+/**
+ * The identity a request is replayed under: a move's or delete's operation id, a create's document
+ * or folder id (the server dedupes a create by it). A refusal names it, so a request kind added
+ * later must state its own identity here.
+ */
+export function namespaceRequestId(request: NamespaceRequest): string {
+  switch (request.kind) {
+    case "create":
+      return request.body.documentId;
+    case "create-folder":
+      return request.body.folderId;
+    default:
+      return request.body.operationId;
+  }
+}
+
+/** Every request kind can be refused; only its accepted answer differs. */
 export type NamespaceAttempt = {
   [Kind in NamespaceRequest["kind"]]: {
     attemptId: string;
     request: Extract<NamespaceRequest, { kind: Kind }>;
-    outcome?: Kind extends "create"
-      ? Extract<NamespaceOutcome, { kind: "create" }>
-      :
-          | Extract<NamespaceOutcome, { kind: "refusal" }>
-          | {
+    outcome?:
+      | Extract<NamespaceOutcome, { kind: "refusal" }>
+      | (Kind extends "create" | "create-folder"
+          ? Extract<NamespaceOutcome, { kind: Kind }>
+          : {
               kind: "operation";
               receipt: Extract<ContextOperationReceipt, { command: { kind: Kind } }>;
-            };
+            });
   };
 }[NamespaceRequest["kind"]];
+
+/**
+ * A placement a later one waits on, named by its admission `order` in the journal of `kind` under
+ * `handle` (an operation's handle is its operation id). The order is the placement's logical
+ * identity: a remint replaces its intent but the replacement inherits the admission, so the
+ * reference follows it (`latestAdmittedPlacement`).
+ */
+export type PlacementPredecessor = {
+  kind: "resource" | "folder" | "operation";
+  handle: string;
+  order: number;
+  /** The later intent's position names this predecessor's subject, so a failure changes its premise. */
+  anchor?: true;
+};
+
+/**
+ * Where a placement stands in the account's causal order. Written once with the intent, under the
+ * account's cross-tab admission lock, and never revised: dispatch, projection and Undo all read it.
+ */
+export type PlacementAdmission = {
+  /** Account-wide admission sequence, comparable across file and folder journals. */
+  order: number;
+  /** Conflict keys: the subject, the sibling sequences it leaves and joins, its anchor and destination ancestry. */
+  scope: readonly string[];
+  /** Intents still unresolved at admission whose scope overlaps; they dispatch first. */
+  predecessors: readonly PlacementPredecessor[];
+};
+
+/** One selected root of a Copy: the record that stands for its copy until the server answers. */
+export type CopyRoot = {
+  kind: "file" | "folder";
+  /** The handle of the record that holds `copyId`. */
+  handle: string;
+  /** Device-minted; the server gives the root's copy this id. */
+  copyId: string;
+  /** The source identity (`expected.nodeId`): Copy finds the source by it, not by path. */
+  sourceId: string;
+  /** What is copied: the live document, or the draft a tab shows. */
+  view: CopyContextEntryView;
+  /** The source's Yjs state vector (base64) when this device held it open at the drop: the server waits for the room to catch up to it. */
+  stateVector?: string;
+  /** Shown until the server's answer names the copy. */
+  predictedName: string;
+};
+
+/** Where a Copy's roots land: one parent, and where among its children. */
+export type CopyDesired = {
+  kind: "copy";
+  /** The selection's outermost roots as the device saw them at the drop, in selection order; the request names fewer when the server holds one inside another. */
+  roots: readonly CopyRoot[];
+  destination: Pick<ResourceDestination, "parent" | "position">;
+  /** Where the writer started it (opaque to the replica): a refusal shows there when the destination is gone. */
+  origin?: string;
+};
 
 export type NamespaceIntent = ResourceKey & {
   projectId: string;
@@ -201,22 +351,18 @@ export type NamespaceIntent = ResourceKey & {
   /** Caller-issued id lets surfaces correlate settlement before background dispatch. */
   operationId?: string;
   sequence: number;
+  /** Placement ordering captured at admission; see `PlacementAdmission`. */
+  admission?: PlacementAdmission;
   identityRevision: number;
   desired:
-    | {
-        kind: "create";
-        folderPath: string;
-        provisionalName?: string;
-        /**
-         * Where the writer put the document, sent with the create so the server can join a
-         * branch's document waiting there. Absent for a nameless create (the editor's New document).
-         */
-        destination?: ResourceDestination;
-      }
     | {
         kind: "set-location";
         /** Original input; canonical destination is only for display and comparison. */
         typedName: string;
+        /**
+         * Where the writer put the document. The editor's nameless create names its materialized
+         * home (`untitledDestination`) until the writer places it somewhere else.
+         */
         destination: ResourceDestination;
       }
     | {
@@ -225,7 +371,8 @@ export type NamespaceIntent = ResourceKey & {
         typedName: string;
         destination: ResourceDestination;
       }
-    | { kind: "delete" };
+    | { kind: "delete" }
+    | CopyDesired;
   attempts: readonly NamespaceAttempt[];
   /** Local receipt application time; immutable evidence is retained after the UI note expires. */
   settledAt?: number;
@@ -246,18 +393,34 @@ export type ResourceRecord = {
   intents: readonly NamespaceIntent[];
 };
 
-/** A folder is namespace identity only: it never owns a document id, content or classification. */
+/**
+ * A folder is namespace identity only: it never owns a document id, content or classification.
+ * A folder the server has not accepted yet is local: no canonical place, only its create.
+ */
 export type FolderNamespaceRecord = ResourceKey & {
   /** Null for account-owned personal folders; command projects live on the intents. */
   projectId: string | null;
   folderId: string;
+  /** Ids this folder was minted under before a remint (`folder-remint.ts`); attempts name them. A list so the store can index it. */
+  aliases?: readonly string[];
   revision: number;
-  canonical: ResourceLocation;
+  /** What the server holds under `folderId`, as its answers prove (`server-hold.ts`). */
+  serverHold: ServerHold;
+  /** Set when an operation made this folder; absent for one that holds its own create. */
+  copiedBy?: CopiedBy;
+  /** Null while the folder is local: its first placement has not been accepted. */
+  canonical: ResourceLocation | null;
   /** Parent identity installed atomically with the canonical location. */
   canonicalParent?: ParentRef;
+  /** This folder's rank and child-order policy from the same canonical observation. */
+  canonicalRank?: string | null;
+  canonicalLocationVersion?: string;
+  canonicalOrderPolicy?: ContextParentOrderPolicy;
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   canonicalRefresh?: { operationId: string; observationVersion?: string };
+  /** A local deletion's Undo window: the folder, its place and its children stay recoverable until then (epoch ms). */
+  localDeletion?: { obligationId: string; notBefore: number };
   /** Exact-ID availability proves this folder is gone, never descendant document deletion. */
   terminal?: { generation: string };
   intents: readonly NamespaceIntent[];
@@ -267,6 +430,67 @@ export type FolderNamespaceWrite = {
   expectedRevision: number | null;
   next: FolderNamespaceRecord;
 };
+
+/**
+ * One writer action over several records (a Copy), journaled once under its operation id: the
+ * operation's own intents and attempts, apart from the records it creates. Every intent's `handle`
+ * is the `operationId`, so the generic journal, placement admission and predecessors address an
+ * operation as they do a resource or a folder.
+ */
+export type OperationRecord = {
+  operationId: string;
+  projectId: string;
+  revision: number;
+  /** When the server first said a source room had not received this device's edits (epoch ms); bounds the resends. */
+  behindSince?: number;
+  intents: readonly NamespaceIntent[];
+};
+
+/**
+ * An operation's record with the records it makes or removes, in one transaction: the roots a Copy
+ * admits, the places its answer gives them, or the roots a refusal drops. The operation's own
+ * record is written first, so the validators read the receipt that places a root.
+ */
+export type OperationWrite = {
+  expectedRevision: number | null;
+  next: OperationRecord;
+  roots?: {
+    /** New root records (admission): written, then validated against the operation just written. */
+    created?: {
+      resources: readonly ResourceRecord[];
+      folders: readonly FolderNamespaceRecord[];
+    };
+    /** Roots given the place the receipt names, from whatever state they are in when the transaction runs. */
+    placed?: readonly RootPlace[];
+    /** Handles of root records deleted with their intents: the Copy did not happen. */
+    dropped?: readonly string[];
+  };
+};
+
+/** Where the server put one root, from the receipt and the request that asked. */
+export type RootPlace = {
+  handle: string;
+  kind: "file" | "folder";
+  location: ResourceLocation;
+  parent: ParentRef;
+  /** The receipt's namespace version: a catalog read at or after it completes the refresh. */
+  observationVersion: string;
+};
+
+/**
+ * A Copy's source room has not received the edits this device holds. The server recorded nothing,
+ * and the same request may be sent again; the replica bounds how long it does.
+ */
+export class SourceBehindError extends Error {
+  constructor(readonly error: MeridianError) {
+    super("The source has edits the server has not received yet");
+  }
+}
+
+/** What the replica needs of an operation from a record's side: its journal, by id. */
+export interface OperationReader {
+  readOperation(operationId: string): Promise<OperationRecord | null>;
+}
 
 /** Persist only checkpoint data; indexes are derived by the catalog reducer. */
 export type ResourceCatalogCheckpoint = Pick<
@@ -288,11 +512,12 @@ export type MetadataCommitResult = "committed" | "stale";
 export type ResourceProjectionSnapshot = {
   records: readonly ResourceRecord[];
   folders: readonly FolderNamespaceRecord[];
+  operations: readonly OperationRecord[];
   catalogs: readonly ResourceCatalogCheckpoint[];
 };
 
 /** All mutation results mean outer commit. Network, locks and Yjs work stay outside these calls. */
-export interface ResourceMetadataStore {
+export interface ResourceMetadataStore extends OperationReader {
   readonly accountId: string;
   readResource(key: ResourceKey): Promise<ResourceRecord | null>;
   /** Reads one resource only when this project's intents or catalog expose it. */
@@ -319,11 +544,21 @@ export interface ResourceMetadataStore {
 /** Transport evidence is matched to its recorded attempt by journal policy before installation. */
 export type NamespaceOutcome =
   | { kind: "create"; result: CreateUntitledContextDocumentAnswer }
+  | { kind: "create-folder"; result: CreateContextFolderResponse }
   | { kind: "operation"; receipt: ContextOperationReceipt }
+  /** A typed, non-retryable 4xx answering the request `operationId` names (`namespaceRequestId`). */
   | { kind: "refusal"; operationId: string; error: MeridianError };
 
 export type NamespaceIdentityAvailability =
-  | { kind: "available"; location: ResourceLocation; parent: ParentRef; observationVersion: string }
+  | {
+      kind: "available";
+      location: ResourceLocation;
+      parent: ParentRef;
+      observationVersion: string;
+      locationVersion?: string;
+      rank?: string | null;
+      orderPolicy?: ContextParentOrderPolicy;
+    }
   | { kind: "deleted"; generation: string; observationVersion: string }
   | { kind: "unavailable" };
 
@@ -335,6 +570,7 @@ export interface ResourceNamespaceTransport {
     identity: { kind: "file" | "folder"; id: string },
   ): Promise<NamespaceIdentityAvailability>;
   readOutcome(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
+  /** Rejects with `SourceBehindError` when a Copy's source room has not caught up; any other failure leaves the attempt uncertain. */
   submit(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
 }
 

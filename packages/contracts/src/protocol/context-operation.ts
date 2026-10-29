@@ -1,20 +1,24 @@
 /** Durable namespace attempt outcomes, independent from current canonical location. */
 import type { OwnerSlip } from "../context-uri.js";
 import type {
+  CopyContextEntriesResult,
+  CopyContextEntrySource,
   DeleteContextEntryRequest,
   DeleteContextEntryResult,
   MoveContextEntryRequest,
 } from "./http-types.js";
 
 /**
- * Why an operation can't run, when a caller words it: a path two nodes share, or a rename
+ * Why an operation can't run, when a caller words it: a path two nodes share, a rename
  * whose extension would change how the document is stored (a binary file to a text one or
- * back), or which kind of text document it is.
+ * back), or which kind of text document it is, or a Copy of a Work's draft of a document that
+ * Work holds no draft of.
  */
 export type InvalidOperationReason =
   | "ambiguous_path"
   | "file_type_conversion"
-  | "document_type_conversion";
+  | "document_type_conversion"
+  | "no_draft";
 
 export type ContextError =
   | { code: "operation_mismatch"; uri: string }
@@ -40,7 +44,16 @@ export type ContextError =
       unknownScheme?: string;
       slip?: OwnerSlip;
     }
-  | { code: "io_error"; uri: string; message: string };
+  | {
+      code: "io_error";
+      uri: string;
+      message: string;
+      /**
+       * `source_behind`: a Copy's source room has not received the edits the writer's client
+       * holds. Retryable like any `io_error`, and told apart so a replica bounds its retries.
+       */
+      reason?: "source_behind";
+    };
 
 export interface ContextMoveResult {
   movedNodeId?: string;
@@ -48,6 +61,8 @@ export interface ContextMoveResult {
   /** Scheme-relative path durably committed by the tree mutation. */
   destinationPath: string;
   destinationUri?: string;
+  /** Per-entry namespace mutation revision produced by this exact operation. */
+  locationVersion?: string;
 }
 
 export type ContextOperationCommand =
@@ -57,12 +72,31 @@ export type ContextOperationCommand =
       destinationUri: string;
       expected: MoveContextEntryRequest["expected"];
       destinationParent?: MoveContextEntryRequest["destinationParent"];
+      position?: MoveContextEntryRequest["position"];
     }
-  | { kind: "delete"; uri: string; expected: DeleteContextEntryRequest["expected"] };
+  | { kind: "delete"; uri: string; expected: DeleteContextEntryRequest["expected"] }
+  | {
+      kind: "copy";
+      /** Ordered roots by canonical address; the read view travels with each. */
+      sources: CopyContextEntryCommandSource[];
+      destinationUri: string;
+      destinationParent?: MoveContextEntryRequest["destinationParent"];
+      position?: MoveContextEntryRequest["position"];
+    };
+
+/**
+ * One root as the receipt remembers it. The client's state vector is deliberately absent:
+ * a replay after more typing carries a newer vector, and that is the same Copy.
+ */
+export type CopyContextEntryCommandSource = Pick<CopyContextEntrySource, "view" | "copyId"> & {
+  uri: string;
+  expected: CopyContextEntrySource["expected"];
+};
 
 export type ContextOperationValue = {
   move: ContextMoveResult;
   delete: DeleteContextEntryResult;
+  copy: CopyContextEntriesResult;
 };
 
 export type ContextOperationResult<K extends ContextOperationCommand["kind"]> =

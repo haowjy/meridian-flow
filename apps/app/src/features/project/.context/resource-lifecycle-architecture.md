@@ -35,7 +35,7 @@ Three facts must stay separate:
 | --- | --- |
 | [AccountFeatureLifetime](../context/account-feature-lifetime.ts) | Creates one account document runtime, resource replica, availability coordinator, removal coordinator, and opener. Storage invalidation closes the complete account lifetime. |
 | [AccountResourceReplica](../../../core/resources/account-resource-replica.ts) | Owns reservation, exact local opening, catalog acquisition, durable namespace replay, remint, terminal transitions, and projection subscriptions. |
-| [AccountResourceReconciler](../../../core/resources/account-resource-reconciler.ts) | The replica's background runner per handle: namespace dispatch, join and remint through one failure-safe identity commit, session adoption, local cleanup, and retry triggers. |
+| [AccountResourceReconciler](../../../core/resources/account-resource-reconciler.ts) | The replica's background runner per handle: namespace dispatch, join and remint through one failure-safe identity commit, session adoption, local cleanup, and retry triggers. Runners are independent; a placement waits only for the predecessors its journal admission names (`placementDispatchVerdict`) and is woken by any journal change, so reconnect cannot invert dependent offline moves and an unrelated request never queues behind a held one. |
 | [ResourceIdentityFeed](../../../core/resources/resource-identity-feed.ts) and [IdentityContinuity](../context/identity-continuity.ts) | The feed hands each projection to its readers (and announces live identity changes). Continuity, one per account, reconciles recent routes and device recents against the current projection whenever it, or a store, changes: an id is rewritten only when `resourceIdentityIndex` resolves it to a different current id, never from a remembered transition, and never an id a record holds as its own. |
 | [Resource replica package](../../../../../../packages/resource-replica/src/index.ts) | Pure resource, catalog, intent, deletion, adoption, and projection policy. It imports no React, browser storage, HTTP, or Yjs session objects. |
 | [IndexedDB metadata adapter](../../../core/resources/indexeddb-resource-metadata.ts) | Stores account-global resource descriptors, project-qualified intentions, and project-qualified catalog checkpoints with revision CAS. One account-wide reactive read feeds project projections. |
@@ -45,7 +45,7 @@ Three facts must stay separate:
 
 ## New, write, and acknowledge
 
-1. New atomically reserves an account-global resource handle, Document ID, exact content database, provisional Unfiled location, and ineligible create intention.
+1. New atomically reserves an account-global resource handle, Document ID, exact content database, its untitled materialization, provisional Unfiled location, and an ineligible first placement.
 2. Content initialization completes before the editor receives the handle. The workspace opens the resource synchronously and the stable session boundary binds its Y.Doc.
 3. First content marks creation eligible. Explicit filing also marks an empty resource eligible and appends the desired location.
 4. The namespace runner persists immutable request bytes before HTTP, records the outcome, then applies it through metadata CAS. Reload, response loss, and another browser context resume the same recorded work.

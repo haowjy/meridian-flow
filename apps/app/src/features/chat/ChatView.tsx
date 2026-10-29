@@ -47,12 +47,17 @@ import { useLineage } from "@/client/query/useLineageTitle";
 import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
+  useOpenAsk,
   useRunStateSlice,
   useThreadActions,
   useThreadAsks,
   useThreadStore,
 } from "@/client/stores";
-import type { ComposerChatCommand, ComposerHandle } from "@/components/app/composer";
+import {
+  type ComposerChatCommand,
+  type ComposerHandle,
+  useFileDrop,
+} from "@/components/app/composer";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { LinkFollowDialog } from "@/features/links";
@@ -165,6 +170,13 @@ export function ChatView({
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
   useRegisterChatComposer(threadId, composerRef);
+  // The transcript takes desktop files for the composer, so the whole chat is one drop zone.
+  // An open ask hides the composer, so a drop would land in a draft the writer can't see.
+  const askOpen = useOpenAsk(threadId) !== null;
+  const fileDrop = useFileDrop({
+    enabled: active && !askOpen,
+    onDrop: (entries) => composerRef.current?.attachFiles(entries),
+  });
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
@@ -675,6 +687,7 @@ export function ChatView({
                     writeMode={controls.writeMode}
                     onWriteModeChange={handleWriteModeChange}
                     composerStrip={composerStrip}
+                    fileDropActive={fileDrop.over}
                     availableSkills={availableSkills.skills}
                     referenceCatalog={referenceCatalog}
                     chatCommands={chatCommands}
@@ -687,7 +700,10 @@ export function ChatView({
                 <TurnDerivationProvider value={turnDerivation}>
                   <SubagentDisclosureProvider>
                     <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-                      <div className="relative flex min-h-0 flex-1 flex-col">
+                      <div
+                        className="relative flex min-h-0 flex-1 flex-col"
+                        {...fileDrop.dropProps}
+                      >
                         <RunningSubagentsStrip threadId={threadId} />
                         <TurnList
                           threadId={threadId}

@@ -37,12 +37,17 @@ function setup(filetype = "typescript") {
   const engine = createMarkdownDocumentEngine({
     links: createStaticDocumentLinkScopes(),
     codec: mdxCodec({ schema }),
+    exportCodec: mdxCodec({ schema, export: true }),
     model,
     journal,
     coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
+      seedInitialDocuments: async () => {},
       missingAuthorityProjection: async () => null,
+      stageInitialStates: async () => {},
+      commitStagedStates: async () => [],
+      discardStagedStates: async () => ({ remaining: false }),
     },
     parseStored: createUnboundParser({ codec: mdxCodec({ schema }), schema }),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),

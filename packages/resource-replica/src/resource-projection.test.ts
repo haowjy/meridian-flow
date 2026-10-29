@@ -8,6 +8,7 @@
 import { expect, it } from "vitest";
 import { createResourcePlacement } from "./folder-projection";
 import { entries, move, node } from "./namespace-schedule-fixtures";
+import { projectOptimisticSiblingOrder } from "./optimistic-sibling-order";
 import { prepareNamespaceAttempt, recordNamespaceOutcome } from "./resource-namespace";
 import {
   projectResourceLocation,
@@ -61,8 +62,9 @@ it("projects only the requesting project's durable location intention", () => {
   // Lowest-level contract: naming remains complete after placement ownership retires.
   const settled = placed.next;
   settled.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  settled.resource.serverHold = "held";
   settled.intents = settled.intents.map((intent) =>
-    intent.desired.kind === "create" ? { ...intent, state: "settled" } : intent,
+    intent.intentId === "create" ? { ...intent, state: "settled" } : intent,
   );
   const submitted = prepareNamespaceAttempt(
     settled,
@@ -100,6 +102,165 @@ it("projects only the requesting project's durable location intention", () => {
     path: "/moved/opening",
     provisional: false,
   });
+
+  // Placement replay follows durable admission order, and every unresolved placement counts, not
+  // each row's latest: A→after C, B→after A, A→before C is A,C,B (latest-only gives A,B,C).
+  const canonical = [
+    { ...entries[0], orderPolicy: "default" as const },
+    { ...node("P", "P"), orderPolicy: "default" as const },
+    node("A", "P/A", "P", "file"),
+    node("B", "P/B", "P", "file"),
+    node("C", "P/C", "P", "file"),
+  ];
+  const admit = (order: number) => ({ order, scope: [], predecessors: [] });
+  const reservedAt = (id: string) => {
+    const reserved = reserveResourceDocument({
+      projectId: "project-a",
+      handle: id,
+      documentId: id,
+      databaseName: id,
+      schema: "schema",
+      intentId: `create-${id}`,
+    }).next;
+    reserved.resource.canonical = {
+      scheme: "manuscript",
+      path: `/P/${id}`,
+      name: id,
+      workId: null,
+    };
+    reserved.resource.canonicalParent = { kind: "folder", folderId: "P" };
+    return reserved;
+  };
+  const place = (
+    record: ReturnType<typeof reservedAt>,
+    intentId: string,
+    order: number,
+    position: { kind: "before" | "after"; siblingId: string },
+  ) => {
+    const write = planResourceLocation({
+      record,
+      projectId: "project-a",
+      intentId,
+      eligibleAt: 1,
+      admission: admit(order),
+      destination: {
+        parent: { kind: "folder", folderId: "P" },
+        name: record.resource.handle,
+        position,
+      },
+    });
+    if (!write) throw new Error("Missing reorder");
+    return write.next;
+  };
+  const a1 = place(reservedAt("A"), "a1", 1, { kind: "after", siblingId: "C" });
+  const reordered = [
+    place(a1, "a3", 3, { kind: "before", siblingId: "C" }),
+    place(reservedAt("B"), "b2", 2, { kind: "after", siblingId: "A" }),
+  ];
+  const optimistic = projectOptimisticSiblingOrder({
+    projectId: "project-a",
+    canonical,
+    projected: canonical,
+    records: reordered,
+    folders: [],
+  });
+  expect(
+    optimistic
+      .flatMap((entry) =>
+        (entry.kind === "file" || entry.kind === "folder") && entry.parentId === "P" ? [entry] : [],
+      )
+      .sort((left, right) => (left.rank ?? "").localeCompare(right.rank ?? ""))
+      .map((entry) => entry.entryId),
+  ).toEqual(["A", "C", "B"]);
+
+  // A promotion changes how later arrivals are placed: the server appends to the now-manual
+  // parent even though the catalog snapshot used to build the projection still says default.
+  const promotionRecord = reserveResourceDocument({
+    projectId: "project-a",
+    handle: "promotion",
+    documentId: "B",
+    databaseName: "promotion",
+    schema: "schema",
+    intentId: "create-promotion",
+  }).next;
+  promotionRecord.resource.canonical = {
+    scheme: "manuscript",
+    path: "/P/B",
+    name: "B",
+    workId: null,
+  };
+  promotionRecord.resource.canonicalParent = { kind: "folder", folderId: "P" };
+  const promotion = planResourceLocation({
+    record: promotionRecord,
+    projectId: "project-a",
+    intentId: "promote",
+    eligibleAt: 1,
+    admission: { order: 2, scope: [], predecessors: [] },
+    destination: {
+      parent: { kind: "folder", folderId: "P" },
+      name: "B",
+      position: { kind: "start" },
+    },
+  });
+  if (!promotion) throw new Error("Missing promotion");
+  const arrival = reserveResourceDocument({
+    projectId: "project-a",
+    handle: "arrival",
+    documentId: "A",
+    databaseName: "arrival",
+    schema: "schema",
+    intentId: "create-arrival",
+  }).next;
+  arrival.resource.canonical = {
+    scheme: "manuscript",
+    path: "/Q/A",
+    name: "A",
+    workId: null,
+  };
+  arrival.resource.canonicalParent = { kind: "folder", folderId: "Q" };
+  const movedArrival = planResourceLocation({
+    record: arrival,
+    projectId: "project-a",
+    intentId: "move-arrival",
+    eligibleAt: 1,
+    admission: { order: 3, scope: [], predecessors: [] },
+    destination: { parent: { kind: "folder", folderId: "P" }, name: "A" },
+  });
+  if (!movedArrival) throw new Error("Missing arrival");
+  const parentP = node("P", "P");
+  const parentQ = node("Q", "Q");
+  const root = entries[0];
+  if (!root || parentP.kind !== "folder" || parentQ.kind !== "folder")
+    throw new Error("Missing parent folders");
+  const promotedThenArrived = projectOptimisticSiblingOrder({
+    projectId: "project-a",
+    canonical: [
+      root,
+      { ...parentP, orderPolicy: "default" },
+      { ...parentQ, orderPolicy: "default" },
+      node("A", "Q/A", "Q", "file"),
+      node("B", "P/B", "P", "file"),
+      node("C", "P/C", "P", "file"),
+    ],
+    projected: [
+      root,
+      { ...parentP, orderPolicy: "default" },
+      { ...parentQ, orderPolicy: "default" },
+      node("A", "P/A", "P", "file"),
+      node("B", "P/B", "P", "file"),
+      node("C", "P/C", "P", "file"),
+    ],
+    records: [promotion.next, movedArrival.next],
+    folders: [],
+  });
+  expect(
+    promotedThenArrived
+      .flatMap((entry) =>
+        (entry.kind === "file" || entry.kind === "folder") && entry.parentId === "P" ? [entry] : [],
+      )
+      .sort((left, right) => (left.rank ?? "").localeCompare(right.rank ?? ""))
+      .map((entry) => entry.entryId),
+  ).toEqual(["B", "C", "A"]);
 });
 
 it("prefers a current server identity over another resource's obsolete remint alias", () => {
@@ -213,4 +374,34 @@ it("projects link-created suffix folders once per home, following the anchor unt
     "part",
     "part",
   ]);
+});
+
+it("never calls a server-held document provisional, whatever its journal says", () => {
+  const reserved = reserveResourceDocument({
+    projectId: "project-a",
+    handle: "resource",
+    documentId: "document",
+    databaseName: "content",
+    schema: "schema",
+    intentId: "create",
+    provisionalName: "Chapter 1",
+  }).next;
+  // The editor's nameless create has not been placed: it invites a home.
+  expect(projectResourceLocation("project-a", reserved)?.provisional).toBe(true);
+  // The server holds it, and the catalog it installed carries its own provisional name.
+  reserved.resource.canonical = {
+    scheme: "manuscript",
+    path: "/Chapter 1",
+    name: "Chapter 1",
+    workId: null,
+  };
+  reserved.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  reserved.resource.serverHold = "held";
+  reserved.intents = [];
+  expect(projectResourceLocation("project-a", reserved)).toMatchObject({
+    scheme: "manuscript",
+    path: "/Chapter 1",
+    name: "Chapter 1",
+    provisional: false,
+  });
 });

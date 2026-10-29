@@ -2,7 +2,9 @@
  * EventSink call-site helpers: timestamp stamping and JSON-natural error payloads
  * for observability records. Keeps emit shape consistent across domain migrations.
  */
+
 import { isMeridianError } from "@meridian/contracts/errors";
+import { DrizzleQueryError } from "drizzle-orm";
 import type { EventRecord, EventSink } from "./ports/event-sink.js";
 import { safeMeridianErrorCode } from "./safe-event.js";
 
@@ -33,6 +35,19 @@ export function joinIds(ids: readonly string[]): string {
   return ids.slice(0, 3).join(",");
 }
 
+/**
+ * A Drizzle query failure wraps the driver's error and carries the SQL and its params as
+ * its own message. The cause says what Postgres rejected (message, SQLSTATE); the wrapper
+ * can hold a writer's text in its params, so diagnostics read only the cause.
+ */
+function unwrapQueryError(error: unknown): unknown {
+  try {
+    return error instanceof DrizzleQueryError && error.cause ? error.cause : error;
+  } catch {
+    return error; // a hostile prototype trap
+  }
+}
+
 function ownDataValue(value: object, key: string): unknown {
   try {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -59,7 +74,8 @@ function safeErrorClass(error: Error): string {
   return typeof name === "string" && SAFE_ERROR_CLASSES.has(name) ? name : "Error";
 }
 
-export function unknownToEventPayload(error: unknown): Record<string, unknown> {
+export function unknownToEventPayload(failure: unknown): Record<string, unknown> {
+  const error = unwrapQueryError(failure);
   try {
     if (isMeridianError(error)) {
       const code = safeMeridianErrorCode(error.code);
@@ -108,7 +124,8 @@ const ERROR_MESSAGE_MAX = 200;
  * interpolate a writer's text, so quoted spans and secret-shaped tokens are dropped and
  * the rest is collapsed to one bounded line. Not a MeridianError's: those carry a code.
  */
-export function errorMessageOf(error: unknown): { errorMessage: string } | undefined {
+export function errorMessageOf(failure: unknown): { errorMessage: string } | undefined {
+  const error = unwrapQueryError(failure);
   try {
     if (!(error instanceof Error) || isMeridianError(error)) return undefined;
     const message = ownDataValue(error, "message");

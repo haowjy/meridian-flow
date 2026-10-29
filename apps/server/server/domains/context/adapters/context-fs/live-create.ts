@@ -13,6 +13,7 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import {
   allocateFilename,
+  type ContextSiblingPosition,
   type Filetype,
   type NamespaceNameClaim,
   namespaceName,
@@ -368,6 +369,8 @@ export class LiveCreate {
     documentId: DocumentId;
     /** The folder identity the destination named; a different folder here is stale. */
     expectFolderId?: string;
+    /** Where among the folder's children a new document goes; a reveal keeps its place. */
+    position?: ContextSiblingPosition;
     options: ContextWriteOptions;
   }): Promise<Result<OptimisticOutcome, AdapterFault>> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -463,6 +466,7 @@ export class LiveCreate {
     const created = await this.atomically({ ...target, folderId }, plan, {
       ...extra,
       provisionalName: input.leaf === null,
+      ...(input.position ? { position: input.position } : {}),
       ...(joinFrom ? { joinFrom } : {}),
     });
     if (created.ok) {
@@ -494,6 +498,7 @@ export class LiveCreate {
       options?: ContextWriteOptions;
       /** The device's create id a reveal forwards to the revealed document. */
       joinFrom?: DocumentId;
+      position?: ContextSiblingPosition;
     } = {},
   ): Promise<
     Result<{ document: ContextDocument; markdown: string; revealed: boolean }, AdapterFault>
@@ -513,6 +518,7 @@ export class LiveCreate {
               markdown: "",
               filetype: target.filetype,
               provisionalName: extra.provisionalName,
+              ...(extra.position ? { position: extra.position } : {}),
               ...(extra.joinFrom
                 ? { joinFrom: { fromId: extra.joinFrom, projectId: this.deps.projectId } }
                 : {}),

@@ -24,6 +24,7 @@ import { allocateFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { placeBranchSibling, syncBranchSiblingFacts } from "./branch-sibling-order.js";
 import {
   readBranchTreeFacts,
   settleBranchEntries,
@@ -89,14 +90,15 @@ export async function moveInBranch(
       name: string;
       extension: string;
     };
+    position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
     changedBy: ChangedBy;
   },
 ): Promise<Result<BranchTreeChange, BranchTreeFault>> {
   const view: TreeView = { kind: "branch", branchId: input.branchId };
   const tree = createTreeReader(db);
   await lockDocuments(db, [input.documentId]);
-  if ((await tree.findById(view, input.documentId)).kind !== "found")
-    return Err({ code: "not_found" });
+  const current = await tree.findById(view, input.documentId);
+  if (current.kind !== "found") return Err({ code: "not_found" });
   const { contextSourceId } = input.to;
   const desiredPath = filePath(input.to.dir, input.to.name, input.to.extension);
   const occupant = await tree.resolvePath(view, {
@@ -106,7 +108,11 @@ export async function moveInBranch(
   });
   if (occupant.kind === "ambiguous") return Err({ code: "ambiguous" });
   if (occupant.kind === "found") {
-    if (occupant.node.kind === "document" && occupant.node.document.id === input.documentId)
+    if (
+      occupant.node.kind === "document" &&
+      occupant.node.document.id === input.documentId &&
+      !input.position
+    )
       return Err({ code: "already_there" });
   }
   const filename = await allocateFilename(
@@ -132,6 +138,18 @@ export async function moveInBranch(
   if (walk.kind === "occupied")
     return Err(walk.occupant.kind === "ambiguous" ? { code: "ambiguous" } : conflictWithFile);
   if (walk.kind !== "walked") throw new Error("A branch's folder walk fills every gap");
+  const rank = await placeBranchSibling(db, {
+    branchId: input.branchId,
+    documentId: input.documentId,
+    sourceId: contextSourceId,
+    parentId: walk.folderId,
+    name: input.to.extension ? `${landedName}.${input.to.extension}` : landedName,
+    ...(input.position ? { position: input.position } : {}),
+    arrived:
+      current.document.contextSourceId !== contextSourceId ||
+      current.document.folderId !== walk.folderId,
+  });
+  if (rank === "stale-anchor") return Err({ code: "not_found" });
   const before = await factsOf(db, input.branchId, input.documentId);
   const after: BranchTreeFacts = {
     row: true,
@@ -141,6 +159,7 @@ export async function moveInBranch(
       rootSourceId: walk.folderId === null ? contextSourceId : null,
       name: landedName,
       extension: input.to.extension,
+      rank,
     },
     deleted: false,
   };
@@ -150,6 +169,15 @@ export async function moveInBranch(
     facts: after,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
+  });
+  await syncBranchSiblingFacts(db, {
+    branchId: input.branchId,
+    documentId: input.documentId,
+    facts: after,
+    previousParent: {
+      sourceId: current.document.contextSourceId,
+      folderId: current.document.folderId,
+    },
   });
   return Ok({ before, after });
 }
@@ -194,13 +222,15 @@ export async function discardBranchTreeFacts(
   await lockDocuments(db, [input.documentId]);
   const facts = await factsOf(db, input.branchId, input.documentId);
   if (!facts.moved && !facts.deleted) return { discarded: false };
+  const after = { ...facts, moved: null, deleted: false };
   await writeBranchTreeFacts(db, {
     branchId: input.branchId,
     documentId: input.documentId,
-    facts: { ...facts, moved: null, deleted: false },
+    facts: after,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: null,
   });
+  await syncBranchSiblingFacts(db, { ...input, facts: after });
   await settleBranchEntries(db, {
     branchId: input.branchId,
     documentIds: [input.documentId],
@@ -252,6 +282,11 @@ export async function writeBackBranchFacts(
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
     ...(!current.row && facts.created ? { createdBy: input.changedBy } : {}),
+  });
+  await syncBranchSiblingFacts(db, {
+    branchId: input.branchId,
+    documentId: input.documentId,
+    facts,
   });
   return Ok(facts);
 }

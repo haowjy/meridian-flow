@@ -26,7 +26,7 @@ export function RailPaneHeader({
   expanded: boolean;
   /** Click toggles; ArrowLeft/ArrowRight force collapse/expand. */
   onExpandedChange: (expanded: boolean) => void;
-  /** Hover-revealed `PaneHeaderActionButton`s; hidden while collapsed. */
+  /** `PaneHeaderActionButton`s revealed on header hover / focus, expanded or collapsed. */
   actions?: React.ReactNode;
   /** Drop handlers when the header is a drop target (the tree's areas). */
   dropProps?: React.HTMLAttributes<HTMLElement>;
@@ -35,7 +35,8 @@ export function RailPaneHeader({
     /* This row stays on the rail material at rest and only lifts on hover. */
     <div
       {...dropProps}
-      className="group relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50"
+      data-rail-pane-header
+      className="relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50"
     >
       <button
         type="button"
@@ -66,13 +67,16 @@ export function RailPaneHeader({
           {label}
         </span>
       </button>
-      {/* VS Code's expanded-only rule: no actions on a collapsed pane. The
-          shelf sits in normal flow at the row's end (VS Code: titles
+      {/* Actions show on a collapsed pane too (Jimmy overrode VS Code's
+          expanded-only rule), so each action must expand its pane itself.
+          The shelf sits in normal flow at the row's end (VS Code: titles
           ellipsize, actions hold the right edge) so it needs no background
-          mask over the translucent tint; invisible at rest, revealed on
-          header hover / focus-within. */}
-      {expanded && actions ? (
-        <span className="mr-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          mask over the translucent tint. With hover, invisible at rest and
+          revealed on header hover / focus; on touch always shown, since an
+          invisible button would still take a tap meant for the header
+          (`.rail-pane-actions` in globals.css). */}
+      {actions ? (
+        <span className="rail-pane-actions mr-2 flex shrink-0 items-center gap-1 transition-opacity">
           {actions}
         </span>
       ) : null}

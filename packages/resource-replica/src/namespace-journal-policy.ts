@@ -1,36 +1,29 @@
 /** Immutable ordered namespace journal contracts, shared by file and folder records. */
-import { intentOwnsDeletion } from "./resource-intent-policy";
-import type { NamespaceIntent, NamespaceOutcome, ResourceDestination } from "./resource-records";
+import {
+  intentOwnsDeletion,
+  type NamespaceIntentOutcome,
+  namespaceIntentOutcome,
+} from "./resource-intent-policy";
+import {
+  type NamespaceIntent,
+  namespaceRequestId,
+  type PlacementAdmission,
+  type ResourceDestination,
+} from "./resource-records";
+import type { ServerHold } from "./server-hold";
 
 type Journal = { handle: string; intents: readonly NamespaceIntent[] };
 
-/** Semantic settlement is distinct from immutable transport evidence. Terminal always absorbs it. */
-export type NamespaceIntentOutcome =
-  | "accepted"
-  | "refused"
-  | "superseded"
-  | "unexecutable-after-terminal";
-
-export function namespaceIntentOutcome(
-  outcome: NamespaceOutcome,
-  terminal = false,
-): NamespaceIntentOutcome {
-  if (terminal) return "unexecutable-after-terminal";
-  return (
-    outcome.kind === "operation"
-      ? outcome.receipt.result.ok
-      : outcome.kind === "create" && outcome.result.status !== "conflict"
-  )
-    ? "accepted"
-    : "refused";
-}
-
-/** Both journals use this transition; effects belong to the identity's own layer. */
+/**
+ * Both journals use this transition; effects belong to the identity's own layer. A refusal retires
+ * the placements queued behind it, except on a spent id: that work moves to a new one.
+ */
 export function settleNamespaceIntent(
   intents: readonly NamespaceIntent[],
   intent: NamespaceIntent,
   disposition: NamespaceIntentOutcome,
   settledAt: number,
+  hold: ServerHold,
 ): NamespaceIntent[] {
   const state =
     disposition === "accepted"
@@ -43,7 +36,10 @@ export function settleNamespaceIntent(
       current.intentId === intent.intentId ? { ...current, state, settledAt } : current,
   );
   const evidence = intent.attempts.at(-1)?.outcome;
-  return disposition === "refused" && evidence && namespaceIntentOutcome(evidence) === "refused"
+  return disposition === "refused" &&
+    hold !== "spent" &&
+    evidence &&
+    namespaceIntentOutcome(evidence) === "refused"
     ? resolveRefusedLocationChain(next, intent)
     : next;
 }
@@ -61,6 +57,10 @@ export function resolveUnavailableNamespace(
   );
 }
 
+/**
+ * `intent` is queued placement work that rides on `earlier`: a later move of the same identity, or
+ * a move queued behind its first placement. Both end with what refused `earlier`.
+ */
 function followsLocationIntent(intent: NamespaceIntent, earlier: NamespaceIntent): boolean {
   return (
     (earlier.desired.kind === "set-location" || earlier.desired.kind === "set-folder-location") &&
@@ -76,7 +76,7 @@ export function resolveRefusedLocationChain(
   failed: NamespaceIntent,
 ): NamespaceIntent[] {
   const deleted =
-    (failed.desired.kind === "set-location" || failed.desired.kind === "set-folder-location") &&
+    failed.desired.kind !== "delete" &&
     intents.some(
       (intent) =>
         intent.sequence > failed.sequence &&
@@ -92,6 +92,107 @@ export function resolveRefusedLocationChain(
         ? { ...intent, state: "cancelled" }
         : intent,
   );
+}
+
+/**
+ * An admission after the entry it names has a new id: its order and predecessors stay, and its
+ * scope (the keys later placements overlap with) names the new id wherever it named the old.
+ */
+export function renamedAdmission(
+  admission: PlacementAdmission,
+  from: string,
+  to: string,
+): PlacementAdmission {
+  const rename = (key: string) =>
+    key === `entry:${from}`
+      ? `entry:${to}`
+      : key === `parent:folder:${from}`
+        ? `parent:folder:${to}`
+        : key;
+  return { ...admission, scope: admission.scope.map(rename).sort() };
+}
+
+/**
+ * The journal side of replacing a spent id, shared by documents and folders. The failed placement
+ * is superseded and sent again as a new intent, and the unsent intents queued behind it are
+ * cancelled and queued again after it. Each copy keeps its place in the order and its
+ * predecessors, so a placement that waited on the original keeps waiting on its replacement, and
+ * its scope names the new id (`renamedAdmission`), so a placement admitted into the replacement
+ * waits on it too. `from` is the identity revision of the work being replaced and `to` the one its
+ * copies carry; `fromId` and `toId` are the entry ids they replace. Null when nothing is left to
+ * send.
+ */
+export function remintJournal(input: {
+  intents: readonly NamespaceIntent[];
+  from: number;
+  to: number;
+  fromId: string;
+  toId: string;
+  retryIntentId: string;
+  rebasedIntentIds: Readonly<Record<string, string>>;
+}): NamespaceIntent[] | null {
+  const { intents } = input;
+  const failed = [...intents]
+    .filter(
+      (intent) =>
+        intent.state === "needs-repair" &&
+        intent.identityRevision === input.from &&
+        (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location"),
+    )
+    .sort((left, right) => right.sequence - left.sequence)[0];
+  const dependents = intents.filter(
+    (intent) =>
+      (!failed || intent.sequence > failed.sequence) &&
+      intent.identityRevision === input.from &&
+      intent.state === "pending" &&
+      intent.attempts.length === 0,
+  );
+  for (const dependent of dependents) {
+    if (!input.rebasedIntentIds[dependent.intentId])
+      throw new Error("Remint requires an identity for every dependent intention");
+  }
+  if (!failed && dependents.length === 0) return null;
+  let sequence = Math.max(0, ...intents.map((intent) => intent.sequence));
+  const retry: NamespaceIntent[] = failed
+    ? [
+        {
+          projectId: failed.projectId,
+          handle: failed.handle,
+          intentId: input.retryIntentId,
+          sequence: ++sequence,
+          identityRevision: input.to,
+          desired: failed.desired,
+          // The retry stands where the failed placement stood in the account's causal order.
+          ...(failed.admission
+            ? { admission: renamedAdmission(failed.admission, input.fromId, input.toId) }
+            : {}),
+          attempts: [],
+          state: "pending",
+        },
+      ]
+    : [];
+  const rebased = dependents.map(
+    (intent): NamespaceIntent => ({
+      ...intent,
+      intentId: input.rebasedIntentIds[intent.intentId] as string,
+      sequence: ++sequence,
+      identityRevision: input.to,
+      ...(intent.admission
+        ? { admission: renamedAdmission(intent.admission, input.fromId, input.toId) }
+        : {}),
+    }),
+  );
+  return [
+    ...intents.map((intent) =>
+      intent.intentId === failed?.intentId
+        ? { ...intent, state: "superseded" as const }
+        : dependents.includes(intent)
+          ? { ...intent, state: "cancelled" as const }
+          : intent,
+    ),
+    ...retry,
+    ...rebased,
+  ];
 }
 
 /** The failed receipt stays the repair anchor; its cancelled chain supplies the newest destination. */
@@ -113,14 +214,75 @@ export function namespaceRepairDestination(
   return latest.desired.kind === "set-folder-location" ? latest.desired.destination : null;
 }
 
+/**
+ * The Undo window a deletion that settled on this device leaves open: its obligation id and the
+ * time it closes.
+ */
+export type LocalDeletionWindow = { obligationId: string; notBefore?: number };
+
+/**
+ * Undo of a deletion that settled on this device, inside its window: the deletion is superseded
+ * and the identity's latest placement is queued again, since what the deletion cancelled cannot
+ * restart. Null once the window has closed (the content may already be cleaned up) or when no
+ * such deletion is held. Each journal clears its own window field around this.
+ */
+export function undoLocalDeletion(input: {
+  intents: readonly NamespaceIntent[];
+  window: LocalDeletionWindow | null | undefined;
+  operationId: string;
+  createIntentId: string;
+  identityRevision: number;
+  now: number;
+}): NamespaceIntent[] | null {
+  const deletion = input.intents.find(
+    (intent) =>
+      intent.operationId === input.operationId &&
+      intent.desired.kind === "delete" &&
+      intent.state === "settled-locally",
+  );
+  const window = input.window;
+  if (
+    !deletion ||
+    window?.obligationId !== deletion.intentId ||
+    (window.notBefore !== undefined && input.now >= window.notBefore)
+  )
+    return null;
+  const placement = input.intents
+    .filter(
+      (intent) =>
+        intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location",
+    )
+    .sort((left, right) => right.sequence - left.sequence)[0];
+  if (!placement) return null;
+  return [
+    ...input.intents.map((intent) =>
+      intent === deletion ? { ...intent, state: "superseded" as const } : intent,
+    ),
+    {
+      projectId: placement.projectId,
+      handle: placement.handle,
+      intentId: input.createIntentId,
+      sequence: Math.max(...input.intents.map((intent) => intent.sequence)) + 1,
+      identityRevision: input.identityRevision,
+      desired: placement.desired,
+      ...(placement.admission ? { admission: placement.admission } : {}),
+      attempts: [],
+      state: "pending",
+    },
+  ];
+}
+
 export function validateNamespaceJournal(input: {
   previous: Journal | null;
   next: Journal;
   identityRevision: number;
   localDeletionAllowed?: boolean;
+  /** Local deletions whose Undo cleared their cleanup in this write: they may become superseded. */
+  revokedLocalDeletions?: ReadonlySet<string>;
   terminal?: boolean;
 }): void {
   const { previous, next, identityRevision, localDeletionAllowed = false } = input;
+  const revoked = input.revokedLocalDeletions ?? new Set<string>();
   const previousMax = Math.max(0, ...(previous?.intents.map((intent) => intent.sequence) ?? []));
   const previousIds = new Set(previous?.intents.map((intent) => intent.intentId));
   const ids = new Set<string>();
@@ -169,8 +331,7 @@ export function validateNamespaceJournal(input: {
         throw new Error("Namespace request Work authority is incomplete");
       if (
         attempt.outcome?.kind === "refusal" &&
-        (attempt.request.kind === "create" ||
-          attempt.outcome.operationId !== attempt.request.body.operationId ||
+        (attempt.outcome.operationId !== namespaceRequestId(attempt.request) ||
           attempt.outcome.error.retryable)
       )
         throw new Error("Namespace refusal does not match submitted request");
@@ -178,6 +339,7 @@ export function validateNamespaceJournal(input: {
         const receipt = attempt.outcome.receipt;
         if (
           attempt.request.kind === "create" ||
+          attempt.request.kind === "create-folder" ||
           receipt.command.kind !== attempt.request.kind ||
           receipt.operationId !== attempt.request.body.operationId
         )
@@ -188,12 +350,20 @@ export function validateNamespaceJournal(input: {
           request.kind === "move" && command.kind === "move"
             ? request.body.expected.kind === command.expected.kind &&
               request.body.expected.nodeId === command.expected.nodeId
-            : request.kind === "delete" &&
-              command.kind === "delete" &&
-              request.body.expected.kind === command.expected.kind &&
-              (request.body.expected.kind !== "file" ||
-                (command.expected.kind === "file" &&
-                  request.body.expected.documentId === command.expected.documentId));
+            : request.kind === "copy" && command.kind === "copy"
+              ? request.body.sources.length === command.sources.length &&
+                request.body.sources.every(
+                  (source, index) =>
+                    source.copyId === command.sources[index]?.copyId &&
+                    source.expected.kind === command.sources[index]?.expected.kind &&
+                    source.expected.nodeId === command.sources[index]?.expected.nodeId,
+                )
+              : request.kind === "delete" &&
+                command.kind === "delete" &&
+                request.body.expected.kind === command.expected.kind &&
+                (request.body.expected.kind !== "file" ||
+                  (command.expected.kind === "file" &&
+                    request.body.expected.documentId === command.expected.documentId));
         if (!matchesIdentity)
           throw new Error("Namespace outcome does not match submitted identity");
       } else if (attempt.outcome?.kind === "create") {
@@ -202,6 +372,13 @@ export function validateNamespaceJournal(input: {
           (attempt.outcome.result.status !== "conflict" &&
             attempt.outcome.result.status !== "joined" &&
             attempt.outcome.result.documentId !== attempt.request.body.documentId)
+        )
+          throw new Error("Create outcome does not match submitted identity");
+      } else if (attempt.outcome?.kind === "create-folder") {
+        if (
+          attempt.request.kind !== "create-folder" ||
+          (attempt.outcome.result.status !== "conflict" &&
+            attempt.outcome.result.folderId !== attempt.request.body.folderId)
         )
           throw new Error("Create outcome does not match submitted identity");
       }
@@ -267,11 +444,13 @@ export function validateNamespaceJournal(input: {
     if (
       intent.state === "superseded" &&
       ((intent.attempts.length > 0 && !outcome) ||
-        accepted ||
+        // An accepted answer the replica could not apply is `needs-repair` and ends superseded.
+        (accepted && previousIntent?.state !== "needs-repair") ||
         (previousIntent &&
           previousIntent.state !== "needs-repair" &&
           previousIntent.state !== "received" &&
-          previousIntent.state !== "superseded"))
+          previousIntent.state !== "superseded" &&
+          !revoked.has(intent.intentId)))
     )
       throw new Error("Only failed namespace work can be superseded");
     if (intent.state === "pending" && intent.attempts.length > 0)
@@ -288,12 +467,15 @@ export function validateNamespaceJournal(input: {
       intent.identityRevision !== oldIntent.identityRevision ||
       intent.operationId !== oldIntent.operationId ||
       (oldIntent.settledAt !== undefined && intent.settledAt !== oldIntent.settledAt) ||
-      JSON.stringify(intent.desired) !== JSON.stringify(oldIntent.desired)
+      JSON.stringify(intent.desired) !== JSON.stringify(oldIntent.desired) ||
+      JSON.stringify(intent.admission) !== JSON.stringify(oldIntent.admission)
     )
       throw new Error("Recorded namespace intention cannot be replaced");
     if (
       (oldIntent.state === "cancelled" || oldIntent.state === "settled-locally") &&
-      (intent.state !== oldIntent.state || intent.attempts.length > 0)
+      ((intent.state !== oldIntent.state &&
+        !(revoked.has(intent.intentId) && intent.state === "superseded")) ||
+        intent.attempts.length > 0)
     )
       throw new Error("Locally completed namespace work cannot restart");
     if (

@@ -177,7 +177,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const persistence = createDrizzleCollabPersistence(deps.db);
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
-    onArrival: (id) => deps.arrivals?.settle([id]) ?? Promise.resolve(0),
+    onArrivals: (ids) => deps.arrivals?.settle(ids) ?? Promise.resolve(0),
   });
   const hocuspocusBinding = createHocuspocusBinding(deps.eventSink);
   const liveCoordinator = createHocuspocusCoordinator({
@@ -535,6 +535,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftPeers = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts,
+      draftCoordinator,
       draftPulls,
       agentEdit,
       documents: runtime.markdownDocuments,
@@ -576,6 +577,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
   return createCollabFacade({
+    importBinder: runtime.importBinder,
     lifecycle: {
       dispose: async () => {
         await Promise.all([draftAheads.shutdown(), draftPulls.shutdown(), draftEffects.dispose()]);
@@ -616,15 +618,26 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     reversal: turnReversal,
     documents: {
+      readForExport: runtime.markdownDocuments.readForExport,
       initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
       repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
+      prepareSeed: runtime.markdownDocuments.prepareSeed,
+      stageInitialStates: persistence.seeds.stageInitialStates,
+      async commitStagedStates(stagingId) {
+        const seeds = await persistence.seeds.commitStagedStates(stagingId);
+        deferUntilDrizzleCommit(() => runtime.markdownDocuments.announceSeeds(seeds));
+      },
+      discardStagedStates: persistence.seeds.discardStagedStates,
+      encodeSeed: runtime.markdownDocuments.encodeSeed,
+      installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
+      bindCopiedBlocks: runtime.linkBinder.bindCopiedBlocks,
       bindStatic: runtime.linkBinder.bindStatic,
     },
     projections: {

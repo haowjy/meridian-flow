@@ -85,8 +85,10 @@ export type VisibleDocument = {
   storageUrl: string | null;
   mimeType: string | null;
   sizeBytes: number | null;
+  hasPreview: boolean;
   metadata: JsonObject;
   provisionalName: boolean;
+  rank: string | null;
   locationVersion: bigint;
   hidden: boolean;
   updatedAt: Date;
@@ -99,6 +101,8 @@ export type VisibleFolder = {
   contextSourceId: ContextSourceId;
   parentId: FolderId | null;
   name: string;
+  rank: string | null;
+  orderPolicy: "default" | "manual";
   hidden: boolean;
   locationVersion: bigint;
   path: string;
@@ -190,6 +194,7 @@ export type TreeStateNode = {
     parentFolderId: FolderId | null;
     name: string;
     extension: string;
+    rank: string | null;
     path: string;
     /** Folder names from the source root to the parent: a move target by path. */
     dir: readonly string[];
@@ -296,6 +301,8 @@ type VisibleFolderRow = {
   contextSourceId: ContextSourceId;
   parentId: FolderId | null;
   name: string;
+  rank: string | null;
+  orderPolicy: "default" | "manual";
   hidden: boolean;
   locationVersion: bigint;
 };
@@ -345,6 +352,8 @@ export function createTreeReader(
         contextSourceId: vf.contextSourceId,
         parentId: vf.parentId,
         name: vf.name,
+        rank: vf.rank,
+        orderPolicy: vf.orderPolicy,
         hidden: vf.hidden,
         locationVersion: vf.locationVersion,
       })
@@ -364,8 +373,10 @@ export function createTreeReader(
       storageUrl: row.storageUrl,
       mimeType: row.mimeType,
       sizeBytes: row.sizeBytes,
+      hasPreview: row.hasPreview,
       metadata: row.metadata,
       provisionalName: row.provisionalName,
+      rank: row.rank,
       locationVersion: row.locationVersion,
       hidden: row.hidden,
       updatedAt: row.updatedAt,
@@ -804,7 +815,7 @@ export function createTreeReader(
       row: DocumentIdentityRow;
       branch: BranchTreeRow | null;
       state: BranchLogicalState | null;
-      at: Pick<DocumentIdentityRow, "contextSourceId" | "folderId" | "name" | "extension">;
+      at: Pick<DocumentIdentityRow, "contextSourceId" | "folderId" | "name" | "extension" | "rank">;
     };
     const items: Item[] = [
       // A tombstone is no longer the branch's: repair-on-touch drops its row (§12.4).
@@ -884,6 +895,7 @@ export function createTreeReader(
           parentFolderId: at.folderId,
           name: at.name,
           extension: at.extension,
+          rank: at.rank,
           path,
           dir: [...chain].reverse().map((folder) => folder.name),
           uri: address,

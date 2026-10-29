@@ -39,12 +39,13 @@ browser reports no fine pointer, so rows render at touch height.
    inside it: the folder and its rows light, the hint reads "Move to
    characters". Drop. The three chapters appear under `characters`, stay
    selected, and the open document's path reads Knowledge Base › characters.
-   Between the tree and Scratch, the rail reads "Moved 3 items to
-   characters." with Undo and Dismiss; it covers nothing and stays until the
-   next move or Dismiss.
-4. Press Undo: the chapters return to `Act 2`. Repeat with the keyboard (Tab
-   to Undo, Enter) and with Dismiss: focus lands on a moved row, not the page
-   body. Drop a row, then rename it: Undo leaves the notice and the message
+   A card at the window's bottom-right reads "Moved 3 items to
+   characters." with Undo and Dismiss, below any import toast; it stays until
+   the next move, copy or delete (which replaces it) or Dismiss. On a phone it
+   sits inline in the drawer between the Files tree and User instead.
+4. Press Undo: the chapters return to `Act 2`. Repeat with the keyboard (F8
+   moves focus into the bottom-right region, then Tab to Undo, Enter) and with
+   Dismiss: focus lands on a moved row, not the page body. Drop a row, then rename it: Undo leaves the notice and the message
    stays with Dismiss.
 4a. Open a row's `…` menu, Move… it into a collapsed folder: the same notice
    names the destination; Undo returns it.
@@ -64,6 +65,54 @@ browser reports no fine pointer, so rows render at touch height.
    never enters this recipe's move route.
 9. After every drag, check that no region stays lit
    (`document.querySelectorAll('div[aria-hidden].-z-10').length === 0`).
+
+## Reorder within a folder
+
+Named risks: an edge drop lands somewhere other than the line showed, the folder
+region steals an edge, a stale verdict or spring survives moving between edges,
+a search-hidden sibling is ignored, or several rows land out of order.
+
+Seed `Act 1` holding `Interludes` (a folder with two notes) and `Chapter 1`,
+`Chapter 2`, `Chapter 3`, `Chapter 4`, `Chapter 10`; a collapsed `Act 2` holding
+`Chapter 11`, `Chapter 12`; root `Prologue` and `Epilogue`. Rows are 44 px in the
+headless browser: a file's edge band is its top or bottom third, a folder's its
+top or bottom quarter.
+
+1. Drag `Chapter 10` to the top band of `Chapter 2`: a line at `Chapter 2`'s
+   indentation, no fill on `Act 1`, the hint reads "Move before Chapter 2".
+   Move to its centre: nothing lights (it is already in `Act 1`). Move to the
+   bottom band of `Chapter 3`: "Move after Chapter 3". Drop: it lands there and
+   the notice reads "Reordered Chapter 10." with Undo.
+2. Drag `Prologue` over open `Act 1`: its top band reads "Move before Act 1"
+   with the line at root indentation; its centre lights the whole folder,
+   "Move to Act 1". The top band of `Act 2` reads "Move before Act 2", the line
+   below `Act 1`'s subtree; a collapsed folder's bottom band reads "Move after
+   Act 2". Drop on "before Act 1", then Undo: `Prologue` returns to the bottom.
+3. Ctrl-select `Chapter 2` and `Chapter 4` and drop them on the bottom band of
+   `Chapter 1`: they land after it in screen order, the notice reads "Reordered
+   2 items."; Undo restores both places. Dragging a selection onto an edge of
+   one of its own rows does nothing.
+4. Hover `Act 2` until it springs open, then the bottom band of `Chapter 11`
+   and drop: "Moved Chapter 4 to Act 2." and it sits between 11 and 12.
+5. Drag `Act 1` onto an edge of a row inside it: "Can't go inside itself", no
+   line, no change.
+6. In a Work's Files, search `o` so `Bell timing` hides between `Bell rope` and
+   `Bell tower`. Drag `Bell tower` to the bottom band of `Bell rope`: the line
+   and "Move after Bell rope" show (the hidden row counts). Clear the search:
+   the order is rope, tower, timing.
+7. With a short viewport (1440×560), hold a drag in the tree's bottom 32 px
+   until it scrolls, then drop on an edge of a row scrolled into view: it lands
+   beside that row.
+8. A second client sees each reorder without a reload.
+9. Escape: the headless drag ignores the key, so dispatch
+   `window.dispatchEvent(new Event('dragend'))` mid-drag; the line and hint go.
+10. Move… on a chapter (desktop keyboard: focus its `…`, Enter, type `m`,
+    Enter, End, Enter): its own folder offers "Change position in Act 1", which
+    lists "Move to the top of Act 1", "Move after <sibling>" and "Move to the
+    bottom of Act 1", minus the place it holds. Choose one: the row moves, the
+    notice reads "Reordered …", focus returns to the row. Repeat on the phone
+    (393×852, coarse pointer per [Chat Files](chat-files.md)); its rows are
+    not draggable.
 
 ## Refused moves and deletes
 
@@ -150,5 +199,6 @@ One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
 
 ## Evidence
 
-Record the commit, date, the screenshots for steps 2, 3, 5 and the Scratch and
-Work Files drops, and any console errors, in the active work directory.
+Record the commit, date, the screenshots for steps 2, 3, 5, the reorder steps
+1, 2, 6 and 10, and the Scratch and Work Files drops, and any console errors, in
+the active work directory.

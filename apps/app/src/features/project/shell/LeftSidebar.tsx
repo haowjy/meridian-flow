@@ -16,14 +16,15 @@ import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { SurfaceNotices } from "../context/project-notices";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
 import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
+import { ProjectMenu } from "./ProjectMenu";
 import type { ScreenKey } from "./screens";
+import type { TitleEditHandle } from "./TitleEditSlot";
 import { WorkspaceNavBody } from "./WorkspaceNavBody";
 
 /**
@@ -71,6 +72,7 @@ export function LeftSidebar({
   // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
   // and the Editor path everywhere else (see `use-dock-placement`).
   const placement = useDockPlacement();
+  const titleEditor = useRef<TitleEditHandle>(null);
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
@@ -119,10 +121,17 @@ export function LeftSidebar({
           onClick={onCollapse}
         />
         <InlineProjectTitle
+          editRef={titleEditor}
           title={projectTitle}
           {...titleEdit}
           className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
           inputClassName="h-8 px-2 text-[14px] font-semibold"
+        />
+        <ProjectMenu
+          key={projectId}
+          projectId={projectId}
+          project={projectTitle}
+          onRename={() => titleEditor.current?.start(projectTitle)}
         />
       </div>
 
@@ -131,7 +140,6 @@ export function LeftSidebar({
         onSelectScreen={onSelectScreen}
         presentation="desktop"
         childrenRef={treePane}
-        notice={<SurfaceNotices surface="sidebar" className="mx-2 my-1 shrink-0" />}
         onOpenTrash={() => void trashNavigation.navigate(true)}
         user={
           contextLive ? (

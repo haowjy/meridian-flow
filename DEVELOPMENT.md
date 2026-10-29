@@ -180,9 +180,9 @@ pnpm dev:prune-worktrees -- --orphans --dry-run
 pnpm dev:prune-worktrees -- --orphans          # confirm interactively; --yes skips the prompt
 ```
 
-Only sessions created by the dev launcher qualify: their names include a hash of
-the checkout path, that path must be missing, and every terminal pane must still
-point inside it. Live checkouts, locked Git registrations, other repositories,
+Only sessions created by the dev launcher on the `meridian-dev` tmux server
+qualify: their names include a hash of the checkout path, that path must be
+missing, and every terminal pane must still point inside it. Live checkouts, locked Git registrations, other repositories,
 and unrelated terminals are left alone. Branches, databases and work items are
 never deleted. A refusal means ownership could not be proved; inspect the
 reported session and PID before retrying, rather than killing by name or path.
@@ -251,6 +251,10 @@ pnpm test:all       # unit + managed DB suites in one Vitest run (requires Postg
 
 Portless + tmux (not raw `localhost:3000`). See [AGENTS.md — Dev environment](AGENTS.md#dev-environment).
 
+Dev stacks run on the private tmux server `meridian-dev`, not the default one.
+Attach with `tmux -L meridian-dev attach -t <session>`; `pnpm dev` prints the
+exact command. The default server holds the machine owner's live shells.
+
 ```bash
 pnpm dev                  # start (tailscale serve by default)
 pnpm dev --no-tailscale   # local-only (no Tailscale exposure)
@@ -270,9 +274,10 @@ on your default server, `pnpm dev` refuses to start and prints the command that
 stops it.
 
 Restart terminates this worktree's owned tmux session, then owns its configured
-fixed ports. It logs each remaining holder by PID and command, sends SIGTERM,
-waits briefly, and sends SIGKILL to stragglers. An uninspectable bound port still
-aborts startup with diagnostics.
+fixed ports. It also stops a stack started before dev moved to `meridian-dev`,
+which still lives on the default server. It logs each remaining holder by PID
+and command, sends SIGTERM, waits briefly, and sends SIGKILL to stragglers. An
+uninspectable bound port still aborts startup with diagnostics.
 
 ### After a reboot
 

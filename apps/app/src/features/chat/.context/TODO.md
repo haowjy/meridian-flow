@@ -50,3 +50,11 @@ most three clauses ("Read and edited loop-test.md, 1 edit failed"). A failure
 shows in the label without opening the fold; a live fold names the current
 action. Deferred out of the subagent UI change because it rewrites the digest
 contract in `turn-composition.md`.
+
+## Tool-call row copy for rank-only moves
+
+`describeModelMove` also words the tool-call row ("Changing the position of …").
+Only the receipt line and the draft review rail were seen on screen: chats fold
+the write rows into the receipt. Open a chat that shows the raw tool-call row
+for a model `write(move)` with `position` and no path change, and confirm the
+copy there.

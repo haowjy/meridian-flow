@@ -129,6 +129,16 @@ write: a draft placement ends the branch's use unless another thread's committed
 text makes the document stand, and only that Work's document draft, peers, and
 rooms retire.
 
+A device-minted folder ID is idempotent the same way (`createFolderIfAbsent`, the
+`create-folder` route): a replay finds the folder under its ID and answers
+`already-exists`. The route reads the ID first (`answerHeldFolder`), before any authority
+over the destination, so an ID held out of reach (deleted, hidden, foreign, a document's) is a
+final `409 conflict` even when the destination's Work is archived. The folder takes the
+first free name at the destination and absorbs a hidden branch folder already there, so a
+create is never refused for a name. A destination that is gone is `destination_missing`.
+A create carries `destination.position` like a document create, resolved under the move
+lock; an anchor the server does not hold leaves the folder at the parent's end.
+
 A hidden node with no active branch use is tombstoned, never left live. End of
 use locks and rechecks the complete namespace/document scope, releases its
 storage and drafts, and prunes empty hidden folders. A moved scope aborts
@@ -163,6 +173,114 @@ Work deletion soft-deletes its owned sources, documents, and folders marked
 `deletedByWorkId`; restore clears only those, so separately deleted content
 stays deleted.
 
+## Copy
+
+A Copy is one atomic command per drop: ordered roots (documents and folders) into one
+destination folder, with an optional sibling position.
+`POST /api/projects/:projectId/context/copy` and `./mf doc copy` drive it; the browser's
+Copy intent is not built yet. The pieces: `copy/copy-port.ts` resolves the request's
+addresses to adapters, `copy/copy-command.ts` reads, duplicates and orchestrates, and
+`adapters/context-fs/copy-adapter.ts` (source read) with `copy-tree.ts` (insertion) is what
+one source's tree contributes.
+
+- Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, live tree) and each
+  tracked document's content is read once as a frozen cut (`readEffectiveBlocks`: the live
+  document, or the draft a tab shows when the source names that view). The listing is a
+  series of committed reads, not one database snapshot; a folder moved while it runs lands
+  on one side of it. A selection collapses to its outermost roots first: a root inside
+  another selected folder, or selected twice, is already in that copy. Everything slow
+  happens before the receipt's transaction opens: the reads, a binary's duplicated bytes
+  (`prepareBinaryCopy`, D24), the plan, and the binding. A source room that is not open
+  loads through a second connection, so a transaction held across the reads would starve
+  the pool. Each put key is released if no transaction commits to name its object (a
+  refusal, a retryable failure, a replay that never reads it). A process crash between a put
+  and the rollback still leaks it (the model copy tool leaks the same way; one storage sweep
+  would cover both).
+- The operation receipt (`kind: "copy"`) owns the transaction. Inside it the command
+  transaction takes the destination's Work and namespace, and nothing else: the sources are
+  a frozen cut, so their namespaces are not locked and a source deleted mid-copy is a copy
+  of what the writer saw. The command re-resolves an identity destination through the
+  router's one resolver (the one Create and Move also use: `destination_missing` when the
+  folder is gone, `permission_denied` when the writer cannot edit it), then the destination
+  adapter inserts the plan (`copyInto`).
+- Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
+  against live occupants and the rest of the batch, from a lock-free read of the destination
+  parent. A hidden draft node never takes a name from a copy ([naming conflicts never
+  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/naming/naming-conflicts-never-block.md)):
+  the insert normalizes the roots' names, so a hidden node on a root's name yields to the next
+  free one. Only the roots meet existing occupants.
+  A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
+  every descendant keeps a server-minted identity, so a replay or a replan keeps the roots
+  the client already names. Any row already holding a `copyId` — live, hidden, deleted, in
+  another source, or a document's — makes the insert a typed `conflict`; a duplicate id
+  within one request is a 400. The plan mints every identity before any content is bound,
+  so one old→new map binds links between roots through `collab/domain/copied-blocks.ts`: links inside the copied set name
+  the copies (a settled `ahead:` ref, an unsettled one whose address now holds a copied
+  folder, and an image or link to a copied binary included),
+  everything else keeps its target. The model's `copy` tool calls the same
+  `remapCopiedBlocks`, with the same settled-ahead map read from the same cut, so a document
+  it copies and a document a writer copies point their links alike. The model remaps a
+  document onto its own copy only when it copied the whole document, never an excerpt.
+  Under the lock `copyInto` re-reads the parent and confirms the roots would take the same
+  names; if a concurrent write took one, it inserts nothing and answers `replan`, and the
+  command plans and binds again under the lock (a second plan cannot move).
+- A copied folder keeps its source's order policy and its children arrive in source order,
+  so a manual folder's visible order survives. Roots arrive by the destination parent's own
+  rule (the end of a manual parent, name order in a default one). An explicit position
+  places the roots as one run: the first there, each next one after the previous, so a
+  default parent becomes manual exactly as a reorder makes it.
+- Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
+  so it lands only in an empty document) and encoded to its first Yjs state
+  (`encodeSeed`) outside the lock. The insert is set-based, because nothing below a root can
+  meet an occupant: `ContextDocumentStore.insertNewTree` writes folders, documents,
+  projections and claimed locations in one statement per batch of 500 (`tree/new-tree.ts`),
+  `InitialDocumentSeeds.seedInitialDocuments` writes the heads and seed checkpoints, and the
+  creation aggregate (`createDocumentsAtomically`) settles every arrival once, so ahead refs
+  pointing at a copy's new address settle. The per-node checks of a single create (occupancy,
+  hidden candidate, hidden-name yield) are skipped on purpose: they are what makes a
+  create cost fifteen statements, and the plan has already allocated around every name.
+  Projections and link rows are derived after the transaction commits, four documents at a
+  time (`refreshDocumentProjection`), and the answer does not wait for them. So a successful
+  answer means the rows are committed, not derived: until they fill, a model `ls` word count
+  and backlinks miss the copies, and a ref the copy itself owns (`ahead:`) registers then.
+  Reading a copy through its room shows its text immediately. A derivation that fails is
+  logged and the stale sweep recovers it. `metadata.copiedFrom` records the source URI, the
+  version read and that version's revision; folder provenance lives in the receipt.
+- Refusals are typed and recorded on the receipt, so a replay under the same operation ID
+  answers the same result: `not_found` or `stale_source` for a gone or changed source,
+  `destination_missing` for a destination that no longer exists, `stale_target` for one that
+  moved, `permission_denied` for an identity destination the writer cannot edit,
+  `invalid_operation`
+  for a folder into its own subtree ("Can't go inside itself", the drag hint's words), an
+  unsupported source (a draft view of a folder, or of a document its Work holds no draft of:
+  reason `no_draft`), the source root, or a draft placement destination. Uploads as the
+  destination (by path or by folder identity), a malformed path or state vector, and a vector
+  sent for a folder are refused by the route before the domain runs, typed and unrecorded. A
+  draft view names its Work and no chat: the server reads that Work's active branch's draft of
+  the document, and a Work outside the project is refused as `work_missing`.
+- A duplicate request with the same operation ID waits for an in-flight prepare in this
+  process before reading, then answers from the receipt the first attempt recorded (or
+  prepares itself when that attempt recorded none). Another process still re-prepares; only
+  a committed receipt is shared.
+- A client-held source sends its Yjs state vector with a document source (a folder source
+  with a vector is a 400). The vector is compared with the room of the view being read, live
+  or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to
+  catch up, then answers `io_error` with `reason: "source_behind"` ("The source has edits the
+  server has not received yet"): retryable and never recorded, so the replica's replay under
+  the same operation ID reads the room again, and distinct from a transport failure so the
+  replica can stop after a bounded wait. Recording it as `stale_source` would hand the first
+  answer to every replay. A live document's vector from a real tab has been checked; no draft
+  tab has sent one yet, so confirm the draft room's vector against one first.
+- Lock hold grows with the statements, not with a round trip per document: 200 linked
+  chapters of about 1,500 words hold the destination namespace for about 0.3 s in a fresh
+  project. What is left is the catalog reconcile (`refreshSources`), which reads the whole
+  project scope on every write and runs twice when the destination folder is also created,
+  and the head lock it takes (see `FUTURE.md`).
+- A document that exists only in a Work's draft is not in the live tree, so it cannot be a
+  source yet (`not_found`).
+- There is no Undo command: Copy's Undo is ordinary deletion of the identities the receipt
+  lists.
+
 ## Catalog and publication
 
 The catalog is a live tree view, not a second visibility policy. Branch-hidden
@@ -196,7 +314,12 @@ location commit within the same tracked schema. Document/code or tracked/
 binary conversion is refused until an explicit conversion seam exists.
 Unknown suffixes remain tracked prose; registered non-tracked types fail with
 a typed error. Binary creation and upload use the binary storage path and do
-not erase storage or MIME metadata through a text write.
+not erase storage or MIME metadata through a text write. `writeBinary` takes
+`hasPreview`: the caller stores the original and its preview first
+(`saveImagePreview`, [storage](../../storage/.context/CONTEXT.md#previews)).
+Reads sign the original for download and answer `drawUrl`, what to draw:
+the preview, the original when browsers draw that type, or nothing (the file
+card). `drawObjectKey` in storage is the one place that decides it.
 
 Text writes route provenance through `collab-document-sync.ts`: agent writes
 carry turn identity, human writes carry user identity, and omitted provenance
@@ -288,3 +411,11 @@ no `results://` scheme. Neither Recent list lives here: chat Recent reads
 - [File access policy](../../file-policy/.context/CONTEXT.md)
 - [Collab codec and authority](../../collab/.context/CONTEXT.md)
 - [Deferred work](FUTURE.md)
+
+## Import staging
+
+`context_staged_folders` and `context_staged_documents` are private generation-tagged rows. Catalog, ContextFS, address lookup, link resolution, and tree readers do not read them. Reveal validates the whole placement, locks Works before namespace keys, inserts the generation set-wise, settles membership and arrivals, then publishes one catalog refresh. A changed destination refuses the generation rather than revealing a partial tree.
+
+The reveal inserts rows unranked, then places the stage's top level like any other arrival (`placeArrivedBatch` in `tree/sibling-order.ts`): a default destination leaves them unranked, a manual one appends them after its last rank in default order, with server-minted ranks under the namespace lock it already holds. Everything below the top level sits in new default-order folders.
+
+Both write paths that insert rows in bulk take their ranks from the same rule, `arrivalRanks` in `tree/sibling-order.ts`: `placeArrivedBatch` updates rows a caller already inserted, and `insertNewTree` (a Copy's result) writes the ranks in with the rows. A write path that inserts `folders` or `documents` rows must place them through `arrivalRanks`; setting `rank` by hand bypasses the allocator.

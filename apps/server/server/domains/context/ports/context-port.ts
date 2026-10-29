@@ -3,16 +3,20 @@
  * contract over context URI schemes plus file-entry, result, and error types.
  */
 
-import type { LinkView } from "@meridian/contracts";
+import type { LinkView, StoredDocumentProperties } from "@meridian/contracts";
 import type {
   ContextUriScheme,
   ProjectScopedContextUriScheme,
   WorkScopedContextUriScheme,
 } from "@meridian/contracts/context-uri";
 import type {
+  ContextDestinationParent,
   ContextError,
   ContextMoveResult,
   ContextOperationReceipt,
+  ContextSiblingPosition,
+  CopyContextEntriesResult,
+  CopyContextEntryView,
   DeleteContextEntryRequest,
   DeleteContextEntryResult,
   DocumentFileType,
@@ -139,7 +143,11 @@ export interface ContextCreateUntitledDocumentOptions {
    * carries. The create joins a branch's hidden document waiting there. Without it the
    * create is nameless: `Untitled N` in the home URI's folder.
    */
-  destination?: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
+  destination?: {
+    parent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
+    name: string;
+    position?: MoveContextEntryRequest["position"];
+  };
   /** Refuses a destination the caller may not edit; given the resolved destination URI. */
   authorizeDestination?: (uri: string) => Promise<boolean>;
 }
@@ -152,12 +160,50 @@ export interface AdapterCreateUntitledOptions {
   name?: string;
   /** The folder identity the destination named: a stale one is retried, never made again. */
   expectFolderId?: string;
+  /** Where among the folder's children a new document goes; it never moves one that exists. */
+  position?: MoveContextEntryRequest["position"];
+}
+
+export interface ContextCreateFolderOptions {
+  folderId: string;
+  origin: WriteProvenance;
+  /** Where the writer put the folder; the same identity-based address a move carries. */
+  destination: {
+    parent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
+    name: string;
+    position?: MoveContextEntryRequest["position"];
+  };
+  /** Refuses a destination the caller may not edit; given the resolved destination URI. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
+}
+
+export interface ContextCreateFolderResult {
+  /** `already-exists` answers a replay of the same id. */
+  status: "created" | "already-exists";
+  folderId: string;
+  scheme: ContextScheme;
+  path: string;
+  name: string;
+  workId?: string;
+}
+
+/** What the router hands an adapter: the destination resolved to a folder path and a leaf. */
+export interface AdapterCreateFolderOptions {
+  folderId: string;
+  origin: WriteProvenance;
+  /** The typed folder name; a taken one yields to the first free name. */
+  name: string;
+  /** The folder identity the destination named: a stale one is retried, never made again. */
+  expectFolderId?: string;
+  /** Where among the folder's siblings a new folder goes. */
+  position?: MoveContextEntryRequest["position"];
 }
 
 interface BaseListEntry {
   uri: string;
   title?: string | null;
   documentId?: string;
+  folderId?: string;
   sizeBytes?: number;
   updatedAt?: string;
   /** True when the entry's scheme is read-only. */
@@ -205,6 +251,14 @@ interface BaseFileRef {
   updatedAt?: string;
   /** True when the file's scheme is read-only. */
   readonly?: boolean;
+  /**
+   * Imported frontmatter stored with the document; `copy` carries it to the copy.
+   * Host-only: the model never sees properties in v1 (ruling I6, #778). Copy
+   * inheriting metadata is not model visibility; no tool output may render this.
+   */
+  properties?: StoredDocumentProperties;
+  /** Alternate names stored with the document; `copy` carries them. Host-only, like `properties`. */
+  aliases?: string[];
 }
 
 /** A Yjs/projected text file ref returned by {@link ContextPort.stat}. */
@@ -222,6 +276,8 @@ export interface BinaryFileRef extends BaseFileRef {
   storageUrl: string;
   /** Persisted MIME type for the stored object, when known. */
   mimeType?: string;
+  /** A browser-drawable preview is stored beside the object (`previewObjectKey`). */
+  hasPreview?: boolean;
 }
 
 /** A single-file lookup result returned by {@link ContextPort.stat}. */
@@ -274,6 +330,31 @@ export interface SearchResult {
   shown?: SearchShowing;
 }
 
+/**
+ * One Copy as a port takes it: canonical addresses the route resolved from the writer's
+ * locators, one ordered root per selection entry, and the destination parent's address.
+ */
+export interface ContextCopyRequest {
+  operationId: string;
+  sources: readonly {
+    /** Canonical address of the root (a free path or a folder path). */
+    uri: string;
+    view?: CopyContextEntryView;
+    expected: { kind: "file" | "folder"; nodeId: string };
+    /** The device-minted identity for this root's copy; descendants are server-minted. */
+    copyId?: string;
+    /** The client's own Yjs state vector for a file it holds open, decoded by the route. */
+    stateVector?: Uint8Array;
+  }[];
+  /** Canonical address of the destination parent folder. */
+  destinationUri: string;
+  /** The identity-based destination, for the receipt and the in-transaction recheck. */
+  destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
+  /** Recheck edit authority on a re-resolved identity destination, under the copy's locks. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
+}
+
 export type WriteProvenance =
   | { type: "agent"; agentSlug: string | null; threadId: string; turnId: string }
   | { type: "human"; userId: string; threadId?: string }
@@ -295,6 +376,7 @@ export interface ContextWriteOptions {
 
 export interface ContextLocationOptions extends ContextWriteOptions {
   destinationParent?: MoveContextEntryRequest["destinationParent"];
+  position?: MoveContextEntryRequest["position"];
   /** Reconfirm the resolved destination's edit authority under its namespace locks. */
   authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
@@ -315,7 +397,15 @@ export type ContextBranchTreeCommand = {
   documentId: string;
   changedBy: BranchChangeAuthor;
   record(change: RecordedBranchTreeChange): Promise<void>;
-} & ({ op: "move"; sourceUri: string; destinationUri: string } | { op: "delete"; uri: string });
+} & (
+  | {
+      op: "move";
+      sourceUri: string;
+      destinationUri: string;
+      position?: MoveContextEntryRequest["position"];
+    }
+  | { op: "delete"; uri: string }
+);
 
 export type ContextBranchTreeResult = { uri: string; moved: boolean };
 
@@ -333,6 +423,8 @@ export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   storageUrl: string;
   mimeType: string;
   sizeBytes: number;
+  /** A preview of the object was stored beside it (`saveImagePreview` said so). */
+  hasPreview?: boolean;
 }
 
 /**
@@ -344,6 +436,17 @@ export interface ContextWriteBinaryOptions extends ContextWriteOptions {
  */
 export interface ContextPort {
   lookupOperation(operationId: string): Promise<ContextOperationReceipt | null>;
+
+  /**
+   * One Copy: the request's roots are read through this port's sources (an explicit per-source
+   * read view), and the destination's adapter inserts the tree, all in one transaction with a
+   * durable receipt. File policy is the caller's: this only moves context.
+   */
+  copy(request: ContextCopyRequest): Promise<Result<CopyContextEntriesResult, ContextError>>;
+
+  /** The canonical address a folder identity has now; `destination_missing` when it is gone. */
+  resolveFolderUri(uri: string): Promise<Result<{ uri: string }, ContextError>>;
+
   /** Resolve metadata for one file by URI. `not_found` if it does not exist or names a directory. */
   stat(uri: string): Promise<Result<FileRef, ContextError>>;
 
@@ -406,6 +509,12 @@ export interface ContextPort {
     homeUri: string,
     options: ContextCreateUntitledDocumentOptions,
   ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>>;
+
+  /** Create a folder under a device-minted id at the writer's destination. */
+  createFolder(
+    homeUri: string,
+    options: ContextCreateFolderOptions,
+  ): Promise<Result<ContextCreateFolderResult, ContextError>>;
 
   /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
   ensureTrackedDocument(

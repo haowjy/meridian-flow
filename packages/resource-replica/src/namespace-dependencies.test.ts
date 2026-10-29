@@ -149,6 +149,7 @@ it.each<NamespaceIdentityAvailability>([
       accountId: "account",
       readFolder: async () => record,
       readFolders: async () => [record],
+      readOperation: async () => null,
       commitFolder: commit,
     },
     transport: {
@@ -291,6 +292,7 @@ function acknowledgedFile(): ResourceRecord {
       content: { kind: "unacquired" },
       classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: loc("P/A/doc.md"),
+      serverHold: "held",
       lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
       aliases: {},
       obligations: {},

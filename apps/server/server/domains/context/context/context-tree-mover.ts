@@ -111,6 +111,7 @@ type LocationChangePolicy =
       expected?: ContextLocationOptions["expected"];
       inTransaction?: ContextLocationOptions["inTransaction"];
       destinationParent?: ContextDestinationParent;
+      position?: ContextLocationOptions["position"];
       resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
       authorizeDestination?: (uri: string) => Promise<boolean>;
     };
@@ -156,6 +157,7 @@ export class ContextTreeMover {
       expected,
       operationId,
       destinationParent,
+      position,
       resolveDestination,
       authorizeDestination,
       inTransaction,
@@ -171,6 +173,7 @@ export class ContextTreeMover {
           destinationUri: destination.canonical,
           expected,
           ...(destinationParent ? { destinationParent } : {}),
+          ...(position ? { position } : {}),
         },
         () =>
           this.commitWriterLocation(source, destination, { ...options, operationId: undefined }),
@@ -182,6 +185,7 @@ export class ContextTreeMover {
       expected,
       overwrite: false,
       destinationParent,
+      position,
       resolveDestination,
       authorizeDestination,
       inTransaction,
@@ -220,7 +224,7 @@ export class ContextTreeMover {
             policy.authorizeDestination &&
             !(await policy.authorizeDestination(destination.canonical))
           )
-            return Err({ code: "destination_missing", uri: destination.canonical });
+            return Err({ code: "permission_denied", uri: destination.canonical });
           if (policy.target === "exact" && policy.expected) {
             const token = await this.inspect(source);
             if (!token.ok) return token;
@@ -230,9 +234,9 @@ export class ContextTreeMover {
             }
           }
           if (source.canonical === destination.canonical) {
-            return policy.target === "exact"
-              ? this.graduateInPlace(source)
-              : Err({ code: "invalid_operation", uri: destination.canonical });
+            if (policy.target !== "exact")
+              return Err({ code: "invalid_operation", uri: destination.canonical });
+            if (!policy.position) return this.graduateInPlace(source);
           }
           if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
             return Err({ code: "permission_denied", uri: destination.canonical });
@@ -248,28 +252,24 @@ export class ContextTreeMover {
             prepared.value.expectedTarget.token.nodeId === prepared.value.source.nodeId &&
             prepared.value.expectedTarget.token.sourceId === prepared.value.source.sourceId
           ) {
-            return prepared.value.source.kind === "file"
-              ? this.graduateInPlace({ ...source, path: prepared.value.source.path })
-              : Ok({
-                  movedNodeId: prepared.value.source.nodeId,
-                  destinationPath: prepared.value.source.path,
-                });
+            if (policy.target !== "exact" || !policy.position)
+              return prepared.value.source.kind === "file"
+                ? this.graduateInPlace({ ...source, path: prepared.value.source.path })
+                : Ok({
+                    movedNodeId: prepared.value.source.nodeId,
+                    destinationPath: prepared.value.source.path,
+                  });
           }
-          const result = await callAdapter(
-            destination.canonical,
-            () =>
-              destination.adapter.tree?.commitPreparedMove({
-                ...prepared.value,
-                actorUserId: policy.target === "container" ? policy.actorUserId : undefined,
-                linkNoteProjectId: this.moveLinks?.linkNoteProjectId,
-              }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
-          );
+          const result = await this.commitPreparedMove(destination, prepared.value, policy);
           if (!result.ok) return result;
           const parsedDestination = parseContextUri(destination.canonical);
           if (!parsedDestination.ok) throw new Error("Invalid resolved destination URI");
           const moved: ContextMoveResult = {
             movedNodeId: result.value.movedNodeId,
             ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
+            ...(result.value.locationVersion
+              ? { locationVersion: result.value.locationVersion }
+              : {}),
             destinationPath: result.value.path,
             ...(policy.target === "exact" && policy.destinationParent
               ? {
@@ -293,6 +293,23 @@ export class ContextTreeMover {
           : [source, destination].map(scopeOf),
       )
       .catch((error) => lifecycleCommandFailure(error, source.canonical));
+  }
+
+  private commitPreparedMove(
+    destination: ContextTreeDispatch,
+    prepared: PreparedContextMove,
+    policy: LocationChangePolicy,
+  ) {
+    return callAdapter(
+      destination.canonical,
+      () =>
+        destination.adapter.tree?.commitPreparedMove({
+          ...prepared,
+          actorUserId: policy.target === "container" ? policy.actorUserId : undefined,
+          linkNoteProjectId: this.moveLinks?.linkNoteProjectId,
+          ...(policy.target === "exact" && policy.position ? { position: policy.position } : {}),
+        }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
+    );
   }
 
   private async graduateInPlace(

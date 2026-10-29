@@ -19,16 +19,7 @@ import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol
 import type { JsonObject } from "@meridian/contracts/threads";
 import { branchTreeChanges, documents, folders } from "@meridian/database/schema";
 import { and, eq, getTableColumns, inArray, isNull, type SQL, Subquery, sql } from "drizzle-orm";
-import {
-  bigint,
-  boolean,
-  integer,
-  jsonb,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { bigint, boolean, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
@@ -46,8 +37,10 @@ const visibleDocumentShape = pgTable("visible_documents", {
   storageUrl: text("storage_url"),
   mimeType: text("mime_type"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
+  hasPreview: boolean("has_preview").notNull(),
   metadata: jsonb("metadata").$type<JsonObject>().notNull(),
   provisionalName: boolean("provisional_name").notNull(),
+  rank: text("rank"),
   locationVersion: bigint("location_version", { mode: "bigint" }).notNull(),
   hidden: boolean("hidden").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
@@ -60,7 +53,8 @@ const visibleFolderShape = pgTable("visible_folders", {
   parentId: uuid("parent_id").$type<FolderId>(),
   name: text("name").notNull(),
   description: text("description"),
-  sortOrder: integer("sort_order").notNull(),
+  rank: text("rank"),
+  orderPolicy: text("order_policy").$type<"default" | "manual">().notNull(),
   hidden: boolean("hidden").notNull(),
   locationVersion: bigint("location_version", { mode: "bigint" }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
@@ -91,11 +85,11 @@ function subquery<TAlias extends string, TColumns extends Record<string, unknown
 }
 
 const documentTail = sql.raw(
-  "d.file_type, d.storage_url, d.mime_type, d.size_bytes, d.metadata, d.provisional_name, " +
+  "d.file_type, d.storage_url, d.mime_type, d.size_bytes, d.has_preview, d.metadata, d.provisional_name, " +
     "d.location_version, d.hidden, d.created_at, d.updated_at",
 );
 const folderColumns = sql.raw(
-  "f.id, f.context_source_id, f.parent_id, f.name, f.description, f.sort_order, f.hidden, " +
+  "f.id, f.context_source_id, f.parent_id, f.name, f.description, f.rank, f.order_policy, f.hidden, " +
     "f.location_version, f.created_at, f.updated_at",
 );
 
@@ -146,7 +140,8 @@ function treeFactOf(b: SQL): SQL {
 const movedElsewhere = sql.raw(
   "NOT (c.moved_folder_id IS NOT DISTINCT FROM d.folder_id " +
     "AND (c.moved_folder_id IS NOT NULL OR c.moved_root_source_id = d.context_source_id) " +
-    "AND c.moved_name = d.name AND c.moved_extension = d.extension)",
+    "AND c.moved_name = d.name AND c.moved_extension = d.extension " +
+    "AND c.moved_rank IS NOT DISTINCT FROM d.rank)",
 );
 
 /**
@@ -234,7 +229,7 @@ function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
   const slots = slotted(match, "key, source_id, parent_id, name, extension");
   const select = match
     ? sql`SELECT p.key, d.id`
-    : sql`SELECT d.id, d.context_source_id, d.folder_id, d.name, d.extension, ${documentTail}`;
+    : sql`SELECT d.id, d.context_source_id, d.folder_id, d.name, d.extension, d.rank, ${documentTail}`;
   const live = sql`${select}
     FROM ${slots}documents d WHERE ${liveDocument}${at(match, rowLocation, "d.extension")}`;
   if (view.kind === "live") return live;
@@ -243,6 +238,7 @@ function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
     ? sql`SELECT p.key, d.id`
     : sql`SELECT d.id, coalesce(mf.context_source_id, c.moved_root_source_id) AS context_source_id,
         c.moved_folder_id AS folder_id, c.moved_name AS name, c.moved_extension AS extension,
+        c.moved_rank AS rank,
         ${documentTail}`;
   return sql`${live} AND NOT ${treeFactOf(branch)}
     UNION ALL
@@ -411,6 +407,7 @@ export type DocumentIdentityRow = {
   extension: string;
   fileType: string;
   storageUrl: string | null;
+  rank: string | null;
   locationVersion: bigint;
 };
 
@@ -424,6 +421,7 @@ type RawIdentityRow = {
   extension: string;
   file_type: string;
   storage_url: string | null;
+  rank: string | null;
   location_version: string;
 };
 
@@ -438,6 +436,7 @@ function identityRow(row: RawIdentityRow): DocumentIdentityRow {
     extension: row.extension,
     fileType: row.file_type,
     storageUrl: row.storage_url,
+    rank: row.rank,
     locationVersion: BigInt(row.location_version),
   };
 }
@@ -445,7 +444,7 @@ function identityRow(row: RawIdentityRow): DocumentIdentityRow {
 const identityColumns = sql.raw(
   "d.id::text AS id, d.hidden, d.deleted_at IS NOT NULL AS deleted, " +
     "d.context_source_id::text AS context_source_id, d.folder_id::text AS folder_id, d.name, " +
-    "d.extension, d.file_type, d.storage_url, d.location_version::text AS location_version",
+    "d.extension, d.file_type, d.storage_url, d.rank, d.location_version::text AS location_version",
 );
 
 export async function loadDocumentIdentityRows(
@@ -502,6 +501,7 @@ export type BranchTreeFactsRow = {
     rootSourceId: ContextSourceId | null;
     name: string;
     extension: string;
+    rank: string | null;
   } | null;
   deleted: boolean;
   /** Null only on a created row written before PR 3. */
@@ -520,6 +520,7 @@ export type BranchTreeRow = DocumentIdentityRow & {
     folderId: FolderId | null;
     name: string;
     extension: string;
+    rank: string | null;
   };
 };
 
@@ -540,6 +541,7 @@ export async function loadBranchTreeRows(
       moved_source_id: string | null;
       moved_name: string | null;
       moved_extension: string | null;
+      moved_rank: string | null;
       revision: string | null;
       base_version: string | null;
     }
@@ -549,7 +551,7 @@ export async function loadBranchTreeRows(
       c.moved_folder_id::text AS moved_folder_id,
       c.moved_root_source_id::text AS moved_root_source_id,
       coalesce(mf.context_source_id, c.moved_root_source_id)::text AS moved_source_id,
-      c.moved_name, c.moved_extension, c.revision::text AS revision,
+      c.moved_name, c.moved_extension, c.moved_rank, c.revision::text AS revision,
       c.base_version::text AS base_version
     FROM branch_tree_changes c
     CROSS JOIN LATERAL (
@@ -568,6 +570,7 @@ export async function loadBranchTreeRows(
             rootSourceId: row.moved_root_source_id as ContextSourceId | null,
             name: row.moved_name,
             extension: row.moved_extension,
+            rank: row.moved_rank,
           }
         : null;
     return {
@@ -586,12 +589,14 @@ export async function loadBranchTreeRows(
               folderId: moved.folderId,
               name: moved.name,
               extension: moved.extension,
+              rank: moved.rank,
             }
           : {
               contextSourceId: identity.contextSourceId,
               folderId: identity.folderId,
               name: identity.name,
               extension: identity.extension,
+              rank: identity.rank,
             },
     };
   });

@@ -1,19 +1,49 @@
 /** Journal invariants shared by storage adapters; attempts are immutable once submitted. */
 import { newerCanonicalObservation } from "./canonical-observation";
+import { refreshWitness } from "./first-place";
 import { validateNamespaceJournal } from "./namespace-journal-policy";
-import type { ResourceRecord } from "./resource-records";
+import type { OperationRecord, ResourceRecord } from "./resource-records";
+import { deleteNeedsServer } from "./server-hold";
 
+/**
+ * `operation` is the journal of the operation `next.resource.copiedBy` names, which the caller
+ * reads inside its transaction: its receipt can refresh a document that holds no create of its own.
+ */
 export function validateResourceRecordUpdate(
   previous: ResourceRecord | null,
   next: ResourceRecord,
+  operation: OperationRecord | null = null,
 ): void {
   const resource = next.resource;
   if (next.intents.some((intent) => intent.desired.kind === "set-folder-location"))
     throw new Error("Folder placement requires a folder namespace record");
+  if (next.intents.some((intent) => intent.desired.kind === "copy"))
+    throw new Error("A Copy is journaled by its operation, not by a document");
   if (resource.revision !== (previous?.resource.revision ?? 0) + 1)
     throw new Error("Invalid resource revision");
   if (previous && previous.resource.handle !== resource.handle)
     throw new Error("Resource identity mismatch");
+  // The server's acceptance is the one fact a document cannot lose; only a spent id is replaced.
+  if (
+    (resource.canonical !== null || resource.lifecycle.kind === "acknowledged") &&
+    resource.serverHold !== "held"
+  )
+    throw new Error("A document the server placed is held");
+  if (previous?.resource.serverHold === "held" && resource.serverHold !== "held")
+    throw new Error("A held document id never stops being held");
+  if (previous && previous.resource.copiedBy?.operationId !== resource.copiedBy?.operationId)
+    throw new Error("The operation that made a record never changes");
+  // `local` means the next placement is a create and a delete settles on this device. Either would
+  // act on an id the operation owns while it may still land, so a missed dispatch gate would write
+  // where an `uncertain` root only waits.
+  if (resource.copiedBy && resource.serverHold !== "uncertain" && resource.serverHold !== "held")
+    throw new Error("An operation's root awaits its answer or is held");
+  if (
+    previous?.resource.serverHold === "spent" &&
+    resource.serverHold === "local" &&
+    previous.resource.identity.documentId === resource.identity.documentId
+  )
+    throw new Error("A spent document id is replaced, never reused");
   if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal") {
     // Only a strictly newer server observation of the document as present supersedes deletion,
     // and never under an outstanding purge of the deleted lineage's content.
@@ -69,20 +99,18 @@ export function validateResourceRecordUpdate(
     (!Number.isFinite(eligibility.eligibleAt) || eligibility.eligibleAt < 0)
   )
     throw new Error("Resource create eligibility is invalid");
-  const executableCreate = next.intents.some(
-    (intent) =>
-      intent.desired.kind === "create" &&
-      intent.state !== "cancelled" &&
-      intent.state !== "settled" &&
-      intent.state !== "superseded" &&
-      intent.state !== "settled-locally",
-  );
-  if (
-    executableCreate &&
-    resource.lifecycle.kind === "local" &&
+  const executableCreate =
     resource.canonical === null &&
-    !eligibility
-  )
+    next.intents.some(
+      (intent) =>
+        (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+        intent.state !== "cancelled" &&
+        intent.state !== "settled" &&
+        intent.state !== "superseded" &&
+        intent.state !== "settled-locally",
+    );
+  // A document an operation made has no create of its own to be eligible for.
+  if (executableCreate && resource.lifecycle.kind === "local" && !eligibility && !resource.copiedBy)
     throw new Error("Local creation requires an explicit eligibility witness");
   const previousEligibility = previous?.resource.obligations.createEligibility;
   if (
@@ -150,28 +178,31 @@ export function validateResourceRecordUpdate(
     if (!createdLocalContent && !acknowledgedExactCache)
       throw new Error("Session adoption requires created or acquired exact content");
   }
-  if (resource.obligations.canonicalRefresh) {
-    const operationId = resource.obligations.canonicalRefresh.operationId;
-    const source = next.intents.some((intent) =>
-      intent.attempts.some(
-        (attempt) =>
-          attempt.request.kind === "move" &&
-          attempt.outcome?.kind === "operation" &&
-          attempt.outcome.receipt.operationId === operationId &&
-          attempt.outcome.receipt.result.ok,
-      ),
-    );
-    if (!source) throw new Error("Canonical refresh requires a successful move receipt");
-  }
+  if (
+    resource.obligations.canonicalRefresh &&
+    !refreshWitness(
+      { intents: next.intents, copiedBy: resource.copiedBy },
+      operation,
+      resource.obligations.canonicalRefresh.operationId,
+    )
+  )
+    throw new Error("Canonical refresh requires a successful move receipt");
   validateNamespaceJournal({
     terminal: resource.lifecycle.kind === "terminal",
     previous: previous ? { handle: previous.resource.handle, intents: previous.intents } : null,
     next: { handle: resource.handle, intents: next.intents },
     identityRevision: resource.identity.revision,
-    localDeletionAllowed:
-      resource.lifecycle.kind === "local" &&
-      resource.canonical === null &&
-      !next.intents.some((item) => item.attempts.length > 0),
+    localDeletionAllowed: !deleteNeedsServer(resource.serverHold),
+    revokedLocalDeletions: new Set(
+      previous?.intents
+        .filter(
+          (intent) =>
+            intent.state === "settled-locally" &&
+            previous.resource.obligations.cleanup?.obligationId === intent.intentId &&
+            resource.obligations.cleanup?.obligationId !== intent.intentId,
+        )
+        .map((intent) => intent.intentId),
+    ),
   });
   const oldRefresh = previous?.resource.obligations.canonicalRefresh;
   const nextRefresh = resource.obligations.canonicalRefresh;
