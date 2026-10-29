@@ -102,7 +102,7 @@ async function fixture(
   const effective = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts: f.draftStore,
-      derivations: { grepTexts: async () => new Map() },
+      blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
       resolveFiletype: async () => null,
       draftPulls: f.draftPulls,
       agentEdit: f.collab.agentEdit(),

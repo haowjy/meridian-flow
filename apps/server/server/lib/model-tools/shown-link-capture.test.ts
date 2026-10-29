@@ -167,6 +167,7 @@ async function harness(
   let plainReads = 0;
   const documentSync = {
     readStoredGrepTexts: async () => new Map(),
+    readStoredWordCounts: async () => new Map(),
     readEffectiveHashlines: async ({ documentId }: { documentId: string }) => ({
       ok: true,
       value: {

@@ -30,7 +30,7 @@ async function _expectScopedReplay(
   const { createEffectiveDocumentReader } = await import("../domain/effective-document-reader.js");
   const reader = createEffectiveDocumentReader({
     drafts: fixture.draftStore,
-    derivations: { grepTexts: async () => new Map() },
+    blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
     resolveFiletype: async () => null,
     draftPulls: fixture.draftPulls,
     agentEdit: fixture.collab.agentEdit(),

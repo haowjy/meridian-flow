@@ -49,9 +49,9 @@ import {
   SILENT_TURN_INVERSE_NOTICES,
   UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
 } from "./adapters/declared-stubs.js";
-import { serializeStoredDocument } from "./adapters/document-loader.js";
 import { createDrizzleApplyClick, measureApplyAppend } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
+import { createDrizzleBlockText } from "./adapters/drizzle-block-text.js";
 import { createDrizzleBranchCommands } from "./adapters/drizzle-branch-commands.js";
 import {
   createDrizzleBranchDiscard,
@@ -117,11 +117,7 @@ import { createDraftPullService } from "./domain/draft-pulls.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
-import {
-  type AheadRefRegistrar,
-  type DocumentLinkScopes,
-  LIVE_VIEW,
-} from "./domain/ports/document-link-scope.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
@@ -267,12 +263,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const derivations = createDocumentDerivationService({
     store: derivationStore,
-    deriveBlocks: (documentId, doc) =>
-      createBlockDeriver({
-        model: runtime.model,
-        codec: runtime.codec,
-        resolveFiletype: lookups.resolveDocumentFiletype,
-      })(documentId, doc),
+    deriveBlocks: createBlockDeriver({
+      runtime: () => runtime,
+      resolveFiletype: lookups.resolveDocumentFiletype,
+    }),
     outsideTransaction: runOutsideDrizzleTransaction,
     deferred: (documentId) => {
       if (!deps.eventSink) return;
@@ -546,7 +540,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftPeers = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts,
-      derivations: derivationStore,
+      blockText: createDrizzleBlockText(deps.db),
       draftPulls,
       agentEdit,
       documents: runtime.markdownDocuments,
@@ -629,13 +623,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     reversal: turnReversal,
     documents: {
-      initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
-      repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
+      ensureDocumentAuthority: runtime.markdownDocuments.ensureDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
-      readFrozenMarkdown: (documentId) =>
-        serializeStoredDocument(persistence.journal, documentId, (doc) =>
-          runtime.markdownDocuments.serializeDocument(documentId, doc, LIVE_VIEW),
-        ),
+      readFrozenMarkdown: runtime.markdownDocuments.readFrozenMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,

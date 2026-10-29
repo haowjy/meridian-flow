@@ -2,31 +2,16 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  branches,
   contextSources,
   documentBlockRooms,
   documentBlocks,
-  documentDrafts,
   documentLinks,
   documents,
   documentYjsHeads,
   projects,
   works,
 } from "@meridian/database";
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  ne,
-  not,
-  notExists,
-  or,
-  type SQL,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -45,6 +30,7 @@ import {
   type DocumentDerivationStore,
 } from "../domain/ports/document-derivations.js";
 import { loadDocumentState } from "./document-loader.js";
+import { staleForSweep } from "./drizzle-block-text.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 /** Caller owns the document mutation lock for this transaction. */
@@ -87,6 +73,9 @@ export async function captureDocumentDerivation(
   };
 }
 
+/** The project a document's source belongs to: its own, or its Work's. */
+const sourceProjectId = sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`;
+
 /** Rows per statement: bounded by the driver's parameter limit. */
 const WRITE_CHUNK = 1000;
 
@@ -96,6 +85,18 @@ function chunks<T>(rows: readonly T[]): T[][] {
   const out: T[][] = [];
   for (let at = 0; at < rows.length; at += WRITE_CHUNK) out.push(rows.slice(at, at + WRITE_CHUNK));
   return out;
+}
+
+async function documentProjectId(tx: DrizzleDb, documentId: DocumentId): Promise<ProjectId> {
+  const [source] = await tx
+    .select({ projectId: sourceProjectId })
+    .from(documents)
+    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+    .leftJoin(works, eq(works.id, contextSources.workId))
+    .where(eq(documents.id, documentId))
+    .limit(1);
+  if (!source?.projectId) throw new Error(`Document ${documentId} has no project`);
+  return source.projectId;
 }
 
 /**
@@ -141,17 +142,11 @@ export async function certifyDocumentDerivation(
     room.extractorVersion === w.extractorVersion
   )
     return true;
-  const [source] = await tx
-    .select({
-      projectId: sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`,
-    })
-    .from(documents)
-    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-    .leftJoin(works, eq(works.id, contextSources.workId))
-    .where(eq(documents.id, cut.documentId))
-    .limit(1);
-  const projectId = source?.projectId;
-  if (!projectId) throw new Error(`Document ${cut.documentId} has no project`);
+  // The project changes only with a move, which bumps the location version.
+  const projectId =
+    room && room.cutLocationVersion === w.locationVersion
+      ? room.projectId
+      : await documentProjectId(tx, cut.documentId);
 
   // A re-derivation that changed no content (an extractor bump, a move) is not an edit:
   // `ls` shows `updatedAt` to the model and the writer.
@@ -256,19 +251,6 @@ export type AheadRegistrationRecovery = {
 
 const AHEAD_RECOVERY_PAGE = 100;
 
-/**
- * The derived outputs are behind the document: never derived, or the room's cut differs from
- * the document's head, location or the extractor version. Needs `documentBlockRooms`
- * left-joined to `documents` and `documentYjsHeads`.
- */
-const staleDerivation = or(
-  isNull(documentBlockRooms.roomId),
-  ne(documentBlockRooms.cutGeneration, documentYjsHeads.authorityGeneration),
-  ne(documentBlockRooms.cutAdmissionSeq, documentYjsHeads.nextAdmissionSequence),
-  ne(documentBlockRooms.cutLocationVersion, documents.locationVersion),
-  ne(documentBlockRooms.extractorVersion, DOCUMENT_EXTRACTOR_VERSION),
-) as SQL;
-
 export function createDrizzleDocumentDerivationStore(
   db: Database,
   lastAddress: DocumentLastAddress,
@@ -331,67 +313,24 @@ export function createDrizzleDocumentDerivationStore(
         return certifyDocumentDerivation(tx, cut, outputs, at);
       });
     },
-    async grepTexts(ids, { draftWorkId }) {
-      if (!ids.length) return new Map();
-      // The watermark and the text come from one snapshot: one statement.
-      const rows = await currentDrizzleDb(db)
-        .select({
-          id: documentBlockRooms.documentId,
-          text: sql<string>`coalesce((
-            select string_agg(${documentBlocks.text}, E'\n' order by o.position)
-            from unnest(${documentBlockRooms.blockOrder}) with ordinality as o(block_id, position)
-            join ${documentBlocks} on ${documentBlocks.roomId} = ${documentBlockRooms.roomId}
-              and ${documentBlocks.blockId} = o.block_id
-          ), '')`,
-        })
-        .from(documentBlockRooms)
-        .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
-        .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
-        .where(
-          and(
-            inArray(documentBlockRooms.documentId, ids),
-            not(staleDerivation),
-            // A draft reader sees the draft, which the live room doesn't hold.
-            draftWorkId
-              ? notExists(
-                  currentDrizzleDb(db)
-                    .select({ one: sql`1` })
-                    .from(documentDrafts)
-                    .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
-                    .where(
-                      and(
-                        eq(documentDrafts.documentId, documents.id),
-                        eq(documentDrafts.kind, "work_draft"),
-                        eq(documentDrafts.status, "active"),
-                        eq(branches.status, "active"),
-                        eq(branches.originWorkId, draftWorkId),
-                      ),
-                    ),
-                )
-              : undefined,
-          ),
-        );
-      return new Map(rows.map((row) => [row.id, row.text]));
-    },
     async stale(scope, page) {
       // LIMIT bounds returned stale rows, not the cross-table freshness scan.
-      const projectId = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
       const rows = await currentDrizzleDb(db)
         .select({ id: documents.id })
         .from(documents)
         .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
         .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
         .leftJoin(works, eq(works.id, contextSources.workId))
-        .leftJoin(projects, sql`${projects.id} = ${projectId}`)
+        .leftJoin(projects, sql`${projects.id} = ${sourceProjectId}`)
         .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
         .where(
           and(
             isNull(documents.deletedAt),
-            staleDerivation,
+            staleForSweep,
             scope
               ? scope.personalOwnerId
                 ? eq(projects.userId, scope.personalOwnerId)
-                : sql`${projectId} = ${scope.projectId}`
+                : sql`${sourceProjectId} = ${scope.projectId}`
               : undefined,
             page?.after ? gt(documents.id, page.after) : undefined,
           ),

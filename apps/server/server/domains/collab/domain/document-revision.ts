@@ -9,17 +9,14 @@
  * apply it identifies. It is a freshness signal, never a write refusal.
  */
 import { createHash } from "node:crypto";
-import { bodyRange, destinationFreeBlocks, grepBlockText } from "@meridian/agent-edit";
-import {
-  type AgentEditCodecFactory,
-  type AgentEditModel,
-  toDocHandle,
-} from "@meridian/agent-edit/integration";
+import { bodyRange } from "@meridian/agent-edit";
+import type { AgentEditCodecFactory, AgentEditModel } from "@meridian/agent-edit/integration";
 import { spelledLinks } from "@meridian/markup/links";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { HashlineRead } from "../contracts.js";
+import { grepBlocksOf } from "./grep-blocks.js";
 import type { HolderLinkScope } from "./ports/document-link-scope.js";
 
 export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
@@ -56,19 +53,17 @@ export function readHashlines(
   codecs: AgentEditCodecFactory,
   verbatim: boolean,
 ): HashlineRead {
-  const blocks = model.projectBlocks(toDocHandle(doc));
-  const nodes = blocks.map((block) => block.node);
+  const grepBlocks = grepBlocksOf(doc, model, codecs.markup, verbatim);
   const bodies = codecs.forScope(scope).serializeBlocks(
-    nodes,
-    blocks.map((block) => block.hash),
+    grepBlocks.map(({ block }) => block.node),
+    grepBlocks.map(({ block }) => block.hash),
   );
-  const destinationFree = destinationFreeBlocks(codecs.markup, nodes);
   return {
-    blocks: blocks.map((block, index) => ({
+    blocks: grepBlocks.map(({ block, destinationFree, text }, index) => ({
       hash: block.hash,
       body: bodies[index] as string,
-      destinationFree: destinationFree[index] as string,
-      text: grepBlockText(destinationFree[index] as string, block.node, verbatim),
+      destinationFree,
+      text,
       verbatim,
       links: spelledLinks([block.node], scope),
     })),

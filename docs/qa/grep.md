@@ -127,9 +127,10 @@ writer sees; the timing cases above stay the scale checks.
   current (edited) text. Restore it afterwards.
 - **Moved-link destination.** Link document A from document B, move A to another folder, then open
   the link from B's text: it lands on A at its new address.
-- **Move-only ordering.** Record the project's recently-updated order, move one document without
-  editing it, and read the order again: the moved document's `updated_at` does not change, so it does
-  not jump to the top.
+- **Move-only ordering.** Record each `updated_at` in the project's recently-updated order, move one
+  document without editing it, and read them again. The moved document's own `updated_at` changes (the
+  tree bumps it on a move; `main` does the same). The `updated_at` of every document that links to it
+  does not: re-deriving them after the move is not an edit, so none of them jumps to the top.
 - **`ls -v` counts and file-tree sizes.** `ls` with `verbose: true` returns a word count per
   document; read it from the tool result (`./mf log` or the `turn_blocks` row's `output`), because the
   expanded card shows names only. Compare it with the file tree's size label for the same document;

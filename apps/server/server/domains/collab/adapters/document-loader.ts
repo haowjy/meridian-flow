@@ -1,7 +1,6 @@
 /** Rebuilds encoded Y.Doc state from the durable UpdateJournal. */
 
 import type { JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   bindDocumentAuthority,
@@ -9,6 +8,7 @@ import {
   RetiredDocumentHandleError,
 } from "../domain/document-handle.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
+import { storedDocument } from "../domain/stored-document.js";
 
 export async function loadDocumentState(
   journal: UpdateJournal,
@@ -29,34 +29,4 @@ export async function loadDocumentState(
   } finally {
     doc.destroy();
   }
-}
-
-/**
- * What `serialize` makes of a document's stored state, whatever its lifecycle (a trashed
- * document keeps its state until purge); empty when it holds none. Reads the journal, never a
- * live room.
- */
-export async function serializeStoredDocument(
-  journal: UpdateJournal,
-  docId: string,
-  serialize: (doc: Y.Doc) => Promise<string>,
-): Promise<string> {
-  const snapshot = await journal.read(docId);
-  if (!snapshot.checkpoint && snapshot.updates.length === 0) return "";
-  const doc = storedDocument(snapshot);
-  try {
-    return await serialize(doc);
-  } finally {
-    doc.destroy();
-  }
-}
-
-/** The stored state as a document; the caller destroys it. */
-export function storedDocument(snapshot: JournalSnapshot): Y.Doc {
-  const doc = createCollabYDoc({ gc: false });
-  if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-  for (const entry of [...snapshot.updates].sort((a, b) => a.seq - b.seq)) {
-    Y.applyUpdate(doc, entry.update);
-  }
-  return doc;
 }

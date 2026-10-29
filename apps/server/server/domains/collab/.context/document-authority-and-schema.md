@@ -35,9 +35,10 @@ proves the document is living (`requireLivingDocument`), writes nothing when any
 checkpoint or update exists, and otherwise calls `initializeHead` and installs
 the first checkpoint. Two kinds of caller reach it: the create's own
 transaction (live create, a branch's new hidden row, bootstrap and seeds
-through `seedFromMarkdown`, or `initializeEmptyDocument` for an empty create),
-and explicit repair of a living document whose authority is absent
-(`repairDocumentAuthority`, seeded as an empty document).
+through `seedFromMarkdown`, or `ensureDocumentAuthority` for an empty create),
+and explicit repair of a living document whose authority is absent (the same
+`ensureDocumentAuthority`, seeded as an empty document: it reads first and
+writes only when the document has no state).
 Repair runs only on an explicit touch: the occupant `create-placement` returns,
 a joined hidden candidate before its draft seeds, live overwrite and the held
 live lease, and Hocuspocus room admission before its first generation read.

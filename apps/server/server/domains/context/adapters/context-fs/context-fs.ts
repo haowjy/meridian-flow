@@ -111,7 +111,10 @@ export interface ContextFSDeps {
   documentSync: MarkdownDocumentStore &
     Pick<
       DraftPeerShadowAccess,
-      "readEffectiveHashlines" | "readEffectiveMarkdown" | "readStoredGrepTexts"
+      | "readEffectiveHashlines"
+      | "readEffectiveMarkdown"
+      | "readStoredGrepTexts"
+      | "readStoredWordCounts"
     >;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
@@ -185,9 +188,8 @@ function moveFiletypeTransition(
  * Owns path ↔ folder-tree resolution and folder auto-creation; delegates
  * single-node persistence to a {@link ContextDocumentStore}.
  *
- * Content is Yjs-canonical: folder tree and Markdown projections stay in the
- * store, but read/write content flows through the collab domain. The store's
- * markdown is only a search/listing projection cache.
+ * Content is Yjs-canonical: the folder tree stays in the store, but read/write
+ * content flows through the collab domain.
  *
  * Production commands lock the complete logical namespace before preflight.
  * Stores join that transaction; successful claims and tree changes publish
@@ -660,8 +662,8 @@ export class ContextFS implements ContextSchemeAdapter {
     ]);
 
     const wordCounts = options?.wordCounts
-      ? await this.store.readWordCounts(
-          documents.filter((doc) => doc.fileType === null).map((doc) => doc.id),
+      ? await this.documentSync.readStoredWordCounts(
+          documents.filter((doc) => doc.fileType === null).map((doc) => doc.id as DocumentId),
         )
       : new Map<string, number>();
     const entries: AdapterFileEntry[] = folders.map((folder) => ({
@@ -686,7 +688,9 @@ export class ContextFS implements ContextSchemeAdapter {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
               schemaType: trackedSchema?.value ?? "document",
-              ...(options?.wordCounts ? { wordCount: wordCounts.get(doc.id) ?? 0 } : {}),
+              ...(wordCounts.has(doc.id as DocumentId)
+                ? { wordCount: wordCounts.get(doc.id as DocumentId) }
+                : {}),
             }
           : {
               editable: false as const,

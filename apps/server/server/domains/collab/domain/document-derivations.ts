@@ -1,11 +1,9 @@
 /** Derives live outputs from durable cuts; timers are hints, database staleness is authority. */
 
 import { createHash } from "node:crypto";
-import { destinationFreeBlocks, grepBlockText } from "@meridian/agent-edit";
 import {
   type AgentEditCodecFactory,
   blockItemIdKey,
-  toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -14,6 +12,7 @@ import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirr
 import * as Y from "yjs";
 import { type DocumentLinkRow, deriveDocumentLinkRows } from "./document-link-rows.js";
 import { isCodeDocument } from "./document-schema-type.js";
+import { grepBlocksOf } from "./grep-blocks.js";
 import type {
   DerivationScope,
   DerivedBlock,
@@ -190,25 +189,20 @@ export async function deriveDocumentOutputs(
  * own, so the projection runs on it with no copy.
  */
 export function createBlockDeriver(deps: {
-  model: YProsemirrorDocumentModel;
-  codec: AgentEditCodecFactory;
+  /** A thunk: the runtime that owns the model is built after the derivation service. */
+  runtime(): { model: YProsemirrorDocumentModel; codec: AgentEditCodecFactory };
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
 }): DeriveBlocks {
   return async (documentId, doc) => {
     const verbatim = await isCodeDocument(deps.resolveFiletype, documentId);
-    const projected = deps.model.projectBlocks(toDocHandle(doc));
-    const free = destinationFreeBlocks(
-      deps.codec.markup,
-      projected.map((block) => block.node),
-    );
-    return projected.map((block, index) => {
-      const text = grepBlockText(free[index] as string, block.node, verbatim);
-      return {
+    const { model, codec } = deps.runtime();
+    return grepBlocksOf(doc, model, codec.markup, verbatim).map(
+      ({ block, destinationFree, text }) => ({
         id: blockItemIdKey(block.id),
         text,
-        contentHash: sha256(free[index] as string),
-      };
-    });
+        contentHash: sha256(destinationFree),
+      }),
+    );
   };
 }
 

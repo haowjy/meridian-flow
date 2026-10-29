@@ -23,7 +23,7 @@ import {
 import type { LinkView } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { DocumentLinkScope, MarkupCodec, ParsedContent, PMNode } from "@meridian/markup";
+import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -49,6 +49,7 @@ import {
 } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
+import { storedDocument } from "./stored-document.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -125,6 +126,11 @@ export type MarkdownDocumentEngine = {
     doc: Y.Doc,
     view: LinkView,
   ): Promise<{ content: string; revision: string }>;
+  /**
+   * The markdown of a document's stored state, whatever its lifecycle (a trashed document keeps
+   * its state until purge); empty when it holds none. Reads the journal, never a live room.
+   */
+  readFrozenMarkdown(documentId: DocumentId): Promise<string>;
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<{ content: string; revision: string }, SyncError>>;
@@ -147,13 +153,11 @@ export type MarkdownDocumentEngine = {
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
-  /** The create's own step for an empty create: the document's authority, empty. */
-  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
   /**
-   * Explicit repair of a living document whose authority is absent (an old anomaly): it is
-   * seeded as an empty document. A no-op when any checkpoint or update exists; refuses a removed one.
+   * Gives a document with no state its authority, seeded empty (a create, or the repair of an
+   * old anomaly); a no-op when any checkpoint or update exists.
    */
-  repairDocumentAuthority(documentId: DocumentId): Promise<void>;
+  ensureDocumentAuthority(documentId: DocumentId): Promise<void>;
   /** Writes only a document with no state yet; otherwise a no-op. Takes fresh writes only. */
   seedFromMarkdown(
     documentId: string,
@@ -205,17 +209,11 @@ export function createMarkdownDocumentEngine(
     schemaType: YjsTrackedSchemaType,
     links: DocumentLinkScope,
   ): string {
-    return projectBlocks(documentId, doc, (blocks) => markdownOf(blocks, schemaType, links));
-  }
-
-  function markdownOf(
-    blocks: ParsedContent["blocks"],
-    schemaType: YjsTrackedSchemaType,
-    links: DocumentLinkScope,
-  ): string {
-    if (blocks.length === 0) return "";
-    if (schemaType === "code") return blocks[0]?.textContent ?? "";
-    return deps.codec.serialize(blocks, links);
+    return projectBlocks(documentId, doc, (blocks) => {
+      if (blocks.length === 0) return "";
+      if (schemaType === "code") return blocks[0]?.textContent ?? "";
+      return deps.codec.serialize(blocks, links);
+    });
   }
 
   /**
@@ -415,7 +413,7 @@ export function createMarkdownDocumentEngine(
     format: { schemaType: YjsTrackedSchemaType },
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     try {
-      await repairDocumentAuthority(input.documentId);
+      await ensureDocumentAuthority(input.documentId);
       const result = await deps.coordinator.withDocument(input.documentId, (liveDoc) =>
         replaceLiveDocumentMarkdown(
           input.documentId,
@@ -442,10 +440,13 @@ export function createMarkdownDocumentEngine(
   }
 
   /**
-   * The one initializer both materialization callers share: the create's transaction and
-   * explicit repair. Rooms recover after the boundary that makes the state durable.
+   * Seeds an empty document when none has state, else does nothing; the unlocked read skips
+   * the write transaction for the common case. Nothing else holds the text: it is an empty
+   * document, not the empty paragraph a parse would give. Rooms recover after the boundary
+   * that makes the state durable.
    */
-  async function initializeAuthority(documentId: DocumentId): Promise<void> {
+  async function ensureDocumentAuthority(documentId: DocumentId): Promise<void> {
+    if (!(await deps.initialDocumentSeeds.lacksAuthority(documentId))) return;
     const doc = createCollabYDoc({ gc: false });
     try {
       const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
@@ -460,19 +461,23 @@ export function createMarkdownDocumentEngine(
     if (!deps.deferUntilCommit?.(deliver)) await deliver();
   }
 
-  async function repairDocumentAuthority(documentId: DocumentId): Promise<void> {
-    if (!(await deps.initialDocumentSeeds.lacksAuthority(documentId))) return;
-    // Nothing else holds the document's text: it is an empty document, not the empty
-    // paragraph a parse would give.
-    await initializeAuthority(documentId);
-  }
-
   const engine: MarkdownDocumentEngine = {
     async serializeDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
       const links = await spelling(documentId, [doc], view);
       return serializeForSchema(documentId, doc, format.value.schemaType, links);
+    },
+
+    async readFrozenMarkdown(documentId) {
+      const snapshot = await deps.journal.read(documentId);
+      if (!snapshot.checkpoint && snapshot.updates.length === 0) return "";
+      const doc = storedDocument(snapshot);
+      try {
+        return await engine.serializeDocument(documentId, doc, LIVE_VIEW);
+      } finally {
+        doc.destroy();
+      }
     },
 
     async serializeVersionedDocument(documentId, doc, view) {
@@ -530,9 +535,7 @@ export function createMarkdownDocumentEngine(
 
     setMarkdown,
 
-    initializeEmptyDocument: initializeAuthority,
-
-    repairDocumentAuthority,
+    ensureDocumentAuthority,
 
     async seedFromMarkdown(documentId, content, origin) {
       const typedDocumentId = documentId as DocumentId;
@@ -574,7 +577,7 @@ export function createMarkdownDocumentEngine(
     },
 
     async withLiveDocument(documentId, operation) {
-      await repairDocumentAuthority(documentId as DocumentId);
+      await ensureDocumentAuthority(documentId as DocumentId);
       return deps.coordinator.withDocument(documentId, (doc) =>
         operation({ documentId: documentId as DocumentId, doc }),
       );
@@ -627,7 +630,7 @@ export function createMarkdownDocumentEngine(
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
     const shaped = checkBound(input.documentId, input.content, format.value, "write");
     if (!shaped.ok) return shaped;
-    await repairDocumentAuthority(input.documentId);
+    await ensureDocumentAuthority(input.documentId);
     const actor = mutationActor(input.origin, input.threadId);
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,

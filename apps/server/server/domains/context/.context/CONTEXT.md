@@ -90,7 +90,9 @@ Matching is per line of the document's grep text: markdown as `read` shows it, l
 the text view (a code file's text is the file itself, with no fence). Each document's text comes first: collab's `readStoredGrepTexts`
 answers which of a slice of 50 documents have stored text matching what this reader
 sees (current derivation, no active draft in the reader's own Work, no staged writes of
-the reply), else the effective read's blocks give it. Candidate paths are spelled through
+the reply), else the effective read's blocks give it. Collab's `readStoredWordCounts` is the
+same door for `ls -v`: it answers for current derivations only, and a document it leaves out
+lists with no word count. Context never reads the block tables itself. Candidate paths are spelled through
 the tree view's folder chain; a document under a deleted ancestor has no path and is not
 searched. One loop over the text decides
 match and count; the read is repeated only for `content` mode's passages. A

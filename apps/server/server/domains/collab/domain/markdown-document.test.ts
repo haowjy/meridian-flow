@@ -69,7 +69,7 @@ function setup(filetype = "typescript") {
 }
 
 async function seedCode(setupResult: ReturnType<typeof setup>, source = "const answer = 42;") {
-  await setupResult.engine.initializeEmptyDocument(DOCUMENT_ID);
+  await setupResult.engine.ensureDocumentAuthority(DOCUMENT_ID);
   const written = await setupResult.engine.setMarkdown({
     documentId: DOCUMENT_ID,
     content: await setupResult.bind(source),

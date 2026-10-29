@@ -83,7 +83,7 @@ function documentSyncProbe() {
   const seeded: string[] = [];
   const documentSync: ContextFSDeps["documentSync"] = {
     ...createInMemoryCollabDomain(),
-    initializeEmptyDocument: async (documentId) => {
+    ensureDocumentAuthority: async (documentId) => {
       ensured.push(documentId);
     },
     readAsMarkdown: async () => ({ ok: true, value: "" }),
@@ -158,12 +158,12 @@ describe("ContextFS createUntitledDocument", () => {
     let failDurableHeadOnce = true;
     const documentSync = {
       ...collab,
-      async initializeEmptyDocument(documentId: DocumentId) {
+      async ensureDocumentAuthority(documentId: DocumentId) {
         if (failDurableHeadOnce) {
           failDurableHeadOnce = false;
           throw new Error("durable document authority head unavailable");
         }
-        return collab.initializeEmptyDocument(documentId);
+        return collab.ensureDocumentAuthority(documentId);
       },
     } satisfies ContextFSDeps["documentSync"];
     const { fs, backing } = createUntitledFs({ documentSync });
