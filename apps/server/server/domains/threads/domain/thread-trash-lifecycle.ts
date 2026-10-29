@@ -33,6 +33,7 @@ interface TransitionThreadTrashDeps {
    * Ends the thread's run and subagent subtree in this transaction (lineage cancellation).
    * Runs before the thread row lock: it takes thread locks, parents first, each after its ask rows.
    */
+  /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
 }
 

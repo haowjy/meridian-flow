@@ -595,8 +595,9 @@ export function createRunSessions(deps: {
   };
 
   /**
-   * The topmost threads of a set, in the caller's order (parents first; see `stopThreads`). A Work's roots need not have depth 0: a subagent whose parent was rebound
-   * elsewhere stays a root of the old Work.
+   * The topmost threads of a set, in the caller's order (parents first; see `stopThreads`). A Work's
+   * roots need not have depth 0: a subagent whose parent was rebound elsewhere stays a root of the
+   * old Work.
    */
   async function lineageOwners(threadIds: readonly ThreadId[]): Promise<ThreadId[]> {
     const subtrees = await Promise.all(

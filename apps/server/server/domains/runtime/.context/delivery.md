@@ -221,8 +221,8 @@ The continuation yields at that switch; the following run applies it before
 adopting later messages. The row carries no public control body and materializes
 no transcript turn. Delivery rechecks this eligibility under the thread lock;
 SQL wake discovery only avoids wasted starts. The row is only the wake hint: what
-the continuation owes is `asks.continuation`, which admission claims (`pending` to
-`done`) and acknowledges the row in the reservation commit. A hint whose ask owes
+the continuation owes is `asks.continuation`, which admission claims (owed, `pending`
+to `done`; `continuationOwedSql` is the rule) and acknowledges the row in the reservation commit. A hint whose ask owes
 nothing any more is retired without a run.
 
 A machine message names its sending execution (`MessageDraft.sender`), and the

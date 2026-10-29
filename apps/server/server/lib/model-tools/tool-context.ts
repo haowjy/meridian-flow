@@ -78,6 +78,7 @@ export interface ToolWiringDeps {
   notices: Pick<NoticePort, "record">;
   controls: Pick<ThreadControls, "enqueueControl">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
+  /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
