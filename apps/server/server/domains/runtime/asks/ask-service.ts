@@ -129,20 +129,14 @@ function firstMisfit(questions: readonly AskQuestion[], answers: DraftAnswers): 
   });
 }
 
-type AnswerCheck = { ok: true; resolution: AskResolution } | { ok: false; questionIndex?: number };
-
-/** The resolution a writer's answer gives this ask, or why it doesn't fit. */
-function answerResolution(ask: StoredAsk, answer: AskAnswer): AnswerCheck {
-  if (ask.kind === "permission")
-    return answer.kind === "allow" || answer.kind === "allow_always" || answer.kind === "deny"
-      ? { ok: true, resolution: { kind: answer.kind } }
-      : { ok: false };
-  if (answer.kind !== "answers") return { ok: false };
+/** Why a writer's answer doesn't fit this ask (the question it misses, when one), or null when it fits. */
+function answerMisfit(ask: StoredAsk, answer: AskAnswer): { questionIndex?: number } | null {
+  if (ask.kind === "permission") return answer.kind === "answers" ? {} : null;
+  if (answer.kind !== "answers") return {};
   const { questions } = ask.payload as QuestionAskPayload;
-  if (answer.answers.length !== questions.length) return { ok: false };
+  if (answer.answers.length !== questions.length) return {};
   const misfit = firstMisfit(questions, answer.answers);
-  if (misfit >= 0) return { ok: false, questionIndex: misfit };
-  return { ok: true, resolution: { kind: "answers", answers: answer.answers } };
+  return misfit >= 0 ? { questionIndex: misfit } : null;
 }
 
 /** The timeout's resolution: the writer's held answers stand, every other question takes its Recommended option. */
@@ -156,7 +150,8 @@ function timeoutResolution(ask: StoredAsk): AskResolution {
 }
 
 function resolutionPlan(resolution: AskResolution | null): AskResolutionPlan {
-  return { kind: resolution?.kind === "cancelled" ? "cancel" : "resume" };
+  if (!resolution) throw new Error("A claimed ask has a resolution");
+  return { kind: resolution.kind === "cancelled" ? "cancel" : "resume" };
 }
 
 /** Runs what the writer allowed. */
@@ -192,21 +187,23 @@ const UNREADABLE_COMMAND: AskToolResult = {
   isError: true,
 };
 
+interface ResolveInput {
+  askId: string;
+  threadId: ThreadId;
+  status: "answered" | "expired";
+  /** Built from the row as the thread lock holds it, so a draft stored since a listing counts. */
+  resolution: (current: StoredAsk) => AskResolution;
+  submissionId?: string;
+  dueBy?: Date;
+}
+
 export function createAskService(deps: {
   repos: ThreadRepositories;
   eventWriter: LiveEventWriter;
   delivery: Pick<DeliveryProducer, "withThreadLock">;
   permission: PermissionExecutor;
 }): AskService {
-  async function claim(input: {
-    askId: string;
-    threadId: ThreadId;
-    status: "answered" | "expired";
-    /** Built from the row as the thread lock holds it, so a draft stored since a listing counts. */
-    resolution: (current: StoredAsk) => AskResolution;
-    submissionId?: string;
-    dueBy?: Date;
-  }): Promise<AskClaim> {
+  async function claim(input: ResolveInput): Promise<AskClaim> {
     const existing = await deps.repos.asks.findById(input.askId);
     if (!existing || existing.threadId !== input.threadId)
       return { kind: "finished", result: { ok: false, code: "ask_not_open" } };
@@ -340,14 +337,7 @@ export function createAskService(deps: {
     });
   }
 
-  async function resolve(input: {
-    askId: string;
-    threadId: ThreadId;
-    status: "answered" | "expired";
-    resolution: (current: StoredAsk) => AskResolution;
-    submissionId?: string;
-    dueBy?: Date;
-  }): Promise<AskAnswerResult> {
+  async function resolve(input: ResolveInput): Promise<AskAnswerResult> {
     return deps.repos.transaction(() =>
       // The thread lock takes its held ask rows, this one included, before its own lock.
       deps.delivery.withThreadLock(input.threadId, async (producer) => {
@@ -386,19 +376,19 @@ export function createAskService(deps: {
       if (!stored || stored.threadId !== input.threadId) return { ok: false, code: "ask_not_open" };
       if (stored.submissionId === input.submissionId && stored.status !== "open")
         return { ok: true, ask: threadAsk(stored) };
-      const checked = answerResolution(stored, input.answer);
-      if (!checked.ok)
+      const misfit = answerMisfit(stored, input.answer);
+      if (misfit)
         return {
           ok: false,
           code: "invalid_answer",
           ask: threadAsk(stored),
-          ...(checked.questionIndex === undefined ? {} : { questionIndex: checked.questionIndex }),
+          ...(misfit.questionIndex === undefined ? {} : { questionIndex: misfit.questionIndex }),
         };
       const result = await resolve({
         askId: input.askId,
         threadId: input.threadId,
         status: "answered",
-        resolution: () => checked.resolution,
+        resolution: () => input.answer,
         submissionId: input.submissionId,
       });
       if (result.ok) await testHook("ask.answer.afterCommit");

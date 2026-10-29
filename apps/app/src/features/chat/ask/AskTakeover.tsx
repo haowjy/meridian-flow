@@ -26,10 +26,11 @@ export type QuestionDraft = { step: number; entries: readonly QuestionEntry[] };
 
 export type AskTakeoverProps = {
   open: OpenAsk;
-  /** Empty for a permission request. */
-  draft: QuestionDraft;
+  /** For a question ask; a permission request has none. */
+  draft?: QuestionDraft;
   onDraftChange: (draft: QuestionDraft) => void;
-  onAnswer: (answer: AskAnswer) => void;
+  /** A question's answer comes with the draft it was sent from, for the host to hold. */
+  onAnswer: (answer: AskAnswer, sent?: QuestionDraft) => void;
   /** The server refused the last answer; the draft is already at the question it named, if any. */
   refused?: boolean;
   /** Read the chat again: the server closed the ask without saying how. */
@@ -80,7 +81,9 @@ export function AskTakeover({
           </FailureCard>
         </div>
       ) : null}
-      {ask.kind === "question" ? (
+      {ask.kind === "permission" ? (
+        <PermissionTakeover ask={ask} onAnswer={onAnswer} />
+      ) : draft ? (
         <QuestionTakeover
           key={ask.id}
           ask={ask}
@@ -88,9 +91,7 @@ export function AskTakeover({
           onDraftChange={onDraftChange}
           onAnswer={onAnswer}
         />
-      ) : (
-        <PermissionTakeover ask={ask} onAnswer={onAnswer} />
-      )}
+      ) : null}
     </>
   );
 }
@@ -166,7 +167,7 @@ function QuestionTakeover({
   ask: QuestionAsk;
   draft: QuestionDraft;
   onDraftChange: (draft: QuestionDraft) => void;
-  onAnswer: (answer: AskAnswer) => void;
+  onAnswer: (answer: AskAnswer, sent?: QuestionDraft) => void;
 }) {
   const titleId = useId();
   const positionId = useId();
@@ -180,11 +181,11 @@ function QuestionTakeover({
   const last = position === count;
   const choices = entries.map((held) => held.choice);
   const complete = choices.every((choice) => choice !== null);
-  // Every answer is held before it sends, so a failed send reopens with it picked.
-  const send = (held: readonly QuestionEntry[]) => {
-    onDraftChange({ step, entries: held });
-    onAnswer({ kind: "answers", answers: held.map((item) => item.choice as QuestionAnswer) });
-  };
+  const send = (held: readonly QuestionEntry[]) =>
+    onAnswer(
+      { kind: "answers", answers: held.map((item) => item.choice as QuestionAnswer) },
+      { step, entries: held },
+    );
   // Words stay in the field when an option is picked: they go back to the composer if unused.
   const choose = (choice: QuestionAnswer) => {
     const next = entries.map((held, index) => (index === step ? { ...held, choice } : held));
