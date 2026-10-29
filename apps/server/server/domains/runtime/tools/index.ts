@@ -48,9 +48,14 @@ export {
   type ThreadMessageMode,
   type ThreadReportArgs,
 } from "./spawn-tools.js";
-export { createToolExecutor, type ToolExecutorWithBatch } from "./tool-executor.js";
+export {
+  createToolExecutor,
+  handlerToolResult,
+  type ToolExecutorWithBatch,
+} from "./tool-executor.js";
 export { createToolRegistry } from "./tool-registry.js";
 export type {
+  RequestToolHandlerContext,
   ResultEvidence,
   ToolCallInput,
   ToolExecutionContext,

@@ -80,7 +80,7 @@ function ChatComposerComponent({
     [ref],
   );
   // While an ask is open it takes the box's place; nothing runs, so Stop is not offered.
-  const takeover = useAskTakeover(threadId, agentName, composer);
+  const takeover = useAskTakeover(threadId, composer);
   const dock = useDraftDock({ threadId, generating, active });
   const openReferenceDocument = useOpenChatDocument(projectId);
   const canOpenReference = useCanOpenChatReference();

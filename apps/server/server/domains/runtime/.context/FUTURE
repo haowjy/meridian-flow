@@ -49,3 +49,7 @@
   prompt bake and tools, the switch notice, the leaf and position chain), and a
   missed seam runs a reply in the wrong mode, which is why it was rejected for
   now.
+
+- Project-scoped “Allow always” grants have no settings surface yet. Writers need
+  to see and revoke them before the first action is set to `ask`; the storage seam
+  is `PermissionGrantStore`, so changing the scope remains localized.

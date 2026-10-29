@@ -47,6 +47,7 @@ import type {
   WorkContextNotices,
   WorkRepository,
 } from "../../domains/projects/index.js";
+import type { PermissionGrantStore } from "../../domains/runtime/index.js";
 import {
   type ShownLinkStore,
   SKILLS_URI_ROOT,
@@ -71,6 +72,7 @@ export interface ToolWiringDeps {
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
+  permissionGrants: PermissionGrantStore;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
   notices: Pick<NoticePort, "record">;

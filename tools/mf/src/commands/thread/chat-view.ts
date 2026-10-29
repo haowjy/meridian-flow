@@ -603,7 +603,7 @@ function rowLines(row: ChatRow): string[] {
 }
 
 function askLine({ ask, resolution }: AskReceipt): string {
-  const asked = ask.kind === "question" ? ask.payload.question : ask.payload.summary;
+  const asked = ask.kind === "question" ? ask.payload.question : permissionLine(ask.payload);
   const answer =
     resolution.kind === "option"
       ? resolution.label
@@ -615,9 +615,19 @@ function askLine({ ask, resolution }: AskReceipt): string {
   return `asked ${ask.id}: ${oneLine(asked)} -> ${answer}`;
 }
 
+/** The request's facts: `work.update @w2 {"name":"Beta"}`. The app words them. */
+function permissionLine(payload: Extract<OpenAsk["ask"], { kind: "permission" }>["payload"]) {
+  const target = payload.work
+    ? ` ${payload.work.handle ? `@${payload.work.handle}` : "No Work"}`
+    : "";
+  const changes =
+    Object.keys(payload.changes).length > 0 ? ` ${JSON.stringify(payload.changes)}` : "";
+  return `${payload.action}${target}${changes}`;
+}
+
 function openAskLines(ask: OpenAsk["ask"]): string[] {
   if (ask.kind === "permission")
-    return [`  open permission request ${ask.id}: ${oneLine(ask.payload.summary)}`];
+    return [`  open permission request ${ask.id}: ${permissionLine(ask.payload)}`];
   const { question, options, recommended } = ask.payload;
   return [
     `  open question ${ask.id}: ${oneLine(question)}${ask.deadlineAt ? ` (continues at ${ask.deadlineAt})` : ""}`,

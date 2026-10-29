@@ -23,6 +23,21 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
+import { projects } from "./content";
+
+export const projectActionGrants = pgTable(
+  "project_action_grants",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("project_action_grants_project_action_unique").on(table.projectId, table.action),
+  ],
+);
 
 export const asks = pgTable(
   "asks",
@@ -37,6 +52,8 @@ export const asks = pgTable(
     toolCallId: text("tool_call_id").notNull(),
     kind: text("kind").$type<AskKind>().notNull(),
     payload: jsonb("payload").$type<AskPayload>().notNull(),
+    /** Validated server-only command. Never serialized through threadAsk(). */
+    permissionCommand: jsonb("permission_command").$type<Record<string, unknown>>(),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }),
     status: text("status").$type<AskStatus>().notNull().default("pending"),
     resolution: jsonb("resolution").$type<AskResolution>(),
@@ -66,6 +83,10 @@ export const asks = pgTable(
       .on(table.threadId)
       .where(sql`${table.status} IN ('pending', 'open')`),
     check("asks_kind_valid", sql`${table.kind} IN ('question', 'permission')`),
+    check(
+      "asks_permission_command_coherent",
+      sql`(${table.kind} = 'permission' AND ${table.permissionCommand} IS NOT NULL) OR (${table.kind} = 'question' AND ${table.permissionCommand} IS NULL)`,
+    ),
     check(
       "asks_status_valid",
       sql`${table.status} IN ('pending', 'open', 'answered', 'expired', 'cancelled')`,
