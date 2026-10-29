@@ -20,7 +20,7 @@ export {
 export type {
   ModelPricing,
   ModelRegistry,
-  PinnedModelRate,
+  ModelTokenRate,
   RegisteredModel,
   RegisteredProvider,
 } from "./config/registry.js";

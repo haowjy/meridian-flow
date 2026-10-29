@@ -20,7 +20,13 @@ import {
   type ModelAttemptTimeouts,
   modelAttemptTimeoutEvent,
 } from "./deadline.js";
-import type { GatewayConfig, GenerateRequest, ModelInfo, StreamEvent } from "./domain/index.js";
+import {
+  type GatewayConfig,
+  type GenerateRequest,
+  type ModelInfo,
+  resolveCall,
+  type StreamEvent,
+} from "./domain/index.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
 import {
   isCommittedOutputEvent,
@@ -211,6 +217,7 @@ export async function* streamWithRetry(
   const maxAttempts = retry?.maxAttempts ?? 1;
   let delay = retry?.initialDelayMs ?? 500;
   const maxDelay = retry?.maxDelayMs ?? 10_000;
+  const call = resolveCall(request, model);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let sawError: StreamEvent | undefined;
@@ -220,7 +227,7 @@ export async function* streamWithRetry(
     const startedAt = now();
     const requestStartedAt = new Date().toISOString();
     const iterator = adapter
-      .stream({ ...request, signal: attemptSignal.signal }, model)
+      .stream({ ...request, signal: attemptSignal.signal }, model, call)
       [Symbol.asyncIterator]();
     const buffer = new EventBuffer();
     let backpressured = false;

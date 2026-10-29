@@ -26,16 +26,36 @@
  *   default.
  */
 import type OpenAI from "openai";
-import {
-  type ContentPart,
-  clampReasoningEffort,
-  type GenerateRequest,
-  type Message,
-  type ModelInfo,
-  openaiCacheTtlWire,
-  type Tool,
+import type {
+  ContentPart,
+  GenerateRequest,
+  Message,
+  ModelInfo,
+  ResolvedCall,
+  Tool,
 } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
+
+const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
+const TWELVE_HOURS_MS = 12 * 60 * 60 * 1_000;
+
+/** `prompt_cache_options.ttl` for a lifetime: "12h" is the only longer option; the 30m default is sent as no parameter. */
+function openaiCacheTtlWire(ttlMs: number | null): "12h" | undefined {
+  return ttlMs === TWELVE_HOURS_MS ? "12h" : undefined;
+}
+
+/** Reject, at construction, a model whose long cache lifetime this API cannot be sent. */
+export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
+  const { ttlMs, longTtlMs } = model.promptCache;
+  if (
+    longTtlMs !== undefined &&
+    (ttlMs !== THIRTY_MINUTES_MS || openaiCacheTtlWire(longTtlMs) !== "12h")
+  ) {
+    throw new Error(
+      `OpenAI prompt cache TTLs for ${model.id} must be 30m, with 12h as the long one`,
+    );
+  }
+}
 
 // ── Content parts mapping ─────────────────────────────────────────
 //
@@ -274,21 +294,15 @@ function mapToolChoice(
 // ── Reasoning config ──────────────────────────────────────────────
 //
 // Canonical reasoning → OpenAI Responses reasoning config.
-// `adaptive` maps to effort=medium + summary=auto. An explicit effort is sent as
-// is, lowered to the model's `maxReasoningEffort`; GPT-5.6 and GPT-6.1 accept
-// low…max. The summary field requests auto-summarization of reasoning.
+// `default` sends only summary=auto (auto-summarization of reasoning) and leaves
+// the effort to the model; `off` is the `none` effort, which the models that
+// can disable reasoning accept.
 //
 
-function mapReasoning(
-  reasoning: GenerateRequest["reasoning"],
-  model: ModelInfo,
-): { effort: string; summary: "auto" } | undefined {
-  if (!reasoning || reasoning === "disabled") return undefined;
-  if (reasoning === "adaptive") return { effort: "medium", summary: "auto" };
-  return {
-    effort: clampReasoningEffort(reasoning.effort, model.maxReasoningEffort),
-    summary: "auto",
-  };
+function mapReasoning(reasoning: ResolvedCall["reasoning"]): object {
+  if (reasoning === "off") return { effort: "none" };
+  if (reasoning === "default") return { summary: "auto" };
+  return { effort: reasoning.effort, summary: "auto" };
 }
 
 // ── Response format mapping ───────────────────────────────────────
@@ -334,9 +348,9 @@ function mapResponseFormat(
 export function toOpenAIResponsesParams(
   request: GenerateRequest,
   model: ModelInfo,
+  call: ResolvedCall,
 ): OpenAI.Responses.ResponseCreateParamsStreaming {
   const { id: modelId, provider: providerId } = model;
-  const longTtlMs = model.promptCache.longTtlMs;
   const instructions = extractInstructions(request.messages);
   const input = flattenAssistantToolCalls(request.messages, providerId, modelId);
 
@@ -353,16 +367,14 @@ export function toOpenAIResponsesParams(
     ...(request.maxTokens ? { max_output_tokens: request.maxTokens } : {}),
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     ...(request.topP !== undefined ? { top_p: request.topP } : {}),
-    ...(mapReasoning(request.reasoning, model)
-      ? { reasoning: mapReasoning(request.reasoning, model) }
-      : {}),
+    reasoning: mapReasoning(call.reasoning),
     ...(mapResponseFormat(request.responseFormat)
       ? { text: mapResponseFormat(request.responseFormat) }
       : {}),
     ...(request.promptCacheKey ? { prompt_cache_key: request.promptCacheKey } : {}),
     // The 30m default needs no parameter. The SDK (6.45.0) predates `prompt_cache_options`.
-    ...(longTtlMs !== undefined && request.promptCacheRetention === "long"
-      ? { prompt_cache_options: { ttl: openaiCacheTtlWire(longTtlMs) } }
+    ...(call.longCacheWrites
+      ? { prompt_cache_options: { ttl: openaiCacheTtlWire(call.cacheTtlMs) } }
       : {}),
   } as OpenAI.Responses.ResponseCreateParamsStreaming;
 }

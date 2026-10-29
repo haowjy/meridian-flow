@@ -13,6 +13,7 @@ const record = (event: string) => appendFileSync(tracePath, `${event}\n`);
 const keepAlive = setInterval(() => {}, 1_000);
 
 const gateway: Gateway = {
+  listModels: () => [],
   getDefaultModel: () => "gpt-5.6-luna",
   async *stream(request) {
     request.signal?.addEventListener(

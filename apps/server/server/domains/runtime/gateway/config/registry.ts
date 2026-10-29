@@ -2,19 +2,18 @@
  * Model/provider registry: static source of truth for provider endpoints, wire
  * formats, model metadata, default model, and pinned launch pricing.
  * Key decisions: JSON-natural registry data, provider enablement from each
- * provider's apiKeyEnv, and gateway-local PinnedModelRate (G4 — billing consumes
- * structurally in B2, no billing import here).
+ * provider's apiKeyEnv. Adapter-specific wire checks (cache lifetimes) live in
+ * the adapters and run when a gateway is created.
  */
-import {
-  type BuiltinAdapter,
-  type Capability,
-  type GatewayConfig,
-  type ModelInfo,
-  openaiCacheTtlWire,
-  type PromptCacheDescriptor,
-  type ProviderConfig,
-  type ReasoningEffort,
-  type TokenizerFamily,
+import type {
+  BuiltinAdapter,
+  Capability,
+  GatewayConfig,
+  ModelInfo,
+  PromptCacheDescriptor,
+  ProviderConfig,
+  ReasoningSupport,
+  TokenizerFamily,
 } from "../domain/index.js";
 
 export interface ModelPricing {
@@ -36,6 +35,9 @@ export interface ModelPricing {
   source: string;
 }
 
+/** A model's pinned price tagged with the provider and model it applies to. */
+export type ModelTokenRate = ModelPricing & { provider: string; model: string };
+
 export interface RegisteredModel {
   id: string;
   tokenizer: TokenizerFamily;
@@ -45,8 +47,7 @@ export interface RegisteredModel {
   /** JSON-natural capability list; converted to Set only at the gateway boundary. */
   capabilities: readonly Capability[];
   promptCache: PromptCacheDescriptor;
-  /** Highest effort level the model accepts; absent means `max`. */
-  maxReasoningEffort?: ReasoningEffort;
+  reasoning: ReasoningSupport;
   pricing: ModelPricing;
 }
 
@@ -64,24 +65,6 @@ export interface ModelRegistry {
   providers: readonly RegisteredProvider[];
   /** Model ID used when callers omit a model. Must exist in at least one provider entry. */
   defaultModel: string;
-}
-
-/**
- * Gateway-local pinned rate row. Structurally matches billing's ModelTokenRate so
- * B2 can wire extractPinnedRates → createLayeredTokenRateSource without a
- * gateway→billing type dependency (G4).
- */
-export interface PinnedModelRate {
-  provider: string;
-  model: string;
-  inputUsdPerMillionTokens: string;
-  cachedInputUsdPerMillionTokens?: string;
-  cacheWriteUsdPerMillionTokens?: string;
-  cacheWriteLongUsdPerMillionTokens?: string;
-  outputUsdPerMillionTokens: string;
-  inputTierTokens?: number;
-  aboveTierMultipliers?: { input: number; output: number };
-  source: string;
 }
 
 const OPENAI_PRICING_SOURCE = "https://developers.openai.com/api/docs/pricing (pinned 2026-10-29)";
@@ -203,9 +186,16 @@ const GEMINI_4_ARGON_PRICING: ModelPricing = {
   source: GEMINI_PRICING_SOURCE,
 };
 
-// Claude's Messages API takes `output_config.effort` (low..max, as models.dev lists for all three
-// models). Opus 5.5, Sonnet 5.5 and Fable 5.1 think adaptively, and `thinking: disabled` or a
-// `budget_tokens` is a 400 on them, so Flow sends neither: no registered model needs a budget.
+// Reasoning rows are copied from models.dev `reasoning_options`, minus `xhigh`, which Flow never
+// requests. `canDisable` is a `toggle` option or a `none` effort.
+//
+// Claude's Messages API takes `output_config.effort`. Opus 5.5, Sonnet 5.5 and Fable 5.1 have no
+// toggle and think adaptively, and `thinking: disabled` or a `budget_tokens` is a 400 on them, so
+// Flow sends neither: no registered model needs a budget.
+const CLAUDE_REASONING: ReasoningSupport = { efforts: ["low", "medium", "high", "max"] };
+// OpenAI lists `none` for GPT-6.1 Terra and GPT-5.6 Luna, not for GPT-6.1 Sol.
+const GPT_REASONING: ReasoningSupport = { efforts: ["low", "medium", "high", "max"] };
+const GPT_REASONING_CAN_DISABLE: ReasoningSupport = { ...GPT_REASONING, canDisable: true };
 const CLAUDE_OPUS_5_5_MODEL = {
   id: "claude-opus-5-5",
   tokenizer: "anthropic",
@@ -214,6 +204,7 @@ const CLAUDE_OPUS_5_5_MODEL = {
   maxOutputTokens: 128_000,
   promptCache: EXPLICIT_CACHE_5M_OR_1H,
   capabilities: ["image_input"],
+  reasoning: CLAUDE_REASONING,
   pricing: CLAUDE_OPUS_5_5_PRICING,
 } satisfies RegisteredModel;
 
@@ -225,6 +216,7 @@ const CLAUDE_SONNET_5_5_MODEL = {
   maxOutputTokens: 128_000,
   promptCache: EXPLICIT_CACHE_5M_OR_1H,
   capabilities: ["image_input"],
+  reasoning: CLAUDE_REASONING,
   pricing: CLAUDE_SONNET_5_5_PRICING,
 } satisfies RegisteredModel;
 
@@ -236,6 +228,7 @@ const CLAUDE_FABLE_5_1_MODEL = {
   maxOutputTokens: 128_000,
   promptCache: EXPLICIT_CACHE_5M_OR_1H,
   capabilities: ["image_input"],
+  reasoning: CLAUDE_REASONING,
   pricing: CLAUDE_FABLE_5_1_PRICING,
 } satisfies RegisteredModel;
 
@@ -248,6 +241,7 @@ const GPT_6_1_SOL_MODEL = {
   maxOutputTokens: 128_000,
   promptCache: OPENAI_CACHE_30M_OR_12H,
   capabilities: ["image_input"],
+  reasoning: GPT_REASONING,
   pricing: GPT_6_1_SOL_PRICING,
 } satisfies RegisteredModel;
 
@@ -259,6 +253,7 @@ const GPT_6_1_TERRA_MODEL = {
   maxOutputTokens: 128_000,
   promptCache: OPENAI_CACHE_30M_OR_12H,
   capabilities: ["image_input"],
+  reasoning: GPT_REASONING_CAN_DISABLE,
   pricing: GPT_6_1_TERRA_PRICING,
 } satisfies RegisteredModel;
 
@@ -270,6 +265,7 @@ const GPT_5_6_LUNA_MODEL = {
   maxOutputTokens: 128_000,
   promptCache: OPENAI_CACHE_30M_OR_12H,
   capabilities: ["image_input"],
+  reasoning: GPT_REASONING_CAN_DISABLE,
   pricing: GPT_5_6_LUNA_PRICING,
 } satisfies RegisteredModel;
 
@@ -281,6 +277,8 @@ const DEEPSEEK_FLASH_MODEL = {
   maxOutputTokens: 393_216,
   promptCache: AUTOMATIC_CACHE_ESTIMATE,
   capabilities: ["image_input"],
+  // models.dev: a thinking toggle, and low/high/max (no medium).
+  reasoning: { efforts: ["low", "high", "max"], canDisable: true },
   pricing: DEEPSEEK_FLASH_PRICING,
 } satisfies RegisteredModel;
 
@@ -291,8 +289,8 @@ const GEMINI_4_ARGON_MODEL = {
   contextWindow: 1_048_576,
   maxOutputTokens: 32_768,
   promptCache: AUTOMATIC_CACHE_ESTIMATE,
-  // Google's OpenAI endpoint maps `reasoning_effort` to `thinking_level`: low, medium, high.
-  maxReasoningEffort: "high",
+  // Google's OpenAI endpoint maps `reasoning_effort` to `thinking_level`.
+  reasoning: { efforts: ["low", "medium", "high"] },
   capabilities: ["image_input"],
   pricing: GEMINI_4_ARGON_PRICING,
 } satisfies RegisteredModel;
@@ -329,11 +327,9 @@ export const MODEL_REGISTRY: ModelRegistry = {
   ],
 };
 
-/** Reject cache TTLs the provider cannot be sent, as soon as a registry is loaded. */
+/** Adapter-neutral registry checks, run as soon as a registry is loaded. */
 export function validateModelRegistry(registry: ModelRegistry): void {
-  for (const { adapter, model } of registry.providers.flatMap((provider) =>
-    provider.models.map((model) => ({ adapter: provider.adapter, model })),
-  )) {
+  for (const model of registry.providers.flatMap((provider) => provider.models)) {
     const tier = model.pricing.inputTierTokens;
     if (
       tier !== undefined &&
@@ -346,20 +342,6 @@ export function validateModelRegistry(registry: ModelRegistry): void {
     const { ttlMs, longTtlMs } = model.promptCache;
     if (longTtlMs !== undefined && (ttlMs === null || longTtlMs <= ttlMs)) {
       throw new Error(`Long prompt cache TTL for ${model.id} must exceed its short TTL`);
-    }
-    if (adapter === "openai" && longTtlMs !== undefined) {
-      if (ttlMs !== THIRTY_MINUTES_MS || openaiCacheTtlWire(longTtlMs) !== "12h") {
-        throw new Error(
-          `OpenAI prompt cache TTLs for ${model.id} must be 30m, with 12h as the long one`,
-        );
-      }
-    }
-    if (adapter === "anthropic" && model.promptCache.kind === "explicit") {
-      for (const ttl of [model.promptCache.ttlMs, model.promptCache.longTtlMs ?? FIVE_MINUTES_MS]) {
-        if (ttl !== FIVE_MINUTES_MS && ttl !== ONE_HOUR_MS) {
-          throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
-        }
-      }
     }
   }
 }
@@ -381,21 +363,21 @@ function toModelInfo(provider: RegisteredProvider, model: RegisteredModel): Mode
     inputTierTokens: model.pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
     promptCache: model.promptCache,
-    maxReasoningEffort: model.maxReasoningEffort,
+    reasoning: model.reasoning,
     capabilities: new Set(model.capabilities),
   };
 }
 
 export function buildFromRegistry(
   registry: ModelRegistry,
-  env: Record<string, string | undefined>,
+  env: Readonly<Record<string, string | number | undefined>>,
 ): Pick<GatewayConfig, "providers" | "defaultModel"> {
   validateModelRegistry(registry);
   const providers: ProviderConfig[] = [];
 
   for (const entry of registry.providers) {
     const apiKey = env[entry.apiKeyEnv];
-    if (!hasRealApiKey(apiKey)) continue;
+    if (typeof apiKey !== "string" || !hasRealApiKey(apiKey)) continue;
 
     providers.push({
       id: entry.id,
@@ -409,26 +391,21 @@ export function buildFromRegistry(
   const enabledModelIds = new Set(
     providers.flatMap((provider) => provider.models.map((model) => model.id)),
   );
+  // When the registry default is not enabled, defaultGatewayOptions falls back to the first model.
   const defaultModel = enabledModelIds.has(registry.defaultModel)
     ? registry.defaultModel
-    : providers[0]?.models[0]?.id;
+    : undefined;
 
   return { providers, defaultModel };
 }
 
-export function extractPinnedRates(registry: ModelRegistry): PinnedModelRate[] {
+/** Pinned rate rows, shaped for billing's `ModelTokenRate`. */
+export function extractPinnedRates(registry: ModelRegistry): ModelTokenRate[] {
   return registry.providers.flatMap((provider) =>
     provider.models.map((model) => ({
       provider: provider.id,
       model: model.id,
-      inputUsdPerMillionTokens: model.pricing.inputUsdPerMillionTokens,
-      cachedInputUsdPerMillionTokens: model.pricing.cachedInputUsdPerMillionTokens,
-      cacheWriteUsdPerMillionTokens: model.pricing.cacheWriteUsdPerMillionTokens,
-      cacheWriteLongUsdPerMillionTokens: model.pricing.cacheWriteLongUsdPerMillionTokens,
-      outputUsdPerMillionTokens: model.pricing.outputUsdPerMillionTokens,
-      inputTierTokens: model.pricing.inputTierTokens,
-      aboveTierMultipliers: model.pricing.aboveTierMultipliers,
-      source: model.pricing.source,
+      ...model.pricing,
     })),
   );
 }

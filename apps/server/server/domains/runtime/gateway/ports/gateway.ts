@@ -16,6 +16,6 @@ import type { GenerateRequest, GenerateResult, ModelInfo, StreamEvent } from "..
 export interface Gateway {
   stream(request: GenerateRequest): AsyncIterable<StreamEvent>;
   generate(request: GenerateRequest): Promise<GenerateResult>;
-  listModels?(): ModelInfo[];
+  listModels(): ModelInfo[];
   getDefaultModel(): string | undefined;
 }

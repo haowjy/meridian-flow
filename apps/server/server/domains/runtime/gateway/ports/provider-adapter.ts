@@ -13,10 +13,18 @@
  * Meridian-gateway edge is uniform. Adding a new provider means implementing
  * this one interface and registering it in createAdapter.
  */
-import type { GenerateRequest, ModelInfo, StreamEvent } from "../domain/index.js";
+import type { GenerateRequest, ModelInfo, ResolvedCall, StreamEvent } from "../domain/index.js";
 
-/** Internal — adapters implement one streaming primitive. */
+/**
+ * Internal — adapters implement one streaming primitive. `call` carries the
+ * per-call decisions the gateway core made for the routed model (cache lifetime,
+ * long cache writes, reasoning); the adapter maps them to wire fields.
+ */
 export interface ProviderAdapter {
   readonly providerId: string;
-  stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent>;
+  stream(
+    request: GenerateRequest,
+    model: ModelInfo,
+    call: ResolvedCall,
+  ): AsyncIterable<StreamEvent>;
 }

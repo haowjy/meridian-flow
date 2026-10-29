@@ -875,7 +875,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async tokenizer(caller) {
       const binding = await ports.agentRevisions.readThreadBinding(caller.id);
       const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
-      const model = ports.gateway.listModels?.().find((model) => model.id === modelId);
+      const model = ports.gateway.listModels().find((model) => model.id === modelId);
       if (!model)
         return {
           ok: false,
@@ -1403,6 +1403,7 @@ export function createInMemoryAppServices(): AppServices {
           provider: request.provider ?? "in-memory",
         };
       },
+      listModels: () => [],
       getDefaultModel() {
         return undefined;
       },
@@ -1675,7 +1676,7 @@ export function createInMemoryAppServices(): AppServices {
       store: agentRevisions,
       defaultModel: () => "mock-model",
       unavailableReasons: (definition, model) =>
-        agentExecutionUnavailableReasons(definition, {}, model),
+        agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
     }),
     eventSink: createNoopEventSink(),
     accountSettings,

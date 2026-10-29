@@ -161,6 +161,7 @@ async function setup(
           contextWindow: 128_000,
           maxOutputTokens: 16_384,
           promptCache: { kind: "none", ttlMs: null },
+          reasoning: { efforts: ["low", "medium", "high", "max"] },
           capabilities: new Set(options.supportsImageInput === false ? [] : ["image_input"]),
         },
       ],

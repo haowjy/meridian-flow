@@ -15,14 +15,15 @@
  * - Consecutive same-role messages are merged to satisfy Anthropic's
  *   alternating user/assistant requirement. Thinking blocks within assistant
  *   content are ordered first (Anthropic requires thinking before tool_use/text).
- * - Last-step repair: thinking-mode requests (and DeepSeek, which is always in
- *   thinking mode) prepend empty `{ type: "thinking", thinking: "" }` when an
+ * - Last-step repair: models that think by default (`reasoning.canDisable`) and
+ *   are not switched off prepend empty `{ type: "thinking", thinking: "" }` when an
  *   assistant message has tool_use and no thinking block. Missing tool_result
  *   is repaired earlier in context-builder `completeToolResultGroups`.
- * - Reasoning: an explicit effort goes out as `output_config.effort`, lowered to
- *   the model's `maxReasoningEffort`. `adaptive` and `disabled` send nothing:
- *   Opus 5.5, Sonnet 5.5 and Fable 5.1 think adaptively, and `thinking: disabled`
- *   or `budget_tokens` is a 400 on them; DeepSeek ignores `budget_tokens`.
+ * - Reasoning: a resolved effort goes out as `output_config.effort`; `off` (only
+ *   resolved for models with a toggle, such as DeepSeek) goes out as
+ *   `thinking: {type: "disabled"}`; `default` sends nothing. Opus 5.5, Sonnet 5.5
+ *   and Fable 5.1 think adaptively, and `thinking: disabled` or `budget_tokens`
+ *   is a 400 on them, which is why they never resolve to `off`.
  * - Prompt caching: a canonical `ContentPart.cacheBreakpoint` (set by
  *   `loop/prompt-cache-marks.ts`, at most three per request) becomes an
  *   explicit `cache_control` on that part. Its TTL comes from the registry
@@ -32,24 +33,38 @@
  *   messages, so the system-message breakpoint already covers them.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import {
-  type ContentPart,
-  clampReasoningEffort,
-  type GenerateRequest,
-  type Message,
-  type ModelInfo,
-  type Tool,
+import type {
+  ContentPart,
+  GenerateRequest,
+  Message,
+  ModelInfo,
+  ResolvedCall,
+  Tool,
 } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 import { anthropicToolSchema } from "./tool-schema.js";
 
 type CacheControl = Anthropic.Messages.CacheControlEphemeral;
 
+const FIVE_MINUTES_MS = 5 * 60 * 1_000;
+const ONE_HOUR_MS = 60 * 60 * 1_000;
+
+/** Reject, at construction, a model whose explicit cache lifetimes this API cannot be sent. */
+export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
+  const { kind, ttlMs, longTtlMs } = model.promptCache;
+  if (kind !== "explicit") return;
+  for (const ttl of [ttlMs, longTtlMs ?? FIVE_MINUTES_MS]) {
+    if (ttl !== FIVE_MINUTES_MS && ttl !== ONE_HOUR_MS) {
+      throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
+    }
+  }
+}
+
 function cacheControlForTtl(ttlMs: number | null | undefined): CacheControl | undefined {
   switch (ttlMs) {
-    case 5 * 60 * 1_000:
+    case FIVE_MINUTES_MS:
       return { type: "ephemeral", ttl: "5m" };
-    case 60 * 60 * 1_000:
+    case ONE_HOUR_MS:
       return { type: "ephemeral", ttl: "1h" };
     default:
       return undefined;
@@ -379,11 +394,11 @@ function mapToolChoice(
 
 export function toAnthropicMessageParams(
   request: GenerateRequest,
-  model: Pick<ModelInfo, "id" | "maxOutputTokens" | "maxReasoningEffort">,
+  model: Pick<ModelInfo, "id" | "maxOutputTokens" | "reasoning">,
+  call: ResolvedCall,
   providerId = "anthropic",
-  promptCacheTtlMs?: number | null,
 ): Anthropic.Messages.MessageCreateParamsStreaming {
-  const cacheControl = cacheControlForTtl(promptCacheTtlMs);
+  const cacheControl = cacheControlForTtl(call.cacheTtlMs);
   const maxTokens = request.maxTokens ?? model.maxOutputTokens;
   const system = extractSystem(request.messages, cacheControl);
   const tools = mapTools(request.tools, providerId);
@@ -393,11 +408,11 @@ export function toAnthropicMessageParams(
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 
-  const effort =
-    typeof request.reasoning === "object"
-      ? clampReasoningEffort(request.reasoning.effort, model.maxReasoningEffort)
-      : undefined;
-  const repaired = providerId === "deepseek" ? ensureThinkingBeforeToolUse(messages) : messages;
+  const { reasoning } = call;
+  const repaired =
+    model.reasoning.canDisable && reasoning !== "off"
+      ? ensureThinkingBeforeToolUse(messages)
+      : messages;
 
   return {
     model: model.id,
@@ -412,7 +427,8 @@ export function toAnthropicMessageParams(
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     ...(request.topP !== undefined ? { top_p: request.topP } : {}),
     ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
-    ...(effort ? { output_config: { effort } } : {}),
+    ...(typeof reasoning === "object" ? { output_config: { effort: reasoning.effort } } : {}),
+    ...(reasoning === "off" ? { thinking: { type: "disabled" as const } } : {}),
     ...(request.providerOptions?.anthropic ?? {}),
   };
 }

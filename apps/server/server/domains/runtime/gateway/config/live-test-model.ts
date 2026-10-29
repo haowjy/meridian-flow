@@ -17,7 +17,7 @@ import { MODEL_REGISTRY } from "./registry.js";
 const REGISTRY_MODEL_IDS = MODEL_REGISTRY.providers.flatMap((p) => p.models.map((m) => m.id));
 
 export function withLiveTestModel(gateway: Gateway, modelId: string): Gateway {
-  const override = gateway.listModels?.().find((model) => model.id === modelId);
+  const override = gateway.listModels().find((model) => model.id === modelId);
   if (!override) throw new Error(`LIVE_TEST_MODEL: model not available: ${modelId}`);
 
   // The named provider is dropped: it may not serve the override model.

@@ -8,8 +8,33 @@ import { WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import { WorkCommandSchema } from "../../../tools/core-tools.js";
 import { modelToolSchema } from "../../../tools/model-tool-schema.js";
+import type { GenerateRequest } from "../../domain/index.js";
+import { resolveReasoning } from "../../domain/index.js";
 import { assistant, system, toolResult, user } from "../../helpers/messages.js";
 import { toAnthropicMessageParams } from "./request-map.js";
+
+// DeepSeek's row has a thinking toggle; Claude's has none.
+function toParams(
+  request: GenerateRequest,
+  model: { id: string; maxOutputTokens: number },
+  providerId: string,
+  cacheTtlMs: number | null = null,
+) {
+  const reasoning =
+    providerId === "deepseek"
+      ? { efforts: ["low", "high", "max"] as const, canDisable: true as const }
+      : { efforts: ["low", "medium", "high", "max"] as const };
+  return toAnthropicMessageParams(
+    request,
+    { ...model, reasoning },
+    {
+      cacheTtlMs,
+      longCacheWrites: false,
+      reasoning: resolveReasoning(request.reasoning, reasoning),
+    },
+    providerId,
+  );
+}
 
 const EPHEMERAL_1H = { type: "ephemeral" as const, ttl: "1h" as const };
 
@@ -54,7 +79,7 @@ function assistantBlocks(params: ReturnType<typeof toAnthropicMessageParams>) {
 
 describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   it("prepends empty thinking on DeepSeek when tool_use has none", () => {
-    const params = toAnthropicMessageParams(
+    const params = toParams(
       requestWithToolPair(),
       { id: "deepseek-flash", maxOutputTokens: 256 },
       "deepseek",
@@ -64,7 +89,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   });
 
   it("does not invent thinking for Anthropic when reasoning is disabled", () => {
-    const params = toAnthropicMessageParams(
+    const params = toParams(
       { ...requestWithToolPair(), reasoning: "disabled" },
       { id: "claude-sonnet-4", maxOutputTokens: 4096 },
       "anthropic",
@@ -73,7 +98,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   });
 
   it("leaves signed thinking in place", () => {
-    const params = toAnthropicMessageParams(
+    const params = toParams(
       {
         promptCacheRetention: "short" as const,
         messages: [
@@ -110,7 +135,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   });
 
   it("fills empty thinking after unsigned reasoning is dropped", () => {
-    const params = toAnthropicMessageParams(
+    const params = toParams(
       {
         promptCacheRetention: "short" as const,
         messages: [
@@ -137,7 +162,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
 
 describe("Anthropic message alternation", () => {
   it("merges adjacent delivery user messages after a tool result", () => {
-    const params = toAnthropicMessageParams(
+    const params = toParams(
       {
         promptCacheRetention: "short" as const,
         messages: [
@@ -168,7 +193,7 @@ describe("Anthropic message alternation", () => {
 
 describe("Anthropic prompt-cache breakpoints", () => {
   it("translates a cacheBreakpoint into ephemeral cache_control with a 1h ttl for system, tool_use, and tool_result blocks", () => {
-    const params = toAnthropicMessageParams(
+    const params = toParams(
       {
         promptCacheRetention: "short" as const,
         messages: [
@@ -241,13 +266,13 @@ it("keeps implicit thinking and cached content unchanged when only the output ca
     ],
     reasoning: { effort: "low" as const },
   };
-  const original = toAnthropicMessageParams(
+  const original = toParams(
     request,
     { id: "claude-sonnet-5-5", maxOutputTokens: 16384 },
     "anthropic",
     3600000,
   );
-  const capped = toAnthropicMessageParams(
+  const capped = toParams(
     { ...request, maxTokens: 4096 + 300 },
     { id: "claude-sonnet-5-5", maxOutputTokens: 16384 },
     "anthropic",
@@ -265,7 +290,7 @@ it("preserves real Work and Write command instructions only when projecting for 
       messages: [user("Hello")],
       tools: [{ ...skillTool, inputSchema }],
     };
-    const params = toAnthropicMessageParams(
+    const params = toParams(
       request,
       { id: "claude-sonnet-5-5", maxOutputTokens: 128_000 },
       "anthropic",
@@ -299,18 +324,11 @@ it("preserves real Work and Write command instructions only when projecting for 
       tools: [{ ...skillTool, inputSchema: { ...root, anyOf: oneOf } }],
     };
     expect(
-      toAnthropicMessageParams(
-        anyOfRequest,
-        { id: "claude-sonnet-5-5", maxOutputTokens: 128_000 },
-        "anthropic",
-      ).tools?.[0],
+      toParams(anyOfRequest, { id: "claude-sonnet-5-5", maxOutputTokens: 128_000 }, "anthropic")
+        .tools?.[0],
     ).toHaveProperty("input_schema", advertised.input_schema);
     expect(
-      toAnthropicMessageParams(
-        request,
-        { id: "deepseek-flash", maxOutputTokens: 65_536 },
-        "deepseek",
-      ).tools?.[0],
+      toParams(request, { id: "deepseek-flash", maxOutputTokens: 65_536 }, "deepseek").tools?.[0],
     ).toHaveProperty("input_schema", original);
     expect(inputSchema).toEqual(original);
   }

@@ -23,6 +23,7 @@ const MODEL: ModelInfo = {
   contextWindow: 128_000,
   maxOutputTokens: 4_096,
   promptCache: { kind: "none", ttlMs: null },
+  reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };
 
