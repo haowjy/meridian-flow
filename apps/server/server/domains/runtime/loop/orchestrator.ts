@@ -188,8 +188,8 @@ import {
 } from "./streaming.js";
 import {
   dispatchToolCall,
+  type RequestBatch,
   reduceToolBatch,
-  requestBatch,
   type ToolDispatchOutcome,
 } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
@@ -2561,7 +2561,7 @@ async function executeLoop({
             }
 
             const batchOutcomes: ToolDispatchOutcome[] = [];
-            const batch = requestBatch(toolCallsFromResult);
+            const batch: RequestBatch = { deferred: null };
             // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
             // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
             for (const call of toolCallsFromResult) {

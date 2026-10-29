@@ -195,8 +195,7 @@ into the parent's script before you send. A parent woken by a report matches
 9. **Two requests in one batch.** Script one primary reply with two `ask_user`
    calls. PASS: one ask row exists, the second call's result is
    `one_request_at_a_time`, and the reply ends `awaiting_answer` on the first
-   question. An `ask_user` beside `return_result` is refused as
-   `request_after_result`.
+   question.
 10. **Failed rows.** Expand step 9's reply in the browser. PASS: the refused row
     reads "Couldn't ask a question" and opens to "Only one question can wait for an
     answer at a time, so this one wasn't asked."; under zh it opens to the Chinese

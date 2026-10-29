@@ -4827,10 +4827,6 @@ msgstr "The AI provider turned this request down."
 msgid "The assistant called this tool with arguments it couldn't use."
 msgstr "The assistant called this tool with arguments it couldn't use."
 
-#: src/features/chat/tool-failure.tsx
-msgid "The assistant had already finished its report, so this wasn't asked."
-msgstr "The assistant had already finished its report, so this wasn't asked."
-
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr "The browser blocked the clipboard. Check this site's permissions."
