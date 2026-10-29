@@ -48,6 +48,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/inverse-actions.db.test.ts",
   "apps/server/server/domains/collab/response-rollback.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.image-paths.db.test.ts",
+  "apps/server/server/domains/collab/grep-text.db.test.ts",
   "apps/server/server/domains/collab/response-save-destinations.db.test.ts",
   "apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts",
   "apps/server/server/domains/collab/document-revisions.db.test.ts",
@@ -127,6 +128,7 @@ const expectedSuites = [
   "apps/server/server/lib/routes/context-move.db.test.ts",
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
+  "packages/database/src/migrations/0107_grep_tool_rename.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
   "tools/dev/lib/migration-runner.db.test.ts",
 ] as const;

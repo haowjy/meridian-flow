@@ -244,11 +244,31 @@ export type TurnReversalAccess = {
 
 export type VersionedDocumentRead<T> = { content: T; revision: string | null };
 
-export type HashlineRead = VersionedDocumentRead<string[]> & {
-  /** Aligned with `content`: the ref-bearing links each block spells. */
-  links: readonly (readonly SpelledLinkFact[])[];
+/** One block of a hashline read: what `read` shows, and what grep matches and spells. */
+export type HashlineBlock = {
+  hash: string;
+  /** The block as `read` shows it, with no addressing prefix. */
+  body: string;
+  /** The block's markdown with link destinations spelled empty. */
+  destinationFree: string;
+  /** What grep matches in this block: the writer's text, or a code file's text as stored. */
+  text: string;
+  /** A code file's block: `text` is not a decoding of `destinationFree`. */
+  verbatim: boolean;
+  /** The ref-bearing links the block spells. */
+  links: readonly SpelledLinkFact[];
+};
+
+export type HashlineRead = {
+  blocks: HashlineBlock[];
+  revision: string | null;
   /** The holder `links` were spelled from, as the read's own binding named it. */
   holder: { uri: string | null; view: LinkView };
+  /** A range of a block's `destinationFree` markdown, placed in its `body`; null when it can't be. */
+  locate(
+    block: Pick<HashlineBlock, "body" | "destinationFree">,
+    range: { start: number; end: number },
+  ): { start: number; end: number } | null;
 };
 
 /**
@@ -260,14 +280,14 @@ export type MarkdownDocumentStore = LinkBinder & {
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
-  /** The create's own step for an empty create: its authority, empty, in its transaction. */
-  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
   /**
-   * Explicit repair of a living document whose authority is absent, from its stored
-   * projection; a no-op when it has authority. Called only on an explicit touch.
+   * Gives a document that has no state its authority, seeded empty: a create's own step, or
+   * the repair of an old anomaly on an explicit touch. A no-op when it has authority.
    */
-  repairDocumentAuthority(documentId: DocumentId): Promise<void>;
+  ensureDocumentAuthority(documentId: DocumentId): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
+  /** The markdown of a document's stored Yjs, even one in the trash; empty when it holds none. */
+  readFrozenMarkdown(documentId: DocumentId): Promise<string>;
   /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
     documentId: string,
@@ -470,6 +490,21 @@ export type DraftPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<string | null>;
   flushDraftLivePull(documentId: DocumentId): Promise<void>;
+  /**
+   * Stored grep text for those of `documentIds` whose text matches what this reader sees: the
+   * derived outputs are current, no active draft stands between a draft reader and the live
+   * text, and the reply has staged no writes of its own (they leave no draft row, so only the
+   * reply's room says the derivation is behind its view). Documents left out need a read.
+   */
+  readStoredGrepTexts(
+    input: {
+      documentIds: DocumentId[];
+      threadId?: ThreadId | null;
+      responseId?: string | null;
+    } & EffectiveReadVersion,
+  ): Promise<Map<DocumentId, string>>;
+  /** Words per document whose derived outputs are current; the others are absent. */
+  readStoredWordCounts(documentIds: DocumentId[]): Promise<Map<DocumentId, number>>;
   readEffectiveMarkdown(
     input: {
       documentId: DocumentId;

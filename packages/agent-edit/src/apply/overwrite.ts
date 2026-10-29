@@ -27,12 +27,11 @@ export function resolveOverwrite(
   written: Pick<ResolveWriteParams, "content" | "parsedContent" | "blocks">,
   empty: boolean,
 ): ResolveWriteResult {
-  const blockCount = ctx.model.getBlocks(ctx.doc).length;
   const result = resolveWrite(
     ctx,
     empty
-      ? { command: "remove", documentAddress, in: [1, blockCount] }
-      : { command: "replace", documentAddress, ...written, in: [1, blockCount] },
+      ? { command: "remove", documentAddress, wholeDocument: true }
+      : { command: "replace", documentAddress, ...written, wholeDocument: true },
   );
   if (result.ok) {
     validateSemanticEditIRV1(result.ir, {

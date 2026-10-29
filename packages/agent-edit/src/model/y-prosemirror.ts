@@ -2,7 +2,6 @@ import type { ParsedContent } from "@meridian/markup";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
-import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Span } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
 import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
@@ -11,14 +10,18 @@ import type {
   ContentLineage,
   InlineReplacementResult,
   InlineTextReplacement,
+  ProjectedBlock,
 } from "../ports/model.js";
 import {
   blockHashesForDoc,
+  blockIdentityForItem,
+  fullHashForItemId,
   getBlockHash,
   getBlockItemId,
   getTopLevelXmlBlocks,
   isLiveXmlElement,
   lookupBlockHash,
+  uniqueHashesForBlocks,
 } from "./block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 
@@ -52,16 +55,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     getDocumentBlockIds(doc) {
       return blockHashesForDoc(unwrapDoc(doc));
-    },
-
-    lookupBlock(doc, hash) {
-      const lookup = lookupBlockHash(unwrapDoc(doc), hash);
-      if (!lookup.ok) {
-        return lookup.reason === "ambiguous"
-          ? { ok: false, reason: "ambiguous", matches: lookup.matches.map(toRef) }
-          : { ok: false, reason: "not_found" };
-      }
-      return { ok: true, block: toRef(lookup.block) };
     },
 
     isLive(block) {
@@ -120,15 +113,7 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
     },
 
     projectBlocks(doc) {
-      return prosemirrorBlocksForDoc(unwrapDoc(doc), schema);
-    },
-
-    serializeBlockLines(doc, codec, blocks) {
-      return serializeBlockLines(unwrapDoc(doc), codec, schema, blocks);
-    },
-
-    serializeBlockBodies(doc, codec, blocks) {
-      return serializeBlockBodies(unwrapDoc(doc), codec, schema, blocks);
+      return projectBlocks(unwrapDoc(doc), schema);
     },
   };
 }
@@ -141,28 +126,28 @@ export function prosemirrorRootOf(doc: Y.Doc, schema: Schema): PMNode {
   return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
 }
 
-export function toProsemirrorBlock(
-  doc: Y.Doc,
-  block: Y.XmlElement | BlockRef,
-  schema: Schema,
-): PMNode {
-  const element = unwrapBlock(toRef(block));
-  const blocks = getTopLevelXmlBlocks(doc);
-  const index = blocks.indexOf(element);
-  if (index < 0) throw new Error("Y.XmlElement is not a top-level block in this document");
-  const pmBlock = prosemirrorRootOf(doc, schema).child(index);
-  if (!pmBlock) throw new Error("ProseMirror block not found for Y.XmlElement");
-  return pmBlock;
-}
-
-/** Project the PM tree once and return all top-level block nodes — O(D), not O(B·D). */
-export function prosemirrorBlocksForDoc(doc: Y.Doc, schema: Schema): PMNode[] {
+/**
+ * One walk that pairs each top-level element with its node. Building the root repairs the
+ * document (an element the schema can't build is deleted and dropped), so the surviving
+ * elements are read after it and are exactly the ones that produced nodes; hashes are
+ * computed over them, never over the pre-repair list.
+ */
+function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
   const root = prosemirrorRootOf(doc, schema);
-  const blocks: PMNode[] = [];
-  for (let i = 0; i < root.childCount; i++) {
-    blocks.push(root.child(i));
+  const elements = getTopLevelXmlBlocks(doc);
+  if (elements.length !== root.childCount) {
+    throw new Error(
+      `Projection lost alignment: ${elements.length} elements for ${root.childCount} nodes`,
+    );
   }
-  return blocks;
+  const hashes = uniqueHashesForBlocks(elements);
+  return elements.map((element, index) => ({
+    ref: toRef(element),
+    id: getBlockItemId(element),
+    hash: hashes[index],
+    fullHash: fullHashForItemId(blockIdentityForItem(doc, getBlockItemId(element))),
+    node: root.child(index),
+  }));
 }
 
 export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newText: string): void {
@@ -260,7 +245,10 @@ export function applyInlineReplacements(
   schema: Schema,
 ): InlineReplacementResult {
   const element = unwrapBlock(toRef(block));
-  const current = toProsemirrorBlock(doc, element, schema);
+  const current = projectBlocks(doc, schema).find(
+    (block) => unwrapBlock(block.ref) === element,
+  )?.node;
+  if (!current) throw new Error("Y.XmlElement is not a top-level block in this document");
   const blockType = element.nodeName;
   if (current.type.name !== blockType) return blockTypeMismatch(blockType, current.type.name);
   if (!canReplaceInline(current) || !hasFlatInlineContent(current)) {
@@ -296,52 +284,6 @@ function canReplaceInline(block: PMNode): boolean {
 
 function hasFlatInlineContent(block: PMNode): boolean {
   return block.content.size === block.textContent.length;
-}
-
-function serializeBlockLines(
-  doc: Y.Doc,
-  codec: AgentEditCodec,
-  schema: Schema,
-  selectedBlocks?: readonly BlockRef[],
-): string[] {
-  const blocks = getTopLevelXmlBlocks(doc).map(toRef);
-  if (blocks.length === 0) return [];
-  const hashes = blockHashesForDoc(doc);
-  const pmBlocks = prosemirrorBlocksForDoc(doc, schema);
-  if (!selectedBlocks) return codec.serializeBlocks(pmBlocks, hashes);
-  const indexByBlock = new Map<BlockRef, number>();
-  blocks.forEach((block, index) => {
-    indexByBlock.set(block, index);
-  });
-  const selectedPmBlocks: PMNode[] = [];
-  const selectedHashes: string[] = [];
-  for (const block of selectedBlocks) {
-    const index = indexByBlock.get(block);
-    if (index === undefined) continue;
-    selectedPmBlocks.push(pmBlocks[index]);
-    selectedHashes.push(hashes[index]);
-  }
-  return codec.serializeBlocks(selectedPmBlocks, selectedHashes);
-}
-
-function serializeBlockBodies(
-  doc: Y.Doc,
-  codec: AgentEditCodec,
-  schema: Schema,
-  selectedBlocks: readonly BlockRef[],
-): string[] {
-  const blocks = getTopLevelXmlBlocks(doc).map(toRef);
-  const pmBlocks = prosemirrorBlocksForDoc(doc, schema);
-  const indexByBlock = new Map<BlockRef, number>();
-  blocks.forEach((block, index) => {
-    indexByBlock.set(block, index);
-  });
-  const selectedPmBlocks: PMNode[] = [];
-  for (const block of selectedBlocks) {
-    const index = indexByBlock.get(block);
-    if (index !== undefined) selectedPmBlocks.push(pmBlocks[index]);
-  }
-  return codec.serializeBlockBodies(selectedPmBlocks);
 }
 
 function blockTypeMismatch(

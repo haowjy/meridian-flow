@@ -54,7 +54,7 @@ orchestrator and streams through `ThreadEventHub`.
 ### context + collab
 
 `context` owns URI-addressed writing context and delegates document sync to
-`collab`. `collab` owns Yjs updates, markdown projection, and ProseMirror schema
+`collab`. `collab` owns Yjs updates, the per-block text projection, and ProseMirror schema
 compatibility.
 
 ### billing

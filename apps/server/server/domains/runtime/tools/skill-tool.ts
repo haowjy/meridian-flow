@@ -2,7 +2,7 @@
  * The model `skill` tool (D58) and every other model tool's `skills://`
  * branch. Skills are read-only files (D52): `read` returns a file, one of its
  * `#heading` sections or its outline (D60), `ls` lists folders, and `write`
- * and `search` refuse.
+ * and `grep` refuse.
  */
 import {
   documentNotFoundMessage,
@@ -43,7 +43,7 @@ const SkillToolInputSchema = z
 type SkillToolInput = z.output<typeof SkillToolInputSchema>;
 
 const SKILL_WRITE = "Files under skills:// can only be read.";
-const SKILL_SEARCH = "search doesn't cover skills://. Use ls and read.";
+const SKILL_GREP = "grep doesn't cover skills://. Use ls and read.";
 
 function blockSelectorRefusal(field: "in" | "around"): string {
   return `skills:// files have no block hashes, so ${field} doesn't work here. Read the whole file or a #heading.`;
@@ -182,8 +182,8 @@ export function refuseSkillWrite(parsed: WriteToolInput) {
   };
 }
 
-/** `search` scoped to `skills://` is refused; null otherwise. */
-export function refuseSkillSearch(scope: string | undefined) {
-  if (!scope || !isSkillsUri(scope)) return null;
-  return { isError: true as const, output: meridianErrorFromTool(SKILL_SEARCH) };
+/** `grep` scoped to `skills://` is refused; null otherwise. */
+export function refuseSkillGrep(path: string | undefined) {
+  if (!path || !isSkillsUri(path)) return null;
+  return { isError: true as const, output: meridianErrorFromTool(SKILL_GREP) };
 }

@@ -18,9 +18,9 @@ renderers and retain details on the typed result. Executor-owned timeout/abort/
 throw failures use a registration formatter when one exists. Document handlers
 keep the typed `meridian.agent-edit.v1` envelope for these failures.
 
-Tools are grouped by owner: core `read`/`write`/`work` and listing/search,
+Tools are grouped by owner: core `read`/`write`/`work` and listing/`grep`,
 spawn/history tools, and the `skill` adapter for retained `skills://` files.
-The model's skill path is read-only; `write` and `search` refuse it. The
+The model's skill path is read-only; `write` and `grep` refuse it. The
 canonical tool schemas live in runtime and their handlers are bound from
 `lib/model-tools`.
 
@@ -56,7 +56,7 @@ the Flow tool; the subagent-question change removes that exclusion.
 `delete` are host commands, below), and every result renders through it. Source
 text for copy/insert/replace is read as nodes and never passes through model
 text. File destinations and grants come from file-policy, and all document
-results use the typed agent-edit contract. `ls`, `search`, and `work` return
+results use the typed agent-edit contract. `ls`, `grep`, and `work` return
 contract-shaped values with model-facing renderers that omit internal IDs and
 add detail only for explicit `verbose` requests. A Work has no write mode of its
 own: the chat's mode is in its work context (D62).
