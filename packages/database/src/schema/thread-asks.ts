@@ -7,6 +7,7 @@ import type {
   AskPayload,
   AskResolution,
   AskStatus,
+  DraftAnswers,
 } from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import {
@@ -54,7 +55,11 @@ export const asks = pgTable(
     payload: jsonb("payload").$type<AskPayload>().notNull(),
     /** Validated server-only command. Never serialized through threadAsk(). */
     permissionCommand: jsonb("permission_command").$type<Record<string, unknown>>(),
+    /** When a question ask settled the run and opened; its hard timeout limit counts from here. */
+    openedAt: timestamp("opened_at", { withTimezone: true }),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }),
+    /** The answers a writer had chosen when they last interacted; a timeout resolves from them. */
+    draftAnswers: jsonb("draft_answers").$type<DraftAnswers>(),
     status: text("status").$type<AskStatus>().notNull().default("pending"),
     resolution: jsonb("resolution").$type<AskResolution>(),
     submissionId: text("submission_id"),

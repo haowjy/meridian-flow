@@ -10,11 +10,14 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AskAnswer,
   AskResolution,
+  DraftAnswers,
   JsonObject,
   JsonValue,
   PermissionAskPayload,
   PermissionWorkCommand,
+  QuestionAnswer,
   QuestionAskPayload,
+  ResolvedQuestionAnswer,
   ThreadAsk,
 } from "@meridian/contracts/threads";
 import { permissionWorkCommandSchema } from "@meridian/contracts/threads";
@@ -29,10 +32,17 @@ import type {
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
+import { askDeadline } from "./ask-deadline.js";
 
 export type AskAnswerResult =
   | { ok: true; ask: ThreadAsk }
-  | { ok: false; code: "ask_not_open" | "invalid_answer"; ask?: ThreadAsk };
+  | {
+      ok: false;
+      code: "ask_not_open" | "invalid_answer";
+      ask?: ThreadAsk;
+      /** The first question whose answer didn't fit, when one entry is at fault. */
+      questionIndex?: number;
+    };
 
 /** What a tool call asks the writer for: an answer to a question, or permission to run an action. */
 export type AskRequest =
@@ -72,6 +82,23 @@ export interface AskService {
     submissionId: string;
     answer: AskAnswer;
   }): Promise<AskAnswerResult>;
+  /**
+   * The writer is interacting with an open question ask: stores the answers they hold and
+   * moves its deadline out. Publishes the ask only when the deadline moved. Refused (nothing
+   * changes) for a thread the user doesn't own, a closed or permission ask, or draft answers
+   * that don't fit the questions.
+   */
+  presence(input: {
+    userId: string;
+    threadId: ThreadId;
+    askId: string;
+    answers: DraftAnswers;
+    now?: Date;
+  }): Promise<void>;
+  /**
+   * Resolves every open question ask past its deadline: what the writer had answered stands,
+   * and each other question takes its Recommended option.
+   */
   expireDue(now?: Date, limit?: number): Promise<number>;
   /**
    * Records an ask a lineage cancellation claimed: a live one's cancelled tool result, or
@@ -80,21 +107,46 @@ export interface AskService {
   recordCancelled(claimed: ClaimedAsk): Promise<void>;
 }
 
-/** The resolution a writer's answer gives this ask, or null when it doesn't fit the ask. */
-function answerResolution(ask: StoredAsk, answer: AskAnswer): AskResolution | null {
+type AskQuestion = QuestionAskPayload["questions"][number];
+
+function fitsQuestion(question: AskQuestion, answer: QuestionAnswer): boolean {
+  if (answer.kind === "option") return question.options.some((o) => o.label === answer.label);
+  if (answer.kind === "text") return answer.text.trim() !== "";
+  return true;
+}
+
+/** The index of the first answer that doesn't fit its question, or -1. Null entries are unanswered. */
+function firstMisfit(questions: readonly AskQuestion[], answers: DraftAnswers): number {
+  return answers.findIndex((answer, i) => {
+    const question = questions[i];
+    return !question || (answer !== null && !fitsQuestion(question, answer));
+  });
+}
+
+type AnswerCheck = { ok: true; resolution: AskResolution } | { ok: false; questionIndex?: number };
+
+/** The resolution a writer's answer gives this ask, or why it doesn't fit. */
+function answerResolution(ask: StoredAsk, answer: AskAnswer): AnswerCheck {
   if (ask.kind === "permission")
     return answer.kind === "allow" || answer.kind === "allow_always" || answer.kind === "deny"
-      ? { kind: answer.kind }
-      : null;
-  const payload = ask.payload as QuestionAskPayload;
-  if (answer.kind === "option")
-    return payload.options.some((option) => option.label === answer.label)
-      ? { kind: "option", label: answer.label }
-      : null;
-  if (answer.kind === "text")
-    return answer.text.trim() ? { kind: "text", text: answer.text } : null;
-  if (answer.kind === "skip") return { kind: "skipped" };
-  return null;
+      ? { ok: true, resolution: { kind: answer.kind } }
+      : { ok: false };
+  if (answer.kind !== "answers") return { ok: false };
+  const { questions } = ask.payload as QuestionAskPayload;
+  if (answer.answers.length !== questions.length) return { ok: false };
+  const misfit = firstMisfit(questions, answer.answers);
+  if (misfit >= 0) return { ok: false, questionIndex: misfit };
+  return { ok: true, resolution: { kind: "answers", answers: answer.answers } };
+}
+
+/** The timeout's resolution: the writer's held answers stand, every other question takes its Recommended option. */
+function timeoutResolution(ask: StoredAsk): AskResolution {
+  const { questions } = ask.payload as QuestionAskPayload;
+  const answers = questions.map(
+    (question, i): ResolvedQuestionAnswer =>
+      ask.draftAnswers?.[i] ?? { kind: "timeout", label: question.recommended ?? null },
+  );
+  return { kind: "timeout", answers };
 }
 
 function resolutionPlan(resolution: AskResolution): AskResolutionPlan {
@@ -146,6 +198,7 @@ export function createAskService(deps: {
     status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
+    dueBy?: Date;
   }): Promise<AskClaim> {
     const existing = await deps.repos.asks.findById(input.askId);
     if (!existing || existing.threadId !== input.threadId)
@@ -164,6 +217,7 @@ export function createAskService(deps: {
         resolution: input.resolution,
         submissionId: input.submissionId,
         resolvedAt: new Date(),
+        dueBy: input.dueBy,
       });
       if (claimed) return { kind: "claimed", ask: claimed };
     } else {
@@ -285,6 +339,7 @@ export function createAskService(deps: {
     status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
+    dueBy?: Date;
   }): Promise<AskAnswerResult> {
     return deps.repos.transaction(() =>
       // The thread lock takes its held ask rows, this one included, before its own lock.
@@ -324,32 +379,67 @@ export function createAskService(deps: {
       if (!stored || stored.threadId !== input.threadId) return { ok: false, code: "ask_not_open" };
       if (stored.submissionId === input.submissionId && stored.status !== "open")
         return { ok: true, ask: threadAsk(stored) };
-      const resolution = answerResolution(stored, input.answer);
-      if (!resolution) return { ok: false, code: "invalid_answer", ask: threadAsk(stored) };
+      const checked = answerResolution(stored, input.answer);
+      if (!checked.ok)
+        return {
+          ok: false,
+          code: "invalid_answer",
+          ask: threadAsk(stored),
+          ...(checked.questionIndex === undefined ? {} : { questionIndex: checked.questionIndex }),
+        };
       const result = await resolve({
         askId: input.askId,
         threadId: input.threadId,
         status: "answered",
-        resolution,
+        resolution: checked.resolution,
         submissionId: input.submissionId,
       });
       if (result.ok) await testHook("ask.answer.afterCommit");
       return result;
+    },
+    async presence(input) {
+      const thread = await deps.repos.threads.findById(input.threadId);
+      if (!thread || thread.userId !== input.userId) return;
+      const now = input.now ?? new Date();
+      // The thread lock serializes this with a resolution; a timeout whose deadline this moves
+      // then loses on its `dueBy` check.
+      await deps.repos.transaction(() =>
+        deps.delivery.withThreadLock(input.threadId, async () => {
+          const stored = await deps.repos.asks.findById(input.askId);
+          if (
+            stored?.threadId !== input.threadId ||
+            stored.status !== "open" ||
+            stored.kind !== "question" ||
+            !stored.openedAt
+          )
+            return;
+          const { questions } = stored.payload as QuestionAskPayload;
+          if (input.answers.length > questions.length || firstMisfit(questions, input.answers) >= 0)
+            return;
+          const updated = await deps.repos.asks.recordPresence({
+            id: stored.id,
+            deadline: askDeadline(now, stored.openedAt),
+            draftAnswers: input.answers,
+          });
+          if (!updated || updated.deadlineAt?.getTime() === stored.deadlineAt?.getTime()) return;
+          await persistAndAppendEvents(deps, input.threadId, async () => ({
+            result: undefined,
+            events: [{ type: "ask.updated" as const, ask: threadAsk(updated) }],
+          }));
+        }),
+      );
     },
     async expireDue(now = new Date(), limit = 100) {
       const due = await deps.repos.asks.listOpenDueBy(now, limit);
       let expired = 0;
       for (const ask of due) {
         if (ask.kind !== "question") continue;
-        const resolution: AskResolution = {
-          kind: "timeout",
-          label: (ask.payload as QuestionAskPayload).recommended ?? null,
-        };
         const result = await resolve({
           askId: ask.id,
           threadId: ask.threadId,
           status: "expired",
-          resolution,
+          resolution: timeoutResolution(ask),
+          dueBy: now,
         });
         if (result.ok) expired += 1;
       }

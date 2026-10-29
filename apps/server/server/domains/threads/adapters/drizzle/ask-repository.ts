@@ -16,7 +16,9 @@ function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
     kind: row.kind,
     payload: row.payload,
     permissionCommand: row.permissionCommand,
+    openedAt: row.openedAt,
     deadlineAt: row.deadlineAt,
+    draftAnswers: row.draftAnswers,
     status: row.status,
     resolution: row.resolution,
     submissionId: row.submissionId,
@@ -38,7 +40,9 @@ function storedAskFromColumns(row: Record<string, unknown>): StoredAsk {
     kind: row.kind as StoredAsk["kind"],
     payload: row.payload as StoredAsk["payload"],
     permissionCommand: row.permission_command as StoredAsk["permissionCommand"],
+    openedAt: dateOrNull(row.opened_at),
     deadlineAt: dateOrNull(row.deadline_at),
+    draftAnswers: row.draft_answers as StoredAsk["draftAnswers"],
     status: row.status as StoredAsk["status"],
     resolution: row.resolution as StoredAsk["resolution"],
     submissionId: row.submission_id as string | null,
@@ -170,11 +174,22 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
           .orderBy(asc(asks.createdAt), asc(asks.id))
       ).map(storedAsk);
     },
-    async openPending(id, turnId, deadline) {
+    async openPending(id, turnId, { openedAt, deadline }) {
       const [row] = await currentDrizzleDb(db)
         .update(asks)
-        .set({ status: "open", deadlineAt: deadline })
+        .set({ status: "open", openedAt, deadlineAt: deadline })
         .where(and(eq(asks.id, id), eq(asks.askingTurnId, turnId), eq(asks.status, "pending")))
+        .returning();
+      return row ? storedAsk(row) : null;
+    },
+    async recordPresence(input) {
+      const [row] = await currentDrizzleDb(db)
+        .update(asks)
+        .set({
+          deadlineAt: sql`GREATEST(${asks.deadlineAt}, ${input.deadline.toISOString()}::timestamptz)`,
+          draftAnswers: input.draftAnswers,
+        })
+        .where(and(eq(asks.id, input.id), eq(asks.status, "open")))
         .returning();
       return row ? storedAsk(row) : null;
     },
@@ -203,7 +218,13 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
           resolvedAt: input.resolvedAt,
           continuation: input.status === "cancelled" ? "cancelled" : "pending",
         })
-        .where(and(eq(asks.id, input.id), eq(asks.status, "open")))
+        .where(
+          and(
+            eq(asks.id, input.id),
+            eq(asks.status, "open"),
+            input.dueBy ? lte(asks.deadlineAt, input.dueBy) : undefined,
+          ),
+        )
         .returning();
       return row ? storedAsk(row) : null;
     },

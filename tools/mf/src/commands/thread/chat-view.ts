@@ -10,6 +10,7 @@
 import type { JsonValue, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import {
   type ProviderErrorResponse,
+  type ResolvedQuestionAnswer,
   readCompactionFacts,
   readHandoffBrief,
   readHandoffSeed,
@@ -603,16 +604,32 @@ function rowLines(row: ChatRow): string[] {
 }
 
 function askLine({ ask, resolution }: AskReceipt): string {
-  const asked = ask.kind === "question" ? ask.payload.question : permissionLine(ask.payload);
-  const answer =
-    resolution.kind === "option"
-      ? resolution.label
-      : resolution.kind === "text"
-        ? `${resolution.kind}: ${oneLine(resolution.text)}`
-        : resolution.kind === "timeout"
-          ? `timeout${resolution.label ? `, went with ${resolution.label}` : ""}`
-          : resolution.kind;
-  return `asked ${ask.id}: ${oneLine(asked)} -> ${answer}`;
+  if (ask.kind === "permission")
+    return `asked ${ask.id}: ${oneLine(permissionLine(ask.payload))} -> ${resolution.kind}`;
+  const { questions } = ask.payload;
+  const answers =
+    resolution.kind === "answers" || resolution.kind === "timeout"
+      ? resolution.answers.map(answerLine)
+      : questions.map(() => resolution.kind);
+  return [
+    `asked ${ask.id}:`,
+    ...questions.map(
+      (item, index) => `    ${index + 1}. ${oneLine(item.question)} -> ${answers[index]}`,
+    ),
+  ].join("\n");
+}
+
+function answerLine(answer: ResolvedQuestionAnswer): string {
+  switch (answer.kind) {
+    case "option":
+      return answer.label;
+    case "text":
+      return `text: ${oneLine(answer.text)}`;
+    case "skipped":
+      return "skipped";
+    case "timeout":
+      return `timeout${answer.label ? `, went with ${answer.label}` : ""}`;
+  }
 }
 
 /** The request's facts: `work.update @w2 {"name":"Beta"}`. The app words them. */
@@ -628,13 +645,16 @@ function permissionLine(payload: Extract<OpenAsk["ask"], { kind: "permission" }>
 function openAskLines(ask: OpenAsk["ask"]): string[] {
   if (ask.kind === "permission")
     return [`  open permission request ${ask.id}: ${permissionLine(ask.payload)}`];
-  const { question, options, recommended } = ask.payload;
+  const { questions } = ask.payload;
   return [
-    `  open question ${ask.id}: ${oneLine(question)}${ask.deadlineAt ? ` (continues at ${ask.deadlineAt})` : ""}`,
-    ...options.map(
-      (option) =>
-        `    - ${option.label}${option.label === recommended ? " (recommended)" : ""}${option.description ? `: ${oneLine(option.description)}` : ""}`,
-    ),
+    `  open question ${ask.id}: ${questions.length} question${questions.length === 1 ? "" : "s"}${ask.deadlineAt ? ` (continues at ${ask.deadlineAt})` : ""}`,
+    ...questions.flatMap(({ question, options, recommended }, index) => [
+      `    ${index + 1}. ${oneLine(question)}`,
+      ...options.map(
+        (option) =>
+          `      - ${option.label}${option.label === recommended ? " (recommended)" : ""}${option.description ? `: ${oneLine(option.description)}` : ""}`,
+      ),
+    ]),
   ];
 }
 

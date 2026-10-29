@@ -329,7 +329,10 @@ export function createThreadWebSocketSession(peer: WsPeer) {
         try {
           const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
           const message = parseWsClientMessage(text);
-          requestId = message?.type === "pong" ? undefined : message?.requestId;
+          requestId =
+            message?.type === "pong" || message?.type === "ask.presence"
+              ? undefined
+              : message?.requestId;
           if (!message) {
             sendError(peer, meridianError("bad_request", "Malformed WebSocket message"));
             return;
@@ -371,8 +374,24 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                       threadId,
                       code: result.code,
                       ...(result.ask ? { ask: result.ask } : {}),
+                      ...(result.questionIndex === undefined
+                        ? {}
+                        : { questionIndex: result.questionIndex }),
                     },
               );
+              return;
+            }
+            case "ask.presence": {
+              if (!peer.context) return;
+              const threadId = parseRequestId(message.threadId) as ThreadId | null;
+              const askId = parseRequestId(message.askId);
+              if (!threadId || !askId) return;
+              await peer.context.app.asks.presence({
+                userId: peer.context.userId,
+                threadId,
+                askId,
+                answers: message.answers,
+              });
               return;
             }
             case "subscribe":

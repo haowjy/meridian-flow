@@ -23,6 +23,7 @@ import {
   type ThreadRepositories,
   turnFailedCopy,
 } from "../../threads/index.js";
+import { askDeadline } from "../asks/ask-deadline.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
@@ -245,11 +246,11 @@ export async function finalizeExecution(
         if (!askedCause) throw new Error("Ask publication lost its terminal cause");
         if (!liveAsk || liveAsk.id !== askedCause.askId)
           throw new Error(`Pending ask disappeared before settlement: ${askedCause.askId}`);
-        const opened = await deps.repos.asks.openPending(
-          askedCause.askId,
-          input.turnId,
-          liveAsk.kind === "question" ? new Date(Date.now() + 270_000) : null,
-        );
+        const openedAt = new Date();
+        const opened = await deps.repos.asks.openPending(askedCause.askId, input.turnId, {
+          openedAt,
+          deadline: liveAsk.kind === "question" ? askDeadline(openedAt, openedAt) : null,
+        });
         if (!opened)
           throw new Error(`Pending ask disappeared before settlement: ${askedCause.askId}`);
         askEvent = { type: "ask.updated", ask: threadAsk(opened) };
