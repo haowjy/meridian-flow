@@ -112,7 +112,6 @@ import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-a
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
-import { openChildQuestionsInRequest } from "../spawn/child-question-binding.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { admitRun, readContinuation } from "../spawn/run-admission.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
@@ -178,7 +177,6 @@ import {
   isDrainRun,
   type PreparedLoop,
   type RunLoopInput,
-  WakeRefusedError,
 } from "./run-turn-port.js";
 import type { AdoptedBatch, DeliveryBoundary, RuntimeDelivery } from "./runtime-delivery.js";
 import { settleSummaryResponses } from "./settle-summary-responses.js";
@@ -266,7 +264,7 @@ export interface OrchestratorDeps {
   askRequests: Pick<AskService, "request">;
   /** Runs after the ambient transaction commits, or at once outside one. */
   afterCommit(task: () => void): void;
-  /** Child invocation cards: running at admission, the saved report when the run ends. */
+  /** Child invocation cards: the saved report when the run ends. */
   reports: RunSessionReports;
   agentRevisions: Pick<
     AgentRevisionStore,
@@ -477,17 +475,6 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {
     const thread = await deps.repos.threads.findById(input.threadId);
     if (!thread) throw new Error(`Thread not found: ${input.threadId}`);
-    // A child's admission is its parent's machine wake, checked under the child's lock.
-    const refusal = input.child
-      ? await deps.runClaim.wakeRefusal({
-          sender: {
-            threadId: input.child.parentThreadId,
-            executionId: input.child.parentExecutionId,
-          },
-          receiver: input.threadId,
-        })
-      : null;
-    if (refusal) throw new WakeRefusedError(refusal, input.threadId);
     return persistWriterTurn({
       persistence: deps,
       threadId: input.threadId,
@@ -509,6 +496,15 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
           : { kind: "writer", actorId: thread.userId },
         body: { kind: "text", text: input.userText },
         idempotencyKey: userTurnId,
+        // A child's admission is its parent's machine wake: the enqueue checks the fence.
+        ...(input.child
+          ? {
+              sender: {
+                threadId: input.child.parentThreadId,
+                executionId: input.child.parentExecutionId,
+              },
+            }
+          : {}),
       },
     });
   });
@@ -554,8 +550,6 @@ async function runDrainTurn(
       const read = hint ? await readContinuation(deps.repos.asks, input.threadId, hint) : null;
       if (read === "retire" && control) return { retire: [control.id] };
       const continuation = read === "retire" ? null : read;
-      // A forwarded ask's obligation is its relay, so its hint outlives admission.
-      const relayAsk = continuation?.forwarded ? continuation.ask : null;
       const requestControl =
         control?.body.kind === "ask_resolved"
           ? null
@@ -747,8 +741,6 @@ async function runDrainTurn(
           selection.outstanding.length > 0 || !!input.replyTurnId || !!continuation,
         // A start-time compaction hands the Retry's list on to the first assistant.
         carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
-        relayAsk,
-        relayControlId: relayAsk && control ? control.id : null,
       };
       const events = [
         ...(skillBody
@@ -765,9 +757,7 @@ async function runDrainTurn(
         value,
         turnId: reservedTurn.id,
         completedControlIds:
-          control && (control.body.kind === "compact" || (continuation && !relayAsk))
-            ? [control.id]
-            : [],
+          control && (control.body.kind === "compact" || continuation) ? [control.id] : [],
         turnKind: currentTurnKind(reservedTurn),
         messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
@@ -831,8 +821,6 @@ async function runDrainTurn(
     localTurns,
     inheritedTurns,
     inheritedBlocks,
-    relayAsk,
-    relayControlId,
   } = setup;
   setup.skillBodies.committed(skillBody ? [skillBody.turn] : []);
   return {
@@ -845,18 +833,6 @@ async function runDrainTurn(
       if (preparationError) throw new RequestPreparationError(preparationError);
       if (!preflight && reservedTurn.role !== "system")
         throw new Error("Request context is unavailable after preparation failed");
-      // The relay rewrites the forwarded ask's tool result before the first request.
-      const relayed = !!relayAsk;
-      if (relayAsk && relayControlId)
-        await deps.childRunCoordinator.relayForwardedAnswer({
-          parentThread: setup.thread,
-          parentTurnId: reservedTurn.id,
-          parentExecutionId: input.lease.executionId,
-          ask: relayAsk,
-          controlId: relayControlId,
-          budget: treeBudget,
-          signal: input.signal,
-        });
       return executeLoop({
         deps,
         input,
@@ -870,12 +846,9 @@ async function runDrainTurn(
           ...setup.controlTurns,
         ],
         inheritedBlocks,
-        initialContext: relayed ? undefined : preflight?.assembled,
-        initialContextInvalidated: relayed,
+        initialContext: preflight?.assembled,
         initialContinuation: preflight?.continuation ?? { kind: "ordinary" },
-        initialCompaction: relayed
-          ? { kind: "generate" }
-          : (preflight?.compaction ?? { kind: "generate" }),
+        initialCompaction: preflight?.compaction ?? { kind: "generate" },
         initialExecutionAdmitted: setup.executionAdmitted,
         carriedReservedFor: setup.carriedReservedFor,
         treeBudget,
@@ -1775,7 +1748,6 @@ async function executeLoop({
   initialTurns,
   inheritedBlocks,
   initialContext,
-  initialContextInvalidated,
   initialCompaction,
   initialContinuation,
   initialExecutionAdmitted,
@@ -1791,8 +1763,6 @@ async function executeLoop({
   initialTurns: Turn[];
   inheritedBlocks: Block[];
   initialContext: AssembledNextTurnContext | undefined;
-  /** A pre-request relay rewrote a tool result after setup assembled the request. */
-  initialContextInvalidated: boolean;
   initialCompaction: CompactionDecision;
   initialContinuation: NotesContinuation;
   initialExecutionAdmitted: boolean;
@@ -1863,14 +1833,12 @@ async function executeLoop({
   ];
   // The reservation already prepared this request, so its first generation is
   // not another boundary.
-  let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined = initialContextInvalidated
-    ? undefined
-    : {
-        turns: [],
-        blocks: [],
-        events: [],
-        ackIds: (await deps.delivery.readPendingProjection(input.threadId)).run?.messageIds ?? [],
-      };
+  let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined = {
+    turns: [],
+    blocks: [],
+    events: [],
+    ackIds: (await deps.delivery.readPendingProjection(input.threadId)).run?.messageIds ?? [],
+  };
   let executionSelector: TurnId | null = initialExecutionAdmitted ? reservedTurn.id : null;
   let terminalControl = false;
   // A message waits behind a queued write-mode switch: end the reply here.
@@ -2296,12 +2264,6 @@ async function executeLoop({
         // Every call it produces plans on that set as of now (C4); results persisting later join `credited`.
         credited.reset(requestCreditedIds);
         const planningBlockIds = credited.ids();
-        const boundChildQuestions = await openChildQuestionsInRequest({
-          turns: allTurns,
-          blocks: allBlocks,
-          creditedBlockIds: new Set(planningBlockIds),
-          asks: deps.repos.asks,
-        });
         thread = built.thread;
         const request = built.request;
         const gatewayCallId = crypto.randomUUID();
@@ -2667,7 +2629,6 @@ async function executeLoop({
                   runClaim: deps.runClaim,
                   shownLinks: deps.shownLinks,
                   observationFrontiers: deps.observationFrontiers,
-                  asks: deps.repos.asks,
                   askRequests: deps.askRequests,
                 },
                 call,
@@ -2685,7 +2646,6 @@ async function executeLoop({
                   blockSeqRef,
                   allTurns,
                   planningBlockIds,
-                  boundChildQuestions,
                   batch,
                   credited,
                   replyMutations: scope.reply,

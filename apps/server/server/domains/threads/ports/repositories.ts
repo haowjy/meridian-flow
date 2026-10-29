@@ -209,8 +209,6 @@ export interface ExecutionReportRepository {
   /** Latest admitted execution per child, ordered from report admission truth. */
   listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
   listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;
-  /** The last of `listFinishedByChild`, read alone. */
-  findLatestFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport | null>;
   /** Bounded metadata for admitted executions still lacking terminal truth. */
   listUnfinalized(
     limit: number,
@@ -307,8 +305,11 @@ export interface ThreadRepository {
    * subtrees whose root the execution that reserved that turn spawned.
    */
   listSubtreeIds(threadId: ThreadId, spawnedByTurnId?: TurnId): Promise<ThreadId[]>;
-  /** The spawn ancestors of `threadId`: its parent first, the root last. */
-  listAncestorIds(threadId: ThreadId): Promise<ThreadId[]>;
+  /**
+   * A lineage cancellation's one write of `spawn_status`: every spawn among these threads whose
+   * run has not finished becomes `cancelled`.
+   */
+  cancelRunningSpawns(threadIds: readonly ThreadId[]): Promise<void>;
   /** Bounded newest-first spawn/derivation children; derivations attach to the cutoff owner. */
   listLineageChildren(input: {
     rootThreadId: ThreadId;

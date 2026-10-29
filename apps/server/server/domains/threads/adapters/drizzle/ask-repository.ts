@@ -1,9 +1,8 @@
 /** Drizzle adapter for durable ask storage and deadline discovery. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { asks } from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
-import { lockThreadAsks } from "../../../../shared/thread-work-lock.js";
-import type { AskRelay, AskRepository, StoredAsk } from "../../ports/ask-repository.js";
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import type { AskRepository, StoredAsk } from "../../ports/ask-repository.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
@@ -19,10 +18,8 @@ function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
     status: row.status,
     resolution: row.resolution,
     submissionId: row.submissionId,
-    relay: row.relay as AskRelay | null,
     continuation: row.continuation,
     continuationTurnId: row.continuationTurnId,
-    forwardedFromAskId: row.forwardedFromAskId,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
   };
@@ -42,10 +39,8 @@ function storedAskFromColumns(row: Record<string, unknown>): StoredAsk {
     status: row.status as StoredAsk["status"],
     resolution: row.resolution as StoredAsk["resolution"],
     submissionId: row.submission_id as string | null,
-    relay: row.relay as AskRelay | null,
     continuation: row.continuation as StoredAsk["continuation"],
     continuationTurnId: row.continuation_turn_id as TurnId | null,
-    forwardedFromAskId: row.forwarded_from_ask_id as string | null,
     createdAt: dateOrNull(row.created_at) as Date,
     resolvedAt: dateOrNull(row.resolved_at),
   };
@@ -66,15 +61,6 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
     async findById(id) {
       const [row] = await currentDrizzleDb(db).select().from(asks).where(eq(asks.id, id)).limit(1);
       return row ? storedAsk(row) : null;
-    },
-    async listByIds(ids) {
-      if (ids.length === 0) return [];
-      return (
-        await currentDrizzleDb(db)
-          .select()
-          .from(asks)
-          .where(inArray(asks.id, [...ids]))
-      ).map(storedAsk);
     },
     async findLiveByTurnForUpdate(turnId) {
       const [row] = await currentDrizzleDb(db)
@@ -101,39 +87,8 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
         .limit(1);
       return row ? storedAsk(row) : null;
     },
-    async lockHeldByThreads(threadIds) {
-      await lockThreadAsks(db, threadIds);
-    },
-    async listCopyHolders(threadIds) {
-      if (threadIds.length === 0) return [];
-      const rows = await currentDrizzleDb(db).execute(sql`
-        WITH RECURSIVE copies AS (
-          SELECT copy.id, copy.thread_id FROM asks copy
-          JOIN asks source ON source.id = copy.forwarded_from_ask_id
-          WHERE source.thread_id IN (${sql.join(
-            threadIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )}) AND copy.status IN ('pending', 'open')
-          UNION
-          SELECT copy.id, copy.thread_id FROM asks copy
-          JOIN copies ON copy.forwarded_from_ask_id = copies.id
-          WHERE copy.status IN ('pending', 'open')
-        )
-        SELECT DISTINCT thread_id FROM copies
-      `);
-      return rows.map((row) => row.thread_id as ThreadId);
-    },
-    async lockByIds(ids) {
-      if (ids.length === 0) return;
-      await currentDrizzleDb(db)
-        .select({ id: asks.id })
-        .from(asks)
-        .where(inArray(asks.id, [...ids]))
-        .orderBy(asc(asks.id))
-        .for("update");
-    },
     async claimLineage(input) {
-      const held = sql`(a.status IN ('pending', 'open') OR a.continuation IN ('pending', 'admitted'))`;
+      const held = sql`(a.status IN ('pending', 'open') OR a.continuation = 'pending')`;
       const targets =
         input.threadIds.length > 0
           ? sql`(a.thread_id IN (${sql.join(
@@ -147,28 +102,18 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
             (a.status IN ('pending', 'open') AND ${
               owner.turnId ? sql`a.asking_turn_id = ${owner.turnId}::uuid` : sql`true`
             })
-            OR (a.continuation IN ('pending', 'admitted') AND (
-              ${owner.spare}::text IS NULL OR NOT EXISTS (
-                SELECT 1 FROM turns t
-                WHERE t.id = a.continuation_turn_id AND t.execution_id::text = ${owner.spare}::text
-              )
-            ))
+            OR a.continuation = 'pending'
           ))`
         : sql`false`;
-      // A live copy forwarded from a claimed ask goes with it, at any remove.
+      // Rows this command already holds lock again at once. A row another transaction holds
+      // became held after the thread's lock took its asks (a new question), and its holder waits
+      // on a thread lock this command holds: waiting for it would deadlock.
       const rows = await currentDrizzleDb(db).execute(sql`
-        WITH RECURSIVE reached AS (
-          SELECT a.id FROM asks a WHERE ${targets} OR ${owned}
-          UNION
-          SELECT copy.id FROM asks copy
-          JOIN reached ON copy.forwarded_from_ask_id = reached.id
-          WHERE copy.status IN ('pending', 'open')
-        ),
-        claimed AS (
+        WITH claimed AS (
           SELECT a.id, a.status AS prior FROM asks a
-          WHERE a.id IN (SELECT id FROM reached)
+          WHERE ${targets} OR ${owned}
           ORDER BY a.id
-          FOR UPDATE
+          FOR UPDATE SKIP LOCKED
         )
         UPDATE asks SET
           status = CASE WHEN claimed.prior IN ('pending', 'open') THEN 'cancelled' ELSE asks.status END,
@@ -189,18 +134,8 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
     async admitContinuation(input) {
       const [row] = await currentDrizzleDb(db)
         .update(asks)
-        .set({
-          continuation: input.forwarded ? "admitted" : "done",
-          continuationTurnId: input.turnId,
-        })
-        .where(
-          and(
-            eq(asks.id, input.id),
-            input.forwarded
-              ? inArray(asks.continuation, ["pending", "admitted"])
-              : eq(asks.continuation, "pending"),
-          ),
-        )
+        .set({ continuation: "done", continuationTurnId: input.turnId })
+        .where(and(eq(asks.id, input.id), eq(asks.continuation, "pending")))
         .returning();
       return row ? storedAsk(row) : null;
     },
@@ -230,40 +165,6 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
           .where(inArray(asks.askingTurnId, [...turnIds]))
           .orderBy(asc(asks.createdAt), asc(asks.id))
       ).map(storedAsk);
-    },
-    async recordRelayOnce(id, relay) {
-      const [row] = await currentDrizzleDb(db)
-        .update(asks)
-        .set({ relay })
-        .where(and(eq(asks.id, id), isNull(asks.relay)))
-        .returning();
-      if (row) return storedAsk(row);
-      const existing = (
-        await currentDrizzleDb(db).select().from(asks).where(eq(asks.id, id)).limit(1)
-      )[0];
-      if (!existing) throw new Error("Forwarded ask disappeared while recording its relay");
-      const stored = storedAsk(existing);
-      if (!sameRelayAdmission(stored.relay, relay))
-        throw new Error("Forwarded ask already has a different relay");
-      return stored;
-    },
-    async completeRelay(input) {
-      const relay = input.late
-        ? sql`${JSON.stringify({ ...input.late, result: input.result })}::jsonb`
-        : sql`${asks.relay} || jsonb_build_object('result', ${JSON.stringify(input.result)}::jsonb)`;
-      const [row] = await currentDrizzleDb(db)
-        .update(asks)
-        .set({ relay, continuation: "done" })
-        .where(
-          and(
-            eq(asks.id, input.id),
-            eq(asks.continuation, "admitted"),
-            eq(asks.continuationTurnId, input.turnId),
-            input.late ? isNull(asks.relay) : sql`${asks.relay} IS NOT NULL`,
-          ),
-        )
-        .returning();
-      return row ? storedAsk(row) : null;
     },
     async openPending(id, turnId, deadline) {
       const [row] = await currentDrizzleDb(db)
@@ -316,12 +217,4 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
       return row ? storedAsk(row) : null;
     },
   };
-}
-
-function sameRelayAdmission(left: AskRelay | null, right: AskRelay): boolean {
-  return (
-    left?.childAskId === right.childAskId &&
-    left.mode === right.mode &&
-    left.messageId === right.messageId
-  );
 }

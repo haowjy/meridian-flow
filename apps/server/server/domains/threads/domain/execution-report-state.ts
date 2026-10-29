@@ -43,7 +43,7 @@ export function decodeReportCapture(value: JsonValue): ReturnResultCapture {
 export const reportTerminalSchema = z.union([
   z.object({ outcome: z.null(), source: z.null(), summary: z.null(), terminalAt: z.null() }),
   z.object({
-    outcome: z.enum(["succeeded", "asked", "failed", "cancelled"]),
+    outcome: z.enum(["succeeded", "failed", "cancelled"]),
     source: z.enum(["return_result", "final_assistant", "empty"]),
     summary: z.string(),
     terminalAt: z.string(),

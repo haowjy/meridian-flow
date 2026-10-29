@@ -188,8 +188,6 @@ export type MessageProvenance =
   | {
       kind: "agent";
       threadId: string;
-      /** Exact child ask this message answers when it is still open. */
-      boundAskId?: string;
       /** Writer-visible identity of the chat that sent a directed message. */
       sender?: { ref: string | null; title: string | null };
       /**
@@ -201,18 +199,10 @@ export type MessageProvenance =
   | {
       kind: "child";
       threadId: string;
-      handle: string;
-      agentName: string;
       reportId: string;
-      outcome: string;
-    }
-  | {
-      kind: "child";
-      threadId: string;
       handle: string;
+      outcome: string;
       agentName: string;
-      /** A child's immutable `asked` report. */
-      ask: { id: string; question: string; options: string[]; recommended?: string };
     }
   | { kind: "system"; source: string };
 

@@ -26,7 +26,8 @@ import { Pause } from "lucide-react";
 import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
-import { errorMessageExpand, rendererFor, toolRowFailed } from "./tool-renderers";
+import { errorMessageExpand } from "./tool-failure";
+import { rendererFor, toolRowFailed } from "./tool-renderers";
 
 export type ToolRowProps = {
   tool: ToolView;

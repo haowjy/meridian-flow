@@ -208,10 +208,7 @@ export type CoreToolHandlers = {
 };
 
 async function askUser(input: unknown, ctx: RequestToolHandlerContext) {
-  const ask = input as AskToolInput;
-  const outcome = await ctx.request(
-    "forward" in ask ? { kind: "forward", askId: ask.forward } : { kind: "question", payload: ask },
-  );
+  const outcome = await ctx.request({ kind: "question", payload: input as AskToolInput });
   return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
 }
 
@@ -336,7 +333,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "ask_user",
         description:
-          'Ask only when the answer changes what you do and you can\'t make a reasonable choice. Otherwise choose, say what you chose, and continue. Give 2–4 options; the writer can also answer in their own words. Mark one recommended if you have a preference: it\'s used if no one answers within a few minutes. Asking ends your turn, and the answer arrives as this tool\'s result. When a child asks you a question, forward it to the writer by default with {"forward": "<ask id>"}; Flow relays the answer to that child. Answer it yourself with thread_message only when your own context already settles it.',
+          "Ask only when the answer changes what you do and you can't make a reasonable choice. Otherwise choose, say what you chose, and continue. Give 2–4 options; the writer can also answer in their own words. Mark one recommended if you have a preference: it's used if no one answers within a few minutes. Asking ends your turn, and the answer arrives as this tool's result.",
         inputSchema: modelToolSchema(AskToolInputSchema),
       },
       input: AskToolInputSchema,

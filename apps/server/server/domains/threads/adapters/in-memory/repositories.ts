@@ -421,15 +421,12 @@ export function createInMemoryRepositories(
       }
       return result;
     },
-    async listAncestorIds(threadId) {
-      const result: ThreadId[] = [];
-      for (
-        let parent = threads.get(threadId)?.parentThreadId;
-        parent;
-        parent = threads.get(parent)?.parentThreadId
-      )
-        result.push(parent as ThreadId);
-      return result;
+    async cancelRunningSpawns(threadIds) {
+      for (const id of threadIds) {
+        const thread = threads.get(id);
+        if (thread?.originType === "spawn" && thread.spawnStatus === "running")
+          threads.set(id, { ...thread, spawnStatus: "cancelled" });
+      }
     },
     async listChildren(threadId) {
       return [...threads.values()]
@@ -1449,10 +1446,8 @@ export function createInMemoryRepositories(
           ...input,
           id: input.id ?? crypto.randomUUID(),
           submissionId: input.submissionId ?? null,
-          relay: input.relay ?? null,
           continuation: null,
           continuationTurnId: null,
-          forwardedFromAskId: input.forwardedFromAskId ?? null,
           createdAt: new Date(),
           resolvedAt: input.resolvedAt ?? null,
         };
@@ -1462,12 +1457,6 @@ export function createInMemoryRepositories(
       async findById(id) {
         const row = asks.get(id);
         return row ? { ...row } : null;
-      },
-      async listByIds(ids) {
-        return ids.flatMap((id) => {
-          const row = asks.get(id);
-          return row ? [{ ...row }] : [];
-        });
       },
       async findLiveByTurnForUpdate(turnId) {
         return (
@@ -1491,48 +1480,19 @@ export function createInMemoryRepositories(
           ) ?? null
         );
       },
-      async lockHeldByThreads() {},
-      async listCopyHolders(threadIds) {
-        const live = (ask: StoredAsk) => ask.status === "pending" || ask.status === "open";
-        let sources = new Set(
-          [...asks.values()].filter((ask) => threadIds.includes(ask.threadId)).map(({ id }) => id),
-        );
-        const holders = new Set<ThreadId>();
-        while (sources.size > 0) {
-          const copies = [...asks.values()].filter(
-            (ask) => live(ask) && ask.forwardedFromAskId && sources.has(ask.forwardedFromAskId),
-          );
-          for (const copy of copies) holders.add(copy.threadId);
-          sources = new Set(copies.map(({ id }) => id));
-        }
-        return [...holders];
-      },
-      async lockByIds() {},
       async claimLineage(input) {
         const targets = new Set<string>(input.threadIds);
         const live = (ask: StoredAsk) => ask.status === "pending" || ask.status === "open";
-        const owed = (ask: StoredAsk) =>
-          ask.continuation === "pending" || ask.continuation === "admitted";
+        const owed = (ask: StoredAsk) => ask.continuation === "pending";
         const { owner } = input;
         const claimed = [...asks.values()]
           .filter((ask) => {
             if (targets.has(ask.threadId)) return live(ask) || owed(ask);
             if (ask.threadId !== owner?.threadId) return false;
             if (live(ask)) return !owner.turnId || ask.askingTurnId === owner.turnId;
-            if (!owed(ask)) return false;
-            const admittedBy = ask.continuationTurnId
-              ? turns.get(ask.continuationTurnId)?.executionId
-              : null;
-            return owner.spare === null || admittedBy !== owner.spare;
+            return owed(ask);
           })
           .sort((a, b) => a.id.localeCompare(b.id));
-        for (let reached = claimed; reached.length > 0; ) {
-          const ids = new Set(reached.map(({ id }) => id));
-          reached = [...asks.values()].filter(
-            (ask) => live(ask) && ask.forwardedFromAskId && ids.has(ask.forwardedFromAskId),
-          );
-          claimed.push(...reached);
-        }
         return claimed.map((ask) => {
           const wasLive = live(ask);
           const row: StoredAsk = {
@@ -1552,12 +1512,10 @@ export function createInMemoryRepositories(
       },
       async admitContinuation(input) {
         const ask = asks.get(input.id);
-        const owed =
-          ask?.continuation === "pending" || (input.forwarded && ask?.continuation === "admitted");
-        if (!ask || !owed) return null;
+        if (ask?.continuation !== "pending") return null;
         const row: StoredAsk = {
           ...ask,
-          continuation: input.forwarded ? "admitted" : "done",
+          continuation: "done",
           continuationTurnId: input.turnId,
         };
         asks.set(row.id, row);
@@ -1574,36 +1532,6 @@ export function createInMemoryRepositories(
       async listByTurnIds(turnIds) {
         const ids = new Set(turnIds);
         return [...asks.values()].filter((ask) => ids.has(ask.askingTurnId));
-      },
-      async recordRelayOnce(id, relay) {
-        const row = asks.get(id);
-        if (!row) throw new Error("Forwarded ask disappeared while recording its relay");
-        if (
-          row.relay &&
-          (row.relay.childAskId !== relay.childAskId ||
-            row.relay.mode !== relay.mode ||
-            row.relay.messageId !== relay.messageId)
-        )
-          throw new Error("Forwarded ask already has a different relay");
-        const updated = { ...row, relay: row.relay ?? relay };
-        asks.set(id, updated);
-        return { ...updated };
-      },
-      async completeRelay(input) {
-        const row = asks.get(input.id);
-        if (
-          !row ||
-          row.continuation !== "admitted" ||
-          row.continuationTurnId !== input.turnId ||
-          (input.late ? row.relay !== null : row.relay === null)
-        )
-          return null;
-        const relay = input.late
-          ? { ...input.late, result: input.result }
-          : { ...(row.relay as NonNullable<StoredAsk["relay"]>), result: input.result };
-        const updated: StoredAsk = { ...row, relay, continuation: "done" };
-        asks.set(input.id, updated);
-        return { ...updated };
       },
       async openPending(id, turnId, deadline) {
         const ask = asks.get(id);

@@ -34,8 +34,6 @@ export class HandBackConflictError extends Error {
 
 export type DeliveryTransaction = {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
-  /** Durable row with no post-commit wake: a caller that drives the run itself. */
-  enqueueWithoutWake(draft: MessageDraft): Promise<InboxMessage>;
   acknowledge(ids: readonly string[]): Promise<void>;
   /** Materialize every eligible predecessor before placing this writer turn. */
   materializePrefix(): Promise<void>;

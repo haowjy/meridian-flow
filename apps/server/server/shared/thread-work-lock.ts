@@ -10,26 +10,27 @@ import {
 } from "./work-lifecycle-lock.js";
 
 /**
- * Locks, in id order, the asks these threads hold: live asks and owed continuations. Ask rows
- * lock before thread locks everywhere (answers claim the ask first), so the thread lock takes
- * its own asks first and an ask transition under it never waits on an ask row.
+ * Locks, in id order, the asks these threads hold: live asks and owed continuations. The thread
+ * lock takes its own asks first, so an ask transition under it never waits on an ask row.
+ * `skipLocked` leaves rows another transaction holds.
  */
-export async function lockThreadAsks(db: DrizzleDb, threadIds: readonly ThreadId[]) {
+export async function lockThreadAsks(
+  db: DrizzleDb,
+  threadIds: readonly ThreadId[],
+  options: { skipLocked?: boolean } = {},
+) {
   if (threadIds.length === 0) return;
-  await currentDrizzleDb(db)
+  const query = currentDrizzleDb(db)
     .select({ id: asks.id })
     .from(asks)
     .where(
       and(
         inArray(asks.threadId, [...threadIds]),
-        or(
-          inArray(asks.status, ["pending", "open"]),
-          inArray(asks.continuation, ["pending", "admitted"]),
-        ),
+        or(inArray(asks.status, ["pending", "open"]), eq(asks.continuation, "pending")),
       ),
     )
-    .orderBy(asc(asks.id))
-    .for("update");
+    .orderBy(asc(asks.id));
+  await (options.skipLocked ? query.for("update", { skipLocked: true }) : query.for("update"));
 }
 
 /** Caller owns the transaction. FK KEY SHARE from Work notices must remain compatible. */

@@ -1,5 +1,5 @@
 {
-  "id": "270ae87c-ce25-44e3-9cdc-6223f60c314c",
+  "id": "ea7b3b8f-de27-4dff-aa69-4866cd94cd85",
   "prevId": "e3d5b237-60c3-41ba-87df-8e0f0f1891a2",
   "version": "7",
   "dialect": "postgresql",
@@ -1957,7 +1957,7 @@
         },
         "thread_execution_reports_outcome_valid": {
           "name": "thread_execution_reports_outcome_valid",
-          "value": "\"thread_execution_reports\".\"outcome\" IS NULL OR \"thread_execution_reports\".\"outcome\" IN ('succeeded','asked','failed','cancelled')"
+          "value": "\"thread_execution_reports\".\"outcome\" IS NULL OR \"thread_execution_reports\".\"outcome\" IN ('succeeded','failed','cancelled')"
         },
         "thread_execution_reports_source_valid": {
           "name": "thread_execution_reports_source_valid",
@@ -3233,7 +3233,7 @@
         },
         "threads_spawn_status_valid": {
           "name": "threads_spawn_status_valid",
-          "value": "\"threads\".\"spawn_status\" IS NULL OR \"threads\".\"spawn_status\" IN ('running', 'asked', 'succeeded', 'failed', 'cancelled')"
+          "value": "\"threads\".\"spawn_status\" IS NULL OR \"threads\".\"spawn_status\" IN ('running', 'succeeded', 'failed', 'cancelled')"
         }
       },
       "isRLSEnabled": false
@@ -8427,12 +8427,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "relay": {
-          "name": "relay",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "continuation": {
           "name": "continuation",
           "type": "text",
@@ -8441,12 +8435,6 @@
         },
         "continuation_turn_id": {
           "name": "continuation_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "forwarded_from_ask_id": {
-          "name": "forwarded_from_ask_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -8466,22 +8454,6 @@
         }
       },
       "indexes": {
-        "asks_forwarded_from": {
-          "name": "asks_forwarded_from",
-          "columns": [
-            {
-              "expression": "forwarded_from_ask_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"asks\".\"forwarded_from_ask_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "asks_open_deadline": {
           "name": "asks_open_deadline",
           "columns": [
@@ -8542,7 +8514,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"asks\".\"status\" IN ('pending', 'open') OR \"asks\".\"continuation\" IN ('pending', 'admitted')",
+          "where": "\"asks\".\"status\" IN ('pending', 'open') OR \"asks\".\"continuation\" = 'pending'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -8592,19 +8564,6 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "asks_forwarded_from_fk": {
-          "name": "asks_forwarded_from_fk",
-          "tableFrom": "asks",
-          "tableTo": "asks",
-          "columnsFrom": [
-            "forwarded_from_ask_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8630,7 +8589,7 @@
         },
         "asks_continuation_valid": {
           "name": "asks_continuation_valid",
-          "value": "(\"asks\".\"status\" IN ('pending', 'open') AND \"asks\".\"continuation\" IS NULL) OR (\"asks\".\"status\" IN ('answered', 'expired') AND \"asks\".\"continuation\" IN ('pending', 'admitted', 'done', 'cancelled')) OR (\"asks\".\"status\" = 'cancelled' AND \"asks\".\"continuation\" = 'cancelled')"
+          "value": "(\"asks\".\"status\" IN ('pending', 'open') AND \"asks\".\"continuation\" IS NULL) OR (\"asks\".\"status\" IN ('answered', 'expired') AND \"asks\".\"continuation\" IN ('pending', 'done', 'cancelled')) OR (\"asks\".\"status\" = 'cancelled' AND \"asks\".\"continuation\" = 'cancelled')"
         },
         "asks_resolution_coherent": {
           "name": "asks_resolution_coherent",

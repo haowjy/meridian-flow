@@ -53,7 +53,7 @@ export const threadSchema = z.object({
    */
   rootThreadId: z.string().min(1),
   spawnDepth: z.number().int().nonnegative(),
-  spawnStatus: z.enum(["running", "asked", "succeeded", "failed", "cancelled"]).nullable(),
+  spawnStatus: z.enum(["running", "succeeded", "failed", "cancelled"]).nullable(),
   totalCostUsd: z.string(),
   turnCount: z.number().int().nonnegative(),
   createdAt: z.string(),

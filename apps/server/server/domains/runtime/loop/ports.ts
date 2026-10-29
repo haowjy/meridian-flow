@@ -32,16 +32,8 @@ export type { ThreadPhase, ThreadStatus };
 /** A named fragment of model-visible context carried by a `context` body. */
 export type ContextPart = { source: string; text: string };
 
-/**
- * The durable continuation obligation of a resolved ask. `delivery` is how the
- * continuation's report reaches the parent: `direct` when a foreground parent call
- * waits on it, `background_notification` otherwise.
- */
-export type AskResolvedBody = {
-  kind: "ask_resolved";
-  askId: string;
-  delivery: "direct" | "background_notification";
-};
+/** The wake hint of a resolved ask: the run it starts continues that ask. */
+export type AskResolvedBody = { kind: "ask_resolved"; askId: string };
 
 export type MessageBody =
   | ControlBody
@@ -62,9 +54,15 @@ export interface MessageDraft {
    * re-persist. Controls use their client-minted id; other producers let storage mint one.
    */
   id?: string;
+  /**
+   * The execution that sends a machine message (a `thread_message`, a child's admission). The
+   * enqueue refuses it under the receiver's lock when the fence says so (`RunClaim.wakeRefusal`);
+   * it is not stored.
+   */
+  sender?: { threadId: ThreadId; executionId: ExecutionId };
 }
 
-export interface InboxMessage extends MessageDraft {
+export interface InboxMessage extends Omit<MessageDraft, "sender"> {
   id: string;
   seq: number;
   enqueuedAt: string;
@@ -149,10 +147,11 @@ export interface RunClaim {
   /** Stamps the machine-wake fence on threads a lineage cancellation stopped (see `wakeRefusal`). */
   fenceWakes(threadIds: readonly ThreadId[]): Promise<void>;
   /**
-   * Whether a machine wake one execution sends (a message, a relay, a child's admission) is
+   * Whether a machine wake one execution sends (a message, a child's admission, a spawn) is
    * refused: `sender_stopped` when that execution no longer holds its lease or was cancelled,
    * `receiver_stopped` when the receiver was fenced after the execution was admitted. Writer
-   * actions never ask. Call under the receiver's thread lock, which the fence takes too.
+   * actions never ask. Call under the receiver's thread lock, which the fence takes too; the
+   * delivery enqueue does, for every draft that names its `sender`.
    */
   wakeRefusal(input: {
     sender: { threadId: ThreadId; executionId: ExecutionId };

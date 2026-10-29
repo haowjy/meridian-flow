@@ -2,8 +2,6 @@
 
 import { describe, expect, it } from "vitest";
 import { createInMemoryAppServices } from "../../../lib/compose.js";
-import type { SubagentThreadFactory } from "../../threads/index.js";
-import type { RunClaim } from "../loop/ports.js";
 
 const USER_ID = "writer";
 
@@ -60,92 +58,6 @@ describe("durable ask claims", () => {
       ask: { status: "answered", resolution: { kind: "option", label: "Right" } },
     });
     expect((await app.threadRepos.blocks.listByTurn(turn.id)).filter(isAskResult)).toHaveLength(1);
-  });
-
-  it("binds a parent answer to the exact ask when the writer races it", async () => {
-    const app = createInMemoryAppServices();
-    const parent = await app.threadRepos.threads.create({
-      aiWriteMode: "direct",
-      projectId: "project",
-      userId: USER_ID,
-    });
-    const parentTurn = await app.threadRepos.turns.create({
-      threadId: parent.id,
-      role: "assistant",
-      origin: "assistant",
-      status: "streaming",
-      executionId: "parent-execution",
-    });
-    const child = await (
-      app.threadRepos.threads as unknown as SubagentThreadFactory
-    ).createSubagent({
-      aiWriteMode: "direct",
-      projectId: "project",
-      userId: USER_ID,
-      parentThreadId: parent.id,
-      rootThreadId: parent.id,
-      originTurnId: parentTurn.id,
-      spawnDepth: 1,
-      title: "Child",
-      spawnStatus: "running",
-    });
-    const turn = await app.threadRepos.turns.create({
-      threadId: child.id,
-      role: "assistant",
-      origin: "assistant",
-      status: "awaiting_answer",
-      executionId: "child-execution",
-    });
-    await app.threadRepos.executionReports.admit({
-      childThreadId: child.id,
-      executionTurnId: turn.id,
-      handle: child.ref ?? "c1",
-      callerThreadId: parent.id,
-      callerTurnId: parentTurn.id,
-      toolCallId: "spawn-call",
-      cardBlockId: null,
-      origin: "spawn",
-      deliveryMode: "direct",
-    });
-    const ask = await app.threadRepos.asks.create({
-      threadId: child.id,
-      askingTurnId: turn.id,
-      executionId: "child-execution",
-      toolCallId: "ask-call",
-      kind: "question",
-      payload: { question: "Choose", options: [{ label: "Left" }, { label: "Right" }] },
-      deadlineAt: new Date(Date.now() + 60_000),
-      status: "open",
-      resolution: null,
-      submissionId: null,
-    });
-
-    // A parent's answer comes from its live execution (the app exposes only part of its claim).
-    await (app.runClaim as RunClaim).startExecution(parent.id, "parent-execution", async () => {});
-    const [parentAnswer, writerAnswer] = await Promise.all([
-      app.asks.answerFromParent({
-        parentThreadId: parent.id,
-        parentExecutionId: "parent-execution",
-        childThreadId: child.id,
-        askId: ask.id,
-        submissionId: "parent-answer",
-        text: "Left",
-        delivery: "direct",
-      }),
-      app.asks.answer({
-        userId: USER_ID,
-        threadId: child.id,
-        askId: ask.id,
-        submissionId: "writer-answer",
-        answer: { kind: "option", label: "Right" },
-      }),
-    ]);
-
-    expect(Number(parentAnswer.ok) + Number(writerAnswer.ok)).toBe(1);
-    expect((await app.threadRepos.blocks.listByTurn(turn.id)).filter(isAskResult)).toHaveLength(1);
-    expect((await app.threadRepos.asks.findById(ask.id))?.resolution?.kind).toMatch(
-      /^(parent|option)$/,
-    );
   });
 });
 

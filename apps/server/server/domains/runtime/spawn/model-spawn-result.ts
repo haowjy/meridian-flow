@@ -36,16 +36,6 @@ export function spawnToolResult(
   return { isError: true, output: result };
 }
 
-/** A child's question as its parent model reads it, nudged toward forwarding to the writer. */
-export function childQuestionText(
-  handle: string,
-  askId: string,
-  question: string,
-  options: readonly string[],
-): string {
-  return `@${handle} asks (ask ${askId}): ${question} (options: ${options.join(", ")}). Forward it to the writer with ask_user({"forward":"${askId}"}); answer with thread_message only if your own context already settles it.`;
-}
-
 export function renderSpawnOutput(value: JsonValue): string {
   if (isInvalidArgumentsResult(value)) return renderInvalidArguments("spawn", value.issues);
   if (!isSpawnResult(value)) return renderRefusal(value);
@@ -54,9 +44,6 @@ export function renderSpawnOutput(value: JsonValue): string {
     // A spawned run carries its execution; a queued thread_message has none.
     if (result.execution !== undefined) return backgroundRunCopy(result.handle);
     return result.notifiesCaller ? queuedNotifyCopy(result.handle) : queuedNoReplyCopy;
-  }
-  if (result.status === "asked") {
-    return childQuestionText(result.handle, result.ask.id, result.ask.question, result.ask.options);
   }
   const report = result.report;
   if (!report)
@@ -75,10 +62,5 @@ export function renderSpawnOutput(value: JsonValue): string {
 
 function isSpawnResult(value: JsonValue): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  return (
-    value.status === "completed" ||
-    value.status === "asked" ||
-    value.status === "error" ||
-    value.status === "background"
-  );
+  return value.status === "completed" || value.status === "error" || value.status === "background";
 }

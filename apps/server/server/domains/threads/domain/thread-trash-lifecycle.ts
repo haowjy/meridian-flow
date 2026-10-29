@@ -31,7 +31,7 @@ interface TransitionThreadTrashDeps {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   /**
    * Ends the thread's run and subagent subtree in this transaction (lineage cancellation).
-   * Runs before the thread row lock: it takes ask rows, then thread locks, parents first.
+   * Runs before the thread row lock: it takes thread locks, parents first, each after its ask rows.
    */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
 }

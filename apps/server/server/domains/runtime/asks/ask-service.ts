@@ -1,10 +1,9 @@
 /**
- * Durable ask resolution, split into claim, tool-result, and continuation owners.
+ * Durable ask creation and resolution, split into claim, tool-result, and continuation owners.
  * A resolution that continues sets the ask's continuation `pending` and writes one
- * `ask_resolved` inbox row, the wake hint that admission follows; a parent's
- * foreground answer marks it `direct`. Permission asks extend the typed
- * tool-result plan with savepoint execution. Every path locks ask rows before
- * any thread lock. A parent's answer is a machine wake: the child's fence can refuse it.
+ * `ask_resolved` inbox row, the wake hint that admission follows. Permission asks extend the
+ * typed tool-result plan with savepoint execution. Every path locks its ask row before the
+ * thread lock.
  */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -25,25 +24,14 @@ import type {
 } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
-import type { AskResolvedBody, RunClaim, WakeRefusal } from "../loop/ports.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
 
 export type AskAnswerResult =
   | { ok: true; ask: ThreadAsk }
   | { ok: false; code: "ask_not_open" | "invalid_answer"; ask?: ThreadAsk };
 
-/** A parent's answer is a machine wake: the fence refuses it once the parent run or the child stopped. */
-export type ParentAnswerResult =
-  | AskAnswerResult
-  | { ok: false; code: "thread_stopped"; refusal: WakeRefusal };
-
-/**
- * What a tool call asks for: a question for whoever answers this thread, or a copy of
- * an open direct child's question for this thread's own answerer.
- */
-export type AskRequest =
-  | { kind: "question"; payload: QuestionAskPayload }
-  | { kind: "forward"; askId: string };
+/** What a tool call asks the writer for. */
+export type AskRequest = { kind: "question"; payload: QuestionAskPayload };
 
 /** `deferred`: the call's execution settles on the ask, and its answer writes the result. */
 export type AskRequestOutcome =
@@ -58,20 +46,10 @@ export type AskToolResult = {
   isError: boolean;
 };
 
-/**
- * How the continuation reports back, and the forwarded ask whose relay this
- * answer is: the relay record commits with the answer that creates its obligation.
- */
-export type AskContinuationPlan = {
-  delivery: AskResolvedBody["delivery"];
-  relayFor?: string;
-};
-
 export type AskResolutionPlan =
   | {
       kind: "resume";
       toolResult: AskToolResultPlan;
-      continuation: AskContinuationPlan;
     }
   | {
       kind: "cancel";
@@ -81,7 +59,7 @@ export type AskResolutionPlan =
 type AskClaim = { kind: "claimed"; ask: StoredAsk } | { kind: "finished"; result: AskAnswerResult };
 
 export interface AskService {
-  /** The one way a tool call opens an ask. Refuses a forward of anything but an open child question. */
+  /** The one way a tool call opens an ask. */
   request(input: {
     threadId: ThreadId;
     askingTurnId: TurnId;
@@ -96,27 +74,10 @@ export interface AskService {
     submissionId: string;
     answer: AskAnswer;
   }): Promise<AskAnswerResult>;
-  /**
-   * Resolves exactly the ask named by a parent message; never searches for a newer
-   * ask. A replay of the same submission answers ok without a second continuation.
-   */
-  answerFromParent(input: {
-    parentThreadId: ThreadId;
-    /** The parent's execution that answers; refused once it or the child was stopped. */
-    parentExecutionId: string;
-    childThreadId: ThreadId;
-    askId: string;
-    submissionId: string;
-    text: string;
-    delivery: AskResolvedBody["delivery"];
-    /** The parent's forwarded ask this answer relays. */
-    relayFor?: string;
-  }): Promise<ParentAnswerResult>;
   expireDue(now?: Date, limit?: number): Promise<number>;
   /**
    * Records an ask a lineage cancellation claimed: a live one's cancelled tool result, or
-   * an `ask.updated` that wakes anything waiting on its continuation. Call under the ask's
-   * thread lock.
+   * an `ask.updated` for an owed continuation it withdrew. Call under the ask's thread lock.
    */
   recordCancelled(claimed: ClaimedAsk): Promise<void>;
 }
@@ -135,20 +96,16 @@ function questionResolution(
   return null;
 }
 
-function resolutionPlan(
-  resolution: AskResolution,
-  continuation: AskContinuationPlan,
-): AskResolutionPlan {
+function resolutionPlan(resolution: AskResolution): AskResolutionPlan {
   return resolution.kind === "cancelled"
     ? { kind: "cancel", toolResult: { kind: "from_resolution" } }
-    : { kind: "resume", toolResult: { kind: "from_resolution" }, continuation };
+    : { kind: "resume", toolResult: { kind: "from_resolution" } };
 }
 
 export function createAskService(deps: {
   repos: ThreadRepositories;
   eventWriter: LiveEventWriter;
   delivery: Pick<DeliveryProducer, "withThreadLock">;
-  wakes: Pick<RunClaim, "wakeRefusal">;
 }): AskService {
   async function claim(input: {
     askId: string;
@@ -252,117 +209,50 @@ export function createAskService(deps: {
     }
   }
 
-  async function continueResolution(
-    producer: DeliveryTransaction,
-    ask: StoredAsk,
-    plan: AskContinuationPlan,
-  ) {
-    const draft = {
+  async function continueResolution(producer: DeliveryTransaction, ask: StoredAsk) {
+    await producer.enqueue({
       threadId: ask.threadId,
-      intent: "control" as const,
-      provenance: { kind: "system" as const, source: "ask" as const },
-      body: { kind: "ask_resolved" as const, askId: ask.id, delivery: plan.delivery },
+      intent: "control",
+      provenance: { kind: "system", source: "ask" },
+      body: { kind: "ask_resolved", askId: ask.id },
       idempotencyKey: `ask-resolved:${ask.id}`,
-    };
-    // A direct continuation is driven by the waiting parent call; the wake sweep
-    // still finds the row if that caller dies first.
-    if (plan.delivery === "direct") await producer.enqueueWithoutWake(draft);
-    else await producer.enqueue(draft);
-    if (plan.relayFor)
-      await deps.repos.asks.recordRelayOnce(plan.relayFor, {
-        childAskId: ask.id,
-        mode: "foreground",
-        result: null,
-      });
+    });
   }
 
-  async function resolve<Refused = never>(input: {
+  async function resolve(input: {
     askId: string;
     threadId: ThreadId;
     status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
-    continuation?: AskContinuationPlan;
-    /** A machine answer's fence check, under the asking thread's lock. */
-    refuse?: () => Promise<Refused | null>;
-  }): Promise<AskAnswerResult | Refused> {
-    return deps.repos.transaction(async () => {
-      // The ask row (and a relay's forwarded ask) locks before the thread lock.
-      await deps.repos.asks.lockByIds([
-        input.askId,
-        ...(input.continuation?.relayFor ? [input.continuation.relayFor] : []),
-      ]);
-      const plan = resolutionPlan(
-        input.resolution,
-        input.continuation ?? { delivery: "background_notification" },
-      );
-      return deps.delivery.withThreadLock(input.threadId, async (producer) => {
-        const refused = await input.refuse?.();
-        if (refused) return refused;
+  }): Promise<AskAnswerResult> {
+    const plan = resolutionPlan(input.resolution);
+    return deps.repos.transaction(() =>
+      // The thread lock takes its held ask rows, this one included, before its own lock.
+      deps.delivery.withThreadLock(input.threadId, async (producer) => {
         const claimed = await claim(input);
         if (claimed.kind === "finished") return claimed.result;
         await writeToolResult({ ask: claimed.ask, threadId: input.threadId, plan });
-        if (plan.kind === "resume")
-          await continueResolution(producer, claimed.ask, plan.continuation);
+        if (plan.kind === "resume") await continueResolution(producer, claimed.ask);
         return { ok: true, ask: threadAsk(claimed.ask) };
-      });
-    });
-  }
-
-  /** The ask a request opens. A forward locks its source, so a cancellation's claim sees the copy. */
-  async function requestedAsk(
-    threadId: ThreadId,
-    request: AskRequest,
-  ): Promise<
-    | { kind: StoredAsk["kind"]; payload: StoredAsk["payload"]; forwardedFromAskId: string | null }
-    | { refusal: JsonValue }
-  > {
-    if (request.kind === "question")
-      return { kind: "question", payload: request.payload, forwardedFromAskId: null };
-    await deps.repos.asks.lockByIds([request.askId]);
-    const forwarded = await deps.repos.asks.findById(request.askId);
-    const child = forwarded ? await deps.repos.threads.findById(forwarded.threadId) : null;
-    if (
-      forwarded?.kind !== "question" ||
-      forwarded.status !== "open" ||
-      child?.parentThreadId !== threadId ||
-      !child.ref
-    )
-      return {
-        refusal: {
-          code: "ask_not_open",
-          message: "That question is no longer open, so there is nothing to forward.",
-          ...(forwarded ? { ask: threadAsk(forwarded) } : {}),
-        },
-      };
-    return {
-      kind: "question",
-      payload: {
-        ...(forwarded.payload as QuestionAskPayload),
-        forwardedFrom: { threadId: forwarded.threadId, askId: forwarded.id, handle: child.ref },
-      },
-      forwardedFromAskId: forwarded.id,
-    };
+      }),
+    );
   }
 
   return {
     async request(input) {
-      const ask = await deps.repos.transaction(async () => {
-        const requested = await requestedAsk(input.threadId, input.request);
-        if ("refusal" in requested) return requested;
-        return deps.repos.asks.create({
-          threadId: input.threadId,
-          askingTurnId: input.askingTurnId,
-          executionId: input.executionId,
-          toolCallId: input.toolCallId,
-          ...requested,
-          deadlineAt: null,
-          status: "pending",
-          resolution: null,
-          submissionId: null,
-        });
+      const ask = await deps.repos.asks.create({
+        threadId: input.threadId,
+        askingTurnId: input.askingTurnId,
+        executionId: input.executionId,
+        toolCallId: input.toolCallId,
+        kind: input.request.kind,
+        payload: input.request.payload,
+        deadlineAt: null,
+        status: "pending",
+        resolution: null,
+        submissionId: null,
       });
-      if ("refusal" in ask) return { kind: "refused", refusal: ask.refusal };
       await testHook("ask.pending");
       return { kind: "deferred", askId: ask.id };
     },
@@ -385,44 +275,6 @@ export function createAskService(deps: {
         submissionId: input.submissionId,
       });
       if (result.ok) await testHook("ask.answer.afterCommit");
-      return result;
-    },
-    async answerFromParent(input) {
-      const child = await deps.repos.threads.findById(input.childThreadId);
-      const stored = await deps.repos.asks.findById(input.askId);
-      if (
-        child?.parentThreadId !== input.parentThreadId ||
-        !stored ||
-        stored.threadId !== input.childThreadId ||
-        stored.kind !== "question"
-      ) {
-        return {
-          ok: false,
-          code: "ask_not_open",
-          ...(stored ? { ask: threadAsk(stored) } : {}),
-        };
-      }
-      if (!input.text.trim()) return { ok: false, code: "invalid_answer", ask: threadAsk(stored) };
-      const replayed = stored.status !== "open" && stored.submissionId === input.submissionId;
-      const result = await resolve({
-        askId: stored.id,
-        threadId: input.childThreadId,
-        status: "answered",
-        resolution: { kind: "parent", text: input.text },
-        submissionId: input.submissionId,
-        continuation: {
-          delivery: input.delivery,
-          ...(input.relayFor ? { relayFor: input.relayFor } : {}),
-        },
-        refuse: async () => {
-          const refusal = await deps.wakes.wakeRefusal({
-            sender: { threadId: input.parentThreadId, executionId: input.parentExecutionId },
-            receiver: input.childThreadId,
-          });
-          return refusal ? { ok: false as const, code: "thread_stopped" as const, refusal } : null;
-        },
-      });
-      if (result.ok && !replayed) await testHook("ask.parentAnswer.afterCommit");
       return result;
     },
     async expireDue(now = new Date(), limit = 100) {

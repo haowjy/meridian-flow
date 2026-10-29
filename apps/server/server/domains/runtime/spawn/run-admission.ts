@@ -1,23 +1,17 @@
 /**
- * A subagent run's admission at its reservation commit: which invocation its report
- * belongs to (the parent call, a continued question's original call, a parent's
- * background re-task, or none), and, for a run that continues a resolved ask, the
- * ask's continuation claim.
+ * A run's admission at its reservation commit: for a run that continues a resolved ask, the
+ * ask's continuation claim; for a subagent run, which invocation its report belongs to (the
+ * parent call, a parent's background re-task, or none).
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation } from "@meridian/contracts/spawn";
-import type { QuestionAskPayload, Thread } from "@meridian/contracts/threads";
+import type { Thread } from "@meridian/contracts/threads";
 import type { StoredAsk, ThreadRepositories } from "../../threads/index.js";
 import type { AskResolvedBody, InboxMessage } from "../loop/ports.js";
 import type { RunLoopInput } from "../loop/run-turn-port.js";
 
 /** The resolved ask a drain run continues, from its `ask_resolved` wake hint. */
-export type ResolvedContinuation = {
-  ask: StoredAsk;
-  delivery: AskResolvedBody["delivery"];
-  /** A forwarded ask's continuation relays the answer before its first request. */
-  forwarded: boolean;
-};
+export type ResolvedContinuation = { ask: StoredAsk };
 
 const THREAD_RUN_CORRELATION = {
   callerThreadId: null,
@@ -41,12 +35,8 @@ export async function readContinuation(
   const ask = await asks.findById(hint.askId);
   if (ask?.threadId !== threadId)
     throw new Error("Ask continuation is not backed by this thread's ask");
-  if (ask.continuation !== "pending" && ask.continuation !== "admitted") return "retire";
-  return {
-    ask,
-    delivery: hint.delivery,
-    forwarded: ask.kind === "question" && !!(ask.payload as QuestionAskPayload).forwardedFrom,
-  };
+  if (ask.continuation !== "pending") return "retire";
+  return { ask };
 }
 
 /**
@@ -54,7 +44,7 @@ export async function readContinuation(
  * lock already holds the ask's row), then records a subagent run's report correlation.
  */
 export async function admitRun(
-  repos: Pick<ThreadRepositories, "asks" | "executionReports" | "threads">,
+  repos: Pick<ThreadRepositories, "asks" | "executionReports">,
   input: {
     thread: Thread;
     executionTurnId: TurnId;
@@ -70,7 +60,6 @@ export async function admitRun(
     !(await repos.asks.admitContinuation({
       id: continuation.ask.id,
       turnId: input.executionTurnId,
-      forwarded: continuation.forwarded,
     }))
   )
     throw new Error("Ask continuation is no longer owed");
@@ -79,27 +68,8 @@ export async function admitRun(
   }
   if (thread.kind !== "subagent") return;
   if (!thread.ref) throw new Error("Subagent thread has no project handle");
-  // A continuation belongs to the asked execution's invocation; the hint says
-  // whether a waiting parent call or a notification delivers its report.
-  const asking = continuation
-    ? await repos.executionReports.findByTurn(threadId, continuation.ask.askingTurnId)
-    : null;
-  const inherited =
-    asking && continuation
-      ? asking.deliveryMode === "none"
-        ? THREAD_RUN_CORRELATION
-        : {
-            callerThreadId: asking.callerThreadId,
-            callerTurnId: asking.callerTurnId,
-            toolCallId: asking.toolCallId,
-            cardBlockId: asking.cardBlockId,
-            origin: asking.origin,
-            deliveryMode: continuation.delivery,
-          }
-      : null;
   const correlation =
     input.executionReport?.correlation ??
-    inherited ??
     parentRetaskCorrelation(thread, input.adopted) ??
     THREAD_RUN_CORRELATION;
   await repos.executionReports.admit({
@@ -107,11 +77,9 @@ export async function admitRun(
     executionTurnId: input.executionTurnId,
     handle: thread.ref,
     ...correlation,
-    agentSlug: input.executionReport?.agentSlug ?? asking?.agentSlug ?? null,
-    name: input.executionReport?.name ?? asking?.name ?? null,
+    agentSlug: input.executionReport?.agentSlug ?? null,
+    name: input.executionReport?.name ?? null,
   });
-  if (asking?.origin === "spawn")
-    await repos.threads.updateSpawnLifecycle(threadId, { spawnStatus: "running" });
 }
 
 /**

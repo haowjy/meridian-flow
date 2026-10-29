@@ -1,9 +1,6 @@
 /** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
-import {
-  type JsonValue,
-  meridianErrorFromStructuredToolOutput,
-} from "@meridian/contracts/protocol";
+import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
@@ -595,14 +592,6 @@ function WorkToolTitle({ tool }: { tool: ToolView }) {
   // `block` so truncate applies: the title slot is a flexified span, and an
   // inline child cannot clip its own overflow.
   return <span className="block truncate">{toolActivityPhrase(tool).verb}</span>;
-}
-
-/** A failed call's server error message: what a failed row opens when its renderer has nothing else. */
-export function errorMessageExpand(tool: ToolView): ToolExpand | null {
-  if (!tool.isError || tool.result == null) return null;
-  const message = meridianErrorFromStructuredToolOutput(tool.result).message;
-  if (!message) return null;
-  return () => <div className="text-compact text-destructive">{message}</div>;
 }
 
 /* ── registry ──────────────────────────────────────────────────────────── */

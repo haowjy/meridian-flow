@@ -56,9 +56,6 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
     async runChild() {
       throw new Error("Test child run coordinator not configured");
     },
-    async relayForwardedAnswer() {
-      throw new Error("Test child run coordinator not configured");
-    },
   };
 }
 
@@ -184,15 +181,9 @@ export function createRuntimeHarness(
     afterCommit: (task) => task(),
     askRequests: {
       request: (input) =>
-        createAskService({
-          repos,
-          eventWriter,
-          delivery: deps.delivery,
-          wakes: deps.runClaim,
-        }).request(input),
+        createAskService({ repos, eventWriter, delivery: deps.delivery }).request(input),
     },
     reports: {
-      async projectRunning() {},
       async publish() {},
     },
     delivery:

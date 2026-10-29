@@ -7,7 +7,6 @@ import type {
   AskPayload,
   AskResolution,
   AskStatus,
-  JsonValue,
 } from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import {
@@ -42,12 +41,9 @@ export const asks = pgTable(
     status: text("status").$type<AskStatus>().notNull().default("pending"),
     resolution: jsonb("resolution").$type<AskResolution>(),
     submissionId: text("submission_id"),
-    relay: jsonb("relay").$type<JsonValue | null>(),
     continuation: text("continuation").$type<AskContinuationState>(),
     /** The latest turn admitted to continue this ask. */
     continuationTurnId: uuid("continuation_turn_id").$type<TurnId>(),
-    /** The child's ask this one forwards: a copy cancels with its source. */
-    forwardedFromAskId: uuid("forwarded_from_ask_id"),
     createdAt: createdAt(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
@@ -57,14 +53,6 @@ export const asks = pgTable(
       foreignColumns: [turns.threadId, turns.id],
       name: "asks_asking_turn_fk",
     }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.forwardedFromAskId],
-      foreignColumns: [table.id],
-      name: "asks_forwarded_from_fk",
-    }).onDelete("set null"),
-    index("asks_forwarded_from")
-      .on(table.forwardedFromAskId)
-      .where(sql`${table.forwardedFromAskId} IS NOT NULL`),
     unique("asks_turn_tool_call_unique").on(table.askingTurnId, table.toolCallId),
     index("asks_open_deadline")
       .on(table.deadlineAt, table.id)
@@ -73,9 +61,7 @@ export const asks = pgTable(
     // The rows a thread lock takes before its own lock: live asks and owed continuations.
     index("asks_held_by_thread")
       .on(table.threadId)
-      .where(
-        sql`${table.status} IN ('pending', 'open') OR ${table.continuation} IN ('pending', 'admitted')`,
-      ),
+      .where(sql`${table.status} IN ('pending', 'open') OR ${table.continuation} = 'pending'`),
     uniqueIndex("asks_one_live_per_thread")
       .on(table.threadId)
       .where(sql`${table.status} IN ('pending', 'open')`),
@@ -86,7 +72,7 @@ export const asks = pgTable(
     ),
     check(
       "asks_continuation_valid",
-      sql`(${table.status} IN ('pending', 'open') AND ${table.continuation} IS NULL) OR (${table.status} IN ('answered', 'expired') AND ${table.continuation} IN ('pending', 'admitted', 'done', 'cancelled')) OR (${table.status} = 'cancelled' AND ${table.continuation} = 'cancelled')`,
+      sql`(${table.status} IN ('pending', 'open') AND ${table.continuation} IS NULL) OR (${table.status} IN ('answered', 'expired') AND ${table.continuation} IN ('pending', 'done', 'cancelled')) OR (${table.status} = 'cancelled' AND ${table.continuation} = 'cancelled')`,
     ),
     check(
       "asks_resolution_coherent",

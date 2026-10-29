@@ -15,7 +15,7 @@ import type {
 import { formatThreadRef } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import * as schema from "@meridian/database/schema";
-import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
@@ -461,19 +461,18 @@ export function createDrizzleThreadRepository(
       `);
       return rows.map((row) => row.id as ThreadId);
     },
-    async listAncestorIds(threadId) {
-      const rows = await currentDrizzleDb(db).execute(sql`
-        WITH RECURSIVE ancestors AS (
-          SELECT parent.id, parent.parent_thread_id, 1 AS depth FROM threads parent
-          JOIN threads child ON child.parent_thread_id = parent.id
-          WHERE child.id = ${threadId}
-          UNION ALL
-          SELECT parent.id, parent.parent_thread_id, ancestors.depth + 1 FROM threads parent
-          JOIN ancestors ON ancestors.parent_thread_id = parent.id
-        )
-        SELECT id FROM ancestors ORDER BY depth
-      `);
-      return rows.map((row) => row.id as ThreadId);
+    async cancelRunningSpawns(threadIds) {
+      if (threadIds.length === 0) return;
+      await currentDrizzleDb(db)
+        .update(schema.threads)
+        .set({ spawnStatus: "cancelled" })
+        .where(
+          and(
+            inArray(schema.threads.id, [...threadIds]),
+            eq(schema.threads.originType, "spawn"),
+            eq(schema.threads.spawnStatus, "running"),
+          ),
+        );
     },
     async listChildren(threadId: ThreadId) {
       const rows = await currentDrizzleDb(db)
