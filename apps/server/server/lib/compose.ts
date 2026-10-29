@@ -193,7 +193,6 @@ import {
   createWriterTurnProducer,
   type DeliveryProducer,
   type Gateway,
-  handlerToolResult,
   InvalidAdmissionError,
   type ObservationFrontiers,
   type RunClaim,
@@ -269,7 +268,7 @@ import {
   createModelToolRegistrations,
   createReferenceReader,
 } from "./model-tools/index.js";
-import { runAllowedWorkCommand } from "./model-tools/work-tool.js";
+import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -836,7 +835,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
-    projects: ports.projectRepo,
     permissionGrants,
     workAuthorityResolver: ports.workAuthorityResolver,
     branches: ports.documentSync,
@@ -860,25 +858,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     delivery,
-    permission: {
-      grants: permissionGrants,
-      async execute(input) {
-        const registration = toolRegistry.getRegistration("work");
-        if (!registration) throw new Error("The work tool is not registered");
-        const { output, result, isError, metadata } = handlerToolResult(
-          await runAllowedWorkCommand(
-            {
-              ...coreToolDeps,
-              savepoint: (operation) => runInDrizzleSavepoint(ports.db, operation),
-            },
-            input,
-          ),
-          registration,
-          { command: input.command.command.command },
-        );
-        return { output, result, isError: isError === true, ...(metadata ? { metadata } : {}) };
-      },
-    },
+    permission: createAllowedWorkExecutor(
+      { ...coreToolDeps, savepoint: (operation) => runInDrizzleSavepoint(ports.db, operation) },
+      toolRegistry,
+    ),
   });
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
