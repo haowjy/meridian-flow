@@ -25,6 +25,7 @@ function failureText(result: NonNullable<ToolView["result"]>): string {
     typeof result === "object" && !Array.isArray(result) ? (result as { error?: unknown }) : null;
   if (record?.error === "invalid_arguments")
     return t`The assistant called this tool with arguments it couldn't use.`;
+  if (record?.error === "permission_denied") return t`The assistant can't use this tool here.`;
   // Spawn and thread_message refusals nest their error under `error`.
   const nested = record?.error && typeof record.error === "object" ? record.error : null;
   const error = meridianErrorFromStructuredToolOutput((nested ?? result) as typeof result);
