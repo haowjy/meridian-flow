@@ -47,13 +47,17 @@ type RunSession = {
 };
 
 /**
- * What a lineage cancellation reaches below its owner. `chat` (Stop): the whole subtree.
- * `turn`: the subtrees that turn's execution spawned, and the turn's own question.
+ * What a lineage cancellation reaches below its owner. `thread` (Stop, Send now): no descendant;
+ * it ends the owner's reply and what that execution itself owes. Background subagents keep
+ * running; a foreground child ends with the reply that was waiting on it, and takes its own
+ * background children with it, as does a subagent's own spawn run when it ends. Whether the owner is fenced is not the reach's business: see
+ * `LineageDecision.fenceOwner`.
+ * `turn`: the turn's own question and the subtrees that turn's execution spawned.
  * `terminal`: a child run that ended takes its whole subtree.
  * `deleted` (trash, Work delete): the whole subtree and everything the owner holds.
  */
 export type LineageReach =
-  | { kind: "chat" }
+  | { kind: "thread" }
   | { kind: "turn"; turnId: TurnId }
   | { kind: "terminal" }
   | { kind: "deleted" };
@@ -67,6 +71,13 @@ export type LineageDecision<T> = {
   result: T;
   reach: LineageReach | null;
   execution: string | null;
+  /**
+   * Fence the owner: it drops its queued `agent` messages and refuses a wake from any sender
+   * admitted before now (a surviving child's report carries no sender, so it still lands). Only
+   * Stop on a subagent sets it, so a parent's queued retasks don't restart the stopped child; a
+   * stopped primary chat is not fenced, and Send now never is. A `deleted` reach fences regardless.
+   */
+  fenceOwner?: boolean;
 };
 
 export type LineageCancelled<T> = {
@@ -524,11 +535,15 @@ export function createRunSessions(deps: {
     stop: (threadId: ThreadId, request: StopRequest): Promise<StopResponse> =>
       cancelLineage(threadId, async () => {
         const response = await deps.delivery.stop(threadId, request);
-        // Stop is "stop everything": the whole subtree, whichever turn spawned it.
+        // Stop is "this reply" and nothing below it: children keep running and their reports
+        // still wake this chat (the fence only refuses senders admitted before the stop).
+        // Explicit cancellations (`cancel`, `stopThreads`) keep their reach: they cancel work.
+        const thread = await deps.repos.threads.findById(threadId);
         return {
           result: response,
-          reach: { kind: "chat" },
+          reach: { kind: "thread" },
           execution: response.cancelledExecutionId,
+          fenceOwner: thread?.parentThreadId != null,
         };
       }),
     /** The queue's x and Cancel queue: decided under the thread lock; never cancels a reply. */
@@ -539,18 +554,17 @@ export function createRunSessions(deps: {
       cancelLineage(threadId, async () => {
         const response = await deps.delivery.sendNow(threadId, request);
         const execution = response.cancelledExecutionId;
-        // Like cancelling that turn: it ends what the reply spawned, nothing older. Before its
-        // first turn the execution has spawned and relayed nothing.
-        const turnId = execution ? await authority.readRunningTurnId(threadId) : null;
+        // Cancels the reply so the queue runs. Never fences the owner: the queue, retasks included, runs next.
         return {
           result: response,
-          reach: turnId ? { kind: "turn", turnId } : null,
+          reach: execution ? { kind: "thread" } : null,
           execution,
         };
       }),
     /**
      * Cancels a turn: its live execution, or the question it is parked on, and the subagents
-     * that turn's execution spawned.
+     * that turn's execution spawned. An explicit cancellation of that work, so unlike the composer's
+     * Stop (this reply only) it reaches what the turn started.
      */
     async cancel(
       threadId: ThreadId,
@@ -582,7 +596,8 @@ export function createRunSessions(deps: {
      * Ends deleted threads' work inside the caller's transaction: each one's live execution and
      * whole subagent subtree, one lineage per topmost thread (a deleted Work lists its threads'
      * descendants too). `threadIds` must be parents first by `(spawn_depth, id)`, the order lineage
-     * cancellation locks owners in; another order deadlocks against a Stop.
+     * cancellation locks owners in; another order deadlocks against a Stop. Deleting is an explicit
+     * cancellation of the work, so it takes the whole subtree; Stop takes only the reply.
      */
     async stopThreads(threadIds: readonly ThreadId[]): Promise<void> {
       for (const threadId of await lineageOwners(threadIds))

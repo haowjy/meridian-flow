@@ -139,3 +139,24 @@ The server sends only the viewed thread's direct children. The strip and panel
 consume that list without filtering or subtree rebasing. Live current-tool and
 run lifecycle refreshes land on the direct parent's journal. A subagent's path
 row reads its direct parent's activity for its own run times, never the root's.
+
+## Stopping a child from the strip
+
+Each running child in the strip carries its own Stop; the aggregate header has
+none. The composer's Stop ends only this chat's reply, so the strip is where a
+writer stops a child without opening it
+([divergence](https://github.com/haowjy/meridian-flow-docs/blob/main/work/ask-user-design/DIVERGENCE/2026-10-29-stop-is-reply-only.md)).
+The row's Stop is the child chat's own Stop: `useSubagentStop` builds the
+child's hand-back operation (`useHandBack` on the child's id and composer draft)
+and presses it, so the child reads Stopped and its queued messages return to its
+message box. The parent holds no live copy of the child's record, so each press
+first reads the child's snapshot into the store; `stopRequest` needs that
+record's execution and watermark. A failed Stop is a card under that row, from
+`handBackCards`, with Try again in Stop's place.
+
+Each child's row sits at one keyed position in the strip's list, whether it is
+the only child, one of several, or under a collapsed list; a collapsed list
+hides its rows instead of unmounting them. The press's first step (the snapshot
+read) is local to that row, so a row that remounted mid-read would drop the
+press with "Stopping" already announced. A hidden row that owes a card shows
+anyway, so a failed Stop stays visible under the collapsed header.

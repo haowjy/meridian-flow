@@ -6,7 +6,8 @@
  * runs, stamps the machine-wake fence on every thread it stopped, withdraws the targets' parent notices and settles their spawn status. The
  * fence is what keeps a stopped thread stopped: a message or spawn admission from an execution
  * admitted before it is refused at enqueue (`RunClaim.wakeRefusal`), so local aborts after commit
- * only make runs stop sooner.
+ * only make runs stop sooner. A `thread` reach (Stop, Send now) ends only the owner's reply: no
+ * descendant is a target. Whether the owner is fenced is the decision's `fenceOwner`, not the reach.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
@@ -54,10 +55,14 @@ export function createLineageCancellation(deps: {
           // Parents first. Under each thread's lock its subtree is listed again: a spawn that
           // committed before that lock is a target too, and a later one waits for this commit,
           // then finds its sender cancelled.
-          const targets = await deps.threads.listSubtreeIds(
-            threadId,
-            reach.kind === "turn" ? reach.turnId : undefined,
-          );
+          // `thread` (Stop, Send now) reaches no descendant: the owner's reply is all it ends.
+          const targets =
+            reach.kind === "thread"
+              ? []
+              : await deps.threads.listSubtreeIds(
+                  threadId,
+                  reach.kind === "turn" ? reach.turnId : undefined,
+                );
           for (let index = 0; index < targets.length; index += 1) {
             const target = targets[index] as ThreadId;
             await deps.delivery.withThreadLock(target, async () => {});
@@ -76,19 +81,23 @@ export function createLineageCancellation(deps: {
           });
           const claimedIds = new Set(claimed.map(({ ask }) => ask.id));
           const targetSet = new Set<string>(targets);
-          // The owner stops too when the writer stopped or deleted the chat; a cancelled turn
-          // or a finished run leaves the owner free to be woken.
-          const fenced = new Set<string>(
-            reach.kind === "chat" || reach.kind === "deleted" ? [threadId, ...targets] : targets,
-          );
+          // The owner is fenced when the writer deleted the chat, or when the decision asks for it
+          // (Stop on a subagent). The fence refuses a wake from ANY sender admitted before the Stop,
+          // not only ancestors: a surviving child's mid-run `thread_message` is refused too, while a
+          // child's report lands, since a report row carries no sender. A stopped primary chat is
+          // not fenced, so reports wake it. Send now never fences: it runs the queue next.
+          const ownerFenced = reach.kind === "deleted" || decision.fenceOwner === true;
+          const fenced = new Set<string>(ownerFenced ? [threadId, ...targets] : targets);
           // A target loses all its queued machine work; writer sends stay, as the writer's own
-          // request to that chat. A stopped owner loses the machine messages that would wake it
-          // (Work notices never start a run, so they stay). Elsewhere only what names the
-          // lineage goes: a target's report notices, and hints for asks this command claimed.
+          // request to that chat. A fenced owner loses its queued `agent` messages, and a deleted
+          // one its `child` reports too: a finished child's report is
+          // work Stop keeps (Work notices never start a run, so they stay). Elsewhere only what
+          // names the lineage goes: a target's report notices, and hints for asks this command claimed.
           const drops = (id: ThreadId, row: InboxMessage) =>
             (targetSet.has(id) && row.provenance.kind !== "writer") ||
             (fenced.has(id) &&
-              (row.provenance.kind === "agent" || row.provenance.kind === "child")) ||
+              (row.provenance.kind === "agent" ||
+                (reach.kind === "deleted" && row.provenance.kind === "child"))) ||
             (row.provenance.kind === "child" && targetSet.has(row.provenance.threadId)) ||
             (isAskResolved(row) && claimedIds.has(row.body.askId));
           for (const id of locked)
