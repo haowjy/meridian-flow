@@ -210,7 +210,10 @@ into the parent's script before you send. A parent woken by a report matches
     reads "Couldn't ask a question" and opens to "Only one question can wait for an
     answer at a time, so this one wasn't asked."; under zh it opens to the Chinese
     sentence. A caught exception (`tool_exception`) opens to "Something went wrong
-    while running this.", never the exception text. A deliberate refusal opens to its
+    while running this.", never the exception text. Arguments that aren't JSON
+    (`"rawArgs":"{\"command\": \"show\" \"id\"}"` on a `work` call; jsonrepair fixes
+    milder breakage) give `tool_arguments_parse` and open to "The assistant called this
+    tool with arguments it couldn't use.", never the retry text. A deliberate refusal opens to its
     own message: script `search` with `"scope":"skills://"` and it reads "search
     doesn't cover skills://. Use ls and read."; a call to a tool the agent lacks reads
     "The assistant can't use this tool here.". For a timeout, hold the Work row
