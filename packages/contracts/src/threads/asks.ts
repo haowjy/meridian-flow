@@ -134,9 +134,7 @@ export const questionAnswerSchema = z.discriminatedUnion("kind", [
 
 /** One question's outcome in a resolved ask: the writer's answer, or the timeout's pick. */
 export const resolvedQuestionAnswerSchema = z.discriminatedUnion("kind", [
-  optionAnswerSchema,
-  textAnswerSchema,
-  skippedAnswerSchema,
+  ...questionAnswerSchema.options,
   z.strictObject({ kind: z.literal("timeout"), label: z.string().nullable() }),
 ]);
 
@@ -151,7 +149,11 @@ const timeoutResolutionSchema = z.strictObject({
   answers: z.array(resolvedQuestionAnswerSchema).min(1).max(MAX_ASK_QUESTIONS),
 });
 
-export const answeredAskResolutionSchema = z.discriminatedUnion("kind", [
+/**
+ * What the writer answers a question ask with (one entry per question, in order) or a
+ * permission ask (one decision); stored as the resolution unchanged.
+ */
+export const askAnswerSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("answers"),
     answers: z.array(questionAnswerSchema).min(1).max(MAX_ASK_QUESTIONS),
@@ -162,7 +164,7 @@ export const answeredAskResolutionSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const askResolutionSchema = z.union([
-  answeredAskResolutionSchema,
+  askAnswerSchema,
   timeoutResolutionSchema,
   z.strictObject({ kind: z.literal("cancelled") }),
 ]);
@@ -172,7 +174,7 @@ export const askLifecycleSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("open"), resolution: z.null(), resolvedAt: z.null() }),
   z.object({
     status: z.literal("answered"),
-    resolution: answeredAskResolutionSchema,
+    resolution: askAnswerSchema,
     resolvedAt: z.string().datetime(),
   }),
   z.object({
@@ -219,16 +221,6 @@ export type AskStatus = z.infer<typeof askLifecycleSchema>["status"];
 export type AskContinuationState = "pending" | "done" | "cancelled";
 export type ThreadAsk = z.infer<typeof threadAskSchema>;
 
-/** A question ask is answered as a set, one entry per question in order; a permission ask by one decision. */
-export const askAnswerSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    kind: z.literal("answers"),
-    answers: z.array(questionAnswerSchema).min(1).max(MAX_ASK_QUESTIONS),
-  }),
-  z.strictObject({ kind: z.literal("allow") }),
-  z.strictObject({ kind: z.literal("allow_always") }),
-  z.strictObject({ kind: z.literal("deny") }),
-]);
 export type AskAnswer = z.infer<typeof askAnswerSchema>;
 export type QuestionAnswer = z.infer<typeof questionAnswerSchema>;
 export type ResolvedQuestionAnswer = z.infer<typeof resolvedQuestionAnswerSchema>;

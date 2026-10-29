@@ -4,13 +4,10 @@
  * from now, never past 55 minutes after it opened) and keeps the answers sent as the draft a
  * timeout resolves from.
  */
-import { apiThreadSnapshotPath, threadSnapshotSchema } from "@meridian/contracts/protocol";
-import { EMPTY_CHAT_ASKS, openAsk, receiveAsks } from "@meridian/thread-client";
 import { EXIT, usageError } from "../../core/cli-error";
-import { type CommandSpec, requirePositional, stringOption } from "../../core/command";
-import { jsonResponse } from "../../core/session";
-import { ANSWER_OPTIONS, answerArgs } from "./answer";
-import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
+import type { CommandSpec } from "../../core/command";
+import { ANSWER_OPTIONS, answerArgs, resolveOpenAsk } from "./answer";
+import { THREAD_TARGET_OPTIONS } from "./resolve";
 import { connectThreadClient } from "./transport";
 
 /** The socket has no reply to a presence message; a closing socket still delivers what was sent. */
@@ -32,24 +29,9 @@ export const threadPresenceCommand: CommandSpec = {
   ],
   async run(ctx) {
     const answers = answerArgs(ctx);
-    const session = await ctx.session();
-    const threadId = await resolveThreadId(
-      session,
-      requirePositional(ctx, 0, "<thread>"),
-      stringOption(ctx, "project"),
-    );
-    const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
-      decode: jsonResponse(threadSnapshotSchema),
-    });
-    const asks = receiveAsks(EMPTY_CHAT_ASKS, snapshot.asks);
-    const askId = stringOption(ctx, "ask") ?? openAsk(asks, snapshot.turns)?.ask.id;
-    if (!askId) {
-      ctx.out.result(
-        { type: "thread.presence", outcome: "failed", reason: "no_open_ask" },
-        () => "No open question in this chat",
-      );
-      return EXIT.notFound;
-    }
+    const target = await resolveOpenAsk(ctx, "thread.presence");
+    if (!target) return EXIT.notFound;
+    const { session, threadId, askId } = target;
     const transport = await connectThreadClient(session);
     try {
       if (!transport.sendAskPresence({ threadId, askId, answers }))

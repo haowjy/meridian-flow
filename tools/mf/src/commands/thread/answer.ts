@@ -60,6 +60,35 @@ export function answerArgs(ctx: CommandContext): (QuestionAnswer | null)[] {
   });
 }
 
+/**
+ * The session, chat and ask a command acts on: `--ask`, else the ask the takeover would show.
+ * Null after reporting that the chat has none open.
+ */
+export async function resolveOpenAsk(
+  ctx: CommandContext,
+  type: "thread.answer" | "thread.presence",
+) {
+  const session = await ctx.session();
+  const threadId = await resolveThreadId(
+    session,
+    requirePositional(ctx, 0, "<thread>"),
+    stringOption(ctx, "project"),
+  );
+  const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+    decode: jsonResponse(threadSnapshotSchema),
+  });
+  const asks: ChatAsks = receiveAsks(EMPTY_CHAT_ASKS, snapshot.asks);
+  const askId = stringOption(ctx, "ask") ?? openAsk(asks, snapshot.turns)?.ask.id;
+  if (!askId) {
+    ctx.out.result(
+      { type, outcome: "failed", reason: "no_open_ask" },
+      () => "No open question in this chat",
+    );
+    return null;
+  }
+  return { session, threadId, asks, askId };
+}
+
 export const threadAnswerCommand: CommandSpec = {
   path: ["thread", "answer"],
   summary: "Answer the chat's open question: per question an option, your own words, or skip",
@@ -81,24 +110,10 @@ export const threadAnswerCommand: CommandSpec = {
       throw usageError("An answer can't be left out: use skip");
     const answer: AskAnswer = { kind: "answers", answers: answers as QuestionAnswer[] };
 
-    const session = await ctx.session();
-    const threadId = await resolveThreadId(
-      session,
-      requirePositional(ctx, 0, "<thread>"),
-      stringOption(ctx, "project"),
-    );
-    const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
-      decode: jsonResponse(threadSnapshotSchema),
-    });
-    let asks: ChatAsks = receiveAsks(EMPTY_CHAT_ASKS, snapshot.asks);
-    const askId = stringOption(ctx, "ask") ?? openAsk(asks, snapshot.turns)?.ask.id;
-    if (!askId) {
-      ctx.out.result(
-        { type: "thread.answer", outcome: "failed", reason: "no_open_ask" },
-        () => "No open question in this chat",
-      );
-      return EXIT.notFound;
-    }
+    const target = await resolveOpenAsk(ctx, "thread.answer");
+    if (!target) return EXIT.notFound;
+    const { session, threadId, askId } = target;
+    let asks = target.asks;
 
     const transport = await connectThreadClient(session);
     try {
