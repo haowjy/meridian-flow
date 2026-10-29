@@ -307,7 +307,7 @@ export type AppServices = {
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
-  /** Ends deleted threads' runs and subagent subtrees. */
+  /** Ends deleted threads' runs and subagent subtrees; `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
