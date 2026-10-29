@@ -69,10 +69,12 @@
 <!-- Steps that let a reviewer see each change for themselves: one ###
      subsection per Before / After item, in the same order. Each gives setup
      (main or this branch, how to start it, seed data), numbered steps, and
-     what to expect on main and on this branch. Drive the running app; use
-     ./mf only to set up state. When a change has no manual path, say so and
-     give the test command plus the edit that makes it fail. Make every command
-     copy-pasteable. -->
+     what to expect on main and on this branch. A visual change shows
+     screenshots or a recording beside its steps. A CLI, config or library
+     change is a numbered text walkthrough with copy-pasteable commands and
+     their real output. Drive the running app; use ./mf only to set up state.
+     When a change has no manual path, say so and give the test command plus
+     the edit that makes it fail. -->
 
 ### <Before / After item>
 
