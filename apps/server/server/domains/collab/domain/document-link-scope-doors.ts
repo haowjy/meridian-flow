@@ -26,6 +26,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
     serializeVersionedDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeVersionedDocument(documentId, doc, view)),
+    readFrozenMarkdown: (documentId) =>
+      scopes.within(by(documentId), () => engine.readFrozenMarkdown(documentId)),
     readVersionedMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readVersionedMarkdown(documentId)),
     restoreFromYDoc: (documentId, snapshot, origin) =>
@@ -37,9 +39,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
-    // Neither spells a link: the repair seeds an empty document.
-    initializeEmptyDocument: engine.initializeEmptyDocument,
-    repairDocumentAuthority: engine.repairDocumentAuthority,
+    // Spells no link: it seeds an empty document.
+    ensureDocumentAuthority: engine.ensureDocumentAuthority,
     // The lease spells nothing; the held write spells as the document it admits.
     withLiveDocument: engine.withLiveDocument,
     writeDocumentHeld: (input) =>
@@ -119,6 +120,7 @@ export function scopeDraftPeer(
     // Passed through: no Markdown of their own.
     flushDraftLivePull: access.flushDraftLivePull,
     readStoredGrepTexts: access.readStoredGrepTexts,
+    readStoredWordCounts: access.readStoredWordCounts,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,

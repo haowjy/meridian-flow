@@ -121,8 +121,6 @@ export interface ContextDocumentStore {
   findDocumentLastLocation(
     documentId: string,
   ): Promise<{ path: string; name: string; deleted: boolean } | null>;
-  /** Words per document, as the last derivation counted them; underived documents are absent. */
-  readWordCounts(ids: string[]): Promise<Map<string, number>>;
   /** Every folder and document the view shows in this source, in one pass. */
   listTree(view: TreeView): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }>;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;

@@ -456,11 +456,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.publicDocument(doc);
   }
 
-  /** Nothing derives in memory, so no document has words. */
-  async readWordCounts(): Promise<Map<string, number>> {
-    return new Map();
-  }
-
   async listTree(
     view: TreeView,
   ): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }> {

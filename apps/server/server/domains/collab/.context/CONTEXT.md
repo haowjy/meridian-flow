@@ -573,9 +573,23 @@ whose hash changed (all of them when the room's `extractor_version` is older tha
 since a hash does not cover how the text was extracted) and delete the removed ones, replace `document_links`, and write the
 room row (`block_order` only when the order moved). Text is produced and hashed before
 the transaction, so certify never reads text back and a later normalizer can run there
-too. A room is stale when its `cut_*` or `extractor_version` differ from the head, the
-location version or the code (`staleDerivation`); a move bumps the location version, so
-the re-derive corrects `project_id`.
+too. Certify reads the project only for a new room or a moved one (`cut_location_version`
+differs): a move bumps the location version, so the re-derive corrects `project_id`.
+
+Reads of the block rows go through one port, `BlockText` (`domain/ports/block-text.ts`,
+`adapters/drizzle-block-text.ts`): `grepTexts` and `wordCounts`. The adapter owns freshness. A
+reader trusts a room only when its `cut_*` match the head and location version and its
+`extractor_version` equals the code's (`staleForReaders`); anything else is unknown to the
+reader, which reads the document itself (grep) or shows nothing (`ls -v` word counts). The
+sweep (`staleForSweep`, on the writer port's `stale`) differs on one point: it skips a room a
+newer extractor certified, because builds overlap in a deploy, the older build's certify
+refuses that room, and retrying it burns three attempts per room per sweep. A later read-side
+prefilter should extend `grepTexts` (required literals in, a skip set out) rather than add a
+second reader.
+
+One function, `grepBlocksOf` (`domain/grep-blocks.ts`), projects a doc into blocks with their
+destination-free markdown and grep text. The derivation hashes and stores it; `readHashlines`
+adds bodies and links. That shared path is why the stored and room-copy texts agree.
 
 `document_hash` is the ordered block `content_hash` list plus the certified link facts;
 `updated_at` moves only when it changes, so an extractor bump or a move is not an edit.
@@ -587,12 +601,13 @@ fence (`grepBlockText` in agent-edit). Sizes are therefore destination-free byte
 Stored text is never substituted for live Yjs when serving document content, with one
 exception: `grep` matches a document's stored text (the blocks' `text` joined with `\n`
 in `block_order`, in one statement with the freshness check, and equal byte for byte to
-the room-copy path's text, pinned by `grep-text.db.test.ts`) when the room is current,
+the room-copy path's text) when the room is current,
 the reader's own Work has no active draft of the document, and this reply has staged no
 write to it. Bump `DOCUMENT_EXTRACTOR_VERSION` when what a block row holds changes.
-Nothing else reads stored markdown: `ls -v` word counts read the room row, the trash
-preview serializes the frozen Yjs on request, and authority repair seeds an empty
-document.
+Nothing else reads stored markdown: `ls -v` word counts come from `BlockText.wordCounts`
+(current rooms only), the trash preview is the engine's `readFrozenMarkdown`, which
+serializes the stored Yjs on request, and `ensureDocumentAuthority` seeds an empty document
+when a document has no state.
 
 ## Links and tree changes
 

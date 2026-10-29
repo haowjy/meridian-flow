@@ -24,7 +24,7 @@ import { isCodeDocument } from "./document-schema-type.js";
 import type { DraftPullService } from "./draft-pulls.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
-import type { DocumentDerivationStore } from "./ports/document-derivations.js";
+import type { BlockText } from "./ports/block-text.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
@@ -35,7 +35,7 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
-  derivations: Pick<DocumentDerivationStore, "grepTexts">;
+  blockText: BlockText;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
@@ -101,7 +101,7 @@ export function createEffectiveDocumentReader(input: {
       }
     },
     async readStoredGrepTexts({ documentIds, responseId, ...version }) {
-      const texts = await input.derivations.grepTexts(documentIds, {
+      const texts = await input.blockText.grepTexts(documentIds, {
         draftWorkId: version.destination === "draft" ? version.workId : null,
       });
       // A reply's writes to a document stay in its room until a commit and leave no draft row,
@@ -111,6 +111,7 @@ export function createEffectiveDocumentReader(input: {
           if (input.agentEdit.hasResponseDocument(responseId, id)) texts.delete(id);
       return texts;
     },
+    readStoredWordCounts: (documentIds) => input.blockText.wordCounts(documentIds),
     flushDraftLivePull(documentId) {
       return input.draftPulls.flushLivePull(documentId);
     },

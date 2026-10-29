@@ -1,5 +1,5 @@
 /** Durable cuts and atomic certification for live-document derived outputs. */
-import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
@@ -48,16 +48,6 @@ export type DocumentDerivationStore = {
     scope?: DerivationScope,
     page?: { after?: DocumentId; limit: number },
   ): Promise<DocumentId[]>;
-  /**
-   * Stored grep text of the documents whose derived outputs are current: the blocks' text
-   * joined with `\n` in block order, in one statement with the freshness check. A reader whose
-   * Work (`draftWorkId`) holds an active draft of a document sees the draft, not the live text,
-   * so that document is left out.
-   */
-  grepTexts(
-    ids: DocumentId[],
-    reader: { draftWorkId: WorkId | null },
-  ): Promise<Map<DocumentId, string>>;
   /**
    * Registers the client-minted ahead refs of this holder's certified rows (contract §11.3):
    * awaited outside a transaction, after commit inside one. Failures are logged, never thrown;

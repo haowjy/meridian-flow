@@ -280,13 +280,11 @@ export type MarkdownDocumentStore = LinkBinder & {
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
-  /** The create's own step for an empty create: its authority, empty, in its transaction. */
-  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
   /**
-   * Explicit repair of a living document whose authority is absent: it is
-   * seeded as an empty document; a no-op when it has authority. Called only on an explicit touch.
+   * Gives a document that has no state its authority, seeded empty: a create's own step, or
+   * the repair of an old anomaly on an explicit touch. A no-op when it has authority.
    */
-  repairDocumentAuthority(documentId: DocumentId): Promise<void>;
+  ensureDocumentAuthority(documentId: DocumentId): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /** The markdown of a document's stored Yjs, even one in the trash; empty when it holds none. */
   readFrozenMarkdown(documentId: DocumentId): Promise<string>;
@@ -505,6 +503,8 @@ export type DraftPeerShadowAccess = {
       responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Map<DocumentId, string>>;
+  /** Words per document whose derived outputs are current; the others are absent. */
+  readStoredWordCounts(documentIds: DocumentId[]): Promise<Map<DocumentId, number>>;
   readEffectiveMarkdown(
     input: {
       documentId: DocumentId;

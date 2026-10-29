@@ -172,7 +172,7 @@ export type EditableFileEntry = BaseListEntry & {
   editable: true;
   filetype: Filetype;
   schemaType: YjsTrackedSchemaType;
-  /** Words as the last derivation counted them; set only when {@link ContextListOptions.wordCounts} asks. */
+  /** Words as the current derivation counted them; set only when {@link ContextListOptions.wordCounts} asks and the derivation is current. */
   wordCount?: number;
 };
 
@@ -196,7 +196,7 @@ export interface ContextListing {
 }
 
 export interface ContextListOptions {
-  /** Count each text document's words from its projection (no extra query). */
+  /** Count each text document's words from its stored block rows, when they are current. */
   wordCounts?: boolean;
 }
 

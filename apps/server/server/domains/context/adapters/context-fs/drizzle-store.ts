@@ -7,8 +7,7 @@
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentBlockRooms } from "@meridian/database/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -307,15 +306,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       if (!document) throw new Error(`Created binary document ${documentId} is not live`);
       return document;
     });
-  }
-
-  async readWordCounts(ids: string[]): Promise<Map<string, number>> {
-    if (!ids.length) return new Map();
-    const rows = await this.db
-      .select({ id: documentBlockRooms.documentId, words: documentBlockRooms.wordCount })
-      .from(documentBlockRooms)
-      .where(inArray(documentBlockRooms.documentId, ids as DocumentId[]));
-    return new Map(rows.map((row) => [row.id, row.words]));
   }
 
   async listTree(
