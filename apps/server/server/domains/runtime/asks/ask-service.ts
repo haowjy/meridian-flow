@@ -124,14 +124,31 @@ export function createAskService(deps: {
     )
       return { kind: "finished", result: { ok: true, ask: threadAsk(existing) } };
 
-    const claimed = await deps.repos.asks.resolveOpen({
-      id: input.askId,
-      status: input.status,
-      resolution: input.resolution,
-      submissionId: input.submissionId,
-      resolvedAt: new Date(),
-    });
-    if (claimed) return { kind: "claimed", ask: claimed };
+    if (await deps.repos.threads.findById(input.threadId)) {
+      const claimed = await deps.repos.asks.resolveOpen({
+        id: input.askId,
+        status: input.status,
+        resolution: input.resolution,
+        submissionId: input.submissionId,
+        resolvedAt: new Date(),
+      });
+      if (claimed) return { kind: "claimed", ask: claimed };
+    } else {
+      // The chat's delete skipped this row because this answer held it: finish that cancellation.
+      const cancelled = await deps.repos.asks.resolveLive({
+        id: input.askId,
+        status: "cancelled",
+        resolution: { kind: "cancelled" },
+        resolvedAt: new Date(),
+      });
+      if (cancelled)
+        await writeToolResult({
+          ask: cancelled,
+          threadId: input.threadId,
+          plan: { kind: "cancel", toolResult: { kind: "from_resolution" } },
+          claimLive: true,
+        });
+    }
 
     const current = await deps.repos.asks.findById(input.askId);
     if (
