@@ -1,6 +1,14 @@
-/** Binds the shared answer and settle commands to this chat's store, its snapshot read and the socket. */
-import type { AskAnswer } from "@meridian/contracts/threads";
-import { type AnswerAskPorts, answerAsk, settleAsk } from "@meridian/thread-client";
+/**
+ * Binds the shared answer and settle commands to this chat's store, its snapshot read and the
+ * socket, plus the still-answering signal that holds a question's deadline off.
+ */
+import type { AskAnswer, DraftAnswers } from "@meridian/contracts/threads";
+import {
+  type AnswerAskPorts,
+  type AnswerAskResult,
+  answerAsk,
+  settleAsk,
+} from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
@@ -8,9 +16,13 @@ import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadActions } from "@/client/stores";
 
 export type AskCommands = {
-  answer(askId: string, answer: AskAnswer): void;
+  answer(askId: string, answer: AskAnswer): Promise<AnswerAskResult>;
   /** Read the chat again after an answer could not learn how the ask ended. */
   settle(askId: string): void;
+  /** The writer is still answering, holding these answers so far; false when the frame couldn't leave. */
+  presence(askId: string, answers: DraftAnswers): boolean;
+  /** Run `listener` each time the socket connects; returns the unsubscribe. */
+  onConnected(listener: () => void): () => void;
 };
 
 export function useAnswerAsk(threadId: string): AskCommands {
@@ -30,8 +42,13 @@ export function useAnswerAsk(threadId: string): AskCommands {
       newSubmissionId: () => globalThis.crypto.randomUUID(),
     };
     return {
-      answer: (askId, answer) => void answerAsk(ports, threadId, askId, answer),
+      answer: (askId, answer) => answerAsk(ports, threadId, askId, answer),
       settle: (askId) => void settleAsk(ports, askId),
+      presence: (askId, answers) => transport.sendAskPresence({ threadId, askId, answers }),
+      onConnected: (listener) =>
+        transport.onConnectionState((state) => {
+          if (state.kind === "connected") listener();
+        }),
     };
   }, [queryClient, threadId, transport, updateAsks]);
 }

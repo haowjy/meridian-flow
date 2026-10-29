@@ -1447,6 +1447,8 @@ export function createInMemoryRepositories(
           ...input,
           id: input.id ?? crypto.randomUUID(),
           submissionId: input.submissionId ?? null,
+          openedAt: null,
+          draftAnswers: null,
           continuation: null,
           continuationTurnId: null,
           createdAt: new Date(),
@@ -1537,12 +1539,24 @@ export function createInMemoryRepositories(
         const ids = new Set(turnIds);
         return [...asks.values()].filter((ask) => ids.has(ask.askingTurnId));
       },
-      async openPending(id, turnId, deadline) {
+      async openPending(id, turnId, { openedAt, deadline }) {
         const ask = asks.get(id);
         if (!ask || ask.askingTurnId !== turnId || ask.status !== "pending") return null;
-        const opened = { ...ask, status: "open" as const, deadlineAt: deadline };
+        const opened = { ...ask, status: "open" as const, openedAt, deadlineAt: deadline };
         asks.set(id, opened);
         return opened;
+      },
+      async recordPresence(input) {
+        const ask = asks.get(input.id);
+        if (ask?.status !== "open") return null;
+        const row: StoredAsk = {
+          ...ask,
+          deadlineAt:
+            ask.deadlineAt && ask.deadlineAt > input.deadline ? ask.deadlineAt : input.deadline,
+          draftAnswers: input.draftAnswers,
+        };
+        asks.set(row.id, row);
+        return row;
       },
       async cancelPendingByTurn(turnId) {
         const cancelled: StoredAsk[] = [];
@@ -1563,6 +1577,7 @@ export function createInMemoryRepositories(
       async resolveOpen(input) {
         const ask = asks.get(input.id);
         if (ask?.status !== "open") return null;
+        if (input.dueBy && !(ask.deadlineAt && ask.deadlineAt <= input.dueBy)) return null;
         const row: StoredAsk = {
           ...ask,
           status: input.status,

@@ -7,6 +7,7 @@ import type {
   AskPayload,
   AskResolution,
   AskStatus,
+  DraftAnswers,
   PermissionWorkCommand,
 } from "@meridian/contracts/threads";
 
@@ -23,7 +24,10 @@ export type StoredAsk = {
    * in another shape, so the one reader that runs it parses it, and reading a thread never fails.
    */
   permissionCommand: Record<string, unknown> | null;
+  /** Set when the ask opens; null while pending. */
+  openedAt: Date | null;
   deadlineAt: Date | null;
+  draftAnswers: DraftAnswers | null;
   status: AskStatus;
   resolution: AskResolution | null;
   submissionId: string | null;
@@ -40,7 +44,14 @@ export type ClaimedAsk = { ask: StoredAsk; wasLive: boolean };
 
 export type CreateAskInput = Omit<
   StoredAsk,
-  "id" | "createdAt" | "resolvedAt" | "continuation" | "continuationTurnId" | "permissionCommand"
+  | "id"
+  | "createdAt"
+  | "resolvedAt"
+  | "continuation"
+  | "continuationTurnId"
+  | "permissionCommand"
+  | "openedAt"
+  | "draftAnswers"
 > & {
   id?: string;
   /** New requests are written in the current shape, even though reads do not check it. */
@@ -72,7 +83,20 @@ export interface AskRepository {
   listByThread(threadId: ThreadId): Promise<StoredAsk[]>;
   listOpenDueBy(deadline: Date, limit: number): Promise<StoredAsk[]>;
   listByTurnIds(turnIds: readonly TurnId[]): Promise<StoredAsk[]>;
-  openPending(id: string, turnId: TurnId, deadline: Date | null): Promise<StoredAsk | null>;
+  openPending(
+    id: string,
+    turnId: TurnId,
+    opening: { openedAt: Date; deadline: Date | null },
+  ): Promise<StoredAsk | null>;
+  /**
+   * Stores the writer's draft answers on an open ask and moves its deadline out to `deadline`
+   * (never earlier). Null when the ask is no longer open.
+   */
+  recordPresence(input: {
+    id: string;
+    deadline: Date;
+    draftAnswers: DraftAnswers;
+  }): Promise<StoredAsk | null>;
   cancelPendingByTurn(turnId: TurnId): Promise<StoredAsk[]>;
   resolveOpen(input: {
     id: string;
@@ -80,6 +104,8 @@ export interface AskRepository {
     resolution: AskResolution;
     submissionId?: string | null;
     resolvedAt: Date;
+    /** Resolves only while the deadline is still at or before this: a timeout loses to a presence that moved it. */
+    dueBy?: Date;
   }): Promise<StoredAsk | null>;
   resolveLive(input: {
     id: string;

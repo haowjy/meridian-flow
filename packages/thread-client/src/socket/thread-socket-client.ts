@@ -19,6 +19,7 @@ import {
   parseWsServerMessage,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
+import type { DraftAnswers } from "@meridian/contracts/threads";
 
 import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
 import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket-lifecycle";
@@ -160,6 +161,10 @@ export class ThreadSocketClient implements ThreadTransport {
         ),
       }),
     );
+  }
+
+  sendAskPresence(input: { threadId: string; askId: string; answers: DraftAnswers }): boolean {
+    return this.socket.isServerConnected() && this.send({ type: "ask.presence", ...input });
   }
 
   /** The one settlement for an answer request: its reply, a request error, a close, or its deadline. */

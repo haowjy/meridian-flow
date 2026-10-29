@@ -4,6 +4,10 @@
  * locks; and the stopped thread's fence: its queued machine messages go, and an execution admitted
  * before the Stop can't message it, while a later one can.
  *
+ * Also the question timeout: a presence message and the expiry sweep racing for an ask at its
+ * deadline (one wins cleanly), a stranger's presence refused, and a walk-away resolved from the
+ * held answers.
+ *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a continuation's state is `asks.continuation`, and lineage cancellation claims it in one
  *   transaction (apps/server/server/domains/runtime/.context/spawn.md)
@@ -104,7 +108,9 @@ else
           executionId,
           toolCallId: `ask-${round}`,
           kind: "question",
-          payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+          payload: {
+            questions: [{ question: "Which?", options: [{ label: "A" }, { label: "B" }] }],
+          },
           permissionCommand: null,
           deadlineAt: new Date(0),
           status: "open",
@@ -118,7 +124,7 @@ else
             threadId: ids.caller,
             askId: ask.id,
             submissionId: `submission-${round}`,
-            answer: { kind: "option", label: "A" },
+            answer: { kind: "answers", answers: [{ kind: "option", label: "A" }] },
           }),
           asks.expireDue(new Date()),
           lineage.cancel(ids.caller, async () => ({
@@ -145,6 +151,103 @@ else
       }
     });
 
+    it("settles a presence bump against the sweep cleanly, and keeps what the writer held", async () => {
+      const openQuestion = async (round: number, prev: TurnId) => {
+        const executionId = crypto.randomUUID();
+        const turn = await repos.turns.create({
+          threadId: ids.caller,
+          prevTurnId: prev,
+          role: "assistant",
+          origin: "assistant",
+          status: "awaiting_answer",
+          executionId,
+        });
+        const now = new Date();
+        const ask = await repos.asks.create({
+          threadId: ids.caller,
+          askingTurnId: turn.id,
+          executionId,
+          toolCallId: `ask-presence-${round}`,
+          kind: "question",
+          payload: {
+            questions: [
+              { question: "One?", options: [{ label: "A" }, { label: "B" }], recommended: "B" },
+              { question: "Two?", options: [{ label: "C" }, { label: "D" }], recommended: "D" },
+            ],
+          },
+          permissionCommand: null,
+          deadlineAt: now,
+          status: "open",
+          resolution: null,
+          submissionId: null,
+        });
+        await db
+          .update(schema.asks)
+          .set({ openedAt: now, deadlineAt: now })
+          .where(eq(schema.asks.id, ask.id));
+        return { ask, turn, now };
+      };
+      const held = [{ kind: "option" as const, label: "A" }, null];
+
+      let prev = ids.callerTurn;
+      for (let round = 0; round < 8; round += 1) {
+        const { ask, turn, now } = await openQuestion(round, prev);
+        prev = turn.id;
+        const stranger = await asks.presence({
+          userId: crypto.randomUUID(),
+          threadId: ids.caller,
+          askId: ask.id,
+          answers: held,
+          now,
+        });
+        expect(stranger).toBe("not_owner");
+        expect(await repos.asks.findById(ask.id)).toMatchObject({
+          deadlineAt: now,
+          draftAnswers: null,
+        });
+
+        await Promise.all([
+          asks.presence({
+            userId: ids.user,
+            threadId: ids.caller,
+            askId: ask.id,
+            answers: held,
+            now,
+          }),
+          asks.expireDue(now),
+        ]);
+        const settled = await repos.asks.findById(ask.id);
+        if (settled?.status === "open") {
+          // The bump won: the deadline moved out and the sweep left the ask alone.
+          expect(settled.deadlineAt?.getTime()).toBeGreaterThan(now.getTime());
+          expect(settled.draftAnswers).toEqual(held);
+          const expired = await asks.expireDue(new Date(now.getTime() + 10 * 60_000));
+          expect(expired).toBe(1);
+          expect(await repos.asks.findById(ask.id)).toMatchObject({
+            status: "expired",
+            resolution: {
+              kind: "timeout",
+              answers: [
+                { kind: "option", label: "A" },
+                { kind: "timeout", label: "D" },
+              ],
+            },
+          });
+        } else {
+          // The sweep won: it resolved before the bump, or the bump found the ask closed.
+          expect(settled?.status).toBe("expired");
+          // The bump found the ask closed and wrote nothing; without `dueBy` it would have stored
+          // its answers and the sweep, from its stale listing, would have resolved over them.
+          expect(settled?.draftAnswers).toBeNull();
+        }
+        expect(
+          (await repos.blocks.listByTurn(turn.id)).filter(
+            (block) => block.blockType === "tool_result",
+          ),
+        ).toHaveLength(1);
+      }
+    });
+
     it("admits the continuation of an ask an older server answered, once", async () => {
       const executionId = crypto.randomUUID();
       const turn = await repos.turns.create({
@@ -162,11 +265,11 @@ else
         executionId,
         toolCallId: "ask-old-server",
         kind: "question",
-        payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+        payload: { questions: [{ question: "Which?", options: [{ label: "A" }, { label: "B" }] }] },
         permissionCommand: null,
         deadlineAt: null,
         status: "answered",
-        resolution: { kind: "option", label: "A" },
+        resolution: { kind: "answers", answers: [{ kind: "option", label: "A" }] },
         submissionId: "old-server-submission",
         resolvedAt: new Date(),
       });
@@ -196,7 +299,7 @@ else
         executionId,
         toolCallId: "ask-spared",
         kind: "question",
-        payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+        payload: { questions: [{ question: "Which?", options: [{ label: "A" }, { label: "B" }] }] },
         permissionCommand: null,
         deadlineAt: null,
         status: "pending",

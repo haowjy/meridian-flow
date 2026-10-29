@@ -329,7 +329,10 @@ export function createThreadWebSocketSession(peer: WsPeer) {
         try {
           const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
           const message = parseWsClientMessage(text);
-          requestId = message?.type === "pong" ? undefined : message?.requestId;
+          requestId =
+            message?.type === "pong" || message?.type === "ask.presence"
+              ? undefined
+              : message?.requestId;
           if (!message) {
             sendError(peer, meridianError("bad_request", "Malformed WebSocket message"));
             return;
@@ -371,8 +374,33 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                       threadId,
                       code: result.code,
                       ...(result.ask ? { ask: result.ask } : {}),
+                      ...(result.questionIndex === undefined
+                        ? {}
+                        : { questionIndex: result.questionIndex }),
                     },
               );
+              return;
+            }
+            case "ask.presence": {
+              if (!peer.context) return;
+              const threadId = parseRequestId(message.threadId) as ThreadId | null;
+              const askId = parseRequestId(message.askId);
+              if (!threadId || !askId) return;
+              const refused = await peer.context.app.asks.presence({
+                userId: peer.context.userId,
+                threadId,
+                askId,
+                answers: message.answers,
+              });
+              // No reply goes back, so the log is the only trace of a client reporting a bad draft.
+              if (refused)
+                emitEvent(peer.context.app.eventSink, {
+                  // A presence crossing an answer or the sweep is routine; a misfit or a stranger is a bug.
+                  level: refused === "not_open_question" ? "info" : "warn",
+                  source: "wire.thread_ws",
+                  name: "ask.presence.refused",
+                  payload: { failureReason: refused, threadId },
+                });
               return;
             }
             case "subscribe":

@@ -3,7 +3,11 @@
  * shared answer command over the socket. The ask defaults to the one the takeover would show.
  */
 import { apiThreadSnapshotPath, threadSnapshotSchema } from "@meridian/contracts/protocol";
-import type { AskAnswer } from "@meridian/contracts/threads";
+import {
+  type AskAnswer,
+  draftAnswersSchema,
+  type QuestionAnswer,
+} from "@meridian/contracts/threads";
 import {
   answerAsk,
   type ChatAsks,
@@ -11,78 +15,108 @@ import {
   openAsk,
   receiveAsks,
 } from "@meridian/thread-client";
-import { CliError, EXIT, usageError } from "../../core/cli-error";
-import { type CommandSpec, flag, requirePositional, stringOption } from "../../core/command";
+import { EXIT, usageError } from "../../core/cli-error";
+import {
+  type CommandContext,
+  type CommandSpec,
+  listOption,
+  type OptionSpec,
+  readJsonArg,
+  requirePositional,
+  stringOption,
+} from "../../core/command";
 import { jsonResponse } from "../../core/session";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
-import { createThreadClient } from "./transport";
+import { connectThreadClient } from "./transport";
 
-const CONNECT_TIMEOUT_MS = 10_000;
+/** The options both `answer` and `presence` take: the answers, one per question in order. */
+export const ANSWER_OPTIONS: Record<string, OptionSpec> = {
+  answer: {
+    type: "string",
+    multiple: true,
+    description:
+      "One question's answer, repeated in question order: option:<label>, text:<words> or skip (presence also takes none)",
+  },
+  answers: {
+    type: "string",
+    description:
+      "All answers as JSON: [{kind:'option',label}|{kind:'text',text}|{kind:'skipped'}|null, …]",
+  },
+};
+
+/** The answers from `--answer` (repeated) or `--answers` (JSON); `none` and null are unanswered. */
+export function answerArgs(ctx: CommandContext): (QuestionAnswer | null)[] {
+  const repeated = listOption(ctx, "answer");
+  const json = stringOption(ctx, "answers");
+  if (repeated.length > 0 === (json !== undefined))
+    throw usageError("Pass --answer once per question, or --answers as JSON");
+  if (json !== undefined) return draftAnswersSchema.parse(readJsonArg(json, "--answers"));
+  return repeated.map((raw) => {
+    if (raw === "skip") return { kind: "skipped" };
+    if (raw === "none") return null;
+    if (raw.startsWith("option:")) return { kind: "option", label: raw.slice(7) };
+    if (raw.startsWith("text:")) return { kind: "text", text: raw.slice(5) };
+    throw usageError(`--answer ${raw}: use option:<label>, text:<words> or skip`);
+  });
+}
+
+/**
+ * The session, chat and ask a command acts on: `--ask`, else the ask the takeover would show.
+ * Null after reporting that the chat has none open.
+ */
+export async function resolveOpenAsk(
+  ctx: CommandContext,
+  type: "thread.answer" | "thread.presence",
+) {
+  const session = await ctx.session();
+  const threadId = await resolveThreadId(
+    session,
+    requirePositional(ctx, 0, "<thread>"),
+    stringOption(ctx, "project"),
+  );
+  const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
+    decode: jsonResponse(threadSnapshotSchema),
+  });
+  const asks: ChatAsks = receiveAsks(EMPTY_CHAT_ASKS, snapshot.asks);
+  const askId = stringOption(ctx, "ask") ?? openAsk(asks, snapshot.turns)?.ask.id;
+  if (!askId) {
+    ctx.out.result(
+      { type, outcome: "failed", reason: "no_open_ask" },
+      () => "No open question in this chat",
+    );
+    return null;
+  }
+  return { session, threadId, asks, askId };
+}
 
 export const threadAnswerCommand: CommandSpec = {
   path: ["thread", "answer"],
-  summary: "Answer the chat's open question: an option, your own words, or skip",
+  summary: "Answer the chat's open question: per question an option, your own words, or skip",
   args: "<thread>",
   route: "WS /api/threads/ws ask.answer",
   options: {
     ...THREAD_TARGET_OPTIONS,
     ask: { type: "string", description: "Ask id (default: the chat's open ask)" },
-    option: { type: "string", description: "Answer with this option label" },
-    text: { type: "string", description: "Answer in your own words" },
-    skip: { type: "boolean", description: "Skip the question" },
+    ...ANSWER_OPTIONS,
   },
   examples: [
-    "./mf thread answer <id> --option 'Chapter one'",
-    "./mf thread answer <id> --text 'Start with the duel'",
-    "./mf thread answer <id> --skip --json",
+    "./mf thread answer <id> --answer 'option:Chapter one'",
+    "./mf thread answer <id> --answer 'option:Left' --answer 'text:Start with the duel' --answer skip",
+    './mf thread answer <id> --answers \'[{"kind":"skipped"}]\' --json',
   ],
   async run(ctx) {
-    const option = stringOption(ctx, "option");
-    const text = stringOption(ctx, "text");
-    const skip = flag(ctx, "skip");
-    if ([option !== undefined, text !== undefined, skip].filter(Boolean).length !== 1)
-      throw usageError("Pass exactly one of --option, --text or --skip");
-    const answer: AskAnswer =
-      option !== undefined
-        ? { kind: "option", label: option }
-        : text !== undefined
-          ? { kind: "text", text }
-          : { kind: "skip" };
+    const answers = answerArgs(ctx);
+    if (answers.some((answer) => answer === null))
+      throw usageError("An answer can't be left out: use skip");
+    const answer: AskAnswer = { kind: "answers", answers: answers as QuestionAnswer[] };
 
-    const session = await ctx.session();
-    const threadId = await resolveThreadId(
-      session,
-      requirePositional(ctx, 0, "<thread>"),
-      stringOption(ctx, "project"),
-    );
-    const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
-      decode: jsonResponse(threadSnapshotSchema),
-    });
-    let asks: ChatAsks = receiveAsks(EMPTY_CHAT_ASKS, snapshot.asks);
-    const askId = stringOption(ctx, "ask") ?? openAsk(asks, snapshot.turns)?.ask.id;
-    if (!askId) {
-      ctx.out.result(
-        { type: "thread.answer", outcome: "failed", reason: "no_open_ask" },
-        () => "No open question in this chat",
-      );
-      return EXIT.notFound;
-    }
+    const target = await resolveOpenAsk(ctx, "thread.answer");
+    if (!target) return EXIT.notFound;
+    const { session, threadId, askId } = target;
+    let asks = target.asks;
 
-    const transport = createThreadClient(session);
+    const transport = await connectThreadClient(session);
     try {
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(
-          () => reject(new CliError("timeout", "Timed out connecting the thread socket")),
-          CONNECT_TIMEOUT_MS,
-        );
-        const stop = transport.onConnectionState((state) => {
-          if (state.kind !== "connected") return;
-          clearTimeout(timer);
-          queueMicrotask(() => stop());
-          resolve();
-        });
-        transport.connect();
-      });
       const result = await answerAsk(
         {
           transport,
@@ -105,7 +139,7 @@ export const threadAnswerCommand: CommandSpec = {
       ctx.out.result(
         {
           type: "thread.answer",
-          outcome: result,
+          outcome: result.kind,
           askId,
           status: ask?.status ?? null,
           resolution: ask?.resolution ?? null,
@@ -113,9 +147,9 @@ export const threadAnswerCommand: CommandSpec = {
         (value) =>
           `${value.askId} ${value.outcome}${value.resolution ? ` ${JSON.stringify(value.resolution)}` : ""}`,
       );
-      return result === "answered"
+      return result.kind === "answered"
         ? EXIT.ok
-        : result === "not_open"
+        : result.kind === "not_open"
           ? EXIT.notFound
           : EXIT.unproven;
     } finally {
