@@ -708,6 +708,13 @@
       "when": 1793233694664,
       "tag": "0106_lineage_cancellation",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1793233754664,
+      "tag": "0107_lineage_cancellation_check",
+      "breakpoints": true
     }
   ]
 }

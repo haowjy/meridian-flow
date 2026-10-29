@@ -8587,10 +8587,6 @@
           "name": "asks_status_valid",
           "value": "\"asks\".\"status\" IN ('pending', 'open', 'answered', 'expired', 'cancelled')"
         },
-        "asks_continuation_valid": {
-          "name": "asks_continuation_valid",
-          "value": "(\"asks\".\"status\" IN ('pending', 'open') AND \"asks\".\"continuation\" IS NULL) OR (\"asks\".\"status\" IN ('answered', 'expired') AND \"asks\".\"continuation\" IN ('pending', 'done', 'cancelled')) OR (\"asks\".\"status\" = 'cancelled' AND \"asks\".\"continuation\" = 'cancelled')"
-        },
         "asks_resolution_coherent": {
           "name": "asks_resolution_coherent",
           "value": "(\"asks\".\"status\" IN ('pending', 'open') AND \"asks\".\"resolution\" IS NULL AND \"asks\".\"resolved_at\" IS NULL) OR (\"asks\".\"status\" IN ('answered', 'expired', 'cancelled') AND \"asks\".\"resolution\" IS NOT NULL AND \"asks\".\"resolved_at\" IS NOT NULL)"

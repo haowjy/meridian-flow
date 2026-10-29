@@ -1,8 +1,8 @@
 -- migration: no-transaction
--- Lineage cancellation: each ask's continuation state and admitted turn, the withdrawn-notice
--- fence on execution reports, and the machine-wake fence on threads.
--- The check is added NOT VALID, then validated, so no ACCESS EXCLUSIVE lock is held through
--- validation; the index is built concurrently.
+-- Lineage cancellation, expand step: each ask's continuation state and admitted turn, the
+-- withdrawn-notice fence on execution reports, and the machine-wake fence on threads. The check
+-- that ties `continuation` to `status` is 0107's: a server from before this migration still
+-- resolves asks with `continuation` NULL while the rollout runs. The index is built concurrently.
 SET lock_timeout = '2s';
 --> statement-breakpoint
 ALTER TABLE "thread_execution_reports" ADD COLUMN IF NOT EXISTS "notice_withdrawn" boolean DEFAULT false NOT NULL;
@@ -29,21 +29,6 @@ UPDATE "asks" SET "continuation" = CASE
   ELSE 'done'
 END
 WHERE "status" IN ('answered', 'expired', 'cancelled') AND "continuation" IS NULL;
---> statement-breakpoint
-SET lock_timeout = '2s';
---> statement-breakpoint
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'asks'::regclass AND conname = 'asks_continuation_valid'
-  ) THEN
-    ALTER TABLE asks ADD CONSTRAINT asks_continuation_valid CHECK (("status" IN ('pending', 'open') AND "continuation" IS NULL) OR ("status" IN ('answered', 'expired') AND "continuation" IN ('pending', 'done', 'cancelled')) OR ("status" = 'cancelled' AND "continuation" = 'cancelled')) NOT VALID;
-  END IF;
-END $$;
---> statement-breakpoint
-RESET lock_timeout;
---> statement-breakpoint
-ALTER TABLE asks VALIDATE CONSTRAINT asks_continuation_valid;
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "asks_held_by_thread"
   ON "asks" ("thread_id")
