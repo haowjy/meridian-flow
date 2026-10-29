@@ -50,7 +50,7 @@ type RunSession = {
  * What a lineage cancellation reaches below its owner. `thread` (Stop, Send now): no descendant;
  * it ends the owner's reply and what that execution itself owes. Background subagents keep
  * running; a foreground child ends with the reply that was waiting on it, and takes its own
- * background children with it. Whether the owner is fenced is not the reach's business: see
+ * background children with it, as does a subagent's own spawn run when it ends. Whether the owner is fenced is not the reach's business: see
  * `LineageDecision.fenceOwner`.
  * `turn`: the turn's own question and the subtrees that turn's execution spawned.
  * `terminal`: a child run that ended takes its whole subtree.
