@@ -15,7 +15,10 @@ export type AnswerAskPorts = {
   newSubmissionId(): string;
 };
 
-export type AnswerAskResult = "answered" | "not_open" | "failed";
+export type AnswerAskResult =
+  | { kind: "answered" | "not_open" | "failed" }
+  /** The server refused the answer; `questionIndex` names the question at fault, when one is. */
+  | { kind: "invalid_answer"; questionIndex?: number };
 
 export async function answerAsk(
   ports: AnswerAskPorts,
@@ -32,7 +35,7 @@ export async function answerAsk(
   const reply = await ports.transport.answerAsk({ threadId, askId, submissionId, answer });
   if (reply.type === "ask.answer.ok") {
     ports.update((asks) => receiveAsks(asks, [reply.ask]));
-    return "answered";
+    return { kind: "answered" };
   }
   if (reply.type === "ask.answer.error" && reply.code === "ask_not_open") {
     // Another tab, the parent or the deadline won. The reply names the resolution when it can;
@@ -42,10 +45,12 @@ export async function answerAsk(
       ports.update((asks) => receiveAsks(asks, [winner]));
       void ports.refresh().catch(() => undefined);
     } else await settleAsk(ports, askId);
-    return "not_open";
+    return { kind: "not_open" };
   }
   ports.update((asks) => failAskAnswer(asks, askId, submissionId));
-  return "failed";
+  if (reply.type === "ask.answer.error" && reply.code === "invalid_answer")
+    return { kind: "invalid_answer", questionIndex: reply.questionIndex };
+  return { kind: "failed" };
 }
 
 /**

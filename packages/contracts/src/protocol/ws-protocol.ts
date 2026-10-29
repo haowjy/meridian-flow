@@ -6,12 +6,7 @@
 import { z } from "zod";
 
 import { type MeridianError, meridianErrorSchema } from "../errors/index.js";
-import {
-  askAnswerSchema,
-  draftAnswersSchema,
-  type ThreadAsk,
-  threadAskSchema,
-} from "../threads/asks.js";
+import { askAnswerSchema, draftAnswersSchema, threadAskSchema } from "../threads/asks.js";
 import { controlBodySchema } from "../threads/control-body.js";
 import type { RunState } from "../threads/run-state.js";
 import { aiWriteModeSchema } from "../works/ai-write-mode.js";
@@ -112,16 +107,26 @@ export const wsClientMessageSchema = z.discriminatedUnion("type", [
 
 export type WsClientMessage = z.infer<typeof wsClientMessageSchema>;
 
+const wsAskAnswerOkSchema = z.object({
+  type: z.literal("ask.answer.ok"),
+  requestId: wsRequestIdSchema,
+  threadId: z.string().min(1),
+  ask: threadAskSchema,
+});
+
+const wsAskAnswerErrorSchema = z.object({
+  type: z.literal("ask.answer.error"),
+  requestId: wsRequestIdSchema,
+  threadId: z.string().min(1),
+  code: z.enum(["ask_not_open", "invalid_answer"]),
+  ask: threadAskSchema.optional(),
+  /** The first question whose answer didn't fit, when one entry is at fault. */
+  questionIndex: z.number().int().nonnegative().optional(),
+});
+
 export type AskAnswerReply =
-  | { type: "ask.answer.ok"; requestId: string; threadId: string; ask: ThreadAsk }
-  | {
-      type: "ask.answer.error";
-      requestId: string;
-      threadId: string;
-      code: "ask_not_open" | "invalid_answer";
-      ask?: ThreadAsk;
-      questionIndex?: number;
-    };
+  | z.infer<typeof wsAskAnswerOkSchema>
+  | z.infer<typeof wsAskAnswerErrorSchema>;
 
 export const wsGapCauseSchema = z.enum(["replay_limit_exceeded", "server_restart"]);
 
@@ -324,19 +329,8 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     ]),
     headRevision: wsEventSeqSchema,
   }),
-  z.object({
-    type: z.literal("ask.answer.ok"),
-    requestId: wsRequestIdSchema,
-    threadId: z.string().min(1),
-    ask: threadAskSchema,
-  }),
-  z.object({
-    type: z.literal("ask.answer.error"),
-    requestId: wsRequestIdSchema,
-    threadId: z.string().min(1),
-    code: z.enum(["ask_not_open", "invalid_answer"]),
-    ask: threadAskSchema.optional(),
-  }),
+  wsAskAnswerOkSchema,
+  wsAskAnswerErrorSchema,
   z.object({
     type: z.literal("error"),
     kind: z.literal("error"),

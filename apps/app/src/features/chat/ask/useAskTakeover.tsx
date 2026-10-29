@@ -8,6 +8,11 @@
  * beside a picked option, or sent but beaten by another resolution) are added to the composer
  * draft once. Closure follows the ask's lifecycle, not the takeover.
  *
+ * A takeover that opens with no local draft (a reload, another device) starts from the answers
+ * the server holds for the ask (`draftAnswers`), the ones a timeout would use. With two tabs open
+ * the last one to report wins. A send the server refuses as `invalid_answer` moves the draft to
+ * the question it names.
+ *
  * While the writer works on a question, the draft goes to the server as `ask.presence`, at most
  * once per `PRESENCE_INTERVAL_MS`, so the idle deadline stays off and a walk-away keeps what
  * they chose.
@@ -80,12 +85,12 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
       return;
     }
     if (openId !== null && current.askId === null && open) {
-      write({ askId: openId, ...emptyDraft(open.ask) });
+      write({ askId: openId, ...seedDraft(open.ask) });
     }
   }, [composer, open, openId, stopPresence, tracked, write]);
 
   if (!open) return null;
-  const draft = held.askId === open.ask.id ? held : emptyDraft(open.ask);
+  const draft = held.askId === open.ask.id ? held : seedDraft(open.ask);
   return (
     <AskTakeover
       open={open}
@@ -98,15 +103,32 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
       onAnswer={(answer) => {
         // The answer carries the draft; a trailing report would only repeat it.
         stopPresence();
-        commands.answer(open.ask.id, answer);
+        const askId = open.ask.id;
+        void commands.answer(askId, answer).then((result) => {
+          const current = heldRef.current;
+          if (
+            result.kind === "invalid_answer" &&
+            result.questionIndex !== undefined &&
+            current.askId === askId
+          )
+            write({ ...current, step: result.questionIndex });
+        });
       }}
     />
   );
 }
 
-function emptyDraft(ask: ThreadAsk): QuestionDraft {
+/** The draft a takeover starts from: the answers the server holds for the ask, else none. */
+function seedDraft(ask: ThreadAsk): QuestionDraft {
   const count = ask.kind === "question" ? ask.payload.questions.length : 0;
-  return { step: 0, entries: Array.from({ length: count }, () => ({ choice: null, words: "" })) };
+  const held = ask.draftAnswers ?? [];
+  const entries = Array.from({ length: count }, (_, index) => {
+    const choice = held[index] ?? null;
+    return { choice, words: choice?.kind === "text" ? choice.text : "" };
+  });
+  // Resume at the first question still open.
+  const open = entries.findIndex((entry) => entry.choice === null);
+  return { step: open < 0 ? 0 : open, entries };
 }
 
 /** Each question's typed words that its outcome doesn't hold, one per line; empty when none. */

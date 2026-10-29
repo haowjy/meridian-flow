@@ -200,7 +200,7 @@ else
           answers: held,
           now,
         });
-        expect(stranger).toBeUndefined();
+        expect(stranger).toBe("not_owner");
         expect(await repos.asks.findById(ask.id)).toMatchObject({
           deadlineAt: now,
           draftAnswers: null,
@@ -236,6 +236,9 @@ else
         } else {
           // The sweep won: it resolved before the bump, or the bump found the ask closed.
           expect(settled?.status).toBe("expired");
+          // The bump found the ask closed and wrote nothing; without `dueBy` it would have stored
+          // its answers and the sweep, from its stale listing, would have resolved over them.
+          expect(settled?.draftAnswers).toBeNull();
         }
         expect(
           (await repos.blocks.listByTurn(turn.id)).filter(

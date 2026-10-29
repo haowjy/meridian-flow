@@ -17,6 +17,7 @@ export function threadAsk(ask: StoredAsk): ThreadAsk {
     kind: ask.kind,
     payload: ask.payload,
     deadlineAt: ask.deadlineAt?.toISOString() ?? null,
+    draftAnswers: ask.draftAnswers,
     status: ask.status,
     resolution: ask.resolution,
     createdAt: ask.createdAt.toISOString(),

@@ -217,18 +217,7 @@ const GrepToolInputSchema = z
   .strict();
 export type GrepToolInput = z.output<typeof GrepToolInputSchema>;
 
-/**
- * A thread's frozen prefix keeps advertising the tool as it was when the thread started, so a
- * thread from before multi-question ask still calls with one `{question, options}`. Dispatch takes
- * that as a list of one; new threads are told the list shape.
- */
-export const AskToolInputSchema = z.preprocess(
-  (input) =>
-    typeof input === "object" && input !== null && "question" in input
-      ? { questions: [input] }
-      : input,
-  questionAskPayloadSchema,
-);
+export const AskToolInputSchema = questionAskPayloadSchema;
 
 /** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "grep", "ask_user"] as const;

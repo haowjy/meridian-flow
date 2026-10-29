@@ -743,6 +743,13 @@
       "when": 1793301194660,
       "tag": "0111_ask_multi_question",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1793301254660,
+      "tag": "0112_ask_multi_question_rows",
+      "breakpoints": true
     }
   ]
 }
