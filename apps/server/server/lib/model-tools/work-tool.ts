@@ -1,7 +1,8 @@
 /**
  * The model `work` tool: list, show and change the project's Works. The action
- * policy decides each command (D39). Work rebinding and queued write-mode
- * changes run under the calling execution's existing claim.
+ * policy decides each command (D39). A direct call's Work rebinding and queued
+ * write-mode changes run under the calling execution's claim; under an Allow they run
+ * under the answer's thread lock, with no claim (an open ask blocks run selection).
  */
 import { type PermissionDeniedReason, TOOL_EXCEPTION_CODE } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
