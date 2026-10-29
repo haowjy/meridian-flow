@@ -1,8 +1,9 @@
 -- migration: no-transaction
 -- Lineage cancellation, expand step: each ask's continuation state and admitted turn, the
 -- withdrawn-notice fence on execution reports, and the machine-wake fence on threads. The check
--- that ties `continuation` to `status` is 0107's: a server from before this migration still
--- resolves asks with `continuation` NULL while the rollout runs. The index is built concurrently.
+-- that ties `continuation` to `status` ships in a later release, after this code is deployed: a
+-- server from before this migration still resolves asks with `continuation` NULL while the
+-- rollout runs. The index is built concurrently.
 SET lock_timeout = '2s';
 --> statement-breakpoint
 ALTER TABLE "thread_execution_reports" ADD COLUMN IF NOT EXISTS "notice_withdrawn" boolean DEFAULT false NOT NULL;
