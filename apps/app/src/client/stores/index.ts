@@ -59,10 +59,13 @@ export {
 } from "./thread-store/announcements";
 export {
   ThreadStoreProvider,
+  useAskReceipt,
   useIsThreadPendingCreation,
+  useOpenAsk,
   useRunState,
   useRunStateSlice,
   useThreadActions,
+  useThreadAsks,
   useThreadStore,
 } from "./thread-store/thread-store";
 export type { ThreadStoreActions } from "./thread-store/types";

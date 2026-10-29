@@ -152,6 +152,7 @@ export function snapshotOf(
     threadId: THREAD_ID,
     thread: thread(),
     turns: o.turns ?? [],
+    asks: [],
     threadUsage: {
       inputTokens: 0,
       cacheReadTokens: 0,
@@ -203,12 +204,6 @@ export const frames = {
       frame({ type: "TEXT_MESSAGE_END", messageId }),
     ];
   },
-  interrupt: (turnId: string, interruptId: string, state: "created" | "resolved") =>
-    frame({
-      type: "CUSTOM",
-      name: "meridian.interrupt",
-      value: { turnId, interruptId, blockSequence: 0, state },
-    }),
   toolCall: (id: string, name: string, args: string, ...results: string[]): AGUIEvent[] => [
     frame({ type: "TOOL_CALL_START", toolCallId: id, toolCallName: name }),
     frame({ type: "TOOL_CALL_ARGS", toolCallId: id, delta: args }),
@@ -226,7 +221,7 @@ export function publishRecord(wire: Wire, over: Partial<RunState> = {}) {
 
 /** The facts of one answered message: what streamed, what the server stored, and how it ended. */
 export type ReplySpec = {
-  status?: "complete" | "error" | "cancelled" | "waiting_interrupt";
+  status?: "complete" | "error" | "cancelled";
   /** Text deltas on the stream. Default `["Hello there"]`; none for a failed or cancelled run. */
   streamed?: string[];
   /** The reply's stored text. Default: the streamed text joined. */
@@ -261,11 +256,9 @@ export function replyScenario(wire: Wire, specs: ReplySpec | ReplySpec[]) {
     wire.publish(frames.started(reply));
     for (const event of spec.extra ?? []) wire.publish(event);
     if (streamed.length) for (const event of frames.text(reply, ...streamed)) wire.publish(event);
-    const open = status === "waiting_interrupt";
-    if (open) wire.publish(frames.interrupt(reply, "int-1", "created"));
-    else wire.publish(error ? frames.failed(error) : frames.finished(reply));
-    const execution = open ? { executionId: `exec-${reply}`, currentTurnId: reply } : null;
-    if (!open) publishRecord(wire);
+    wire.publish(error ? frames.failed(error) : frames.finished(reply));
+    const execution = null;
+    publishRecord(wire);
     const running = snapshotOf({
       seq: Number(resumeAfterSeq),
       record: { execution: { executionId: `exec-${reply}`, currentTurnId: reply } },
@@ -288,16 +281,6 @@ export function replyScenario(wire: Wire, specs: ReplySpec | ReplySpec[]) {
                 status,
                 error,
                 text: stored,
-                ...(open
-                  ? {
-                      blocks: [
-                        block(reply, 0, {
-                          blockType: "custom",
-                          content: { interrupt: { id: "int-1" } },
-                        }),
-                      ],
-                    }
-                  : {}),
               }),
             ],
           });

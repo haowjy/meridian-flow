@@ -139,7 +139,7 @@ export function transcriptUnsettledTurnsSql(spans: readonly TranscriptSpan[]) {
       WHERE t.thread_id = ${span.threadId}::uuid
         AND t.position > ${span.afterPosition}
         ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
-        AND t.status IN ('pending','streaming','waiting_interrupt')
+        AND t.status IN ('pending','streaming','awaiting_answer')
       ORDER BY t.position ASC
       LIMIT 1
     )`,
@@ -268,7 +268,7 @@ export function createDrizzleTranscriptReader(
         .select()
         .from(schema.turns)
         .where(
-          sql`${schema.turns.threadId} = ${threadId}::uuid AND ${schema.turns.status} IN ('pending','streaming','waiting_interrupt')`,
+          sql`${schema.turns.threadId} = ${threadId}::uuid AND ${schema.turns.status} IN ('pending','streaming')`,
         )
         .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
@@ -292,7 +292,7 @@ export function createDrizzleTranscriptReader(
         JOIN threads th ON th.id = t.thread_id
         WHERE th.kind = 'primary'
           AND t.role = 'assistant'
-          AND t.status IN ('pending','streaming','waiting_interrupt')
+          AND t.status IN ('pending','streaming')
           ${after ? sql`AND (t.thread_id, t.position) > (${after.threadId}::uuid, ${after.position}::int)` : sql``}
         ORDER BY t.thread_id ASC, t.position ASC
         LIMIT ${limit}

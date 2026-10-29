@@ -10,7 +10,7 @@ import {
   type InvocationPatch,
   type ResolvedAgentConfiguration,
 } from "@meridian/contracts/agents";
-import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import {
   type AgentRevision,
   type AgentRevisionBinding,

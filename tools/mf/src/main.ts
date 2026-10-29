@@ -42,7 +42,6 @@ const EXIT_CODE_LINES = [
   "3 not found",
   "4 stack not running or dev login failed",
   "5 cancelled",
-  "8 waiting on an interrupt (./mf thread respond)",
   "124 timeout",
 ];
 

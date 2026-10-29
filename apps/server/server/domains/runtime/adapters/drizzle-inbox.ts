@@ -259,6 +259,11 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
             inArray(schema.threadInboxMessages.intent, ["message", "control"]),
             // A lone pending switch waits for a run, so it never wakes the chat.
             sql`${schema.threadInboxMessages.body}->>'kind' is distinct from 'write_mode'`,
+            sql`NOT EXISTS (
+              SELECT 1 FROM ${schema.asks}
+              WHERE ${schema.asks.threadId} = ${schema.threadInboxMessages.threadId}
+                AND ${schema.asks.status} = 'open'
+            )`,
             afterThreadId ? gt(schema.threadInboxMessages.threadId, afterThreadId) : undefined,
             isNull(schema.threadInboxMessages.deliveredAt),
           ),

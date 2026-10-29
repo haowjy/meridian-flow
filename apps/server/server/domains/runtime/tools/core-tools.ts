@@ -20,7 +20,7 @@ import {
   renderAgentEditResult,
   WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
-import { askUserToolInputSchema } from "@meridian/contracts/components";
+import { askToolInputSchema } from "@meridian/contracts/components";
 import {
   aiWriteModeSchema,
   INVALID_WORK_NAME,
@@ -190,6 +190,8 @@ const SearchToolInputSchema = z
   .strict();
 export type SearchToolInput = z.output<typeof SearchToolInputSchema>;
 
+export const AskToolInputSchema = askToolInputSchema;
+
 /** Canonical list of runnable core tool names. */
 export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask_user"] as const;
 
@@ -322,12 +324,12 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "ask_user",
-        description: "Ask the user a question and wait for the answer.",
-        inputSchema: modelToolSchema(askUserToolInputSchema),
+        description:
+          "Ask only when the answer changes what you do and you can't make a reasonable choice. Otherwise choose, say what you chose, and continue. Give 2–4 options; the writer can also answer in their own words. Mark one recommended if you have a preference: it's used if no one answers within a few minutes. Asking ends your turn, and the answer arrives as this tool's result.",
+        inputSchema: modelToolSchema(AskToolInputSchema),
       },
-      input: askUserToolInputSchema,
+      input: AskToolInputSchema,
       execution: { type: "server", handler: handlers.ask_user },
-      capability: "interrupt",
     },
   ];
 }

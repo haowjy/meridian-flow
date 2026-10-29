@@ -1,7 +1,7 @@
 /** Turn-scoped protocol lookup for settled foreground invocation cards. */
 
+import { type ArtifactRef, isArtifactRef } from "@meridian/contracts/artifacts";
 import { parseInvocationCard } from "@meridian/contracts/components";
-import { type ArtifactRef, isArtifactRef } from "@meridian/contracts/interrupt";
 import { type Block, blockContentRecord, type JsonValue } from "@meridian/contracts/protocol";
 import { componentBlockContent } from "./component-block-content";
 
