@@ -16,12 +16,16 @@ active work directory.
    {
      "name": "ask_user",
      "arguments": {
-       "question": "Which point of view should this scene use?",
-       "options": [
-         { "label": "First person", "description": "Keep the scene intimate." },
-         { "label": "Third person", "description": "Show more of the battlefield." }
-       ],
-       "recommended": "First person"
+       "questions": [
+         {
+           "question": "Which point of view should this scene use?",
+           "options": [
+             { "label": "First person", "description": "Keep the scene intimate." },
+             { "label": "Third person", "description": "Show more of the battlefield." }
+           ],
+           "recommended": "First person"
+         }
+       ]
      }
    }
    ```
@@ -41,25 +45,63 @@ result it received.
 
 | Case | Command | Expected tool result |
 |---|---|---|
-| Option | `./mf thread answer "$chat" --ask "$ask" --option 'Third person'` | `{"answer":"Third person"}` |
-| Own words | `./mf thread answer "$chat" --ask "$ask" --text 'Alternate at the scene break'` | `{"answer":"Alternate at the scene break","free_text":true}` |
-| Skip | `./mf thread answer "$chat" --ask "$ask" --skip` | `{"answer":null,"skipped":true}` |
+| Option | `./mf thread answer "$chat" --ask "$ask" --answer 'option:Third person'` | `{"answers":[{"question":"Which point of view should this scene use?","answer":"Third person"}]}` |
+| Own words | `./mf thread answer "$chat" --ask "$ask" --answer 'text:Alternate at the scene break'` | `{"answers":[{"question":"…","answer":"Alternate at the scene break","free_text":true}]}` |
+| Skip | `./mf thread answer "$chat" --ask "$ask" --answer skip` | `{"answers":[{"question":"…","answer":null,"skipped":true}]}` |
+
+Pass one `--answer` per question in order, or all of them as `--answers '<json>'`.
 
 PASS for every case: the asking turn becomes complete, its tool use and result
 remain on that turn, exactly one new assistant turn continues, and the answer
 command prints the resolved ask. Repeat one socket request with the same
 `submissionId`; it returns the first resolution without another continuation.
 
-Submit an unknown option, blank text, and an answer to the resolved ask. PASS:
-the first two return `invalid_answer`; the stale answer returns `ask_not_open`
-with the resolved ask.
+Submit an unknown option, blank text, too few answers, and an answer to the resolved
+ask. PASS: the first three return `invalid_answer` (for an unknown option or blank text the
+socket's `ask.answer.error` frame also carries the question's `questionIndex`); the stale answer returns
+`ask_not_open` with the resolved ask.
+
+### Several questions
+
+Script `ask_user` with three questions (two with a `recommended`, one without),
+then answer `--answer 'option:Third person' --answer 'text:About 2000 words' --answer skip`.
+PASS: `./mf thread view "$chat"` lists the three questions numbered while open and
+shows each with its answer after; the tool result is `{"answers":[…]}` with three
+entries in order, each carrying its question text, the second `free_text:true`, the
+third `skipped:true`; one continuation. A fourth question is accepted; a fifth, or
+none, fails the call's arguments (`invalid_arguments`). A call in the old one-question
+shape (`question`, `options` at the top) is still accepted as one question.
 
 ## Timeout
 
-Create an ask with a recommended option and leave it open past 270 seconds.
-PASS: within one 15-second sweep it expires, receives
-`{"answer":"First person","timed_out":true}`, and continues once. Repeat
-without `recommended`; the result is `{"answer":null,"timed_out":true}`.
+A question times out after 4 minutes idle, and never later than 55 minutes after it
+opened. The constants are in `asks/ask-deadline.ts`; to run these cases quickly, shorten
+them locally (for example 20 s and 60 s), restart the stack with `MODEL_PROVIDER=mock`,
+and revert before committing.
+
+1. **Nothing answered.** Open a one-question ask with a `recommended` and wait out the
+   idle time. PASS: within one 15-second sweep it expires and receives
+   `{"answers":[{"question":"…","answer":"First person","timed_out":true}]}`, and
+   continues once. Repeat without `recommended`; the entry is
+   `{"answer":null,"timed_out":true}`.
+2. **Walk-away after answering some.** Open a three-question ask. Send
+   `./mf thread presence "$chat" --answer 'option:Third person' --answer none --answer none`,
+   then stop. PASS: after the idle time the ask expires; the first entry is the writer's
+   `Third person` (no `timed_out`), the second takes its Recommended option with
+   `timed_out:true`, and the third, which has none, is `{"answer":null,"timed_out":true}`.
+   `./mf thread view` shows the same.
+3. **Presence bumps the deadline.** On an open ask, note `continues at` in
+   `./mf thread view`, run `./mf thread presence` (with `--answer none` per question)
+   about halfway through the idle time. PASS: `continues at` moves to the idle time after
+   the presence. Repeat before each deadline. PASS: the deadline moves each time and stops
+   at 55 minutes after the ask opened (`opened_at`); a presence after that moves nothing,
+   and the ask expires at the limit, from the held answers.
+4. **Refused presence.** Send presence for a chat the signed-in user doesn't own, an
+   ask that is already resolved, a permission request, and a draft that names an unknown
+   option. PASS: none changes `deadline_at` or `draft_answers`.
+5. **Restart.** Send presence with a held answer, restart the stack, and wait out the
+   idle time. PASS: the ask still expires on its stored deadline, and the held answer
+   stands in the result.
 
 ## Queue barrier
 
@@ -144,7 +186,8 @@ Use the crash controller described in
 
 The client lane fills these steps before the combined feature ships:
 
-- [ ] composer takeover, option/text/Skip, countdown, and hidden Stop
+- [ ] composer takeover: one question at a time ("1 of N"), Back, option/text/Skip per
+  question, Send on the last, countdown that follows the deadline, and hidden Stop
 - [ ] optimistic receipt and retry after a failed answer send
 - [ ] resolution in another tab restores the draft and appends typed text
 - [ ] reload while open and reload after resolution
@@ -215,9 +258,9 @@ into the parent's script before you send. A parent woken by a report matches
    result is `thread_stopped` ("This run was stopped, so nothing was sent or
    started.").
 9. **Two requests in one batch.** Script one primary reply with two `ask_user`
-   calls. PASS: one ask row exists, the second call's result is
-   `one_request_at_a_time`, and the reply ends `awaiting_answer` on the first
-   question.
+   calls, each with a question. PASS: one ask row exists, the second call's result is
+   `one_request_at_a_time`, and the reply ends `awaiting_answer` on the first call's
+   questions. (Several questions go in one call; see "Several questions".)
 10. **Failed rows.** Expand step 9's reply in the browser. PASS: the refused row
     reads "Couldn't ask a question" and opens to "Only one question or request can
     wait for an answer at a time, so this one wasn't asked."; under zh it opens to the Chinese
