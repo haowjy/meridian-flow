@@ -66,31 +66,28 @@ export const permissionAskPayloadSchema = z.discriminatedUnion("action", [
 const workIdSchema = z.string().uuid();
 
 /**
- * The resolved command an Allow runs, stored on the ask and never sent to a client. Rows
- * are parsed with this on read: Allow executes them.
+ * The resolved command an Allow runs, its target pinned by id, stored on the ask and never
+ * sent to a client. The project is the asking chat's. Rows are parsed with this on read:
+ * Allow executes them.
  */
-export const permissionWorkCommandSchema = z.strictObject({
-  tool: z.literal("work"),
-  projectId: z.string().uuid(),
-  command: z.discriminatedUnion("command", [
-    z.strictObject({
-      command: z.literal("create"),
-      name: z.string(),
-      goal: z.string().nullable().optional(),
-    }),
-    z.strictObject({
-      command: z.literal("update"),
-      workId: workIdSchema,
-      name: z.string().optional(),
-      goal: z.string().nullable().optional(),
-      status: z.string().nullable().optional(),
-    }),
-    z.strictObject({ command: z.literal("archive"), workId: workIdSchema }),
-    z.strictObject({ command: z.literal("unarchive"), workId: workIdSchema }),
-    z.strictObject({ command: z.literal("switch"), workId: workIdSchema }),
-    z.strictObject({ command: z.literal("write_mode"), mode: aiWriteModeSchema }),
-  ]),
-});
+export const permissionWorkCommandSchema = z.discriminatedUnion("command", [
+  z.strictObject({
+    command: z.literal("create"),
+    name: z.string(),
+    goal: z.string().nullable().optional(),
+  }),
+  z.strictObject({
+    command: z.literal("update"),
+    workId: workIdSchema,
+    name: z.string().optional(),
+    goal: z.string().nullable().optional(),
+    status: z.string().nullable().optional(),
+  }),
+  z.strictObject({ command: z.literal("archive"), workId: workIdSchema }),
+  z.strictObject({ command: z.literal("unarchive"), workId: workIdSchema }),
+  z.strictObject({ command: z.literal("switch"), workId: workIdSchema }),
+  z.strictObject({ command: z.literal("write_mode"), mode: aiWriteModeSchema }),
+]);
 
 export const askContentSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("question"), payload: questionAskPayloadSchema }),

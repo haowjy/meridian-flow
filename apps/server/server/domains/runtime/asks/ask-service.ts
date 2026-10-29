@@ -6,7 +6,7 @@
  * savepoint and refusal translation. Every path locks its ask row before the thread lock.
  */
 
-import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AskAnswer,
   AskResolution,
@@ -26,7 +26,6 @@ import type {
   ThreadRepositories,
 } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
-import type { PermissionGrantStore } from "../loop/permissions/permission-grants.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
 
@@ -118,21 +117,20 @@ function resolutionPlan(ask: StoredAsk, resolution: AskResolution): AskResolutio
 
 /** Runs what the writer allowed. */
 export interface PermissionExecutor {
-  grants: Pick<PermissionGrantStore, "grant">;
   /**
-   * Runs the stored command as the thread's writer, inside the answer's transaction; a
-   * domain refusal rolls back the command's own writes and becomes an error result.
+   * Runs the stored command inside the answer's transaction; a domain refusal rolls back the
+   * command's own writes and becomes an error result. `always` also stores the project's
+   * grant for the action, even when the action was refused: the writer's standing choice.
    */
-  execute(input: { threadId: ThreadId; command: PermissionWorkCommand }): Promise<AskToolResult>;
+  execute(input: {
+    threadId: ThreadId;
+    command: PermissionWorkCommand;
+    always: boolean;
+  }): Promise<AskToolResult>;
 }
 
 /** For compositions that run no model tools, so no permission request can open. */
 export const refusingPermissionExecutor: PermissionExecutor = {
-  grants: {
-    async grant() {
-      throw new Error("This composition runs no permission requests");
-    },
-  },
   async execute() {
     throw new Error("This composition runs no permission requests");
   },
@@ -273,14 +271,11 @@ export function createAskService(deps: {
           throw new Error(`Permission ask ${ask.id} resolved as ${decision}`);
         const command = ask.permissionCommand;
         if (!command) throw new Error(`Permission ask ${ask.id} has no command`);
-        const result = await deps.permission.execute({ threadId: ask.threadId, command });
-        // The writer's standing choice holds even when this action was refused.
-        if (decision === "allow_always")
-          await deps.permission.grants.grant(
-            command.projectId as ProjectId,
-            `work.${command.command.command}`,
-          );
-        return result;
+        return deps.permission.execute({
+          threadId: ask.threadId,
+          command,
+          always: decision === "allow_always",
+        });
       }
     }
   }

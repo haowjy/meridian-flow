@@ -74,11 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           work: { handle: "w1", name: "Review target" },
           changes: { name: "Already taken" },
         },
-        permissionCommand: {
-          tool: "work",
-          projectId,
-          command: { command: "update", workId: target.id, name: "Already taken" },
-        },
+        permissionCommand: { command: "update", workId: target.id, name: "Already taken" },
         deadlineAt: null,
         status: "open",
         resolution: null,

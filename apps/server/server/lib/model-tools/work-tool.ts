@@ -24,12 +24,15 @@ import {
   WorkNameRequiredError,
   WorkStatusInvalidError,
 } from "../../domains/projects/index.js";
+import type { PermissionExecutor } from "../../domains/runtime/asks/ask-service.js";
 import {
   type AskableAction,
   actionPolicy,
+  handlerToolResult,
   type ModelWork,
   mayChangeWorks,
   type RequestToolHandlerContext,
+  type ToolRegistry,
   type WorkCommand,
   type WorkShowResult,
 } from "../../domains/runtime/index.js";
@@ -275,53 +278,30 @@ function permissionPayload(thread: Thread, command: AskedWorkCommand): Permissio
 }
 
 /** The command an Allow runs: its target pinned by id, so a later rename can't retarget it. */
-function permissionCommand(thread: Thread, command: AskedWorkCommand): PermissionWorkCommand {
-  const projectId = thread.projectId;
-  switch (command.command) {
-    case "create":
-      return {
-        tool: "work",
-        projectId,
-        command: { command: "create", name: command.name, goal: command.goal },
-      };
-    case "write_mode":
-      return { tool: "work", projectId, command: { command: "write_mode", mode: command.mode } };
-    case "update":
-      return {
-        tool: "work",
-        projectId,
-        command: {
-          command: "update",
-          workId: command.work.id,
-          name: command.name,
-          goal: command.goal,
-          status: command.status,
-        },
-      };
-    default:
-      return {
-        tool: "work",
-        projectId,
-        command: { command: command.command, workId: command.work.id },
-      };
-  }
+function permissionCommand(command: AskedWorkCommand): PermissionWorkCommand {
+  if (!("work" in command)) return command;
+  const { work, ...fields } = command;
+  return { ...fields, workId: work.id };
 }
 
 /** The command an Allow stored, its target loaded again by id. */
 async function resolveStored(
   deps: ToolWiringDeps,
+  thread: Thread,
   stored: PermissionWorkCommand,
-): Promise<ResolvedWorkCommand | ToolErrorOutput> {
-  const { command } = stored;
-  if (command.command === "create" || command.command === "write_mode") return command;
-  const work = await deps.works.findById(command.workId);
-  if (!work || work.projectId !== stored.projectId)
-    return toolError({
-      code: "work_not_found",
-      message: "The approved Work is no longer available.",
-    });
-  const { workId: _, ...fields } = command;
-  return { ...fields, work };
+): Promise<Resolution> {
+  if (!("workId" in stored)) return { ok: true, command: stored };
+  const { workId, ...fields } = stored;
+  const work = await deps.works.findById(workId);
+  if (!work || work.projectId !== thread.projectId)
+    return {
+      ok: false,
+      result: toolError({
+        code: "work_not_found",
+        message: "The approved Work is no longer available.",
+      }),
+    };
+  return { ok: true, command: { ...fields, work } };
 }
 
 /**
@@ -491,37 +471,46 @@ function executeWorkCommand(
 }
 
 /**
- * Runs what the writer allowed in a savepoint inside the answer's
- * transaction: a domain refusal rolls back its writes and after-commit effects first, then
- * becomes the result, so the answer still commits. Any other failure propagates and rolls
- * back the answer. Returns a handler result, as the `work` tool's handler does.
+ * Runs what the writer allowed, in a savepoint inside the answer's transaction: a domain
+ * refusal rolls back its writes and after-commit effects first, then becomes the result, so
+ * the answer still commits. Any other failure propagates and rolls back the answer. The
+ * result is shaped as the `work` call's own would be.
  */
-export async function runAllowedWorkCommand(
+export function createAllowedWorkExecutor(
   deps: ToolWiringDeps & { savepoint<T>(operation: () => Promise<T>): Promise<T> },
-  input: { threadId: ThreadId; command: PermissionWorkCommand },
-): Promise<unknown> {
-  const thread = await deps.threads.findById(input.threadId);
-  const project = await deps.projects.findById(input.command.projectId);
-  if (
-    !thread ||
-    !project ||
-    project.deletedAt ||
-    project.userId !== thread.userId ||
-    thread.projectId !== input.command.projectId
-  )
-    return toolError({
-      code: "work_not_found",
-      message: "This chat or project is no longer available.",
-    });
-  const resolved = await resolveStored(deps, input.command);
-  if (isToolError(resolved)) return resolved;
-  try {
-    return await deps.savepoint(() => executeWorkCommand(deps, thread, resolved));
-  } catch (error) {
-    const expected = expectedWorkError(error, undefined, true);
-    if (!expected) throw error;
-    return expected;
+  registry: Pick<ToolRegistry, "getRegistration">,
+): PermissionExecutor {
+  async function run(thread: Thread, command: PermissionWorkCommand): Promise<unknown> {
+    const resolution = await resolveStored(deps, thread, command);
+    if (!resolution.ok) return resolution.result;
+    try {
+      return await deps.savepoint(() => executeWorkCommand(deps, thread, resolution.command));
+    } catch (error) {
+      const expected = expectedWorkError(error, undefined, true);
+      if (!expected) throw error;
+      return expected;
+    }
   }
+
+  return {
+    async execute({ threadId, command, always }) {
+      const registration = registry.getRegistration("work");
+      if (!registration) throw new Error("The work tool is not registered");
+      // The answer found the chat under its lock; a delete in between cancels the ask instead.
+      const thread = await deps.threads.findById(threadId);
+      if (!thread) throw new Error(`Thread not found: ${threadId}`);
+      const output = await run(thread, command);
+      if (always)
+        await deps.permissionGrants.grant(thread.projectId as ProjectId, `work.${command.command}`);
+      const shaped = handlerToolResult(output, registration, { command: command.command });
+      return {
+        output: shaped.output,
+        result: shaped.result,
+        isError: shaped.isError === true,
+        ...(shaped.metadata ? { metadata: shaped.metadata } : {}),
+      };
+    },
+  };
 }
 
 export function createWorkHandler(deps: ToolWiringDeps) {
@@ -555,7 +544,7 @@ export function createWorkHandler(deps: ToolWiringDeps) {
         const outcome = await ctx.request({
           kind: "permission",
           payload: permissionPayload(thread, resolved),
-          command: permissionCommand(thread, resolved),
+          command: permissionCommand(resolved),
         });
         return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
       }
