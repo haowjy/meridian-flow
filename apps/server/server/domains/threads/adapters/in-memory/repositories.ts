@@ -1489,7 +1489,11 @@ export function createInMemoryRepositories(
           .filter((ask) => {
             if (targets.has(ask.threadId)) return live(ask) || owed(ask);
             if (ask.threadId !== owner?.threadId) return false;
-            if (live(ask)) return !owner.turnId || ask.askingTurnId === owner.turnId;
+            if (live(ask))
+              return (
+                (ask.status === "open" || ask.executionId === owner.execution) &&
+                (!owner.turnId || ask.askingTurnId === owner.turnId)
+              );
             return owed(ask);
           })
           .sort((a, b) => a.id.localeCompare(b.id));

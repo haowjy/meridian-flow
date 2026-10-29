@@ -136,6 +136,40 @@ else
       }
     });
 
+    it("spares the pending question of an execution Stop did not cancel", async () => {
+      const executionId = crypto.randomUUID();
+      const turn = await repos.turns.create({
+        threadId: ids.caller,
+        prevTurnId: ids.callerTurn,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+        executionId,
+      });
+      const ask = await repos.asks.create({
+        threadId: ids.caller,
+        askingTurnId: turn.id,
+        executionId,
+        toolCallId: "ask-spared",
+        kind: "question",
+        payload: { question: "Which?", options: [{ label: "A" }, { label: "B" }] },
+        deadlineAt: null,
+        status: "pending",
+        resolution: null,
+        submissionId: null,
+      });
+      const stop = (execution: string | null) =>
+        lineage.cancel(ids.caller, async () => ({
+          result: null,
+          reach: { kind: "chat" as const },
+          execution,
+        }));
+      await stop(null);
+      expect(await repos.asks.findById(ask.id)).toMatchObject({ status: "pending" });
+      await stop(executionId);
+      expect(await repos.asks.findById(ask.id)).toMatchObject({ status: "cancelled" });
+    });
+
     it("drops a stopped child's queued messages and fences the run that sent them", async () => {
       const caller = await runClaim.startExecution(ids.caller, crypto.randomUUID(), async () => {});
       if (!caller) throw new Error("caller claim was not taken");

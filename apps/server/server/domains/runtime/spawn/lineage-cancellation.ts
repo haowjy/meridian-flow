@@ -1,9 +1,9 @@
 /**
  * Lineage cancellation as one durable command. In one transaction it takes the owner's thread
  * lock, lets the trigger decide, then takes each target's lock parents first and claims the
- * lineage's asks (open questions and owed continuations become `cancelled`). It then drops the
- * stopped threads' queued machine work, flags the live runs, stamps the machine-wake fence on every
- * thread it stopped, withdraws the targets' parent notices and settles their spawn status. The
+ * lineage's asks (open questions, the cancelled execution's pending one and owed continuations
+ * become `cancelled`). It then drops the stopped threads' queued machine work, flags the live
+ * runs, stamps the machine-wake fence on every thread it stopped, withdraws the targets' parent notices and settles their spawn status. The
  * fence is what keeps a stopped thread stopped: a message or spawn admission from an execution
  * admitted before it is refused at enqueue (`RunClaim.wakeRefusal`), so local aborts after commit
  * only make runs stop sooner.
@@ -75,7 +75,7 @@ export function createLineageCancellation(deps: {
             owner:
               reach.kind === "terminal"
                 ? null
-                : { threadId, turnId: reach.kind === "turn" ? reach.turnId : null },
+                : { threadId, turnId: reach.kind === "turn" ? reach.turnId : null, execution },
           });
           const claimedIds = new Set(claimed.map(({ ask }) => ask.id));
           const targetSet = new Set<string>(targets);

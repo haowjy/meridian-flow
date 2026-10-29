@@ -48,14 +48,15 @@ export interface AskRepository {
   findLiveByThread(threadId: ThreadId): Promise<StoredAsk | null>;
   /**
    * One lineage cancellation's claim, in one statement: every live ask and owed continuation of
-   * `threadIds`, and of `owner` the live asks (only `turnId`'s, when given) and owed
-   * continuations. Live asks become cancelled; every claimed continuation becomes `cancelled`.
+   * `threadIds`, and of `owner` the open asks (only `turnId`'s, when given), the pending asks of
+   * `execution` (the owner's execution the decision cancelled; a run the decision spared keeps
+   * the question it is asking) and owed continuations. Live asks become cancelled; every claimed continuation becomes `cancelled`.
    * Rows another transaction holds are skipped: it waits on a thread lock the command holds and
    * then sees the cancellation (a flagged run cancels its own ask; a writer's answer wins).
    */
   claimLineage(input: {
     threadIds: readonly ThreadId[];
-    owner: { threadId: ThreadId; turnId: TurnId | null } | null;
+    owner: { threadId: ThreadId; turnId: TurnId | null; execution: string | null } | null;
   }): Promise<ClaimedAsk[]>;
   /** Admits a resolved ask's owed continuation at `turnId` (`done`); null when nothing is owed. */
   admitContinuation(input: { id: string; turnId: TurnId }): Promise<StoredAsk | null>;

@@ -99,9 +99,9 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
       const { owner } = input;
       const owned = owner
         ? sql`(a.thread_id = ${owner.threadId}::uuid AND (
-            (a.status IN ('pending', 'open') AND ${
-              owner.turnId ? sql`a.asking_turn_id = ${owner.turnId}::uuid` : sql`true`
-            })
+            ((a.status = 'open' OR (a.status = 'pending' AND ${
+              owner.execution ? sql`a.execution_id = ${owner.execution}::uuid` : sql`false`
+            })) AND ${owner.turnId ? sql`a.asking_turn_id = ${owner.turnId}::uuid` : sql`true`})
             OR a.continuation = 'pending'
           ))`
         : sql`false`;
