@@ -695,6 +695,7 @@ else
         contextWindow: 100_000,
         maxOutputTokens: 4_096,
         promptCache: { kind: "explicit" as const, ttlMs: 60_000 },
+        reasoning: { efforts: ["low", "medium", "high", "max"] },
         capabilities: new Set(),
       };
       const summaryRequests: import("../../runtime/gateway/index.js").GenerateRequest[] = [];

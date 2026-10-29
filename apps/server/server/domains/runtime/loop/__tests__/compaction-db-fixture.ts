@@ -80,6 +80,7 @@ export function createCompactionFixture(db: Database) {
             contextWindow: 128000,
             maxOutputTokens: 100,
             promptCache: { kind: "automatic", ttlMs: 60000 },
+            reasoning: { efforts: ["low", "medium", "high", "max"] },
             capabilities: new Set(["image_input"]),
           },
         ],

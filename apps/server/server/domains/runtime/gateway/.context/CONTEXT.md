@@ -12,9 +12,14 @@ prefix.
 
 ## Port and attempt policy
 
-`Gateway.stream()` yields canonical `StreamEvent`s; `generate()` and optional
-`listModels()` complete the port; a cancelled call is settled by the
-`settleCancelledResult()` function in `domain/cancel-settlement.ts`. A registry maps
+`Gateway.stream()` yields canonical `StreamEvent`s; `generate()` and `listModels()`
+complete the port; the orchestrator persists a cancelled call's result when
+`shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable usage.
+Where the routed model is known, `attempt-stream.ts` calls `resolveCall()`
+(`domain/resolve-call.ts`) once and hands the adapter a `ResolvedCall`:
+`{ cacheTtlMs, longCacheWrites, reasoning: "default" | "off" | { effort } }`. Adapters
+only map it to wire fields and reject at construction (`assertCacheTtlsOnWire`) a model
+whose cache lifetimes they cannot send. A registry maps
 model IDs to provider adapters and is the single source for model context,
 pricing, cache descriptor, and required tokenizer family. Duplicate model IDs
 warn during construction rather than silently replacing an entry. Registry model
@@ -84,17 +89,17 @@ provider advertisement is not argument authority.
 
 Each model declares `promptCache: { kind, ttlMs, longTtlMs? }`: `ttlMs` is the
 short lifetime, `longTtlMs` the longer one the model offers (Claude 1h; GPT-5.6+ 12h,
-the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl` via
-`openaiCacheTtlWire`; the 30m default is never sent). When a provider omits the
+the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl` by the
+OpenAI adapter; the 30m default is never sent). When a provider omits the
 cache-write split by lifetime, the adapters attribute all writes to the lifetime the
-request asked for (`requestsLongCacheWrites`). DeepSeek and Gemini cache
+request asked for (`ResolvedCall.longCacheWrites`). DeepSeek and Gemini cache
 automatically with an assumed 5-minute `ttlMs`.
 `GenerateRequest.promptCacheRetention` is required and picks one
 (`resolvePromptCacheTtlMs`): the loop asks `long` for primary threads and `short`
 for subagents, fixed by thread kind so the cached prefix never varies mid-thread;
-the rolling summarizer passes `short` explicitly. `validateModelRegistry` requires
-`longTtlMs > ttlMs`; an OpenAI model with a `longTtlMs` must be 30m/12h, and an
-explicit Anthropic-adapter model 5m/1h.
+the rolling summarizer passes `short` explicitly. `validateModelRegistry` (adapter-neutral)
+requires `longTtlMs > ttlMs`; the OpenAI adapter requires 30m/12h when a model has a
+`longTtlMs`, and the Anthropic adapter 5m/1h for explicit models, both when a gateway is created.
 Explicit descriptors produce provider cache marks; automatic models receive no
 marks and `none` models predict cold. DeepSeek is automatic with no TTL choice: its
 descriptor holds one assumed 5-minute `ttlMs` for both chat kinds. A nullable TTL
@@ -112,17 +117,21 @@ input exceeds it (OpenAI GPT-5.6+: whole request at 2x input and cache, 1.5x out
 above 272K). Registry rates are pinned at standard prices; Gemini 4 Argon's intro
 discount ends 2026-11-30 and the registry has no effective dates.
 
-Gemini 4 Argon uses the `openai-compatible` adapter against Google's OpenAI endpoint;
-an explicit effort goes out as `reasoning_effort` (Google maps it to `thinking_level`),
-while `adaptive` and `disabled` send nothing. The Anthropic adapter (Claude and DeepSeek)
-sends it as `output_config.effort`. Each mapper lowers the effort to the registry
-row's `maxReasoningEffort` (absent means `max`): Gemini's row says `high`; the GPT and
-Claude rows accept every Flow level, so `max` goes out as `max`. Claude Opus 5.5, Sonnet 5.5
-and Fable 5.1 think adaptively and cannot disable it: `thinking: disabled` and
-`budget_tokens` are a 400 on them, DeepSeek ignores `budget_tokens`, so no registered model
-gets a thinking budget and `adaptive`/`disabled` send no `thinking` field. (On DeepSeek
-that means the summarizer's `disabled` still thinks; `thinking: {type: "disabled"}` would
-turn it off.)
+Each model row's `reasoning: { efforts, canDisable? }` is copied from models.dev
+`reasoning_options` (minus `xhigh`, which Flow never requests): `canDisable` is a
+`toggle` option or a `none` effort. `resolveReasoning()` turns the request into
+`default` (absent or `adaptive`: send no effort, on every adapter), `off` (`disabled`,
+only when the model `canDisable`; otherwise the lowest supported effort), or the nearest
+supported effort (a tie goes up: DeepSeek has no `medium`, so `medium` becomes `high`).
+Wire mapping: the Anthropic adapter (Claude and DeepSeek) sends an effort as
+`output_config.effort` and `off` as `thinking: {type: "disabled"}`; the OpenAI Responses
+adapter sends `reasoning.effort` (`none` for `off`) with `summary: "auto"`; the
+`openai-compatible` adapter (Gemini 4 Argon, Google maps `reasoning_effort` to
+`thinking_level`) sends `reasoning_effort`. Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 have
+no toggle, so they never resolve to `off`: `thinking: disabled` and `budget_tokens` are a
+400 on them, and no registered model gets a thinking budget. Models that think by default
+(`canDisable`, such as DeepSeek) get an empty thinking block before a replayed `tool_use`
+unless reasoning is `off`.
 
 Every model declares a tokenizer family with no fallback; runtime compaction
 uses it for CJK estimates. Output limits are provider defaults unless a request

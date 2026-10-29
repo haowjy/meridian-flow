@@ -108,7 +108,7 @@ import {
   type GenerateRequest,
   type GenerateResult,
   type Gateway as LlmGateway,
-  settleCancelledResult,
+  shouldPersistCancelledResult,
 } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
@@ -1113,16 +1113,14 @@ async function settleCancelledResponse(input: {
   requestMessageCount: number;
   predictedCacheState: PrefixCacheState;
 }): Promise<Turn> {
-  const settlement = settleCancelledResult(input.result);
-
   let currentTurn = input.currentTurn;
-  if (settlement?.persist) {
+  if (input.result && shouldPersistCancelledResult(input.result)) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
       runInput: input.runInput,
       thread: input.thread,
       currentTurn,
-      result: settlement.result,
+      result: input.result,
       requestMessageCount: input.requestMessageCount,
       predictedCacheState: input.predictedCacheState,
       treeBudget: input.treeBudget,

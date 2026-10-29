@@ -238,7 +238,7 @@ export async function prepareNextTurnContext(
 
   const gatewayParams = agentContext.gatewayParams;
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
-  const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
+  const resolvedModel = input.gateway?.listModels().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,

@@ -11,29 +11,9 @@ import type { JsonObject, PriceSource } from "@meridian/contracts/threads";
 import {
   extractPinnedRates,
   MODEL_REGISTRY,
-  type PinnedModelRate,
+  type ModelTokenRate,
 } from "../gateway/config/registry.js";
 import { readMeteringStatus } from "../gateway/domain/metering.js";
-
-export interface ModelTokenRate {
-  provider: string;
-  model: string;
-  /** USD per 1,000,000 uncached input tokens. */
-  inputUsdPerMillionTokens: string;
-  /** USD per 1,000,000 cache-read input tokens, when the provider reports them separately. */
-  cachedInputUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 cache-write input tokens (the short-TTL rate for providers that split by TTL). */
-  cacheWriteUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 long-TTL cache-write tokens (Anthropic 1h, OpenAI 12h); only for providers that report writes by TTL. */
-  cacheWriteLongUsdPerMillionTokens?: string;
-  /** USD per 1,000,000 output tokens, including reasoning tokens counted in output. */
-  outputUsdPerMillionTokens: string;
-  /** Input size above which the provider reprices the whole request by `aboveTierMultipliers`. */
-  inputTierTokens?: number;
-  /** Whole-request multipliers: `input` scales every input-side rate (cache included), `output` the output rate. */
-  aboveTierMultipliers?: { input: number; output: number };
-  source: string;
-}
 
 export type ModelTokenRateLayer = "pinned" | "override";
 
@@ -90,21 +70,6 @@ function rateKey(provider: string, model: string): string {
   return `${provider.toLowerCase()}::${model.toLowerCase()}`;
 }
 
-function pinnedModelRateToTokenRate(rate: PinnedModelRate): ModelTokenRate {
-  return {
-    provider: rate.provider,
-    model: rate.model,
-    inputUsdPerMillionTokens: rate.inputUsdPerMillionTokens,
-    cachedInputUsdPerMillionTokens: rate.cachedInputUsdPerMillionTokens,
-    cacheWriteUsdPerMillionTokens: rate.cacheWriteUsdPerMillionTokens,
-    cacheWriteLongUsdPerMillionTokens: rate.cacheWriteLongUsdPerMillionTokens,
-    outputUsdPerMillionTokens: rate.outputUsdPerMillionTokens,
-    inputTierTokens: rate.inputTierTokens,
-    aboveTierMultipliers: rate.aboveTierMultipliers,
-    source: rate.source,
-  };
-}
-
 function indexRates(
   rates: readonly ModelTokenRate[],
   sourceLayer: ModelTokenRateLayer,
@@ -130,7 +95,7 @@ export function createLayeredTokenRateSource(
 
 export function createDefaultModelTokenRateSource(): ModelTokenRateSource {
   return createLayeredTokenRateSource({
-    pinnedRates: extractPinnedRates(MODEL_REGISTRY).map(pinnedModelRateToTokenRate),
+    pinnedRates: extractPinnedRates(MODEL_REGISTRY),
     overrideRates: MOCK_FIXTURE_TOKEN_RATES,
   });
 }

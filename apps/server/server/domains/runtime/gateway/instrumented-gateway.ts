@@ -325,15 +325,14 @@ export function createInstrumentedGateway(
       }
     },
 
+    listModels() {
+      return gateway.listModels();
+    },
+
     getDefaultModel() {
       return gateway.getDefaultModel();
     },
   };
-
-  const listModels = gateway.listModels;
-  if (listModels) {
-    instrumented.listModels = () => listModels.call(gateway);
-  }
 
   return instrumented;
 }

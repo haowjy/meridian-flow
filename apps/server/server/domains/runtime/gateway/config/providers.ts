@@ -22,10 +22,8 @@ export interface GatewayEnvInput {
   /** With `APP_ENV`, tells production (refuses LIVE_TEST_MODEL) from staging (allows it). */
   NODE_ENV?: string;
   APP_ENV?: string;
-  FLOW_ANTHROPIC_API_KEY?: string;
-  FLOW_OPENAI_API_KEY?: string;
-  FLOW_DEEPSEEK_API_KEY?: string;
-  FLOW_GEMINI_API_KEY?: string;
+  /** Each registry provider's `apiKeyEnv`. */
+  [providerApiKeyEnv: string]: string | number | undefined;
 }
 
 /** Parse an env override to a millisecond count. Unset, empty, or NaN yields undefined. */
@@ -44,6 +42,7 @@ const MOCK_MODEL: ModelInfo = {
   contextWindow: 128_000,
   maxOutputTokens: 4096,
   promptCache: { kind: "none", ttlMs: null },
+  reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };
 
@@ -63,12 +62,7 @@ export function buildProviderConfigs(
     return { providers: [], defaultModel: undefined };
   }
 
-  return buildFromRegistry(MODEL_REGISTRY, {
-    FLOW_ANTHROPIC_API_KEY: env.FLOW_ANTHROPIC_API_KEY,
-    FLOW_OPENAI_API_KEY: env.FLOW_OPENAI_API_KEY,
-    FLOW_DEEPSEEK_API_KEY: env.FLOW_DEEPSEEK_API_KEY,
-    FLOW_GEMINI_API_KEY: env.FLOW_GEMINI_API_KEY,
-  });
+  return buildFromRegistry(MODEL_REGISTRY, env);
 }
 
 export function defaultGatewayOptions(

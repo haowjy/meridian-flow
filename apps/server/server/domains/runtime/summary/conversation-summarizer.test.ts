@@ -27,6 +27,7 @@ const threadModel: ModelInfo = {
   contextWindow: 10000,
   maxOutputTokens: 1000,
   promptCache: { kind: "explicit", ttlMs: 3600000 },
+  reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };
 const cheapModel = {

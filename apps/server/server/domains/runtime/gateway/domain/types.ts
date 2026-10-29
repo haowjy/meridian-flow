@@ -59,31 +59,18 @@ export function resolvePromptCacheTtlMs(
   return retention === "long" ? (cache.longTtlMs ?? cache.ttlMs) : cache.ttlMs;
 }
 
-/** Whether a request writes its cache at the model's long lifetime. */
-export function requestsLongCacheWrites(
-  cache: PromptCacheDescriptor,
-  retention: PromptCacheRetention,
-): boolean {
-  return retention === "long" && cache.longTtlMs !== undefined;
-}
-
-/**
- * OpenAI GPT-5.6+ `prompt_cache_options.ttl` for a lifetime. "12h" is the only longer
- * option; the 30m default is sent as no parameter.
- */
-export function openaiCacheTtlWire(ttlMs: number): "12h" | undefined {
-  return ttlMs === 12 * 60 * 60 * 1_000 ? "12h" : undefined;
-}
-
 export const REASONING_EFFORTS = ["low", "medium", "high", "max"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
-/** The requested effort, lowered to the model's ceiling. */
-export function clampReasoningEffort(
-  effort: ReasoningEffort,
-  ceiling: ReasoningEffort = "max",
-): ReasoningEffort {
-  return REASONING_EFFORTS.indexOf(effort) > REASONING_EFFORTS.indexOf(ceiling) ? ceiling : effort;
+/**
+ * A model's reasoning controls, copied from its models.dev `reasoning_options`
+ * (`xhigh`, which Flow never requests, is omitted from `efforts`).
+ */
+export interface ReasoningSupport {
+  /** Effort levels the model accepts. */
+  efforts: readonly ReasoningEffort[];
+  /** Whether reasoning can be turned off: a `toggle` option or a `none` effort. */
+  canDisable?: true;
 }
 
 /**
@@ -92,8 +79,7 @@ export function clampReasoningEffort(
  * definition.
  */
 export interface ModelInfo {
-  /** Highest Flow effort level the model accepts; absent means `max`. Higher requests clamp to it. */
-  maxReasoningEffort?: ReasoningEffort;
+  reasoning: ReasoningSupport;
   /** Whole-request input repricing threshold, if the model has one. */
   inputTierTokens?: number;
   /** Underlying tokenizer family. */

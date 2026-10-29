@@ -171,6 +171,7 @@ describe("frozen prompt provider requests", () => {
       contextWindow: 100_000,
       maxOutputTokens: 4_096,
       promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1_000 },
+      reasoning: { efforts: ["low", "medium", "high", "max"] },
       capabilities: new Set(),
     };
     const tools: Tool[] = [
@@ -301,6 +302,7 @@ describe("frozen prompt provider requests", () => {
       contextWindow: 100_000,
       maxOutputTokens: 4_096,
       promptCache: { kind: "none", ttlMs: null },
+      reasoning: { efforts: ["low", "medium", "high", "max"] },
       capabilities: new Set(["image_input"]),
     };
     const gateway = Object.assign(

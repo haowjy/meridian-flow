@@ -1907,6 +1907,7 @@ else
         contextWindow: 6_000,
         maxOutputTokens: 100,
         promptCache: { kind: "automatic" as const, ttlMs: 60_000 },
+        reasoning: { efforts: ["low", "medium", "high", "max"] as const },
         capabilities: new Set<import("../gateway/index.js").Capability>(),
       };
       rig.deps.gateway.listModels = () => [model];

@@ -13,19 +13,19 @@
  *   text-only messages use the simpler string content format.
  * - `stream_options: { include_usage: true }` is always set so the final
  *   chunk carries cumulative token usage (per OpenAI streaming docs).
- * - Reasoning: an explicit effort goes out as `reasoning_effort`, lowered to the
- *   model's `maxReasoningEffort`. `adaptive` and `disabled` send nothing.
+ * - Reasoning: a resolved effort goes out as `reasoning_effort`; `default` and
+ *   `off` send nothing (the model's default applies).
  * - No prompt-cache marks are sent: the models on this adapter cache automatically.
  */
 import type OpenAI from "openai";
 
-import {
-  type ContentPart,
-  clampReasoningEffort,
-  type GenerateRequest,
-  type Message,
-  type ModelInfo,
-  type Tool,
+import type {
+  ContentPart,
+  GenerateRequest,
+  Message,
+  ModelInfo,
+  ResolvedCall,
+  Tool,
 } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 
@@ -193,18 +193,11 @@ function mapResponseFormat(
   };
 }
 
-/**
- * Explicit effort → `reasoning_effort`, lowered to the model's ceiling (Google's
- * OpenAI endpoint maps it to `thinking_level`: low, medium, high). `adaptive` and
- * `disabled` send nothing and leave the model's default.
- */
+/** The SDK type predates `max`; models whose row allows it accept it. */
 function mapReasoningEffort(
-  reasoning: GenerateRequest["reasoning"],
-  model: ModelInfo,
+  reasoning: ResolvedCall["reasoning"],
 ): OpenAI.Chat.Completions.ChatCompletionCreateParams["reasoning_effort"] {
-  if (typeof reasoning !== "object") return undefined;
-  // The SDK type predates `max`; models whose row allows it accept it.
-  return clampReasoningEffort(reasoning.effort, model.maxReasoningEffort) as "high";
+  return typeof reasoning === "object" ? (reasoning.effort as "high") : undefined;
 }
 
 /**
@@ -215,7 +208,8 @@ function mapReasoningEffort(
  */
 export function toOpenAIChatCompletionParams(
   request: GenerateRequest,
-  model: ModelInfo,
+  model: Pick<ModelInfo, "id">,
+  call: ResolvedCall,
 ): OpenAI.Chat.Completions.ChatCompletionCreateParams {
   return {
     model: model.id,
@@ -228,7 +222,7 @@ export function toOpenAIChatCompletionParams(
     temperature: request.temperature,
     top_p: request.topP,
     stop: request.stopSequences,
-    reasoning_effort: mapReasoningEffort(request.reasoning, model),
+    reasoning_effort: mapReasoningEffort(call.reasoning),
     response_format: mapResponseFormat(request.responseFormat),
     stream: true,
     stream_options: { include_usage: true },
