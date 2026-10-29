@@ -317,6 +317,10 @@ export function createAskService(deps: {
    * An allowed action that stops threads (a Work delete) takes their lineage owners' locks
    * before the asking thread's, or it deadlocks with a concurrent stop of the same threads.
    * The asking thread locks in the same pass, so its own lock below is a re-entry.
+   *
+   * The ask row locks first, before any thread lock. When an earlier owner's lock comes first,
+   * the asking thread's lock skips its held asks, and a Stop of the asking thread may hold this
+   * row while it waits for that thread's lock: the claim would wait on it under the lock.
    */
   async function lockAhead(input: {
     askId: string;
@@ -325,8 +329,9 @@ export function createAskService(deps: {
   }) {
     if (input.resolution.kind !== "allow" && input.resolution.kind !== "allow_always") return;
     const ask = await deps.repos.asks.findById(input.askId);
-    if (ask?.permissionCommand && ask.threadId === input.threadId)
-      await deps.permission.lockAhead({ threadId: input.threadId, command: ask.permissionCommand });
+    if (!ask?.permissionCommand || ask.threadId !== input.threadId) return;
+    await deps.repos.asks.findLiveByTurnForUpdate(ask.askingTurnId);
+    await deps.permission.lockAhead({ threadId: input.threadId, command: ask.permissionCommand });
   }
 
   async function resolve(input: {
@@ -338,7 +343,8 @@ export function createAskService(deps: {
   }): Promise<AskAnswerResult> {
     return deps.repos.transaction(async () => {
       await lockAhead(input);
-      // The thread lock takes its held ask rows, this one included, before its own lock.
+      // The thread lock takes its held ask rows, this one included, before its own lock; an
+      // Allow that took other threads' locks first locked this row in `lockAhead`.
       return deps.delivery.withThreadLock(input.threadId, async (producer) => {
         const claimed = await claim(input);
         if (claimed.kind === "finished") return claimed.result;

@@ -298,6 +298,22 @@ exercise these cases:
    change, so it wasn't done.” A parent's `thread send --mock` script does not
    reach the child it spawns: queue the child's script separately with
    `./mf mock script … --match "<text from the child's prompt>"`.
+10. **Allow-delete races.** Put two chats in one Work and have the one with the
+    higher id ask to delete it. `psql` stands in for the other side. A thread's lock
+    is `pg_advisory_xact_lock(hashtextextended('meridian:thread-lock:<chat id>', 82))`.
+    Answers need a local `--decision allow` patch to `./mf thread answer`. Never
+    commit that patch.
+    - **Stop.** In psql, `BEGIN` and lock the ask row (`SELECT … FROM asks WHERE id=…
+      FOR UPDATE`), then Allow. Then take the asking chat's lock in psql. PASS: psql
+      gets the lock and no `deadlock detected` appears. The answer then deletes the
+      Work.
+    - **Writer delete.** In psql, hold the lower chat's lock. Queue the Allow and
+      `./mf api DELETE /api/works/<id>` behind it in either order, then commit. PASS:
+      when the answer is first, it deletes the Work (`allow`, continuation
+      `cancelled`). When the delete is first, the ask is `cancelled`/`cancelled` and
+      the answer gets `not_open`, as in a question's step 12 under "Subagents and
+      Stop". Either way the chat has no undelivered inbox row and `wake.failed` stays
+      empty.
 
 In the browser, confirm permission takeovers have only Deny, Allow always, and
 Allow; no text field or countdown appears. Repeat a failed send and a stale

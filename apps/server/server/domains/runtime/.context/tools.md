@@ -84,20 +84,28 @@ project-and-action grant, even when the action was refused. Base deny still wins
 No current action maps to `ask`.
 
 An Allow that deletes a Work runs the delete's lineage cancellation inside the
-answer, which by then holds the asking chat's thread lock (and, through it, the ask
-row). So before that lock, the answer takes the lineage owners' locks of the Work
-tree and the asking chat together, in id order, the order a delete's `stopThreads`
-takes them (`PermissionExecutor.lockAhead`, the run sessions' `lockThreads`,
-`lineage.lock`). Its own thread lock is then a re-entry, and the delete's
-cancellations take the targets as any delete does. Without that, a writer's
-concurrent delete of the same Work, holding an earlier chat's lock and waiting on
-the asking chat's, deadlocks with it; and when the asking chat sits outside the
-deleted Work, two Allows that each delete the other's Work would lock in opposite
-orders. A loser of the first lock holds nothing while it waits, and when it gets the
-locks its claim finds the ask already cancelled or answered. When the deleted Work
-holds the asking chat, the cancellation also cancels that ask's continuation, so the
-answer writes no `ask_resolved` hint: a hint on a deleted chat would fail every wake
-sweep.
+answer, which by then holds the asking chat's thread lock. So the answer first locks
+its ask row, then takes the lineage owners' locks of the Work tree and the asking
+chat together, in id order, the order a delete's `stopThreads` takes them
+(`PermissionExecutor.lockAhead`, the run sessions' `lockThreads`, `lineage.lock`).
+Its own thread lock is then a re-entry, and the delete's cancellations take the
+targets as any delete does.
+
+- **Owner locks in id order.** A writer's concurrent delete of the same Work holds an
+  earlier chat's lock and then takes the asking chat's; an answer that took the asking
+  chat's lock first would deadlock with it. When the asking chat sits outside the
+  deleted Work, two Allows that each delete the other's Work would lock in opposite
+  orders.
+- **The ask row before any thread lock.** When an earlier chat's lock comes first, the
+  asking chat's lock skips asks another transaction holds. A Stop of the asking chat
+  can hold the row while it waits for the lock the answer then holds, so a claim that
+  waited on the row would deadlock.
+- **Who wins.** A transaction queued ahead of the answer skips the row the answer
+  holds. If that was a writer's delete, the answer's claim finds the chat deleted and
+  cancels the ask as the delete would have; a Stop or answer queued on the row finds
+  the ask settled. When the answer's own delete holds the asking chat, it cancels that
+  ask's continuation, so the answer writes no `ask_resolved` hint: a hint on a deleted
+  chat would fail every wake sweep.
 
 ## Document and cost boundaries
 
