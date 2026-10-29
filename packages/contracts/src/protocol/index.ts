@@ -20,6 +20,7 @@ export {
   meridianErrorFromTool,
   meridianErrorFromWsBoundary,
   sharedErrorInterrupt,
+  TOOL_EXCEPTION_CODE,
   wsErrorInterruptPayload,
 } from "../errors/index.js";
 export { blockContentRecord } from "../threads/block-content-record.js";

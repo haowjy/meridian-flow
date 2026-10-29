@@ -13,6 +13,7 @@ import { latestRowAt } from "../loop/latest-row.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
 import {
   type InboxWorkSelection,
+  isAskResolved,
   next,
   prefixRows,
   type WriteModeSwitchMessage,
@@ -21,7 +22,11 @@ import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop
 import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
 import { hasReferenceEvidence } from "../loop/reference-context.js";
-import { NoPendingWakeError, ReplyRetryUnavailableError } from "../loop/run-turn-port.js";
+import {
+  NoPendingWakeError,
+  ReplyRetryUnavailableError,
+  WakeRefusedError,
+} from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -45,7 +50,7 @@ export function createDeliveryAdapter(
     handBacks?: HandBackStore;
     runClaim: Pick<
       RunClaim,
-      "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder"
+      "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder" | "wakeRefusal"
     >;
     workContext: import("../loop/work-context.js").WorkContextReader;
     notices: NoticePort;
@@ -116,9 +121,7 @@ export function createDeliveryAdapter(
     const pendingBatch = await inbox.selectPending(threadId);
     const projection = await inbox.readPendingProjection(threadId);
     const boundIds = new Set(projection.run?.messageIds ?? []);
-    const continuation = pendingBatch.find(
-      (row) => row.intent === "control" && row.body.kind === "ask_resolved",
-    );
+    const continuation = pendingBatch.find(isAskResolved);
     const openAsk = continuation ? null : await deps.repos.asks.findOpenByThread(threadId);
     return {
       pendingBatch,
@@ -208,7 +211,12 @@ export function createDeliveryAdapter(
       return result;
     }
   }
-  const enqueue = async (draft: MessageDraft) => {
+  // Every caller holds the receiver's thread lock, which the fence's stamp takes too.
+  const enqueue = async ({ sender, ...draft }: MessageDraft) => {
+    if (sender) {
+      const refusal = await deps.runClaim.wakeRefusal({ sender, receiver: draft.threadId });
+      if (refusal) throw new WakeRefusedError(refusal, draft.threadId);
+    }
     const message = await inbox.enqueue(draft);
     if (draft.intent === "message" || draft.intent === "control")
       schedulePostCommit(() => deps.runStarter.start(draft.threadId));
@@ -832,9 +840,14 @@ export function createDeliveryAdapter(
             throw new DOMException("The operation was aborted", "AbortError");
         },
         prepare: (selection) => prepare(selection),
-        hasPreparationFailure: (prepared) => !prepared || prepared.preparationFailure !== undefined,
+        hasPreparationFailure: (prepared) =>
+          !prepared || "retire" in prepared || prepared.preparationFailure !== undefined,
         commit: async (_selection, work, prepared) => {
           if (!prepared) return null;
+          if ("retire" in prepared) {
+            await ack(lease.threadId, [...prepared.retire]);
+            return null;
+          }
           await prepared.persist?.();
           await ack(lease.threadId, work.ids);
           await ack(lease.threadId, prepared.completedControlIds ?? []);

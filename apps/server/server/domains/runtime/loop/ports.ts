@@ -32,9 +32,12 @@ export type { ThreadPhase, ThreadStatus };
 /** A named fragment of model-visible context carried by a `context` body. */
 export type ContextPart = { source: string; text: string };
 
+/** The wake hint of a resolved ask: the run it starts continues that ask. */
+export type AskResolvedBody = { kind: "ask_resolved"; askId: string };
+
 export type MessageBody =
   | ControlBody
-  | { kind: "ask_resolved"; askId: string }
+  | AskResolvedBody
   | { kind: "text"; text: string }
   | { kind: "context"; parts: ContextPart[] }
   | { kind: "work_context_refresh" };
@@ -51,9 +54,15 @@ export interface MessageDraft {
    * re-persist. Controls use their client-minted id; other producers let storage mint one.
    */
   id?: string;
+  /**
+   * The execution that sends a machine message (a `thread_message`, a child's admission). The
+   * enqueue refuses it under the receiver's lock when the fence says so (`RunClaim.wakeRefusal`);
+   * it is not stored.
+   */
+  sender?: { threadId: ThreadId; executionId: ExecutionId };
 }
 
-export interface InboxMessage extends MessageDraft {
+export interface InboxMessage extends Omit<MessageDraft, "sender"> {
   id: string;
   seq: number;
   enqueuedAt: string;
@@ -85,6 +94,8 @@ export interface HeldRunClaim {
   release(): Promise<void>;
   onLost(listener: () => void): () => void;
 }
+
+export type WakeRefusal = "sender_stopped" | "receiver_stopped";
 
 export interface RunClaim {
   /** Takes the shared run mutex without publishing a run lease. */
@@ -128,6 +139,24 @@ export interface RunClaim {
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
   /** Stop the live run that has bound this turn, matching membership under the lease row lock. */
   cancelExecution(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  /**
+   * Flags whatever live run each thread holds as cancelled, in any process: its
+   * heartbeat and batch adoption honour the flag. Lineage cancellation's durable half.
+   */
+  requestCancel(threadIds: readonly ThreadId[]): Promise<void>;
+  /** Stamps the machine-wake fence on threads a lineage cancellation stopped (see `wakeRefusal`). */
+  fenceWakes(threadIds: readonly ThreadId[]): Promise<void>;
+  /**
+   * Whether a machine wake one execution sends (a message, a child's admission, a spawn) is
+   * refused: `sender_stopped` when that execution no longer holds its lease or was cancelled,
+   * `receiver_stopped` when the receiver was fenced after the execution was admitted. Writer
+   * actions never ask. Call under the receiver's thread lock, which the fence takes too; the
+   * delivery enqueue does, for every draft that names its `sender`.
+   */
+  wakeRefusal(input: {
+    sender: { threadId: ThreadId; executionId: ExecutionId };
+    receiver: ThreadId | null;
+  }): Promise<WakeRefusal | null>;
   /** See `ThreadStatusReader.readOpenExecutionId`. */
   readOpenExecutionId(threadId: ThreadId): Promise<ExecutionId | null>;
   /** Threads whose lease row expired: stale executions for the repair lane to settle. */

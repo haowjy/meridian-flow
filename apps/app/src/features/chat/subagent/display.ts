@@ -3,8 +3,7 @@
 import { createElement, useSyncExternalStore } from "react";
 import { i18n } from "@/lib/i18n";
 import { liveToolActivityLabel } from "../command-descriptor";
-
-export type SubagentVisualStatus = "running" | "done" | "stopped" | "unknown";
+import type { SubagentRunStatus } from "./run-model";
 
 /** The agent's name leads every subagent surface; the run's task name follows it. */
 type SubagentIdentity = { agentName?: string | null; title?: string | null };
@@ -19,10 +18,10 @@ export function subagentMarkName(agentName?: string | null): string {
   return name && name !== "Subagent" ? name : i18n._("Subagent");
 }
 
-export function subagentStatus(outcome: unknown, running = false): SubagentVisualStatus {
+export function subagentStatus(outcome: unknown, running = false): SubagentRunStatus {
   if (running) return "running";
   if (outcome === "succeeded") return "done";
-  if (outcome === "failed" || outcome === "cancelled") return "stopped";
+  if (outcome === "failed" || outcome === "cancelled") return outcome;
   return "unknown";
 }
 

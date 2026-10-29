@@ -51,6 +51,8 @@ function stubOrchestrator(
   records: RecordedTurn[],
   repos: ReturnType<typeof createInMemoryRepositories>,
   authority = createInMemoryRunClaim(),
+  /** The run session publishes each report as its run ends. */
+  publish: (threadId: ThreadId, executionTurnId: TurnId) => Promise<unknown> = async () => {},
 ): RunTurnPort {
   let counter = 0;
   return {
@@ -124,6 +126,7 @@ function stubOrchestrator(
             await repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: "succeeded" });
           }
           await authority.release(lease);
+          await publish(input.threadId, assistantTurnId);
           return { status: "complete", turn: assistant };
         },
       };
@@ -248,7 +251,12 @@ async function fixture(
     );
   const inbox = createInMemoryInbox();
   const runStarter = createInMemoryRunStarter();
+  let publisher!: ReturnType<typeof createReportPublisher>;
+  const reports = {
+    publish: (threadId: ThreadId, execution: TurnId) => publisher.publish(threadId, execution),
+  };
   const runtimeHarness = createRuntimeHarness({
+    reports,
     repos,
     eventWriter,
     agentRevisions: revisions,
@@ -260,7 +268,7 @@ async function fixture(
     schedulePostCommit: (task) => task(),
   });
   const delivery = runtimeHarness.delivery;
-  const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
+  publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
 
   const driver = createChildRunDriver({
     backgroundTasks: runtimeHarness.backgroundTasks,
@@ -270,16 +278,17 @@ async function fixture(
         : (options.orchestrator ??
           (options.realRuntime
             ? runtimeHarness.orchestrator
-            : stubOrchestrator(turns, repos, runClaim))),
+            : stubOrchestrator(turns, repos, runClaim, reports.publish))),
     repos: { executionReports: repos.executionReports },
     eventWriter,
     readActivity,
-    publisher,
     eventSink,
   });
   const coreCoordinator = createChildRunCoordinator({
     driver,
     delivery,
+    // These cases are about selection and cards; the fence has its own DB test.
+    wakes: { wakeRefusal: async () => null },
     repos: {
       threads: repos.threads,
       turns: repos.turns,
@@ -404,6 +413,7 @@ describe("ChildRunCoordinator spawn selection", () => {
         kind: "spawn",
         parentThread: { ...parent, spawnDepth: 3 },
         parentTurnId: "turn-1" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "",
         prompt,
         budget,
@@ -419,6 +429,7 @@ describe("ChildRunCoordinator spawn selection", () => {
         kind: "spawn",
         parentThread: { ...parent, spawnDepth: 2 },
         parentTurnId: "turn-1" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "",
         prompt,
         budget,
@@ -435,6 +446,7 @@ describe("ChildRunCoordinator spawn selection", () => {
         kind: "spawn",
         parentThread: parent,
         parentTurnId: "turn-1" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "",
         prompt,
         budget,
@@ -453,6 +465,7 @@ describe("ChildRunCoordinator spawn selection", () => {
         kind: "spawn",
         parentThread: parent,
         parentTurnId: "turn-1" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "hidden",
         prompt,
         budget,
@@ -490,6 +503,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
           kind: "spawn",
           parentThread: restrictedParent,
           parentTurnId: "turn-1" as TurnId,
+          parentExecutionId: "parent-execution",
           agentSlug: "critic",
           prompt,
           ...(overrides ? { overrides } : {}),
@@ -524,6 +538,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
           kind: "spawn",
           parentThread,
           parentTurnId: "turn-1" as TurnId,
+          parentExecutionId: "parent-execution",
           agentSlug,
           prompt,
           overrides: { permission },
@@ -585,6 +600,7 @@ describe("ChildRunCoordinator thread_message", () => {
         kind: "spawn",
         parentThread: parent,
         parentTurnId: "turn-1" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "",
         prompt,
         budget,
@@ -602,6 +618,7 @@ describe("ChildRunCoordinator thread_message", () => {
         kind: "message",
         parentThread: parent,
         parentTurnId: "turn-2" as TurnId,
+        parentExecutionId: "parent-execution",
         ref: childHandle,
         prompt: "first follow-up",
         toolCallId: "call-first",
@@ -614,6 +631,7 @@ describe("ChildRunCoordinator thread_message", () => {
         kind: "message",
         parentThread: parent,
         parentTurnId: "turn-3" as TurnId,
+        parentExecutionId: "parent-execution",
         ref: childHandle,
         prompt: "second follow-up",
         toolCallId: "call-second",
@@ -692,6 +710,7 @@ describe("ChildRunCoordinator thread_message", () => {
           kind: "spawn",
           parentThread: parent,
           parentTurnId: "turn-1" as TurnId,
+          parentExecutionId: "parent-execution",
           prompt,
           budget,
         },
@@ -749,6 +768,7 @@ describe("ChildRunCoordinator thread_message", () => {
           kind: "spawn",
           parentThread: parent,
           parentTurnId: "turn-1" as TurnId,
+          parentExecutionId: "parent-execution",
           agentSlug: "",
           prompt,
           budget,
@@ -787,6 +807,7 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
         kind: "spawn",
         parentThread: parent,
         parentTurnId: "outer-turn" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "",
         prompt,
         budget,
@@ -804,6 +825,7 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
         kind: "spawn",
         parentThread: nestedParent,
         parentTurnId: "nested-turn" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "",
         prompt,
         budget,
@@ -851,6 +873,7 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
         kind: "spawn",
         parentThread: parent,
         parentTurnId: "turn-1" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "",
         prompt,
         budget,
@@ -899,6 +922,7 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
         kind: "spawn",
         parentThread: parent,
         parentTurnId: "turn-1" as TurnId,
+        parentExecutionId: "parent-execution",
         agentSlug: "",
         prompt,
         budget,

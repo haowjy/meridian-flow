@@ -1,9 +1,6 @@
 /** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
-import {
-  type JsonValue,
-  meridianErrorFromStructuredToolOutput,
-} from "@meridian/contracts/protocol";
+import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
@@ -606,14 +603,6 @@ function WorkToolTitle({ tool }: { tool: ToolView }) {
   return <span className="block truncate">{toolActivityPhrase(tool).verb}</span>;
 }
 
-/** A failed call's server error message, for tools whose failure has nothing else to open. */
-function errorMessageExpand(tool: ToolView): ToolExpand | null {
-  if (!tool.isError || tool.result == null) return null;
-  const message = meridianErrorFromStructuredToolOutput(tool.result).message;
-  if (!message) return null;
-  return () => <div className="text-compact text-destructive">{message}</div>;
-}
-
 /* ── registry ──────────────────────────────────────────────────────────── */
 
 /** A registered tool whose whole title is its phrase, with no document to name. */
@@ -652,12 +641,10 @@ const RENDERERS: Record<string, ToolRenderer> = {
   },
   work: {
     title: (tool) => <WorkToolTitle tool={tool} />,
-    expand: errorMessageExpand,
   },
   // Only a failed `ask_user` has a row; a question that was asked shows as the takeover and receipt.
-  ask: {
+  ask_user: {
     title: () => t`Couldn't ask a question`,
-    expand: errorMessageExpand,
   },
   thread_message: THREAD_MESSAGE_RENDERER,
   thread_report: THREAD_REPORT_RENDERER,

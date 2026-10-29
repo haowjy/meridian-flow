@@ -605,6 +605,10 @@ msgstr ""
 msgid "A chat is renaming this to {place}."
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "A chat was stopped, so this wasn't sent."
+msgstr "有对话已停止，因此没有发送。"
+
 #: src/features/chat/DeletedChatCard.tsx
 msgid "A chat you had open was deleted."
 msgstr ""
@@ -1940,7 +1944,7 @@ msgstr ""
 
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Couldn't send a message to {line}"
-msgstr ""
+msgstr "无法向 {line} 发送消息"
 
 #: src/features/chat/chat-card-copy.ts
 msgid "Couldn't send now."
@@ -2489,6 +2493,11 @@ msgstr "正在浏览文件夹…"
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
 msgstr ""
+
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/subagent/SubagentMark.tsx
+msgid "Failed"
+msgstr "失败"
 
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
@@ -3526,6 +3535,10 @@ msgstr ""
 msgid "Only on this device"
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "Only one question can wait for an answer at a time, so this one wasn't asked."
+msgstr "一次只能有一个问题等待回答，因此这个问题没有发出。"
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Only part of this change could be reversed."
 msgstr ""
@@ -3672,11 +3685,6 @@ msgstr ""
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr ""
-
-#. placeholder {0}: resolution.text
-#: src/features/chat/ask/AskReceipt.tsx
-msgid "Parent Agent: {0}"
-msgstr "上级代理：{0}"
 
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"
@@ -4447,6 +4455,10 @@ msgstr ""
 msgid "Something went wrong while reading that document."
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "Something went wrong while running this."
+msgstr "运行时出了问题。"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Split cell"
 msgstr ""
@@ -4490,6 +4502,10 @@ msgstr ""
 msgid "Stop"
 msgstr "停止"
 
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Stop \"{name}\""
+msgstr "停止“{name}”"
+
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Stop compaction"
@@ -4519,6 +4535,7 @@ msgstr ""
 msgid "stopped"
 msgstr "已停止"
 
+#: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
@@ -4526,9 +4543,14 @@ msgstr "已取消"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/subagent/useSubagentStop.ts
 #: src/features/chat/useChatStop.ts
 msgid "Stopping"
 msgstr ""
+
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Stopping \"{name}\""
+msgstr "正在停止“{name}”"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Stopping compaction"
@@ -4829,6 +4851,14 @@ msgstr "某个对话中的 AI 删除了这份文档。"
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
 msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "The assistant called this tool with arguments it couldn't use."
+msgstr "助手调用这个工具时给出了无法使用的参数。"
+
+#: src/features/chat/tool-failure.tsx
+msgid "The assistant can't use this tool here."
+msgstr "助手在这里无法使用这个工具。"
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
@@ -5266,6 +5296,10 @@ msgstr ""
 msgid "This switch already happened."
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "This took too long, so it was stopped."
+msgstr "耗时太久，已停止。"
+
 #: src/features/editor/SchemaNotices.tsx
 msgid "This version of Meridian can't display it."
 msgstr ""
@@ -5335,6 +5369,7 @@ msgid "Trash"
 msgstr ""
 
 #: src/features/chat/ChatCards.tsx
+#: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"

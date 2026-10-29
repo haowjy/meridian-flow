@@ -78,6 +78,7 @@ export interface ToolExecutionContext {
   threadMessage?: ThreadMessageToolHandlerContext["threadMessage"];
   threadReport?: ThreadReportToolHandlerContext["threadReport"];
   returnResult?: ReturnResultToolHandlerContext["returnResult"];
+  request?: RequestToolHandlerContext["request"];
   /** The run's observation-frontier lookups, for tools that show documents. */
   frontiers?: FrontierLookups;
 }
@@ -197,6 +198,16 @@ export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
 }
 
 /**
+ * Opens a durable ask for this call. `deferred` settles the execution on it, and its answer
+ * writes this call's result; `refused` is the call's result (one request per batch).
+ */
+export interface RequestToolHandlerContext extends ToolHandlerContext {
+  request(
+    request: import("../asks/ask-service.js").AskRequest,
+  ): Promise<import("../asks/ask-service.js").AskRequestOutcome>;
+}
+
+/**
  * The core tool-handler type signature.
  *
  * When the registration declares `input`, the executor has already parsed the
@@ -276,12 +287,13 @@ export interface ToolRegistration {
           | ToolHandler<SpawnToolHandlerContext>
           | ToolHandler<ThreadMessageToolHandlerContext>
           | ToolHandler<ThreadReportToolHandlerContext>
-          | ToolHandler<ReturnResultToolHandlerContext>;
+          | ToolHandler<ReturnResultToolHandlerContext>
+          | ToolHandler<RequestToolHandlerContext>;
       }
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
-  capability?: "spawn" | "thread_message" | "thread_report" | "return_result";
+  capability?: "spawn" | "thread_message" | "thread_report" | "return_result" | "request";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
   /**

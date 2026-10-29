@@ -47,8 +47,24 @@ executor calls do not silently reapply it; callers must choose the policy seam.
 The answer's tool result is written onto the asking turn before an internal
 continuation starts through ordinary request assembly. The tool and the Mars
 capability share one name. The action policy retains `ask` for future
-actions, but no current action maps to it. Children temporarily do not receive
-the Flow tool; the subagent-question change removes that exclusion.
+actions, but no current action maps to it. Subagents never get `ask_user`
+(`projectToolPolicy`): a child does its task with reasonable calls, or stops and
+says in its report what is missing (`SUBAGENT_GUIDANCE`). The parent carries on
+from the report: it does the work itself, sends the child what it needs, or asks
+the writer with its own `ask_user` (the spawn description says so).
+
+A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
+the ask service's one creation call (`AskService.request`) opens the ask the
+request names and returns the deferred disposition, which settles the execution.
+The batch rule keys on that disposition, not on the tool: the first request in a
+provider batch defers it, and a later one (`one_request_at_a_time`) is refused
+as that call's tool result while the reply continues (`loop/tool-dispatch.ts`,
+`RequestBatch`). The app maps that code, `thread_stopped`, `tool_timeout` and
+`tool_arguments_parse` (arguments that were not JSON, read like a schema failure) to its own
+localized sentence on the failed row. A caught exception, in the executor or a handler's own
+catch, carries `TOOL_EXCEPTION_CODE` (`tool_exception`), and the app shows generic copy for it,
+never its message: the message can carry SQL or internal ids. Every other failure, including a
+deliberate refusal without its own code (`tool_error`), shows its message.
 
 ## Document and cost boundaries
 

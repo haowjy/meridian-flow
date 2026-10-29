@@ -29,7 +29,7 @@ type WorkReceiptReversalDeps = {
   threads: Pick<ThreadRepository, "findById">;
   works: WorkRepository;
   workContextNotices: Pick<WorkContextNotices, "workChanged">;
-  stopThreadRun: (threadId: ThreadId) => Promise<void>;
+  stopThreads: (threadIds: readonly ThreadId[]) => Promise<void>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -76,42 +76,35 @@ export async function reverseWorkReceipts(
   if (!context) return [];
   const ordered = orderReceipts(context.receipts, input.direction);
   try {
-    return await runWorkLifecycleCommand(
-      { transaction: deps.transaction, stopThreadRun: deps.stopThreadRun },
-      async () => {
-        await lockReceiptState(deps, ordered);
-        const plan = await planReceipts(deps, ordered, context.thread, input.direction);
-        const applied: WorkReceiptReversal[] = [];
-        const deletedThreadIds = new Set<ThreadId>();
-        for (const step of plan) {
-          if (!step.executable) {
-            applied.push(
-              result(
-                step.receipt,
-                context.thread.projectId,
-                step.command,
-                "unavailable",
-                step.message,
-              ),
-            );
-            continue;
-          }
-          const appliedStep = await applyStep(deps, step.receipt, input.direction);
-          for (const threadId of appliedStep.threadIds) {
-            deletedThreadIds.add(threadId);
-          }
+    return await runWorkLifecycleCommand(deps.transaction, async () => {
+      await lockReceiptState(deps, ordered);
+      const plan = await planReceipts(deps, ordered, context.thread, input.direction);
+      const applied: WorkReceiptReversal[] = [];
+      for (const step of plan) {
+        if (!step.executable) {
           applied.push(
             result(
               step.receipt,
               context.thread.projectId,
               step.command,
-              input.direction === "undo" ? "reversed" : "redone",
+              "unavailable",
+              step.message,
             ),
           );
+          continue;
         }
-        return { value: applied, threadIdsToStop: [...deletedThreadIds] };
-      },
-    );
+        await applyStep(deps, step.receipt, input.direction);
+        applied.push(
+          result(
+            step.receipt,
+            context.thread.projectId,
+            step.command,
+            input.direction === "undo" ? "reversed" : "redone",
+          ),
+        );
+      }
+      return applied;
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
@@ -256,15 +249,14 @@ async function planReceipts(
 }
 
 async function applyStep(
-  deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices">,
+  deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices" | "stopThreads">,
   receipt: WorkReceipt,
   direction: Direction,
-): Promise<{ threadIds: ThreadId[] }> {
+): Promise<void> {
   if (receipt.operation === "create") {
     if (direction === "undo") {
-      return {
-        threadIds: (await deps.works.softDelete(receipt.workId)).threadIds,
-      };
+      // The tree's runs and subagent lineages end in this transaction, before its rows lock.
+      await deps.works.softDelete(receipt.workId, deps.stopThreads);
     } else {
       await deps.works.restore(receipt.workId);
       await deps.workContextNotices.workChanged(receipt.workId);
@@ -273,18 +265,14 @@ async function applyStep(
     const state = direction === "undo" ? receipt.before : receipt.after;
     if (!state) throw new Error("Receipt state is incomplete");
     await applyState(deps, receipt.workId, state);
-    return { threadIds: [] };
   } else if (receipt.operation === "delete") {
     if (direction === "undo") {
       await deps.works.restore(receipt.workId);
       await deps.workContextNotices.workChanged(receipt.workId);
     } else {
-      return {
-        threadIds: (await deps.works.softDelete(receipt.workId)).threadIds,
-      };
+      await deps.works.softDelete(receipt.workId, deps.stopThreads);
     }
   }
-  return { threadIds: [] };
 }
 
 async function applyState(

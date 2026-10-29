@@ -35,6 +35,7 @@ import {
 import { createInMemoryObservationFrontiers } from "../../adapters/in-memory/observation-frontiers.js";
 import { createInMemoryShownLinkStore } from "../../adapters/in-memory/shown-links.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
+import { createAskService } from "../../asks/ask-service.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
@@ -166,6 +167,24 @@ export function createRuntimeHarness(
       async stop() {
         return false;
       },
+    },
+    // No subagent threads: nothing below a run to cancel or publish.
+    lineage: {
+      async cancel(_threadId, decide) {
+        const { result, execution } = await decide();
+        return { result, execution, targets: [] };
+      },
+      async endSubtree() {
+        return [];
+      },
+    },
+    afterCommit: (task) => task(),
+    askRequests: {
+      request: (input) =>
+        createAskService({ repos, eventWriter, delivery: deps.delivery }).request(input),
+    },
+    reports: {
+      async publish() {},
     },
     delivery:
       overrides.delivery ??

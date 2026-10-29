@@ -1,11 +1,12 @@
 /**
- * Durable ask resolution, split into claim, tool-result, and continuation owners.
- * Permission asks extend the typed tool-result plan with savepoint execution;
- * child answers extend the continuation plan with direct admission. Neither
- * path changes the ask-first claim and thread-lock ordering.
+ * Durable ask creation and resolution, split into claim, tool-result, and continuation owners.
+ * A resolution that continues sets the ask's continuation `pending` and writes one
+ * `ask_resolved` inbox row, the wake hint that admission follows. Permission asks extend the
+ * typed tool-result plan with savepoint execution. Every path locks its ask row before the
+ * thread lock.
  */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AskAnswer,
   AskResolution,
@@ -15,7 +16,12 @@ import type {
 } from "@meridian/contracts/threads";
 import { testHook } from "../../../shared/test-hooks.js";
 import { askToolResult, threadAsk } from "../../threads/domain/ask.js";
-import type { LiveEventWriter, StoredAsk, ThreadRepositories } from "../../threads/index.js";
+import type {
+  ClaimedAsk,
+  LiveEventWriter,
+  StoredAsk,
+  ThreadRepositories,
+} from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
@@ -23,6 +29,14 @@ import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-deli
 export type AskAnswerResult =
   | { ok: true; ask: ThreadAsk }
   | { ok: false; code: "ask_not_open" | "invalid_answer"; ask?: ThreadAsk };
+
+/** What a tool call asks the writer for. */
+export type AskRequest = { kind: "question"; payload: QuestionAskPayload };
+
+/** `deferred`: the call's execution settles on the ask, and its answer writes the result. */
+export type AskRequestOutcome =
+  | { kind: "deferred"; askId: string }
+  | { kind: "refused"; refusal: JsonValue };
 
 export type AskToolResultPlan = { kind: "from_resolution" };
 
@@ -32,23 +46,27 @@ export type AskToolResult = {
   isError: boolean;
 };
 
-export type AskContinuationPlan = { kind: "queue" } | { kind: "none" };
-
 export type AskResolutionPlan =
   | {
       kind: "resume";
       toolResult: AskToolResultPlan;
-      continuation: { kind: "queue" };
     }
   | {
       kind: "cancel";
       toolResult: AskToolResultPlan;
-      continuation: { kind: "none" };
     };
 
 type AskClaim = { kind: "claimed"; ask: StoredAsk } | { kind: "finished"; result: AskAnswerResult };
 
 export interface AskService {
+  /** The one way a tool call opens an ask. */
+  request(input: {
+    threadId: ThreadId;
+    askingTurnId: TurnId;
+    executionId: string;
+    toolCallId: string;
+    request: AskRequest;
+  }): Promise<AskRequestOutcome>;
   answer(input: {
     userId: string;
     threadId: ThreadId;
@@ -57,9 +75,11 @@ export interface AskService {
     answer: AskAnswer;
   }): Promise<AskAnswerResult>;
   expireDue(now?: Date, limit?: number): Promise<number>;
-  cancelOpen(threadId: ThreadId, askId: string): Promise<AskAnswerResult>;
-  /** Joins a thread lifecycle transaction; claims the ask before its thread lock. */
-  cancelForThreadLifecycle(threadId: ThreadId): Promise<void>;
+  /**
+   * Records an ask a lineage cancellation claimed: a live one's cancelled tool result, or
+   * an `ask.updated` for an owed continuation it withdrew. Call under the ask's thread lock.
+   */
+  recordCancelled(claimed: ClaimedAsk): Promise<void>;
 }
 
 function questionResolution(
@@ -78,16 +98,8 @@ function questionResolution(
 
 function resolutionPlan(resolution: AskResolution): AskResolutionPlan {
   return resolution.kind === "cancelled"
-    ? {
-        kind: "cancel",
-        toolResult: { kind: "from_resolution" },
-        continuation: { kind: "none" },
-      }
-    : {
-        kind: "resume",
-        toolResult: { kind: "from_resolution" },
-        continuation: { kind: "queue" },
-      };
+    ? { kind: "cancel", toolResult: { kind: "from_resolution" } }
+    : { kind: "resume", toolResult: { kind: "from_resolution" } };
 }
 
 export function createAskService(deps: {
@@ -98,10 +110,9 @@ export function createAskService(deps: {
   async function claim(input: {
     askId: string;
     threadId: ThreadId;
-    status: "answered" | "expired" | "cancelled";
+    status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
-    claimLive?: boolean;
   }): Promise<AskClaim> {
     const existing = await deps.repos.asks.findById(input.askId);
     if (!existing || existing.threadId !== input.threadId)
@@ -113,21 +124,31 @@ export function createAskService(deps: {
     )
       return { kind: "finished", result: { ok: true, ask: threadAsk(existing) } };
 
-    const claimed = input.claimLive
-      ? await deps.repos.asks.resolveLive({
-          id: input.askId,
-          status: "cancelled",
-          resolution: input.resolution,
-          resolvedAt: new Date(),
-        })
-      : await deps.repos.asks.resolveOpen({
-          id: input.askId,
-          status: input.status,
-          resolution: input.resolution,
-          submissionId: input.submissionId,
-          resolvedAt: new Date(),
+    if (await deps.repos.threads.findById(input.threadId)) {
+      const claimed = await deps.repos.asks.resolveOpen({
+        id: input.askId,
+        status: input.status,
+        resolution: input.resolution,
+        submissionId: input.submissionId,
+        resolvedAt: new Date(),
+      });
+      if (claimed) return { kind: "claimed", ask: claimed };
+    } else {
+      // The chat's delete skipped this row because this answer held it: finish that cancellation.
+      const cancelled = await deps.repos.asks.resolveLive({
+        id: input.askId,
+        status: "cancelled",
+        resolution: { kind: "cancelled" },
+        resolvedAt: new Date(),
+      });
+      if (cancelled)
+        await writeToolResult({
+          ask: cancelled,
+          threadId: input.threadId,
+          plan: { kind: "cancel", toolResult: { kind: "from_resolution" } },
+          claimLive: true,
         });
-    if (claimed) return { kind: "claimed", ask: claimed };
+    }
 
     const current = await deps.repos.asks.findById(input.askId);
     if (
@@ -205,55 +226,53 @@ export function createAskService(deps: {
     }
   }
 
-  async function continueResolution(
-    producer: DeliveryTransaction,
-    ask: StoredAsk,
-    plan: AskContinuationPlan,
-  ) {
-    switch (plan.kind) {
-      case "none":
-        return;
-      case "queue":
-        await producer.enqueue({
-          threadId: ask.threadId,
-          intent: "control",
-          provenance: { kind: "system", source: "ask" },
-          body: { kind: "ask_resolved", askId: ask.id },
-          idempotencyKey: `ask-resolved:${ask.id}`,
-        });
-        return;
-      default:
-        plan satisfies never;
-    }
+  async function continueResolution(producer: DeliveryTransaction, ask: StoredAsk) {
+    await producer.enqueue({
+      threadId: ask.threadId,
+      intent: "control",
+      provenance: { kind: "system", source: "ask" },
+      body: { kind: "ask_resolved", askId: ask.id },
+      idempotencyKey: `ask-resolved:${ask.id}`,
+    });
   }
 
   async function resolve(input: {
     askId: string;
     threadId: ThreadId;
-    status: "answered" | "expired" | "cancelled";
+    status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
-    claimLive?: boolean;
   }): Promise<AskAnswerResult> {
-    return deps.repos.transaction(async () => {
-      const claimed = await claim(input);
-      if (claimed.kind === "finished") return claimed.result;
-      const plan = resolutionPlan(input.resolution);
-      // The conditional ask claim precedes the thread lock for every resolver.
-      return deps.delivery.withThreadLock(input.threadId, async (producer) => {
-        await writeToolResult({
-          ask: claimed.ask,
-          threadId: input.threadId,
-          plan,
-          claimLive: input.claimLive,
-        });
-        await continueResolution(producer, claimed.ask, plan.continuation);
+    const plan = resolutionPlan(input.resolution);
+    return deps.repos.transaction(() =>
+      // The thread lock takes its held ask rows, this one included, before its own lock.
+      deps.delivery.withThreadLock(input.threadId, async (producer) => {
+        const claimed = await claim(input);
+        if (claimed.kind === "finished") return claimed.result;
+        await writeToolResult({ ask: claimed.ask, threadId: input.threadId, plan });
+        if (plan.kind === "resume") await continueResolution(producer, claimed.ask);
         return { ok: true, ask: threadAsk(claimed.ask) };
-      });
-    });
+      }),
+    );
   }
 
   return {
+    async request(input) {
+      const ask = await deps.repos.asks.create({
+        threadId: input.threadId,
+        askingTurnId: input.askingTurnId,
+        executionId: input.executionId,
+        toolCallId: input.toolCallId,
+        kind: input.request.kind,
+        payload: input.request.payload,
+        deadlineAt: null,
+        status: "pending",
+        resolution: null,
+        submissionId: null,
+      });
+      await testHook("ask.pending");
+      return { kind: "deferred", askId: ask.id };
+    },
     async answer(input) {
       const thread = await deps.repos.threads.findById(input.threadId);
       if (!thread || thread.userId !== input.userId) return { ok: false, code: "ask_not_open" };
@@ -294,26 +313,20 @@ export function createAskService(deps: {
       }
       return expired;
     },
-    cancelOpen(threadId, askId) {
-      return resolve({
-        askId,
-        threadId,
-        status: "cancelled",
-        resolution: { kind: "cancelled" },
-      });
-    },
-    async cancelForThreadLifecycle(threadId) {
-      const ask = await deps.repos.asks.findLiveByThread(threadId);
-      if (!ask) return;
-      const result = await resolve({
-        askId: ask.id,
-        threadId,
-        status: "cancelled",
-        resolution: { kind: "cancelled" },
-        claimLive: true,
-      });
-      if (!result.ok && result.code !== "ask_not_open")
-        throw new Error(`Could not cancel live ask ${ask.id}`);
+    async recordCancelled({ ask, wasLive }) {
+      if (wasLive) {
+        await writeToolResult({
+          ask,
+          threadId: ask.threadId,
+          plan: { kind: "cancel", toolResult: { kind: "from_resolution" } },
+          claimLive: true,
+        });
+        return;
+      }
+      await persistAndAppendEvents(deps, ask.threadId, async () => ({
+        result: undefined,
+        events: [{ type: "ask.updated" as const, ask: threadAsk(ask) }],
+      }));
     },
   };
 }

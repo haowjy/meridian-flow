@@ -5,8 +5,13 @@
  */
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 
-/** The executor's generic code says nothing the message doesn't. */
-const UNINFORMATIVE_CODES = new Set(["tool_error"]);
+/** The executor's own codes say nothing the message doesn't. */
+const UNINFORMATIVE_CODES = new Set([
+  "tool_error",
+  "tool_exception",
+  "tool_timeout",
+  "tool_arguments_parse",
+]);
 
 /** A `MeridianError` as JSON: what `toolError` and the executor's own failures return. */
 export function isMeridianErrorValue(value: JsonValue): value is JsonObject {
