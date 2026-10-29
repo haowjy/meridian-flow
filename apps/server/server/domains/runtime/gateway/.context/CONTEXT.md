@@ -6,9 +6,9 @@ normalization, cancellation settlement, and provider-error mapping.
 
 Provider keys are read only from `FLOW_`-prefixed variables
 (`FLOW_ANTHROPIC_API_KEY`, `FLOW_DEEPSEEK_API_KEY`, …), never the vendors'
-standard names. The owner's machine has `ANTHROPIC_API_KEY`-style keys set for
-local subscriptions, and Flow must not bill those. Keep the prefix on any new
-provider key.
+unprefixed names. The owner's machine sets the unprefixed keys for local
+subscriptions, and Flow must not bill those. `check:negative-space` enforces the
+prefix.
 
 ## Port and attempt policy
 
