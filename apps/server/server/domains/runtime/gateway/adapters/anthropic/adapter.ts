@@ -20,6 +20,7 @@ import type {
   ProviderConfig,
   StreamEvent,
 } from "../../domain/index.js";
+import { resolvePromptCacheTtlMs } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import {
   mapProviderHttpError,
@@ -74,7 +75,7 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
           model.id,
           model.maxOutputTokens,
           providerId,
-          model.promptCache.ttlMs,
+          resolvePromptCacheTtlMs(model.promptCache, request.promptCacheRetention),
         );
         const stream = await client.messages.create(params, { signal: request.signal });
 

@@ -50,8 +50,21 @@ export type Capability =
 /** Registry-declared provider cache behavior and its best-known retention window. */
 export interface PromptCacheDescriptor {
   kind: "explicit" | "automatic" | "none";
-  /** Best-known TTL in milliseconds; null means the provider does not publish one. */
+  /** Best-known TTL in milliseconds of the default (short) retention; null means the provider does not publish one. */
   ttlMs: number | null;
+  /** TTL when a request asks for long retention; absent when the model offers no longer option. */
+  longTtlMs?: number;
+}
+
+/** Which cache lifetime a request wants: primary chats ask for long, subagents for short. */
+export type PromptCacheRetention = "short" | "long";
+
+/** The TTL a request with this retention gets from a model, for adapters and warm/cold prediction. */
+export function resolvePromptCacheTtlMs(
+  cache: PromptCacheDescriptor,
+  retention: PromptCacheRetention | undefined,
+): number | null {
+  return retention === "long" ? (cache.longTtlMs ?? cache.ttlMs) : cache.ttlMs;
 }
 
 /**
@@ -258,6 +271,8 @@ export interface GenerateRequest {
    * ignores it.
    */
   promptCacheKey?: string;
+  /** Cache lifetime wanted; fixed per thread kind so the cached prefix never changes mid-thread. */
+  promptCacheRetention?: PromptCacheRetention;
   /** Observability-only context; adapters must never map it into provider requests. */
   correlation?: {
     /** Preallocated by callers that need to join request content to lifecycle evidence. */
