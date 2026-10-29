@@ -167,7 +167,7 @@ bare_provider_env=()
 while IFS= read -r hit; do
   [[ -n "$hit" ]] && bare_provider_env+=("$hit")
 done < <(
-  git grep -n -E '\b(ANTHROPIC|OPENAI|DEEPSEEK)_(API_KEY|BASE_URL)\b' -- \
+  git grep -n -E '\b(ANTHROPIC|OPENAI|DEEPSEEK|GEMINI)_(API_KEY|BASE_URL)\b' -- \
     ':!.meridian/**' ':!tools/ci/check-negative-space.sh' 2>/dev/null || true
 )
 if (( ${#bare_provider_env[@]} > 0 )); then

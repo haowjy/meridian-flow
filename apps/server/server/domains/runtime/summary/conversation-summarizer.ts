@@ -4,7 +4,13 @@ import type { Usage } from "@meridian/contracts/runtime";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 
-import type { Gateway, GenerateRequest, GenerateResult, ModelInfo } from "../gateway/index.js";
+import {
+  type Gateway,
+  type GenerateRequest,
+  type GenerateResult,
+  type ModelInfo,
+  settleCancelledResult,
+} from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { KEEP_OPEN_INSTRUCTION_LINES } from "../loop/compaction/important-files.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
@@ -264,15 +270,11 @@ export function createConversationSummarizer(
               error instanceof Error ? error.message : String(error),
             );
           }
-          if (input.signal.aborted && gateway.settleCancelledResult) {
-            try {
-              const settled = await gateway.settleCancelledResult({ result, model: row.model });
-              if (settled?.persist) {
-                result = settled.result;
-                usage = result.usage;
-              }
-            } catch (error) {
-              failure = error;
+          if (input.signal.aborted) {
+            const settled = settleCancelledResult(result);
+            if (settled?.persist) {
+              result = settled.result;
+              usage = result.usage;
             }
           }
           Object.assign(row, {

@@ -13,11 +13,12 @@
  */
 import OpenAI from "openai";
 import { modelAttemptTimeoutEvent } from "../../deadline.js";
-import type {
-  GenerateRequest,
-  ModelInfo,
-  ProviderConfig,
-  StreamEvent,
+import {
+  type GenerateRequest,
+  type ModelInfo,
+  type ProviderConfig,
+  requestsLongCacheWrites,
+  type StreamEvent,
 } from "../../domain/index.js";
 import { hasBillableTokenUsage, withMissingUsageMetering } from "../../domain/metering.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
@@ -53,7 +54,11 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
     async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
       // Create a fresh accumulator per stream call — each generate request
       // gets its own streaming state.
-      const acc = createStreamAccumulator(model.id, providerId);
+      const acc = createStreamAccumulator(
+        model.id,
+        providerId,
+        requestsLongCacheWrites(model.promptCache, request.promptCacheRetention),
+      );
       yield { type: "start", model: model.id, provider: providerId };
 
       try {

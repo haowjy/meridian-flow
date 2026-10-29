@@ -38,13 +38,16 @@ describe("model pricing", () => {
   });
 
   it("prices OpenAI's inclusive cache counters without double-counting input", () => {
-    const usage = mapOpenAIUsage({
-      input_tokens: 1_903,
-      input_tokens_details: { cached_tokens: 1_792 },
-      output_tokens: 74,
-      output_tokens_details: { reasoning_tokens: 0 },
-      total_tokens: 1_977,
-    });
+    const usage = mapOpenAIUsage(
+      {
+        input_tokens: 1_903,
+        input_tokens_details: { cached_tokens: 1_792 },
+        output_tokens: 74,
+        output_tokens_details: { reasoning_tokens: 0 },
+        total_tokens: 1_977,
+      },
+      false,
+    );
 
     expect(usage).toEqual({
       inputTokens: 1_903,
@@ -81,13 +84,16 @@ describe("model pricing", () => {
       computeModelCost({
         provider: "deepseek",
         model: "deepseek-flash",
-        usage: mapAnthropicUsage({
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          cache_read_input_tokens: cacheReadTokens,
-          cache_creation_input_tokens: 0,
-          output_tokens_details: null,
-        } as Parameters<typeof mapAnthropicUsage>[0]),
+        usage: mapAnthropicUsage(
+          {
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            cache_read_input_tokens: cacheReadTokens,
+            cache_creation_input_tokens: 0,
+            output_tokens_details: null,
+          } as Parameters<typeof mapAnthropicUsage>[0],
+          false,
+        ),
         rateSource,
       }),
     );
@@ -102,13 +108,16 @@ describe("model pricing", () => {
   });
 
   it("retains Anthropic input categories when the terminal delta only updates output", () => {
-    const initial = mapAnthropicUsage({
-      input_tokens: 111,
-      output_tokens: 1,
-      cache_read_input_tokens: 1_792,
-      cache_creation_input_tokens: 0,
-      output_tokens_details: null,
-    } as Parameters<typeof mapAnthropicUsage>[0]);
+    const initial = mapAnthropicUsage(
+      {
+        input_tokens: 111,
+        output_tokens: 1,
+        cache_read_input_tokens: 1_792,
+        cache_creation_input_tokens: 0,
+        output_tokens_details: null,
+      } as Parameters<typeof mapAnthropicUsage>[0],
+      false,
+    );
     const terminal = mapAnthropicUsage(
       {
         input_tokens: null,
@@ -117,6 +126,7 @@ describe("model pricing", () => {
         cache_creation_input_tokens: null,
         output_tokens_details: null,
       } as Parameters<typeof mapAnthropicUsage>[0],
+      false,
       initial,
     );
 

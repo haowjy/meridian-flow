@@ -158,23 +158,19 @@ function elapsedMs(startedAt: number, endedAt: number): number {
   return Math.max(0, Math.round(endedAt - startedAt));
 }
 
-/** Gateway-level timeout policy; a model's own overrides win over these. */
+/** Gateway-level timeout policy. */
 export interface ModelAttemptTimeoutOverrides {
   attemptStallMs?: number;
   attemptCeilingMs?: number;
 }
 
-/**
- * Resolve the effective timeouts for one model attempt: per-model override,
- * then gateway policy, then the process default.
- */
-export function resolveModelAttemptTimeouts(
-  model: Pick<ModelInfo, "stallTimeoutMs" | "ceilingTimeoutMs">,
+/** The effective timeouts for an attempt: gateway policy, then the process default. */
+export function resolveAttemptTimeouts(
   gateway: ModelAttemptTimeoutOverrides,
 ): ModelAttemptTimeouts {
   return {
-    stallMs: model.stallTimeoutMs ?? gateway.attemptStallMs ?? DEFAULT_ATTEMPT_STALL_MS,
-    ceilingMs: model.ceilingTimeoutMs ?? gateway.attemptCeilingMs ?? DEFAULT_ATTEMPT_CEILING_MS,
+    stallMs: gateway.attemptStallMs ?? DEFAULT_ATTEMPT_STALL_MS,
+    ceilingMs: gateway.attemptCeilingMs ?? DEFAULT_ATTEMPT_CEILING_MS,
   };
 }
 

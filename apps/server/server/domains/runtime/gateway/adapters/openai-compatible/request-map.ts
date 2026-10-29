@@ -22,7 +22,6 @@ import type OpenAI from "openai";
 import {
   type ContentPart,
   clampReasoningEffort,
-  type FunctionTool,
   type GenerateRequest,
   type Message,
   type ModelInfo,
@@ -140,17 +139,14 @@ function mapMessage(message: Message): OpenAI.Chat.Completions.ChatCompletionMes
 
 /**
  * Map canonical Tool[] to Chat Completions tools.
- * Only function tools are mapped (hosted tools have no Chat Completions
- * equivalent). Each function tool becomes a `function` tool with name,
+ * Each function tool becomes a `function` tool with name,
  * description, and parameters (inputSchema).
  */
 function mapTools(
   tools: Tool[] | undefined,
 ): OpenAI.Chat.Completions.ChatCompletionTool[] | undefined {
   if (!tools?.length) return undefined;
-  const functionTools = tools.filter((t): t is FunctionTool => t.type === "function");
-  if (!functionTools.length) return undefined;
-  return functionTools.map((tool) => ({
+  return tools.map((tool) => ({
     type: "function" as const,
     function: {
       name: tool.name,

@@ -56,8 +56,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   it("prepends empty thinking on DeepSeek when tool_use has none", () => {
     const params = toAnthropicMessageParams(
       requestWithToolPair(),
-      "deepseek-flash",
-      256,
+      { id: "deepseek-flash", maxOutputTokens: 256 },
       "deepseek",
     );
     expect(assistantBlocks(params)[0]).toEqual({ type: "thinking", thinking: "" });
@@ -67,8 +66,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   it("does not invent thinking for Anthropic when reasoning is disabled", () => {
     const params = toAnthropicMessageParams(
       { ...requestWithToolPair(), reasoning: "disabled" },
-      "claude-sonnet-4",
-      4096,
+      { id: "claude-sonnet-4", maxOutputTokens: 4096 },
       "anthropic",
     );
     expect(assistantBlocks(params).some((block) => block.type === "thinking")).toBe(false);
@@ -100,8 +98,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
         ],
         tools: [skillTool],
       },
-      "deepseek-flash",
-      256,
+      { id: "deepseek-flash", maxOutputTokens: 256 },
       "deepseek",
     );
     expect(assistantBlocks(params)[0]).toMatchObject({
@@ -131,8 +128,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
         ],
         tools: [skillTool],
       },
-      "deepseek-flash",
-      256,
+      { id: "deepseek-flash", maxOutputTokens: 256 },
       "deepseek",
     );
     expect(assistantBlocks(params)[0]).toEqual({ type: "thinking", thinking: "" });
@@ -154,8 +150,7 @@ describe("Anthropic message alternation", () => {
           user("writer message two"),
         ],
       },
-      "claude-sonnet-4-5",
-      256,
+      { id: "claude-sonnet-4-5", maxOutputTokens: 256 },
       "anthropic",
       60 * 60 * 1_000,
     );
@@ -205,8 +200,7 @@ describe("Anthropic prompt-cache breakpoints", () => {
         ],
         tools: [{ type: "function", name: "grep", description: "Search.", inputSchema: {} }],
       },
-      "claude-sonnet-4-5",
-      256,
+      { id: "claude-sonnet-4-5", maxOutputTokens: 256 },
       "anthropic",
       60 * 60 * 1_000,
     );
@@ -249,15 +243,13 @@ it("keeps implicit thinking and cached content unchanged when only the output ca
   };
   const original = toAnthropicMessageParams(
     request,
-    "claude-sonnet-5-5",
-    16384,
+    { id: "claude-sonnet-5-5", maxOutputTokens: 16384 },
     "anthropic",
     3600000,
   );
   const capped = toAnthropicMessageParams(
     { ...request, maxTokens: 4096 + 300 },
-    "claude-sonnet-5-5",
-    16384,
+    { id: "claude-sonnet-5-5", maxOutputTokens: 16384 },
     "anthropic",
     3600000,
   );
@@ -273,7 +265,11 @@ it("preserves real Work and Write command instructions only when projecting for 
       messages: [user("Hello")],
       tools: [{ ...skillTool, inputSchema }],
     };
-    const params = toAnthropicMessageParams(request, "claude-sonnet-5-5", 128_000, "anthropic");
+    const params = toAnthropicMessageParams(
+      request,
+      { id: "claude-sonnet-5-5", maxOutputTokens: 128_000 },
+      "anthropic",
+    );
     const advertised = params.tools?.[0] as {
       input_schema: { properties: Record<string, { description: string }>; required: string[] };
     };
@@ -303,10 +299,18 @@ it("preserves real Work and Write command instructions only when projecting for 
       tools: [{ ...skillTool, inputSchema: { ...root, anyOf: oneOf } }],
     };
     expect(
-      toAnthropicMessageParams(anyOfRequest, "claude-sonnet-5-5", 128_000, "anthropic").tools?.[0],
+      toAnthropicMessageParams(
+        anyOfRequest,
+        { id: "claude-sonnet-5-5", maxOutputTokens: 128_000 },
+        "anthropic",
+      ).tools?.[0],
     ).toHaveProperty("input_schema", advertised.input_schema);
     expect(
-      toAnthropicMessageParams(request, "deepseek-flash", 65_536, "deepseek").tools?.[0],
+      toAnthropicMessageParams(
+        request,
+        { id: "deepseek-flash", maxOutputTokens: 65_536 },
+        "deepseek",
+      ).tools?.[0],
     ).toHaveProperty("input_schema", original);
     expect(inputSchema).toEqual(original);
   }

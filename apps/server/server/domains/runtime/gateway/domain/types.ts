@@ -33,19 +33,11 @@ export type ProviderOptions = Record<string, Record<string, unknown>>;
 export type TokenizerFamily = "anthropic" | "o200k" | "gemini" | "deepseek";
 
 /**
- * Declared LLM capability flags. Used by the orchestrator and context builder
- * to decide whether to include images, enable tool calling, etc. Each adapter
- * reports capabilities from its static model catalog in config/providers.ts.
+ * Declared LLM capability flags, from the model's row in config/registry.ts.
+ * Only `image_input` is read today (the context builder keeps images for models
+ * that take them); add a value when something branches on it.
  */
-export type Capability =
-  | "streaming"
-  | "tool_calling"
-  | "parallel_tool_calls"
-  | "image_input"
-  | "image_output"
-  | "file_input"
-  | "structured_output"
-  | "reasoning";
+export type Capability = "image_input";
 
 /** Registry-declared provider cache behavior and its best-known retention window. */
 export interface PromptCacheDescriptor {
@@ -67,12 +59,19 @@ export function resolvePromptCacheTtlMs(
   return retention === "long" ? (cache.longTtlMs ?? cache.ttlMs) : cache.ttlMs;
 }
 
+/** Whether a request writes its cache at the model's long lifetime. */
+export function requestsLongCacheWrites(
+  cache: PromptCacheDescriptor,
+  retention: PromptCacheRetention,
+): boolean {
+  return retention === "long" && cache.longTtlMs !== undefined;
+}
+
 /**
- * OpenAI GPT-5.6+ `prompt_cache_options.ttl` values by lifetime: "30m" is the default
- * and "12h" the only longer option (the shortest of at least 1 hour).
+ * OpenAI GPT-5.6+ `prompt_cache_options.ttl` for a lifetime. "12h" is the only longer
+ * option; the 30m default is sent as no parameter.
  */
-export function openaiCacheTtlWire(ttlMs: number): "30m" | "12h" | undefined {
-  if (ttlMs === 30 * 60 * 1_000) return "30m";
+export function openaiCacheTtlWire(ttlMs: number): "12h" | undefined {
   return ttlMs === 12 * 60 * 60 * 1_000 ? "12h" : undefined;
 }
 
@@ -90,8 +89,7 @@ export function clampReasoningEffort(
 /**
  * Static model metadata registered per provider. `provider` is filled in by
  * buildProviderRegistry from the ProviderConfig.id, not from the model's own
- * definition. `hostedTools` lists server-side tools (web_search, code_execution,
- * etc.) that the provider executes without Meridian involvement.
+ * definition.
  */
 export interface ModelInfo {
   /** Highest Flow effort level the model accepts; absent means `max`. Higher requests clamp to it. */
@@ -107,11 +105,6 @@ export interface ModelInfo {
   maxOutputTokens: number;
   promptCache: PromptCacheDescriptor;
   capabilities: Set<Capability>;
-  hostedTools?: Set<string>;
-  /** Per-model inactivity window override. 0 disables the stall guard. */
-  stallTimeoutMs?: number;
-  /** Per-model absolute ceiling override. 0 disables the ceiling backstop. */
-  ceilingTimeoutMs?: number;
 }
 
 /**
@@ -232,20 +225,8 @@ export interface FunctionTool {
   providerOptions?: ProviderOptions;
 }
 
-/**
- * Hosted (server-side) tools executed by the provider itself. Meridian does not
- * execute these — Anthropic's `web_search`, `code_execution`, `text_editor`,
- * `computer_use` and OpenAI's `web_search`, `code_interpreter`, `file_search`.
- */
-export type HostedToolKind = "web_search" | "code_execution" | "file_search";
-
-export interface HostedTool {
-  type: "hosted";
-  kind: HostedToolKind | string;
-  providerOptions?: ProviderOptions;
-}
-
-export type Tool = FunctionTool | HostedTool;
+/** Every tool the model sees is a function tool Flow executes. */
+export type Tool = FunctionTool;
 
 export type ResponseFormat =
   | { type: "text" }
@@ -491,8 +472,7 @@ export interface ProviderConfig {
  *   event re-arms it, so a slow-but-streaming model is never killed. 0 disables.
  * - `attemptCeilingMs`: absolute backstop for one provider attempt (default
  *   10 min), fixed from attempt start. Not the normal terminator; 0 disables it
- *   for self-hosted models. Per-model `stallTimeoutMs`/`ceilingTimeoutMs`
- *   override these. Timeouts are retryable.
+ *   for self-hosted models. Timeouts are retryable.
  * - `retry`: controls per-provider retry with exponential backoff. Only
  *   retries before committed output (visible text or a tool call) has been
  *   emitted to the caller; reasoning-only attempts are retryable.

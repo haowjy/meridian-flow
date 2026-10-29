@@ -71,6 +71,16 @@ function formatGatewayStartupInfo(
 }
 
 /**
+ * Production as `resolveDebugPathsEnabled` sees it: `APP_ENV=production`, or
+ * `NODE_ENV=production` with `APP_ENV` unset or `dev`, so a deployed process
+ * missing `APP_ENV` fails closed. Staging is not production.
+ */
+function isProductionEnv(env: GatewayEnvInput): boolean {
+  const appEnv = env.APP_ENV ?? "dev";
+  return appEnv === "production" || (env.NODE_ENV === "production" && appEnv === "dev");
+}
+
+/**
  * Build a gateway from environment inputs.
  *
  * When no real provider keys are configured (or MODEL_PROVIDER is "mock"),
@@ -113,6 +123,10 @@ export async function createGatewayFromEnv(
   const defaultModel = gatewayOptions.defaultModel;
   if (!defaultModel) throw new Error("Gateway configuration has no default model");
   const liveTestModel = env.LIVE_TEST_MODEL;
+  if (liveTestModel && isProductionEnv(env)) {
+    await cleanup?.();
+    throw new Error("LIVE_TEST_MODEL: dev only; unset it in production.");
+  }
   if (liveTestModel && !providers.some((p) => p.models.some((m) => m.id === liveTestModel))) {
     const inRegistry = MODEL_REGISTRY.providers.some((p) =>
       p.models.some((m) => m.id === liveTestModel),
@@ -139,7 +153,7 @@ export async function createGatewayFromEnv(
 
   return {
     gateway: liveTestModel ? withLiveTestModel(gateway, liveTestModel) : gateway,
-    defaultModel: liveTestModel ?? defaultModel,
+    defaultModel,
     cleanup,
     ...(mockScript ? { mockScript } : {}),
   };

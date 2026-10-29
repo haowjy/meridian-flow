@@ -12,8 +12,9 @@ prefix.
 
 ## Port and attempt policy
 
-`Gateway.stream()` yields canonical `StreamEvent`s; `generate()`, optional
-`settleCancelledResult()`, and `listModels()` complete the port. A registry maps
+`Gateway.stream()` yields canonical `StreamEvent`s; `generate()` and optional
+`listModels()` complete the port; a cancelled call is settled by the
+`settleCancelledResult()` function in `domain/cancel-settlement.ts`. A registry maps
 model IDs to provider adapters and is the single source for model context,
 pricing, cache descriptor, and required tokenizer family. Duplicate model IDs
 warn during construction rather than silently replacing an entry. Registry model
@@ -84,7 +85,9 @@ provider advertisement is not argument authority.
 Each model declares `promptCache: { kind, ttlMs, longTtlMs? }`: `ttlMs` is the
 short lifetime, `longTtlMs` the longer one the model offers (Claude 1h; GPT-5.6+ 12h,
 the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl` via
-`openaiCacheTtlWire`; the 30m default is never sent). DeepSeek and Gemini cache
+`openaiCacheTtlWire`; the 30m default is never sent). When a provider omits the
+cache-write split by lifetime, the adapters attribute all writes to the lifetime the
+request asked for (`requestsLongCacheWrites`). DeepSeek and Gemini cache
 automatically with an assumed 5-minute `ttlMs`.
 `GenerateRequest.promptCacheRetention` is required and picks one
 (`resolvePromptCacheTtlMs`): the loop asks `long` for primary threads and `short`
@@ -111,12 +114,15 @@ discount ends 2026-11-30 and the registry has no effective dates.
 
 Gemini 4 Argon uses the `openai-compatible` adapter against Google's OpenAI endpoint;
 an explicit effort goes out as `reasoning_effort` (Google maps it to `thinking_level`),
-while `adaptive` and `disabled` send nothing. Each mapper lowers the effort to the registry
-row's `maxReasoningEffort` (absent means `max`): Gemini's row says `high`; the GPT rows
-accept every Flow level, so `max` goes out as `max`. Claude Opus 5.5 and
-Fable 5.1 think adaptively and cannot disable it; nothing in Flow sends a disabled or
-fixed-budget `thinking` for them (the loop sets no `reasoning`, and the summarizer's
-`disabled` sends no `thinking` field).
+while `adaptive` and `disabled` send nothing. The Anthropic adapter (Claude and DeepSeek)
+sends it as `output_config.effort`. Each mapper lowers the effort to the registry
+row's `maxReasoningEffort` (absent means `max`): Gemini's row says `high`; the GPT and
+Claude rows accept every Flow level, so `max` goes out as `max`. Claude Opus 5.5, Sonnet 5.5
+and Fable 5.1 think adaptively and cannot disable it: `thinking: disabled` and
+`budget_tokens` are a 400 on them, DeepSeek ignores `budget_tokens`, so no registered model
+gets a thinking budget and `adaptive`/`disabled` send no `thinking` field. (On DeepSeek
+that means the summarizer's `disabled` still thinks; `thinking: {type: "disabled"}` would
+turn it off.)
 
 Every model declares a tokenizer family with no fallback; runtime compaction
 uses it for CJK estimates. Output limits are provider defaults unless a request
@@ -139,10 +145,10 @@ at tool registration.
 
 `LIVE_TEST_MODEL=<registry model id>` sends every gateway call to that model, whatever
 the request, chat binding or Agent names. `createGatewayFromEnv` validates it (known id,
-provider key set) and wraps the gateway once (`config/live-test-model.ts`); `startup-guards`
-refuses it in production. The wrapper rewrites the request's model, drops its provider,
-and answers every `listModels()` entry with the override's facts under the listed id,
-because compaction, image support, tokenizer and cache prediction look models up by the
-stored id. Costing needs no hook: it prices the provider and model the response reports.
+provider key set) and wraps the gateway once (`config/live-test-model.ts`); it also refuses it in production (not staging). The wrapper rewrites the request's model, drops its provider,
+and lists every registry id, keyed or not, with the override's facts, because
+availability checks, compaction, image support, tokenizer and cache prediction look models
+up by the stored id. `getDefaultModel()` stays the real default, so seeding and child
+bindings never record the override. Costing needs no hook: it prices the provider and model the response reports.
 Stored bindings, Agent files and the catalog still show the model they name. The name has
 no `FLOW_` prefix because it is not a provider key.

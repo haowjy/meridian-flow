@@ -39,6 +39,8 @@ import { parseToolCallArguments } from "../../helpers/parse-tool-arguments.js";
 // ── Accumulator ───────────────────────────────────────────────────
 
 interface StreamAccumulator {
+  // The request asked for the long cache lifetime: the attribution when the provider omits the write split.
+  longCacheWrites: boolean;
   // Unindexed fallback content. Most Responses output has `output_index`; text
   // that arrives through auxiliary events such as refusals does not, so it is
   // appended after indexed content rather than being guessed into the order.
@@ -108,8 +110,13 @@ function emptyUsage(): Usage {
   return { inputTokens: 0, outputTokens: 0 };
 }
 
-export function createStreamAccumulator(model: string, provider: string): StreamAccumulator {
+export function createStreamAccumulator(
+  model: string,
+  provider: string,
+  longCacheWrites: boolean,
+): StreamAccumulator {
   return {
+    longCacheWrites,
     contentParts: [],
     textPartsByOutputIndex: new Map(),
     reasoningItems: new Map(),
@@ -189,7 +196,7 @@ function findToolCallEntry(
 
 // ── Usage mapping ─────────────────────────────────────────────────
 
-export function mapUsage(usage: OpenAI.Responses.ResponseUsage): Usage {
+export function mapUsage(usage: OpenAI.Responses.ResponseUsage, longCacheWrites: boolean): Usage {
   // Responses reports canonical input/output token totals directly, but cache
   // hits and reasoning tokens live in provider-specific detail objects
   // (`input_tokens_details.cached_tokens`, `output_tokens_details.reasoning_tokens`).
@@ -217,7 +224,9 @@ export function mapUsage(usage: OpenAI.Responses.ResponseUsage): Usage {
   }
   if (details?.cache_write_tokens && details.cache_write_tokens > 0) {
     result.cacheWriteTokens = details.cache_write_tokens;
-    const long = details.cache_write_tokens_details?.ttl_12h_tokens ?? 0;
+    const long =
+      details.cache_write_tokens_details?.ttl_12h_tokens ??
+      (longCacheWrites ? details.cache_write_tokens : 0);
     if (long > 0) result.cacheWriteLongTokens = long;
   }
 
@@ -465,7 +474,7 @@ export function* eventsFromResponseStreamEvent(
       // subscribers see token counts before the adapter later emits the final
       // end event with the assembled GenerateResult.
       if (response.usage) {
-        acc.usage = mapUsage(response.usage);
+        acc.usage = mapUsage(response.usage, acc.longCacheWrites);
         yield { type: "usage", usage: acc.usage };
       }
       if (response.error) {

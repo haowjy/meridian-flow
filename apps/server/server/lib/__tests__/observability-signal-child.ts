@@ -43,9 +43,6 @@ const gateway: Gateway = {
   async generate() {
     throw new Error("The shutdown fixture only streams");
   },
-  async settleCancelledResult({ result }) {
-    return result ? { result, persist: true } : null;
-  },
 };
 
 let runtime!: Awaited<ReturnType<typeof runtimeScenario>>;

@@ -23,7 +23,7 @@ const MODEL: ModelInfo = {
   contextWindow: 128_000,
   maxOutputTokens: 4_096,
   promptCache: { kind: "none", ttlMs: null },
-  capabilities: new Set(["streaming"]),
+  capabilities: new Set(),
 };
 
 const REQUEST: GenerateRequest = { messages: [], promptCacheRetention: "short" };

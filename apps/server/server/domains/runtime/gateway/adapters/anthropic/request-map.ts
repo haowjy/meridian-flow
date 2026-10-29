@@ -19,8 +19,10 @@
  *   thinking mode) prepend empty `{ type: "thinking", thinking: "" }` when an
  *   assistant message has tool_use and no thinking block. Missing tool_result
  *   is repaired earlier in context-builder `completeToolResultGroups`.
- * - Thinking budget is computed as a percentage of max_tokens, scaled by the
- *   effort level (low=25%, medium=50%, high=75%, max=100%).
+ * - Reasoning: an explicit effort goes out as `output_config.effort`, lowered to
+ *   the model's `maxReasoningEffort`. `adaptive` and `disabled` send nothing:
+ *   Opus 5.5, Sonnet 5.5 and Fable 5.1 think adaptively, and `thinking: disabled`
+ *   or `budget_tokens` is a 400 on them; DeepSeek ignores `budget_tokens`.
  * - Prompt caching: a canonical `ContentPart.cacheBreakpoint` (set by
  *   `loop/prompt-cache-marks.ts`, at most three per request) becomes an
  *   explicit `cache_control` on that part. Its TTL comes from the registry
@@ -30,14 +32,14 @@
  *   messages, so the system-message breakpoint already covers them.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import type {
-  ContentPart,
-  FunctionTool,
-  GenerateRequest,
-  Message,
-  Tool,
+import {
+  type ContentPart,
+  clampReasoningEffort,
+  type GenerateRequest,
+  type Message,
+  type ModelInfo,
+  type Tool,
 } from "../../domain/index.js";
-import { thinkingBudgetTokens } from "../../domain/thinking-budget.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 import { anthropicToolSchema } from "./tool-schema.js";
 
@@ -325,8 +327,7 @@ function extractSystem(
 // ── Tool mapping ──────────────────────────────────────────────────
 //
 // Canonical Tool[] → Anthropic ToolUnion[]. Function tools map to Anthropic
-// tools with input_schema; hosted tools map to web_search_20250305 or
-// code_execution_20250522. Tools are never cache-marked directly: Anthropic
+// tools with input_schema. Tools are never cache-marked directly: Anthropic
 // renders tools before system before messages, so the system message's own
 // breakpoint already covers them (see the file header).
 //
@@ -337,28 +338,13 @@ function mapTools(
 ): Anthropic.Messages.ToolUnion[] | undefined {
   if (!tools?.length) return undefined;
 
-  const mapped: Anthropic.Messages.ToolUnion[] = [];
-  for (const tool of tools) {
-    if (tool.type === "function") {
-      const ft = tool as FunctionTool;
-      mapped.push({
-        name: ft.name,
-        description: ft.description,
-        input_schema: (providerId === "anthropic"
-          ? anthropicToolSchema(ft.inputSchema)
-          : ft.inputSchema) as Anthropic.Messages.Tool.InputSchema,
-      });
-    } else if (tool.type === "hosted") {
-      if (tool.kind === "web_search" || tool.kind.startsWith("anthropic.web_search")) {
-        mapped.push({ type: "web_search_20250305" as any, name: "web_search" } as any);
-      }
-      if (tool.kind === "code_execution" || tool.kind.startsWith("anthropic.code_execution")) {
-        mapped.push({ type: "code_execution_20250522" as any, name: "code_execution" } as any);
-      }
-      // Other hosted tools: pass through providerOptions
-    }
-  }
-  return mapped.length > 0 ? mapped : undefined;
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: (providerId === "anthropic"
+      ? anthropicToolSchema(tool.inputSchema)
+      : tool.inputSchema) as Anthropic.Messages.Tool.InputSchema,
+  }));
 }
 
 // ── Tool choice mapping ───────────────────────────────────────────
@@ -393,29 +379,28 @@ function mapToolChoice(
 
 export function toAnthropicMessageParams(
   request: GenerateRequest,
-  modelId: string,
-  maxOutputTokens: number,
+  model: Pick<ModelInfo, "id" | "maxOutputTokens" | "maxReasoningEffort">,
   providerId = "anthropic",
   promptCacheTtlMs?: number | null,
 ): Anthropic.Messages.MessageCreateParamsStreaming {
   const cacheControl = cacheControlForTtl(promptCacheTtlMs);
-  const maxTokens = request.maxTokens ?? maxOutputTokens;
+  const maxTokens = request.maxTokens ?? model.maxOutputTokens;
   const system = extractSystem(request.messages, cacheControl);
   const tools = mapTools(request.tools, providerId);
   const messages = mergeConsecutiveSameRole(
     request.messages
-      .map((message) => mapMessage(message, providerId, modelId, cacheControl))
+      .map((message) => mapMessage(message, providerId, model.id, cacheControl))
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 
-  // Effort is model-relative: capping output must not change the cached thinking prefix.
-  const budget = thinkingBudgetTokens(request, maxOutputTokens);
-  const thinking = budget ? { type: "enabled" as const, budget_tokens: budget } : undefined;
-  const repaired =
-    thinking || providerId === "deepseek" ? ensureThinkingBeforeToolUse(messages) : messages;
+  const effort =
+    typeof request.reasoning === "object"
+      ? clampReasoningEffort(request.reasoning.effort, model.maxReasoningEffort)
+      : undefined;
+  const repaired = providerId === "deepseek" ? ensureThinkingBeforeToolUse(messages) : messages;
 
   return {
-    model: modelId,
+    model: model.id,
     max_tokens: maxTokens,
     messages: repaired,
     stream: true,
@@ -427,7 +412,7 @@ export function toAnthropicMessageParams(
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     ...(request.topP !== undefined ? { top_p: request.topP } : {}),
     ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
-    ...(thinking ? { thinking } : {}),
+    ...(effort ? { output_config: { effort } } : {}),
     ...(request.providerOptions?.anthropic ?? {}),
   };
 }

@@ -47,12 +47,6 @@ export interface RegisteredModel {
   promptCache: PromptCacheDescriptor;
   /** Highest effort level the model accepts; absent means `max`. */
   maxReasoningEffort?: ReasoningEffort;
-  /** Provider-side tools that Meridian advertises but does not execute itself. */
-  hostedTools?: readonly string[];
-  /** Per-model inactivity window override in ms. 0 disables the stall guard. */
-  stallTimeoutMs?: number;
-  /** Per-model absolute ceiling override in ms. 0 disables the ceiling backstop. */
-  ceilingTimeoutMs?: number;
   pricing: ModelPricing;
 }
 
@@ -209,16 +203,9 @@ const GEMINI_4_ARGON_PRICING: ModelPricing = {
   source: GEMINI_PRICING_SOURCE,
 };
 
-// Opus 5.5 and Fable 5.1 think adaptively and cannot turn it off; nothing in Flow sends
-// `thinking: disabled`, a forced tool_choice, or a fixed budget for them.
-const CLAUDE_CAPABILITIES = [
-  "streaming",
-  "tool_calling",
-  "image_input",
-  "structured_output",
-  "reasoning",
-] as const satisfies readonly Capability[];
-
+// Claude's Messages API takes `output_config.effort` (low..max, as models.dev lists for all three
+// models). Opus 5.5, Sonnet 5.5 and Fable 5.1 think adaptively, and `thinking: disabled` or a
+// `budget_tokens` is a 400 on them, so Flow sends neither: no registered model needs a budget.
 const CLAUDE_OPUS_5_5_MODEL = {
   id: "claude-opus-5-5",
   tokenizer: "anthropic",
@@ -226,7 +213,7 @@ const CLAUDE_OPUS_5_5_MODEL = {
   contextWindow: 1_000_000,
   maxOutputTokens: 128_000,
   promptCache: EXPLICIT_CACHE_5M_OR_1H,
-  capabilities: CLAUDE_CAPABILITIES,
+  capabilities: ["image_input"],
   pricing: CLAUDE_OPUS_5_5_PRICING,
 } satisfies RegisteredModel;
 
@@ -237,7 +224,7 @@ const CLAUDE_SONNET_5_5_MODEL = {
   contextWindow: 1_000_000,
   maxOutputTokens: 128_000,
   promptCache: EXPLICIT_CACHE_5M_OR_1H,
-  capabilities: CLAUDE_CAPABILITIES,
+  capabilities: ["image_input"],
   pricing: CLAUDE_SONNET_5_5_PRICING,
 } satisfies RegisteredModel;
 
@@ -248,18 +235,9 @@ const CLAUDE_FABLE_5_1_MODEL = {
   contextWindow: 1_000_000,
   maxOutputTokens: 128_000,
   promptCache: EXPLICIT_CACHE_5M_OR_1H,
-  capabilities: CLAUDE_CAPABILITIES,
+  capabilities: ["image_input"],
   pricing: CLAUDE_FABLE_5_1_PRICING,
 } satisfies RegisteredModel;
-
-const GPT_CAPABILITIES = [
-  "streaming",
-  "tool_calling",
-  "parallel_tool_calls",
-  "image_input",
-  "structured_output",
-  "reasoning",
-] as const satisfies readonly Capability[];
 
 // OpenAI has not published the GPT-6 / GPT-5.6 tokenizer; o200k is the estimate.
 const GPT_6_1_SOL_MODEL = {
@@ -269,7 +247,7 @@ const GPT_6_1_SOL_MODEL = {
   contextWindow: 1_050_000,
   maxOutputTokens: 128_000,
   promptCache: OPENAI_CACHE_30M_OR_12H,
-  capabilities: GPT_CAPABILITIES,
+  capabilities: ["image_input"],
   pricing: GPT_6_1_SOL_PRICING,
 } satisfies RegisteredModel;
 
@@ -280,7 +258,7 @@ const GPT_6_1_TERRA_MODEL = {
   contextWindow: 1_050_000,
   maxOutputTokens: 128_000,
   promptCache: OPENAI_CACHE_30M_OR_12H,
-  capabilities: GPT_CAPABILITIES,
+  capabilities: ["image_input"],
   pricing: GPT_6_1_TERRA_PRICING,
 } satisfies RegisteredModel;
 
@@ -291,7 +269,7 @@ const GPT_5_6_LUNA_MODEL = {
   contextWindow: 1_050_000,
   maxOutputTokens: 128_000,
   promptCache: OPENAI_CACHE_30M_OR_12H,
-  capabilities: GPT_CAPABILITIES,
+  capabilities: ["image_input"],
   pricing: GPT_5_6_LUNA_PRICING,
 } satisfies RegisteredModel;
 
@@ -302,7 +280,7 @@ const DEEPSEEK_FLASH_MODEL = {
   contextWindow: 1_048_576,
   maxOutputTokens: 393_216,
   promptCache: AUTOMATIC_CACHE_ESTIMATE,
-  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
+  capabilities: ["image_input"],
   pricing: DEEPSEEK_FLASH_PRICING,
 } satisfies RegisteredModel;
 
@@ -315,7 +293,7 @@ const GEMINI_4_ARGON_MODEL = {
   promptCache: AUTOMATIC_CACHE_ESTIMATE,
   // Google's OpenAI endpoint maps `reasoning_effort` to `thinking_level`: low, medium, high.
   maxReasoningEffort: "high",
-  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
+  capabilities: ["image_input"],
   pricing: GEMINI_4_ARGON_PRICING,
 } satisfies RegisteredModel;
 
@@ -405,9 +383,6 @@ function toModelInfo(provider: RegisteredProvider, model: RegisteredModel): Mode
     promptCache: model.promptCache,
     maxReasoningEffort: model.maxReasoningEffort,
     capabilities: new Set(model.capabilities),
-    hostedTools: model.hostedTools ? new Set(model.hostedTools) : undefined,
-    stallTimeoutMs: model.stallTimeoutMs,
-    ceilingTimeoutMs: model.ceilingTimeoutMs,
   };
 }
 
