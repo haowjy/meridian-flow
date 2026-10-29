@@ -43,9 +43,6 @@ export type AskRequestOutcome =
   | { kind: "deferred"; askId: string }
   | { kind: "refused"; refusal: JsonValue };
 
-/** `permission`: Allow runs the stored command, and Deny reports `{allowed: false}`. */
-export type AskToolResultPlan = { kind: "from_resolution" } | { kind: "permission" };
-
 export type AskToolResult = {
   output: JsonValue;
   result: JsonValue;
@@ -53,15 +50,8 @@ export type AskToolResult = {
   metadata?: JsonObject;
 };
 
-export type AskResolutionPlan =
-  | {
-      kind: "resume";
-      toolResult: AskToolResultPlan;
-    }
-  | {
-      kind: "cancel";
-      toolResult: AskToolResultPlan;
-    };
+/** `resume` continues the asking run with the answer's tool result; `cancel` ends its turn. */
+export type AskResolutionPlan = { kind: "resume" } | { kind: "cancel" };
 
 type AskClaim = { kind: "claimed"; ask: StoredAsk } | { kind: "finished"; result: AskAnswerResult };
 
@@ -106,13 +96,8 @@ function answerResolution(ask: StoredAsk, answer: AskAnswer): AskResolution | nu
   return null;
 }
 
-function resolutionPlan(ask: StoredAsk, resolution: AskResolution): AskResolutionPlan {
-  if (resolution.kind === "cancelled")
-    return { kind: "cancel", toolResult: { kind: "from_resolution" } };
-  return {
-    kind: "resume",
-    toolResult: { kind: ask.kind === "permission" ? "permission" : "from_resolution" },
-  };
+function resolutionPlan(resolution: AskResolution): AskResolutionPlan {
+  return { kind: resolution.kind === "cancelled" ? "cancel" : "resume" };
 }
 
 /** Runs what the writer allowed. */
@@ -186,7 +171,7 @@ export function createAskService(deps: {
         await writeToolResult({
           ask: cancelled,
           threadId: input.threadId,
-          plan: { kind: "cancel", toolResult: { kind: "from_resolution" } },
+          plan: { kind: "cancel" },
           claimLive: true,
         });
     }
@@ -222,7 +207,7 @@ export function createAskService(deps: {
     )
       throw new Error("Live ask is not attached to its active asking turn");
     const blocks = await deps.repos.blocks.listByTurn(turn.id);
-    const result = await resolveToolResult(input.ask, input.plan.toolResult);
+    const result = await resolveToolResult(input.ask);
     const block = contentForBlockInput({
       turnId: turn.id,
       blockType: "tool_result",
@@ -255,29 +240,23 @@ export function createAskService(deps: {
     }));
   }
 
-  async function resolveToolResult(
-    ask: StoredAsk,
-    plan: AskToolResultPlan,
-  ): Promise<AskToolResult> {
-    switch (plan.kind) {
-      case "from_resolution": {
-        const result = askToolResult(ask);
-        return { output: result, result, isError: false };
-      }
-      case "permission": {
-        const decision = ask.resolution?.kind;
-        if (decision === "deny") return DENIED;
-        if (decision !== "allow" && decision !== "allow_always")
-          throw new Error(`Permission ask ${ask.id} resolved as ${decision}`);
-        const command = ask.permissionCommand;
-        if (!command) throw new Error(`Permission ask ${ask.id} has no command`);
-        return deps.permission.execute({
-          threadId: ask.threadId,
-          command,
-          always: decision === "allow_always",
-        });
-      }
+  /** A question's answer, or a cancelled ask, as the tool result; an answered permission ask runs. */
+  async function resolveToolResult(ask: StoredAsk): Promise<AskToolResult> {
+    const decision = ask.resolution?.kind;
+    if (ask.kind === "question" || decision === "cancelled") {
+      const result = askToolResult(ask);
+      return { output: result, result, isError: false };
     }
+    if (decision === "deny") return DENIED;
+    if (decision !== "allow" && decision !== "allow_always")
+      throw new Error(`Permission ask ${ask.id} resolved as ${decision}`);
+    const command = ask.permissionCommand;
+    if (!command) throw new Error(`Permission ask ${ask.id} has no command`);
+    return deps.permission.execute({
+      threadId: ask.threadId,
+      command,
+      always: decision === "allow_always",
+    });
   }
 
   async function continueResolution(producer: DeliveryTransaction, ask: StoredAsk) {
@@ -302,7 +281,7 @@ export function createAskService(deps: {
       deps.delivery.withThreadLock(input.threadId, async (producer) => {
         const claimed = await claim(input);
         if (claimed.kind === "finished") return claimed.result;
-        const plan = resolutionPlan(claimed.ask, input.resolution);
+        const plan = resolutionPlan(input.resolution);
         await writeToolResult({ ask: claimed.ask, threadId: input.threadId, plan });
         if (plan.kind === "resume") await continueResolution(producer, claimed.ask);
         return { ok: true, ask: threadAsk(claimed.ask) };
@@ -371,7 +350,7 @@ export function createAskService(deps: {
         await writeToolResult({
           ask,
           threadId: ask.threadId,
-          plan: { kind: "cancel", toolResult: { kind: "from_resolution" } },
+          plan: { kind: "cancel" },
           claimLive: true,
         });
         return;
