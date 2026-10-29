@@ -17,6 +17,7 @@ import type {
   QuestionAskPayload,
   ThreadAsk,
 } from "@meridian/contracts/threads";
+import { permissionWorkCommandSchema } from "@meridian/contracts/threads";
 import { testHook } from "../../../shared/test-hooks.js";
 import { askToolResult, threadAsk } from "../../threads/domain/ask.js";
 import type {
@@ -125,6 +126,12 @@ const DENIED: AskToolResult = {
   output: { allowed: false },
   result: { allowed: false },
   isError: false,
+};
+
+const UNREADABLE_COMMAND: AskToolResult = {
+  output: { allowed: false, error: "This request was stored by another version and cannot run." },
+  result: { allowed: false, error: "This request was stored by another version and cannot run." },
+  isError: true,
 };
 
 export function createAskService(deps: {
@@ -250,11 +257,14 @@ export function createAskService(deps: {
     if (decision === "deny") return DENIED;
     if (decision !== "allow" && decision !== "allow_always")
       throw new Error(`Permission ask ${ask.id} resolved as ${decision}`);
-    const command = ask.permissionCommand;
-    if (!command) throw new Error(`Permission ask ${ask.id} has no command`);
+    if (!ask.permissionCommand) throw new Error(`Permission ask ${ask.id} has no command`);
+    // Tolerant on read, strict here: a command stored by another release may not parse, and that
+    // ask resolves as a recorded refusal instead of breaking the thread's reads.
+    const parsed = permissionWorkCommandSchema.safeParse(ask.permissionCommand);
+    if (!parsed.success) return UNREADABLE_COMMAND;
     return deps.permission.execute({
       threadId: ask.threadId,
-      command,
+      command: parsed.data,
       always: decision === "allow_always",
     });
   }

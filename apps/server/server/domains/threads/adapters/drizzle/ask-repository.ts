@@ -1,6 +1,5 @@
 /** Drizzle adapter for durable ask storage and deadline discovery. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { permissionWorkCommandSchema } from "@meridian/contracts/threads";
 import { asks } from "@meridian/database/schema";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import type { AskRepository, StoredAsk } from "../../ports/ask-repository.js";
@@ -15,7 +14,7 @@ function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
     toolCallId: row.toolCallId,
     kind: row.kind,
     payload: row.payload,
-    permissionCommand: permissionCommand(row.permissionCommand),
+    permissionCommand: row.permissionCommand,
     deadlineAt: row.deadlineAt,
     status: row.status,
     resolution: row.resolution,
@@ -25,11 +24,6 @@ function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
   };
-}
-
-/** Allow runs this command, so a row an older build wrote is parsed, not trusted. */
-function permissionCommand(value: unknown): StoredAsk["permissionCommand"] {
-  return value === null ? null : permissionWorkCommandSchema.parse(value);
 }
 
 /** A row from raw SQL, which returns column names, not field names. */
@@ -42,7 +36,7 @@ function storedAskFromColumns(row: Record<string, unknown>): StoredAsk {
     toolCallId: row.tool_call_id as string,
     kind: row.kind as StoredAsk["kind"],
     payload: row.payload as StoredAsk["payload"],
-    permissionCommand: permissionCommand(row.permission_command),
+    permissionCommand: row.permission_command as StoredAsk["permissionCommand"],
     deadlineAt: dateOrNull(row.deadline_at),
     status: row.status as StoredAsk["status"],
     resolution: row.resolution as StoredAsk["resolution"],
