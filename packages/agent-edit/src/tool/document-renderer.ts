@@ -2,8 +2,9 @@
 
 import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
-import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { DocHandle } from "../handles.js";
+import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
+import { hashLocateContext } from "../resolver/hash-locator.js";
 import {
   headingSectionFragments,
   isHeading,
@@ -11,7 +12,6 @@ import {
   resolveSearchScope,
   type ScopeResult,
 } from "../resolver/scope.js";
-import { modelBlockItem } from "./model-result.js";
 import type { ReadCommand } from "./types.js";
 
 export interface DocumentRenderAddress {
@@ -20,7 +20,13 @@ export interface DocumentRenderAddress {
 }
 
 export type ReadBlockSelection =
-  | { ok: true; blocks: Array<BlockRef> }
+  | {
+      ok: true;
+      /** The selected blocks, in document order. */
+      selected: readonly ProjectedBlock[];
+      /** The one projection of the document, whole: its size and headings; never re-project. */
+      projected: readonly ProjectedBlock[];
+    }
   | { ok: false; code: "not_found" | "invalid_write"; message: string; documentBlocks?: number };
 
 export interface DocumentRenderer {
@@ -29,11 +35,9 @@ export interface DocumentRenderer {
     command: ReadCommand,
     address: DocumentRenderAddress,
   ): ReadBlockSelection;
-  renderBlockLines(doc: DocHandle, codec: AgentEditCodec, blocks?: readonly BlockRef[]): string[];
   renderRead(
-    doc: DocHandle,
+    selection: Extract<ReadBlockSelection, { ok: true }>,
     codec: AgentEditCodec,
-    blocks: readonly BlockRef[],
     format: "full" | "outline",
   ): RenderedRead;
   parseForCommand(content: string): ParseForCommandResult;
@@ -60,7 +64,6 @@ export function createDocumentRenderer(deps: {
 
   return {
     selectReadBlocks,
-    renderBlockLines,
     renderRead,
     parseForCommand,
   };
@@ -70,58 +73,64 @@ export function createDocumentRenderer(deps: {
     command: ReadCommand,
     address: DocumentRenderAddress,
   ): ReadBlockSelection {
-    const scopeContext = { doc, model };
-    if (address.fragment) {
-      const result = resolveScope(scopeContext, `#${address.fragment}`);
-      return scopeSelection(result);
-    }
+    // Projecting repairs the document, so it runs before any scope takes an index.
+    const projected = model.projectBlocks(doc);
+    const scopeContext = hashLocateContext(model, projected);
+    const scopeSelection = (result: ScopeResult): ReadBlockSelection => {
+      if (result.ok) {
+        const { startIndex, blocks } = result.scope;
+        return {
+          ok: true,
+          selected: projected.slice(startIndex, startIndex + blocks.length),
+          projected,
+        };
+      }
+      if (result.code === "ambiguous") {
+        const matches = new Set(result.matches);
+        return {
+          ok: true,
+          selected: projected.filter((block) => matches.has(block.ref)),
+          projected,
+        };
+      }
+      return result;
+    };
+    if (address.fragment) return scopeSelection(resolveScope(scopeContext, `#${address.fragment}`));
     if (command.around !== undefined) {
-      const result = resolveSearchScope(scopeContext, undefined, command.around);
-      return scopeSelection(result);
+      return scopeSelection(resolveSearchScope(scopeContext, undefined, command.around));
     }
-    if (command.in !== undefined) {
-      const result = resolveScope(scopeContext, command.in);
-      return scopeSelection(result);
-    }
-    return { ok: true, blocks: model.getBlocks(doc) };
-  }
-
-  function scopeSelection(result: ScopeResult): ReadBlockSelection {
-    if (result.ok) return { ok: true, blocks: result.scope.blocks };
-    if (result.code === "ambiguous") return { ok: true, blocks: result.matches };
-    return result;
-  }
-
-  function renderBlockLines(
-    doc: DocHandle,
-    codec: AgentEditCodec,
-    blocks?: readonly BlockRef[],
-  ): string[] {
-    return model.serializeBlockLines(doc, codec, blocks);
+    if (command.in !== undefined) return scopeSelection(resolveScope(scopeContext, command.in));
+    return { ok: true, selected: projected, projected };
   }
 
   function renderRead(
-    doc: DocHandle,
+    { selected, projected }: Extract<ReadBlockSelection, { ok: true }>,
     codec: AgentEditCodec,
-    blocks: readonly BlockRef[],
     format: "full" | "outline",
   ): RenderedRead {
     const headingBlocks =
-      format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
+      format === "outline" ? selected.filter((block) => isHeading(model, block.ref)) : [];
     const outline = headingBlocks.length > 0;
-    const rendered = outline ? headingBlocks : blocks;
-    const items = model.serializeBlockLines(doc, codec, rendered).map(modelBlockItem);
+    const shown = outline ? headingBlocks : selected;
+    const bodies = codec.serializeBlocks(
+      shown.map((block) => block.node),
+      shown.map((block) => block.hash),
+    );
+    const items: RenderedRead["blocks"] = shown.map((block, index) => ({
+      hash: block.hash,
+      body: bodies[index],
+    }));
     if (outline) {
-      const fragments = headingSectionFragments({ doc, model });
+      const fragments = headingSectionFragments(hashLocateContext(model, projected));
       items.forEach((item, index) => {
-        const section = fragments.get(rendered[index] as BlockRef);
+        const section = fragments.get(shown[index].ref);
         if (section !== undefined) item.section = section;
       });
     }
     return {
       format: outline ? "outline" : "full",
       blocks: items,
-      documentBlocks: model.getBlocks(doc).length,
+      documentBlocks: projected.length,
     };
   }
 

@@ -27,6 +27,7 @@ import { createFigureSignedUrlHandler } from "../../../routes/api/projects/[proj
 import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { grepQuery } from "../../../test-support/grep-query.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleFileFacts } from "../../file-policy/adapters/drizzle-file-facts.js";
 import { RecentDocumentUnavailableError } from "../../recent-documents/ports/recent-documents-repository.js";
@@ -318,9 +319,9 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         {
           surface: "ContextFS search",
           run: async () => {
-            const hits = await liveFs.search("smells of salt");
+            const hits = await liveFs.grep(grepQuery("smells of salt"));
             return hits.ok
-              ? hits.value.some((hit) => hit.documentId === s.harbor)
+              ? hits.value.files.some((hit) => hit.documentId === s.harbor)
               : hits.error.code;
           },
           expected: false,
@@ -540,9 +541,9 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         {
           surface: "ContextFS search in D",
           run: async () => {
-            const hits = await branchFs.search("smells of salt");
+            const hits = await branchFs.grep(grepQuery("smells of salt"));
             return hits.ok
-              ? hits.value.flatMap((hit) => (hit.documentId === s.harbor ? [hit.uri] : []))
+              ? hits.value.files.flatMap((hit) => (hit.documentId === s.harbor ? [hit.uri] : []))
               : hits.error.code;
           },
           expected: [HARBOR_URI],

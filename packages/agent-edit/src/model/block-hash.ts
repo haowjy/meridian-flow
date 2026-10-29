@@ -109,7 +109,7 @@ function uniqueHashFor(target: Y.XmlElement, blocks: readonly Y.XmlElement[]): s
 }
 
 /** Compute unique hashes for a set of blocks in one sorted pass. */
-function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[] {
+export function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[] {
   return uniqueHashesForIds(blocks.map(blockIdentity));
 }
 

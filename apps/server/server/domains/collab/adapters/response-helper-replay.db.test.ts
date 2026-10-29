@@ -30,6 +30,8 @@ async function _expectScopedReplay(
   const { createEffectiveDocumentReader } = await import("../domain/effective-document-reader.js");
   const reader = createEffectiveDocumentReader({
     drafts: fixture.draftStore,
+    blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
+    resolveFiletype: async () => null,
     draftPulls: fixture.draftPulls,
     agentEdit: fixture.collab.agentEdit(),
     documents: fixture.runtime.markdownDocuments,
@@ -56,11 +58,7 @@ async function _expectScopedReplay(
   const hashlines = await reader.readEffectiveHashlines(args);
   expect(hashlines).toMatchObject({ ok: true });
   if (hashlines.ok)
-    expect(hashlines.value.content.map((block) => block.slice(block.indexOf("|") + 1))).toEqual([
-      "red",
-      "azure",
-      "lime",
-    ]);
+    expect(hashlines.value.blocks.map((block) => block.body)).toEqual(["red", "azure", "lime"]);
 }
 
 describe("response helper replay (Postgres)", () => {

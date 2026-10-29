@@ -3,11 +3,11 @@ import { documentPathKey, splitDocumentHrefSuffix } from "@meridian/contracts";
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import {
-  isSearchHits,
-  renderSearchFiles,
-  renderSearchHits,
-  type SearchHit,
-} from "./search-result.js";
+  type GrepToolResult,
+  isGrepResult,
+  renderGrepFileList,
+  renderGrepFiles,
+} from "./grep-result.js";
 
 /**
  * `stale`: the document changed since this copy. `reshown`: compaction shows its
@@ -82,18 +82,18 @@ export const writeDocumentText: DocumentTextPolicy = {
   },
 };
 
-/** A search's passages from changed files are cleared; its history form keeps files and counts. */
-export const searchDocumentText: DocumentTextPolicy = {
+/** A grep's passages from changed files are cleared; its history form keeps files and counts. */
+export const grepDocumentText: DocumentTextPolicy = {
   kind: "read",
   elide({ input = {}, output, result }, changed, treatment) {
-    const typed = isSearchHits(result) ? result : isSearchHits(output) ? output : undefined;
+    const typed = isGrepResult(result) ? result : isGrepResult(output) ? output : undefined;
     if (!typed)
-      return { output: `[Cleared at compaction: search results; search again for current text]` };
-    const hits = typed as unknown as SearchHit[];
-    if (treatment === "history") return { output: renderSearchFiles(hits) };
+      return { output: `[Cleared at compaction: grep results; grep again for current text]` };
+    const grepped = typed as unknown as GrepToolResult;
+    if (treatment === "history") return { output: renderGrepFileList(grepped) };
     const uris = new Set(changed.map((ref) => ref.uri));
     return {
-      output: renderSearchHits(hits, input, (hit) => changed.length === 0 || uris.has(hit.uri)),
+      output: renderGrepFiles(grepped, input, (hit) => changed.length === 0 || uris.has(hit.uri)),
     };
   },
 };

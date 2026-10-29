@@ -422,7 +422,7 @@ from the real runtime, not fabricated model output.
 - [Thinking and critique](../tools/mf/fixtures/mock-thinking.json): paced thinking followed by a formatted critique.
 - [Large output](../tools/mf/fixtures/mock-large.json): 10,000 lorem words with paragraph breaks.
 - [Sample rotation](../tools/mf/fixtures/mock-samples.json): scene, critique, outline and Markdown on four model calls. Queue with `mock script`; `send --mock` removes unconsumed steps when that send finishes.
-- [Document tools](../tools/mf/fixtures/mock-tools.json): create/overwrite `scratch://Mock scene`, then read, list and search it, followed by a final answer. The fixture fixes this path in the current chat's Scratch, not manuscript files. Read it with `./mf doc read "scratch://@<chat-ref>/Mock scene"` (for example, chat ref `c7`).
+- [Document tools](../tools/mf/fixtures/mock-tools.json): create/overwrite `scratch://Mock scene`, then read, list and grep it, followed by a final answer. The fixture fixes this path in the current chat's Scratch, not manuscript files. Read it with `./mf doc read "scratch://@<chat-ref>/Mock scene"` (for example, chat ref `c7`).
 - [Retry recovery](../tools/mf/fixtures/mock-recovery.json): one 503, then a successful outline. The gateway is the only retry layer; provider SDK clients use `maxRetries: 0`.
 - [Truncated response](../tools/mf/fixtures/mock-truncated.json): a partial sentence with the provider's length finish reason.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.

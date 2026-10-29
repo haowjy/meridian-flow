@@ -3,20 +3,16 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
-import type { AgentEditModel, ContentLineage } from "../ports/model.js";
+import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
 import type { ApplyEchoHunk } from "./types.js";
 
 export interface BlockSnapshot {
   hash: string;
   clientID: number;
   clock: number;
-  /** Hash-independent canonical rendering used by provenance classification. */
-  renderedContent: string;
   /** Canonical hashless block body. */
   body: string;
   serialized: string;
-  /** Visible prose ancestry; identities come from CRDT items, never text bytes. */
-  lineage: readonly ContentLineage[];
 }
 
 export interface EchoInput {
@@ -32,18 +28,23 @@ export function snapshotBlocks(
   model: AgentEditModel,
   codec: AgentEditCodec,
 ): BlockSnapshot[] {
-  const blocks = model.getBlocks(doc);
-  if (blocks.length === 0) return [];
-  const hashes = model.getDocumentBlockIds(doc);
-  const serialized = model.serializeBlockLines(doc, codec);
-  const bodies = model.serializeBlockBodies(doc, codec, blocks);
-  return blocks.map((block, index) => ({
-    hash: hashes[index],
-    ...model.getCanonicalBlockIdentity(block),
-    renderedContent: `${model.getBlockType(block)}|${bodies[index]}`,
+  return snapshotProjected(model.projectBlocks(doc), codec);
+}
+
+/** `snapshotBlocks` over a projection the caller already holds. */
+export function snapshotProjected(
+  projected: readonly ProjectedBlock[],
+  codec: AgentEditCodec,
+): BlockSnapshot[] {
+  const bodies = codec.serializeBlocks(
+    projected.map((block) => block.node),
+    projected.map((block) => block.hash),
+  );
+  return projected.map(({ id, hash }, index) => ({
+    hash,
+    ...id,
     body: bodies[index],
-    serialized: serialized[index],
-    lineage: model.getVisibleContentLineage(block),
+    serialized: toHashline(hash, bodies[index]),
   }));
 }
 
@@ -73,7 +74,7 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
  * to the document, merged, in order. The echo's window.
  * A target of -1 (an insert at the start) widens to the first block.
  */
-export function windowOf(targets: Iterable<number>, blockCount: number): number[] {
+function windowOf(targets: Iterable<number>, blockCount: number): number[] {
   const indexes = new Set<number>();
   for (const target of targets) {
     for (

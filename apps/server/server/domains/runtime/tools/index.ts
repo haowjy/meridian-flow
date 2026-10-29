@@ -18,12 +18,13 @@ export {
   type CoreToolHandlers,
   type CoreToolName,
   createCoreToolRegistrations,
+  type GrepToolInput,
   type LsToolInput,
-  type SearchToolInput,
   type WorkCommand,
   WorkCommandSchema,
 } from "./core-tools.js";
 export type { DocumentRef, DocumentTextPolicy } from "./document-text.js";
+export { grepPassage } from "./grep-result.js";
 export { createInspectionToolRegistrations } from "./inspection-tools.js";
 export {
   type InvalidArgumentIssue,
@@ -32,11 +33,10 @@ export {
   renderInvalidArguments,
 } from "./invalid-arguments.js";
 export { type LsEntry, type LsResult, sortLsEntries } from "./ls-result.js";
-export { searchPassage } from "./search-result.js";
 export {
   createSkillToolRegistrations,
   readSkill,
-  refuseSkillSearch,
+  refuseSkillGrep,
   refuseSkillWrite,
   skillsRootEntries,
 } from "./skill-tool.js";
