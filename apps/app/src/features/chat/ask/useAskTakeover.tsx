@@ -7,7 +7,9 @@
  *
  * Nothing typed is lost: when the ask ends, words that aren't in how it ended (left in a field
  * beside a picked option, or sent but beaten by another resolution) are added to the composer
- * draft once. Closure follows the ask's lifecycle, not the takeover.
+ * draft once. Closure follows the ask's lifecycle, not the takeover. The writer's draft is kept
+ * in this tab's session storage, one per chat, so leaving the chat or reloading keeps the words;
+ * an ask that ended meanwhile closes when the chat opens again.
  *
  * A takeover the writer hasn't touched (a reload, another device, coming back to a chat) shows
  * the answers the server holds for the ask (`draftAnswers`), the ones a timeout would use, and
@@ -21,8 +23,9 @@
  * they chose. A report waiting on that interval is sent when the writer leaves or the page hides,
  * and one the socket couldn't carry is sent when it connects again.
  */
-import type { ThreadAsk } from "@meridian/contracts/threads";
+import { questionAnswerSchema, type ThreadAsk } from "@meridian/contracts/threads";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { browserRecord, isRecord } from "@/client/storage/browser-record";
 import { useOpenAsk, useThreadStore } from "@/client/stores";
 import type { ComposerHandle } from "@/components/app/composer";
 import { AskTakeover, type QuestionDraft } from "./AskTakeover";
@@ -35,18 +38,28 @@ const NONE: HeldDraft = { askId: null, step: 0, entries: [] };
 /** The server's idle clock is minutes long; this keeps it moving without a frame per keystroke. */
 const PRESENCE_INTERVAL_MS = 30_000;
 
-export function useAskTakeover(threadId: string, composer: RefObject<ComposerHandle | null>) {
+export function useAskTakeover(
+  accountId: string,
+  threadId: string,
+  composer: RefObject<ComposerHandle | null>,
+) {
   const open = useOpenAsk(threadId);
   const commands = useAnswerAsk(threadId);
   const openId = open?.ask.id ?? null;
-  const [held, setHeld] = useState<HeldDraft>(NONE);
+  // ChatView is keyed by chat, so the account and chat are fixed for this hook's life.
+  const [stored] = useState(() => heldRecord(accountId, threadId));
+  const [held, setHeld] = useState<HeldDraft>(() => stored.read() ?? NONE);
   // The ref is the truth for the effect and the presence timer: it changes with each write,
   // before any render the answer's store update causes.
   const heldRef = useRef(held);
-  const write = useCallback((next: HeldDraft) => {
-    heldRef.current = next;
-    setHeld(next);
-  }, []);
+  const write = useCallback(
+    (next: HeldDraft) => {
+      heldRef.current = next;
+      setHeld(next);
+      stored.write(next.askId === null ? undefined : next);
+    },
+    [stored],
+  );
   // The ask whose last answer the server refused; any change to its draft clears it.
   const [refusedAsk, setRefusedAsk] = useState<string | null>(null);
   const tracked = useThreadStore((state) =>
@@ -138,12 +151,43 @@ export function useAskTakeover(threadId: string, composer: RefObject<ComposerHan
           const current = heldRef.current;
           if (result.kind !== "invalid_answer") return;
           setRefusedAsk(askId);
-          // A draft the writer never changed isn't held yet; the seeded one is what was sent.
-          if (result.questionIndex !== undefined && current.askId === askId)
-            write({ ...current, step: result.questionIndex });
+          if (result.questionIndex !== undefined) write({ ...current, step: result.questionIndex });
         });
       }}
     />
+  );
+}
+
+function heldRecord(accountId: string, threadId: string) {
+  return browserRecord<HeldDraft>(
+    "session",
+    {
+      key: `meridian:ask-draft:v1:${JSON.stringify([accountId, threadId])}`,
+      version: 1,
+      accountId,
+    },
+    (value) => {
+      if (!isRecord(value) || typeof value.askId !== "string") return undefined;
+      const { step, entries } = value;
+      if (
+        !Number.isInteger(step) ||
+        !Array.isArray(entries) ||
+        (step as number) < 0 ||
+        (step as number) >= entries.length
+      )
+        return undefined;
+      const parsed = entries.map((entry) => {
+        if (!isRecord(entry) || typeof entry.words !== "string") return null;
+        const choice = questionAnswerSchema.nullable().safeParse(entry.choice);
+        return choice.success ? { choice: choice.data, words: entry.words } : null;
+      });
+      if (parsed.some((entry) => entry === null)) return undefined;
+      return {
+        askId: value.askId,
+        step: step as number,
+        entries: parsed as QuestionDraft["entries"],
+      };
+    },
   );
 }
 

@@ -110,25 +110,24 @@ function QuestionsReceipt({
             aria-hidden
           />
         </button>
-        {open ? (
-          <ol
-            id={panelId}
-            className="mt-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]"
-          >
-            {questions.map((item, index) => (
-              // Questions are fixed for the ask's life; their order is their identity.
-              <li key={index}>
-                <span className="text-muted-foreground">{item.question}</span>
-                {answers?.[index] ? (
-                  <>
-                    {" "}
-                    <Answer pending={pending}>{questionAnswerText(answers[index])}</Answer>
-                  </>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        ) : null}
+        <ol
+          id={panelId}
+          hidden={!open}
+          className="mt-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]"
+        >
+          {questions.map((item, index) => (
+            // Questions are fixed for the ask's life; their order is their identity.
+            <li key={index}>
+              <span className="text-muted-foreground">{item.question}</span>
+              {answers?.[index] ? (
+                <>
+                  {" "}
+                  <Answer pending={pending}>{questionAnswerText(answers[index])}</Answer>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ol>
       </div>
     </ReceiptLine>
   );
