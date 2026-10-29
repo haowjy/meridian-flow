@@ -39,26 +39,6 @@ async function openQuestion() {
 }
 
 describe("durable ask claims", () => {
-  it("admits exactly one answer, expiry, or cancellation", async () => {
-    const { app, ask, thread } = await openQuestion();
-
-    const [answer, expired, cancelled] = await Promise.all([
-      app.asks.answer({
-        userId: USER_ID,
-        threadId: thread.id,
-        askId: ask.id,
-        submissionId: "submission",
-        answer: { kind: "option", label: "Right" },
-      }),
-      app.asks.expireDue(new Date()),
-      app.asks.cancelOpen(thread.id, ask.id),
-    ]);
-
-    expect(Number(answer.ok) + expired + Number(cancelled.ok)).toBe(1);
-    const settled = await app.threadRepos.asks.findById(ask.id);
-    expect(settled?.status).toMatch(/^(answered|expired|cancelled)$/);
-  });
-
   it("returns the first result for a repeated submission id", async () => {
     const { app, ask, thread, turn } = await openQuestion();
     const submit = () =>

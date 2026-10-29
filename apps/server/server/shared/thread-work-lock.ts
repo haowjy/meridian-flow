@@ -1,13 +1,42 @@
-/** Canonical mutation locks: thread (NO KEY UPDATE), then primary/target Works by id. */
+/**
+ * Canonical mutation locks: thread (NO KEY UPDATE), then primary/target Works by id. Several
+ * thread rows lock parents first, by `(spawn_depth, id)` (`parentsFirst`), the order lineage
+ * cancellation takes a subtree in; any other order deadlocks against a Stop.
+ */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { threads, threadWorks } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { asks, threads, threadWorks } from "@meridian/database/schema";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { continuationOwedSql } from "./ask-continuation-owed.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 import {
   type LockedWorkLifecycle,
   lockWorkLifecycle,
   lockWorksInIdOrder,
 } from "./work-lifecycle-lock.js";
+
+/**
+ * Locks, in id order, the asks these threads hold: live asks and owed continuations. The thread
+ * lock takes its own asks first, so an ask transition under it never waits on an ask row.
+ * `skipLocked` leaves rows another transaction holds.
+ */
+export async function lockThreadAsks(
+  db: DrizzleDb,
+  threadIds: readonly ThreadId[],
+  options: { skipLocked?: boolean } = {},
+) {
+  if (threadIds.length === 0) return;
+  const query = currentDrizzleDb(db)
+    .select({ id: asks.id })
+    .from(asks)
+    .where(
+      and(
+        inArray(asks.threadId, [...threadIds]),
+        or(inArray(asks.status, ["pending", "open"]), continuationOwedSql()),
+      ),
+    )
+    .orderBy(asc(asks.id));
+  await (options.skipLocked ? query.for("update", { skipLocked: true }) : query.for("update"));
+}
 
 /** Caller owns the transaction. FK KEY SHARE from Work notices must remain compatible. */
 export async function lockThreadForMutation(db: DrizzleDb, threadId: ThreadId) {
@@ -25,6 +54,25 @@ export async function lockThreadForMutation(db: DrizzleDb, threadId: ThreadId) {
   return thread ?? null;
 }
 
+/**
+ * The order a thread tree is locked in, by Work lockers and by lineage cancellation within one
+ * owner's subtree (cancellation orders the owners themselves, then locks each subtree this way).
+ * `spawn_depth` is the parent's plus one, so parents sort before their children;
+ * `listSubtreeIds` gives a subtree this order.
+ */
+export function parentsFirst(
+  a: { id: string; spawnDepth: number },
+  b: { id: string; spawnDepth: number },
+): number {
+  return a.spawnDepth - b.spawnDepth || a.id.localeCompare(b.id);
+}
+
+const treeColumns = {
+  id: threads.id,
+  deletedAt: threads.deletedAt,
+  spawnDepth: threads.spawnDepth,
+};
+
 async function findWorkThreadTree(
   db: DrizzleDb,
   workId: WorkId,
@@ -32,14 +80,14 @@ async function findWorkThreadTree(
 ): Promise<{ threadIds: ThreadId[]; liveThreadIds: ThreadId[] }> {
   const activeDb = currentDrizzleDb(db);
   const roots = await activeDb
-    .select({ id: threads.id, deletedAt: threads.deletedAt })
+    .select(treeColumns)
     .from(threadWorks)
     .innerJoin(threads, eq(threadWorks.threadId, threads.id))
     .where(and(eq(threadWorks.workId, workId), eq(threadWorks.isPrimary, true)));
   const rows = new Map(roots.map((row) => [row.id, row]));
   if (includeMarked) {
     const marked = await activeDb
-      .select({ id: threads.id, deletedAt: threads.deletedAt })
+      .select(treeColumns)
       .from(threads)
       .where(eq(threads.deletedByWorkId, workId));
     for (const row of marked) rows.set(row.id, row);
@@ -47,7 +95,7 @@ async function findWorkThreadTree(
   let frontier = [...rows.keys()];
   while (frontier.length > 0) {
     const children = await activeDb
-      .select({ id: threads.id, deletedAt: threads.deletedAt })
+      .select(treeColumns)
       .from(threads)
       .where(inArray(threads.parentThreadId, frontier));
     frontier = [];
@@ -57,7 +105,7 @@ async function findWorkThreadTree(
       frontier.push(child.id);
     }
   }
-  const ordered = [...rows.values()].sort((a, b) => a.id.localeCompare(b.id));
+  const ordered = [...rows.values()].sort(parentsFirst);
   return {
     threadIds: ordered.map(({ id }) => id),
     liveThreadIds: ordered.filter(({ deletedAt }) => !deletedAt).map(({ id }) => id),
@@ -65,13 +113,21 @@ async function findWorkThreadTree(
 }
 
 /**
- * Stabilizes a Work's primary thread forest under the canonical thread-before-Work lock order.
+ * Stabilizes a Work's primary thread forest under the canonical thread-before-Work lock order,
+ * its rows parents first.
  * `changed` asks the transaction owner to retry instead of letting a newly joined tree escape.
  */
 export async function lockWorkThreadTree(
   db: DrizzleDb,
   workId: WorkId,
-  options: { includeMarked?: boolean } = {},
+  options: {
+    includeMarked?: boolean;
+    /**
+     * Runs on the tree before its rows lock, receiving the ids parents first (`parentsFirst`); a
+     * thread that joins meanwhile reads as `changed`.
+     */
+    beforeLock?: (threadIds: readonly ThreadId[]) => Promise<void>;
+  } = {},
 ): Promise<{
   lifecycle: LockedWorkLifecycle;
   threadIds: ThreadId[];
@@ -79,6 +135,7 @@ export async function lockWorkThreadTree(
   changed: boolean;
 }> {
   const initial = await findWorkThreadTree(db, workId, options.includeMarked ?? false);
+  await options.beforeLock?.(initial.threadIds);
   for (const threadId of initial.threadIds) await lockThreadForMutation(db, threadId);
   const lifecycle = await lockWorkLifecycle(db, workId);
   const current = await findWorkThreadTree(db, workId, options.includeMarked ?? false);

@@ -4,6 +4,7 @@ export {
   type ChatCardsInput,
   chatCards,
 } from "./chat-cards";
+export { handBackCards } from "./hand-back-cards";
 export type {
   BriefStopFailure,
   ChatCard,

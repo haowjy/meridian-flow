@@ -84,8 +84,9 @@ validate under the same lock and refuse a flagged lease.
   the writer rows at or below `seenThrough` plus `mine`; L is the writer rows
   above it that are not `mine`. An execution *takes on* a message when it is in
   the lease receipt or one of its turns delivered it. The execution is cancelled
-  when the writer saw it or it took on a message in P, unless it took on one in
-  L. `decideHandBack` classifies each covered message as `gone` (another request
+  when the writer saw it, it took on a message in P, or it continues the writer's
+  answer to a question (`continuesWriterAnswer`: an answer is the writer's own
+  request, like `mine`), unless it took on one in L. `decideHandBack` classifies each covered message as `gone` (another request
   handed it back), handed back, or `answered`.
 - **`handBack`** is the same operation for the queue's x and Cancel queue
   (`POST /api/threads/:id/hand-back`, `HandBackRequest { requestId, ids }`,
@@ -204,7 +205,11 @@ behind a queued write-mode switch (`yield`: the execution ends with no
 successor). At run start, pending non-command rows win unless a write-mode
 switch precedes work (`switch`, applied at the admitted run start); a lone
 switch stays pending, and otherwise the oldest command runs alone. See
-[controls](controls.md). Stop ends only the current turn. A notice-only queue
+[controls](controls.md). Stop ends only the current reply of its own chat and what
+that execution owes; its background subagents keep running (a foreground child
+ends with the reply that was waiting on it, and takes its own background children
+along; see
+[lineage cancellation](spawn.md#lineage-cancellation)). A notice-only queue
 does not start a run. `wakeIfRunnable` rereads after release and setup
 cancellation; the periodic sweep is the durable backstop, and an empty reread
 must not spin.
@@ -218,7 +223,16 @@ start and adopts eligible queued messages only up to the first write-mode switch
 The continuation yields at that switch; the following run applies it before
 adopting later messages. The row carries no public control body and materializes
 no transcript turn. Delivery rechecks this eligibility under the thread lock;
-SQL wake discovery only avoids wasted starts.
+SQL wake discovery only avoids wasted starts. The row is only the wake hint: what
+the continuation owes is `asks.continuation`, which admission claims (owed, `pending`
+to `done`; `continuationOwedSql` is the rule) and acknowledges the row in the reservation commit. A hint whose ask owes
+nothing any more is retired without a run.
+
+A machine message names its sending execution (`MessageDraft.sender`), and the
+enqueue checks the receiver's wake fence under the receiver's thread lock before the
+row is written (see [lineage cancellation](spawn.md#lineage-cancellation)). A
+refused draft throws `WakeRefusedError`, which the sending tool turns into a
+`thread_stopped` result.
 
 `UserTurnAdmission` is the writer fence under the thread lock. Its sequence is
 **validate → record → enqueue**: replay/fingerprint identity is settled first,

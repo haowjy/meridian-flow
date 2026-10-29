@@ -383,7 +383,7 @@ accompany any of them. Unknown fields and conflicting text sources are rejected.
 | `delayMs` | Wait 0–120,000 ms before starting the response, including errors. |
 | `chunkSize` | Unicode characters per text, thinking, or tool-argument chunk; 1–65,536, default 24. |
 | `chunkDelayMs` | Interval between chunks, 0–10,000 ms. Scripts default to 0 (burst output); without `MOCK_MODEL_RESPONSE` or a matching script, the dev default uses 20 ms. Approximate character rate is `chunkSize * 1000 / chunkDelayMs`; network and application processing add overhead. |
-| `toolCalls` | `[{ "name": "read", "args": { "path": "scratch://Mock scene" } }]`. Up to 100 calls; names and arguments go to the real tool registry. |
+| `toolCalls` | `[{ "name": "read", "args": { "path": "scratch://Mock scene" } }]`. Up to 100 calls; names and arguments go to the real tool registry. `rawArgs` instead of `args` sends the arguments string as is, for a malformed-JSON tool call. |
 | `finishReason` | `length` for truncation or `content_filter` for a filtered response. Sends all supplied text, then marks the response failed; the partial text remains above a failed-response card. Does not shorten text for you. Omit for normal completion or tool execution. |
 | `error` | `{ "status": 503, "message": "Unavailable" }` instead of content. Cannot be combined with response content or streaming controls. |
 | `times` | Number of model calls consuming this step (1–1,000). An error without `times` keeps answering every matching call, including retries, until the script is cleared. |

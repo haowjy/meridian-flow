@@ -2,6 +2,9 @@
  * POST /api/threads/:threadId/stop: chat Stop, decided once on the server from rows. Cancels the
  * running reply the writer saw (or that took on a message they saw) and hands back every waiting
  * writer message no execution has taken on, answering their content for the acting tab's composer.
+ * It ends that reply and what it owes (its open question, an owed continuation). Background
+ * subagents keep running and their reports still wake the chat; a foreground one follows the
+ * reply's abort signal and ends with it.
  * A replay of the same request id answers the stored decision (200); the same id with another body
  * is a 409.
  */
@@ -20,8 +23,6 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) throw createError({ statusCode: 400, message: "invalid_stop" });
   try {
     const request: StopRequest = parsed.data;
-    const openAsk = await app.threadRepos.asks.findOpenByThread(threadId);
-    if (openAsk) await app.asks.cancelOpen(threadId, openAsk.id);
     return serializeTransport((await app.runner.stop(threadId, request)) satisfies StopResponse);
   } catch (error) {
     if (error instanceof HandBackConflictError)

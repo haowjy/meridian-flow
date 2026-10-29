@@ -13,13 +13,6 @@ export const questionAskPayloadSchema = z.strictObject({
   question: z.string().min(1),
   options: z.array(askOptionSchema).min(2).max(4),
   recommended: z.string().min(1).optional(),
-  forwardedFrom: z
-    .strictObject({
-      threadId: z.string().min(1),
-      askId: z.string().min(1),
-      handle: z.string().min(1),
-    })
-    .optional(),
 });
 
 export const permissionAskPayloadSchema = z.strictObject({
@@ -36,7 +29,6 @@ export const answeredAskResolutionSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("option"), label: z.string().min(1) }),
   z.strictObject({ kind: z.literal("text"), text: z.string().min(1) }),
   z.strictObject({ kind: z.literal("skipped") }),
-  z.strictObject({ kind: z.literal("parent"), text: z.string().min(1) }),
   z.strictObject({ kind: z.literal("allow") }),
   z.strictObject({ kind: z.literal("allow_always") }),
   z.strictObject({ kind: z.literal("deny") }),
@@ -99,6 +91,12 @@ export type AskPayload = QuestionAskPayload | PermissionAskPayload;
 export type AskKind = z.infer<typeof askContentSchema>["kind"];
 export type AskResolution = z.infer<typeof askResolutionSchema>;
 export type AskStatus = z.infer<typeof askLifecycleSchema>["status"];
+
+/**
+ * Where a resolved ask's continuation stands; null while the ask is live. `pending` is owed
+ * until a run admits it (`done`) or a cancellation takes it (`cancelled`).
+ */
+export type AskContinuationState = "pending" | "done" | "cancelled";
 export type ThreadAsk = z.infer<typeof threadAskSchema>;
 
 export const askAnswerSchema = z.discriminatedUnion("kind", [

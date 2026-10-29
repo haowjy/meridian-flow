@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { OpenSubagentChatButton } from "../OpenSubagentChatButton";
 import { Elapsed, formatSubagentElapsed, resolveSubagentName } from "./display";
-import type { SubagentRun, SubagentRunStatus } from "./run-model";
+import type { SubagentRun } from "./run-model";
 import { SubagentMark } from "./SubagentMark";
 
 export function SubagentIdentity({
@@ -22,12 +22,11 @@ export function SubagentIdentity({
   showName?: boolean;
   afterName?: ReactNode;
 }) {
-  const markStatus: SubagentRunStatus = run.status;
   return (
     <>
       <SubagentMark
         agentName={run.agentName}
-        status={markStatus}
+        status={run.status}
         className={size === "card" ? undefined : "size-5 text-[10px]"}
       />
       {agentLabel ?? <SubagentIdentityName run={run} />}
@@ -129,6 +128,7 @@ export function SubagentRow({
   expandable = false,
   door = true,
   threadIds,
+  trailing,
   detail,
   children,
   className,
@@ -145,6 +145,8 @@ export function SubagentRow({
   expandable?: boolean;
   door?: boolean;
   threadIds?: string;
+  /** Row controls before the door, e.g. a running child's Stop. */
+  trailing?: ReactNode;
   detail?: ReactNode;
   children?: ReactNode;
   className?: string;
@@ -178,6 +180,7 @@ export function SubagentRow({
         ) : (
           <div className={cn("flex min-w-0 items-center", gap, fill)}>{identity}</div>
         )}
+        {trailing}
         {door ? (
           <OpenSubagentChatButton
             threadId={run.threadId}

@@ -102,6 +102,7 @@ import {
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
+import type { AskService } from "../asks/ask-service.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
@@ -112,7 +113,7 @@ import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
-import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
+import { admitRun, readContinuation } from "../spawn/run-admission.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import {
@@ -157,7 +158,7 @@ import {
 } from "./partial-tool-activity.js";
 import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
+import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import {
   loadReferenceReads,
@@ -166,7 +167,11 @@ import {
   recordReferenceEvidence,
 } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
-import { createRunSessions } from "./run-session.js";
+import {
+  createRunSessions,
+  type LineageCancellation,
+  type RunSessionReports,
+} from "./run-session.js";
 import {
   type DrainRunLoopInput,
   isDrainRun,
@@ -181,7 +186,12 @@ import {
   mapStreamEvent,
   toJsonValue,
 } from "./streaming.js";
-import { dispatchToolCall, reduceToolBatch, type ToolDispatchOutcome } from "./tool-dispatch.js";
+import {
+  dispatchToolCall,
+  type RequestBatch,
+  reduceToolBatch,
+  type ToolDispatchOutcome,
+} from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import {
   type AssembledNextTurnContext,
@@ -249,6 +259,13 @@ export interface OrchestratorDeps {
   headSeq(threadId: ThreadId): Promise<bigint>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
+  /** Lineage cancellation across processes: turn cancel, delete, and a child's terminal run end a subtree; Stop and Send now end only the reply. */
+  lineage: LineageCancellation;
+  askRequests: Pick<AskService, "request">;
+  /** Runs after the ambient transaction commits, or at once outside one. */
+  afterCommit(task: () => void): void;
+  /** Child invocation cards: the saved report when the run ends. */
+  reports: RunSessionReports;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"
@@ -416,38 +433,6 @@ function applyResponseToTurnSnapshot(turn: Turn, response: ModelResponseReceived
   };
 }
 
-async function admitRunExecution(
-  deps: OrchestratorDeps,
-  input: RunLoopInput,
-  thread: Thread,
-  executionTurnId: TurnId,
-  adopted: readonly InboxMessage[] = [],
-): Promise<void> {
-  if (thread.kind !== "subagent" && input.executionReport) {
-    throw new Error("Execution report correlation requires a subagent thread");
-  }
-  if (thread.kind === "subagent") {
-    if (!thread.ref) throw new Error("Subagent thread has no project handle");
-    const correlation = input.executionReport?.correlation ??
-      parentRetaskCorrelation(thread, adopted) ?? {
-        callerThreadId: null,
-        callerTurnId: null,
-        toolCallId: null,
-        cardBlockId: null,
-        origin: "thread_run" as const,
-        deliveryMode: "none" as const,
-      };
-    await deps.repos.executionReports.admit({
-      childThreadId: input.threadId,
-      executionTurnId,
-      handle: thread.ref,
-      ...correlation,
-      agentSlug: input.executionReport?.agentSlug ?? null,
-      name: input.executionReport?.name ?? null,
-    });
-  }
-}
-
 /** Commit initial history before handing the session its lazy model loop. */
 async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise<PreparedLoop> {
   const { repos } = deps;
@@ -511,6 +496,15 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
           : { kind: "writer", actorId: thread.userId },
         body: { kind: "text", text: input.userText },
         idempotencyKey: userTurnId,
+        // A child's admission is its parent's machine wake: the enqueue checks the fence.
+        ...(input.child
+          ? {
+              sender: {
+                threadId: input.child.parentThreadId,
+                executionId: input.child.parentExecutionId,
+              },
+            }
+          : {}),
       },
     });
   });
@@ -552,16 +546,10 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
-      if (control?.body.kind === "ask_resolved") {
-        const ask = await deps.repos.asks.findById(control.body.askId);
-        if (
-          !ask ||
-          ask.threadId !== input.threadId ||
-          ask.status === "open" ||
-          ask.status === "pending"
-        )
-          throw new Error("Ask continuation is not backed by a resolved ask");
-      }
+      const hint = control?.body.kind === "ask_resolved" ? control.body : null;
+      const read = hint ? await readContinuation(deps.repos.asks, input.threadId, hint) : null;
+      if (read === "retire" && control) return { retire: [control.id] };
+      const continuation = read === "retire" ? null : read;
       const requestControl =
         control?.body.kind === "ask_resolved"
           ? null
@@ -749,7 +737,8 @@ async function runDrainTurn(
         localTurns,
         inheritedTurns,
         inheritedBlocks,
-        executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
+        executionAdmitted:
+          selection.outstanding.length > 0 || !!input.replyTurnId || !!continuation,
         // A start-time compaction hands the Retry's list on to the first assistant.
         carriedReservedFor: reservedTurn.role === "assistant" ? [] : retryReservedFor,
       };
@@ -768,9 +757,7 @@ async function runDrainTurn(
         value,
         turnId: reservedTurn.id,
         completedControlIds:
-          control?.body.kind === "compact" || control?.body.kind === "ask_resolved"
-            ? [control.id]
-            : [],
+          control && (control.body.kind === "compact" || continuation) ? [control.id] : [],
         turnKind: currentTurnKind(reservedTurn),
         messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
@@ -805,14 +792,14 @@ async function runDrainTurn(
                     reservedTurn.id,
                     preflight.evidence,
                   );
-                if (selection.outstanding.length > 0 || input.replyTurnId)
-                  await admitRunExecution(
-                    deps,
-                    input,
-                    setupThread,
-                    reservedTurn.id,
-                    selection.outstanding,
-                  );
+                if (selection.outstanding.length > 0 || input.replyTurnId || continuation)
+                  await admitRun(deps.repos, {
+                    thread: setupThread,
+                    executionTurnId: reservedTurn.id,
+                    adopted: selection.outstanding,
+                    continuation,
+                    executionReport: input.executionReport,
+                  });
               },
             },
           );
@@ -1167,24 +1154,17 @@ async function persistToolOutcome(input: {
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  outcome:
-    | { kind: "permission_denied"; reason: string }
-    | { kind: "notes_held" }
-    | { kind: "ask_refused"; reason: string };
+  outcome: { kind: "permission_denied"; reason: string } | { kind: "notes_held" };
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const denied = input.outcome.kind === "permission_denied" || input.outcome.kind === "ask_refused";
+  const denied = input.outcome.kind === "permission_denied";
   const result: JsonObject =
     input.outcome.kind === "permission_denied"
       ? { error: "permission_denied", reason: input.outcome.reason }
-      : input.outcome.kind === "ask_refused"
-        ? { error: "ask_refused", reason: input.outcome.reason }
-        : { refusal: "notes_step" };
+      : { refusal: "notes_step" };
   const output = denied
-    ? input.outcome.kind === "ask_refused"
-      ? input.outcome.reason
-      : result
+    ? result
     : "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.";
   const extraEvents: OrchestratorEvent[] =
     input.outcome.kind === "permission_denied"
@@ -1888,7 +1868,13 @@ async function executeLoop({
           (!executionSelector ||
             !(await deps.repos.executionReports.findByExecution(thread.id, executionSelector)))
         ) {
-          await admitRunExecution(deps, input, thread, turn.id, adopted);
+          await admitRun(deps.repos, {
+            thread,
+            executionTurnId: turn.id,
+            adopted,
+            continuation: null,
+            executionReport: input.executionReport,
+          });
           executionSelector = turn.id;
         }
       },
@@ -2575,34 +2561,13 @@ async function executeLoop({
             }
 
             const batchOutcomes: ToolDispatchOutcome[] = [];
-            const batchHasReturnResult = toolCallsFromResult.some(
-              (candidate) => candidate.name === "return_result",
-            );
-            let acceptedAsk = false;
+            const batch: RequestBatch = { deferred: null };
             // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
             // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
             for (const call of toolCallsFromResult) {
               if (isCancelled()) {
                 return cancelExit();
               }
-
-              if (call.name === "ask_user" && (batchHasReturnResult || acceptedAsk)) {
-                const reason = batchHasReturnResult
-                  ? "You returned a result; there's no one left to answer."
-                  : "One question at a time: ask this after the answer arrives";
-                const refused = await persistToolOutcome({
-                  deps,
-                  threadId: input.threadId,
-                  turn: currentTurn,
-                  call,
-                  outcome: { kind: "ask_refused", reason },
-                  blockSeq,
-                });
-                blockSeq = refused.nextBlockSeq;
-                allBlocks.push(refused.block);
-                continue;
-              }
-              if (call.name === "ask_user") acceptedAsk = true;
 
               if (continuation.kind === "notes") {
                 const withinBudget = continuation.remaining > 0;
@@ -2664,7 +2629,7 @@ async function executeLoop({
                   runClaim: deps.runClaim,
                   shownLinks: deps.shownLinks,
                   observationFrontiers: deps.observationFrontiers,
-                  asks: deps.repos.asks,
+                  askRequests: deps.askRequests,
                 },
                 call,
                 {
@@ -2681,6 +2646,7 @@ async function executeLoop({
                   blockSeqRef,
                   allTurns,
                   planningBlockIds,
+                  batch,
                   credited,
                   replyMutations: scope.reply,
                 },

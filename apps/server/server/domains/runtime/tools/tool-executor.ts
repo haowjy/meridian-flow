@@ -64,6 +64,7 @@ import {
   type MeridianError,
   meridianErrorFromTool,
   meridianErrorToJson,
+  TOOL_EXCEPTION_CODE,
 } from "@meridian/contracts/errors";
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
@@ -74,6 +75,7 @@ import {
 } from "./invalid-arguments.js";
 import { isMeridianErrorValue, renderRefusal } from "./refusal.js";
 import type {
+  RequestToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
   ThreadMessageToolHandlerContext,
@@ -106,6 +108,17 @@ function errorResult(toolCallId: string, error: MeridianError): ToolExecutionRes
   return { toolCallId, output: renderRefusal(value), result: value, isError: true };
 }
 
+/**
+ * Codes the app reads: a caught exception is redacted there, a timeout says it timed out, and
+ * unparseable arguments read like a schema failure (the message is a retry instruction for the
+ * model, with the raw fragment in it).
+ */
+const EXECUTION_ERROR_CODES: Partial<Record<ToolExecutionError["kind"], string>> = {
+  exception: TOOL_EXCEPTION_CODE,
+  timeout: "tool_timeout",
+  arguments_parse: "tool_arguments_parse",
+};
+
 function executionErrorResult(
   toolCallId: string,
   registration: ToolRegistration | undefined,
@@ -126,7 +139,10 @@ function executionErrorResult(
       // A formatter must not break the executor's guarantee that tool failures resolve.
     }
   }
-  return errorResult(toolCallId, meridianErrorFromTool(error.message));
+  return errorResult(
+    toolCallId,
+    meridianErrorFromTool(error.message, undefined, EXECUTION_ERROR_CODES[error.kind]),
+  );
 }
 
 /**
@@ -330,7 +346,8 @@ function handlerContextForRegistration(
   | SpawnToolHandlerContext
   | ThreadMessageToolHandlerContext
   | ThreadReportToolHandlerContext
-  | ReturnResultToolHandlerContext {
+  | ReturnResultToolHandlerContext
+  | RequestToolHandlerContext {
   switch (registration.capability) {
     case undefined:
       return baseContext;
@@ -359,6 +376,10 @@ function handlerContextForRegistration(
         );
       }
       return { ...baseContext, returnResult: executionContext.returnResult };
+    case "request":
+      if (!executionContext.request)
+        throw new Error(`Request tool ${registration.definition.name} missing request context`);
+      return { ...baseContext, request: executionContext.request };
   }
 }
 

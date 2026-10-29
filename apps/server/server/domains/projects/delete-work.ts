@@ -12,7 +12,7 @@ type LifecycleDeps = {
 
 type DeleteDeps = {
   works: WorkRepository;
-  stopThreadRun(threadId: ThreadId): Promise<void>;
+  stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
 };
 
 export type DeleteWorkTransition = { before: Work | null; after: Work | null; changed: boolean };
@@ -21,18 +21,11 @@ export async function deleteWorkTransition(
   deps: DeleteDeps,
   workId: WorkId,
 ): Promise<DeleteWorkTransition> {
-  return runWorkLifecycleCommand(
-    { transaction: deps.works.transaction, stopThreadRun: deps.stopThreadRun },
-    async () => {
-      const deletion = await deps.works.softDelete(workId);
-      const { before, after } = deletion;
-      const changed = !!after?.deletedAt && !before?.deletedAt;
-      return {
-        value: { before, after, changed },
-        threadIdsToStop: changed ? deletion.threadIds : [],
-      };
-    },
-  );
+  return runWorkLifecycleCommand(deps.works.transaction, async () => {
+    // The tree's runs and subagent lineages end in this same transaction.
+    const { before, after } = await deps.works.softDelete(workId, deps.stopThreads);
+    return { before, after, changed: !!after?.deletedAt && !before?.deletedAt };
+  });
 }
 
 export async function restoreWork(deps: LifecycleDeps, workId: WorkId): Promise<Work> {

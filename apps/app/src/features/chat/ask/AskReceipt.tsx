@@ -44,8 +44,6 @@ function answerText({ resolution }: AskReceiptFacts): string {
       return resolution.label;
     case "text":
       return resolution.text;
-    case "parent":
-      return t`Parent Agent: ${resolution.text}`;
     case "skipped":
       return t`Skipped`;
     case "timeout":

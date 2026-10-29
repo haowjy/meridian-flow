@@ -5,7 +5,8 @@ import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { turnSubagentFacts } from "@meridian/thread-client";
 import { subagentCurrentToolLabel } from "./display";
 
-export type SubagentRunStatus = "running" | "done" | "stopped" | "unknown";
+/** A finished run's outcome stays distinct: a failed run and a stopped one read differently. */
+export type SubagentRunStatus = "running" | "done" | "failed" | "cancelled" | "unknown";
 export type SubagentRun = {
   threadId: string | null;
   ref: string | null;
@@ -32,7 +33,7 @@ export function statusFromSources(input: {
   endedAt?: string | null;
 }): SubagentRunStatus {
   if (input.outcome === "succeeded") return "done";
-  if (input.outcome === "failed" || input.outcome === "cancelled") return "stopped";
+  if (input.outcome === "failed" || input.outcome === "cancelled") return input.outcome;
   if (input.live) return "running";
   if (input.endedAt) return input.savedRunning ? "unknown" : "unknown";
   return input.savedRunning ? "unknown" : "unknown";
@@ -42,12 +43,7 @@ export function runFromActivity(node: ThreadActivityNode): SubagentRun {
   const live = node.status.kind === "awake";
   const status = statusFromSources({
     live,
-    outcome:
-      node.spawnStatus === "succeeded"
-        ? "succeeded"
-        : node.spawnStatus === "failed" || node.spawnStatus === "cancelled"
-          ? node.spawnStatus
-          : undefined,
+    outcome: node.spawnStatus === "running" ? undefined : node.spawnStatus,
     endedAt: node.runEndedAt,
   });
   return {
@@ -70,7 +66,7 @@ export function runFromActivity(node: ThreadActivityNode): SubagentRun {
 
 export function runFromThread(
   thread: Thread,
-  savedStatus: "running" | "succeeded" | "failed" | "cancelled" | null,
+  savedStatus: Thread["spawnStatus"],
   startedAt?: string | null,
   endedAt?: string | null,
 ): SubagentRun {
@@ -82,12 +78,7 @@ export function runFromThread(
     name: thread.title?.trim() || null,
     status: statusFromSources({
       savedRunning: savedStatus === "running",
-      outcome:
-        savedStatus === "succeeded"
-          ? savedStatus
-          : savedStatus === "failed" || savedStatus === "cancelled"
-            ? savedStatus
-            : undefined,
+      outcome: savedStatus === "running" ? undefined : savedStatus,
       live: savedStatus === "running" && !endedAt,
       endedAt,
     }),

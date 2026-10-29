@@ -607,7 +607,7 @@ function askLine({ ask, resolution }: AskReceipt): string {
   const answer =
     resolution.kind === "option"
       ? resolution.label
-      : resolution.kind === "text" || resolution.kind === "parent"
+      : resolution.kind === "text"
         ? `${resolution.kind}: ${oneLine(resolution.text)}`
         : resolution.kind === "timeout"
           ? `timeout${resolution.label ? `, went with ${resolution.label}` : ""}`
