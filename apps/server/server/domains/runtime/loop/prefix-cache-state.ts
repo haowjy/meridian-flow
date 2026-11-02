@@ -8,6 +8,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
+import { allSettledOrThrow } from "../../../shared/settle-all.js";
 import {
   bakeIdAt,
   decodeImageInclusionMetadata,
@@ -230,7 +231,7 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
     const thread = await deps.repos.threads.findByIdIncludingDeleted(input.threadId);
     if (!thread || !input.model) return cold("facts_unavailable");
 
-    const [listedTurns, unboundedResponse] = await Promise.all([
+    const [listedTurns, unboundedResponse] = await allSettledOrThrow([
       input.knownLocalTurns ?? deps.repos.turns.listByThread(input.threadId),
       input.throughTurnId ? null : deps.repos.modelResponses.findLatestByThread(input.threadId),
     ]);
@@ -263,7 +264,7 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
       }
       const owner = await deps.repos.threads.findByIdIncludingDeleted(ownerThreadId);
       if (!owner) return cold("facts_unavailable");
-      const [ownerTurns, ownerResponse] = await Promise.all([
+      const [ownerTurns, ownerResponse] = await allSettledOrThrow([
         deps.repos.turns.listByThread(ownerThreadId),
         deps.repos.modelResponses.findLatestByThread(ownerThreadId),
       ]);
