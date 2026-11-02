@@ -2,7 +2,6 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
-import { allSettledOrThrow } from "../../../shared/settle-all.js";
 import type {
   ThreadRepositories,
   ThreadRepository,
@@ -424,7 +423,7 @@ export async function readTranscriptPageForProjection(
             return owner ? [owner] : [];
           });
     const uniqueOwners = [...new Map(owners.map((owner) => [owner.threadId, owner])).values()];
-    const [boundaries, firstBakeId] = await allSettledOrThrow([
+    const [boundaries, firstBakeId] = await Promise.all([
       repos.turns.listTranscriptBoundaries(spans),
       firstPromptBakeId(repos, uniqueOwners, pageThread),
     ]);
@@ -587,7 +586,7 @@ export async function readTranscriptTurn(
     const resolution = await resolveTranscriptSpans(repos, thread);
     const turn = await repos.turns.findConversationTurnByOrdinal(resolution.spans, ordinal);
     if (!turn) return null;
-    const [turnBlocks, boundaries, firstBake] = await allSettledOrThrow([
+    const [turnBlocks, boundaries, firstBake] = await Promise.all([
       repos.blocks.listByTurn(turn.id as TurnId),
       repos.turns.listTranscriptBoundaries(resolution.spans),
       firstPromptBakeId(repos, resolution.owners, thread),

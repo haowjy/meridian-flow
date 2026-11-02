@@ -62,6 +62,7 @@ import type {
   TurnDocumentTouchRepository,
 } from "../../domains/threads/index.js";
 import { threadExecutionContext } from "../../domains/threads/index.js";
+import { runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
 import { agentPrincipal } from "./file-access.js";
 import type { AgentEditResponseWriteLifecycle } from "./response-write-lifecycle.js";
 
@@ -240,21 +241,27 @@ export function recordTouchInBackground(
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
 ): void {
   if (!deps.documentTouches || !documentId) return;
-  const eventSink = deps.eventSink;
-  void deps.documentTouches.recordTouch(ctx.turnId, documentId).catch((error) => {
-    emitEvent(eventSink, {
-      level: "warn",
-      source: "lib.model-tools",
-      name: "document_touch.failed",
-      correlation: { threadId: ctx.threadId, turnId: ctx.turnId, runId: ctx.turnId },
-      payload: {
-        threadId: ctx.threadId,
-        turnId: ctx.turnId,
-        documentId,
-        ...unknownToEventPayload(error),
+  const { documentTouches, eventSink } = deps;
+  // Not part of the caller's write: it runs once that commits, or now outside one.
+  runAfterDrizzleCommit(() =>
+    documentTouches.recordTouch(ctx.turnId, documentId).then(
+      () => undefined,
+      (error) => {
+        emitEvent(eventSink, {
+          level: "warn",
+          source: "lib.model-tools",
+          name: "document_touch.failed",
+          correlation: { threadId: ctx.threadId, turnId: ctx.turnId, runId: ctx.turnId },
+          payload: {
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+            documentId,
+            ...unknownToEventPayload(error),
+          },
+        });
       },
-    });
-  });
+    ),
+  );
 }
 
 /** Host evidence for the document a `read` or `write` call touched. */

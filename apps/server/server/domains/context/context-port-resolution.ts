@@ -7,7 +7,6 @@ import type { DocumentVersion } from "@meridian/agent-edit";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, Work, WorkHandle } from "@meridian/contracts/works";
-import { allSettledOrThrow } from "../../shared/settle-all.js";
 import type { WorkRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type {
@@ -55,13 +54,13 @@ export async function resolveThreadContext(
   const thread = await deps.threads.findById(threadId);
   if (!thread) return null;
 
-  const [workAuthorities, primaryMembership, topChat] = await allSettledOrThrow([
+  const [workAuthorities, primaryMembership, topChat] = await Promise.all([
     resolvedAuthorities(deps, thread.projectId),
     deps.threadWorks.findPrimary(thread.id),
     deps.topPrimaryChats?.resolveTopPrimaryChat(thread.id),
   ]);
   const [primaryWorkAuthority, primaryWork] = primaryMembership
-    ? await allSettledOrThrow([
+    ? await Promise.all([
         deps.workAuthorityResolver.byId(thread.projectId, primaryMembership.workId),
         // By id: the project listing leaves out No Work, whose chats can draft too.
         deps.works.findById(primaryMembership.workId),
@@ -144,7 +143,7 @@ export async function contextPortForProjectRecovery(input: {
   requestedWorkId?: string | null;
 }): Promise<ContextPort> {
   const primaryWorkId = input.requestedWorkId ?? null;
-  const [workAuthorities, primaryAuthority] = await allSettledOrThrow([
+  const [workAuthorities, primaryAuthority] = await Promise.all([
     resolvedAuthorities(input.deps, input.projectId),
     primaryWorkId ? input.deps.workAuthorityResolver.byId(input.projectId, primaryWorkId) : null,
   ]);
@@ -175,8 +174,8 @@ export async function contextPortForProjectAuthorities(input: {
     );
   }
   if (!input.primaryWorkId || !input.workIds.has(input.primaryWorkId)) return null;
-  const [resolved, workAuthorities] = await allSettledOrThrow([
-    allSettledOrThrow(
+  const [resolved, workAuthorities] = await Promise.all([
+    Promise.all(
       [...input.workIds].map(async (workId) => {
         const authority = await input.deps.workAuthorityResolver.byId(input.projectId, workId);
         return [workId, authority] as const;
@@ -211,7 +210,7 @@ export async function contextPortForProjectBrowse(input: {
 }): Promise<ContextPort | null> {
   if (input.chatId) {
     if (input.workId || input.rootThreadId) return null;
-    const [workAuthorities, chat] = await allSettledOrThrow([
+    const [workAuthorities, chat] = await Promise.all([
       resolvedAuthorities(input.deps, input.projectId),
       input.deps.contextPorts.topPrimaryChats.resolveTopPrimaryChat(input.chatId as ThreadId),
     ]);

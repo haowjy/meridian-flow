@@ -12,7 +12,6 @@ import {
 import { parseContextUri } from "../domains/context/context/uri.js";
 import { isFileAccessDenied } from "../domains/file-policy/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
-import { allSettledOrThrow } from "../shared/settle-all.js";
 import type { AppServices } from "./app.js";
 import { requireRequestId } from "./request-id.js";
 import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
@@ -44,7 +43,7 @@ export async function handleTurnLiveLineageRequest(
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId") as TurnId;
   await requireThreadOwner({ threads: deps.threads }, threadId, input.userId);
-  const [visibleDocuments, receipt, workAvailability] = await allSettledOrThrow([
+  const [visibleDocuments, receipt, workAvailability] = await Promise.all([
     deps.documentSync.listEditedDocumentsForTurn(threadId, turnId).then((documents) =>
       filterAccessibleLiveLineageDocuments(deps, {
         documents,
@@ -83,7 +82,7 @@ async function filterAccessibleLiveLineageDocuments(
   input: { documents: TurnEditedDocument[]; userId: UserId },
 ): Promise<TurnEditedDocument[]> {
   const principal = { accountId: input.userId };
-  const readable = await allSettledOrThrow(
+  const readable = await Promise.all(
     input.documents.map(async (document) => {
       let grant =
         document.tree?.op === "delete" || document.removed
