@@ -11,6 +11,7 @@ import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { allSettledOrThrow } from "../../../shared/settle-all.js";
 import type {
   DraftPeerShadowAccess,
   EffectiveReadVersion,
@@ -127,7 +128,7 @@ export function createEffectiveDocumentReader(input: {
     readEffectiveHashlines(command) {
       return readEffective(command, async (handle): Promise<HashlineRead> => {
         const doc = unwrapDoc(handle);
-        const [scope, verbatim] = await Promise.all([
+        const [scope, verbatim] = await allSettledOrThrow([
           spelling(command, doc),
           isCodeDocument(input.resolveFiletype, command.documentId),
         ]);

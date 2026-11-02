@@ -7,6 +7,7 @@
  */
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import { allSettledOrThrow } from "../../shared/settle-all.js";
 import { threadAsk } from "./domain/ask.js";
 import { readThreadActivity } from "./domain/thread-activity.js";
 import { isThreadActionRequired } from "./domain/visible-conversation-policy.js";
@@ -100,7 +101,7 @@ export async function buildThreadSnapshot(
       runState,
       threadUsage,
       status,
-    ] = await Promise.all([
+    ] = await allSettledOrThrow([
       hub.headSeq(threadId),
       // The graph keeps every turn (the leaf, `prevTurnId`). The snapshot drops handed-back messages and keeps
       // forgotten turns, stamped `forgottenBy`: the client hides them, and diagnostics can still read them.

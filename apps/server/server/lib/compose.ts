@@ -260,6 +260,7 @@ import {
 } from "../domains/working-set/index.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
+import { allSettledOrThrow } from "../shared/settle-all.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import {
@@ -789,7 +790,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     ports.eventSink,
   );
   const publishThreadStatus = async (threadId: ThreadId) => {
-    const [status, runningTurnId] = await Promise.all([
+    const [status, runningTurnId] = await allSettledOrThrow([
       ports.statusReader.read(threadId),
       ports.statusReader.readRunningTurnId(threadId),
     ]);
@@ -1372,6 +1373,9 @@ export function createInMemoryAppServices(): AppServices {
     },
     async noWork() {
       return null;
+    },
+    async listForProject() {
+      return [];
     },
     async lockById() {
       return null;

@@ -171,9 +171,8 @@ export async function resolveToolCall(
     version,
   );
   if (isToolError(context)) return context;
-  const { primaryWorkId } = context.resolution;
+  const { primaryWorkId, primaryWork } = context.resolution;
   if (!primaryWorkId) throw new Error(`Thread primary Work is missing: ${ctx.threadId}`);
-  const primaryWork = await deps.works.findById(primaryWorkId);
   if (!primaryWork || workLifecycleState(primaryWork) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }

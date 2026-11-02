@@ -4,9 +4,10 @@
  */
 
 import type { DocumentVersion } from "@meridian/agent-edit";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
-import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
+import type { ResolvedWorkAuthority, Work, WorkHandle } from "@meridian/contracts/works";
+import { allSettledOrThrow } from "../../shared/settle-all.js";
 import type { WorkRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type {
@@ -22,6 +23,8 @@ import type { UnifiedContextPortFactory } from "./unified-context-port-factory.j
 export interface ThreadContextResolution {
   thread: Thread;
   primaryWorkId: string | null;
+  /** The primary Work's row, deleted ones included; null when the thread has no primary Work. */
+  primaryWork: Work | null;
   workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
   /** The thread's Work when the chat writes drafts; null in auto-apply. */
@@ -41,7 +44,7 @@ export interface ThreadContextResolutionDeps {
   uploadChats?: ChatUploadsOwners;
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  works: Pick<WorkRepository, "listByProject" | "findById">;
+  works: Pick<WorkRepository, "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
@@ -52,29 +55,18 @@ export async function resolveThreadContext(
   const thread = await deps.threads.findById(threadId);
   if (!thread) return null;
 
-  const [projectWorks, primaryMembership] = await Promise.all([
-    deps.works.listByProject(thread.projectId, { lifecycle: "all" }),
+  const [workAuthorities, primaryMembership, topChat] = await allSettledOrThrow([
+    resolvedAuthorities(deps, thread.projectId),
     deps.threadWorks.findPrimary(thread.id),
-  ]);
-  const [authorities, primaryWorkAuthority, primaryWork, topChat] = await Promise.all([
-    Promise.all(
-      projectWorks.map((work) => deps.workAuthorityResolver.byId(thread.projectId, work.id)),
-    ),
-    primaryMembership
-      ? deps.workAuthorityResolver.byId(thread.projectId, primaryMembership.workId)
-      : null,
-    // By id: the project listing leaves out No Work, whose chats can draft too.
-    primaryMembership ? deps.works.findById(primaryMembership.workId) : null,
     deps.topPrimaryChats?.resolveTopPrimaryChat(thread.id),
   ]);
-  const workAuthorities = new Map(
-    authorities
-      .filter(
-        (authority): authority is ResolvedWorkAuthority & { workHandle: WorkHandle } =>
-          authority != null && authority.workHandle !== null,
-      )
-      .map((authority) => [authority.workHandle, authority]),
-  );
+  const [primaryWorkAuthority, primaryWork] = primaryMembership
+    ? await allSettledOrThrow([
+        deps.workAuthorityResolver.byId(thread.projectId, primaryMembership.workId),
+        // By id: the project listing leaves out No Work, whose chats can draft too.
+        deps.works.findById(primaryMembership.workId),
+      ])
+    : [null, null];
   return {
     thread,
     uploadChats: deps.uploadChats,
@@ -82,6 +74,7 @@ export async function resolveThreadContext(
     scratchLineages: deps.scratchLineages,
     ...(primaryWork ? { scratchOwner: scratchOwnerFor(thread, primaryWork) } : {}),
     primaryWorkId: primaryMembership?.workId ?? null,
+    primaryWork,
     workAuthorities,
     primaryWorkAuthority,
     primaryBranchWork:
@@ -125,23 +118,19 @@ export function contextPortForThread(
 
 export interface ProjectBrowseContextPortDeps {
   contextPorts: UnifiedContextPortFactory;
-  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
 async function resolvedAuthorities(
-  deps: ProjectBrowseContextPortDeps,
+  deps: Pick<ProjectBrowseContextPortDeps, "workAuthorityResolver">,
   projectId: string,
-  works: Awaited<ReturnType<WorkRepository["listByProject"]>>,
 ): Promise<Map<WorkHandle, ResolvedWorkAuthority>> {
-  const resolved = await Promise.all(
-    works.map((work) => deps.workAuthorityResolver.byId(projectId, work.id)),
-  );
+  const resolved = await deps.workAuthorityResolver.listForProject(projectId as ProjectId);
   return new Map(
     resolved
       .filter(
         (value): value is ResolvedWorkAuthority & { workHandle: WorkHandle } =>
-          value != null && value.workHandle !== null,
+          value.workHandle !== null,
       )
       .map((value) => [value.workHandle, value]),
   );
@@ -154,10 +143,9 @@ export async function contextPortForProjectRecovery(input: {
   userId: string;
   requestedWorkId?: string | null;
 }): Promise<ContextPort> {
-  const works = await input.deps.works.listByProject(input.projectId, { lifecycle: "all" });
   const primaryWorkId = input.requestedWorkId ?? null;
-  const [workAuthorities, primaryAuthority] = await Promise.all([
-    resolvedAuthorities(input.deps, input.projectId, works),
+  const [workAuthorities, primaryAuthority] = await allSettledOrThrow([
+    resolvedAuthorities(input.deps, input.projectId),
     primaryWorkId ? input.deps.workAuthorityResolver.byId(input.projectId, primaryWorkId) : null,
   ]);
   if (!primaryWorkId || !primaryAuthority) {
@@ -178,32 +166,27 @@ export async function contextPortForProjectAuthorities(input: {
   userId: string;
   workIds: ReadonlySet<string>;
   primaryWorkId?: string | null;
-  projectWorks?: Awaited<ReturnType<WorkRepository["listByProject"]>>;
 }): Promise<ContextPort | null> {
   if (input.workIds.size === 0) {
-    const works =
-      input.projectWorks ??
-      (await input.deps.works.listByProject(input.projectId, { lifecycle: "all" }));
     return input.deps.contextPorts.forProject(
       input.projectId,
       input.userId,
-      await resolvedAuthorities(input.deps, input.projectId, works),
+      await resolvedAuthorities(input.deps, input.projectId),
     );
   }
   if (!input.primaryWorkId || !input.workIds.has(input.primaryWorkId)) return null;
-  const resolved = await Promise.all(
-    [...input.workIds].map(async (workId) => {
-      const authority = await input.deps.workAuthorityResolver.byId(input.projectId, workId);
-      return [workId, authority] as const;
-    }),
-  );
+  const [resolved, workAuthorities] = await allSettledOrThrow([
+    allSettledOrThrow(
+      [...input.workIds].map(async (workId) => {
+        const authority = await input.deps.workAuthorityResolver.byId(input.projectId, workId);
+        return [workId, authority] as const;
+      }),
+    ),
+    resolvedAuthorities(input.deps, input.projectId),
+  ]);
   if (resolved.some(([, authority]) => !authority)) return null;
   const primaryAuthority = resolved.find(([workId]) => workId === input.primaryWorkId)?.[1];
   if (!primaryAuthority) return null;
-  const works =
-    input.projectWorks ??
-    (await input.deps.works.listByProject(input.projectId, { lifecycle: "all" }));
-  const workAuthorities = await resolvedAuthorities(input.deps, input.projectId, works);
   return input.deps.contextPorts.forWork(
     primaryAuthority,
     input.projectId,
@@ -228,14 +211,14 @@ export async function contextPortForProjectBrowse(input: {
 }): Promise<ContextPort | null> {
   if (input.chatId) {
     if (input.workId || input.rootThreadId) return null;
-    const works = await input.deps.works.listByProject(input.projectId, { lifecycle: "all" });
-    const chat = await input.deps.contextPorts.topPrimaryChats.resolveTopPrimaryChat(
-      input.chatId as ThreadId,
-    );
+    const [workAuthorities, chat] = await allSettledOrThrow([
+      resolvedAuthorities(input.deps, input.projectId),
+      input.deps.contextPorts.topPrimaryChats.resolveTopPrimaryChat(input.chatId as ThreadId),
+    ]);
     return input.deps.contextPorts.forProject(
       input.projectId,
       input.userId,
-      await resolvedAuthorities(input.deps, input.projectId, works),
+      workAuthorities,
       undefined,
       { chatId: input.chatId, chatRef: chat?.chatRef ?? null },
     );
@@ -247,11 +230,10 @@ export async function contextPortForProjectBrowse(input: {
       input.rootThreadId,
     );
     if (!lineage) return null;
-    const works = await input.deps.works.listByProject(input.projectId, { lifecycle: "all" });
     return input.deps.contextPorts.forProject(
       input.projectId,
       input.userId,
-      await resolvedAuthorities(input.deps, input.projectId, works),
+      await resolvedAuthorities(input.deps, input.projectId),
       lineage,
     );
   }
