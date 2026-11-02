@@ -789,8 +789,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     ports.eventSink,
   );
   const publishThreadStatus = async (threadId: ThreadId) => {
-    const status = await ports.statusReader.read(threadId);
-    const runningTurnId = await ports.statusReader.readRunningTurnId(threadId);
+    const [status, runningTurnId] = await Promise.all([
+      ports.statusReader.read(threadId),
+      ports.statusReader.readRunningTurnId(threadId),
+    ]);
     await threadEventHub.appendEvent(threadId, {
       type: "thread.status",
       threadId,

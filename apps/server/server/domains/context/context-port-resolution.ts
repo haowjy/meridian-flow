@@ -52,14 +52,21 @@ export async function resolveThreadContext(
   const thread = await deps.threads.findById(threadId);
   if (!thread) return null;
 
-  const projectWorks = await deps.works.listByProject(thread.projectId, { lifecycle: "all" });
-  const primaryMembership = await deps.threadWorks.findPrimary(thread.id);
-  const authorities = await Promise.all(
-    projectWorks.map((work) => deps.workAuthorityResolver.byId(thread.projectId, work.id)),
-  );
-  const primaryWorkAuthority = primaryMembership
-    ? await deps.workAuthorityResolver.byId(thread.projectId, primaryMembership.workId)
-    : null;
+  const [projectWorks, primaryMembership] = await Promise.all([
+    deps.works.listByProject(thread.projectId, { lifecycle: "all" }),
+    deps.threadWorks.findPrimary(thread.id),
+  ]);
+  const [authorities, primaryWorkAuthority, primaryWork, topChat] = await Promise.all([
+    Promise.all(
+      projectWorks.map((work) => deps.workAuthorityResolver.byId(thread.projectId, work.id)),
+    ),
+    primaryMembership
+      ? deps.workAuthorityResolver.byId(thread.projectId, primaryMembership.workId)
+      : null,
+    // By id: the project listing leaves out No Work, whose chats can draft too.
+    primaryMembership ? deps.works.findById(primaryMembership.workId) : null,
+    deps.topPrimaryChats?.resolveTopPrimaryChat(thread.id),
+  ]);
   const workAuthorities = new Map(
     authorities
       .filter(
@@ -68,11 +75,6 @@ export async function resolveThreadContext(
       )
       .map((authority) => [authority.workHandle, authority]),
   );
-  // By id: the project listing leaves out No Work, whose chats can draft too.
-  const primaryWork = primaryMembership
-    ? await deps.works.findById(primaryMembership.workId)
-    : null;
-  const topChat = await deps.topPrimaryChats?.resolveTopPrimaryChat(thread.id);
   return {
     thread,
     uploadChats: deps.uploadChats,
@@ -153,11 +155,11 @@ export async function contextPortForProjectRecovery(input: {
   requestedWorkId?: string | null;
 }): Promise<ContextPort> {
   const works = await input.deps.works.listByProject(input.projectId, { lifecycle: "all" });
-  const workAuthorities = await resolvedAuthorities(input.deps, input.projectId, works);
   const primaryWorkId = input.requestedWorkId ?? null;
-  const primaryAuthority = primaryWorkId
-    ? await input.deps.workAuthorityResolver.byId(input.projectId, primaryWorkId)
-    : null;
+  const [workAuthorities, primaryAuthority] = await Promise.all([
+    resolvedAuthorities(input.deps, input.projectId, works),
+    primaryWorkId ? input.deps.workAuthorityResolver.byId(input.projectId, primaryWorkId) : null,
+  ]);
   if (!primaryWorkId || !primaryAuthority) {
     return input.deps.contextPorts.forProject(input.projectId, input.userId, workAuthorities);
   }

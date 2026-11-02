@@ -93,8 +93,8 @@ export function createDeliveryAdapter(
     const control = at === "run_start" && nextWork.kind === "control" ? nextWork.control : null;
     const rows = nextWork.kind === "batch" || nextWork.kind === "control" ? nextWork.rows : [];
     const selectedIds = new Set([...rows.map((row) => row.id), ...(control ? [control.id] : [])]);
-    const work = await workBatch(threadId, rows);
-    const [notices, thread] = await Promise.all([
+    const [work, notices, thread] = await Promise.all([
+      workBatch(threadId, rows),
       deps.notices.peek(threadId),
       deps.repos.threads.findById(threadId),
     ]);
@@ -118,8 +118,10 @@ export function createDeliveryAdapter(
     return { selection, pendingBatch, work, eligibilityKey };
   }
   async function eligiblePending(threadId: ThreadId) {
-    const pendingBatch = await inbox.selectPending(threadId);
-    const projection = await inbox.readPendingProjection(threadId);
+    const [pendingBatch, projection] = await Promise.all([
+      inbox.selectPending(threadId),
+      inbox.readPendingProjection(threadId),
+    ]);
     const boundIds = new Set(projection.run?.messageIds ?? []);
     const continuation = pendingBatch.find(isAskResolved);
     const openAsk = continuation ? null : await deps.repos.asks.findOpenByThread(threadId);
@@ -243,11 +245,11 @@ export function createDeliveryAdapter(
   async function materializePrefix(threadId: ThreadId) {
     const selected = await selectForPreparation(threadId, "prefix");
     const { selection, work } = selected;
-    const turns = await Promise.all(
-      work.batch.map((message) => turnGraph(deps.repos.turns).findById(message.id)),
-    );
     const leaf = selection.activeLeafTurnId;
-    const leafTurn = leaf ? await turnGraph(deps.repos.turns).findById(leaf) : null;
+    const [turns, leafTurn] = await Promise.all([
+      Promise.all(work.batch.map((message) => turnGraph(deps.repos.turns).findById(message.id))),
+      leaf ? turnGraph(deps.repos.turns).findById(leaf) : null,
+    ]);
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
     const plan = planMessageTurns({
       threadId,
