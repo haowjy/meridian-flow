@@ -1090,6 +1090,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
+    documentTouches: ports.threadRepos.documentTouches,
     observationFrontiers: ports.observationFrontiers,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
