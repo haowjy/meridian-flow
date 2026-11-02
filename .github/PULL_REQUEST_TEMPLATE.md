@@ -120,11 +120,11 @@
        included, ends with a prober's agent-browser run whose screenshots are in
        Examples. ./mf output is debugging context, not verification. A PR with
        no writer-reachable change says "Browser: none" with the reason.
-     - Model: name the provider each run used and why. Use the mock provider
-       when the model's output doesn't matter to the change. Run a real model
-       (`deepseek-flash`) when the change touches what the model receives or
-       does: prompts, tool definitions or results, request shape, streaming, or
-       the provider path.
+     - Model: name the provider each run used and why. The mock provider fits
+       most changes: use it when the model's output doesn't matter. A real
+       model run (`deepseek-flash`) is recommended when the change touches what
+       the model receives or does: prompts, tool definitions or results,
+       request shape, streaming, or the provider path.
      - Tests: each test added, changed or deleted, with the risk it protects or
        why deleting it is safe (AGENTS.md, Build and test).
      - Not exercised: what you didn't run, and why.
