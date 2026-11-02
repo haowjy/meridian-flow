@@ -423,8 +423,10 @@ export async function readTranscriptPageForProjection(
             return owner ? [owner] : [];
           });
     const uniqueOwners = [...new Map(owners.map((owner) => [owner.threadId, owner])).values()];
-    const boundaries = await repos.turns.listTranscriptBoundaries(spans);
-    const firstBakeId = await firstPromptBakeId(repos, uniqueOwners, pageThread);
+    const [boundaries, firstBakeId] = await Promise.all([
+      repos.turns.listTranscriptBoundaries(spans),
+      firstPromptBakeId(repos, uniqueOwners, pageThread),
+    ]);
 
     if (spans.length === 0) {
       return {
@@ -584,11 +586,12 @@ export async function readTranscriptTurn(
     const resolution = await resolveTranscriptSpans(repos, thread);
     const turn = await repos.turns.findConversationTurnByOrdinal(resolution.spans, ordinal);
     if (!turn) return null;
-    const blocks = (await repos.blocks.listByTurn(turn.id as TurnId)).sort(
-      (left, right) => left.sequence - right.sequence,
-    );
-    const boundaries = await repos.turns.listTranscriptBoundaries(resolution.spans);
-    const firstBake = await firstPromptBakeId(repos, resolution.owners, thread);
+    const [turnBlocks, boundaries, firstBake] = await Promise.all([
+      repos.blocks.listByTurn(turn.id as TurnId),
+      repos.turns.listTranscriptBoundaries(resolution.spans),
+      firstPromptBakeId(repos, resolution.owners, thread),
+    ]);
+    const blocks = turnBlocks.sort((left, right) => left.sequence - right.sequence);
     return {
       turn,
       blocks,
