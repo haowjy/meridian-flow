@@ -2,7 +2,6 @@
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { type Block, isPendingPlaceholder } from "@meridian/contracts/threads";
-import { allSettledOrThrow } from "../../../shared/settle-all.js";
 import type { NoticePort } from "../../notices/index.js";
 import { hasCompletedReplyInLineage, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -94,7 +93,7 @@ export function createDeliveryAdapter(
     const control = at === "run_start" && nextWork.kind === "control" ? nextWork.control : null;
     const rows = nextWork.kind === "batch" || nextWork.kind === "control" ? nextWork.rows : [];
     const selectedIds = new Set([...rows.map((row) => row.id), ...(control ? [control.id] : [])]);
-    const [work, notices, thread] = await allSettledOrThrow([
+    const [work, notices, thread] = await Promise.all([
       workBatch(threadId, rows),
       deps.notices.peek(threadId),
       deps.repos.threads.findById(threadId),
@@ -119,7 +118,7 @@ export function createDeliveryAdapter(
     return { selection, pendingBatch, work, eligibilityKey };
   }
   async function eligiblePending(threadId: ThreadId) {
-    const [pendingBatch, projection] = await allSettledOrThrow([
+    const [pendingBatch, projection] = await Promise.all([
       inbox.selectPending(threadId),
       inbox.readPendingProjection(threadId),
     ]);
@@ -141,7 +140,7 @@ export function createDeliveryAdapter(
     threadId: ThreadId,
     selected: SelectedDelivery<DeliverySelectionFields>,
   ) {
-    const [eligibility, thread] = await allSettledOrThrow([
+    const [eligibility, thread] = await Promise.all([
       eligiblePending(threadId),
       deps.repos.threads.findById(threadId),
     ]);
@@ -247,10 +246,8 @@ export function createDeliveryAdapter(
     const selected = await selectForPreparation(threadId, "prefix");
     const { selection, work } = selected;
     const leaf = selection.activeLeafTurnId;
-    const [turns, leafTurn] = await allSettledOrThrow([
-      allSettledOrThrow(
-        work.batch.map((message) => turnGraph(deps.repos.turns).findById(message.id)),
-      ),
+    const [turns, leafTurn] = await Promise.all([
+      Promise.all(work.batch.map((message) => turnGraph(deps.repos.turns).findById(message.id))),
       leaf ? turnGraph(deps.repos.turns).findById(leaf) : null,
     ]);
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);

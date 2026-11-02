@@ -10,7 +10,6 @@ import {
   type Work,
   workLifecycleState,
 } from "@meridian/contracts/works";
-import { allSettledOrThrow } from "../../../shared/settle-all.js";
 import type { WorkRepository } from "../../projects/index.js";
 import {
   type ThreadRepository,
@@ -199,7 +198,7 @@ export function createWorkContextReader(deps: {
     async renderForThread(threadId) {
       const thread = await deps.threads.findById(threadId);
       if (!thread || thread.deletedAt) throw new Error(`Thread unavailable: ${threadId}`);
-      const [current, chat, root, permission] = await allSettledOrThrow([
+      const [current, chat, root, permission] = await Promise.all([
         (async () => {
           const primary = await deps.threadWorks.findPrimary(threadId);
           if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
