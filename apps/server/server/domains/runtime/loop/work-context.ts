@@ -198,14 +198,20 @@ export function createWorkContextReader(deps: {
     async renderForThread(threadId) {
       const thread = await deps.threads.findById(threadId);
       if (!thread || thread.deletedAt) throw new Error(`Thread unavailable: ${threadId}`);
-      const primary = await deps.threadWorks.findPrimary(threadId);
-      if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
-      const current = await deps.works.findById(primary.workId);
-      if (!current || workLifecycleState(current) === "deleted") {
-        throw new Error(`Thread primary Work is unavailable: ${threadId}`);
-      }
-      const chat = await deps.topPrimaryChats.resolveTopPrimaryChat(threadId);
-      const root = await deps.threads.findByIdIncludingDeleted(thread.rootThreadId);
+      const [current, chat, root, permission] = await Promise.all([
+        (async () => {
+          const primary = await deps.threadWorks.findPrimary(threadId);
+          if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
+          const work = await deps.works.findById(primary.workId);
+          if (!work || workLifecycleState(work) === "deleted") {
+            throw new Error(`Thread primary Work is unavailable: ${threadId}`);
+          }
+          return work;
+        })(),
+        deps.topPrimaryChats.resolveTopPrimaryChat(threadId),
+        deps.threads.findByIdIncludingDeleted(thread.rootThreadId),
+        deps.readChainPermission(threadId),
+      ]);
       const execution: ThreadExecutionContext = threadExecutionContext(current, thread.aiWriteMode);
       return {
         text: renderWorkContext({
@@ -213,7 +219,7 @@ export function createWorkContextReader(deps: {
           aiWriteMode: thread.aiWriteMode,
           rootThreadRef: root?.ref ?? undefined,
           chatRef: chat?.chatRef,
-          mayUnarchive: mayChangeWorks(await deps.readChainPermission(threadId)),
+          mayUnarchive: mayChangeWorks(permission),
         }),
         current: { projectId: thread.projectId, execution },
       };

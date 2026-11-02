@@ -14,6 +14,8 @@ type DrizzleTransactionContext = {
   locals: Map<object, unknown>;
   participants: Map<object, ParticipantFrame<unknown>>;
   flushingParticipants: boolean;
+  /** Set before COMMIT or ROLLBACK goes out; work that outlives its scope must not reach it. */
+  closed: boolean;
 };
 
 export type DrizzleTransactionParticipant<State> = {
@@ -31,29 +33,63 @@ type ParticipantFrame<State> = {
 
 const transactionStorage = new AsyncLocalStorage<DrizzleTransactionContext>();
 
-export function currentDrizzleDb(db: DrizzleDb): DrizzleDb {
-  return transactionStorage.getStore()?.db ?? db;
+/**
+ * The ambient transaction, or undefined outside one. Async work inherits the context, so a
+ * branch still running after its scope ended (a fan-out sibling of a rejected branch, work
+ * left un-awaited) would otherwise reach a finished transaction: postgres-js runs its
+ * statements on the released connection, inside whichever transaction takes it next, and
+ * its commit callbacks would queue where nothing runs them. It throws instead. Work meant to
+ * outlive a transaction leaves it with `runAfterDrizzleCommit` or `runOutsideWrite`.
+ */
+function activeTransaction(): DrizzleTransactionContext | undefined {
+  const active = transactionStorage.getStore();
+  if (active?.closed) {
+    throw new Error("Database work ran after its transaction ended");
+  }
+  return active;
 }
 
-export async function runInDrizzleTransaction<T>(
-  db: DrizzleDatabase,
+/** Runs `operation` as the body of `context`, closing it before the transaction ends. */
+function runAsTransactionBody<T>(
+  context: DrizzleTransactionContext,
   operation: () => Promise<T>,
 ): Promise<T> {
-  const active = transactionStorage.getStore();
-  if (active) return operation();
-  const context: DrizzleTransactionContext = {
+  return transactionStorage.run(context, async () => {
+    try {
+      return await operation();
+    } finally {
+      context.closed = true;
+    }
+  });
+}
+
+function newTransactionContext(db: DrizzleDb): DrizzleTransactionContext {
+  return {
     db,
     afterCommit: [],
     afterRollback: [],
     locals: new Map(),
     participants: new Map(),
     flushingParticipants: false,
+    closed: false,
   };
+}
+
+export function currentDrizzleDb(db: DrizzleDb): DrizzleDb {
+  return activeTransaction()?.db ?? db;
+}
+
+export async function runInDrizzleTransaction<T>(
+  db: DrizzleDatabase,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (activeTransaction()) return operation();
+  const context = newTransactionContext(db);
   let result: T;
   try {
     result = await db.transaction((tx) => {
       context.db = tx;
-      return transactionStorage.run(context, async () => {
+      return runAsTransactionBody(context, async () => {
         const result = await operation();
         await flushDrizzleTransactionParticipants(context);
         return result;
@@ -73,19 +109,12 @@ export async function runInRootDrizzleTransaction<T>(
   options?: { isolationLevel?: "repeatable read"; accessMode?: "read only" },
 ): Promise<T> {
   return transactionStorage.exit(async () => {
-    const context: DrizzleTransactionContext = {
-      db,
-      afterCommit: [],
-      afterRollback: [],
-      locals: new Map(),
-      participants: new Map(),
-      flushingParticipants: false,
-    };
+    const context = newTransactionContext(db);
     let result: T;
     try {
       result = await db.transaction((tx) => {
         context.db = tx;
-        return transactionStorage.run(context, async () => {
+        return runAsTransactionBody(context, async () => {
           const result = await operation();
           await flushDrizzleTransactionParticipants(context);
           return result;
@@ -120,13 +149,11 @@ export async function runInDrizzleSavepoint<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
 ): Promise<T> {
-  const parent = transactionStorage.getStore();
+  const parent = activeTransaction();
   if (!parent) return runInDrizzleTransaction(db, operation);
   const transactional = parent.db as DrizzleTransaction;
   const child: DrizzleTransactionContext = {
-    db: transactional,
-    afterCommit: [],
-    afterRollback: [],
+    ...newTransactionContext(transactional),
     locals: new Map(parent.locals),
     participants: new Map(
       [...parent.participants].map(([key, frame]) => [
@@ -137,12 +164,11 @@ export async function runInDrizzleSavepoint<T>(
         },
       ]),
     ),
-    flushingParticipants: false,
   };
   try {
     const result = await transactional.transaction((tx) => {
       child.db = tx;
-      return transactionStorage.run(child, operation);
+      return runAsTransactionBody(child, operation);
     });
     parent.afterCommit.push(...child.afterCommit);
     parent.afterRollback.push(...child.afterRollback);
@@ -180,7 +206,7 @@ export function runIsolatedFromAmbientTransaction<T>(
 export function enlistDrizzleTransactionParticipant<State>(
   participant: DrizzleTransactionParticipant<State>,
 ): State {
-  const active = transactionStorage.getStore();
+  const active = activeTransaction();
   if (!active) throw new Error("Drizzle transaction participant requires an ambient transaction");
   const existing = active.participants.get(participant.key) as ParticipantFrame<State> | undefined;
   if (existing) return existing.state;
@@ -206,18 +232,18 @@ async function flushDrizzleTransactionParticipants(
 }
 
 export function getDrizzleTransactionLocal<T>(key: object): T | undefined {
-  return transactionStorage.getStore()?.locals.get(key) as T | undefined;
+  return activeTransaction()?.locals.get(key) as T | undefined;
 }
 
 export function setDrizzleTransactionLocal<T>(key: object, value: T): boolean {
-  const active = transactionStorage.getStore();
+  const active = activeTransaction();
   if (!active) return false;
   active.locals.set(key, value);
   return true;
 }
 
 export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boolean {
-  const active = transactionStorage.getStore();
+  const active = activeTransaction();
   if (!active) {
     void runOutsideWrite(callback);
     return false;
@@ -228,7 +254,7 @@ export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boo
 
 /** Queue only when already inside an ambient transaction; callers run inline otherwise. */
 export function deferUntilDrizzleCommit(callback: () => void | Promise<void>): boolean {
-  const active = transactionStorage.getStore();
+  const active = activeTransaction();
   if (!active) return false;
   active.afterCommit.push(callback);
   return true;
@@ -236,14 +262,14 @@ export function deferUntilDrizzleCommit(callback: () => void | Promise<void>): b
 
 /** Queue only when already inside an ambient transaction; callers handle inline errors otherwise. */
 export function deferUntilDrizzleRollback(callback: () => void | Promise<void>): boolean {
-  const active = transactionStorage.getStore();
+  const active = activeTransaction();
   if (!active) return false;
   active.afterRollback.push(callback);
   return true;
 }
 
 export function isInDrizzleTransaction(): boolean {
-  return transactionStorage.getStore() !== undefined;
+  return activeTransaction() !== undefined;
 }
 
 export function runOutsideDrizzleTransaction<T>(operation: () => T): T {

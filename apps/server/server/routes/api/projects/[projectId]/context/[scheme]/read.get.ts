@@ -14,7 +14,6 @@ export default defineEventHandler(async (event) => {
     {
       fileAccess: app.fileAccess,
       projectRepo: app.projectRepo,
-      workRepo: app.workRepo,
       contextPorts: app.contextPorts,
       objectStore: app.objectStore,
       eventSink: app.eventSink,

@@ -43,21 +43,24 @@ export async function handleTurnLiveLineageRequest(
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId") as TurnId;
   await requireThreadOwner({ threads: deps.threads }, threadId, input.userId);
-  const documents = await deps.documentSync.listEditedDocumentsForTurn(threadId, turnId);
-  const visibleDocuments = await filterAccessibleLiveLineageDocuments(deps, {
-    documents,
-    userId: input.userId,
-  });
-  const receipt = await deps.documentSync.getTurnReceiptChip(threadId, turnId);
-  const workAvailability = await getWorkReceiptReversalAvailability(
-    {
-      blocks: deps.blocks,
-      turns: deps.turns,
-      works: deps.works,
-      threads: deps.threads,
-    },
-    { threadId, turnId },
-  );
+  const [visibleDocuments, receipt, workAvailability] = await Promise.all([
+    deps.documentSync.listEditedDocumentsForTurn(threadId, turnId).then((documents) =>
+      filterAccessibleLiveLineageDocuments(deps, {
+        documents,
+        userId: input.userId,
+      }),
+    ),
+    deps.documentSync.getTurnReceiptChip(threadId, turnId),
+    getWorkReceiptReversalAvailability(
+      {
+        blocks: deps.blocks,
+        turns: deps.turns,
+        works: deps.works,
+        threads: deps.threads,
+      },
+      { threadId, turnId },
+    ),
+  ]);
   const workReceipt = workAvailability.undo
     ? ({ state: "work-active", control: "undo" } as const)
     : workAvailability.redo

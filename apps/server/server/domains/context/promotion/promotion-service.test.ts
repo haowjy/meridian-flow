@@ -64,6 +64,9 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
         async noWork() {
           return null;
         },
+        async listForProject() {
+          return [];
+        },
         async lockById() {
           return null;
         },
@@ -112,6 +115,9 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
           async noWork() {
             return null;
           },
+          async listForProject() {
+            return [];
+          },
           async lockById() {
             return null;
           },
@@ -149,6 +155,9 @@ __mergedSuite("promotion-and-flush.test.ts", () => {
       },
       async noWork() {
         return null;
+      },
+      async listForProject() {
+        return [];
       },
       async lockById() {
         return null;

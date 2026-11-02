@@ -27,7 +27,6 @@ import { documentTarget, requireFileGrant } from "./file-access-http.js";
 export interface ContextReadRouteDeps {
   fileAccess: Pick<FileAccess, "authorize">;
   projectRepo: ProjectRepository;
-  workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
@@ -164,7 +163,6 @@ export async function handleContextReadRequest(
   const port = await contextPortForProjectBrowse({
     deps: {
       contextPorts: deps.contextPorts,
-      works: deps.workRepo,
       workAuthorityResolver: deps.workAuthorityResolver,
     },
     projectId: input.projectId,

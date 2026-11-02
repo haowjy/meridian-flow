@@ -768,13 +768,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             fileAccess: createAllowAllFileAccess(),
             projectRepo: createProjectRepositoryForTest({ db }),
-            workRepo: createDrizzleProjectWorkRepository({
-              removal: createTestDocumentRemoval(db),
-              db,
-              lineageScratch: createDrizzleLineageScratchLifecycle(db),
-              fileAccessChanges: createLocalFileAccessChanges(),
-              projectionMutation: createTestWorkProjectionMutation(db),
-            }),
             contextPorts,
             workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
           },
