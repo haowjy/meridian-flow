@@ -16,6 +16,8 @@ import {
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
+import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { TurnDocumentTouchRepository } from "../../threads/index.js";
 import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
 import {
   type DocumentTextTreatment,
@@ -39,7 +41,7 @@ export interface ReferenceReader {
       /** The read records its frontier, chained from this lookup. */
       recordingFrontier?: FrontierLookup;
     },
-  ): Promise<ReferenceRead & { evidence?: ResultEvidence }>;
+  ): Promise<ReferenceRead & { evidence?: ResultEvidence; touchedDocumentId?: string }>;
 }
 
 /**
@@ -50,6 +52,8 @@ export interface ReferenceEvidence {
   shown: ShownLinkShowing[];
   /** Each reference block's frontier: the block whose materialized read the model is sent. */
   frontiers: { sourceBlockId: string; frontier: ObservationFrontier }[];
+  /** Documents the reads touched, recorded on the turn the commit persists. */
+  touched: string[];
 }
 
 /**
@@ -58,7 +62,10 @@ export interface ReferenceEvidence {
  * the commit persisting those blocks, after they are projected.
  */
 export async function recordReferenceEvidence(
-  deps: FrontierRecordingDeps & { shownLinks: Pick<ShownLinkStore, "record"> },
+  deps: FrontierRecordingDeps & {
+    shownLinks: Pick<ShownLinkStore, "record">;
+    documentTouches: Pick<TurnDocumentTouchRepository, "recordTouch">;
+  },
   threadId: string,
   turnId: string,
   evidence: ReferenceEvidence,
@@ -67,9 +74,22 @@ export async function recordReferenceEvidence(
     await deps.shownLinks.record({ ...showing, threadId, turnId });
   for (const { sourceBlockId, frontier } of evidence.frontiers)
     await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
+  for (const documentId of new Set(evidence.touched)) {
+    try {
+      await deps.documentTouches.recordTouch(turnId, documentId);
+    } catch (error) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "document_touch.failed",
+        correlation: { threadId, turnId },
+        payload: { documentId, ...unknownToEventPayload(error) },
+      });
+    }
+  }
 }
 
-export const NO_REFERENCE_EVIDENCE: ReferenceEvidence = { shown: [], frontiers: [] };
+export const NO_REFERENCE_EVIDENCE: ReferenceEvidence = { shown: [], frontiers: [], touched: [] };
 
 export function mergeReferenceEvidence(
   ...all: readonly (ReferenceEvidence | undefined)[]
@@ -77,6 +97,7 @@ export function mergeReferenceEvidence(
   return {
     shown: all.flatMap((evidence) => evidence?.shown ?? []),
     frontiers: all.flatMap((evidence) => evidence?.frontiers ?? []),
+    touched: all.flatMap((evidence) => evidence?.touched ?? []),
   };
 }
 
@@ -113,7 +134,7 @@ export async function loadReferenceReads(input: {
   );
   const reads = new Map<string, ReferenceRead & { frontier?: ObservationFrontier }>();
   const updated: Block[] = [];
-  const evidence: ReferenceEvidence = { shown: [], frontiers: [] };
+  const evidence: ReferenceEvidence = { shown: [], frontiers: [], touched: [] };
   for (const block of input.blocks) {
     if (block.turnId !== input.userTurnId) continue;
     const reference = referenceOccurrenceContent(block);
@@ -136,6 +157,7 @@ export async function loadReferenceReads(input: {
       };
       reads.set(key, result);
       evidence.shown.push(...(read.evidence?.shown ?? []));
+      if (read.touchedDocumentId) evidence.touched.push(read.touchedDocumentId);
     }
     input.signal?.throwIfAborted();
     // A repeated mention shows the same read, so its block records the same frontier.

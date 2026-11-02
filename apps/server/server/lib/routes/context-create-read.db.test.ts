@@ -187,13 +187,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
-              workRepo: createDrizzleProjectWorkRepository({
-                removal: createTestDocumentRemoval(db),
-                db,
-                lineageScratch: createDrizzleLineageScratchLifecycle(db),
-                fileAccessChanges: createLocalFileAccessChanges(),
-                projectionMutation: createTestWorkProjectionMutation(db),
-              }),
               contextPorts,
               objectStore: createInMemoryObjectStore(),
               eventSink: createNoopEventSink(),

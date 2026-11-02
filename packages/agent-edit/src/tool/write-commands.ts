@@ -508,8 +508,10 @@ export function createWriteCommands(deps: {
     if (planDoc !== room.doc && "edits" in plan && hasMissingTarget(plan.edits, room.doc)) {
       return status("not_found", "The selected block no longer exists.");
     }
-    await registerMinted(edit.assigner, docId, context);
-    const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
+    const [, identity] = await Promise.all([
+      registerMinted(edit.assigner, docId, context),
+      nextWriteIdentity(docId, session, context, command.tool_use_id),
+    ]);
     const editScopeId = context.responseIdentity?.editScopeId;
     const staged = Boolean(editScopeId) && actor.kind === "agent";
     // A save's first entry keeps the room's cut: reconcile reads what retired since.
