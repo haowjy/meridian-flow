@@ -120,11 +120,12 @@
        included, ends with a prober's agent-browser run whose screenshots are in
        Examples. ./mf output is debugging context, not verification. A PR with
        no writer-reachable change says "Browser: none" with the reason.
-     - Model: name the provider each run used and why. The mock provider fits
-       most changes: use it when the model's output doesn't matter. A real
-       model run (`deepseek-flash`) is recommended when the change touches what
-       the model receives or does: prompts, tool definitions or results,
-       request shape, streaming, or the provider path.
+     - Model: name the provider each run used and why. A change to the
+       harness (the agent stack in .context/CONTEXT.md, Harness composition:
+       the runtime loop, gateway and tools, threads, context, collab and the
+       rest) is recommended a real-model run (`deepseek-flash`) as well as the
+       mock runs that pin its behavior. A change outside the harness can rely
+       on the mock provider.
      - Tests: each test added, changed or deleted, with the risk it protects or
        why deleting it is safe (AGENTS.md, Build and test).
      - Not exercised: what you didn't run, and why.
