@@ -5,15 +5,15 @@
  * The document toolbar row starts exactly where the prose starts, so nothing
  * shifts when switching tabs or when a host mounts the editor without it.
  *
- * The horizontal inset is split across two layers — a wrapper and the
- * ProseMirror node's own padding. The whole editor pane is click-to-focus
- * territory (EditorSurfaceFrame routes gutter presses to the caret), so the
- * split is pure geometry; the sum is what a reader sees as margin:
+ * The ProseMirror node spans the whole pane, so every press, sweep and drag in
+ * the pane is inside `view.dom`. Its own padding is the whole margin: the
+ * centring (whatever the pane has beyond 48rem, halved) plus the inset below.
+ * The text column sits where a centered 48rem wrapper with these insets put it:
  *
  *   pane (container)   leading (handle side)   trailing
- *   < @2xl (42rem)     48 = px-2 + pl-10        32 = px-2 + pr-6
- *   @2xl – @3xl        56 = px-4 + px-10        56
- *   >= @3xl (48rem)    64 = px-6 + px-10        64
+ *   < @2xl (42rem)     48                       32
+ *   @2xl – @3xl        56                       56
+ *   >= @3xl (48rem)    64                       64
  *
  * Every step answers to the PANE (EditorSurfaceFrame's `@container`), not the
  * viewport: the dock's document, a narrow Editor window and the phone all get
@@ -43,11 +43,8 @@ import { cn } from "@/lib/utils";
 export const editorColumnChrome =
   "mx-auto w-full max-w-3xl px-4 @md:pr-8 @md:pl-12 @2xl:px-14 @3xl:px-16";
 
-/** The scrolling canvas wrapper around `EditorContent`. */
-export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 @2xl:px-4 @3xl:px-6";
-
 /**
- * Fill chain for the canvas wrapper AND `EditorContent`, so the ProseMirror
+ * Fill chain for `EditorContent`, so the ProseMirror
  * node reaches the bottom of the scroll area — clicking below the last line
  * must land in the editor. Percentage `min-h-full` alone breaks here: a
  * min-height-driven parent is not a definite height, so the child's
@@ -89,7 +86,13 @@ export const editorProseScrollPastEnd = "pb-[50vh]";
  */
 export function editorProseClass(toolbar: "docked" | "none"): string {
   return cn(
-    "prose-tokens document-prose min-h-full shrink-0 pl-10 pr-6 @2xl:pr-10",
+    "prose-tokens document-prose min-h-full shrink-0",
+    // Padding percentages resolve against the parent's width: the pane. The
+    // trailing padding also holds the reading measure (68ch less the old 2.5rem
+    // of padding either side) where the pane is wider than it.
+    "[--prose-lead:3rem] [--prose-trail:2rem] @2xl:[--prose-lead:3.5rem] @2xl:[--prose-trail:3.5rem] @3xl:[--prose-lead:4rem] @3xl:[--prose-trail:4rem]",
+    "pl-[calc(max(0px,(100%-48rem)/2)+var(--prose-lead))]",
+    "pr-[max(calc(max(0px,(100%-48rem)/2)+var(--prose-trail)),calc(100%-max(0px,(100%-48rem)/2)-var(--prose-lead)-68ch+5rem))]",
     editorProseScrollPastEnd,
     toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
   );
