@@ -5,7 +5,12 @@
  * whatever the row is now.
  */
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
-import type { NamespaceRequest, ParentRef, ResourceDestination } from "./resource-records";
+import {
+  type NamespaceRequest,
+  type ParentRef,
+  type ResourceDestination,
+  sameDestinationParent,
+} from "./resource-records";
 
 type Entry = Readonly<{ kind: "file" | "folder"; id: string }>;
 
@@ -34,7 +39,7 @@ export function moveRequest(
   const sameParent =
     !destination.createFolders?.length &&
     current.parent !== undefined &&
-    JSON.stringify(current.parent) === JSON.stringify(destination.parent);
+    sameDestinationParent(current.parent, destination.parent);
   const position: ContextSiblingPosition | undefined = destination.position;
   return {
     kind: "move",

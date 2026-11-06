@@ -362,7 +362,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     return this.atomic(async () => {
       let destinationPath = normalizeTreePath(input.destinationPath);
       let targetBasename = treeBasename(destinationPath);
-      if (!targetBasename || input.source.nodeId === CONTEXT_ROOT_DIRECTORY_ID) {
+      if (!targetBasename) {
         return Err({ code: "invalid_operation" });
       }
 
@@ -579,7 +579,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   ): Promise<Result<ContextTreeDeleteResult, ContextTreeMutationError>> {
     const result = await this.atomic(async () => {
       const token = command.root;
-      if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
       const current = await this.inspectNode({ kind: token.kind, id: token.nodeId });
       if (!sameLocation(current, token)) return Err({ code: "stale_source" });
       const now = this.nextTimestamp();

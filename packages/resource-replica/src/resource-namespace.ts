@@ -28,7 +28,11 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
-import { destinationParentLocation, namespaceRequestId, sameOwner } from "./resource-records";
+import {
+  destinationParentLocation,
+  namespaceRequestId,
+  sameDestinationParent,
+} from "./resource-records";
 import { deleteNeedsServer, holdAfterAttempt } from "./server-hold";
 
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
@@ -295,18 +299,6 @@ function namespaceEntryIs(
   request: Extract<NamespaceRequest, { kind: "move" | "delete" }>,
 ): boolean {
   return expected.kind === request.body.kind && expected.nodeId === request.entryId;
-}
-
-function sameDestinationParent(
-  left: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
-  right: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
-): boolean {
-  if (!left || !right) return left === right;
-  if (JSON.stringify(left.createFolders ?? []) !== JSON.stringify(right.createFolders ?? []))
-    return false;
-  if (left.kind === "folder" || right.kind === "folder")
-    return left.kind === "folder" && right.kind === "folder" && left.folderId === right.folderId;
-  return left.scheme === right.scheme && sameOwner(left.owner, right.owner);
 }
 
 function attemptIs<Kind extends NamespaceRequest["kind"]>(

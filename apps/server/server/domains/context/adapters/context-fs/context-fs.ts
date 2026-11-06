@@ -74,6 +74,7 @@ import type {
 import type {
   ContextLocationToken,
   ContextTreeDeleteCommand,
+  ContextTreeMoveCommand,
   ContextTreeMutationError,
   ContextTreeMutationStore,
   PreparedContextMove,
@@ -912,49 +913,17 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
+    let command: ContextTreeMoveCommand = prepared;
     if ("destinationFilename" in prepared) {
-      // The mover found the source through its own adapter's inspectMovable,
-      // which filters by that source's view in this transaction.
-      const source = prepared.source;
-      const destinationFiletype = moveFiletypeTransition(
-        source,
+      const transition = moveFiletypeTransition(
+        prepared.source,
         prepared.destinationPath,
         prepared.destinationFiletype,
       );
-      if (!destinationFiletype.ok) return destinationFiletype;
-      const committed = await this.mutationStore.commitMove({
-        source,
-        linkNoteProjectId: prepared.linkNoteProjectId,
-        destinationSourceId: prepared.destinationSourceId,
-        destinationParentToken: prepared.destinationParentToken,
-        destinationCreateFolders: prepared.destinationCreateFolders,
-        destinationPath: prepared.destinationPath,
-        expectedTarget: prepared.expectedTarget,
-        position: prepared.position,
-        destinationFiletype: destinationFiletype.value,
-        destinationFilename: prepared.destinationFilename,
-      });
-      if (!committed.ok) return Err(this.mutationFault(committed.error));
-      return Ok({
-        movedNodeId: committed.value.movedNodeId,
-        ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
-        ...(committed.value.locationVersion
-          ? { locationVersion: committed.value.locationVersion }
-          : {}),
-        path: committed.value.destinationPath,
-      });
+      if (!transition.ok) return transition;
+      command = { ...prepared, destinationFiletype: transition.value };
     }
-    const source = prepared.source;
-    const committed = await this.mutationStore.commitMove({
-      source,
-      linkNoteProjectId: prepared.linkNoteProjectId,
-      destinationSourceId: prepared.destinationSourceId,
-      destinationParentToken: prepared.destinationParentToken,
-      destinationCreateFolders: prepared.destinationCreateFolders,
-      destinationPath: prepared.destinationPath,
-      expectedTarget: prepared.expectedTarget,
-      position: prepared.position,
-    });
+    const committed = await this.mutationStore.commitMove(command);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,

@@ -268,7 +268,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       await lockContextSources(this.db, [input.source.sourceId, input.destinationSourceId]);
       const destinationPath = normalizeTreePath(input.destinationPath);
       const targetBasename = treeBasename(destinationPath);
-      if (!targetBasename || input.source.nodeId === CONTEXT_ROOT_DIRECTORY_ID) {
+      if (!targetBasename) {
         return Err({ code: "invalid_operation" });
       }
 
@@ -451,7 +451,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     return this.withMutationTransaction(async () => {
       const token = command.root;
       await lockContextSources(this.db, [token.sourceId]);
-      if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
       const current = await this.inspectNode({ kind: token.kind, id: token.nodeId });
       if (!sameLocation(current, token)) return Err({ code: "stale_source" });
       const now = new Date();

@@ -19,6 +19,7 @@ import {
   type ResourceLocation,
   type ResourceRecord,
   type ResourceWrite,
+  sameDestinationParent,
   sameOwner,
 } from "./resource-records";
 import { resourceChatOwner, resourceLineageOwner } from "./resource-work-authority";
@@ -202,7 +203,7 @@ function observedResourceWrite(input: {
   if (
     observed.revision !== current.revision &&
     (!sameResourceLocation(observed.canonical, current.canonical) ||
-      JSON.stringify(observed.canonicalParent) !== JSON.stringify(current.canonicalParent) ||
+      !sameDestinationParent(observed.canonicalParent, current.canonicalParent) ||
       observed.canonicalRank !== current.canonicalRank ||
       !sameClassification(observed.classification, current.classification))
   )
