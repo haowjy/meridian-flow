@@ -69,8 +69,8 @@ Debugging: [docs/debugging.md](docs/debugging.md).
 
 Start with `pnpm dev` and find URLs with `pnpm portless:list`. Dev uses Portless
 HTTPS routes: never assume ports. Setup is in [DEVELOPMENT.md](DEVELOPMENT.md), tool
-rules in [tools/dev/AGENTS.md](tools/dev/AGENTS.md). After changing a package, run
-`pnpm dev:restart`: the dev server doesn't watch `node_modules`. A dev stack belongs to the
+rules in [tools/dev/AGENTS.md](tools/dev/AGENTS.md). After installing, upgrading or
+patching a package, run `pnpm dev:restart`: the dev server doesn't watch `node_modules`. A dev stack belongs to the
 session that started it.
 
 **Debug with `./mf`; verify in the browser.** Use `./mf` to reproduce and read
@@ -88,8 +88,8 @@ facts come from [models.dev](https://models.dev).
 budgets:
 [tools/ci/README.md](tools/ci/README.md).
 
-Write few unit tests. A new test protects a named risk that no decision or probe
-covers, and asserts what the code produces, not mocks or call counts. Prefer probes
+Write few unit tests. A new test protects a named risk that no probe or other test
+already exercises, and asserts what the code produces, not mocks or call counts. Prefer probes
 in the [runtime probe catalog](docs/qa/README.md). A test pinned to a redesignable
 decision lists it under `Pins implementation decisions` in its header; change the
 decision, change the test.
@@ -98,7 +98,7 @@ decision, change the test.
 
 Commit often. A human merges product changes into `main` or `staging`; everything
 else needs no permission: worktrees, commits, pushes, PRs, issues. Documentation-only
-changes commit directly to `main`, with no PR.
+changes need no PR: push them straight to `main`.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with
