@@ -1,9 +1,9 @@
 /** Durable namespace attempt outcomes, independent from current canonical location. */
 import type { OwnerSlip } from "../context-uri.js";
 import type {
+  ContextEntryRef,
   CopyContextEntriesResult,
   CopyContextEntrySource,
-  DeleteContextEntryRequest,
   DeleteContextEntryResult,
   MoveContextEntryRequest,
 } from "./http-types.js";
@@ -51,8 +51,11 @@ export type ContextError =
       /**
        * `source_behind`: a Copy's source room has not received the edits the writer's client
        * holds. Retryable like any `io_error`, and told apart so a replica bounds its retries.
+       * `namespace_changed`: the entry or its destination moved to another Work or area between
+       * the route's lookup and the locks. Nothing is recorded; a resend under the same operation
+       * id looks the entry up again.
        */
-      reason?: "source_behind";
+      reason?: "source_behind" | "namespace_changed";
     };
 
 export interface ContextMoveResult {
@@ -60,7 +63,8 @@ export interface ContextMoveResult {
   linkUpdate?: { links: number; documents: number };
   /** Scheme-relative path durably committed by the tree mutation. */
   destinationPath: string;
-  destinationUri?: string;
+  /** Where the entry stands after the move: the address a receipt's refresh fences on. */
+  destinationUri: string;
   /** Per-entry namespace mutation revision produced by this exact operation. */
   locationVersion?: string;
 }
@@ -68,13 +72,13 @@ export interface ContextMoveResult {
 export type ContextOperationCommand =
   | {
       kind: "move";
-      sourceUri: string;
-      destinationUri: string;
-      expected: MoveContextEntryRequest["expected"];
+      expected: ContextEntryRef;
       destinationParent?: MoveContextEntryRequest["destinationParent"];
       position?: MoveContextEntryRequest["position"];
+      /** Only when the writer typed one; otherwise the row keeps its name. */
+      name?: string;
     }
-  | { kind: "delete"; uri: string; expected: DeleteContextEntryRequest["expected"] }
+  | { kind: "delete"; expected: ContextEntryRef }
   | {
       kind: "copy";
       /** Ordered roots by canonical address; the read view travels with each. */

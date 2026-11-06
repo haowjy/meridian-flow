@@ -76,7 +76,7 @@ Use a `__delay` of `8000` to `14000` where a step says "hold".
    first inside the folder and the second ranked between the folder and its next sibling.
 5. Refusal with contents: in a Manuscript folder `Dest`, hold and create `Doomed`, add a
    document and a folder in it, then delete `Dest` with `./mf api POST
-   .../context/manuscript/delete` (`expected: {kind: "folder", nodeId}`) before the POST
+   .../context/entries/<DestId>/delete` (`expected: {kind: "folder"}`) before the POST
    goes out. One POST answers 409 `destination_missing`. `Doomed` and both children are
    listed in Unfiled with a mark, each `needs-repair`; the document's identity bar offers
    "File it". Move… on `Doomed` to Manuscript lands it under the same id; the children keep

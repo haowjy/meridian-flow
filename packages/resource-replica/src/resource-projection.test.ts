@@ -80,11 +80,16 @@ it("projects only the requesting project's durable location intention", () => {
       command: {
         destinationParent: { kind: "folder" as const, folderId: "chapters" },
         kind: "move",
-        sourceUri: "user://shared",
-        destinationUri: "manuscript://chapters/opening",
         expected: { kind: "file", nodeId: "document" },
+        name: "opening",
       },
-      result: { ok: true, value: { destinationPath: "chapters/opening" } },
+      result: {
+        ok: true,
+        value: {
+          destinationPath: "chapters/opening",
+          destinationUri: "manuscript://chapters/opening",
+        },
+      },
     },
   });
   if (!received) throw new Error("Missing filing outcome");

@@ -194,7 +194,7 @@ async function commitLive(
     });
   if (input.command === "delete") {
     const deleted = await port.delete(source.uri, {
-      expected: { kind: "file", documentId: source.documentId },
+      expected: { kind: "file", nodeId: source.documentId },
       origin,
       inTransaction: () => record(),
     });

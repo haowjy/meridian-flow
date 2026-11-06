@@ -204,6 +204,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
+    inspectNode: async (node) => Ok(await this.mutationStore.inspectNode(node)),
     commitProvisionalGraduation: (source) => this.commitProvisionalGraduation(source),
     commitPreparedMove: (prepared) => this.commitPreparedMove(prepared),
     commitRecursiveDelete: (command) => this.commitRecursiveDelete(command),

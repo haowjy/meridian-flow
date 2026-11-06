@@ -26,6 +26,7 @@ import { composeAppServices, createProductionAppPorts } from "../../lib/compose.
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { unloadHocuspocus } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
+import { entryAt } from "../../test-support/entry-ref.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
@@ -199,7 +200,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             door: "an overwrite after the target moved keeps every ref it leaves in place",
             act: async () => {
               await ok(
-                port.commitWriterLocation("manuscript://target", "manuscript://moved/target"),
+                port.commitWriterLocation("manuscript://target", "manuscript://moved/target", {
+                  expected: await entryAt(port, "manuscript://target"),
+                }),
               );
               await ok(
                 port.write(
@@ -358,7 +361,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               ).documentId;
               afterNextBind = async () => {
                 await ok(
-                  port.commitWriterLocation("manuscript://occupant", "manuscript://first-moved"),
+                  port.commitWriterLocation("manuscript://occupant", "manuscript://first-moved", {
+                    expected: await entryAt(port, "manuscript://occupant"),
+                  }),
                 );
                 await ok(port.createTrackedDocument("manuscript://occupant", "Second."));
               };

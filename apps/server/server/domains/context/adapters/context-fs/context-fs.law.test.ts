@@ -7,6 +7,7 @@
 import { type DocumentId, documentTitleFromUri } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
+import { entryAt } from "../../../../test-support/entry-ref.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
 import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
@@ -18,6 +19,16 @@ import {
   InMemoryContextDocumentStore,
 } from "./in-memory-store.js";
 import { InMemoryContextTreeMutationStore } from "./in-memory-tree-mutation-store.js";
+
+/** The entry at a path of one adapter, as the mover takes it (by id). */
+async function movableAt(fs: Pick<ContextFS, "tree">, path: string) {
+  const token = await fs.tree.inspectMovable(path);
+  if (!token.ok || !token.value) throw new Error(`Nothing to move at ${path}`);
+  return {
+    kind: token.value.kind === "directory" ? ("folder" as const) : ("file" as const),
+    nodeId: token.value.nodeId,
+  };
+}
 
 const SOURCE_A = "00000000-0000-4000-8000-000000000901";
 const SOURCE_B = "00000000-0000-4000-8000-000000000902";
@@ -252,8 +263,10 @@ describe("ContextFS rename filetype invariant", () => {
       context,
       backing,
       mutationStore,
-      move: (source: string, destination: string) =>
-        mover.commitWriterLocation(dispatch(source), dispatch(destination)),
+      move: async (source: string, destination: string) =>
+        mover.commitWriterLocation(dispatch(source), dispatch(destination), {
+          expected: await movableAt(context, source),
+        }),
     };
   }
 
@@ -413,7 +426,9 @@ describe("canonical document naming laws", () => {
     });
     await fs.ensureTrackedDocument("config.toml");
     expect(
-      await mover.commitWriterLocation(dispatch("config.toml"), dispatch("settings")),
+      await mover.commitWriterLocation(dispatch("config.toml"), dispatch("settings"), {
+        expected: await movableAt(fs, "config.toml"),
+      }),
     ).toMatchObject({ ok: true, value: { destinationPath: "settings.toml" } });
     expect(await fs.ensureTrackedDocument("copied", { sourceExtension: "toml" })).toMatchObject({
       ok: true,
@@ -446,11 +461,19 @@ describe("canonical document naming laws", () => {
       canonical: `manuscript://${path}`,
       workScopeId: null,
     });
-    expect(await mover.commitWriterLocation(dispatch("Chapter"), dispatch("Lore"))).toMatchObject({
+    expect(
+      await mover.commitWriterLocation(dispatch("Chapter"), dispatch("Lore"), {
+        expected: await movableAt(fs, "Chapter"),
+      }),
+    ).toMatchObject({
       ok: true,
       value: { destinationPath: "Lore (2)" },
     });
-    expect(await mover.commitWriterLocation(dispatch("Lore"), dispatch("Chapter"))).toMatchObject({
+    expect(
+      await mover.commitWriterLocation(dispatch("Lore"), dispatch("Chapter"), {
+        expected: await movableAt(fs, "Lore"),
+      }),
+    ).toMatchObject({
       ok: true,
       value: { destinationPath: "Chapter" },
     });
@@ -549,11 +572,15 @@ describe("router through real ContextFS naming", () => {
       error: { code: "conflict", occupantKind: "file" },
     });
     expect(
-      await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore"),
+      await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore", {
+        expected: await entryAt(port, "manuscript://Chapter"),
+      }),
     ).toMatchObject({ ok: true, value: { destinationPath: "Lore (2)" } });
     await fs.mkdir("Other");
     expect(
-      await port.commitWriterLocation("manuscript://Other", "manuscript://Chapter.md"),
+      await port.commitWriterLocation("manuscript://Other", "manuscript://Chapter.md", {
+        expected: await entryAt(port, "manuscript://Other"),
+      }),
     ).toMatchObject({ ok: true, value: { destinationPath: "Chapter.md" } });
   });
 
@@ -566,7 +593,9 @@ describe("router through real ContextFS naming", () => {
     expect(original.ok).toBe(true);
     const before = [...backing.documents.values()].map((row) => ({ ...row }));
     expect(
-      await port.commitWriterLocation(`manuscript://${source}`, `manuscript://${destination}`),
+      await port.commitWriterLocation(`manuscript://${source}`, `manuscript://${destination}`, {
+        expected: await entryAt(port, `manuscript://${source}`),
+      }),
     ).toMatchObject({ ok: false, error: { code: "invalid_operation" } });
     expect([...backing.documents.values()]).toEqual(before);
   });

@@ -86,12 +86,17 @@ until an authorized terminal cleanup transition.
 
 `reconcileResourceNamespace` persists an immutable attempt before dispatch,
 records received evidence separately, and applies it through metadata CAS.
-App move attempts always carry the picked `destinationParent`. Preparation looks
-up the folder's server-canonical location; an absent or terminal destination enters
-move repair without a fabricated transport attempt. Folder receipt matching uses
-that parent identity, creation suffix and leaf name rather than the parent's potentially changed
-path or owner. Root moves still match qualified URI authority. Source identity
-and URI remain immutable evidence. File intents retain typed names for immutable
+Moves and deletes are requested by entry id (`namespace-requests.ts`, shared by the file and
+folder journals): the request carries the id, the kind, and only what the writer chose. A
+`destinationParent` is sent unless it is the parent the device last observed, and a `name` only
+when it differs from the observed one, so a stale device cannot undo another device's rename or
+move. Preparation still looks up a picked folder's server-canonical location; an absent or
+terminal destination enters move repair without a fabricated transport attempt. Receipt matching
+compares the entry id and kind, the parent identity with its creation suffix, the position and the
+typed name; no path or owner is compared, and replay does not depend on where the entry now is
+(`replayEligible` no longer checks a source path). A non-final `io_error` (`namespace_changed`)
+leaves the attempt submitted and it is resent under the same operation id. The attempt, its receipt
+and the id are immutable evidence; Copy still names its roots by path. File intents retain typed names for immutable
 transport while the contracts filename codec supplies canonical optimistic names.
 Folder suffix names stay literal and share main's document-alias collision checks.
 Receipt lookup and dispatch share a short account/resource lock with future

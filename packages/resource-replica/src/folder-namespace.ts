@@ -14,6 +14,7 @@ import {
   validateNamespaceJournal,
 } from "./namespace-journal-policy";
 import { namespaceReceiptIs } from "./namespace-receipts";
+import { deleteRequest, moveRequest } from "./namespace-requests";
 import { committedResourceDeletion, LOCAL_DELETION_UNDO_MS } from "./resource-deletion";
 import {
   awaitsRemint,
@@ -42,7 +43,6 @@ import type {
   NamespaceIdentityAvailability,
   NamespaceIntent,
   NamespaceOutcome,
-  NamespaceRequest,
   OperationReader,
   OperationRecord,
   ParentRef,
@@ -61,7 +61,7 @@ import {
   ownerOf,
   sameOwner,
 } from "./resource-records";
-import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
+import { resourceContextAuthority } from "./resource-work-authority";
 import { deleteNeedsServer, holdAfterAttempt } from "./server-hold";
 
 /** Browser persistence implements this alongside its file journal, in the same account owner. */
@@ -70,10 +70,6 @@ export interface FolderNamespaceStore extends OperationReader {
   readFolder(key: ResourceKey): Promise<FolderNamespaceRecord | null>;
   readFolders(projectId: string): Promise<readonly FolderNamespaceRecord[]>;
   commitFolder(write: FolderNamespaceWrite): Promise<MetadataCommitResult>;
-}
-
-function pathParts(path: string): string[] {
-  return path.split("/").filter(Boolean);
 }
 
 /**
@@ -415,7 +411,7 @@ export function validateFolderNamespaceUpdate(
           ? true
           : request.kind === "create-folder"
             ? !named(request.body.folderId)
-            : request.body.expected.kind !== "folder" || !named(request.body.expected.nodeId),
+            : request.body.expected.kind !== "folder" || !named(request.entryId),
       ),
     )
   )
@@ -541,19 +537,10 @@ export function prepareFolderNamespaceAttempt(
         state: "settled-locally",
       }));
     if (!source) return null;
-    const request: Extract<NamespaceRequest, { kind: "delete" }> = {
-      kind: "delete",
-      scheme: source.scheme,
-      workId: source.workId,
-      workHandle: source.workHandle ?? null,
-      rootThreadId: source.rootThreadId ?? null,
-      rootThreadRef: source.rootThreadRef ?? null,
-      body: {
-        operationId: intent.operationId ?? ids.operationId,
-        path: pathParts(source.path).join("/"),
-        expected: { kind: "folder", nodeId: record.folderId },
-      },
-    };
+    const request = deleteRequest(
+      { kind: "folder", id: record.folderId },
+      intent.operationId ?? ids.operationId,
+    );
     return replaceIntent(record, intent.intentId, (current) => ({
       ...current,
       state: "submitted",
@@ -589,28 +576,12 @@ export function prepareFolderNamespaceAttempt(
   }
   // Held without a place waits for it; `uncertain` is replayed, never re-created; `spent` is replaced first.
   if (record.serverHold !== "held" || !source) return null;
-  const owners = moveOwnerFields(source, parent);
-  const request: Extract<NamespaceRequest, { kind: "move" }> = {
-    kind: "move",
-    scheme: source.scheme,
-    ...owners,
-    body: {
-      operationId: intent.operationId ?? ids.operationId,
-      path: pathParts(source.path).join("/"),
-      expected: { kind: "folder", nodeId: record.folderId },
-      destinationParent: {
-        ...destination.parent,
-        ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
-      },
-      destinationScheme: parent.scheme,
-      destinationFolderPath: [...pathParts(parent.path), ...(destination.createFolders ?? [])].join(
-        "/",
-      ),
-      ...owners.body,
-      ...(intent.desired.typedName !== source.name ? { newName: intent.desired.typedName } : {}),
-      ...(destination.position ? { position: destination.position } : {}),
-    },
-  };
+  const request = moveRequest(
+    { kind: "folder", id: record.folderId },
+    intent.operationId ?? ids.operationId,
+    { destination, typedName: intent.desired.typedName },
+    { name: source.name, parent: record.canonicalParent },
+  );
   return replaceIntent(record, intent.intentId, (current) => ({
     ...current,
     state: "submitted",
@@ -899,7 +870,7 @@ export function reconcileFolderNamespace(input: {
       return (
         !record.canonicalRefresh &&
         request.body.expected.kind === "folder" &&
-        request.body.expected.nodeId === record.folderId
+        request.entryId === record.folderId
       );
     },
   });

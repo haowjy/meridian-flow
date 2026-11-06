@@ -113,12 +113,12 @@ The app no longer sends a payload the server refuses, so rewrite the first
 matching request in the page (`window.fetch`). Leave later POSTs unrewritten so
 a resend would show as a second request.
 
-- **Move:** on the first `POST …/context/manuscript/move`, parse the JSON body
-  and set `destinationWorkId` to any UUID. The server answers 400
-  "`destinationWorkId` is not valid for manuscript" as
+- **Move:** on the first `POST …/context/entries/<id>/move`, parse the JSON body
+  and set `destinationParent` to `{"kind":"bogus"}`. The server answers 400
+  "Destination parent is invalid" as
   `{kind:"error", error:{code:"bad_request", retryable:false, …}}`.
-- **Delete:** on the first `POST …/context/<scheme>/delete`, drop `expected`.
-  The server answers 400 "expected target is required" with the same envelope.
+- **Delete:** on the first `POST …/context/entries/<id>/delete`, drop `expected`.
+  The server answers 400 "Expected entry kind is required" with the same envelope.
 
 One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
 
@@ -130,14 +130,14 @@ One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
     const url = String((u && u.url) || u);
     if (
       !used &&
-      url.includes("/context/manuscript/move") &&
+      url.includes("/context/entries/") && url.endsWith("/move") &&
       i &&
       i.method === "POST" &&
       typeof i.body === "string"
     ) {
       used = true;
       const body = JSON.parse(i.body);
-      body.destinationWorkId = "11111111-1111-4111-8111-111111111111";
+      body.destinationParent = { kind: "bogus" };
       return o.call(this, u, { ...i, body: JSON.stringify(body) });
     }
     return o.apply(this, arguments);

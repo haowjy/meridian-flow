@@ -335,7 +335,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(
         port.delete("user://user", {
-          expected: { kind: "file", documentId: userDocumentId },
+          expected: { kind: "file", nodeId: userDocumentId },
         }),
       ).resolves.toMatchObject({
         ok: true,

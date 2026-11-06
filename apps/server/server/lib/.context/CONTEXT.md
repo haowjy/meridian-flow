@@ -113,11 +113,19 @@ the user's projects), and the user holds a read grant on the row `held` names, w
 join's forward. It answers from that row (`fileRefOfVisible`, the mapping `ContextFS.stat`
 shares), so it never resolves a path and never sees a draft.
 
-Move requests carry `destinationParent` when they use destination identity.
-The route passes that identity into the domain command and receipt, maps typed
-`destination_missing` to non-retryable repair, and rechecks edit authority on
-the resolved destination under the move transaction. URI-only callers retain
-path semantics.
+Move and delete are `POST /api/projects/:projectId/context/entries/:entryId/{move,delete}`
+(`context-move-route.ts`, `context-delete-route.ts`, with `context-entry-route.ts`). Neither
+request names a path or an owner. After the project check, a recorded outcome for the same
+operation and command answers first, so a resend of a committed move or delete is not refused for
+the row having moved on. `locateEntry` then finds the row through `availability.held` (another
+project's row, hidden and deleted rows are 404; a User-area file is reachable from any of the
+user's projects). Edit is granted on the row `held` names, never on the id the request carried (a
+join forwards), and for a folder on its area's container; uploads are refused. A move also needs
+edit on the destination area unless the destination is a folder, which is rechecked under the move
+locks (`authorizeDestination`). `destination_missing` stays non-retryable repair. The request
+sends `name` and `destinationParent` only when the writer chose them (see
+`MoveContextEntryRequest`); `locateEntry` supplies the rest. URI callers (the model) go through the
+port with the same node and keep path semantics for the destination.
 
 The app's durable namespace queue resends any move, delete, create-untitled or create-folder it
 has not settled, and it settles a refusal only from a typed non-retryable 4xx (the

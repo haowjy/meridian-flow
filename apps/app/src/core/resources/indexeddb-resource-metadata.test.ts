@@ -386,13 +386,13 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
           operationId: "delete-folder",
           command: {
             kind: "delete",
-            uri: "manuscript://A",
             expected: { kind: "folder", nodeId: "parent" },
           },
           result: {
             ok: true,
             value: {
               status: "deleted",
+              uri: "manuscript://A",
               removed: ["one", "two", "newer", "unknown"].map((documentId) => ({
                 documentId,
                 removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
@@ -488,13 +488,13 @@ it.each([
         operationId: "parent-delete",
         command: {
           kind: "delete",
-          uri: "manuscript://A",
           expected: { kind: "folder", nodeId: "parent" },
         },
         result: {
           ok: true,
           value: {
             status: "deleted",
+            uri: "manuscript://A",
             removed: [
               {
                 documentId: key.handle,

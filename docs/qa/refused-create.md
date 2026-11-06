@@ -97,8 +97,8 @@ run: it names the first id.
    no failure mark, only "Only on this device". `network unroute`; within 30s the create
    lands and the chip goes.
 8. A real server refusal: abort creates as in step 7, press New file on a Manuscript
-   folder, name it, delete that folder with `./mf api POST .../context/manuscript/delete`
-   (`expected: {kind: "folder", nodeId}`), then `network unroute`. One POST answered 409
+   folder, name it, delete that folder with `./mf api POST .../context/entries/<folderId>/delete`
+   (`{operationId, expected: {kind: "folder"}}`), then `network unroute`. One POST answered 409
    `destination_missing`; the row is listed in Unfiled at its name (not under a folder),
    with the mark and no further POST. Move… to a live folder lands it.
 9. Working set: with `__refuse` set and `__delay` at `14000`, press New document, type,
@@ -108,10 +108,10 @@ run: it names the first id.
    document contributes no route. When the create lands, the projection clears `localOnly`
    and the next report adds the route.
 10. A refused move's notice: stub the move request to fail (an `eval` that wraps
-    `window.fetch` and posts `{}` to `/context/<scheme>/move`), Move… a server document to
+    `window.fetch` and posts `{}` to `/context/entries/<id>/move`), Move… a server document to
     another folder: the toast reads "Couldn't move X to <folder>." with Retry, and it stays
     until closed. The row's mark clears when X is renamed from another client
-    (`./mf api POST .../context/manuscript/move` with `newName`).
+    (`./mf api POST .../context/entries/<id>/move` with `name`).
 11. Position: a refused document dragged between two siblings keeps its slot when the
     repair create lands (the create carries `position`; see the server table below).
 
@@ -119,7 +119,7 @@ run: it names the first id.
     file in Manuscript and name it. The document row is listed and one POST has gone out
     (`__cu` logs every attempt after it too, but none leaves the client). In IndexedDB the
     resource has `serverHold: "uncertain"`. Delete that document on the server with
-    `./mf api POST .../context/manuscript/delete` (`expected: {kind: "file", documentId}`; an
+    `./mf api POST .../context/entries/<id>/delete` (`expected: {kind: "file"}`; an
     archived Work does the same), set `__refuse2`, clear `__hold`. The first replay answers 409
     `conflict`: the resource takes a new `identity.documentId` (revision 2, the old id in
     `aliases`), `serverHold` is `local`, and a retry under the new id is refused

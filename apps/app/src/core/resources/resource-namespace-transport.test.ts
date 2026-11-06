@@ -31,22 +31,15 @@ const api = vi.hoisted(() => ({
 vi.mock("@/client/api/projects-api", () => api);
 const request: NamespaceRequest = {
   kind: "delete",
-  scheme: "scratch",
-  workId: "work",
-  workHandle: "w1",
-  body: {
-    operationId: "operation",
-    path: "note.md",
-    expected: { kind: "file", documentId: "document" },
-  },
+  entryId: "document",
+  body: { operationId: "operation", expected: { kind: "file" } },
 };
 const receipt: ContextOperationReceipt = {
   observationVersion: "1",
   operationId: "operation",
   command: {
     kind: "delete",
-    uri: "scratch://@w1/note.md",
-    expected: { kind: "file", documentId: "document" },
+    expected: { kind: "file", nodeId: "document" },
   },
   result: { ok: false, error: { code: "conflict", uri: "scratch://@w1/note.md" } },
 };

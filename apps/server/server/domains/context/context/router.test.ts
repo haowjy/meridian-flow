@@ -59,6 +59,21 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
         }
         return Ok(null);
       }),
+      inspectNode: vi.fn(async (node: { id: string }) =>
+        Ok(
+          node.id === "document-old"
+            ? {
+                observationVersion: "1",
+                kind: "file" as const,
+                nodeId: "document-old",
+                sourceId: `${scheme}-source`,
+                path: "old",
+                filetype: "markdown" as const,
+                extension: "",
+              }
+            : null,
+        ),
+      ),
       commitProvisionalGraduation: vi.fn(async () => Ok(undefined)),
       commitPreparedMove: vi.fn(async (prepared) =>
         Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
@@ -95,7 +110,7 @@ describe("context router deletion receipts", () => {
 
     await expect(
       port.delete("manuscript://old.md", {
-        expected: { kind: "file", documentId: "document-old" },
+        expected: { kind: "file", nodeId: "document-old" },
       }),
     ).resolves.toEqual({
       ok: false,
@@ -280,18 +295,27 @@ describe("context router scheme creation capabilities", () => {
 
   it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
     const { port, uploads } = createPort();
+    const oldDocument = { kind: "file" as const, nodeId: "document-old" };
 
     await expect(
-      port.commitWriterLocation(`scratch://@w7/old.md`, `uploads://old.md`),
+      port.commitWriterLocation(`scratch://@w7/old.md`, `uploads://old.md`, {
+        expected: oldDocument,
+      }),
     ).resolves.toMatchObject({
       ok: false,
       error: { code: "invalid_operation", uri: "uploads://@c12/old.md" },
     });
     await expect(
-      port.commitWriterLocation(`uploads://old.md`, `uploads://renamed.md`),
+      port.commitWriterLocation(`uploads://old.md`, `uploads://renamed.md`, {
+        expected: oldDocument,
+      }),
     ).resolves.toEqual({
       ok: true,
-      value: { movedNodeId: "document-old", destinationPath: "renamed" },
+      value: {
+        movedNodeId: "document-old",
+        destinationPath: "renamed",
+        destinationUri: "uploads://@c12/renamed",
+      },
     });
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
   });

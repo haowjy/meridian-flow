@@ -248,13 +248,13 @@ describe("namespace record transitions", () => {
       operationId: "operation",
       command: {
         kind: "delete",
-        uri: "unfiled://drafts/Document",
-        expected: { kind: "file", documentId: "document" },
+        expected: { kind: "file", nodeId: "document" },
       },
       result: {
         ok: true,
         value: {
           status: "deleted",
+          uri: "unfiled://drafts/Document",
           removed: [
             {
               documentId: "document",
@@ -319,13 +319,16 @@ describe("namespace record transitions", () => {
         command: {
           destinationParent: { kind: "folder" as const, folderId: "chapters" },
           kind: "move",
-          sourceUri: "unfiled://before",
-          destinationUri: "manuscript://chapters/after",
           expected: { kind: "file", nodeId: "document" },
+          name: "after",
         },
         result: {
           ok: true,
-          value: { movedNodeId: "document", destinationPath: "chapters/after" },
+          value: {
+            movedNodeId: "document",
+            destinationPath: "chapters/after",
+            destinationUri: "manuscript://chapters/after",
+          },
         },
       },
     });
@@ -393,13 +396,16 @@ describe("namespace record transitions", () => {
         command: {
           destinationParent: { kind: "folder" as const, folderId: "chapters" },
           kind: "move",
-          sourceUri: "unfiled://before",
-          destinationUri: "manuscript://chapters/after",
           expected: { kind: "file", nodeId: "document" },
+          name: "after",
         },
         result: {
           ok: true,
-          value: { movedNodeId: "document", destinationPath: "chapters/after" },
+          value: {
+            movedNodeId: "document",
+            destinationPath: "chapters/after",
+            destinationUri: "manuscript://chapters/after",
+          },
         },
       },
     });
@@ -440,227 +446,8 @@ describe("namespace record transitions", () => {
     );
     expect(deletion?.next.intents[1]?.attempts[0]?.request).toMatchObject({
       kind: "delete",
-      scheme: "manuscript",
-      body: { path: "chapters/after" },
+      entryId: "document",
     });
-  });
-
-  it("rejects a receipt for a different immutable source path", () => {
-    const before = local();
-    before.resource.canonical = {
-      scheme: "unfiled",
-      path: "/before",
-      name: "before",
-      workId: null,
-    };
-    before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
-    before.resource.serverHold = "held";
-    before.intents = [
-      {
-        ...before.intents[0],
-        intentId: "delete",
-        desired: { kind: "delete" },
-      },
-    ];
-    const submitted = prepareNamespaceAttempt(
-      before,
-      {
-        attemptId: "attempt",
-        operationId: "operation",
-      },
-      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
-    );
-    if (!submitted) throw new Error("missing submitted write");
-    expect(() =>
-      recordNamespaceOutcome(submitted.next, "delete", "attempt", {
-        kind: "operation",
-        receipt: {
-          observationVersion: "1",
-          operationId: "operation",
-          command: {
-            kind: "delete",
-            uri: "unfiled://replacement",
-            expected: { kind: "file", documentId: "document" },
-          },
-          result: {
-            ok: true,
-            value: {
-              status: "deleted",
-              removed: [
-                {
-                  documentId: "document",
-                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
-                },
-              ],
-              availabilityGeneration: "2",
-            },
-          },
-        },
-      }),
-    ).toThrow("does not match current attempt");
-  });
-
-  it("rejects same-path receipts resolved under another Work authority", () => {
-    const before = local();
-    before.resource.canonical = {
-      scheme: "scratch",
-      path: "/note",
-      name: "note",
-      workId: "work-a",
-      workHandle: "w1",
-    };
-    before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
-    before.resource.serverHold = "held";
-    before.intents = [
-      {
-        ...before.intents[0],
-        intentId: "delete",
-        desired: { kind: "delete" },
-      },
-    ];
-    const submitted = prepareNamespaceAttempt(
-      before,
-      {
-        attemptId: "attempt",
-        operationId: "operation",
-      },
-      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
-    );
-    if (!submitted) throw new Error("missing submitted write");
-    expect(() =>
-      recordNamespaceOutcome(submitted.next, "delete", "attempt", {
-        kind: "operation",
-        receipt: {
-          observationVersion: "1",
-          operationId: "operation",
-          command: {
-            kind: "delete",
-            uri: "scratch://@w2/note",
-            expected: { kind: "file", documentId: "document" },
-          },
-          result: {
-            ok: true,
-            value: {
-              status: "deleted",
-              removed: [
-                {
-                  documentId: "document",
-                  removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
-                },
-              ],
-              availabilityGeneration: "2",
-            },
-          },
-        },
-      }),
-    ).toThrow("does not match current attempt");
-  });
-});
-
-describe("a chat's Scratch owner", () => {
-  function lineageNote(): ResourceRecord {
-    const record = local();
-    record.resource.canonical = {
-      scheme: "scratch",
-      path: "/duel/beats",
-      name: "beats",
-      workId: null,
-      rootThreadId: "root-c12",
-      rootThreadRef: "c12",
-    };
-    record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
-    record.resource.serverHold = "held";
-    return record;
-  }
-
-  it("names the lineage and its handle on the source side of a move out", () => {
-    const record = lineageNote();
-    record.intents = [
-      {
-        ...(record.intents[0] as ResourceRecord["intents"][number]),
-        intentId: "move-out",
-        desired: {
-          kind: "set-location",
-          typedName: "beats",
-          destination: {
-            parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
-            name: "beats",
-          },
-        },
-      },
-    ];
-    const submitted = prepareNamespaceAttempt(
-      record,
-      {
-        attemptId: "attempt",
-        operationId: "operation",
-      },
-      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
-    );
-    const request = submitted?.next.intents[0]?.attempts[0]?.request;
-    expect(request).toMatchObject({
-      kind: "move",
-      sourceRootThreadRef: "c12",
-      destinationRootThreadRef: null,
-      body: { sourceRootThreadId: "root-c12", destinationRootThreadId: null, sourceWorkId: null },
-    });
-  });
-
-  it("accepts a delete receipt under its own lineage handle and rejects another chat's", () => {
-    const record = lineageNote();
-    record.intents = [
-      {
-        ...(record.intents[0] as ResourceRecord["intents"][number]),
-        intentId: "delete",
-        desired: { kind: "delete" },
-      },
-    ];
-    const submitted = prepareNamespaceAttempt(
-      record,
-      {
-        attemptId: "attempt",
-        operationId: "operation",
-      },
-      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
-    );
-    if (!submitted) throw new Error("missing submitted write");
-    const receipt = (uri: string): NamespaceOutcome => ({
-      kind: "operation",
-      receipt: {
-        observationVersion: "1",
-        operationId: "operation",
-        command: { kind: "delete", uri, expected: { kind: "file", documentId: "document" } },
-        result: {
-          ok: true,
-          value: {
-            status: "deleted",
-            removed: [
-              {
-                documentId: "document",
-                removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
-              },
-            ],
-            availabilityGeneration: "2",
-          },
-        },
-      },
-    });
-    expect(() =>
-      recordNamespaceOutcome(
-        submitted.next,
-        "delete",
-        "attempt",
-        receipt("scratch://@c12/duel/beats"),
-      ),
-    ).not.toThrow();
-    expect(() =>
-      recordNamespaceOutcome(
-        submitted.next,
-        "delete",
-        "attempt",
-        receipt("scratch://@c40/duel/beats"),
-      ),
-    ).toThrow("does not match current attempt");
   });
 });
 
@@ -834,9 +621,8 @@ it.each([
                     owner: { workId: "work", workHandle: "w5" },
                   },
                   kind: "move",
-                  sourceUri: "scratch://@w5/before",
-                  destinationUri: "scratch://@w5/after",
                   expected: { kind: "file", nodeId: "document" },
+                  name: "after",
                 },
                 result: {
                   ok: false,
@@ -905,8 +691,7 @@ it.each([
             operationId: "delete-operation",
             command: {
               kind: "delete",
-              uri: "scratch://@w5/before",
-              expected: { kind: "file", documentId: "document" },
+              expected: { kind: "file", nodeId: "document" },
             },
             result: { ok: false, error: { code: "conflict", uri: "scratch://@w5/before" } },
           },
@@ -953,8 +738,7 @@ it("restores a rejected delete after retry and admits another delete", async () 
               operationId: `operation-${number}`,
               command: {
                 kind: "delete",
-                uri: "scratch://@w1/note",
-                expected: { kind: "file", documentId: "document" },
+                expected: { kind: "file", nodeId: "document" },
               },
               result: { ok: false, error: { code: "conflict", uri: "scratch://@w1/note" } },
             },
@@ -1010,9 +794,8 @@ it("offers the latest queued file name after refusal and retries from accepted p
           owner: { workId: null },
         },
         kind: "move",
-        sourceUri: "manuscript://A",
-        destinationUri: "manuscript://B",
         expected: { kind: "file", nodeId: "document" },
+        name: "B",
       },
       result: { ok: false, error: { code: "conflict", uri: "manuscript://B" } },
     },
@@ -1056,7 +839,8 @@ it("offers the latest queued file name after refusal and retries from accepted p
   );
   if (!retry) throw new Error("Missing retry");
   expect(retry.next.intents.at(-1)?.attempts[0].request).toMatchObject({
-    body: { path: "A", newName: "C" },
+    entryId: "document",
+    body: { name: "C" },
   });
   expect(projectResourceNeedsRepair("project", retry.next)).toBeNull();
 });
@@ -1117,9 +901,8 @@ it.each([
               owner: { workId: null },
             },
             kind: "move",
-            sourceUri: "manuscript://A",
-            destinationUri: "manuscript://B",
             expected: { kind: "file", nodeId: "document" },
+            name: "B",
           },
           result: { ok: false, error: { code: "conflict", uri: "manuscript://B" } },
         },
@@ -1144,7 +927,7 @@ it.each([
   if (!retry) throw new Error("Missing delete dispatch");
   expect(retry.next.intents.at(-1)?.attempts[0]?.request).toMatchObject({
     kind: "delete",
-    body: { path: "A", expected: { kind: "file", documentId: "document" } },
+    entryId: "document",
   });
 });
 
@@ -1153,15 +936,10 @@ it("refuses a move receipt for a different captured destination parent", () => {
     attemptId: "attempt",
     request: {
       kind: "move",
-      scheme: "manuscript",
-      sourceWorkHandle: null,
-      destinationWorkHandle: null,
+      entryId: "document",
       body: {
         operationId: "operation",
-        path: "A",
-        expected: { kind: "file", nodeId: "document" },
-        destinationScheme: "manuscript",
-        destinationFolderPath: "B",
+        expected: { kind: "file" },
         destinationParent: { kind: "folder", folderId: "selected" },
       },
     },
@@ -1173,12 +951,10 @@ it("refuses a move receipt for a different captured destination parent", () => {
       operationId: "operation",
       command: {
         kind: "move",
-        sourceUri: "manuscript://A",
-        destinationUri: "manuscript://B/A",
         expected: { kind: "file", nodeId: "document" },
         destinationParent: { kind: "folder", folderId: "replacement" },
       },
-      result: { ok: true, value: { destinationPath: "B/A" } },
+      result: { ok: true, value: { destinationPath: "B/A", destinationUri: "manuscript://B/A" } },
     },
   };
   expect(namespaceOutcomeMatches(attempt, outcome)).toBe(false);
@@ -1222,12 +998,16 @@ it("matches immutable identity moves after the destination's path and owner chan
         operationId: "operation",
         command: {
           kind: "move",
-          sourceUri: "unfiled://before",
-          destinationUri: "manuscript://Renamed/before",
           destinationParent: { kind: "folder", folderId: "parent" },
           expected: { kind: "file", nodeId: "document" },
         },
-        result: { ok: true, value: { destinationPath: "Renamed/before" } },
+        result: {
+          ok: true,
+          value: {
+            destinationPath: "Renamed/before",
+            destinationUri: "manuscript://Renamed/before",
+          },
+        },
       },
     }),
   ).not.toThrow();
@@ -1263,7 +1043,6 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
   expect(attempt.request).toMatchObject({
     kind: "move",
     body: {
-      destinationFolderPath: "Act/New Arc/Part 1",
       destinationParent: {
         kind: "folder",
         folderId: "anchor",
@@ -1278,8 +1057,6 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
       operationId: "operation",
       command: {
         kind: "move",
-        sourceUri: "unfiled://A",
-        destinationUri: "kb://Renamed/New Arc/Part 1/A",
         expected: { kind: "file", nodeId: "document" },
         destinationParent: {
           kind: "folder",
@@ -1287,7 +1064,13 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
           createFolders: ["New Arc", "Part 1"],
         },
       },
-      result: { ok: true, value: { destinationPath: "Renamed/New Arc/Part 1/A" } },
+      result: {
+        ok: true,
+        value: {
+          destinationPath: "Renamed/New Arc/Part 1/A",
+          destinationUri: "manuscript://Renamed/New Arc/Part 1/A",
+        },
+      },
     },
   };
   expect(namespaceOutcomeMatches(attempt, outcome)).toBe(true);
@@ -1301,7 +1084,7 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
 });
 
 describe("a name the writer typed with a prose suffix", () => {
-  const moveReceipt = (operationId: string, sourceUri: string, destinationUri: string) =>
+  const moveReceipt = (operationId: string, name: string | undefined, destinationUri: string) =>
     ({
       kind: "operation",
       receipt: {
@@ -1309,14 +1092,16 @@ describe("a name the writer typed with a prose suffix", () => {
         operationId,
         command: {
           kind: "move",
-          sourceUri,
-          destinationUri,
+          ...(name ? { name } : {}),
           expected: { kind: "file", nodeId: "document" },
           destinationParent: destinationUri.includes("/Book/")
             ? { kind: "folder", folderId: "Book" }
             : { kind: "root", scheme: "manuscript", owner: { workId: null } },
         },
-        result: { ok: true, value: { movedNodeId: "document", destinationPath: "x" } },
+        result: {
+          ok: true,
+          value: { movedNodeId: "document", destinationPath: "x", destinationUri },
+        },
       },
     }) satisfies NamespaceOutcome;
 
@@ -1365,7 +1150,10 @@ describe("a name the writer typed with a prose suffix", () => {
     const submitted = submit(placed("Chapter 13"), "Chapter 14.md");
     const intent = submitted.intents[0];
     expect(intent?.desired).toMatchObject({ destination: { name: "Chapter 14" } });
-    expect(intent?.attempts[0]?.request).toMatchObject({ body: { newName: "Chapter 14.md" } });
+    expect(intent?.attempts[0]?.request).toMatchObject({
+      entryId: "document",
+      body: { name: "Chapter 14.md" },
+    });
     // The optimistic location is already the name the server answers with.
     expect(projectResourceLocation("project", submitted)).toMatchObject({ name: "Chapter 14" });
     const needsRepair = structuredClone(submitted);
@@ -1379,26 +1167,24 @@ describe("a name the writer typed with a prose suffix", () => {
         submitted,
         "intent",
         "attempt",
-        moveReceipt("operation", "manuscript://Chapter 13", "manuscript://Chapter 14.md"),
+        moveReceipt("operation", "Chapter 14.md", "manuscript://Chapter 14.md"),
       ),
     ).not.toBeNull();
   });
 
   it("moving a document under the name it has, typed with its suffix, asks for no rename", () => {
     const submitted = submit(placed("Chapter 13"), "Chapter 13.md", "Book");
-    expect(submitted.intents[0]?.attempts[0]?.request).toMatchObject({
-      body: { destinationFolderPath: "Book" },
+    const request = submitted.intents[0]?.attempts[0]?.request;
+    expect(request).toMatchObject({
+      body: { destinationParent: { kind: "folder", folderId: "Book" } },
     });
-    expect(submitted.intents[0]?.attempts[0]?.request).toHaveProperty(
-      "body.newName",
-      "Chapter 13.md",
-    );
+    expect(request).not.toHaveProperty("body.name");
     expect(
       recordNamespaceOutcome(
         submitted,
         "intent",
         "attempt",
-        moveReceipt("operation", "manuscript://Chapter 13", "manuscript://Book/Chapter 13.md"),
+        moveReceipt("operation", undefined, "manuscript://Book/Chapter 13.md"),
       ),
     ).not.toBeNull();
   });
@@ -1406,7 +1192,7 @@ describe("a name the writer typed with a prose suffix", () => {
   it("keeps the extension of the file a bare name renames", () => {
     const submitted = submit(placed("config.toml"), "settings");
     expect(submitted.intents[0]?.attempts[0]?.request).toMatchObject({
-      body: { newName: "settings" },
+      body: { name: "settings" },
     });
   });
 

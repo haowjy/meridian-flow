@@ -40,6 +40,10 @@ function dispatch(input: {
         if (path === input.path) return Ok(input.token === undefined ? sourceToken : input.token);
         return Ok(null);
       }),
+      inspectNode: vi.fn(async (node: { id: string }) => {
+        const token = input.token === undefined ? sourceToken : input.token;
+        return Ok(token?.nodeId === node.id ? token : null);
+      }),
       commitProvisionalGraduation: vi.fn(async () => Ok(undefined)),
       commitPreparedMove: vi.fn(async (prepared) =>
         Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
@@ -72,7 +76,7 @@ function dispatch(input: {
 describe("ContextTreeMover result-aware command ownership", () => {
   it.each([
     "draft.md",
-  ])("rejects a replaced source identity before moving or graduating to %s", async (path) => {
+  ])("finds a replaced source identity gone before moving or graduating to %s", async (path) => {
     const mover = new ContextTreeMover();
     const source = dispatch({ canonical: "manuscript://draft.md", path: "draft.md" });
     const destination =
@@ -83,7 +87,7 @@ describe("ContextTreeMover result-aware command ownership", () => {
       mover.commitWriterLocation(source, destination, {
         expected: { kind: "file", nodeId: "original-document" },
       }),
-    ).resolves.toEqual(Err({ code: "stale_source", uri: "manuscript://draft.md" }));
+    ).resolves.toEqual(Err({ code: "not_found", uri: "manuscript://draft.md" }));
   });
 
   it("does not serialize independent mover commands behind callback settlement", async () => {
@@ -107,15 +111,24 @@ describe("ContextTreeMover result-aware command ownership", () => {
     const mover = new ContextTreeMover(transaction);
     const target = dispatch({ canonical: "manuscript://draft.md", path: "draft.md" });
 
-    const first = mover.commitWriterLocation(target, target);
+    const expected = { kind: "file" as const, nodeId: "document-1" };
+    const first = mover.commitWriterLocation(target, target, { expected });
     await vi.waitFor(() => expect(entries).toBe(1));
-    const second = mover.commitWriterLocation(target, target);
+    const second = mover.commitWriterLocation(target, target, { expected });
     await vi.waitFor(() => expect(entries).toBe(2));
     settleFirst();
 
     await expect(Promise.all([first, second])).resolves.toEqual([
-      Ok({ movedNodeId: "document-1", destinationPath: "draft.md" }),
-      Ok({ movedNodeId: "document-1", destinationPath: "draft.md" }),
+      Ok({
+        movedNodeId: "document-1",
+        destinationPath: "draft",
+        destinationUri: "manuscript://draft",
+      }),
+      Ok({
+        movedNodeId: "document-1",
+        destinationPath: "draft",
+        destinationUri: "manuscript://draft",
+      }),
     ]);
   });
 });
@@ -129,5 +142,5 @@ it("refuses a delayed folder delete when a different folder occupies the path", 
   });
   await expect(
     mover.delete(target, { expected: { kind: "folder", nodeId: "original" } }),
-  ).resolves.toEqual(Err({ code: "stale_target", uri: "manuscript://folder" }));
+  ).resolves.toEqual(Err({ code: "not_found", uri: "manuscript://folder" }));
 });

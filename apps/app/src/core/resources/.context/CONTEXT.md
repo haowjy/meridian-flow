@@ -6,11 +6,14 @@ the production account-scoped owner. The authenticated feature lifetime creates
 one instance and closes the whole document runtime if its storage is invalidated.
 
 `IndexedDbResourceMetadata` owns one physical database per account
-(`meridian:resource-metadata:v4:<account>`; its Dexie schema version, 6 today, is
+(`meridian:resource-metadata:v4:<account>`; its Dexie schema version, 7 today, is
 separate from that name); the incompatible inactive predecessor schemas are
 deliberately ignored rather than migrated. Never edit a Dexie version that has
 reached a browser: add the next one, or the automatic schema diff skips its
-upgrade steps for databases already at it. Resource descriptors are account-global by stable handle and retain
+upgrade steps for databases already at it. Version 7 drops every move and delete attempt (in
+every state, in `intents` and in `folders[].intents`) and the canonical refresh that waited on one,
+because their path-and-owner requests and old-shape receipts cannot be sent or validated any more;
+pending creates, operations and unsent intents stay. Resource descriptors are account-global by stable handle and retain
 catalog-defined file classification. Namespace intentions carry the project used
 for their command. Catalog checkpoints carry both server scope and consuming
 project, so the same account-owned User catalog can project into several projects
@@ -69,7 +72,8 @@ Browser focus, online events and a bounded 30-second interval retry pending work
 the runner records server attempts and outcomes later. Shutdown unsubscribes the metadata observer, removes retry
 sources, fences new delivery and drains active runners before metadata closes.
 
-The namespace transport uses existing create/move/delete, receipt and exact-ID
+The namespace transport uses the by-id move and delete routes
+(`/context/entries/:entryId/{move,delete}`), the create routes, receipts and exact-ID
 availability APIs, plus `create-folder` (a replay is the same request under the same folder id).
 Shared package reconciliation owns refresh progress for both
 files and folders; the account owner has no separate folder refresh loop. The

@@ -343,6 +343,18 @@ catalog DML before recording the outcome, while infrastructure failure stays
 retryable. A reused operation ID cannot replan a different command. Receipt
 lookup needs current project access, not the old path or Work.
 
+Move and delete are addressed by entry id. `ContextTreeMover` takes the node
+(`expected: {kind, nodeId}`) and finds its row under the namespace locks
+(`inspectNode`); the source URI the caller passes only decides which locks to take. A row found in
+another Work or area than the one locked, or a destination folder that now resolves to another
+scope, answers a non-final `io_error` with `reason: "namespace_changed"`: no receipt is recorded and
+the resend relocates the entry and authorizes again. The receipt command is a function of the
+request alone (`expected`, `destinationParent`, `position`, and `name` only when the writer typed
+one), so a resend is recognised without locating anything; the address lives in the result
+(`destinationUri`, and `uri` on a delete), and the observation version reads its generation from it
+(`user://` uses the user's counter). A move with no `name` keeps the row's name and one with no
+`destinationParent` keeps its folder.
+
 ## Document content and filetype rules
 
 `ContextFS` resolves filetype before constructing Yjs content. Existing text

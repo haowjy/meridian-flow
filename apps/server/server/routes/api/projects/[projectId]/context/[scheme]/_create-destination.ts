@@ -5,23 +5,19 @@
  */
 import {
   type CanonicalContextAuthority,
-  isProjectScopedScheme,
   isWorkScopedScheme,
-  parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ContextCreateDestination } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type {
   HeldContextNode,
   ProjectContextAvailabilityPort,
 } from "../../../../../../domains/context/index.js";
-import {
-  type FileTarget,
-  isFileAccessDenied,
-} from "../../../../../../domains/file-policy/index.js";
+import { isFileAccessDenied } from "../../../../../../domains/file-policy/index.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
 import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
+import { containerOfUri } from "../../../../../../lib/context-locator.js";
 import {
   parseDestinationParent,
   parseSiblingPosition,
@@ -39,56 +35,6 @@ export function parseCreateDestination(raw: unknown): ContextCreateDestination {
     name: parseContextMutationName(fields.name, "destination.name"),
     ...(fields.position === undefined ? {} : { position: parseSiblingPosition(fields.position) }),
   };
-}
-
-/** A canonical address as the container the caller needs edit on, or null when none is named. */
-async function containerOfUri(
-  app: AppServices,
-  projectId: string,
-  uri: string,
-): Promise<FileTarget | null> {
-  const parsed = parseUnifiedContextUri(uri);
-  if (!parsed.ok) return null;
-  const { scheme, authority } = parsed.value;
-  if (isProjectScopedScheme(scheme)) {
-    return {
-      kind: "container",
-      scheme,
-      owner: { scope: "project", projectId: projectId as ProjectId },
-    };
-  }
-  if (scheme === "uploads") {
-    const chat =
-      authority.kind === "chat"
-        ? await app.contextPorts.chats.byRef(projectId, authority.chatRef)
-        : null;
-    return chat
-      ? {
-          kind: "container",
-          scheme,
-          owner: {
-            scope: "chat",
-            projectId: projectId as ProjectId,
-            threadId: chat.chatId as ThreadId,
-          },
-        }
-      : null;
-  }
-  if (authority.kind === "lineage") {
-    const lineage = await app.contextPorts.lineages.byRef(projectId, authority.rootThreadRef);
-    return lineage
-      ? {
-          kind: "container",
-          scheme,
-          owner: { scope: "lineage", projectId, rootThreadId: lineage.rootThreadId },
-        }
-      : null;
-  }
-  const work =
-    authority.kind === "work"
-      ? await app.workAuthorityResolver.byHandle(projectId, authority.workHandle)
-      : null;
-  return work ? { kind: "container", scheme, owner: { scope: "work", workId: work.workId } } : null;
 }
 
 /** The URI of the destination scheme's root for the named owner, for a root-kind parent. */

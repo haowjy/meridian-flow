@@ -11,13 +11,13 @@ import type {
 } from "@meridian/contracts/context-uri";
 import type {
   ContextDestinationParent,
+  ContextEntryRef,
   ContextError,
   ContextMoveResult,
   ContextOperationReceipt,
   ContextSiblingPosition,
   CopyContextEntriesResult,
   CopyContextEntryView,
-  DeleteContextEntryRequest,
   DeleteContextEntryResult,
   DocumentFileType,
   Filetype,
@@ -419,7 +419,10 @@ export interface ContextLocationOptions extends ContextWriteOptions {
   /** Reconfirm the resolved destination's edit authority under its namespace locks. */
   authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
-  expected?: MoveContextEntryRequest["expected"];
+  /** The node that moves: found by id under the locks, wherever it is by then. */
+  expected: ContextEntryRef;
+  /** The name the writer typed, when they did: the receipt's command keeps what was asked. */
+  name?: string;
   /**
    * Runs inside the move's own transaction once its rows are written, so a caller's record of
    * the move (the model's edit history) commits or rolls back with it.
@@ -447,7 +450,7 @@ export type ContextBranchTreeResult = { uri: string; moved: boolean };
 export interface ContextDeleteOptions extends ContextWriteOptions {
   removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
-  expected: DeleteContextEntryRequest["expected"];
+  expected: ContextEntryRef;
   /** Runs inside the delete's own transaction once the removal is written (see the move's). */
   inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
 }
@@ -588,7 +591,7 @@ export interface ContextPort {
   commitWriterLocation(
     sourceUri: string,
     destinationUri: string,
-    options?: ContextLocationOptions,
+    options: ContextLocationOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
   /** Delete only the initiating file identity or folder kind at this URI. */

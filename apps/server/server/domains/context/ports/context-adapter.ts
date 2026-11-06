@@ -150,6 +150,11 @@ export type AdapterDeleteResult = {
 
 export interface ContextTreeAdapter {
   inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
+  /** The live node with this id, wherever it is now; null when it is gone. */
+  inspectNode(node: {
+    kind: ContextLocationToken["kind"];
+    id: string;
+  }): Promise<Result<ContextLocationToken | null, AdapterFault>>;
   commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,
   ): Promise<Result<void, AdapterFault>>;
