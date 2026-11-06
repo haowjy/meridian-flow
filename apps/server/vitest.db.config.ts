@@ -17,6 +17,7 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
   : [];
 const expectedSuites = [
   "apps/server/server/domains/collab/draft-disposition.db.test.ts",
+  "apps/server/server/domains/collab/draft-journal-edit-kind.db.test.ts",
   "apps/server/server/domains/collab/adapters/response-helper-replay.db.test.ts",
   "apps/server/server/domains/collab/reply-save-refusals.db.test.ts",
   "apps/server/server/domains/collab/branch-commands.db.test.ts",
