@@ -16,7 +16,7 @@
  * the answers the server holds for the ask (`draftAnswers`), the ones a timeout would use, and
  * follows them as newer ones arrive: a chat left open re-reads them on return. The draft becomes
  * the writer's own at their first change, and no later `ask.updated` replaces it. With two tabs
- * open, the tab whose writer changed an answer last wins; a tab that only sees activity never
+ * open, the last report to reach the server wins, and a delayed re-send can replace a newer answer from another device; a tab that only sees activity never
  * sends its draft. A send the server refuses as `invalid_answer` moves the draft to
  * the question it names.
  *
@@ -114,12 +114,8 @@ export function useAskTakeover(
       for (const type of ACTIVITY_EVENTS) window.removeEventListener(type, report, options);
     };
   }, [presence, questionOpen]);
-  // A draft with answers the server lacks (a reload, a failed send that reopened the takeover)
-  // reports as soon as its ask is open here.
-  useEffect(() => {
-    if (questionOpen && held.owed) presence.report();
-  }, [presence, questionOpen, held.owed]);
-  // The server publishes on every draft change, so its echo of the choices is the ack.
+  // The server echoes every answer-carrying report, so its echo of the choices is the ack. Runs
+  // before the report effect so a mount with the echo already in the store doesn't re-send.
   useEffect(() => {
     const current = heldRef.current;
     if (
@@ -132,6 +128,11 @@ export function useAskTakeover(
     )
       write({ ...current, owed: false });
   }, [tracked, held.owed, write]);
+  // A draft with answers the server lacks (a reload, a failed send that reopened the takeover)
+  // reports as soon as its ask is open here.
+  useEffect(() => {
+    if (questionOpen && held.owed) presence.report();
+  }, [presence, questionOpen, held.owed]);
   useEffect(() => {
     window.addEventListener("pagehide", presence.flush);
     const unsubscribe = commands.onConnected(presence.flush);
