@@ -104,7 +104,7 @@
     "apps/app/src/features/project/context/DocumentProperties.test.tsx": 8,
     "apps/app/src/features/project/context/draft-tab-settlement.test.ts": 6,
     "apps/app/src/features/project/context/editor-presentation.test.ts": 1,
-    "apps/app/src/features/project/context/entry-drag/execute-move.test.ts": 3,
+    "apps/app/src/features/project/context/entry-drag/execute-move.test.ts": 2,
     "apps/app/src/features/project/context/entry-drag/move-plan.test.ts": 3,
     "apps/app/src/features/project/context/entry-drag/selection.test.tsx": 2,
     "apps/app/src/features/project/context/identity-continuity.test.ts": 1,
