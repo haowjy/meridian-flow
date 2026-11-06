@@ -451,6 +451,11 @@ export interface ContextDeleteOptions extends ContextWriteOptions {
   removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
   expected: ContextEntryRef;
+  /**
+   * Delete only while the node is still at this path of the URI's area; a node the writer has
+   * renamed or moved since survives, and the delete answers `stale_target`.
+   */
+  onlyAt?: string;
   /** Runs inside the delete's own transaction once the removal is written (see the move's). */
   inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
 }
