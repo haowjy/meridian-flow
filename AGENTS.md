@@ -90,12 +90,12 @@ architecture.
 Update the relevant `AGENTS.md`, `.context/`, or KB material when a change
 shifts the mental model, contracts, or decisions.
 
-**Keep principles apart from implementation.** Write something as a decision or
-principle only when it is meant to hold. Describe everything else as the current
-implementation, which can change when a better design turns up. The owner's
-remarks are direction and suggestions unless they say otherwise: quote them, keep
-their uncertainty, and don't record them as rulings. Measurements and incident
-history go beside the code or tool they concern, not into rules.
+**Keep principles apart from implementation.** Very little here is an invariant.
+Everything else is the current implementation, open to rewriting once evidence or
+testing shows something better. The owner's words are direction, not rulings:
+reason against them and work around them when the evidence says to. Write down the
+behavior and its reason, not who said it. Measurements and incident history go
+beside the code or tool they concern, not into rules.
 
 ## Dev environment
 
