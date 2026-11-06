@@ -5,9 +5,8 @@ amber "Only on this device" chip on the document; the refused document loses its
 or sits under a deleted destination; a dependent rename or delete queued behind it
 never settles; a network drop is settled as a refusal and the document never lands; a
 replay of a create the server already took is refused once its Work is archived, and
-every repair under that id is refused after it; deleting a refused document destroys its
-text with no Undo; the working-set sync replays a 400 for a document the server never
-held; the failure sentence is cut on a phone, or never shown there; an id the server holds
+every repair under that id is refused after it; the working-set sync replays a 400 for a
+document the server never held; the failure sentence is cut on a phone, or never shown there; an id the server holds
 out of reach (deleted, or its Work archived) is replayed forever and its repair refused with
 it.
 This recipe is not a current pass claim.
@@ -82,10 +81,8 @@ run: it names the first id.
 3. Repeat step 1, then use the row's menu: Move… (the picker says where it was meant
    to go) lands it; Rename files it at Unfiled under the new name.
 4. Repeat step 1, then Delete the row. No POST; the row is gone, the delete is
-   `settled-locally`, and the notice reads "Deleted Untitled" with Undo. Undo brings the
-   row back with its text (one more POST, refused again while `__refuse` is set; the row
-   returns to Unfiled with its mark). Without Undo the exact content is cleaned up after
-   10 minutes (`cleanup.notBefore`).
+   `settled-locally`. The exact content is cleaned up after 10 minutes
+   (`cleanup.notBefore`).
 5. Set `__delay` to `14000`, press New document, type, then immediately open "File it"
    and pick a folder before the held POST answers. When it is refused the queued move is
    `cancelled`, the create is `needs-repair`, no second POST goes out, and the row's
@@ -112,8 +109,9 @@ run: it names the first id.
    and the next report adds the route.
 10. A refused move's notice: stub the move request to fail (an `eval` that wraps
     `window.fetch` and posts `{}` to `/context/<scheme>/move`), Move… a server document to
-    another folder, and read the sidebar notice "Couldn't move X." Rename X from another
-    client (`./mf api POST .../context/manuscript/move` with `newName`). The notice leaves.
+    another folder: the toast reads "Couldn't move X to <folder>." with Retry, and it stays
+    until closed. The row's mark clears when X is renamed from another client
+    (`./mf api POST .../context/manuscript/move` with `newName`).
 11. Position: a refused document dragged between two siblings keeps its slot when the
     repair create lands (the create carries `position`; see the server table below).
 
