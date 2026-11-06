@@ -10,8 +10,10 @@
  * real `DataTransfer`) into the pipeline that already handles them:
  * ProseMirror's `view.dragging`, `LandingExtension`'s caret and doors, link
  * announcements, other surfaces' `LandingExtension` (the composer copies).
- * Release first sends one `dragover` at the release point, so a fast drag
- * lands where it is let go, then `drop` only if that `dragover` was cancelled:
+ * Release first lifts a press that has not lifted yet but ended `LIFT_PX` or more
+ * from where it began (a flick can release before any move is heard), then
+ * sends one `dragover` at the release point, so a fast drag lands where it is
+ * let go, then `drop` only if that `dragover` was cancelled:
  * a target that claims nothing gets nothing. (A native drag also withholds
  * `drop` from a target that set `dropEffect` to `none`; this one does not, and
  * the doors check again on `drop`.)
@@ -249,36 +251,13 @@ function startGesture(
     modifiers = modifiersOf(event);
   };
 
-  listen(
-    "pointermove",
-    (event: PointerEvent) => {
-      if (event.buttons === 0) {
-        // The button came up somewhere we never heard about.
-        onLost();
-        return;
-      }
-      track(event);
-      if (phase === "lifted") {
-        // Hover chrome elsewhere reads `pointermove`; a native drag sends none.
-        event.stopPropagation();
-      } else if (
-        phase === "pressed" &&
-        Math.abs(event.clientX - press.clientX) + Math.abs(event.clientY - press.clientY) >= LIFT_PX
-      ) {
-        lift();
-      }
-    },
-    true,
-  );
-  listen("pointercancel", onLost, true);
-  listen("blur", onLost);
-  const onKey = (event: KeyboardEvent) => {
-    modifiers = modifiersOf(event);
-  };
-  listen("keydown", onKey, true);
-  listen("keyup", onKey, true);
-  listen("mouseup", (event: MouseEvent) => {
+  /** A release the gesture heard, from `mouseup` or from a `pointermove` that says no button is down. */
+  const release = (event: MouseEvent) => {
     track(event);
+    // A flick can release before any move far enough to lift: the release
+    // point decides, and the drag lands where it was let go.
+    if (phase === "pressed" && travelled(event)) lift();
+    if (ac.signal.aborted) return;
     finish(true);
     if (phase === "ended") {
       // The `click` after a lift is not a click (the link surface would follow a link).
@@ -293,7 +272,38 @@ function startGesture(
       placeCaret(view, event.clientX, event.clientY, thirdPresses.has(press));
     }
     stop();
-  });
+  };
+
+  const travelled = (event: MouseEvent) =>
+    Math.abs(event.clientX - press.clientX) + Math.abs(event.clientY - press.clientY) >= LIFT_PX;
+
+  listen(
+    "pointermove",
+    (event: PointerEvent) => {
+      if (event.buttons === 0) {
+        // The button came up where we heard nothing; treat it as the release.
+        // `release` ends the gesture, so a `mouseup` that follows is not heard twice.
+        release(event);
+        return;
+      }
+      track(event);
+      if (phase === "lifted") {
+        // Hover chrome elsewhere reads `pointermove`; a native drag sends none.
+        event.stopPropagation();
+      } else if (phase === "pressed" && travelled(event)) {
+        lift();
+      }
+    },
+    true,
+  );
+  listen("pointercancel", onLost, true);
+  listen("blur", onLost);
+  const onKey = (event: KeyboardEvent) => {
+    modifiers = modifiersOf(event);
+  };
+  listen("keydown", onKey, true);
+  listen("keyup", onKey, true);
+  listen("mouseup", release);
 
   return onLost;
 }
