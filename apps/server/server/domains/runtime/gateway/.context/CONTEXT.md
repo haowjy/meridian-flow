@@ -28,7 +28,7 @@ facts (limits, prices, modalities, effort ranges) come from
 models.dev lacks, such as per-TTL cache-write rates and wire parameters.
 
 `attempt-stream.ts` is the only retry layer. Provider SDK retries are disabled.
-Retry/fallback occurs only before committed text or tool output; reasoning-only
+Retry occurs only before committed text or tool output; reasoning-only
 output is retryable. Backoff honors provider retry hints and is abort-aware.
 Each attempt has an inactivity stall timer and an absolute ceiling timer on one
 derived signal. Partial-output cancellation may drain usage/end events but is

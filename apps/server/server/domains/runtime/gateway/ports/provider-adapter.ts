@@ -3,7 +3,7 @@
  * (anthropic/openai/openai-compatible) implements.
  *
  * The gateway drives this and reduces the stream through consumeStream and
- * the retry/fallback machinery. Each adapter maps one provider's SDK events
+ * the retry machinery. Each adapter maps one provider's SDK events
  * to canonical StreamEvents.
  *
  * `providerId` is a stable string matching ProviderConfig.id, used by the

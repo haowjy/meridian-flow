@@ -9,10 +9,8 @@
  * 2. buildProviderRegistry() indexes models by ID so resolveRoute() can look up
  *    adapter + model in O(1).
  * 3. gateway.stream() is the main entry point:
- *    a. Without fallback: resolve the primary route, stream with retry.
- *    b. With fallback: iterate the provider list; for each, streamForProvider()
- *       runs streamWithRetry(). On a retryable error before committed output,
- *       move to the next provider. After committed output, propagate.
+ *    Resolve the model's route and stream it with retry. Routing errors are
+ *    non-retryable invalid_request errors; there is no cross-provider fallback.
  * 4. Per-attempt timeout policy is resolved through
  *    resolveAttemptTimeouts (gateway config, then the process default) and handed to streamWithRetry.
  * 5. gateway.generate() is the convenience wrapper: consumeStream(gateway.stream()).
@@ -35,15 +33,7 @@ import type {
 } from "./domain/index.js";
 import type { Gateway } from "./ports/gateway.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
-import {
-  buildProviderRegistry,
-  fallbackProviderIds,
-  type ProviderRegistry,
-  type ResolvedRoute,
-  resolveRoute,
-  resolveRouteForProvider,
-} from "./routing.js";
-import { isCommittedOutputEvent } from "./stream-events.js";
+import { buildProviderRegistry, resolveRoute } from "./routing.js";
 
 /** Maps a ProviderConfig.adapter string to its concrete ProviderAdapter factory. */
 function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdapter {
@@ -59,52 +49,6 @@ function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdap
   }
 }
 
-/**
- * Stream for a specific provider, resolving the model from the registry.
- * Handles error cases: no model specified, model not served by this provider,
- * no adapter registered.
- */
-async function* streamForProvider(
-  registry: ProviderRegistry,
-  providerId: string,
-  request: GenerateRequest,
-  defaultModel: string | undefined,
-  retry: GatewayConfig["retry"],
-  timeoutOverrides: ModelAttemptTimeoutOverrides,
-): AsyncGenerator<StreamEvent> {
-  const modelId = request.model ?? defaultModel;
-  if (!modelId) {
-    yield {
-      type: "error",
-      code: "invalid_request",
-      message: "No model specified",
-      retryable: false,
-    };
-    return;
-  }
-
-  let route: ResolvedRoute;
-  try {
-    route = resolveRouteForProvider(registry, providerId, modelId);
-  } catch (err) {
-    yield {
-      type: "error",
-      code: "invalid_request",
-      message: err instanceof Error ? err.message : String(err),
-      retryable: false,
-    };
-    return;
-  }
-
-  yield* streamWithRetry(
-    route.adapter,
-    request,
-    route.model,
-    retry,
-    resolveAttemptTimeouts(timeoutOverrides),
-  );
-}
-
 export function createGateway(config: GatewayConfig): Gateway {
   const adapters = new Map<string, ProviderAdapter>();
   for (const provider of config.providers) {
@@ -117,82 +61,30 @@ export function createGateway(config: GatewayConfig): Gateway {
   const gateway: Gateway = {
     async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
       const retry = config.retry;
-      const fallback = config.fallback;
       const timeoutOverrides: ModelAttemptTimeoutOverrides = {
         attemptStallMs: config.attemptStallMs,
         attemptCeilingMs: config.attemptCeilingMs,
       };
 
-      // ── No fallback: single-provider path ──
-      // Resolve the primary route and stream with retry. Routing errors
-      // (unknown model, missing adapter) are surfaced as non-retryable
-      // invalid_request errors.
-      if (!fallback?.enabled) {
-        try {
-          const route = resolveRoute(registry, request, config.defaultModel);
-          yield* streamWithRetry(
-            route.adapter,
-            request,
-            route.model,
-            retry,
-            resolveAttemptTimeouts(timeoutOverrides),
-          );
-        } catch (err) {
-          yield {
-            type: "error",
-            code: "invalid_request",
-            message: err instanceof Error ? err.message : String(err),
-            retryable: false,
-          };
-        }
-        return;
-      }
-
-      // ── Fallback: multi-provider path ──
-      // Build the ordered fallback chain (primary first, then config.order or
-      // registry order). For each provider in the chain:
-      //   - Stream events. If committed output was emitted before the error,
-      //     propagate the error immediately (no fallback).
-      //   - On a retryable error with no committed output: move to the next
-      //     provider.
-      //   - On a non-retryable error: yield and return.
-      // If all providers fail, yield the last error.
-      const providerIds = fallbackProviderIds(
-        registry,
-        request,
-        config.defaultModel,
-        fallback.order,
-      );
-
-      let lastError: StreamEvent | undefined;
-      for (const providerId of providerIds) {
-        let failed = false;
-        let emittedCommittedOutput = false;
-        for await (const event of streamForProvider(
-          registry,
-          providerId,
+      // Routing errors (unknown model, missing adapter) are surfaced as
+      // non-retryable invalid_request errors.
+      try {
+        const route = resolveRoute(registry, request, config.defaultModel);
+        yield* streamWithRetry(
+          route.adapter,
           request,
-          config.defaultModel,
+          route.model,
           retry,
-          timeoutOverrides,
-        )) {
-          if (event.type === "error") {
-            lastError = event;
-            if (emittedCommittedOutput || !event.retryable) {
-              yield event;
-              return;
-            }
-            failed = true;
-            break;
-          }
-          yield event;
-          emittedCommittedOutput ||= isCommittedOutputEvent(event);
-          if (event.type === "end") return;
-        }
-        if (!failed) return;
+          resolveAttemptTimeouts(timeoutOverrides),
+        );
+      } catch (err) {
+        yield {
+          type: "error",
+          code: "invalid_request",
+          message: err instanceof Error ? err.message : String(err),
+          retryable: false,
+        };
       }
-
-      if (lastError) yield lastError;
     },
 
     async generate(request: GenerateRequest): Promise<GenerateResult> {

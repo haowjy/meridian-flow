@@ -155,7 +155,7 @@ function createStreamObservation(input: {
   observe(source: AsyncIterable<StreamEvent>): AsyncIterable<StreamEvent>;
   fail(error: unknown): void;
 } {
-  let route = { provider: input.request.provider, model: input.request.model };
+  let route = { provider: undefined as string | undefined, model: input.request.model };
   let startCount = 0;
   let chunkCount = 0;
   const chunkCounts = new Map<StreamEvent["type"], number>();
@@ -284,10 +284,7 @@ export function createInstrumentedGateway(
       const startedAt = performance.now();
       const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
-      let route = {
-        provider: request.provider,
-        model: request.model,
-      };
+      let route: { provider?: string; model?: string } = { model: request.model };
       emitter.emit("debug", "stream.open", routePayload(route), route);
 
       try {

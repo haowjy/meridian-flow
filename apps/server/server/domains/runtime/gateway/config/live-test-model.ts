@@ -22,11 +22,9 @@ export function withLiveTestModel(gateway: Gateway, modelId: string): Gateway {
   const override = gateway.listModels().find((model) => model.id === modelId);
   if (!override) throw new Error(`LIVE_TEST_MODEL: model not available: ${modelId}`);
 
-  // The named provider is dropped: it may not serve the override model.
   const redirect = (request: GenerateRequest): GenerateRequest => ({
     ...request,
     model: modelId,
-    provider: undefined,
   });
 
   return {

@@ -107,8 +107,6 @@ export interface ModelInfo {
  *   `toolCallId` is the provider call identifier used by tool_result to correlate.
  * - ToolResultPart: the output of a tool execution. `isError` flags tool failures
  *   so the provider knows to retry or report the error.
- * - CustomPart: escape hatch for provider-specific content kinds
- *   (e.g., hosted-tool web_search results) that have no canonical representation.
  */
 
 /**
@@ -171,21 +169,13 @@ export interface ToolResultPart extends CacheBreakpointMarker {
   providerOptions?: ProviderOptions;
 }
 
-export interface CustomPart extends CacheBreakpointMarker {
-  type: "custom";
-  kind: `${string}.${string}`;
-  data?: unknown;
-  providerOptions?: ProviderOptions;
-}
-
 export type ContentPart =
   | TextPart
   | ImagePart
   | FilePart
   | ReasoningPart
   | ToolUsePart
-  | ToolResultPart
-  | CustomPart;
+  | ToolResultPart;
 
 /**
  * A canonical chat message — maps directly to Anthropic Messages and OpenAI
@@ -195,7 +185,6 @@ export type ContentPart =
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
   content: ContentPart[];
-  providerOptions?: ProviderOptions;
 }
 
 /**
@@ -208,7 +197,6 @@ export interface FunctionTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  providerOptions?: ProviderOptions;
 }
 
 /** Every tool the model sees is a function tool Flow executes. */
@@ -229,9 +217,8 @@ export type ToolChoice = "auto" | "required" | "none" | { tool: string };
 /**
  * The unified request shape that every adapter translates into its provider SDK call.
  *
- * Routing: the `provider` field is optional — if omitted, `resolveRoute` in
- * routing.ts picks the provider that declares the requested model in its config.
- * Only set this explicitly when you need to force a specific provider.
+ * Routing: `resolveRoute` in routing.ts picks the provider that declares the
+ * requested model in its config.
  *
  * Cancellation: the `signal` AbortSignal is propagated through the adapter chain
  * and into the provider SDK call. The deadline helper in deadline.ts derives a
@@ -240,7 +227,6 @@ export type ToolChoice = "auto" | "required" | "none" | { tool: string };
  */
 export interface GenerateRequest {
   model?: string;
-  provider?: string;
   messages: Message[];
   tools?: Tool[];
   toolChoice?: ToolChoice;
@@ -285,7 +271,6 @@ export type ErrorCode =
   | "rate_limited"
   | "server_error"
   | "auth_error"
-  | "malformed_response"
   | "invalid_request"
   | "content_filtered"
   | "context_overflow"
@@ -428,8 +413,7 @@ export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible";
 /**
  * A configured provider entry. `adapter` selects the provider adapter factory
  * in createAdapter (create-gateway.ts). `baseUrl` overrides the provider's
- * default API endpoint; `transport` picks SSE vs WebSocket when both are
- * available (future).
+ * default API endpoint.
  */
 export interface ProviderConfig {
   id: string;
@@ -440,12 +424,6 @@ export interface ProviderConfig {
   };
   baseUrl?: string;
   models: ModelInfo[];
-  compliance?: {
-    hipaaEligible?: boolean;
-    baaActive?: boolean;
-    regions?: string[];
-  };
-  transport?: "auto" | "sse" | "websocket";
 }
 
 /**
@@ -462,9 +440,6 @@ export interface ProviderConfig {
  * - `retry`: controls per-provider retry with exponential backoff. Only
  *   retries before committed output (visible text or a tool call) has been
  *   emitted to the caller; reasoning-only attempts are retryable.
- * - `fallback`: when enabled, tries providers in order; fails over on
- *   retryable errors (including timeouts) before committed output.
- * - `onTrace`/`onError`: observability hooks; called per provider attempt.
  */
 export interface GatewayConfig {
   providers: ProviderConfig[];
@@ -474,30 +449,12 @@ export interface GatewayConfig {
   /** Absolute ceiling for one provider attempt. 0 disables. Retry/backoff is outside this window. */
   attemptCeilingMs?: number;
   retry?: { maxAttempts: number; initialDelayMs: number; maxDelayMs: number };
-  fallback?: { enabled: boolean; order?: string[] };
   /** Registry build warnings (e.g. duplicate model IDs skipped). */
   onWarning?: (span: TraceSpan) => void;
-  onTrace?: (span: TraceSpan) => void;
-  onError?: (error: GatewayError) => void;
 }
 
-/**
- * Minimal trace span stub — observability hooks deferred beyond v1 spine.
- * The GatewayConfig.onTrace callback receives one of these per provider call.
- */
+/** Minimal trace span passed to `GatewayConfig.onWarning`. */
 export interface TraceSpan {
   name: string;
   attributes?: Record<string, unknown>;
-}
-
-/**
- * Structured error surfaced through the Gateway error callbacks and the
- * `error` StreamEvent. `retryable` controls whether the retry/fallback logic
- * in create-gateway.ts will retry or try the next fallback provider.
- */
-export interface GatewayError {
-  code: ErrorCode;
-  message: string;
-  retryable: boolean;
-  provider?: string;
 }

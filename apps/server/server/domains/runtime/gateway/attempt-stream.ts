@@ -1,6 +1,6 @@
 /**
  * Per-attempt stream driver: runs one provider adapter with retry/backoff and
- * per-attempt timeouts. Isolated from gateway composition (routing, fallback,
+ * per-attempt timeouts. Isolated from gateway composition (routing,
  * settlement) so the retry/deadline contract has one testable home.
  *
  * Timeout policy:
