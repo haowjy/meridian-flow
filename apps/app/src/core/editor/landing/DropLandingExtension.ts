@@ -20,7 +20,7 @@ import { Fragment, Slice } from "@tiptap/pm/model";
 import { Plugin } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import { dragPayloadKind } from "./drag-payload";
+import { type DragPayloadKind, dragPayloadKind } from "./drag-payload";
 import { DropCaretView } from "./drop-caret";
 import type { DropHint, DropPlan } from "./drop-plan";
 import { type Landing, landingAt, type Point } from "./point-landing";
@@ -77,11 +77,11 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
     };
 
     /** The plan for this drag, or null when no door of this host takes its payload. */
-    function plan(view: EditorView, event: DragEvent): DropPlan | null {
+    function plan(view: EditorView, event: DragEvent, kind: DragPayloadKind): DropPlan | null {
       const landing = landingOf(view, event);
       if (view.dragging)
         return slicePlan(view, landing, view.dragging.slice, dragSource(view, event));
-      switch (dragPayloadKind(Array.from(event.dataTransfer?.types ?? []))) {
+      switch (kind) {
         case "entries":
           return entries ? entries(view, landing, pointOf(event)) : null;
         case "files":
@@ -109,24 +109,24 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
           handleDOMEvents: {
             dragover(view, event) {
               if (!view.editable) return false;
-              const current = plan(view, event);
+              const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
+              const current = plan(view, event, kind);
               if (!current) {
                 clear();
                 return false;
               }
-              if (dragPayloadKind(Array.from(event.dataTransfer?.types ?? [])) === "files")
-                files?.active(editor, true);
+              if (kind === "files") files?.active(editor, true);
               if (current.kind === "accept") caret?.show(current.pos);
               else caret?.hide();
               if (current.hint)
                 hint?.show(owner, { kind: current.kind, label: current.hint }, event);
               else hint?.clear(owner);
 
-              if (current.kind === "accept") event.preventDefault();
+              // A refused file is claimed too: unclaimed, the browser opens it.
+              if (current.kind === "accept" || kind === "files") event.preventDefault();
               if (event.dataTransfer) {
                 if (current.kind === "refuse") event.dataTransfer.dropEffect = "none";
-                else if (dragPayloadKind(Array.from(event.dataTransfer.types)) === "entries")
-                  event.dataTransfer.dropEffect = "copy";
+                else if (kind === "entries") event.dataTransfer.dropEffect = "copy";
               }
               return true;
             },
