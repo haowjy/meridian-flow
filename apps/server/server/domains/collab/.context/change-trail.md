@@ -44,7 +44,10 @@ committed after the cut remains work for the next pass.
 
 Readiness is terminal-turn and absence of canonically owned `rollback_pending`
 rows. Building/settling/settled is delivery state. Settling remains observable for
-one polling pass. Delivery follows commit through the trail dispatcher's outbox.
+one polling pass. The dispatcher treats the outbox as pending work: once the journal
+append commits, the outbox row is deleted in that same transaction. The shell keeps its
+counts, document summaries and word totals because document details are manuscript-bearing
+and cascade when a document is purged.
 
 Trail detail authorization precedes manuscript-bearing materialization. Denied
 occurrences disappear; authorized deleted anchors retain their evidence. Durable

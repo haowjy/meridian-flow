@@ -1,0 +1,1 @@
+ALTER TABLE "apply_command_effects" ADD COLUMN "owners" jsonb;

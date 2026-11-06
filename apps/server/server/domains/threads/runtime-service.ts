@@ -2,9 +2,6 @@
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { RunState } from "@meridian/contracts/threads";
-import type { Database } from "@meridian/database";
-import { eventJournal } from "@meridian/database";
-import { eq } from "drizzle-orm";
 import { readThreadActivity } from "./domain/thread-activity.js";
 import { threadAvailabilityCode } from "./domain/thread-availability.js";
 import type {
@@ -25,7 +22,6 @@ type OwnedThread = {
 };
 
 export function createThreadRuntimeService(deps: {
-  db: Database;
   /** Supplies the lease-derived run status; the runtime authority satisfies it. */
   statusReader: ThreadStatusReader;
   /** Supplies direct children for the per-thread activity read. */
@@ -79,8 +75,5 @@ export function createThreadRuntimeService(deps: {
     readRunningTurnId: (threadId: ThreadId) => deps.statusReader.readRunningTurnId(threadId),
     /** The run-state record at the journal head, so snapshot reads share one record. */
     readRunState: (threadId: ThreadId) => deps.readRunState(threadId),
-    async journalEvents(threadId: ThreadId) {
-      return deps.db.select().from(eventJournal).where(eq(eventJournal.threadId, threadId));
-    },
   };
 }

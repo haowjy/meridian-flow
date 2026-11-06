@@ -1,5 +1,5 @@
 {
-  "id": "54ee9270-1ed3-4e37-b958-5392872eb692",
+  "id": "e8b1d4be-5403-471e-bd1e-6a80fc382504",
   "prevId": "35e1557b-e641-4a32-bb63-a4f590195b1f",
   "version": "7",
   "dialect": "postgresql",
@@ -8994,12 +8994,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "owners": {
-          "name": "owners",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "base_start": {
           "name": "base_start",
           "type": "jsonb",
@@ -9293,12 +9287,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "delivered_at": {
-          "name": "delivered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -9346,7 +9334,6 @@
             }
           ],
           "isUnique": false,
-          "where": "\"change_trail_delivery_outbox\".\"delivered_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
