@@ -315,7 +315,7 @@
     "apps/server/server/domains/threads/domain/thread-trash-lifecycle.db.test.ts": 1,
     "apps/server/server/domains/threads/domain/transcript-page.db.test.ts": 16,
     "apps/server/server/domains/threads/thread-event-hub.db.test.ts": 2,
-    "apps/server/server/domains/threads/thread-event-hub.test.ts": 13,
+    "apps/server/server/domains/threads/thread-event-hub.test.ts": 15,
     "apps/server/server/domains/threads/thread-snapshot.test.ts": 1,
     "apps/server/server/lib/auth.test.ts": 7,
     "apps/server/server/lib/compose.draft-mode-tools.db.test.ts": 11,

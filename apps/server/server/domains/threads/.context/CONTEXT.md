@@ -62,7 +62,9 @@ text never enters event logs.
   reply finishes; the newest finished reply remains available for reconstruction. A
   cursor below that retained boundary gets a replay gap so the client reloads its
   snapshot instead of silently losing stream frames. Projected rows and
-  `run_state.changed` rows are not part of this retention rule.
+  A hub that falls behind the retained boundary rebuilds and closes its subscribers'
+  sockets, so they reconnect into that gap. `run_state.changed` rows are not part of this
+  retention rule.
 - Every custom event name the orchestrator projector emits needs an explicit client
   decision in `@meridian/thread-client`'s `src/turns/reduce-turn-event.ts` (apply,
   refetch or ignore); otherwise the app renders an opaque unknown component.
