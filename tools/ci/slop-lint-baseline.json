@@ -1662,6 +1662,143 @@
         "count": 1
       }
     ],
-    "middle-dot": []
+    "middle-dot": [],
+    "test-timing": [
+      {
+        "path": "apps/app/src/client/chat-submissions/deleted-chat.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 1));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/draft-journal-reads.db.test.ts",
+        "line": "setTimeout(() => resolve(\"waiting for a connection\"), 1500),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-branches.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 5));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/branch-tree.discard.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/draft-peer-pool.db.test.ts",
+        "line": "new Promise((resolve) => setTimeout(() => resolve(\"pool exhausted\"), 8000)),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/response-save-destinations.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 20));",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
+        "line": "inherited = new Promise((resolve) => setTimeout(resolve, 20)).then(() =>",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
+        "line": "stray = new Promise((resolve) => setTimeout(resolve, 20)).then(() => {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 20));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/link-ahead-arrivals.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 20));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/tree/hidden-nodes.db.test.ts",
+        "line": "await new Promise<void>((resolve) => setTimeout(resolve, 10));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/projects/work-repository.db.test.ts",
+        "line": "delay(30, \"blocked\"),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/stop-protocol.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 300));",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/runtime/shown-links.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/observability.test.ts",
+        "line": "expect(Date.now() - signalledAt).toBeGreaterThanOrEqual(75);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/shared/drizzle-transaction.db.test.ts",
+        "line": "await wait(100);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/shared/drizzle-transaction.db.test.ts",
+        "line": "late = wait(50).then(() =>",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/tool/response-committer.test.ts",
+        "line": "setTimeout(resolve, 20);",
+        "count": 1
+      },
+      {
+        "path": "packages/resource-replica/src/folder-placement-regressions.test.ts",
+        "line": "expect(elapsed).toBeLessThan(boundedMs);",
+        "count": 1
+      },
+      {
+        "path": "packages/resource-replica/src/folder-placement-regressions.test.ts",
+        "line": "expect(performance.now() - start).toBeLessThan(boundedMs);",
+        "count": 2
+      },
+      {
+        "path": "tools/dev/lib/migration-runner.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 25));",
+        "count": 1
+      },
+      {
+        "path": "tools/dev/lib/worktree-cleanup-readiness.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 25));",
+        "count": 1
+      },
+      {
+        "path": "tools/mf/src/commands/thread/thread.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 40));",
+        "count": 1
+      },
+      {
+        "path": "tools/mf/src/commands/thread/thread.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 50));",
+        "count": 1
+      }
+    ]
   }
 }
