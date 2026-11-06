@@ -1,6 +1,6 @@
 /** Pure mapping from durable progress and this tab's upload facts to what the Import button and popup show. */
 import { plural, t } from "@lingui/core/macro";
-import type { ImportScheme, ImportSummary } from "@meridian/contracts";
+import type { ImportEntryStatus, ImportScheme, ImportSummary } from "@meridian/contracts";
 import { areaLabel, type ImportDestination } from "./destination";
 import type { LocalUpload, TrackedImport } from "./import-coordinator";
 
@@ -64,12 +64,24 @@ const RUNNING: ReadonlySet<ImportState> = new Set([
   "adding",
 ]);
 
+/** A skip the writer would care about. Hidden and trash files are left out of every vault. */
+const skipMatters = ({ state, reason }: ImportEntryStatus) =>
+  state === "skipped" && reason !== "hidden" && reason !== "trash";
+
 /** What an import asks of its Import button; null for a clean result, which needs no reading. */
-export function importStatus({ summary, local }: Pick<TrackedImport, "summary" | "local">) {
+export function importStatus({
+  summary,
+  local,
+  detail,
+}: Pick<TrackedImport, "summary" | "local" | "detail">): ImportStatus | null {
   const state = importState(summary, local);
   if (local.error) return "needs-writer";
   if (RUNNING.has(state)) return "running";
-  return state === "done" && !summary.destination.fellBack ? null : "needs-writer";
+  if (state !== "done" || summary.destination.fellBack) return "needs-writer";
+  if (summary.counts.skipped === 0) return null;
+  // Which files were skipped comes with the detail, which `ImportWatch` loads on finishing.
+  if (detail?.state !== "finished") return "running";
+  return detail.entries.some(skipMatters) ? "needs-writer" : null;
 }
 
 /** Results the writer has read once the popup closes on them. */

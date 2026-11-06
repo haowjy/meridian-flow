@@ -9,10 +9,8 @@
  * crumb, Recent row, receipt or Uploads entry), waits for the writer's choice
  * at the drop point, Move or Copy (see `drop-choice.ts`).
  */
-import { t } from "@lingui/core/macro";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import { notifyFailure } from "@/components/app/failure-toast";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
@@ -36,9 +34,9 @@ import {
   noLongerThere,
   type PendingChoice,
 } from "./drop-choice";
-import { ENTRY_FAILURE_TOAST } from "./entry";
-import { copyArrivals, copyRows } from "./execute-copy";
-import { moveRows, renamesOnArrival } from "./execute-move";
+import { runCopy, runMove } from "./entry-failure";
+import { copyArrivals } from "./execute-copy";
+import { renamesOnArrival } from "./execute-move";
 import {
   type MoveArea,
   type MoveView,
@@ -88,35 +86,18 @@ export function useEntryList({
 
   const [pending, setPending] = useState<PendingChoice | null>(null);
 
-  const runMove = useCallback(
-    function run(move: ReadyMove) {
-      void moveRows(move.moves, { resources, projectId }).then((result) => {
-        selectRows(latest.current.selection, result.moved);
-        const [failed] = result.failed;
-        if (!failed) return;
-        const refused = new Set(result.failed.map(({ entry }) => entry));
-        notifyFailure({
-          key: ENTRY_FAILURE_TOAST,
-          title: t`Couldn't move ${failed.name} to ${move.destinationName}.`,
-          onRetry: () =>
-            run({ ...move, moves: move.moves.filter(({ entry }) => refused.has(entry)) }),
-        });
-      });
-    },
+  const runListMove = useCallback(
+    (move: ReadyMove) =>
+      void runMove({ resources, projectId }, move.moves, move.destinationName, (moved) =>
+        selectRows(latest.current.selection, moved),
+      ),
     [resources, projectId],
   );
-  const runCopy = useCallback(
-    function run(copy: ReadyCopy) {
-      void copyRows(copy, { resources, projectId }).then((rows) => {
-        if (rows) selectRows(latest.current.selection, rows);
-        else
-          notifyFailure({
-            key: ENTRY_FAILURE_TOAST,
-            title: t`Couldn't copy these items to ${copy.destinationName}.`,
-            onRetry: () => run(copy),
-          });
-      });
-    },
+  const runListCopy = useCallback(
+    (copy: ReadyCopy) =>
+      void runCopy({ resources, projectId }, copy, (rows) =>
+        selectRows(latest.current.selection, rows),
+      ),
     [resources, projectId],
   );
 
@@ -190,10 +171,10 @@ export function useEntryList({
           return;
         }
         const planned = planMove(drop.view, resolved);
-        if (planned.kind === "ready") runMove(planned);
+        if (planned.kind === "ready") runListMove(planned);
       },
     };
-  }, [runMove]);
+  }, [runListMove]);
 
   const choice = useMemo<DropChoiceState | null>(() => {
     if (!pending) return null;
@@ -206,12 +187,12 @@ export function useEntryList({
       choose(action: DropAction) {
         // Judged again from the replica now: the destination may have been renamed or removed.
         const { plans } = choicesNow(moveView(latest.current));
-        if (action === "move" && plans.move) runMove(plans.move);
-        else if (action === "copy" && plans.copy) runCopy(plans.copy);
+        if (action === "move" && plans.move) runListMove(plans.move);
+        else if (action === "copy" && plans.copy) runListCopy(plans.copy);
       },
       dismiss: () => setPending(null),
     };
-  }, [pending, areas, projection, works, noWork, runMove, runCopy]);
+  }, [pending, areas, projection, works, noWork, runListMove, runListCopy]);
 
   return useMemo(() => ({ selection, route, choice }), [selection, route, choice]);
 }

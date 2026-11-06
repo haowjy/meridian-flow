@@ -1,126 +1,106 @@
 /**
- * Toasts a Move, Copy or delete the server refused, with Retry. On screen the row has already
- * gone back and carries its own mark where it has one. A refused Copy is also resolved here: its
- * rows are gone and nothing else would clear it from the journal. A row refused before this tab
- * opened is left to that mark.
+ * Toasts what the server refused. A refused Move or delete has its mark on the row, so its toast
+ * groups the rows refused together and a newer one replaces it; a row refused before this project
+ * opened is left to that mark. A refused Copy has no row left, so each keeps its own toast, and it
+ * stays in the journal until the writer closes that toast or Retry lands. Every toast closes once
+ * what it reports is no longer refused, and on leaving the project.
  */
-import { t } from "@lingui/core/macro";
-import {
-  projectFolderNeedsRepair,
-  projectResourceNeedsRepair,
-  type ResourceDestination,
-} from "@meridian/resource-replica";
 import { useEffect, useRef } from "react";
-import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
-import { notifyFailure } from "@/components/app/failure-toast";
+import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
+  useOptionalRemovedNotices,
 } from "../account-feature-context";
-import { schemeLabel } from "../context-schemes";
-import { deleteEntry } from "../use-delete-context-entry";
-import { copyRefusals } from "./copy-refusal";
-import { ENTRY_FAILURE_TOAST, type EntryRef } from "./entry";
-import { copyRows } from "./execute-copy";
-import { moveRows } from "./execute-move";
-import { entryNameNow, type PlacementView } from "./move-plan";
+import { type CopyRefusal, copyRefusals } from "./copy-refusal";
+import {
+  ENTRY_FAILURE_TOAST,
+  type EntryContext,
+  entryRefusals,
+  retryCopyRefusal,
+  retryRefusals,
+} from "./entry-failure";
 
-type Repair = {
-  intentId: string;
-  kind: "set-location" | "delete" | "create";
-  name: string;
-  destination?: ResourceDestination;
-};
-
-const placeName = (view: PlacementView, { parent }: ResourceDestination) =>
-  parent.kind === "root"
-    ? schemeLabel(parent.scheme)
-    : (view.placement.folderLocation(parent.folderId)?.name ?? null);
+const copyToast = (operationId: string) => `copy-refusal:${operationId}`;
 
 export function RefusalToasts({ projectId }: { projectId: string }) {
   const resources = useAccountResourceReplica();
+  const notices = useOptionalRemovedNotices();
   const { records, folders, placement, snapshot } = useAccountResourceProjection(projectId);
-  const said = useRef<Set<string> | null>(null);
+  /** Intents with no toast to come: refused before this mount, closed, retried or replaced. */
+  const settled = useRef<Set<string> | null>(null);
+  const shownRows = useRef<{ group: string; intents: ReadonlySet<string> } | null>(null);
+  const shownCopies = useRef(new Set<string>());
+
   useEffect(() => {
     if (!snapshot) return;
-    const context = { resources, projectId };
+    const context: EntryContext = { resources, projectId, notices };
     const view = { records, folders, placement, operations: snapshot.operations };
-    const refused = (
-      entry: EntryRef,
-      repair: Repair | null,
-      current: ReturnType<typeof placement.parentForFolder>,
-    ) => {
-      if (!repair) return [];
-      const name = entryNameNow(view, entry) ?? repair.name;
-      if (repair.kind === "delete")
-        return [
-          {
-            intentId: repair.intentId,
-            title: t`Couldn't delete ${name}.`,
-            retry: () => void deleteEntry(resources, projectId, entry),
-          },
-        ];
-      const destination = refusedMoveDestination(repair.destination, current);
-      if (repair.kind !== "set-location" || !destination || !current) return [];
-      const to = placeName(view, destination);
-      return [
-        {
-          intentId: repair.intentId,
-          title: to ? t`Couldn't move ${name} to ${to}.` : t`Couldn't move ${name}.`,
-          retry: () =>
-            void moveRows(
-              [
-                {
-                  entry,
-                  name,
-                  typed: destination.name,
-                  before: current,
-                  after: destination.parent,
-                  ...(destination.position ? { position: destination.position } : {}),
-                },
-              ],
-              context,
-            ),
-        },
-      ];
-    };
-    const refusals = [
-      ...records.flatMap((record) => {
-        const documentId = record.resource.identity?.documentId;
-        return documentId
-          ? refused(
-              { kind: "file", id: documentId },
-              projectResourceNeedsRepair(projectId, record),
-              placement.parentForResource(record),
-            )
-          : [];
-      }),
-      ...folders.flatMap((folder) =>
-        refused(
-          { kind: "folder", id: folder.folderId },
-          projectFolderNeedsRepair(folder),
-          placement.parentForFolder(folder.folderId),
-        ),
-      ),
-    ];
-    const first = said.current === null;
-    const seen = said.current ?? new Set<string>();
-    said.current = seen;
-    for (const { intentId, title, retry } of refusals) {
-      if (seen.has(intentId)) continue;
-      seen.add(intentId);
-      if (!first) notifyFailure({ key: ENTRY_FAILURE_TOAST, title, onRetry: retry });
-    }
-    for (const { operationId, message, copy } of copyRefusals(view, projectId)) {
-      if (seen.has(operationId)) continue;
-      seen.add(operationId);
+
+    const refused = entryRefusals(view, projectId);
+    settled.current ??= new Set(refused.map(({ intentId }) => intentId));
+    const done = settled.current;
+    const open = refused.filter(({ intentId }) => !done.has(intentId));
+    const shown = shownRows.current;
+    const fresh = open.filter(({ intentId }) => !shown?.intents.has(intentId)).at(-1);
+    const group = fresh?.group ?? shown?.group;
+    const members = open.filter((row) => row.group === group);
+    for (const { intentId } of open)
+      if (!members.some((row) => row.intentId === intentId)) done.add(intentId);
+    if (members.length === 0) {
+      if (shown) dismissFailure(ENTRY_FAILURE_TOAST);
+      shownRows.current = null;
+    } else if (group && (fresh || members.length !== shown?.intents.size)) {
+      const intents = new Set(members.map(({ intentId }) => intentId));
+      const close = () => {
+        for (const intentId of intents) done.add(intentId);
+        shownRows.current = null;
+      };
+      dismissFailure(ENTRY_FAILURE_TOAST);
+      shownRows.current = { group, intents };
       notifyFailure({
         key: ENTRY_FAILURE_TOAST,
-        title: message,
-        onRetry: copy ? () => void copyRows(copy, context) : undefined,
+        title: members[0]?.title(members) ?? "",
+        onClose: close,
+        onRetry: async () => {
+          close();
+          await retryRefusals(context, intents);
+        },
       });
-      void resources.resolveCopyRefusal(operationId);
     }
-  }, [records, folders, placement, snapshot, projectId, resources]);
+
+    const copies = copyRefusals(view, projectId);
+    const showCopy = ({ operationId, message, copy }: CopyRefusal) =>
+      notifyFailure({
+        key: copyToast(operationId),
+        title: message,
+        onClose: () => void resources.resolveCopyRefusal(operationId),
+        onRetry: copy
+          ? () =>
+              retryCopyRefusal(context, operationId, () => showCopy({ operationId, message, copy }))
+          : undefined,
+      });
+    for (const refusal of copies) {
+      if (shownCopies.current.has(refusal.operationId)) continue;
+      shownCopies.current.add(refusal.operationId);
+      showCopy(refusal);
+    }
+    for (const operationId of shownCopies.current) {
+      if (copies.some((refusal) => refusal.operationId === operationId)) continue;
+      shownCopies.current.delete(operationId);
+      dismissFailure(copyToast(operationId));
+    }
+  }, [records, folders, placement, snapshot, projectId, resources, notices]);
+
+  useEffect(
+    () => () => {
+      dismissFailure(ENTRY_FAILURE_TOAST);
+      for (const operationId of shownCopies.current) dismissFailure(copyToast(operationId));
+      shownCopies.current.clear();
+      shownRows.current = null;
+      settled.current = null;
+    },
+    [],
+  );
   return null;
 }

@@ -56,6 +56,3 @@ export function entrySystem(
   if (isProjectScopedScheme(scheme)) return "project";
   return `${scheme}:${owner.chatId ?? owner.rootThreadId ?? owner.workId ?? ""}`;
 }
-
-/** The toast key of a failed Move, Copy or delete: the newest replaces the last. */
-export const ENTRY_FAILURE_TOAST = "entry-failure";

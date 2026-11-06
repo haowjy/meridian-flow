@@ -8,23 +8,54 @@ import { CircleAlert } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 
+/** The open toast under each key. Each toast has its own Sonner id: reusing one races its exit. */
+const shown = new Map<string, { id: string | number; onClose?: () => void }>();
+
 export function notifyFailure({
   key,
   title,
   onRetry,
+  onClose,
 }: {
   /** What this failure replaces: the kind of work that failed, not the row. */
   key: string;
   /** Names what failed: "Couldn't move Chapter 3 to Act 2." */
   title: string;
   /** Only where running it again can help. */
-  onRetry?: () => void;
+  onRetry?: () => void | Promise<void>;
+  /** The writer closed it, or a newer failure replaced it. Not called after Retry. */
+  onClose?: () => void;
 }) {
-  toast.error(title, {
-    id: key,
+  const previous = shown.get(key);
+  dismissFailure(key);
+  previous?.onClose?.();
+  const owns = () => shown.get(key)?.id === id;
+  const id = toast.error(title, {
     duration: Number.POSITIVE_INFINITY,
-    action: onRetry ? { label: t`Retry`, onClick: onRetry } : undefined,
+    onDismiss: () => {
+      if (!owns()) return;
+      shown.delete(key);
+      onClose?.();
+    },
+    action: onRetry
+      ? {
+          label: t`Retry`,
+          onClick: () => {
+            if (owns()) shown.delete(key);
+            void onRetry();
+          },
+        }
+      : undefined,
   });
+  shown.set(key, { id, onClose });
+}
+
+/** Closes a failure that no longer applies, without counting as the writer closing it. */
+export function dismissFailure(key: string) {
+  const open = shown.get(key);
+  if (!open) return;
+  shown.delete(key);
+  toast.dismiss(open.id);
 }
 
 /** Below the dock's header on desktop, below the top bar on a phone. */
@@ -43,6 +74,7 @@ export function FailureToaster() {
       offset={DESKTOP_OFFSET}
       mobileOffset={PHONE_OFFSET}
       closeButton
+      expand
       visibleToasts={3}
       containerAriaLabel={t`Failures`}
       icons={{ error: <CircleAlert aria-hidden className="size-4 text-destructive" /> }}
