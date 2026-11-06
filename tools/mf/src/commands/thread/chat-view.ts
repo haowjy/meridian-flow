@@ -627,6 +627,8 @@ function answerLine(answer: ResolvedQuestionAnswer): string {
       return `text: ${oneLine(answer.text)}`;
     case "skipped":
       return "skipped";
+    case "unsent":
+      return `unsent text: ${oneLine(answer.text)}`;
     case "timeout":
       return `timeout${answer.label ? `, went with ${answer.label}` : ""}`;
   }

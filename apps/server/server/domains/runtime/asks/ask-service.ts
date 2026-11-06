@@ -139,13 +139,17 @@ function answerMisfit(ask: StoredAsk, answer: AskAnswer): { questionIndex?: numb
   return misfit >= 0 ? { questionIndex: misfit } : null;
 }
 
-/** The timeout's resolution: the writer's held answers stand, every other question takes its Recommended option. */
+/**
+ * The timeout's resolution: held options and skips stand as the writer's click, held words were
+ * never sent and stay `unsent`, and every other question takes its Recommended option.
+ */
 function timeoutResolution(ask: StoredAsk): AskResolution {
   const { questions } = ask.payload as QuestionAskPayload;
-  const answers = questions.map(
-    (question, i): ResolvedQuestionAnswer =>
-      ask.draftAnswers?.[i] ?? { kind: "timeout", label: question.recommended ?? null },
-  );
+  const answers = questions.map((question, i): ResolvedQuestionAnswer => {
+    const held = ask.draftAnswers?.[i];
+    if (held?.kind === "text") return { kind: "unsent", text: held.text };
+    return held ?? { kind: "timeout", label: question.recommended ?? null };
+  });
   return { kind: "timeout", answers };
 }
 

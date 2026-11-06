@@ -133,13 +133,13 @@ function QuestionsReceipt({
   );
 }
 
-/** How a set of answers went, in counts: answered, skipped, left to the timeout. */
+/** How a set of answers went, in counts: answered, skipped, left to the timeout (unsent words included). */
 function outcomeSummary(answers: readonly ResolvedQuestionAnswer[]): string {
   const count = (kinds: ResolvedQuestionAnswer["kind"][]) =>
     answers.filter((answer) => kinds.includes(answer.kind)).length;
   const answered = count(["option", "text"]);
   const skipped = count(["skipped"]);
-  const unanswered = count(["timeout"]);
+  const unanswered = count(["timeout", "unsent"]);
   return [
     answered ? plural(answered, { one: "# answered", other: "# answered" }) : null,
     skipped ? plural(skipped, { one: "# skipped", other: "# skipped" }) : null,
@@ -174,6 +174,8 @@ function questionAnswerText(answer: ResolvedQuestionAnswer): string {
       return answer.text;
     case "skipped":
       return t`Skipped`;
+    case "unsent":
+      return t`Not sent: ${answer.text}`;
     case "timeout":
       return answer.label ? t`No answer, went with ${answer.label}` : t`No answer`;
   }
