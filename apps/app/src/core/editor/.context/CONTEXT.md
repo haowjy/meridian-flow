@@ -213,6 +213,32 @@ keyboard, pointer, drop, or draft-recovery answer.
   one. A press that lands
   where the caret already stands is left to the browser, which knows the line
   the caret is on. A press in a cell stays in that cell.
+- **A selection drag** (`landing/selection-drag.ts`) is the one press on text
+  the editor takes. The browser's own text drag refuses a press that counts as a
+  third click and, on macOS browsers, waits 150ms (from their source; not run
+  here), so the editor lifts the selection itself. ProseMirror's `mousedown`
+  runs first (it counts clicks), then a listener on `view.dom` prevents the
+  default when the press is on the highlight of a nonempty `TextSelection`
+  (hit-tested on the DOM selection's client rects grown to the line height, so
+  the space between lines counts), with focus, no modifier, an editable view
+  and a chrome kernel. `handleTripleClick` claims a third press there so
+  ProseMirror does not widen the selection. Past 4px it sends a synthetic
+  `dragstart` with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
+  on a target change and `dragover` (so the caret, the 5s caret timeout and
+  autoscroll behave as in a native drag); release sends `drop` only if the last
+  `dragover` was cancelled, then `dragend`. It is a pump into the pipeline
+  below, not a second drop path: another surface mounting `LandingExtension`
+  (the composer, a second pane) reads it as it reads any drag and copies,
+  because the gesture clears TipTap's paste-rule memory of the source (which
+  would delete it after a cross-editor drop). A press that never travels
+  places a caret on release, or selects the textblock for a third press;
+  `click` after a lift is swallowed (the link surface would follow a link).
+  Escape goes through `chrome.beginDrag`; after a lift `pointermove` stops at
+  the window so other panes' hover chrome stays down; a peer edit that changes
+  what the selection holds cancels. Left native: presses with a modifier (so
+  Ctrl/Option-drag still carries text out of the window; Mac Option is
+  unrun), read-only views, editors with no kernel (code documents, the
+  composer as a source), cell selections, and objects (`ObjectPhysics`).
 - **A drop** (`landing/LandingExtension.ts`) picks the door for the drag once:
   `view.dragging ? sliceDoor : doors[kind]`, where the kind comes from its
   types (`landing/drag-payload.ts`: tree rows, files, or text). It asks the walk
