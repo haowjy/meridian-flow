@@ -12,6 +12,7 @@
 import { Trans } from "@lingui/react/macro";
 import { isOwnedContextScheme } from "@meridian/contracts/context-uri";
 import { AlertCircle } from "lucide-react";
+import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
@@ -38,9 +39,11 @@ export function ContextViewerHost({
   className,
 }: ContextViewerHostProps) {
   const owner = isOwnedContextScheme(tab.scheme) ? tabContextOwner(tab) : { workId: editorWorkId };
+  const { catalog } = useContextCatalogView(projectId, tab.scheme, owner);
   const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
     ...owner,
     documentId: tab.documentId,
+    settling: catalog?.findDocument(tab.documentId)?.placementPending,
   });
   if (read.status === "loading") {
     return (
