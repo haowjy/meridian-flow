@@ -42,9 +42,8 @@ a scratch directory outside the checkout:
    when the network returns.
 
 10. On `pnpm dev` (a fresh start: the worker location comes from `nitro.config.ts`),
-    import `map.tiff`, `plain.bmp` and `photo.heic`. `./mf api GET
-    '/api/projects/<id>/context/kb/read?path=<folder>/map.tiff'` returns a
-    `drawUrl` that differs from `url` (its key ends `.preview`), and `./mf log`
+    import `map.tiff`, `plain.bmp` and `photo.heic`. `./mf doc read
+    'kb://<folder>/map.tiff' --json` returns a `drawUrl` that differs from `url` (its key ends `.preview`), and `./mf log`
     shows no `image_preview.failed`. A `worker_unavailable` reason there means the
     worker file is not where `image-preview.ts` looks. Import `broken.tiff` and a
     truncated HEIC, then another good HEIC: the broken ones log `decode_failed`

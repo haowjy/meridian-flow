@@ -141,6 +141,10 @@ of a restored document's return to the live tree.
 tracked-classified viewer read renders as text in every host; collaborative
 editing remains in `ContextDocumentHost`. URL-backed text previews use a
 TanStack query so reopening a signed preview can reuse its read.
+The viewer reads by document id (`GET /documents/:documentId/read`), never by path, and its
+query is keyed by the same id: a rename or move elsewhere leaves the bytes on screen and
+cannot make the read open another file. The server answers from the row's live text or
+stored bytes; a draft view is never read here.
 
 `RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
 documents and navigates on click. It does not open a tab on mount. The tab

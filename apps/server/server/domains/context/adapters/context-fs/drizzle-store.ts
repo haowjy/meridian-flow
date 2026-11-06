@@ -78,7 +78,7 @@ type DocumentRow = Pick<
   | "rank"
 >;
 
-function mapDocument(row: DocumentRow): ContextDocument {
+export function mapDocument(row: DocumentRow): ContextDocument {
   const isBinary = isStorageBackedDocument(row);
   return {
     id: row.id,

@@ -111,12 +111,7 @@ function DockDocumentBody({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <ContextViewerHost
-            projectId={projectId}
-            editorWorkId={tab.workId ?? null}
-            tab={tab}
-            className="bg-transparent"
-          />
+          <ContextViewerHost projectId={projectId} tab={tab} className="bg-transparent" />
         </div>
       )}
     </div>

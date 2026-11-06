@@ -1,197 +1,69 @@
-import {
-  type CanonicalContextAuthority,
-  isOwnedContextScheme,
-  isWorkScopedScheme,
-  parseUnifiedContextUri,
-} from "@meridian/contracts/context-uri";
-import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ThreadId } from "@meridian/contracts/runtime";
+/**
+ * The read behind GET /api/projects/:projectId/documents/:documentId/read: one document's
+ * bytes for a viewer, addressed by its id and answered from its row. A rename or a move
+ * elsewhere changes nothing about which file this reads.
+ *
+ * Access, in order: the project is the user's; the project holds the row (`held` answers for
+ * any owner, hidden and deleted rows count as absent, and a User-area file reads from any of the
+ * user's projects); the user may read that row. The grant is on the row `held` names, which
+ * follows a join's forward, never on the id the request carried.
+ */
+import type { DocumentId, ProjectId } from "@meridian/contracts";
+import type { ContextReadResponse } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
-import { ownedBrowseUri, projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
-import {
-  contextPortForProjectBrowse,
-  type UnifiedContextPortFactory,
-} from "../domains/context/index.js";
+import { fileRefOfVisible, type ProjectContextAvailabilityPort } from "../domains/context/index.js";
+import { LIVE_TREE, type TreeReader } from "../domains/context/tree/tree-view.js";
 import type { FileAccess } from "../domains/file-policy/index.js";
 import { type EventSink, emitEvent } from "../domains/observability/index.js";
-import {
-  type ProjectRepository,
-  type ProjectWorkAuthorityResolver,
-  requireProjectOwner,
-} from "../domains/projects/index.js";
+import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 import {
   drawObjectKey,
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
 } from "../domains/storage/index.js";
-import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
+import type { AppServices } from "./app.js";
 import { documentTarget, requireFileGrant } from "./file-access-http.js";
 
 export interface ContextReadRouteDeps {
   fileAccess: Pick<FileAccess, "authorize">;
   projectRepo: ProjectRepository;
-  contextPorts: UnifiedContextPortFactory;
+  availability: ProjectContextAvailabilityPort;
+  liveDocuments: Pick<TreeReader, "findById">;
+  documentSync: Pick<AppServices["documentSync"], "readAsMarkdown">;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
-  workAuthorityResolver: ProjectWorkAuthorityResolver;
-}
-export interface ContextReadRouteInput {
-  projectId: string;
-  userId: string;
-  scheme: ProjectContextTreeScheme;
-  rawPath: unknown;
-  workId?: string | null;
-  rootThreadId?: string | null;
-  /** The chat whose uploads the path names, when the route scopes to one. */
-  chatId?: string | null;
-}
-interface ResolvedReadPath {
-  uri: string;
-  path: string;
-}
-
-function normalizeSchemePath(scheme: ProjectContextTreeScheme, path: string): string {
-  const segments = path
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "")
-    .split("/")
-    .filter((segment) => segment !== "" && segment !== ".");
-  if (segments.includes(".."))
-    throw createError({ statusCode: 400, message: '`path` may not contain ".."' });
-  return projectBrowseContextUri(scheme, segments.join("/"));
-}
-
-export function resolveContextReadPath(
-  scheme: ProjectContextTreeScheme,
-  rawPath: unknown,
-  authority: CanonicalContextAuthority = { kind: "contextual" },
-): ResolvedReadPath {
-  if (Array.isArray(rawPath))
-    throw createError({ statusCode: 400, message: "`path` must be a single string" });
-  if (typeof rawPath !== "string" || rawPath.trim() === "")
-    throw createError({ statusCode: 400, message: "`path` is required" });
-  const trimmed = rawPath.trim();
-  const explicitScheme = trimmed.match(/^([a-z][a-z0-9+.-]*):\/\/(.*)$/);
-  let uri: string;
-  if (explicitScheme) {
-    if (explicitScheme[1] !== scheme)
-      throw createError({ statusCode: 400, message: "Context path scheme does not match route" });
-    const parsed = parseUnifiedContextUri(trimmed);
-    if (!parsed.ok) throw createError({ statusCode: 400, message: parsed.error.reason });
-    if (isOwnedContextScheme(scheme)) {
-      if ("kind" in authority && authority.kind === "contextual")
-        throw createError({ statusCode: 500, message: "Missing resolved context authority" });
-      if (parsed.value.authority.kind === "contextual") {
-        uri = ownedBrowseUri(scheme, authority, parsed.value.path);
-      } else {
-        const sameAuthority =
-          "workHandle" in authority
-            ? parsed.value.authority.kind === "work" &&
-              parsed.value.authority.workHandle === authority.workHandle
-            : "kind" in authority && authority.kind === "lineage"
-              ? parsed.value.authority.kind === "lineage" &&
-                parsed.value.authority.rootThreadRef === authority.rootThreadRef
-              : "kind" in authority && authority.kind === "chat"
-                ? parsed.value.authority.kind === "chat" &&
-                  parsed.value.authority.chatRef === authority.chatRef
-                : false;
-        if (!sameAuthority) {
-          throw createError({ statusCode: 400, message: "Context authority does not match route" });
-        }
-        uri = ownedBrowseUri(scheme, authority, parsed.value.path);
-      }
-    } else uri = parsed.value.normalized;
-  } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
-    throw createError({ statusCode: 400, message: 'Malformed URI: expected "scheme://path"' });
-  } else if (isOwnedContextScheme(scheme)) {
-    if ("kind" in authority && authority.kind === "contextual") {
-      throw createError({ statusCode: 500, message: "Missing resolved context authority" });
-    }
-    uri = ownedBrowseUri(scheme, authority, trimmed);
-  } else {
-    uri = normalizeSchemePath(scheme, trimmed);
-  }
-  const prefix = `${scheme}://`;
-  const normalizedPath = uri.slice(prefix.length);
-  const segments = normalizedPath.split("/").filter(Boolean);
-  if (!segments.at(-1))
-    throw createError({ statusCode: 400, message: "`path` must name a non-root file" });
-  return { uri, path: `/${segments.join("/")}` };
 }
 
 export async function handleContextReadRequest(
   deps: ContextReadRouteDeps,
-  input: ContextReadRouteInput,
+  input: { projectId: string; userId: string; documentId: string },
 ): Promise<ContextReadResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  let authority: CanonicalContextAuthority = { kind: "contextual" };
-  if (input.rootThreadId) {
-    if (input.workId || input.scheme !== "scratch")
-      throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
-    const lineage = await deps.contextPorts.lineages.byId(input.projectId, input.rootThreadId);
-    if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
-    authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
-  } else if (input.chatId) {
-    if (input.workId || input.scheme !== "uploads")
-      throw createError({ statusCode: 400, message: "Choose one uploads owner" });
-    const chat = await deps.contextPorts.topPrimaryChats.resolveTopPrimaryChat(
-      input.chatId as ThreadId,
-    );
-    if (!chat) throw createError({ statusCode: 404, message: "Chat not found" });
-    authority = { kind: "chat", chatRef: chat.chatRef };
-  } else if (input.scheme === "uploads") {
-    throw createError({ statusCode: 400, message: "Uploads belong to a chat" });
-  } else if (isWorkScopedScheme(input.scheme)) {
-    if (!input.workId)
-      throw createError({ statusCode: 400, message: "Scratch belongs to a Work or a chat" });
-    else {
-      const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);
-      if (!resolved) {
-        throwContextWorkUnavailableHttpError("work_missing");
-      }
-      authority = resolved;
-    }
-  }
-  if (
-    input.scheme === "scratch" &&
-    !input.rootThreadId &&
-    !("workHandle" in authority && authority.workHandle !== null)
-  ) {
-    throw createError({
-      statusCode: 400,
-      message: "Scratch belongs to a Work or a chat.",
-    });
-  }
-  const path = resolveContextReadPath(input.scheme, input.rawPath, authority);
-  const port = await contextPortForProjectBrowse({
-    deps: {
-      contextPorts: deps.contextPorts,
-      workAuthorityResolver: deps.workAuthorityResolver,
+  const held = await deps.availability.held(
+    {
+      projectId: input.projectId as ProjectId,
+      node: { kind: "document", id: input.documentId as DocumentId },
     },
-    projectId: input.projectId,
-    userId: input.userId,
-    workId: input.workId,
-    rootThreadId: input.rootThreadId,
-    chatId: input.chatId,
-  });
-  if (!port) throwContextWorkUnavailableHttpError("work_missing");
-  const ref = await port.stat(path.uri);
-  if (!ref.ok) contextErrorToHttp(ref.error);
-  if (ref.value.documentId) {
-    await requireFileGrant(
-      deps.fileAccess,
-      input.userId,
-      documentTarget(ref.value.documentId),
-      "read",
-    );
-  }
+    { userId: input.userId },
+  );
+  if (held?.kind !== "held") throw createError({ statusCode: 404, message: "Document not found" });
+  const documentId = held.address.id;
+  await requireFileGrant(deps.fileAccess, input.userId, documentTarget(documentId), "read");
+  const found = await deps.liveDocuments.findById(LIVE_TREE, documentId as DocumentId);
+  if (found.kind !== "found") throw createError({ statusCode: 404, message: "Document not found" });
+  const ref = fileRefOfVisible(found.document);
+  if (!ref.ok) throw createError({ statusCode: 502, message: "Document storage is inconsistent" });
   if (ref.value.kind === "tracked") {
-    const read = await port.read(path.uri);
-    if (!read.ok) contextErrorToHttp(read.error);
+    const read = await deps.documentSync.readAsMarkdown(documentId);
+    if (!read.ok)
+      throw createError({
+        statusCode: 503,
+        message: "The document couldn't be read right now.",
+        data: { retryable: true },
+      });
     return {
       kind: "tracked",
-      path: path.path,
-      content: read.value.content,
+      content: read.value,
       schemaType: ref.value.schemaType,
       filetype: ref.value.filetype,
     };
@@ -206,7 +78,7 @@ export async function handleContextReadRequest(
       name: "signed_url.failed",
       payload: {
         projectId: input.projectId,
-        uri: path.uri,
+        uri: held.address.uri,
         storageKey: key,
         error: signed.error,
       },
@@ -226,7 +98,6 @@ export async function handleContextReadRequest(
         : null;
   return {
     kind: "binary",
-    path: path.path,
     url: signed.value,
     ...(drawUrl ? { drawUrl } : {}),
     fileType: ref.value.fileType,
