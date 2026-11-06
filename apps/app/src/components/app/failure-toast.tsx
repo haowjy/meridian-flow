@@ -69,6 +69,7 @@ const PHONE_OFFSET = {
   right: "0.5rem",
 };
 
+// `pointer-events-auto`: an open modal sets `pointer-events: none` on the body, which the toast would inherit.
 export function FailureToaster() {
   const phone = usePhoneShell();
   return (
@@ -86,7 +87,7 @@ export function FailureToaster() {
         closeButtonAriaLabel: t`Dismiss`,
         classNames: {
           toast:
-            "flex w-full items-center gap-2 rounded-md border border-border bg-popover py-2 pr-2 pl-3 text-sm text-popover-foreground shadow-card",
+            "pointer-events-auto flex w-full items-center gap-2 rounded-md border border-border bg-popover py-2 pr-2 pl-3 text-sm text-popover-foreground shadow-card",
           content: "min-w-0 flex-1",
           title: "[overflow-wrap:anywhere]",
           actionButton: "text-button shrink-0 text-sm [@media(pointer:coarse)]:min-h-11",
