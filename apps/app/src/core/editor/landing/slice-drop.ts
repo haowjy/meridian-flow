@@ -5,7 +5,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { Fragment, type Node as PMNode, type ResolvedPos, Slice } from "@tiptap/pm/model";
+import { Fragment, type Node as PMNode, Slice } from "@tiptap/pm/model";
 import {
   type EditorState,
   NodeSelection,
@@ -13,7 +13,7 @@ import {
   TextSelection,
   type Transaction,
 } from "@tiptap/pm/state";
-import { dropPoint } from "@tiptap/pm/transform";
+import { canJoin, dropPoint } from "@tiptap/pm/transform";
 import type { EditorView } from "@tiptap/pm/view";
 
 import type { DropDoor, DropPlan } from "./drop-plan";
@@ -22,8 +22,8 @@ import { crossesTextblocks, removeRange } from "./range-removal";
 
 type SliceSource = {
   moved: boolean;
-  /** The dragged node's own selection, when the drag carried one. */
-  node: Selection | null;
+  /** The source selection while it is still known to this editor. */
+  selection: Selection | null;
 };
 
 const copyModifier = /Mac/i.test(globalThis.navigator?.platform ?? "") ? "altKey" : "ctrlKey";
@@ -36,7 +36,10 @@ const copyModifier = /Mac/i.test(globalThis.navigator?.platform ?? "") ? "altKey
  */
 export function dragSource(view: EditorView, event: DragEvent): SliceSource {
   const dragging = view.dragging as { node?: NodeSelection } | null;
-  return { moved: Boolean(dragging) && !event[copyModifier], node: dragging?.node ?? null };
+  return {
+    moved: Boolean(dragging) && !event[copyModifier],
+    selection: dragging ? (dragging.node ?? view.state.selection) : null,
+  };
 }
 
 /** Drags inside the editor, and text dragged in from outside whose content is unknown until the drop. */
@@ -147,7 +150,7 @@ function finish(view: EditorView, transaction: Transaction): void {
 
 function deleteSource(transaction: Transaction, source: SliceSource): void {
   if (!source.moved) return;
-  if (source.node) source.node.replace(transaction);
+  if (source.selection instanceof NodeSelection) source.selection.replace(transaction);
   else if (crossesTextblocks(transaction.selection)) {
     removeRange(transaction, transaction.selection.from, transaction.selection.to);
   } else transaction.deleteSelection();
@@ -159,7 +162,7 @@ function deleteSource(transaction: Transaction, source: SliceSource): void {
  * part of a block the range reaches into is an ordinary landing.
  */
 function landsInMovedRange(state: EditorState, landing: Landing, source: SliceSource): boolean {
-  return (source.node ?? state.selection).ranges.some(
+  return (source.selection ?? state.selection).ranges.some(
     (range) => landing.pos >= range.$from.pos && landing.pos <= range.$to.pos,
   );
 }
@@ -170,7 +173,7 @@ type BuiltDrop = { transaction: Transaction; from: number; to: number };
  * The transaction one slice drop dispatches, with the range it inserts in the
  * new document, or null when it changes nothing. Follows ProseMirror's own
  * drop (move-delete, node-vs-slice insert, landing selection), except that a
- * multi-line slice breaks the line it lands in (see `breakAtLanding`).
+ * a multi-line slice is inserted as blocks at a gap in the landing line.
  */
 function sliceDropTransaction(
   state: EditorState,
@@ -186,25 +189,38 @@ function sliceDropTransaction(
       ? slice.content.firstChild
       : null;
   const beforeInsert = transaction.doc;
-  const inserted = transaction.steps.length;
   const $mapped = transaction.doc.resolve(mapped);
-  const broken = single ? null : breakAtLanding($mapped, slice);
-  if (single) transaction.replaceRangeWith(mapped, mapped, single);
-  else transaction.replaceRange(mapped, mapped, broken ?? slice);
+  const blocks = single ? null : blocksAtLanding($mapped.parent, slice, source.selection);
+  let gap = mapped;
+  if (blocks && $mapped.parent.isTextblock) {
+    if ($mapped.parentOffset === 0) gap = mapped - 1;
+    else if ($mapped.parentOffset === $mapped.parent.content.size) gap = mapped + 1;
+    else {
+      transaction.split(mapped);
+      gap = mapped + 1;
+    }
+  }
+  const insertAt = transaction.steps.length;
+  if (single) transaction.replaceRangeWith(gap, gap, single);
+  else transaction.replaceRange(gap, gap, blocks?.slice ?? slice);
   if (transaction.doc.eq(beforeInsert)) return null;
 
-  // Assoc -1 keeps an insertion at `pos` from pushing the start past its own content.
-  const from = transaction.mapping.map(pos, -1);
-  let end = from;
-  transaction.mapping.maps.at(-1)?.forEach((_from, _to, _newFrom, newTo) => {
+  let from = gap;
+  let end = gap;
+  transaction.mapping.maps[insertAt]?.forEach((_oldFrom, _oldTo, newFrom, newTo) => {
+    from = newFrom;
     end = newTo;
   });
-  // Landing at a block's start leaves an empty block before the first line.
-  if (broken && $mapped.parentOffset === 0) {
-    transaction.delete(mapped - 1, mapped + 1);
-    end = transaction.mapping.slice(inserted + 1).map(end, -1);
+  if (
+    blocks?.joinsTail &&
+    $mapped.parentOffset < $mapped.parent.content.size &&
+    canJoin(transaction.doc, end)
+  ) {
+    transaction.join(end);
   }
-  const $landing = transaction.doc.resolve(broken ? Math.min(mapped + 1, end) : mapped);
+  from = transaction.mapping.slice(insertAt + 1).map(from, 1);
+  end = transaction.mapping.slice(insertAt + 1).map(end, -1);
+  const $landing = transaction.doc.resolve(from);
   if (single && NodeSelection.isSelectable(single) && $landing.nodeAfter?.sameMarkup(single)) {
     transaction.setSelection(new NodeSelection($landing));
   } else {
@@ -213,65 +229,69 @@ function sliceDropTransaction(
   return { transaction, from, to: end };
 }
 
-/**
- * A slice of several lines landing inside a textblock keeps its lines: the
- * first starts its own line and the last joins what follows, both as blocks of
- * the landing's type. (A line whose end the selection cut through is retyped; a
- * block the slice carries whole keeps its type.) A leading empty block of the
- * landing's type, left open at its start, is what makes the first line a new
- * block rather than a continuation of the text before the caret. Null when the
- * slice lands whole.
- */
-function breakAtLanding($landing: ResolvedPos, slice: Slice): Slice | null {
-  const block = $landing.parent;
-  if (!block.isTextblock || block.type.spec.code) return null;
-  const retype = (line: PMNode): PMNode =>
-    block.type.validContent(line.content)
-      ? block.type.create(block.attrs, line.content, line.marks)
-      : line;
+type BlockSlice = { slice: Slice; joinsTail: boolean };
 
-  const blocks = slice.content.content.slice();
-  const first = peelLine(blocks, 0, slice.openStart);
-  const last = blocks.length > 0 ? peelLine(blocks, blocks.length - 1, slice.openEnd) : null;
-  if (!first || !last) return null;
-  const lines = [
-    block.type.create(block.attrs),
-    slice.openStart > 0 ? retype(first) : first,
-    ...blocks,
-    slice.openEnd > 0 ? retype(last) : last,
-  ];
-  return new Slice(Fragment.from(lines), 1, slice.openEnd > 0 ? 1 : 0);
+/** Closes a multi-line slice into blocks that can be fitted at the landing gap. */
+function blocksAtLanding(
+  landingBlock: PMNode,
+  slice: Slice,
+  selection: Selection | null,
+): BlockSlice | null {
+  let textblocks = 0;
+  slice.content.descendants((node) => {
+    if (node.isTextblock) textblocks++;
+  });
+  if (textblocks < 2 || landingBlock.type.spec.code) return null;
+
+  let nodes = slice.content.content.slice();
+  let joinsTail = false;
+  if (selection instanceof TextSelection) {
+    const { $from, $to } = selection;
+    if ($from.depth === 1 && $from.parent.isTextblock) {
+      if ($from.parentOffset === $from.parent.content.size) nodes.shift();
+      else if ($from.parentOffset > 0 && nodes[0]?.isTextblock)
+        nodes[0] = retype(nodes[0], landingBlock);
+    }
+    if ($to.depth === 1 && $to.parent.isTextblock) {
+      if ($to.parentOffset === 0) nodes.pop();
+      else if ($to.parentOffset < $to.parent.content.size && nodes.at(-1)?.isTextblock) {
+        nodes[nodes.length - 1] = retype(nodes.at(-1) as PMNode, landingBlock);
+        joinsTail = true;
+      }
+    }
+
+    const shared = $from.sharedDepth($to.pos);
+    const insideCell = Array.from({ length: shared }, (_, index) => shared - index).some((depth) =>
+      isTableCell($from.node(depth)),
+    );
+    if (!insideCell && shared > 0) {
+      let content = Fragment.from(nodes.map(closeNode));
+      for (let depth = shared; depth > 0; depth--) {
+        const source = $from.node(depth);
+        const closed = source.type.createAndFill(source.attrs, content, source.marks);
+        if (!closed) break;
+        content = Fragment.from(closed);
+        if (source.type.spec.group?.split(" ").includes("block")) break;
+      }
+      nodes = content.content.slice();
+    }
+  }
+
+  const content = Fragment.from(nodes.map(closeNode));
+  if (content.size === 0) return null;
+  return { slice: new Slice(content, 0, 0), joinsTail };
 }
 
-/**
- * Takes the textblock at the end of the open edge out of `blocks[index]`,
- * leaving what remains of its ancestors (or nothing) in its place. Null, with
- * `blocks` unchanged, when the edge doesn't end in a textblock.
- */
-function peelLine(blocks: PMNode[], index: number, open: number): PMNode | null {
-  const atStart = index === 0;
-  const peel = (node: PMNode, depth: number): { line: PMNode; rest: PMNode | null } | null => {
-    if (node.isTextblock) return { line: node, rest: null };
-    if (depth >= open || node.childCount === 0) return null;
-    const at = atStart ? 0 : node.childCount - 1;
-    const inner = peel(node.child(at), depth + 1);
-    if (!inner) return null;
-    const siblings: PMNode[] = [];
-    node.forEach((child, _offset, i) => {
-      if (i !== at) siblings.push(child);
-    });
-    const kept = inner.rest
-      ? atStart
-        ? [inner.rest, ...siblings]
-        : [...siblings, inner.rest]
-      : siblings;
-    return { line: inner.line, rest: kept.length ? node.copy(Fragment.from(kept)) : null };
-  };
-  const peeled = peel(blocks[index], 0);
-  if (!peeled) return null;
-  if (peeled.rest) blocks[index] = peeled.rest;
-  else blocks.splice(index, 1);
-  return peeled.line;
+function retype(node: PMNode, landingBlock: PMNode): PMNode {
+  return landingBlock.type.validContent(node.content)
+    ? landingBlock.type.create(landingBlock.attrs, node.content, node.marks)
+    : node;
+}
+
+function closeNode(node: PMNode): PMNode {
+  if (node.isLeaf) return node;
+  const content = Fragment.from(node.content.content.map(closeNode));
+  return node.type.createAndFill(node.attrs, content, node.marks) ?? node;
 }
 
 function sameGrid(a: PMNode, b: PMNode): boolean {
