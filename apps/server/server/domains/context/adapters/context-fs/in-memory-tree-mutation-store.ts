@@ -355,12 +355,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {
         if (targetToken.nodeId === input.source.nodeId) return Err({ code: "invalid_operation" });
-        if (
-          input.overwrite &&
-          (targetToken.kind !== input.source.kind || input.source.kind === "directory")
-        ) {
-          return Err({ code: "conflict" });
-        }
       }
 
       const targetParentPath = treeDirname(destinationPath);
@@ -375,7 +369,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
 
       const previousLocations = memoryFileLocations(this.backing, input.source.sourceId);
       if ("destinationFilename" in input) {
-        if (targetToken?.kind === "file" && input.overwrite) await this.runBeforeDestructiveWrite();
         await this.runBeforeDestructiveWrite();
         const sourceAfterHooks = await this.inspect(input.source.sourceId, input.source.path);
         if (!sameLocation(sourceAfterHooks, input.source)) return Err({ code: "stale_source" });
@@ -390,13 +383,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         }
         const sourceRow = this.backing.documents.get(input.source.nodeId);
         if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
-        const targetRow =
-          targetToken?.kind === "file" && input.overwrite
-            ? this.backing.documents.get(targetToken.nodeId)
-            : null;
-        if (targetToken?.kind === "file" && input.overwrite) {
-          if (!targetRow || targetRow.deletedAt !== null) return Err({ code: "stale_target" });
-        }
         const destParentId =
           input.destinationParentToken && !input.destinationCreateFolders?.length
             ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
@@ -430,14 +416,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
               .some((row) => sameNamespaceName(candidate, { kind: "folder", filename: row.name })),
         );
         destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
-        const now = this.nextTimestamp();
-        if (targetRow) {
-          targetRow.deletedAt = now;
-          targetRow.deletionReason = "deleted";
-          targetRow.deletedByUserId = input.actorUserId ?? null;
-          targetRow.updatedAt = now;
-          this.markMutatorWrite();
-        }
         const { name, extension } = input.destinationFilename;
         const basenameChanged = targetBasename !== treeBasename(input.source.path);
         sourceRow.contextSourceId = input.destinationSourceId;

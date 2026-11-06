@@ -169,9 +169,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       });
       await publication;
       let moveDone = false;
-      const moving = port.move("manuscript://race.png", "manuscript://raced.png").finally(() => {
-        moveDone = true;
-      });
+      const moving = port
+        .commitWriterLocation("manuscript://race.png", "manuscript://raced.png")
+        .finally(() => {
+          moveDone = true;
+        });
       // The move either finishes in the gap (the defect) or queues behind the upload.
       await until(async () => moveDone || (await lockWaiters(probe)) > 0);
       release();
@@ -269,7 +271,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       // the ref waiting at the destination settles on it.
       const castRef = await register("kb://cast.toml");
       const cast = await create("user://cast.toml");
-      expect(await port.move("user://cast.toml", "kb://cast.toml")).toMatchObject({ ok: true });
+      expect(await port.commitWriterLocation("user://cast.toml", "kb://cast.toml")).toMatchObject({
+        ok: true,
+      });
       expect(await settlement(castRef)).toBe(cast);
 
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
@@ -277,7 +281,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       const vacated = await register("manuscript://branches/ch2.toml");
       expect(await settlement(vacated)).toBe(moved);
       const destination = await register("manuscript://part-two/ch2.toml");
-      expect(await port.move("manuscript://branches", "manuscript://part-two")).toMatchObject({
+      expect(
+        await port.commitWriterLocation("manuscript://branches", "manuscript://part-two"),
+      ).toMatchObject({
         ok: true,
       });
       expect(await settlement(destination)).toBe(moved);

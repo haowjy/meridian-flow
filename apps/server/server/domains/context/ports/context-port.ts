@@ -427,10 +427,6 @@ export interface ContextLocationOptions extends ContextWriteOptions {
   inTransaction?: (moved: ContextMoveResult) => Promise<void>;
 }
 
-export interface ContextMoveOptions extends ContextWriteOptions {
-  overwrite?: boolean;
-}
-
 /** What `changeInBranch` does: the document it names must be at the source address. */
 export type ContextBranchTreeCommand = {
   documentId: string;
@@ -577,12 +573,6 @@ export interface ContextPort {
     uri: string,
     options: ContextWriteBinaryOptions,
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
-
-  move(
-    sourceUri: string,
-    destinationUri: string,
-    options?: ContextMoveOptions,
-  ): Promise<Result<ContextMoveResult, ContextError>>;
 
   /**
    * A draft-mode chat's move or delete (D26, D45): facts in its Work's branch, never the

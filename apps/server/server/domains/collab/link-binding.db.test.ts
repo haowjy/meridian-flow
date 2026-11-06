@@ -198,7 +198,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           {
             door: "an overwrite after the target moved keeps every ref it leaves in place",
             act: async () => {
-              await ok(port.move("manuscript://target", "manuscript://moved/target"));
+              await ok(
+                port.commitWriterLocation("manuscript://target", "manuscript://moved/target"),
+              );
               await ok(
                 port.write(
                   "manuscript://holder",
@@ -355,7 +357,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 await ok(port.createTrackedDocument("manuscript://occupant", "First.\n\n[A](a)"))
               ).documentId;
               afterNextBind = async () => {
-                await ok(port.move("manuscript://occupant", "manuscript://first-moved"));
+                await ok(
+                  port.commitWriterLocation("manuscript://occupant", "manuscript://first-moved"),
+                );
                 await ok(port.createTrackedDocument("manuscript://occupant", "Second."));
               };
               const saved = await port.write("manuscript://occupant", "First.\n\nAppend.", writer);

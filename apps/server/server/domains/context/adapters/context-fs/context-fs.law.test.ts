@@ -253,7 +253,7 @@ describe("ContextFS rename filetype invariant", () => {
       backing,
       mutationStore,
       move: (source: string, destination: string) =>
-        mover.move(dispatch(source), dispatch(destination)),
+        mover.commitWriterLocation(dispatch(source), dispatch(destination)),
     };
   }
 

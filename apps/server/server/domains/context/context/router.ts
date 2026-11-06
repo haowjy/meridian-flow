@@ -32,8 +32,6 @@ import type {
   ContextError,
   ContextListing,
   ContextListOptions,
-  ContextMoveOptions,
-  ContextMoveResult,
   ContextPort,
   ContextReadResult,
   ContextScheme,
@@ -818,33 +816,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       }
       const result = await callAdapter(canonical, () => adapter.writeBinary(path, options));
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
-    },
-
-    async move(
-      sourceUri: string,
-      destinationUri: string,
-      options?: ContextMoveOptions,
-    ): Promise<Result<ContextMoveResult, ContextError>> {
-      const source = await resolve(sourceUri);
-      if (!source.ok) return source;
-      const destination = await resolveMutation(destinationUri, options?.origin);
-      if (!destination.ok) return destination;
-      if (
-        source.value.scheme === destination.value.scheme &&
-        sameOwner(source.value.authority, destination.value.authority)
-      ) {
-        if (!source.value.adapter.capabilities.writable) {
-          return Err({ code: "permission_denied", uri: source.value.canonical });
-        }
-      } else if (
-        !source.value.adapter.capabilities.writable ||
-        !destination.value.adapter.capabilities.writable
-      ) {
-        return Err({ code: "permission_denied", uri: destination.value.canonical });
-      }
-      const creationDenied = moveCreationDenied(source.value, destination.value);
-      if (creationDenied) return creationDenied;
-      return treeMover.move(source.value, destination.value, options);
     },
 
     async commitWriterLocation(sourceUri, destinationUri, options) {

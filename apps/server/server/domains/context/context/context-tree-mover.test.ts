@@ -107,15 +107,15 @@ describe("ContextTreeMover result-aware command ownership", () => {
     const mover = new ContextTreeMover(transaction);
     const target = dispatch({ canonical: "manuscript://draft.md", path: "draft.md" });
 
-    const first = mover.move(target, target);
+    const first = mover.commitWriterLocation(target, target);
     await vi.waitFor(() => expect(entries).toBe(1));
-    const second = mover.move(target, target);
+    const second = mover.commitWriterLocation(target, target);
     await vi.waitFor(() => expect(entries).toBe(2));
     settleFirst();
 
     await expect(Promise.all([first, second])).resolves.toEqual([
-      Err({ code: "invalid_operation", uri: target.canonical }),
-      Err({ code: "invalid_operation", uri: target.canonical }),
+      Ok({ movedNodeId: "document-1", destinationPath: "draft.md" }),
+      Ok({ movedNodeId: "document-1", destinationPath: "draft.md" }),
     ]);
   });
 });

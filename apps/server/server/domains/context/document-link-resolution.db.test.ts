@@ -344,7 +344,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationSourceId: target.contextSourceId,
           destinationPath: "new",
           expectedTarget: { state: "absent" },
-          overwrite: false,
           graduateProvisionalName: true,
           destinationFiletype: "markdown",
           destinationFilename: { name: "new", extension: "" },

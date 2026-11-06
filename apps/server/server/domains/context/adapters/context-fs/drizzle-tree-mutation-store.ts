@@ -302,12 +302,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             locationVersion: settledPlacement.locationVersion.toString(),
           });
         }
-        if (
-          input.overwrite &&
-          (targetToken.kind !== input.source.kind || input.source.kind === "directory")
-        ) {
-          return Err({ code: "conflict" });
-        }
       }
 
       const targetParentPath = treeDirname(destinationPath);
@@ -321,31 +315,21 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       }
 
       const previousLocations = await readTreeLocations(this.db, input.source);
-      const mutationIds = [
-        ...(input.source.sourceId !== input.destinationSourceId || (targetToken && input.overwrite)
+      await lockDocuments(
+        this.db,
+        input.source.sourceId !== input.destinationSourceId
           ? previousLocations.flatMap((entry) => (entry.kind === "file" ? [entry.id] : []))
-          : []),
-        ...(targetToken?.kind === "file" && input.overwrite ? [targetToken.nodeId] : []),
-      ];
-      await lockDocuments(this.db, mutationIds);
-      // Moved files and an overwrite victim, row-locked in id order: orders this move against
-      // derive certification and journal FK inserts. A move writes nothing into any holder.
-      await lockMovedDocumentRows(this.db, [
-        ...previousLocations.flatMap((entry) =>
+          : [],
+      );
+      // Moved files, row-locked in id order: orders this move against derive certification and
+      // journal FK inserts. A move writes nothing into any holder.
+      await lockMovedDocumentRows(
+        this.db,
+        previousLocations.flatMap((entry) =>
           entry.kind === "file" ? [entry.id as DocumentId] : [],
         ),
-        ...(targetToken?.kind === "file" && input.overwrite
-          ? [targetToken.nodeId as DocumentId]
-          : []),
-      ]);
+      );
       await this.runBeforeDestructiveWrite();
-      if (targetToken?.kind === "file" && input.overwrite) {
-        await this.removal.remove({
-          documentIds: [targetToken.nodeId as DocumentId],
-          reason: "deleted",
-          userId: input.actorUserId as UserId,
-        });
-      }
 
       const file = "destinationFilename" in input ? input : null;
       const moved = await moveNode(this.db, {

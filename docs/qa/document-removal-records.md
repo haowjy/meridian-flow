@@ -64,8 +64,6 @@ writer data. No additional unit case is needed for these recipe-covered risks.
 - Create Scratch in a named Work. Delete that Work: reason `deleted`, Work
   marker set. Availability must say `authority-unavailable`, not independent
   deletion. Restore the Work: all removal fields are null.
-- Move a file over another with overwrite: the victim records `deleted` and
-  the writer; the moved document remains living.
 - Retract a create after a failed write and after reply rollback: reason
   `discarded`, system causes `create_failed` and `reply_rolled_back`.
   A prior completed tool response followed by Stop is **not** this scenario:
