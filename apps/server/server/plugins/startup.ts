@@ -79,9 +79,9 @@ export default function startupPlugin() {
         payload: unknownToEventPayload(error),
       });
       await eventSink.flush();
-    } catch {
-      // A throwing sink must not skip the exit; stderr above already has the error.
+    } finally {
+      // Runs even if the sink throws; stderr above already has the error.
+      if (isMainThread) process.exit(1);
     }
-    if (isMainThread) process.exit(1);
   });
 }
