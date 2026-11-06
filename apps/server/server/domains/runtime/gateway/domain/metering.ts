@@ -1,6 +1,6 @@
 /**
- * Metering helpers on GenerateResult. Providers flag unmetered cancelled streams
- * with `meteringStatus: "missing_usage"`.
+ * Metering helpers on GenerateResult. `attempt-stream.ts` flags a cancelled stream
+ * that ended without provider usage with `meteringStatus: "missing_usage"`.
  */
 import type { GenerateResult } from "./types.js";
 
