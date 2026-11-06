@@ -1,6 +1,12 @@
 /** One mounted editor's chronological history across Yjs edits and editor Apply commands. */
 import type { Editor } from "@tiptap/core";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
+import { TextSelection } from "@tiptap/pm/state";
+import {
+  getRelativeSelection,
+  relativePositionToAbsolutePosition,
+  ySyncPluginKey,
+  yUndoPluginKey,
+} from "@tiptap/y-tiptap";
 import type { UndoManager } from "yjs";
 
 type StackItem = UndoManager["undoStack"][number];
@@ -19,6 +25,10 @@ type Entry =
 
 const histories = new WeakMap<Editor, MountedEditorHistory>();
 const HISTORY_META = "meridian-editor-history";
+/** On a stack item an undo or redo generated: the selection from just before it ran. */
+const RANGE_META = "meridian-editor-range";
+
+type RelativeSelection = ReturnType<typeof getRelativeSelection>;
 
 function insert(entries: Entry[], entry: Entry): void {
   const index = entries.findIndex((candidate) => candidate.sequence > entry.sequence);
@@ -102,6 +112,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
     const original = [...stack];
     stack.splice(0, stack.length, ...original.filter((item) => allowed.has(item)));
 
+    const before = this.relativeSelection();
     this.suppressManagerEvents = true;
     this.managerGenerated = null;
     let popped: StackItem | null = null;
@@ -112,8 +123,9 @@ class MountedEditorHistory implements EditorHistoryHandle {
     }
 
     this.reconcileNativeSegment(source, stack, original, allowed);
-
     const generated = this.managerGenerated as StackItem | null;
+    if (popped) this.restoreRange(popped);
+    if (before) generated?.meta.set(RANGE_META, before);
     if (popped && generated) {
       const known = popped.meta.get(HISTORY_META) as Entry | undefined;
       const moved: Entry = {
@@ -124,6 +136,41 @@ class MountedEditorHistory implements EditorHistoryHandle {
       generated.meta.set(HISTORY_META, moved);
       insert(direction === "undo" ? this.redo : this.undo, moved);
     }
+  }
+
+  private relativeSelection(): RelativeSelection | null {
+    const binding = ySyncPluginKey.getState(this.editor.state)?.binding;
+    return binding ? getRelativeSelection(binding, this.editor.state) : null;
+  }
+
+  /**
+   * Gives back the range a change started from. Yjs undo maps the selection
+   * the document has now, and a range that was moved or replaced has just been
+   * removed, so it collapses into a caret. y-tiptap saves the selection from
+   * before each change on its stack item but reads it only after the document
+   * has been redrawn, and for the item an undo or redo generates it saves one
+   * taken against the already-changed document. So the first undo reads the
+   * item's own, and every item this class generates carries `RANGE_META`,
+   * taken before it ran. Carets and node selections keep the mapped result.
+   */
+  private restoreRange(popped: StackItem): void {
+    const binding = ySyncPluginKey.getState(this.editor.state)?.binding;
+    const before = (popped.meta.get(RANGE_META) ?? (binding && popped.meta.get(binding))) as
+      | RelativeSelection
+      | null
+      | undefined;
+    if (!binding || before?.type !== "text") return;
+    const resolve = (relative: RelativeSelection["anchor"]) =>
+      relativePositionToAbsolutePosition(binding.doc, binding.type, relative, binding.mapping);
+    const anchor = resolve(before.anchor);
+    const head = resolve(before.head);
+    if (anchor === null || head === null || anchor === head) return;
+    const { state, view } = this.editor;
+    view.dispatch(
+      state.tr.setSelection(
+        TextSelection.between(state.doc.resolve(anchor), state.doc.resolve(head)),
+      ),
+    );
   }
 
   /** Remove only items Yjs consumed from the segment it was allowed to traverse. */
