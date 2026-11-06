@@ -209,15 +209,8 @@ export function apiProjectContextCreateFolderPath(
   return `${apiProjectPath(projectId)}/context/${scheme}/create-folder${projectContextQuery(scheme, opts)}`;
 }
 
-export function apiProjectContextReadPath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  opts?: ProjectContextRequestOptions,
-): string {
-  const search = new URLSearchParams({ path });
-  setOwnerQuery(search, scheme, opts);
-  return `${apiProjectPath(projectId)}/context/${scheme}/read?${search.toString()}`;
+export function apiProjectDocumentReadPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/read`;
 }
 
 export function apiProjectContextMovePath(

@@ -29,8 +29,8 @@ import {
   apiProjectContextLineagePath,
   apiProjectContextMovePath,
   apiProjectContextOperationPath,
-  apiProjectContextReadPath,
   apiProjectDocumentAddressPath,
+  apiProjectDocumentReadPath,
   apiProjectPath,
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
@@ -486,16 +486,17 @@ export async function deleteContextEntry(
   );
 }
 
-export async function getProjectContextRead(
+export async function getProjectDocumentRead(
   projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  opts?: ProjectContextRequestOptions,
+  documentId: string,
   init?: RequestInitOptions,
 ): Promise<ContextReadResponse> {
   return getJson<ContextReadResponse>(
-    urlFor(apiProjectContextReadPath(projectId, scheme, path, opts), init),
-    { headers: init?.headers, schema: contextReadResponseSchema },
+    urlFor(apiProjectDocumentReadPath(projectId, documentId), init),
+    {
+      headers: init?.headers,
+      schema: contextReadResponseSchema,
+    },
   );
 }
 

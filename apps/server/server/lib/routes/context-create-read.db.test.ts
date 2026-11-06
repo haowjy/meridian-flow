@@ -50,6 +50,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
       "../../domains/projects/index.js"
     );
+    const { createTreeReader } = await import("../../domains/context/tree/tree-view.js");
+    const { createDrizzleProjectContextAvailability } = await import(
+      "../../domains/context/adapters/project-context-availability.js"
+    );
     const createDrizzleProjectRepository = createProjectRepositoryForTest;
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
     const { handleContextReadRequest } = await import("../context-read-route.js");
@@ -187,17 +191,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
-              contextPorts,
+              availability: createDrizzleProjectContextAvailability(db, createNoopEventSink()),
+              liveDocuments: createTreeReader(db),
+              documentSync: collab,
               objectStore: createInMemoryObjectStore(),
               eventSink: createNoopEventSink(),
-              workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
             },
-            {
-              projectId: PROJECT_ID,
-              userId: USER_ID,
-              scheme: "manuscript",
-              rawPath: `/${path}`,
-            },
+            { projectId: PROJECT_ID, userId: USER_ID, documentId: created.documentId },
           ),
         ).resolves.toMatchObject({ kind: "tracked", content });
       });

@@ -92,6 +92,7 @@ import {
   OUTLIVED_PATH_FAULT,
 } from "./create-placement.js";
 import { resolveCreateTarget } from "./create-target.js";
+import { fileRefOf, trackedSchemaForPersistedFiletype } from "./file-ref.js";
 import { type GrepRead, scanDocuments } from "./grep-scan.js";
 import { LiveCreate } from "./live-create.js";
 
@@ -135,18 +136,6 @@ export interface ContextFSDeps {
   placement: ContextPlacement;
   /** The thread reading through this adapter; without one, reads are live. */
   threadView?: ThreadContextView;
-}
-
-function trackedSchemaForPersistedFiletype(
-  filetype: string | null | undefined,
-): Result<YjsTrackedSchemaType, AdapterFault> {
-  const classification = classifyFiletype(filetype);
-  if (classification.kind === "tracked") return Ok(classification.schemaType);
-  if (classification.kind === "unknown") return Ok("document");
-  return Err({
-    code: "io_error",
-    message: `Tracked document has registered ${classification.kind} filetype: ${filetype}`,
-  });
 }
 
 function moveFiletypeTransition(
@@ -409,38 +398,10 @@ export class ContextFS implements ContextSchemeAdapter {
     const doc = found.value;
     if (!doc || !parsed.value) return Ok(null);
 
-    const base = {
-      path: joinPath(parsed.value.dir.join("/"), renderFilename(doc.name, doc.extension)),
-      documentId: doc.id,
-      sizeBytes: doc.sizeBytes ?? undefined,
-      updatedAt: doc.updatedAt,
-      ...documentMetadataFacts(doc.metadata),
-    };
-    if (doc.fileType === null) {
-      const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
-      const schemaType = trackedSchemaForPersistedFiletype(filetype);
-      if (!schemaType.ok) return schemaType;
-      return Ok({
-        ...base,
-        kind: "tracked",
-        filetype,
-        schemaType: schemaType.value,
-      });
-    }
-    if (!doc.storageUrl) {
-      return {
-        ok: false,
-        error: { code: "io_error", message: "Binary document is missing object storage URL" },
-      };
-    }
-    return Ok({
-      ...base,
-      kind: "binary",
-      fileType: doc.fileType,
-      storageUrl: doc.storageUrl,
-      mimeType: doc.mimeType ?? undefined,
-      hasPreview: doc.hasPreview,
-    });
+    return fileRefOf(
+      doc,
+      joinPath(parsed.value.dir.join("/"), renderFilename(doc.name, doc.extension)),
+    );
   }
 
   async read(

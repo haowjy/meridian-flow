@@ -623,8 +623,6 @@ export function parseWorkingSetRouteList(input: unknown): WorkingSetRouteListPar
 
 export type ContextReadTrackedResponse = {
   kind: "tracked";
-  /** Slash-prefixed display/routing path, e.g. `/project/README.md`. */
-  path: string;
   /** Yjs schema family used to render/edit this projection. */
   schemaType: YjsTrackedSchemaType;
   /** Filetype determining the viewer/editor surface. */
@@ -635,8 +633,6 @@ export type ContextReadTrackedResponse = {
 
 export type ContextReadBinaryResponse = {
   kind: "binary";
-  /** Slash-prefixed display/routing path, e.g. `/project/report.pdf`. */
-  path: string;
   /** Short-lived URL of the stored file, for download; clients must not persist it. */
   url: string;
   /**
@@ -652,14 +648,12 @@ export type ContextReadBinaryResponse = {
 export const contextReadResponseSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("tracked"),
-    path: z.string(),
     schemaType: z.enum(["document", "code"]),
     filetype: filetypeSchema,
     content: z.string(),
   }),
   z.object({
     kind: z.literal("binary"),
-    path: z.string(),
     url: z.string().min(1),
     drawUrl: z.string().min(1).optional(),
     fileType: z.enum(["docx", "image", "pdf", "binary"]),

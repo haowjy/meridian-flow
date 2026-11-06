@@ -106,6 +106,13 @@ canonical addresses; `domains/context/copy/` owns everything that writes. Like m
 runs inside `withDurableIntentInterruptBoundary`, because the app's durable queue replays a
 copy under its operation ID and must settle a deterministic refusal from the typed envelope.
 
+The viewer read (`lib/context-read-route.ts`, `GET /documents/:documentId/read`) takes an id and
+nothing else. It checks, in order: the project is the user's, `availability.held` finds the row in
+this project (any owner; hidden and deleted rows are absent; a User-area file reads from any of
+the user's projects), and the user holds a read grant on the row `held` names, which follows a
+join's forward. It answers from that row (`fileRefOfVisible`, the mapping `ContextFS.stat`
+shares), so it never resolves a path and never sees a draft.
+
 Move requests carry `destinationParent` when they use destination identity.
 The route passes that identity into the domain command and receipt, maps typed
 `destination_missing` to non-retryable repair, and rechecks edit authority on
