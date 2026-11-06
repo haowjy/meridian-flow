@@ -162,14 +162,15 @@ fields, and command-tagged descriptions generated from the Zod branches.
 DeepSeek receives the canonical unions unchanged, and a root `allOf` is refused
 at tool registration.
 
-## LIVE_TEST_MODEL (dev only)
+## LIVE_TEST_MODEL (dev and staging)
 
 `LIVE_TEST_MODEL=<registry model id>` sends every gateway call to that model, whatever
 the request, chat binding or Agent names. `createGatewayFromEnv` validates it (known id,
-provider key set) and wraps the gateway once (`config/live-test-model.ts`); it also refuses it in production (not staging). The wrapper rewrites the request's model, drops its provider,
+provider key set) and wraps the gateway once (`config/live-test-model.ts`); it also refuses it in production (not staging; a staging deploy must set `APP_ENV=staging`). The wrapper rewrites the request's model
 and lists every registry id, keyed or not, with the override's facts, because
-availability checks, compaction, image support, tokenizer and cache prediction look models
-up by the stored id. `getDefaultModel()` stays the real default, so seeding and child
+availability checks, compaction, image support and tokenizer look models
+up by the stored id. Cache prediction is the exception: a chat bound to a model other than the override reads cold
+(`model_changed`), because its stored responses name the routed model, so its summaries take the rolling path. `getDefaultModel()` stays the real default, so seeding and child
 bindings never record the override. Costing needs no hook: it prices the provider and model the response reports.
 Stored bindings, Agent files and the catalog still show the model they name. The name has
 no `FLOW_` prefix because it is not a provider key.
