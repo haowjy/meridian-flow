@@ -22,7 +22,7 @@ const MODEL: ModelInfo = {
   displayName: "Test Model",
   contextWindow: 128_000,
   maxOutputTokens: 4_096,
-  promptCache: { kind: "none", shortTtlMs: null, longTtlMs: null },
+  promptCache: { kind: "automatic", shortTtlMs: null, longTtlMs: null },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };
