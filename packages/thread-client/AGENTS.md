@@ -18,7 +18,8 @@ decision between the server and the screen is headed here, never into `apps/app`
 - Share a decision's inputs and recovery, not only its reducer. A rule that needs a snapshot
   to finish (a divider waiting for its anchor, a waiting message the stream didn't carry)
   exposes what waits, and both hosts refresh from it; otherwise `./mf` silently diverges.
-- Observers must not throw or affect transport behavior. `socket-lifecycle.ts` calls them
-  unguarded, so a throw drops the frame or skips the ping timer or the reconnect.
+- Observers must not throw or affect transport behavior. `socket-lifecycle.ts` catches
+  observer failures, records a bounded diagnostic, and continues the frame, timer, or
+  reconnect path.
 
 Contracts: [`.context/CONTEXT.md`](.context/CONTEXT.md).

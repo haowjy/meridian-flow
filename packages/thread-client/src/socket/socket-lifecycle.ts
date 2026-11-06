@@ -1,5 +1,6 @@
 /** Owns thread handshake phases, reconnects, and current-generation callbacks. */
 
+import type { FailureLog } from "@meridian/contracts/failures";
 import type {
   ConnectivityHintsPort,
   SocketClose,
@@ -26,6 +27,7 @@ export type SocketLifecycleOptions = {
   connectivity?: ConnectivityHintsPort;
   webSocketFactory: (url: string) => SocketLike;
   observer?: ThreadSocketObserver;
+  failureLog?: FailureLog;
   handshakeTimeoutMs?: number;
 };
 
@@ -53,6 +55,7 @@ export type SocketLifecycleConsumer = {
 export class SocketLifecycleController {
   private readonly webSocketFactory: (url: string) => SocketLike;
   private readonly observer?: ThreadSocketObserver;
+  private readonly failureLog?: FailureLog;
   private readonly consumer: SocketLifecycleConsumer;
   private readonly handshakeTimeoutMs: number;
 
@@ -67,10 +70,12 @@ export class SocketLifecycleController {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setTimeout> | null = null;
   private connectionState: ConnectionState = { kind: "disconnected" };
+  private observerFailureCount = 0;
 
   constructor(consumer: SocketLifecycleConsumer, options: SocketLifecycleOptions) {
     this.consumer = consumer;
     this.observer = options.observer;
+    this.failureLog = options.failureLog;
     this.connectivityHints = options.connectivity;
     this.webSocketFactory = options.webSocketFactory;
     this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? DEFAULT_WS_HANDSHAKE_TIMEOUT_MS;
@@ -162,7 +167,9 @@ export class SocketLifecycleController {
     if (!this.isSocketOpen()) return false;
     const socket = this.socket;
     if (!socket) return false;
-    this.observer?.onStringFrame("client_to_server", data, this.socketGeneration);
+    this.observe("client_to_server", this.socketGeneration, () =>
+      this.observer?.onStringFrame("client_to_server", data, this.socketGeneration),
+    );
     try {
       socket.send(data);
       return true;
@@ -236,7 +243,7 @@ export class SocketLifecycleController {
     socket.addEventListener("open", () => {
       if (!this.isCurrentSocket(generation, socket)) return;
       this.phase = "awaiting-connected";
-      this.observer?.onSocketOpen(generation);
+      this.observe("open", generation, () => this.observer?.onSocketOpen(generation));
       this.resetPingTimer();
     });
 
@@ -244,7 +251,9 @@ export class SocketLifecycleController {
       if (!this.isCurrentSocket(generation, socket)) return;
       const data = event.data;
       if (typeof data === "string") {
-        this.observer?.onStringFrame("server_to_client", data, generation);
+        this.observe("server_to_client", generation, () =>
+          this.observer?.onStringFrame("server_to_client", data, generation),
+        );
       }
       this.resetPingTimer();
       this.consumer.onMessage(data);
@@ -256,7 +265,9 @@ export class SocketLifecycleController {
     });
 
     socket.addEventListener("close", (event) => {
-      this.observer?.onSocketClose(generation, event.code, event.wasClean);
+      this.observe("close", generation, () =>
+        this.observer?.onSocketClose(generation, event.code, event.wasClean),
+      );
       if (!this.isCurrentSocket(generation, socket)) return;
       this.handleSocketClose(event);
     });
@@ -347,5 +358,26 @@ export class SocketLifecycleController {
 
   private isCurrentSocket(generation: number, socket: SocketLike): boolean {
     return this.socketGeneration === generation && this.socket === socket;
+  }
+
+  private observe(
+    phase: "client_to_server" | "server_to_client" | "open" | "close",
+    generation: number,
+    callback: () => void,
+  ): void {
+    try {
+      callback();
+    } catch {
+      this.failureLog?.record({
+        occurrenceId: `socket-observer:${generation}:${phase}:${++this.observerFailureCount}`,
+        failure: {
+          category: "unavailable",
+          source: "bug",
+          actionable: false,
+          cause: { code: "observer_failed" },
+        },
+        phase: "recorded",
+      });
+    }
   }
 }

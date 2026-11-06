@@ -32,6 +32,7 @@ const record = z
               "socket_closed",
               "request_failed",
               "validation",
+              "observer_failed",
               "unknown",
             ]),
             status: z.number().int().min(0).max(65535).optional(),
