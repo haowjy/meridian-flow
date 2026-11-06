@@ -91,7 +91,7 @@ if (local) {
   body = process.argv[3] ? readFileSync(process.argv[3], "utf8") : currentPrBody();
   if (body === null) {
     console.log(
-      "check:pr-body: no PR for this branch yet; skipped. Check a draft with `pnpm check:pr-body <body.md>`.",
+      "check:pr-body: no PR for this branch yet; skipped. Keep a draft body as you work, so its required sections shape the work: start from .github/PULL_REQUEST_TEMPLATE.md and check it with `pnpm check:pr-body <body.md>`.",
     );
     process.exit(0);
   }
