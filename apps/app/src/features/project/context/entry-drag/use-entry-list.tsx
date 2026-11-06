@@ -35,7 +35,6 @@ import {
   type PendingChoice,
 } from "./drop-choice";
 import { runCopy, runMove } from "./entry-failure";
-import { copyArrivals } from "./execute-copy";
 import { renamesOnArrival } from "./execute-move";
 import {
   type MoveArea,
@@ -120,16 +119,13 @@ export function useEntryList({
         const { items, plans } = dropChoices(view, resolved, target);
         const first = items.find((item) => item.enabled);
         if (!first) return null;
-        const arrivals =
-          first.action === "move"
-            ? (plans.move?.moves ?? [])
-            : plans.copy
-              ? copyArrivals(plans.copy)
-              : [];
         return {
           kind: "accept",
           label: askLabel(first.label),
-          warning: describeRenames(renamesOnArrival(arrivals, view)),
+          warning:
+            first.action === "move"
+              ? describeRenames(renamesOnArrival(plans.move?.moves ?? [], view))
+              : null,
         };
       }
       const planned = planMove(view, resolved);

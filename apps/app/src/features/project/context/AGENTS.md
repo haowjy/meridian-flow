@@ -25,7 +25,7 @@ chat resources rather than ordinary Editor tabs.
   area root with its authority) before the move is ready, share one
   identity-based refusal (`moveRefusal` in `move-plan.ts`: inside itself;
   already there is a quiet no-op), and arrive at the next free name that
-  `execute-move.ts` predicts. The hover hint and Move… warn with that same
+  `execute-move.ts` predicts. The hover hint and Move… warn (a Copy doesn't) with that same
   prediction before a row arrives renamed. Order goes the same way: a row-edge
   drop and Move…'s "Change position" send a sibling position (before/after a
   sibling, start, end), never a rank. Don't place entries anywhere else.

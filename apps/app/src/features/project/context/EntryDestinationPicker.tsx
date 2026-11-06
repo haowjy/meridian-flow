@@ -29,7 +29,7 @@ import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { describeRenames } from "./entry-drag/drop-choice";
 import { LIVE_VIEW } from "./entry-drag/entry";
-import { copyArrivals, copyRows } from "./entry-drag/execute-copy";
+import { copyRows } from "./entry-drag/execute-copy";
 import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
 import { moveRefusal, parentOf, type ReadyCopy, sameParent } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
@@ -269,21 +269,12 @@ function OpenPicker({
         const blocked = destination ? refusalAt(destination) : "inside-itself";
         if (blocked === "inside-itself") return [];
         if (action === "copy") {
-          const into = destination && destinationParent(destination, works, noWork);
-          const renamed =
-            destination && into
-              ? renamesOnArrival(
-                  copyArrivals(copyPlan(destination.scheme, into, folder.name)),
-                  view,
-                )
-              : [];
           return [
             {
               key: "copy",
               icon: Copy,
               label: t`Copy to ${folder.name}`,
               disabled: pending,
-              note: describeRenames(renamed),
               onSelect: () => {
                 void copy(trail);
               },

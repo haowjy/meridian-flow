@@ -52,7 +52,9 @@ browser reports no fine pointer, so rows render at touch height.
    reads "Move to <folder>" with a warning line under it, "chapter-1 will be
    renamed chapter-1 (2)" (two clashing rows: "2 items will be renamed"). Move…
    shows the same line under that folder's Move action. Drop: the row arrives
-   as `chapter-1 (2)`; no toast shows.
+   as `chapter-1 (2)`; no toast shows. Copy to… the same folder, from the menu or
+   from a dropped tab's Move/Copy choice: no warning shows, and the copy arrives
+   as `chapter-1 (2)`.
 8. Run [Mention drops](mention-drop.md). A writing drop copies references and
    never enters this recipe's move route.
 9. After every drag, check that no region stays lit
