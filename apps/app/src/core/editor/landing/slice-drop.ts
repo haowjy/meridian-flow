@@ -217,6 +217,7 @@ function sliceDropTransaction(
   });
   if (
     blocks?.joinsTail &&
+    $mapped.parent.isTextblock &&
     $mapped.parentOffset < $mapped.parent.content.size &&
     canJoin(transaction.doc, end)
   ) {
