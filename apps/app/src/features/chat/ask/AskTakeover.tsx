@@ -115,7 +115,7 @@ function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children:
 /**
  * Focus the answer the writer holds, else the question's option group (`data-ask-place`, so Tab
  * reaches the first option next and a screen reader names the question, with no ring on an option
- * nobody chose), else the first control, unless they are working elsewhere on
+ * nobody chose), unless they are working elsewhere on
  * the page (another tab's answer moves a takeover nobody is using). Never the field: on a phone
  * that would raise the keyboard each time the controls change.
  */
@@ -125,8 +125,7 @@ function focusControls(root: HTMLElement | null) {
     return;
   const target =
     root?.querySelector<HTMLElement>("[aria-pressed=true]") ??
-    root?.querySelector<HTMLElement>("[data-ask-place]") ??
-    root?.querySelector<HTMLElement>("button");
+    root?.querySelector<HTMLElement>("[data-ask-place]");
   target?.focus({ preventScroll: true });
 }
 
