@@ -41,7 +41,9 @@ A file that can't become a document is stored as a file, never as garbage text:
 `classify` (whole bytes, at receipt) marks `kept_as_file` for a document extension over
 non-text bytes, text that isn't valid UTF-8, and `.html`/`.htm` (tags aren't prose; the
 MIME type is `text/html`). The entry's reason is `kept_as_file`, so the result needs a
-look, and its name keeps its extension. A broken DOCX takes the same reason later, when
+look, and its name keeps its extension. URIs drop a prose suffix, so a kept `binary.md` is
+addressed as `binary`; `TreeReader.resolveAddress` finds it where nothing else holds that name. A
+broken DOCX takes the same reason later, when
 prepare's conversion fails. `changed_after_pick` wins when both apply.
 
 Each put uses `imports/<importId>/<entryId>/<UUIDv7>`. Under the import row lock,

@@ -66,7 +66,8 @@ prepared files until the server says finished. A clean completion acknowledges
 at once, or when an open popup that shows it closes. A finished import that skipped a file the
 writer would care about (anything but `hidden` and `trash`) needs the writer, like a needs-look
 result; closing the popup acknowledges a result that
-needed a look. An import refused before it starts toasts (`notifyFailure`) and closes locally; durable terminal acknowledgements apply across tabs.
+needed a look. Show opens one of the import's files, one that needs a look first, so the tree
+reveals it. An import refused before it starts toasts (`notifyFailure`) and closes locally; durable terminal acknowledgements apply across tabs.
 
 `pending-roots.ts` is the five-rule projection. Catalog identity wins; historical
 `root.created` is not liveness. The coordinator remembers observed roots across
