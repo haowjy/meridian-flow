@@ -35,6 +35,7 @@ import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { parseProjectAddress } from "@/features/project/routing/project-address";
 import { originalBrowserSearch } from "@/router-search";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
+import { getLandingUrl } from "@/server/landing-url";
 import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
 
 // Composition-root prerequisite: product descendants create both client
@@ -63,6 +64,8 @@ export const Route = createFileRoute("/_authenticated")({
   loader: async ({ location }) => {
     const { user: workosUser } = await getAuth();
     if (!workosUser) {
+      const landingUrl = location.pathname === "/" ? await getLandingUrl() : null;
+      if (landingUrl) throw redirect({ href: landingUrl });
       const path = `${location.pathname}${originalBrowserSearch(location.search)}`;
       const href = await getSignInUrl({ data: { returnPathname: path } });
       throw redirect({ href });

@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     "./ink-jade.css": "./src/ink-jade.css",
-    "./themes.css": "./src/themes.css"
+    "./themes.css": "./src/themes.css",
+    "./marketing.css": "./src/marketing.css",
+    "./marketing-sky": "./src/marketing-sky.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
