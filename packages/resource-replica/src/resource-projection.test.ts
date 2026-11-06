@@ -86,7 +86,6 @@ it("projects only the requesting project's durable location intention", () => {
       result: {
         ok: true,
         value: {
-          destinationPath: "chapters/opening",
           destinationUri: "manuscript://chapters/opening",
         },
       },

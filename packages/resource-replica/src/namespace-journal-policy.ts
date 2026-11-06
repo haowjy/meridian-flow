@@ -6,6 +6,7 @@ import {
 } from "./resource-intent-policy";
 import {
   type NamespaceIntent,
+  namespaceEntryIs,
   namespaceRequestId,
   type PlacementAdmission,
   type ResourceDestination,
@@ -278,8 +279,7 @@ export function validateNamespaceJournal(input: {
         const command = receipt.command;
         const matchesIdentity =
           request.kind === "move" && command.kind === "move"
-            ? request.body.kind === command.expected.kind &&
-              request.entryId === command.expected.nodeId
+            ? namespaceEntryIs(command.expected, request)
             : request.kind === "copy" && command.kind === "copy"
               ? request.body.sources.length === command.sources.length &&
                 request.body.sources.every(
@@ -290,8 +290,7 @@ export function validateNamespaceJournal(input: {
                 )
               : request.kind === "delete" &&
                 command.kind === "delete" &&
-                request.body.kind === command.expected.kind &&
-                request.entryId === command.expected.nodeId;
+                namespaceEntryIs(command.expected, request);
         if (!matchesIdentity)
           throw new Error("Namespace outcome does not match submitted identity");
       } else if (attempt.outcome?.kind === "create") {

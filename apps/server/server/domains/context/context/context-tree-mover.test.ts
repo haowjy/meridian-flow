@@ -45,9 +45,7 @@ function dispatch(input: {
         return Ok(token?.nodeId === node.id ? token : null);
       }),
       commitProvisionalGraduation: vi.fn(async () => Ok(undefined)),
-      commitPreparedMove: vi.fn(async (prepared) =>
-        Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
-      ),
+      commitPreparedMove: vi.fn(async (prepared) => Ok({ path: prepared.destinationPath })),
       commitRecursiveDelete: vi.fn(async (command) =>
         Ok({
           removed:
@@ -115,16 +113,8 @@ describe("ContextTreeMover result-aware command ownership", () => {
     settleFirst();
 
     await expect(Promise.all([first, second])).resolves.toEqual([
-      Ok({
-        movedNodeId: "document-1",
-        destinationPath: "draft",
-        destinationUri: "manuscript://draft",
-      }),
-      Ok({
-        movedNodeId: "document-1",
-        destinationPath: "draft",
-        destinationUri: "manuscript://draft",
-      }),
+      Ok({ destinationUri: "manuscript://draft" }),
+      Ok({ destinationUri: "manuscript://draft" }),
     ]);
   });
 });

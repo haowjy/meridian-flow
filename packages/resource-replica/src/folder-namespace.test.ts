@@ -86,7 +86,7 @@ function receipt(name: string, ok: boolean, operationId = name): ContextOperatio
       name,
     },
     result: ok
-      ? { ok: true, value: { destinationPath: name, destinationUri: `manuscript://${name}` } }
+      ? { ok: true, value: { destinationUri: `manuscript://${name}` } }
       : { ok: false, error: { code: "conflict", uri: `manuscript://${name}` } },
   };
 }

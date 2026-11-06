@@ -215,7 +215,7 @@ export function evidence(
         ? error
         : {
             ok: true,
-            value: { destinationPath, destinationUri: `manuscript://${destinationPath}` },
+            value: { destinationUri: `manuscript://${destinationPath}` },
           },
     },
   };

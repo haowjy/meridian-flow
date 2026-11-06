@@ -76,9 +76,7 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
         ),
       ),
       commitProvisionalGraduation: vi.fn(async () => Ok(undefined)),
-      commitPreparedMove: vi.fn(async (prepared) =>
-        Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
-      ),
+      commitPreparedMove: vi.fn(async (prepared) => Ok({ path: prepared.destinationPath })),
       commitRecursiveDelete: vi.fn(async (command) =>
         Ok({
           removed:
@@ -313,8 +311,6 @@ describe("context router scheme creation capabilities", () => {
     ).resolves.toEqual({
       ok: true,
       value: {
-        movedNodeId: "document-old",
-        destinationPath: "renamed",
         destinationUri: "uploads://@c12/renamed",
       },
     });

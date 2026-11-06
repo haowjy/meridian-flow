@@ -276,6 +276,14 @@ export type NamespaceRequest =
       body: CopyContextEntriesRequest;
     };
 
+/** Whether a receipt's command names the entry, and the kind of it, that this request sent. */
+export function namespaceEntryIs(
+  expected: { kind: string; nodeId: string },
+  request: Extract<NamespaceRequest, { kind: "move" | "delete" }>,
+): boolean {
+  return expected.kind === request.body.kind && expected.nodeId === request.entryId;
+}
+
 /**
  * The identity a request is replayed under: a move's or delete's operation id, a create's document
  * or folder id (the server dedupes a create by it). A refusal names it, so a request kind added

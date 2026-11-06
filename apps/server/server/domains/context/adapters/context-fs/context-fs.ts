@@ -926,7 +926,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const committed = await this.mutationStore.commitMove(command);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
-      movedNodeId: committed.value.movedNodeId,
       ...(committed.value.linkUpdate ? { linkUpdate: committed.value.linkUpdate } : {}),
       ...(committed.value.locationVersion
         ? { locationVersion: committed.value.locationVersion }

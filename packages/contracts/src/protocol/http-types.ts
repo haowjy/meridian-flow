@@ -290,12 +290,7 @@ export type ContextDestinationParent = {
   | {
       kind: "root";
       scheme: ProjectContextTreeScheme;
-      owner: {
-        workId: string | null;
-        workHandle?: string | null;
-        rootThreadId?: string | null;
-        rootThreadRef?: string | null;
-      };
+      owner: { workId: string | null; rootThreadId?: string | null };
     }
 );
 

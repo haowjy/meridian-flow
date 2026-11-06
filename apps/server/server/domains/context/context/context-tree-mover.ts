@@ -253,21 +253,15 @@ export class ContextTreeMover {
             if (!change.position)
               return prepared.value.source.kind === "file"
                 ? this.graduateInPlace(source, prepared.value.source, destination)
-                : Ok({
-                    movedNodeId: prepared.value.source.nodeId,
-                    destinationPath: prepared.value.source.path,
-                    destinationUri: uriAt(destination, prepared.value.source.path),
-                  });
+                : Ok({ destinationUri: uriAt(destination, prepared.value.source.path) });
           }
           const result = await this.commitPreparedMove(destination, prepared.value, change);
           if (!result.ok) return result;
           const moved: ContextMoveResult = {
-            movedNodeId: result.value.movedNodeId,
             ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
             ...(result.value.locationVersion
               ? { locationVersion: result.value.locationVersion }
               : {}),
-            destinationPath: result.value.path,
             destinationUri: uriAt(destination, result.value.path),
           };
           await change.inTransaction?.(moved);
@@ -312,11 +306,7 @@ export class ContextTreeMover {
         Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) return result;
-    return Ok({
-      movedNodeId: token.nodeId,
-      destinationPath: token.path,
-      destinationUri: uriAt(destination, token.path),
-    });
+    return Ok({ destinationUri: uriAt(destination, token.path) });
   }
 
   async delete(
