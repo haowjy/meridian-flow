@@ -9,7 +9,7 @@
  * identity, not by what the drop saw. A new action is a new item here and a
  * branch in the list's `choose`; the menu's mechanics don't change.
  */
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
 import type { EntryDrag } from "./entry";
@@ -119,15 +119,4 @@ export function dropChoices(
       ...(copy.kind === "ready" ? { copy } : {}),
     },
   };
-}
-
-/** The warning before a drop or pick whose rows would arrive renamed; null when none would. */
-export function describeRenames(renamed: readonly { name: string; as: string }[]): string | null {
-  const [only] = renamed;
-  if (!only) return null;
-  if (renamed.length === 1) return t`${only.name} will be renamed ${only.as}`;
-  return plural(renamed.length, {
-    one: "# item will be renamed",
-    other: "# items will be renamed",
-  });
 }

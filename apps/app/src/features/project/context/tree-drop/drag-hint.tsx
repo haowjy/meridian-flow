@@ -1,7 +1,7 @@
 /**
  * Draws the label beside the pointer that says what dropping here will do
- * ("Move to Act 2", "Can't go inside itself"), with a warning line under it when
- * the drop will also rename rows. The store is in the editor's landing code.
+ * ("Move to Act 2", "Can't go inside itself"). The store is in the editor's
+ * landing code.
  */
 import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -39,11 +39,6 @@ export function DragHint() {
       >
         {current.label}
       </div>
-      {current.warning ? (
-        <div className="border-x border-b border-warning-border rounded-b-md bg-warning-bg px-2 py-1 text-warning-foreground">
-          {current.warning}
-        </div>
-      ) : null}
     </div>,
     document.body,
   );

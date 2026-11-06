@@ -118,7 +118,7 @@ refusal opens a name-only field; move retry loses a queued rename.
 3. Repeat with a refused Rename. The list may offer its inline name repair;
    the path bar only directs retry to Rename in the file list.
 4. Restore native fetch. Reopen Move…: it must start at the refused destination
-   with an enabled Move to button, not Already in the current parent. Submit
+   with an enabled Move here button, not Already in the current parent. Submit
    without drilling again. If the destination was removed, it instead opens at
    the current parent and retains the refusal message. Retry through the list. For a cancelled rename/move
    chain, check the request's name is the retained destination name, not the

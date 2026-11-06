@@ -28,7 +28,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    Templates and Cancel.
 2. **Copy.** Choose Copy. The copy is listed in `Templates` at once and the source stays.
    No toast.
-3. **A folder tree.** Row menu on `Book` › Copy to… › Manuscript › Copy to Manuscript:
+3. **A folder tree.** Row menu on `Book` › Copy to… › Manuscript › Copy here:
    `Book (2)` appears with the whole tree under it. `Book` is disabled in that picker's
    list, as Move… disables it.
 4. **A refusal.** Go offline, copy `Prologue` to `Templates`, delete `Prologue` with
