@@ -41,6 +41,7 @@ import {
 import { createUntitledContextDocument } from "../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
 import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
+import { entryAt } from "./entry-ref.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
@@ -398,7 +399,11 @@ export function branchTreeCommands(
       });
     },
     async move(from, to) {
-      return (await livePort()).commitWriterLocation(uri(from), uri(to), { origin: human() });
+      const port = await livePort();
+      return port.commitWriterLocation(uri(from), uri(to), {
+        origin: human(),
+        expected: await entryAt(port, uri(from)),
+      });
     },
     async delete(path, operationId) {
       const port = await livePort();
@@ -408,7 +413,7 @@ export function branchTreeCommands(
         return port.delete(uri(path), {
           origin: human(),
           ...(operationId ? { operationId } : {}),
-          expected: { kind: "file", documentId: stat.value.documentId ?? "" },
+          expected: { kind: "file", nodeId: stat.value.documentId ?? "" },
         });
       }
       const { scheme, rel } = sourceOf(path);

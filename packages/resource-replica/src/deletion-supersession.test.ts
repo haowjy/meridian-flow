@@ -47,13 +47,13 @@ function deleted(
     operationId: request.body.operationId,
     command: {
       kind: "delete",
-      uri: `manuscript://${request.body.path}`,
-      expected: request.body.expected,
+      expected: { kind: request.body.expected.kind, nodeId: request.entryId },
     },
     result: {
       ok: true,
       value: {
         status: "deleted",
+        uri: `manuscript://${request.entryId}`,
         removed: removedDocumentIds.map((documentId) => ({
           documentId,
           removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },

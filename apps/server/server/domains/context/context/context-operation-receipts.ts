@@ -13,9 +13,19 @@ class RejectedOperation<K extends ContextOperationCommand["kind"]> extends Error
   }
 }
 
-/** The address a command mismatch names: the entry a delete names, else the destination. */
-function commandAddress(command: ContextOperationCommand): string {
-  return command.kind === "delete" ? command.uri : command.destinationUri;
+/**
+ * Where a settled operation changed things: the address the observation version is read for. A
+ * refusal names it in its error; a Copy's command names its destination.
+ */
+function resultAddress(
+  command: ContextOperationCommand,
+  result: ContextOperationResult<ContextOperationCommand["kind"]>,
+): string {
+  if (!result.ok) return result.error.uri;
+  if (command.kind === "copy") return command.destinationUri;
+  return "destinationUri" in result.value
+    ? result.value.destinationUri
+    : (result.value as { uri: string }).uri;
 }
 
 export class ContextOperationReceipts {
@@ -25,9 +35,11 @@ export class ContextOperationReceipts {
     return this.store.lookup(operationId);
   }
 
+  /** `address` is where the command was aimed, which an `operation_mismatch` names. */
   execute<K extends ContextOperationCommand["kind"]>(
     operationId: string,
     command: Extract<ContextOperationCommand, { kind: K }>,
+    address: string,
     operation: () => Promise<ContextOperationResult<K>>,
   ): Promise<ContextOperationResult<K>> {
     return this.store.transaction(operationId, async () => {
@@ -38,7 +50,7 @@ export class ContextOperationReceipts {
             ok: false,
             error: {
               code: "operation_mismatch",
-              uri: commandAddress(command as ContextOperationCommand),
+              uri: address,
             },
           };
         return previous.result as ContextOperationResult<K>;
@@ -61,7 +73,7 @@ export class ContextOperationReceipts {
         operationId,
         command,
         result,
-        observationVersion: await this.store.observationVersion(command),
+        observationVersion: await this.store.observationVersion(resultAddress(command, result)),
       } as ContextOperationReceipt);
       return result;
     });

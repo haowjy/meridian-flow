@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { itemFor } from "../../test-support/branch-tree-scenario.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
+import { entryAt } from "../../test-support/entry-ref.js";
 import { isFileAccessDenied } from "../file-policy/index.js";
 
 describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", (start, db) => {
@@ -117,6 +118,7 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     const live = runtime.ports.contextPorts.forProject(s.project.id, s.project.userId, new Map());
     const moved = await live.commitWriterLocation("manuscript://ch5", "manuscript://ch4", {
       origin: { type: "human", userId: s.project.userId },
+      expected: await entryAt(live, "manuscript://ch5"),
     });
     expect(moved.ok).toBe(true);
     expect

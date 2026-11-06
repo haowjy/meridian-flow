@@ -92,9 +92,9 @@ then a folder with one document and an empty subfolder:
    no_work_id=$(printf '%s' "$snapshot" | jq -r \
      '.entries[] | select(.kind == "authority" and .authority.workHandle == null) | .entryId')
    operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-   ./mf api POST "/api/projects/$project_id/context/manuscript/move" --data "$(jq -nc \
-     --arg operationId "$operation_id" --arg nodeId "$folder_id" \
-     '{operationId: $operationId, path: "Folder Probe", expected: {kind: "folder", nodeId: $nodeId}, destinationScheme: "manuscript", destinationFolderPath: "", newName: "Folder Probe Renamed"}')"
+   ./mf api POST "/api/projects/$project_id/context/entries/$folder_id/move" --data "$(jq -nc \
+     --arg operationId "$operation_id" \
+     '{operationId: $operationId, expected: {kind: "folder"}, name: "Folder Probe Renamed"}')"
    ./mf doc read "manuscript://Folder Probe Holder.md"
    ```
 
@@ -136,9 +136,9 @@ then a folder with one document and an empty subfolder:
    ./mf doc rm "manuscript://Folder Probe Holder.md"
    ./mf doc rm "manuscript://Folder Probe Renamed/Child.md"
    operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-   ./mf api POST "/api/projects/$project_id/context/manuscript/delete" --data "$(jq -nc \
-     --arg operationId "$operation_id" --arg nodeId "$folder_id" \
-     '{operationId: $operationId, path: "Folder Probe Renamed", expected: {kind: "folder", nodeId: $nodeId}}')"
+   ./mf api POST "/api/projects/$project_id/context/entries/$folder_id/delete" --data "$(jq -nc \
+     --arg operationId "$operation_id" \
+     '{operationId: $operationId, expected: {kind: "folder"}}')"
    ```
 
 Record the commit, date, stack, outcome and screenshot paths in the active work

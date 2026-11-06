@@ -224,7 +224,7 @@ otherwise, A's tabs are live tabs.
   sentence; the Recently opened list does not move.
 - B deletes a folder holding three of A's open tabs: one chip, "<name> deleted 3
   documents (one, two, and three).", the names in its tooltip.
-- Hold B's delete (route `**/context/*/delete*` to abort in both tabs, delete,
+- Hold B's delete (route `**/context/entries/*/delete` to abort in both tabs, delete,
   wait 15 s, unroute, toggle B offline and online): A's tab closes at once with
   no chip, and the chip appears once the delete commits and A is focused, as
   long as A did not navigate meanwhile.

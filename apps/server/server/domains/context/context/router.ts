@@ -823,7 +823,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!source.ok) return source;
       const destination = await resolveMutation(destinationUri);
       if (!destination.ok) return destination;
-      const destinationParent = options?.destinationParent;
+      const destinationParent = options.destinationParent;
       if (
         destinationParent?.kind === "root" &&
         (destinationParent.scheme !== destination.value.scheme ||
@@ -836,13 +836,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const resolveDestination = identityParent
         ? async (): Promise<Result<ContextTreeDispatch, ContextError>> => {
             const parent = await resolveIdentityDestination(identityParent, {
-              ...(options?.authorizeDestination ? { authorize: options.authorizeDestination } : {}),
-              ...(options?.origin ? { origin: options.origin } : {}),
+              ...(options.authorizeDestination ? { authorize: options.authorizeDestination } : {}),
+              ...(options.origin ? { origin: options.origin } : {}),
             });
             if (!parent.ok) return parent;
             const target = await resolveMutation(
               joinContextPath(parent.value.canonical, [name]),
-              options?.origin,
+              options.origin,
             );
             if (!target.ok) return Err({ code: "destination_missing", uri: destinationUri });
             const denied = moveCreationDenied(source.value, target.value);
@@ -853,7 +853,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         const creationDenied = moveCreationDenied(source.value, destination.value);
         if (creationDenied) return creationDenied;
       }
-      const { authorizeDestination, ...rest } = options ?? {};
+      const { authorizeDestination, ...rest } = options;
       return treeMover.commitWriterLocation(source.value, destination.value, {
         ...rest,
         ...(resolveDestination
@@ -921,7 +921,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (retracted.value.placement === "draft") return Ok(undefined);
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
       const deleted = await treeMover.delete(r.value, {
-        expected: { kind: "file", documentId: options.documentId },
+        expected: { kind: "file", nodeId: options.documentId },
         removal: { reason: "discarded", cause: options.cause },
       });
       if (

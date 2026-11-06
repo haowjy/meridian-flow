@@ -30,8 +30,8 @@ including after reload and deletion. This recipe is not a current pass claim.
    document ID in `$DOCUMENT`:
 
    ```bash
-   ./mf api POST "/api/projects/$PROJECT/context/manuscript/move" --data \
-     "{\"operationId\":\"$(cat /proc/sys/kernel/random/uuid)\",\"path\":\"a.md\",\"destinationScheme\":\"manuscript\",\"destinationFolderPath\":\"\",\"newName\":\"b.md\",\"expected\":{\"kind\":\"file\",\"nodeId\":\"$DOCUMENT\"}}" --json
+   ./mf api POST "/api/projects/$PROJECT/context/entries/$DOCUMENT/move" --data \
+     "{\"operationId\":\"$(cat /proc/sys/kernel/random/uuid)\",\"name\":\"b.md\",\"expected\":{\"kind\":\"file\"}}" --json
    ```
 
 3. Without reloading, check `b.md` appears and `a.md` disappears. Follow the
@@ -202,7 +202,7 @@ Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder s
 1. Seed `P/A/doc.md` and `B/anchor.md` in an isolated project. Open the first
    document in the Editor and expand both folders. Neither P nor B should have
    a local namespace journal.
-2. In an isolated browser session, abort `**/context/manuscript/move` requests.
+2. In an isolated browser session, abort `**/context/entries/*/move` requests.
    Move A into B through its Actions menu. Before reconnecting, A and doc.md
    must appear under B and the open document path must read B / A / doc.md.
    Prose stays mounted. Rename A in place and repeat under an unjournaled parent.

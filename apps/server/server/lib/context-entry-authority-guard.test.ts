@@ -24,25 +24,27 @@ describe("context entry authority-prefix guard", () => {
 
   it.each([
     [
-      "root destination name",
+      "destination name",
       {
-        expected: { kind: "file", nodeId: "selected-document" },
-        path: "notes.md",
-        destinationScheme: "manuscript",
-        destinationFolderPath: "",
-        newName: "@notes.md",
+        operationId: "12345678-1234-4234-8234-123456789abc",
+        expected: { kind: "file" },
+        name: "@notes.md",
       },
     ],
     [
-      "nested destination folder",
+      "created destination folder",
       {
-        expected: { kind: "file", nodeId: "selected-document" },
-        path: "notes.md",
-        destinationScheme: "manuscript",
-        destinationFolderPath: "Branches/@Revision",
+        operationId: "12345678-1234-4234-8234-123456789abc",
+        expected: { kind: "file" },
+        destinationParent: {
+          kind: "root",
+          scheme: "manuscript",
+          owner: { workId: null },
+          createFolders: ["Branches", "@Revision"],
+        },
       },
     ],
   ])("rejects move for a %s", (_label, body) => {
-    expectAuthorityReservation(() => parseContextMove({ sourceScheme: "manuscript", body }));
+    expectAuthorityReservation(() => parseContextMove(body));
   });
 });

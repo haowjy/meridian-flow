@@ -193,6 +193,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         return await receipts.execute(
           input.request.operationId,
           receiptCommand(input),
+          input.destination.uri,
           async () => {
             claimed = true;
             if (!prepared)

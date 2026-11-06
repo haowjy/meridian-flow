@@ -115,8 +115,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             await hook();
           };
         },
-        move: (source: string, destination: string) =>
-          mover.commitWriterLocation(dispatch(source), dispatch(destination)),
+        move: async (source: string, destination: string) => {
+          const token = await context.tree.inspectMovable(source);
+          if (!token.ok || !token.value) throw new Error(`Nothing to move at ${source}`);
+          return mover.commitWriterLocation(dispatch(source), dispatch(destination), {
+            expected: {
+              kind: token.value.kind === "directory" ? "folder" : "file",
+              nodeId: token.value.nodeId,
+            },
+          });
+        },
       };
     }
 

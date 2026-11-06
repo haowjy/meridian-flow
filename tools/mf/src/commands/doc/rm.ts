@@ -1,7 +1,7 @@
 /** `doc rm`: delete a document; `deleteDocument` is shared with put --overwrite. */
 import { randomUUID } from "node:crypto";
 import {
-  apiProjectContextDeletePath,
+  apiProjectContextEntryDeletePath,
   type DeleteContextEntryRequest,
   deleteContextEntryResultSchema,
 } from "@meridian/contracts/protocol";
@@ -9,28 +9,22 @@ import { type CommandSpec, requirePositional, stringOption } from "../../core/co
 import type { Session } from "../../core/session";
 import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
-import { ownerOf, PROJECT_OPTION, type ResolvedUri, resolveDocumentId, resolveUri } from "./uri";
+import { PROJECT_OPTION, type ResolvedUri, resolveDocumentId, resolveUri } from "./uri";
 
 export async function deleteDocument(session: Session, projectId: string, target: ResolvedUri) {
   const documentId = await resolveDocumentId(session, projectId, target);
   const body: DeleteContextEntryRequest = {
     operationId: randomUUID(),
-    path: target.path,
-    expected: { kind: "file", documentId: documentId as never },
+    expected: { kind: "file" },
   };
-  await session.request(
-    "POST",
-    apiProjectContextDeletePath(projectId, target.scheme, ownerOf(target)),
-    body,
-    {
-      decode: jsonResponse(
-        deleteContextEntryResultSchema.refine(
-          (response) => response.removed.some((removed) => removed.documentId === documentId),
-          "Deletion did not cover the requested document",
-        ),
+  await session.request("POST", apiProjectContextEntryDeletePath(projectId, documentId), body, {
+    decode: jsonResponse(
+      deleteContextEntryResultSchema.refine(
+        (response) => response.removed.some((removed) => removed.documentId === documentId),
+        "Deletion did not cover the requested document",
       ),
-    },
-  );
+    ),
+  });
   return documentId;
 }
 
@@ -38,7 +32,7 @@ export const docRmCommand: CommandSpec = {
   path: ["doc", "rm"],
   summary: "Delete a document",
   args: "<uri>",
-  route: "POST /api/projects/:projectId/context/:scheme/delete",
+  route: "POST /api/projects/:projectId/context/entries/:entryId/delete",
   options: PROJECT_OPTION,
   examples: ['./mf doc rm "manuscript://Chapter 1"'],
   async run(ctx) {

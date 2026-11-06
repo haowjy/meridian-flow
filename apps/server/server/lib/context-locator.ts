@@ -4,7 +4,8 @@
  * its own refusals; these are the meanings they share, so a move and a copy cannot disagree
  * about who owns an address or which URI spells it.
  */
-import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
+import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
+import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
@@ -66,7 +67,20 @@ export function locatorUri(locator: ResolvedContextLocator, path = locator.path)
 }
 
 /** The container a locator's files live in: the file-policy target an edit is granted on. */
-export function containerOf(locator: ResolvedContextLocator, projectId: string): FileTarget {
+export function containerOf(
+  locator: ResolvedContextLocator | ChatLocator,
+  projectId: string,
+): FileTarget {
+  if (locator.scope === "chat")
+    return {
+      kind: "container",
+      scheme: "uploads",
+      owner: {
+        scope: "chat",
+        projectId: projectId as ProjectId,
+        threadId: locator.chatId as ThreadId,
+      },
+    };
   return locator.scope === "project"
     ? {
         kind: "container",
@@ -141,7 +155,19 @@ export async function resolveLocatorUri(
     if (!chat) return Err({ reason: "chat_missing" });
     return Ok({ scope: "chat", scheme: "uploads", chatId: chat.chatId, path });
   }
+  // A Work-scoped or uploads address that names no owner belongs to no one this project can reach.
+  if (!isProjectScopedScheme(scheme)) return Err({ reason: "work_missing" });
   return Ok({ scope: "project", scheme: scheme as ProjectContextFsScheme, path });
+}
+
+/** The container a canonical address lives in, or null when it names no owner this project can reach. */
+export async function containerOfUri(
+  deps: LocatorDeps,
+  projectId: string,
+  uri: string,
+): Promise<FileTarget | null> {
+  const resolved = await resolveLocatorUri(deps, projectId, uri);
+  return resolved.ok ? containerOf(resolved.value, projectId) : null;
 }
 
 /** The HTTP answer a route gives a refused locator. */

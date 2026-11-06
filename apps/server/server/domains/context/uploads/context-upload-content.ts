@@ -73,7 +73,7 @@ export function createContextUploadContentPort(
     async remove({ reservation, actorUserId }) {
       const port = portFor(reservation, actorUserId);
       const removed = await port.delete(writeUri(reservation), {
-        expected: { kind: "file", documentId: reservation.documentId },
+        expected: { kind: "file", nodeId: reservation.documentId },
       });
       if (removed.ok) return { ok: true };
       if (STALE_DELETE.has(removed.error.code)) return { ok: false, stale: true };

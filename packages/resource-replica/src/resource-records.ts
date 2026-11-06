@@ -235,23 +235,11 @@ export type NamespaceRequest =
     }
   | {
       kind: "move";
-      scheme: ProjectContextTreeScheme;
-      sourceWorkHandle: string | null;
-      destinationWorkHandle: string | null;
-      /** Handles of the lineages named by the body's root thread ids; they identify receipt URIs. */
-      sourceRootThreadRef?: string | null;
-      destinationRootThreadRef?: string | null;
+      /** The entry the URL names: a request carries no path or owner, only the row's id. */
+      entryId: string;
       body: MoveContextEntryRequest;
     }
-  | {
-      kind: "delete";
-      scheme: ProjectContextTreeScheme;
-      workId: string | null;
-      workHandle: string | null;
-      rootThreadId?: string | null;
-      rootThreadRef?: string | null;
-      body: DeleteContextEntryRequest;
-    }
+  | { kind: "delete"; entryId: string; body: DeleteContextEntryRequest }
   | {
       kind: "copy";
       /** Owner of the destination parent when sent, so each root's answered path becomes a full location. */

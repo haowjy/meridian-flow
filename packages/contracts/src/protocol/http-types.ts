@@ -34,7 +34,7 @@ import type {
 } from "../threads/index.js";
 import { threadSchema } from "../threads/thread.js";
 import { type RemovalIdentity, removalIdentitySchema } from "../tree-change.js";
-import type { AiWriteMode, Work, WorkHandle, WorksSnapshot } from "../works/index.js";
+import type { AiWriteMode, Work, WorksSnapshot } from "../works/index.js";
 import type { DocumentRemovalRecord } from "./document-removal.js";
 import { type Filetype, filetypeSchema, type YjsTrackedSchemaType } from "./filetype.js";
 import { admissionReceiptShape, type SubmittedReference } from "./user-turn-admission.js";
@@ -217,15 +217,17 @@ export type CreateUntitledContextDocumentAnswer =
 /** Exact identities committed by one successful context-tree deletion. */
 export const deleteContextEntryResultSchema = z.object({
   status: z.literal("deleted"),
+  /** Where the entry stood when it was deleted: the address a receipt's refresh fences on. */
+  uri: z.string().min(1),
   removed: z.array(z.object({ documentId: z.string().min(1), removal: removalIdentitySchema })),
   availabilityGeneration: z.string().regex(/^(0|[1-9]\d*)$/),
 });
 export type DeleteContextEntryResult = z.infer<typeof deleteContextEntryResultSchema>;
 
+/** Delete the entry in the URL; the server finds the row by id. */
 export type DeleteContextEntryRequest = {
   operationId: string;
-  path: string;
-  expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
+  expected: { kind: "file" | "folder" };
 };
 
 export const restoreContextDocumentsRequestSchema = z.object({
@@ -305,60 +307,31 @@ export type ContextSiblingPosition =
 /** Whether a parent's children follow default name order or stored sibling ranks. */
 export type ContextParentOrderPolicy = "default" | "manual";
 
+/** One file or folder by its id. */
+export type ContextEntryRef = { kind: "file" | "folder"; nodeId: string };
+
+/**
+ * A move or rename of the entry in the URL. The server finds the row by id, so no path or owner
+ * travels. `name` is sent only when the writer typed one, and `destinationParent` only when the
+ * writer chose a parent: an omitted field keeps the row's current value, so a device that has
+ * not yet seen another device's rename or move cannot undo it. `position` alone reorders in the
+ * row's current parent.
+ */
 export type MoveContextEntryRequest = {
+  operationId: string;
+  expected: { kind: "file" | "folder" };
   destinationParent?: ContextDestinationParent;
   position?: ContextSiblingPosition;
-  operationId: string;
-  path: string;
-  expected: { kind: "file" | "folder"; nodeId: string };
-  destinationScheme: ProjectContextTreeScheme;
-  /** Scheme-relative parent folder; the empty string means the scheme root. */
-  destinationFolderPath: string;
-  newName?: string;
-  /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
-  sourceRootThreadId?: string | null;
-  destinationRootThreadId?: string | null;
-  sourceWorkId?: WorkId | null;
-  /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
-  destinationWorkId?: WorkId | null;
+  name?: string;
 };
 
-export type MoveContextEntrySuccess = {
+export type MoveContextEntryResult = {
   linkUpdate?: { links: number; documents: number };
   status: "moved";
   scheme: ProjectContextTreeScheme;
   path: string;
   name: string;
 };
-/** Canonical, server-normalized location used by Open-existing recovery. */
-export type MoveContextEntryLocator =
-  | {
-      scheme: Exclude<ProjectContextTreeScheme, OwnedContextUriScheme>;
-      path: string;
-      authority: { kind: "project" };
-    }
-  | {
-      scheme: "scratch";
-      path: string;
-      authority: { workId: WorkId; workHandle: WorkHandle | null };
-    }
-  | {
-      scheme: "scratch";
-      path: string;
-      authority: { kind: "lineage"; rootThreadId: string; rootThreadRef: string };
-    };
-export type MoveContextEntryConflict = {
-  status: "conflict";
-  collision: MoveContextEntryLocator;
-};
-export type MoveContextEntryRetry = {
-  status: "retry";
-  reason: "stale-source" | "stale-target";
-};
-export type MoveContextEntryResult =
-  | MoveContextEntrySuccess
-  | MoveContextEntryConflict
-  | MoveContextEntryRetry;
 
 /** Which version of a source Copy reads: what the writer's surface shows (D24, 2c). */
 export type CopyContextEntryView =
