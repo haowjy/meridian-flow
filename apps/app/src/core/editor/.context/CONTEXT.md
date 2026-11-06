@@ -296,6 +296,19 @@ keyboard, pointer, drop, or draft-recovery answer.
   refused with no hint. A picture or chip in an ordinary slice lands in a cell.
   A move onto the selection's own range changes nothing and shows no hint; the
   unselected part of a block the selection reaches into is an ordinary landing.
+- **A move keeps its lines.** Taking a text range out of several textblocks
+  never joins them (`landing/range-removal.ts`): a block the range reaches into
+  keeps its unselected text and type, a block it covers whole goes, and so do the
+  containers that would be left empty. A block its parent can't lose (a list
+  item's first paragraph, the last block) stays, emptied. A move inside one
+  textblock, a node move and a `CellSelection` still use `deleteSelection`. A
+  slice of several lines landing inside a textblock breaks it there: the first
+  line starts its own line and the last joins what follows, both as blocks of
+  the landing's type (a block the slice carries whole keeps its own type); at a
+  block's start there is no empty line before, at its end no tail after. This
+  applies to copies too. A single-line slice and a landing in code are unchanged.
+  Lists: the break inside a list item makes a paragraph in that item, not a new
+  bullet.
 - StarterKit's dropcursor stays disabled; two landings answering one drag is
   the bug this prevents. `landing/drop-caret.ts` draws the one caret.
   Keyboard behavior follows the same reading, so no input device places a
