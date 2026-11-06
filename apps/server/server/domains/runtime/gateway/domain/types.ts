@@ -37,13 +37,17 @@ export type TokenizerFamily = "anthropic" | "o200k" | "gemini" | "deepseek";
  */
 export type Capability = "image_input";
 
+/** Provider cache lifetimes are recorded as the provider states them, in seconds. Anything that must beat a lifetime computes its buffer from these values. */
+export const DEFAULT_SUBAGENT_PROMPT_CACHE_TTL = 5 * 60;
+export const DEFAULT_PRIMARY_PROMPT_CACHE_TTL = 60 * 60;
+
 /** Registry-declared provider cache behavior and its best-known retention window. */
 export interface PromptCacheDescriptor {
   kind: "explicit" | "automatic";
-  /** Lifetime in milliseconds of a short-retention request (subagents); null means the provider documents none. */
-  shortTtlMs: number | null;
-  /** Lifetime of a long-retention request (primary chats); equals `shortTtlMs` when the provider offers one lifetime. */
-  longTtlMs: number | null;
+  /** Lifetime in seconds of a short-retention request (subagents); null means the provider documents none. */
+  shortTtlSeconds: number | null;
+  /** Lifetime of a long-retention request (primary chats); equals `shortTtlSeconds` when the provider offers one lifetime. */
+  longTtlSeconds: number | null;
 }
 
 /**
@@ -53,12 +57,12 @@ export interface PromptCacheDescriptor {
 export type PromptCacheRetention = "none" | "short" | "long";
 
 /** The TTL a request with this retention gets from a model, for adapters and warm/cold prediction. */
-export function resolvePromptCacheTtlMs(
+export function resolvePromptCacheTtlSeconds(
   cache: PromptCacheDescriptor,
   retention: PromptCacheRetention,
 ): number | null {
   if (retention === "none") return null;
-  return retention === "long" ? cache.longTtlMs : cache.shortTtlMs;
+  return retention === "long" ? cache.longTtlSeconds : cache.shortTtlSeconds;
 }
 
 export const REASONING_EFFORTS = ["low", "medium", "high", "max"] as const;

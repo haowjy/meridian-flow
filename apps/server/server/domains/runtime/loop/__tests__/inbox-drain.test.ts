@@ -160,7 +160,7 @@ async function setup(
           displayName: "Test model",
           contextWindow: 128_000,
           maxOutputTokens: 16_384,
-          promptCache: { kind: "automatic", shortTtlMs: null, longTtlMs: null },
+          promptCache: { kind: "automatic", shortTtlSeconds: null, longTtlSeconds: null },
           reasoning: { efforts: ["low", "medium", "high", "max"] },
           capabilities: new Set(options.supportsImageInput === false ? [] : ["image_input"]),
         },
