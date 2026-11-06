@@ -1081,15 +1081,16 @@ async function captureLiveEdits(
         {
           mutation: NonNullable<(typeof entries)[number]["mutation"]>;
           receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
-          beforeState: Uint8Array;
-          afterState: Uint8Array;
+          beforeState?: Uint8Array;
+          afterState?: Uint8Array;
         }
       >();
     try {
       Y.applyUpdate(doc, state);
       for (const [i, entry] of entries.entries()) {
         if (entry.docId !== docId) continue;
-        const beforeEntryState = Y.encodeStateAsUpdate(doc);
+        const projected = entry.mutation?.mode === "live" && entry.mutation.actorKind === "agent";
+        const beforeEntryState = projected ? Y.encodeStateAsUpdate(doc) : undefined;
         const receipts = captureReceiptRows(
           doc,
           (entry.mutation?.editParts ?? [entry.update]).map((update) => ({
@@ -1103,10 +1104,9 @@ async function captureLiveEdits(
             mutation: entry.mutation,
             receipts: [],
             beforeState: beforeEntryState,
-            afterState: Y.encodeStateAsUpdate(doc),
           };
         group.receipts.push(...receipts);
-        group.afterState = Y.encodeStateAsUpdate(doc);
+        if (projected) group.afterState = Y.encodeStateAsUpdate(doc);
         groups.set(key, group);
       }
       for (const { mutation, receipts, beforeState, afterState } of groups.values()) {
@@ -1125,7 +1125,7 @@ async function captureLiveEdits(
             origin: receipts[i].origin,
           })),
         });
-        if (mutation.mode === "live" && mutation.actorKind === "agent" && liveTrailProjector) {
+        if (mutation.mode === "live" && beforeState && afterState && liveTrailProjector) {
           await liveTrailProjector({
             documentId: docId,
             beforeState,
