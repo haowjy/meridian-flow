@@ -62,7 +62,7 @@ export interface RegisteredOffering {
 export interface RegisteredProvider {
   id: string;
   /** API wire format — maps to ProviderConfig.adapter at build time. */
-  adapter: BuiltinAdapter | string;
+  adapter: BuiltinAdapter;
   /** Environment variable that must contain a real key for this provider to enable. */
   apiKeyEnv: string;
   baseUrl?: string;

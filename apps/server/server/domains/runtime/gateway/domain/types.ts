@@ -72,9 +72,8 @@ export interface ReasoningSupport {
 }
 
 /**
- * Static model metadata registered per provider. `provider` is filled in by
- * buildProviderRegistry from the ProviderConfig.id, not from the model's own
- * definition.
+ * Static model metadata registered per provider. `provider` is the id of the
+ * ProviderConfig that declares the model.
  */
 export interface ModelInfo {
   reasoning: ReasoningSupport;
@@ -369,10 +368,7 @@ export interface ModelCallTiming {
   generationMs: number | null;
 }
 
-/**
- * Known adapter identifiers. String literals for the built-in adapters plus
- * a catch-all for custom adapter strings.
- */
+/** The provider adapters createAdapter (create-gateway.ts) can build. */
 export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible";
 
 /**
@@ -382,7 +378,7 @@ export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible";
  */
 export interface ProviderConfig {
   id: string;
-  adapter: BuiltinAdapter | string;
+  adapter: BuiltinAdapter;
   auth?: {
     apiKey?: string | (() => string);
     headers?: Record<string, string>;

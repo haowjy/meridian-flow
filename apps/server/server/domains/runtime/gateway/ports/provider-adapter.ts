@@ -6,9 +6,6 @@
  * the retry machinery. Each adapter maps one provider's SDK events
  * to canonical StreamEvents.
  *
- * `providerId` is a stable string matching ProviderConfig.id, used by the
- * registry to route requests.
- *
  * Why one port: every provider has a different SDK contract, but the
  * Meridian-gateway edge is uniform. Adding a new provider means implementing
  * this one interface and registering it in createAdapter.
@@ -21,7 +18,6 @@ import type { GenerateRequest, ModelInfo, ResolvedCall, StreamEvent } from "../d
  * long cache writes, reasoning); the adapter maps them to wire fields.
  */
 export interface ProviderAdapter {
-  readonly providerId: string;
   stream(
     request: GenerateRequest,
     model: ModelInfo,

@@ -62,7 +62,6 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
   const providerId = config.id;
 
   return {
-    providerId,
     async *stream(
       request: GenerateRequest,
       model: ModelInfo,

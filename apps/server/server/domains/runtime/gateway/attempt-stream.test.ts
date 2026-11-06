@@ -48,7 +48,6 @@ function scriptedAdapter(scripts: Script[]): {
 } {
   let calls = 0;
   const adapter: ProviderAdapter = {
-    providerId: "test",
     stream(request) {
       const script = scripts[Math.min(calls, scripts.length - 1)];
       calls += 1;
@@ -262,7 +261,6 @@ describe("per-attempt timing", () => {
       releaseConsumer = resolve;
     });
     const adapter: ProviderAdapter = {
-      providerId: "test",
       async *stream() {
         time = 10;
         yield start;
