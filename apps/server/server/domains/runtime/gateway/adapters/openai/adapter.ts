@@ -50,7 +50,6 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
   const providerId = config.id;
 
   return {
-    providerId,
     async *stream(
       request: GenerateRequest,
       model: ModelInfo,

@@ -53,7 +53,6 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
   const providerId = config.id;
 
   return {
-    providerId,
     async *stream(
       request: GenerateRequest,
       model: ModelInfo,

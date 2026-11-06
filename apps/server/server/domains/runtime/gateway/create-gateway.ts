@@ -5,7 +5,7 @@
  * retry/deadline driver lives in attempt-stream.ts.
  *
  * ── how it works ──
- * 1. createAdapter() maps each ProviderConfig.adapter string to its factory.
+ * 1. createAdapter() maps each ProviderConfig.adapter to its factory.
  * 2. buildProviderRegistry() indexes models by ID so resolveRoute() can look up
  *    adapter + model in O(1).
  * 3. gateway.stream() is the main entry point:
@@ -38,7 +38,7 @@ import type { Gateway } from "./ports/gateway.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
 import { buildProviderRegistry, resolveRoute } from "./routing.js";
 
-/** Maps a ProviderConfig.adapter string to its concrete ProviderAdapter factory. */
+/** Maps a ProviderConfig.adapter to its concrete ProviderAdapter factory. */
 function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdapter {
   switch (config.adapter) {
     case "openai-compatible":
@@ -47,8 +47,6 @@ function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdap
       return createAnthropicAdapter(config);
     case "openai":
       return createOpenAIResponsesAdapter(config);
-    default:
-      throw new Error(`Unknown adapter: ${config.adapter}`);
   }
 }
 
@@ -66,13 +64,10 @@ export function assertModelsOnWire(config: Pick<ProviderConfig, "adapter" | "mod
 
 export function createGateway(config: GatewayConfig): Gateway {
   for (const provider of config.providers) assertModelsOnWire(provider);
-  const adapters = new Map<string, ProviderAdapter>();
-  for (const provider of config.providers) {
-    adapters.set(provider.id, createAdapter(provider));
-  }
-  const registry = buildProviderRegistry(config.providers, adapters, {
-    onWarning: config.onWarning,
-  });
+  const registry = buildProviderRegistry(
+    config.providers.map((provider) => ({ config: provider, adapter: createAdapter(provider) })),
+    config.onWarning,
+  );
 
   const gateway: Gateway = {
     async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
@@ -108,7 +103,7 @@ export function createGateway(config: GatewayConfig): Gateway {
     },
 
     listModels(): ModelInfo[] {
-      return [...registry.modelsById.values()].map((e) => e.model);
+      return [...registry.values()].map((e) => e.model);
     },
 
     getDefaultModel(): string | undefined {
