@@ -12,31 +12,34 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, type Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import { gapCursorFits, opaqueObjectAround } from "../objects/object-selection";
-import { isOpaqueObject, isSourceBlock } from "../objects/object-types";
-import { type Geometry, isTable, landingAt, type Point } from "./point-landing";
+import { gapCursorFits } from "../objects/object-selection";
+import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
+import { type Child, type Geometry, isTable, landingAt, type Point } from "./point-landing";
 import { viewGeometry } from "./view-geometry";
 
-/** The selection a press at `point` makes, or null when nothing there can hold one. */
+/**
+ * The selection a press at `point` makes, or null when nothing there can hold
+ * one. `start` confines the walk to the pressed cell.
+ */
 export function pressSelection(
   state: EditorState,
   point: Point,
   geometry: Geometry,
+  start?: Child,
 ): Selection | null {
-  const landing = landingAt(state, point, geometry);
-  if (landing.kind === "seam") return seamSelection(state, landing.pos, point, geometry);
+  const landing = landingAt(state, point, geometry, start);
+  if (landing.kind === "seam") return seamSelection(state, landing.pos, point, geometry, start);
   return state.doc.resolve(landing.pos).parent.inlineContent
     ? TextSelection.create(state.doc, landing.pos)
     : null;
 }
-
-type Neighbour = { node: PMNode; pos: number };
 
 function seamSelection(
   state: EditorState,
   seam: number,
   point: Point,
   geometry: Geometry,
+  start?: Child,
 ): Selection | null {
   const { doc } = state;
   const $seam = doc.resolve(seam);
@@ -46,24 +49,20 @@ function seamSelection(
   };
   const below = $seam.nodeAfter && { node: $seam.nodeAfter, pos: seam };
 
-  const gapAbove = above
-    ? point.y - (geometry.rectOf(above.pos)?.bottom ?? Number.NEGATIVE_INFINITY)
-    : Infinity;
-  const gapBelow = below
-    ? (geometry.rectOf(below.pos)?.top ?? Number.POSITIVE_INFINITY) - point.y
-    : Infinity;
+  const gapAbove = above ? point.y - geometry.rectOf(above.pos).bottom : Infinity;
+  const gapBelow = below ? geometry.rectOf(below.pos).top - point.y : Infinity;
   const [near, far] = gapAbove <= gapBelow ? [above, below] : [below, above];
   const nearIsAbove = near === above;
 
   // The nearer neighbour's line keeps the pointer's column.
   if (near && isProse(near.node)) {
-    const line = lineIn(state, near, nearIsAbove, point, geometry);
+    const line = lineIn(state, near, nearIsAbove, point, geometry, start);
     if (line) return line;
   }
   if (near && isTable(near.node) && gapCursorFits($seam)) return new GapCursor($seam);
   // Beside a table, source or an object, prose beats it.
   if (near && far && isProse(far.node)) {
-    const line = lineIn(state, far, !nearIsAbove, point, geometry);
+    const line = lineIn(state, far, !nearIsAbove, point, geometry, start);
     if (line) return line;
   }
   // A fence with no prose on its other side (a document's end, a diagram, a
@@ -85,59 +84,44 @@ function seamSelection(
   return outward === null ? null : TextSelection.create(doc, outward);
 }
 
-function objectLike(node: PMNode): boolean {
-  return node.isLeaf || isOpaqueObject(node);
-}
-
 /** Text the writer reads and types into, as opposed to a table, an object or source. */
 function isProse(node: PMNode): boolean {
-  return !isTable(node) && !objectLike(node) && !isSourceBlock(node);
+  return !isTable(node) && !isObjectLike(node);
 }
 
 /** The line of `neighbour` nearest the seam, at the pointer's column. */
 function lineIn(
   state: EditorState,
-  neighbour: Neighbour,
+  neighbour: Child,
   seamIsBelow: boolean,
   point: Point,
   geometry: Geometry,
+  start?: Child,
 ): Selection | null {
   const rect = geometry.rectOf(neighbour.pos);
-  if (!rect) return null;
   const y = seamIsBelow ? rect.bottom - 1 : rect.top + 1;
-  const landing = landingAt(state, { x: point.x, y }, geometry);
+  const landing = landingAt(state, { x: point.x, y }, geometry, start);
   return landing.kind === "inline" ? TextSelection.create(state.doc, landing.pos) : null;
 }
 
-/** `handleClick`: a click on a container's own element, which has no text under it, takes the landing's selection. */
+/**
+ * `handleClick`: a click on a container's own element, which has no text under
+ * it, takes the landing's selection. A caret already standing at the landing
+ * stays the browser's own, which knows the line it sits on (a landing
+ * dispatched at the end of a wrapped line would jump to the next line's start).
+ */
 export function pressOnInertTarget(view: EditorView, event: MouseEvent): boolean {
   if (event.button !== 0 || !view.editable || !isContainerElement(view, event.target)) return false;
-  pressAt(view, event);
-  return true;
-}
-
-function pressAt(view: EditorView, event: MouseEvent): void {
   const selection = pressSelection(
     view.state,
     { x: event.clientX, y: event.clientY },
     viewGeometry(view),
   );
-  if (selection) view.dispatch(view.state.tr.setSelection(selection));
+  const { selection: current } = view.state;
+  const standing =
+    selection instanceof TextSelection && current.empty && current.from === selection.from;
+  if (selection && !standing) view.dispatch(view.state.tr.setSelection(selection));
   view.focus();
-}
-
-/**
- * `mousedown` beside a rendered diagram: the browser's caret hunt would end
- * inside the hidden fence, which flips the diagram to its source before the
- * button comes up. Claimed here instead, with the landing's selection.
- */
-export function claimPressBesideObject(view: EditorView, event: MouseEvent): boolean {
-  if (event.button !== 0 || event.defaultPrevented || !view.editable) return false;
-  if (event.target !== view.dom && !isContainerElement(view, event.target)) return false;
-  const raw = view.posAtCoords({ left: event.clientX, top: event.clientY });
-  if (!raw || !opaqueObjectAround(view.state.doc.resolve(raw.pos))) return false;
-  event.preventDefault();
-  pressAt(view, event);
   return true;
 }
 
@@ -152,13 +136,7 @@ function isContainerElement(view: EditorView, target: EventTarget | null): boole
     return false;
   }
   const { parent } = view.state.doc.resolve(inside);
-  return (
-    parent.isBlock &&
-    !parent.isTextblock &&
-    !parent.isAtom &&
-    !objectLike(parent) &&
-    !isSourceBlock(parent)
-  );
+  return parent.isBlock && !parent.isTextblock && !parent.isAtom && !isObjectLike(parent);
 }
 
 /**

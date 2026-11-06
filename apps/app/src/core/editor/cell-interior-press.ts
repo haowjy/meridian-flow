@@ -6,9 +6,10 @@
  * cell's margins — has no text under it, and the browser's answer to such a
  * press is a hunt for the nearest editable position, which beside a border is
  * the NEIGHBOURING cell (the S6 probe watched exactly that teleport). The
- * landing walk starts from the cell the pointer is inside, so the answer never
- * leaves it; this plugin is only the router that gives `landing/press.ts` the
- * press.
+ * landing walk is started from the pressed cell, so the answer never leaves
+ * it; this plugin is the router that gives `landing/press.ts` the press and the
+ * cell. A `td` that is not a document cell (a foreign one in a node view) is
+ * declined.
  *
  * It claims nothing else. A press on writer text, on a block's own DOM, or on
  * an object's body keeps its native owner (ProseMirror's caret machinery,
@@ -19,9 +20,26 @@
  */
 
 import { Plugin } from "@tiptap/pm/state";
+import type { EditorView } from "@tiptap/pm/view";
 
+import type { Child } from "./landing/point-landing";
 import { pressSelection } from "./landing/press";
 import { viewGeometry } from "./landing/view-geometry";
+
+/** The cell node `dom` renders, or null when `dom` is not a cell's own DOM. */
+function cellContainerAtDOM(view: EditorView, dom: Element): Child | null {
+  let inside: number;
+  try {
+    inside = view.posAtDOM(dom, 0);
+  } catch {
+    return null;
+  }
+  if (inside < 1 || inside > view.state.doc.content.size) return null;
+  const $inside = view.state.doc.resolve(inside);
+  const role = $inside.parent.type.spec.tableRole;
+  if (role !== "cell" && role !== "header_cell") return null;
+  return { node: $inside.parent, pos: $inside.before($inside.depth) };
+}
 
 /**
  * Registered AFTER prosemirror-tables' own handlers (the spread order in
@@ -40,10 +58,13 @@ export function cellInteriorPressPlugin(): Plugin {
           const target = event.target;
           if (!(target instanceof Element) || !target.matches("td, th")) return false;
           if (!view.dom.contains(target)) return false;
+          const cell = cellContainerAtDOM(view, target);
+          if (!cell) return false;
           const selection = pressSelection(
             view.state,
             { x: event.clientX, y: event.clientY },
             viewGeometry(view),
+            cell,
           );
           // No selection is claimed too: the browser's default for this press
           // is the cross-border caret hunt, and standing still is the answer

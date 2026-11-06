@@ -6,7 +6,7 @@ import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
 import { selectedSourceBlock } from "../chrome/chrome-context";
 import type { KeymapBinding } from "../chrome/keymap";
-import { claimPressBesideObject, pressOnInertTarget } from "../landing/press";
+import { pressOnInertTarget } from "../landing/press";
 import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
@@ -205,10 +205,7 @@ export const ObjectPhysicsExtension = Extension.create({
             }),
           ];
 
-          const onMouseDown = (event: MouseEvent) => {
-            selectObjectUnderPress(editorView, event);
-            claimPressBesideObject(editorView, event);
-          };
+          const onMouseDown = (event: MouseEvent) => selectObjectUnderPress(editorView, event);
           editorView.dom.addEventListener("mousedown", onMouseDown);
 
           return {
