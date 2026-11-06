@@ -44,8 +44,11 @@ MIME type is `text/html`). The entry's reason is `kept_as_file`, so the result n
 look, and its name keeps its extension. A kept `binary.md` is stored as name `binary`,
 extension `md`: a stored name carries a prose suffix only for such a file, so lookups try the
 exact stored name before the codec's alias (`binary.md` finds it; `binary` stays a document's),
-and `storedFilename` reads a prose-suffixed current name as a kept file and keeps its suffix
-through rename and move. A
+and `storedFilename` reads a prose extension on the stored row (`ContextLocationToken.extension`,
+or the leaf where a caller has only a name) as a kept file and keeps its suffix through rename,
+move and copy. Link matching tries the literal path before the extension-omitted key, so a
+document `binary` and a kept `binary.md` each get their own links. A name the codec refuses
+(`thesis.docx.md`) is kept as a file under its literal name, never a failed intake. A
 broken DOCX takes the same reason later, when
 prepare's conversion fails. `changed_after_pick` wins when both apply.
 

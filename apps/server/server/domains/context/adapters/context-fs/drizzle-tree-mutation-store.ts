@@ -139,6 +139,7 @@ export async function inspectTreeLocation(
       sourceId,
       path: document.path,
       filetype: isStorageBackedDocument(document) ? null : document.fileType,
+      extension: document.extension,
     };
   }
   if (literal.kind !== "found" || literal.node.kind !== "folder") return null;
@@ -346,22 +347,17 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         });
       }
 
-      const isFile = input.source.kind === "file";
-      const { name, extension } =
-        "destinationFilename" in input
-          ? input.destinationFilename
-          : { name: targetBasename, extension: undefined };
+      const file = "destinationFilename" in input ? input : null;
       const moved = await moveNode(this.db, {
-        node: isFile
-          ? { kind: "document", id: input.source.nodeId as DocumentId }
+        node: file
+          ? { kind: "document", id: file.source.nodeId as DocumentId }
           : { kind: "folder", id: input.source.nodeId as FolderId },
         to: {
           contextSourceId: input.destinationSourceId as ContextSourceId,
           dir: treePathSegments(targetParentPath),
-          name,
-          ...(extension === undefined ? {} : { extension }),
+          ...(file ? file.destinationFilename : { name: targetBasename }),
         },
-        filetype: input.destinationFiletype ?? null,
+        filetype: file?.destinationFiletype ?? null,
       });
       if (!moved.ok) rollback(moved.error.code);
       const afterPlacement = await liveSiblingPlacement(this.db, movedRef);

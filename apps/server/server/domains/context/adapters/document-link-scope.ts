@@ -831,9 +831,16 @@ function snapshotCatalog(
     },
     documentFor(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
-      const documents = atAddress(documentPathKey(uri), true);
-      if (documents === undefined) return undefined;
-      return matchDocumentPath(documents.filter(reachable), uri, (document) => document.uri);
+      // A file kept as `again.md` sits at its own address, which the key `again` of the
+      // extension-omitted form does not list.
+      const exact = atAddress(uri, false);
+      const keyed = atAddress(documentPathKey(uri), true);
+      if (exact === undefined || keyed === undefined) return undefined;
+      return matchDocumentPath(
+        [...exact, ...keyed].filter(reachable),
+        uri,
+        (document) => document.uri,
+      );
     },
     assetAddress(id) {
       const row = snapshot.rows.get(id);

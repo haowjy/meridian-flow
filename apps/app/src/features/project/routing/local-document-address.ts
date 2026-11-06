@@ -130,11 +130,9 @@ export function resolveLocalDocumentAddress(
   const { file } = owner;
   const bound = owner.byIdentity ? file : null;
   // A document under the writer's own unconfirmed move is likewise a known server document.
-  if (
-    file.kind !== "file" ||
-    !file.editable ||
-    !(file.localContent || file.placementPending || bound)
-  )
+  // Editable or not: a kept `.md` card under its writer's unconfirmed rename is as known as a
+  // document, and the server, which has not seen the new path yet, must not reject its route.
+  if (file.kind !== "file" || !(file.localContent || file.placementPending || bound))
     return undefined;
   const entry = catalog.normalized.entries.get(file.documentId);
   if (entry?.kind !== "file") return undefined;

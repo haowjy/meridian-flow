@@ -568,6 +568,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sourceId: SOURCE_ID,
           path: "notes",
           filetype: "markdown",
+          extension: "",
         }),
       ).resolves.toMatchObject({ ok: true });
       const replay = await catalog.changes(scope, before.cursor);

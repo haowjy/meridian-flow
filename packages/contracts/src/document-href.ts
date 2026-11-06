@@ -114,7 +114,10 @@ export function matchDocumentPath<T>(
   pathOf: (candidate: T) => string,
 ): T | null {
   const key = documentPathKey(path);
-  const exact = candidates.find((candidate) => documentPathKey(pathOf(candidate)) === key);
+  // The literal path first: a document `binary` and a file kept as `binary.md` share a key.
+  const exact =
+    candidates.find((candidate) => pathOf(candidate) === path) ??
+    candidates.find((candidate) => documentPathKey(pathOf(candidate)) === key);
   if (exact) return exact;
   const loose = candidates.filter((candidate) => {
     const value = pathOf(candidate);

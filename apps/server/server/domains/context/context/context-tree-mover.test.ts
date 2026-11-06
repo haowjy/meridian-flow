@@ -16,6 +16,7 @@ const sourceToken: ContextLocationToken = {
   sourceId: "source-1",
   path: "draft.md",
   filetype: "markdown",
+  extension: "",
 };
 
 function dispatch(input: {

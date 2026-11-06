@@ -155,8 +155,9 @@ export async function allocateFilename(
 /** Destination naming shared by optimistic clients and server commands.
  * Explicit registered suffixes state the type; other names keep the source extension.
  * Parsed parts accompany the full name so storage never infers the destination twice.
- * A string `current` is the stored name: one with a prose suffix is a file kept as such, and
- * its destination keeps that suffix literally instead of reading it as an alias.
+ * `current` is the stored name, or its stored extension when the caller has the row. A prose
+ * extension on a stored file means it was kept as a file (`binary.md`; documents store none),
+ * so its destination keeps that suffix literally instead of reading it as an alias.
  */
 export function storedFilename(
   typed: string,
@@ -168,9 +169,17 @@ export function storedFilename(
     typeof current === "string" ? parseDocumentFilename(current, { storageBacked: true }) : null;
   const sourceExtension =
     typeof current === "object" ? current.extension : source?.ok ? source.value.extension : "";
-  // A stored name carries a prose suffix only when a file was kept under it (`binary.md`).
-  const storageBacked = source?.ok === true && PROSE_EXTENSIONS.has(source.value.extension);
+  const storageBacked = PROSE_EXTENSIONS.has(sourceExtension);
   const parsed = parseDocumentFilename(typed, { sourceExtension, storageBacked });
+  if (
+    parsed.ok &&
+    storageBacked &&
+    PROSE_EXTENSIONS.has(parsed.value.extension) &&
+    parsed.value.extension !== sourceExtension
+  ) {
+    const message = `a kept file keeps its \`.${sourceExtension}\` suffix; \`.${parsed.value.extension}\` would not convert it`;
+    return { ok: false, message, error: { code: "invalid_name", message } };
+  }
   return parsed.ok
     ? {
         ok: true,
