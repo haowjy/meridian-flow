@@ -19,11 +19,7 @@ import { type ContextMoveResult, renderFilename } from "@meridian/contracts/prot
 import { contextPortForThread } from "../../domains/context/context-port-resolution.js";
 import { contextAreaOf } from "../../domains/context/index.js";
 import type { RecordedBranchTreeChange } from "../../domains/context/ports/branch-tree.js";
-import type {
-  ContextError,
-  ContextPort,
-  FileRef,
-} from "../../domains/context/ports/context-port.js";
+import type { ContextError, FileRef } from "../../domains/context/ports/context-port.js";
 import {
   type FileGrant,
   isFileAccessDenied,
@@ -58,7 +54,7 @@ async function siblingPosition(
   if (input.position.kind === "start" || input.position.kind === "end")
     return { kind: input.position.kind };
   const trimmed = input.position.sibling.replace(/\/+$/, "");
-  const folder = await folderAt(call.context.port, trimmed);
+  const folder = await folderAt(call, trimmed);
   if (!folder.ok)
     return namespaceContextRefusal("move", folder.error, { path: input.position.sibling });
   if (folder.value?.folderId)
@@ -82,18 +78,21 @@ function committedLanding(landedAt: string | undefined, operation: string): stri
   return landedAt;
 }
 
-/** The folder literally named `uri`, if its parent lists one; the written leaf wins over a document alias. */
-async function folderAt(port: ContextPort, uri: string) {
+/** The folder literally named by `path`, if its parent lists one; the written leaf wins over a document alias. */
+async function folderAt(call: ToolCall, path: string) {
+  const uri = path.includes("://") ? path : `manuscript://${path}`;
   const trimmed = uri.replace(/\/+$/, "");
-  const name = trimmed.slice(trimmed.lastIndexOf("/") + 1);
-  if (!name || trimmed.endsWith(":/")) return { ok: true as const, value: null };
-  const listing = await port.list(trimmed.slice(0, trimmed.length - name.length));
+  const slash = trimmed.lastIndexOf("/");
+  const leaf = (value: string) => value.slice(value.lastIndexOf("/") + 1);
+  const name = leaf(trimmed);
+  if (!name || trimmed.endsWith(":")) return { ok: true as const, value: null };
+  const listing = await call.context.port.list(trimmed.slice(0, slash + 1));
   if (!listing.ok) return listing;
   return {
     ok: true as const,
     value:
       listing.value.entries.find(
-        (entry) => entry.kind === "directory" && entry.uri.replace(/\/+$/, "") === trimmed,
+        (entry) => entry.kind === "directory" && leaf(entry.uri.replace(/\/+$/, "")) === name,
       ) ?? null,
   };
 }
@@ -105,7 +104,7 @@ async function resolveSource(
 ): Promise<(FileRef & { documentId: DocumentId }) | WriteToolErrorOutput> {
   const path = sourcePath(input);
   const filePath = splitDocumentFile(path).filePath;
-  const folder = await folderAt(call.context.port, filePath);
+  const folder = await folderAt(call, filePath);
   if (folder.ok && folder.value)
     return namespaceRefusal(input.command, "source_is_folder", { path: filePath });
   const ref = await call.context.port.stat(filePath);

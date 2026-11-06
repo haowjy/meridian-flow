@@ -195,6 +195,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .orderBy(sql`(${schema.documentEdits.treeChange}->>'seq')::bigint`);
 
+    it("refuses a move or delete of a path that names a folder beside the document it renders as", async () => {
+      await db.insert(schema.folders).values({ contextSourceId: SOURCE_ID, name: "ch1.md" });
+      const script = await start();
+      const { call } = await script.begin();
+      for (const path of ["ch1.md", "ch1.md/", "/ch1.md/", "manuscript://ch1.md"]) {
+        expect(text(await call("write", { command: "delete", path }))).toContain("folder");
+        expect(
+          text(await call("write", { command: "move", from: { path }, path: "renamed" })),
+        ).toContain("folder");
+      }
+      expect((await placement(CH1))?.deletedAt).toBeNull();
+      expect((await placement(CH1))?.name).toBe("ch1");
+    });
+
     it("moves at the call; undo by either path and redo walk it; A→B, B→C undoes back to A", async () => {
       const script = await start();
       const { call } = await script.begin();

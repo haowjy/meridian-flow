@@ -89,7 +89,14 @@ async function renameHiddenClaim(db: Database, claim: Claim): Promise<void> {
     UNION ALL
     SELECT f.name FROM folders f
     WHERE f.deleted_at IS NULL AND f.context_source_id = ${claim.contextSourceId}::uuid
-      AND f.parent_id IS NOT DISTINCT FROM ${claim.parentId}::uuid AND f.id <> ${claim.id}::uuid`);
+      AND f.parent_id IS NOT DISTINCT FROM ${claim.parentId}::uuid AND f.id <> ${claim.id}::uuid
+    UNION ALL
+    SELECT CASE WHEN c.moved_extension = '' THEN c.moved_name
+                ELSE c.moved_name || '.' || c.moved_extension END
+    FROM branch_tree_changes c
+    WHERE c.node_kind = 'document' AND c.moved AND NOT c.deleted AND c.node_id <> ${claim.id}::uuid
+      AND c.moved_folder_id IS NOT DISTINCT FROM ${claim.parentId}::uuid
+      AND (c.moved_folder_id IS NOT NULL OR c.moved_root_source_id = ${claim.contextSourceId}::uuid)`);
   const free = firstFreeName(claim, new Set(taken.map((row) => row.filename)));
   const now = new Date();
   if (claim.kind === "document") {
