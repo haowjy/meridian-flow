@@ -21,6 +21,7 @@ import type { UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import {
   contextPortForProjectAuthorities,
+  moveCommand,
   type ProjectContextAvailabilityPort,
   type ProjectContextFsScheme,
   parseUnifiedContextUri,
@@ -221,13 +222,13 @@ export async function handleContextMoveRequest(
 ): Promise<MoveContextEntryResult> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const move = parseContextMove(input.body);
-  const replay = await replayedResult(deps, input, move.operationId, {
-    kind: "move",
-    expected: { kind: move.kind, nodeId: input.entryId },
-    ...(move.destinationParent ? { destinationParent: move.destinationParent } : {}),
-    ...(move.position ? { position: move.position } : {}),
-    ...(move.name ? { name: move.name } : {}),
-  });
+  const requested = { kind: move.kind, nodeId: input.entryId };
+  const replay = await replayedResult(
+    deps,
+    input,
+    move.operationId,
+    moveCommand({ ...move, expected: requested }),
+  );
   if (replay) {
     if (!replay.ok) contextErrorToHttp(replay.error);
     return movedResponse(replay.value);
@@ -331,7 +332,8 @@ export async function handleContextMoveRequest(
       parent ? locatorUri(destination.locator, destination.dir) : null,
       {
         origin: { type: "human", userId: input.userId },
-        expected: { kind: move.kind, nodeId: address.id },
+        expected: requested,
+        nodeId: address.id,
         destinationParent: parent,
         position: move.position,
         ...(move.name ? { name: move.name } : {}),

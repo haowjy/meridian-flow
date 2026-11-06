@@ -20,6 +20,7 @@ export {
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
+export { deleteCommand, moveCommand } from "./context/context-operation-receipts.js";
 export {
   allocateFilename,
   exportFilename,
