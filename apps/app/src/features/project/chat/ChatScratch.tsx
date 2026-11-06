@@ -6,8 +6,8 @@
  * the chat's Scratch as tree rows, with folders opening in place. It always
  * means the chat on screen, and lists the chat's Scratch: the lineage's notes
  * for a No Work chat, the Work's for a chat on a named Work, with any lineage
- * notes left behind by a rebind under "Earlier notes". Picking a note opens it
- * beside the chat (`useOpenScratchNote`) and the section stays open. Rows offer
+ * notes left behind by a rebind under "Earlier notes". Picking a note goes to the
+ * Editor, as a pick in the left tree does, and the section stays open. Rows offer
  * Rename, Move… and Delete like any list's, while the owner can still be edited;
  * the AI makes the notes, so there is no New note. The section shows
  * for every chat, empty or not, so the rail never shifts when the first note
@@ -36,8 +36,8 @@ import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-document-store";
-import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
+import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { DockedRailSection } from "../shell/DockedRailSection";
 import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
 import type { NoticeSurface } from "../shell/SurfaceNotice";
@@ -327,7 +327,7 @@ function ScratchCatalog({
   onPicked?: () => void;
   onRequestDelete: (target: DeleteTarget) => void;
 }) {
-  const openNote = useOpenScratchNote();
+  const openNote = useOpenDocumentInEditor();
   const { isExpanded, toggleEntry } = expansion;
   const env = useMemo(
     () => ({
