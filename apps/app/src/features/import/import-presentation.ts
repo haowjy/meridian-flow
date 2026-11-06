@@ -1,10 +1,10 @@
-/** Pure mapping from durable progress and this tab's upload facts to the activity card. */
+/** Pure mapping from durable progress and this tab's upload facts to what the Import button and popup show. */
 import { plural, t } from "@lingui/core/macro";
-import type { ImportSummary } from "@meridian/contracts";
+import type { ImportScheme, ImportSummary } from "@meridian/contracts";
 import { areaLabel, type ImportDestination } from "./destination";
-import type { LocalUpload } from "./import-coordinator";
+import type { LocalUpload, TrackedImport } from "./import-coordinator";
 
-export type ToastState =
+export type ImportState =
   | "reading"
   | "uploading"
   | "elsewhere"
@@ -21,7 +21,7 @@ export type ToastState =
   | "failed"
   | "refused"
   | "expired";
-export function toastState(summary: ImportSummary, local: LocalUpload): ToastState {
+export function importState(summary: ImportSummary, local: LocalUpload): ImportState {
   if (local.stopAsked) return "stop";
   if (local.phase === "reading" || local.phase === "creating") return "reading";
   if (local.phase === "refused") return "refused";
@@ -45,8 +45,38 @@ export function toastState(summary: ImportSummary, local: LocalUpload): ToastSta
   // With no File handles here, a tab holding the import's lock is the only reason to say so.
   return local.elsewhere ? "elsewhere" : "paused";
 }
-/** What a deleted destination means for this card, in the tense of its state. */
-function fallbackNote(state: ToastState): string | undefined {
+/** The area an import lands in, and so the section whose Import button carries it. */
+export const importScheme = (summary: ImportSummary) =>
+  (summary.label.kind === "export"
+    ? "manuscript"
+    : summary.destination.folderUri.split(":")[0]) as ImportScheme;
+
+/** `running`: the spinner. `needs-writer`: the dot. */
+export type ImportStatus = "running" | "needs-writer";
+
+const RUNNING: ReadonlySet<ImportState> = new Set([
+  "reading",
+  "uploading",
+  "elsewhere",
+  "stop",
+  "waiting",
+  "organizing",
+  "adding",
+]);
+
+/** What an import asks of its Import button; null for a clean result, which needs no reading. */
+export function importStatus({ summary, local }: Pick<TrackedImport, "summary" | "local">) {
+  const state = importState(summary, local);
+  if (local.error) return "needs-writer";
+  if (RUNNING.has(state)) return "running";
+  return state === "done" && !summary.destination.fellBack ? null : "needs-writer";
+}
+
+/** Results the writer has read once the popup closes on them. */
+export const READ_ON_CLOSE: ReadonlySet<ImportState> = new Set(["done", "needs-look", "expired"]);
+
+/** What a deleted destination means for this import, in the tense of its state. */
+function fallbackNote(state: ImportState): string | undefined {
   switch (state) {
     case "done":
     case "needs-look":
@@ -61,8 +91,8 @@ function fallbackNote(state: ToastState): string | undefined {
       return t`The destination was deleted. It will be added at the area root.`;
   }
 }
-export function toastPresentation(summary: ImportSummary, local: LocalUpload) {
-  const state = toastState(summary, local);
+export function importPresentation(summary: ImportSummary, local: LocalUpload) {
+  const state = importState(summary, local);
   const { files, received, receivedBytes, bytes, prepared, skipped, failed, organized, needsLook } =
     summary.counts;
   const name =
@@ -77,7 +107,7 @@ export function toastPresentation(summary: ImportSummary, local: LocalUpload) {
     : 0;
   const count = plural(files, { one: `${received} of # file`, other: `${received} of # files` });
   const rows: Record<
-    ToastState,
+    ImportState,
     { title: string; detail?: string; note?: string; progress?: number | "indeterminate" }
   > = {
     reading: { title: t`Reading ${name}`, progress: "indeterminate" },

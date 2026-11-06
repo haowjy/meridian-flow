@@ -1,11 +1,10 @@
 /**
  * Row-anchored folder placement using the same project tree as document paths. One picker for
  * Move… and Copy to…: both offer the same destinations (a folder cannot go inside itself), and
- * differ in what picking does. Move… takes one row and offers its position among the folder's
- * siblings; Copy to… takes any rows (the refusal notice sends back all of a refused Copy's) and
- * always adds.
+ * differ in what picking does. Move… offers the row's position among the folder's siblings; Copy
+ * to… always adds.
  */
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import type {
   ContextSiblingPosition,
   ProjectContextTreeScheme,
@@ -28,14 +27,12 @@ import { Button } from "@/components/ui/button";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
-import { copyOperation } from "./entry-drag/copy-operation";
 import { describeRenames } from "./entry-drag/drop-choice";
 import { LIVE_VIEW } from "./entry-drag/entry";
 import { copyArrivals, copyRows } from "./entry-drag/execute-copy";
 import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
-import { moveOperation } from "./entry-drag/move-operation";
 import { moveRefusal, parentOf, type ReadyCopy, sameParent } from "./entry-drag/move-plan";
-import { useOperationFeedback } from "./entry-drag/operation-notice";
+import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-project-menu-source";
@@ -47,13 +44,10 @@ type EntryDestinationPickerProps = {
   action: "move" | "copy";
   /** The area the rows sit in, which the menu opens at; absent opens at the project's root. */
   from?: { scheme: ProjectContextTreeScheme; owner: TabOwner };
-  /** Move… takes exactly one row. */
-  entries: readonly PickedEntry[];
+  entry: PickedEntry;
   open: boolean;
   repairMove?: ResourceDestination;
   onOpenChange: (open: boolean) => void;
-  /** A Copy was admitted from this pick. */
-  onPicked?: () => void;
   children: ReactNode;
 };
 
@@ -72,15 +66,14 @@ function OpenPicker({
   projectId,
   action,
   from,
-  entries,
+  entry,
   open,
   repairMove,
   onOpenChange,
-  onPicked,
   rowRef,
 }: Omit<EntryDestinationPickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const resources = useAccountResourceReplica();
-  const { surface, publish } = useOperationFeedback();
+  const selection = useOptionalEntrySelection();
   const view = useAccountResourceProjection(projectId);
   const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
@@ -96,8 +89,6 @@ function OpenPicker({
     [scheme, owner],
   );
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
-  const [entry] = entries;
-  if (!entry) return null;
   const currentTrail = own ? source.own.openAt(entry.path) : [];
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);
@@ -120,13 +111,7 @@ function OpenPicker({
     if (!into) return null;
     // Copy adds beside what is there, so only a folder inside itself refuses.
     if (action === "copy")
-      return entries.some(
-        (picked) =>
-          picked.kind === "folder" &&
-          moveRefusal(view, { kind: picked.kind, id: picked.id }, into) === "inside-itself",
-      )
-        ? "inside-itself"
-        : null;
+      return moveRefusal(view, ref, into) === "inside-itself" ? "inside-itself" : null;
     const position =
       repairMove && sameParent(repairMove.parent, into) ? repairMove.position : undefined;
     return moveRefusal(view, ref, into, position);
@@ -207,7 +192,7 @@ function OpenPicker({
         { resources, projectId },
       );
       if (result.failed.length > 0) throw new Error(unavailable);
-      publish(moveOperation(result, folder.name));
+      selectRows(selection, result.moved);
       onOpenChange(false);
     } catch {
       setError(unavailable);
@@ -216,7 +201,7 @@ function OpenPicker({
     }
   }
 
-  /** Copies every picked row into the folder at the end of `trail`, then reports like a drop does. */
+  /** Copies the row into the folder at the end of `trail`. */
   async function copy(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
@@ -225,14 +210,12 @@ function OpenPicker({
     setPending(true);
     setError(null);
     try {
-      const result = await copyRows(
-        copyPlan(destination.scheme, into, folder.name),
-        { resources, projectId },
-        surface,
-      );
-      if (!result) throw new Error(unavailable);
-      publish(copyOperation(result));
-      onPicked?.();
+      const rows = await copyRows(copyPlan(destination.scheme, into, folder.name), {
+        resources,
+        projectId,
+      });
+      if (!rows) throw new Error(unavailable);
+      selectRows(selection, rows);
       onOpenChange(false);
     } catch {
       setError(unavailable);
@@ -250,11 +233,7 @@ function OpenPicker({
     destinationName,
     scheme,
     into,
-    copies: entries.map((picked) => ({
-      entry: { kind: picked.kind, id: picked.id },
-      name: picked.name,
-      view: LIVE_VIEW,
-    })),
+    copies: [{ entry: ref, name: entry.name, view: LIVE_VIEW }],
   });
 
   return (
@@ -275,13 +254,7 @@ function OpenPicker({
           ?.querySelector<HTMLElement>('button[data-slot="icon-button"], [role="button"]')
           ?.focus();
       }}
-      caption={
-        action === "copy"
-          ? entries.length === 1
-            ? t`Copy ${rowName}`
-            : plural(entries.length, { one: "Copy # item", other: "Copy # items" })
-          : t`Move ${rowName}`
-      }
+      caption={action === "copy" ? t`Copy ${rowName}` : t`Move ${rowName}`}
       status={error ?? refusal}
       isDisabled={(node) => {
         if (!node.folder) return true;

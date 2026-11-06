@@ -76,7 +76,7 @@ export function RailPaneHeader({
           invisible button would still take a tap meant for the header
           (`.rail-pane-actions` in globals.css). */}
       {actions ? (
-        <span className="rail-pane-actions mr-2 flex shrink-0 items-center gap-1 transition-opacity">
+        <span className="rail-pane-actions mr-2 flex shrink-0 items-center gap-1 [&>*]:transition-opacity">
           {actions}
         </span>
       ) : null}
@@ -87,10 +87,13 @@ export function RailPaneHeader({
 /** One header action (VS Code Explorer-header anatomy): ~20px hit target around a 16px icon, transparent at rest, rail hover tint + icon darken on hover, focus-ring for keyboard. */
 export function PaneHeaderActionButton({
   icon: Icon,
+  iconClassName,
   label,
+  children,
   ...props
 }: {
   icon: LucideIcon;
+  iconClassName?: string;
   label: string;
 } & React.ComponentPropsWithoutRef<"button">) {
   return (
@@ -103,9 +106,10 @@ export function PaneHeaderActionButton({
         event.stopPropagation();
         props.onClick?.(event);
       }}
-      className="size-5 rounded"
+      className="relative size-5 rounded"
     >
-      <Icon aria-hidden className="size-4" />
+      <Icon aria-hidden className={cn("size-4", iconClassName)} />
+      {children}
     </IconButton>
   );
 }

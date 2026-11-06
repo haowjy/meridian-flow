@@ -139,7 +139,7 @@ export function useEntryInteraction({
       // Closed, it still names the action it would open for.
       action: picking ?? "move",
       from: { scheme, owner: resolvedOwner },
-      entries: [{ id, name: node.name, path: node.path, kind }],
+      entry: { id, name: node.name, path: node.path, kind },
       repairMove: node.namespaceRepairMove,
       open: picking !== null && actions.includes(picking),
       onOpenChange: (open: boolean) => {

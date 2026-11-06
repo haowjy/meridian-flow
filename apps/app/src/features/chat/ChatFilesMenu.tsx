@@ -22,7 +22,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useOpenChatResource } from "@/features/project/context/open-chat-document";
-import { SurfaceNotices } from "@/features/project/context/project-notices";
 import {
   type EntriesRoute,
   TreeDropScope,
@@ -256,7 +255,6 @@ function FilesDropdown({
             )}
           </UploadsRefuseDrops>
         </div>
-        <SurfaceNotices surface="chat-files" className="sticky bottom-2 mx-2 mb-2" />
       </PopoverContent>
     </Popover>
   );
