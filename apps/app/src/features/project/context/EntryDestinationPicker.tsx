@@ -29,14 +29,14 @@ import { Button } from "@/components/ui/button";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
-import { describeRenames } from "./entry-drag/drop-choice";
 import { LIVE_VIEW } from "./entry-drag/entry";
-import { copyArrivals, copyRows } from "./entry-drag/execute-copy";
-import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
+import { copyRows } from "./entry-drag/execute-copy";
+import { moveRows } from "./entry-drag/execute-move";
 import { moveRefusal, parentOf, type ReadyCopy, sameParent } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
+import { revealFolder } from "./tree-reveal";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
 export type PickedEntry = {
@@ -100,8 +100,6 @@ function OpenPicker({
   const currentTrail = own ? source.own.openAt(entry.path) : [];
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);
-  // The caption names the row as the list shows it; a retry may carry a refused name.
-  const rowName = entry.name;
   const failedFolder =
     action === "move" && repairMove
       ? repairMove.parent.kind === "root"
@@ -202,6 +200,7 @@ function OpenPicker({
       );
       if (result.failed.length > 0) throw new Error(unavailable);
       selectRows(selection, result.moved);
+      revealFolder(destination.entryId);
       onOpenChange(false);
     } catch {
       setError(unavailable);
@@ -225,6 +224,7 @@ function OpenPicker({
       });
       if (!rows) throw new Error(unavailable);
       selectRows(selection, rows);
+      revealFolder(destination.entryId);
       onOpenChange(false);
     } catch {
       setError(unavailable);
@@ -263,7 +263,6 @@ function OpenPicker({
           ?.querySelector<HTMLElement>('button[data-slot="icon-button"], [role="button"]')
           ?.focus();
       }}
-      caption={action === "copy" ? t`Copy ${rowName}` : t`Move ${rowName}`}
       status={error ?? refusal}
       foldersOnly
       isDisabled={(node) => {
@@ -278,21 +277,12 @@ function OpenPicker({
         const blocked = destination ? refusalAt(destination) : "inside-itself";
         if (blocked === "inside-itself") return [];
         if (action === "copy") {
-          const into = destination && destinationParent(destination, works, noWork);
-          const renamed =
-            destination && into
-              ? renamesOnArrival(
-                  copyArrivals(copyPlan(destination.scheme, into, folder.name)),
-                  view,
-                )
-              : [];
           return [
             {
               key: "copy",
               icon: Copy,
-              label: t`Copy to ${folder.name}`,
+              label: t`Copy here`,
               disabled: pending,
-              note: describeRenames(renamed),
               onSelect: () => {
                 void copy(trail);
               },
@@ -318,20 +308,12 @@ function OpenPicker({
               })),
             },
           ];
-        const after = destination && !already && destinationParent(destination, works, noWork);
-        const renamed = after
-          ? renamesOnArrival(
-              [{ entry: ref, name: entry.name, row: entry.row, typed: name, after }],
-              view,
-            )
-          : [];
         return [
           {
             key: "move",
             icon: FolderInput,
-            label: already ? t`Already in ${folder.name}` : t`Move to ${folder.name}`,
+            label: already ? t`Already in ${folder.name}` : t`Move here`,
             disabled: already || pending,
-            note: describeRenames(renamed),
             onSelect: () => {
               void move(trail);
             },

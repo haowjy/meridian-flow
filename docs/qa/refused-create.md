@@ -142,7 +142,7 @@ run: it names the first id.
     refused nameless document selected on the desktop (step 1), the phone's document screen
     reads "Couldn't create this document. Try another place." with Move… and Rename above the
     page; Rename opens the name field in place of the notice, Escape restores it; Move…
-    opens the picker, and Manuscript → Move to Manuscript lands the document and the notice
+    opens the picker, and Manuscript → Move here lands the document and the notice
     goes. In the Files list, Unfiled → each refused row says the sentence with Move… and
     Rename under its name (documents and folders), and Move… there lands it. Tapping a refused
     document row opens it and the screen stays: a named one holds `/editor/unfiled/<name>`
