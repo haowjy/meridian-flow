@@ -20,7 +20,7 @@ import {
   type TurnId,
   type UserId,
 } from "@meridian/contracts";
-import { allocateFilename } from "@meridian/contracts/protocol";
+import { freeFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -104,7 +104,6 @@ export async function moveInBranch(
   const occupant = await tree.resolvePath(view, {
     contextSourceId,
     path: desiredPath,
-    as: "document",
   });
   if (occupant.kind === "ambiguous") return Err({ code: "ambiguous" });
   if (occupant.kind === "found") {
@@ -115,13 +114,12 @@ export async function moveInBranch(
     )
       return Err({ code: "already_there" });
   }
-  const filename = await allocateFilename(
-    { kind: "document", name: input.to.name, extension: input.to.extension },
-    async ({ filename }) => {
+  const filename = await freeFilename(
+    { name: input.to.name, extension: input.to.extension },
+    async (filename) => {
       const found = await tree.resolvePath(view, {
         contextSourceId,
         path: filePath(input.to.dir, filename, ""),
-        as: "document",
       });
       if (found.kind === "not_found") return false;
       if (found.kind === "ambiguous") return true;
@@ -313,11 +311,11 @@ async function freeFactsInBranch(
     : [];
   const prefix = chainPrefix(chain);
   const view = { kind: "branch", branchId: input.branchId } as const;
-  const filename = await allocateFilename(
-    { kind: "document", name: at.name, extension: at.extension },
-    async ({ filename }) => {
+  const filename = await freeFilename(
+    { name: at.name, extension: at.extension },
+    async (filename) => {
       const [here] = await createTreeReader(db).occupancy(view, [
-        { contextSourceId, path: prefix + filename, as: "document" },
+        { contextSourceId, path: prefix + filename },
       ]);
       return (
         !!here && (here.documents.some((id) => id !== input.documentId) || here.folders.length > 0)

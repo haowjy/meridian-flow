@@ -82,12 +82,11 @@ this status; hidden rows outside the selected view are absent. Discarded tombsto
 have diagnostic lineages, so known-id file access can deny access with their
 removal record; this never grants content access or makes them visible.
 
-Anything deciding whether a node may stand at a path asks as a kind (document
-or folder) through one rule. Create refuses an occupied claim; moves, restores and Apply
-allocate a free leaf name but refuse a document blocking an ancestor. A
-folder holds its document alias (`Lore.md` holds `Lore`); folders never clash
-with folders through it. Generic browsing never asks as a kind, and a path two
-nodes share answers a clash, never a pick.
+Anything deciding whether a node may stand at a path asks what the view shows
+there (`resolvePath`, `childAt`, `occupancy`), literally: a folder and a document
+clash when the folder's name is the document's rendered filename. Create refuses an
+occupied claim; moves, restores and Apply allocate a free leaf name but refuse a
+document blocking an ancestor. A path two nodes share answers a clash, never a pick.
 
 An address consumer that already carries a target kind is not making a
 namespace claim. Folder-link preparation passes `directory` to
@@ -210,7 +209,7 @@ and never touches a draft.
 
 Every arrival returns its actual free placement. Live moves, drafted moves and
 their inverses, restores, and Apply placements therefore count up rather than
-refusing a leaf-name collision. After a live write, `normalizeNames` looks up only hidden nodes whose indexed claim meets the installed claim and makes those nodes yield in the same transaction; visible wins, then a hidden folder, then the earlier `(created_at, id)`. Folders persist the contracts codec’s document alias so opposite-kind lookup stays indexed.
+refusing a leaf-name collision. After a live write, `normalizeNames` looks up only hidden nodes whose rendered filename equals the installed one and makes those nodes yield in the same transaction; visible wins, then a hidden folder, then the earlier `(created_at, id)`.
 
 ## Lock and identity contracts
 

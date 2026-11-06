@@ -5,25 +5,13 @@ import {
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
 import {
-  canonicalLeaf,
   filenameCandidates,
   type NamedRow,
-  type NamespaceNameClaim,
-  namespaceName,
   parseDocumentFilename,
   splitRendered,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ContextCreateKind } from "./context-create-kind";
-
-/**
- * What two sibling names clash on. A folder compares as a document name, so a
- * folder `Lore.md` and a document `Lore` are one name and cannot coexist.
- */
-export function entryNameKey(name: string): string {
-  const bare = name.trim().replace(/\/$/, "");
-  return canonicalLeaf(bare);
-}
 
 /** A tracked document's naming facts from its canonical name: a registered suffix is its own. */
 export function documentRow(name: string): NamedRow {
@@ -107,16 +95,8 @@ export function validateContextEntryName(
     if (!stored.ok) return { level: "error", message: stored.message };
     candidate = stored.name;
   }
-  // A stored file compares by its literal name, so a kept `again.md` is its own name beside a
-  // document `again`; a document compares as the codec reads it.
-  const key = current && !current.editable ? candidate : entryNameKey(candidate);
-  const occupant = siblings.find((sibling) =>
-    sibling.kind === "dir"
-      ? kind === "folder"
-        ? sibling.name === candidate
-        : entryNameKey(sibling.name) === key
-      : sibling.name === (kind === "folder" ? key : candidate),
-  );
+  // Siblings clash on the literal rendered name, whatever their kinds.
+  const occupant = siblings.find((sibling) => sibling.name === candidate);
   if (occupant) {
     return {
       level: "error",
@@ -137,50 +117,24 @@ export function moveEntryName(currentName: string, repair?: { name: string }): s
   return repair?.name ?? currentName;
 }
 
-/**
- * The names a folder's rows hold, indexed once so each candidate checks in
- * constant time. A claim collides with the same kind by its literal name and
- * with the other kind by its alias (`sameNamespaceName`).
- */
-export type NameOccupancy = {
-  taken: (candidate: NamespaceNameClaim) => boolean;
-  claim: (candidate: NamespaceNameClaim) => void;
-};
-
-export function nameOccupancy(siblings: readonly ContextEntrySibling[]): NameOccupancy {
-  const literal = { document: new Set<string>(), folder: new Set<string>() };
-  const alias = { document: new Set<string>(), folder: new Set<string>() };
-  const claim = (candidate: NamespaceNameClaim) => {
-    literal[candidate.kind].add(candidate.filename);
-    alias[candidate.kind].add(namespaceName(candidate));
-  };
-  for (const sibling of siblings)
-    claim({ kind: sibling.kind === "dir" ? "folder" : "document", filename: sibling.name });
-  return {
-    taken: (candidate) =>
-      literal[candidate.kind].has(candidate.filename) ||
-      alias[candidate.kind === "folder" ? "document" : "folder"].has(namespaceName(candidate)),
-    claim,
-  };
+/** The names a folder's rows hold, as the tree renders them. Siblings of either kind clash on equal names. */
+export function nameOccupancy(siblings: readonly ContextEntrySibling[]): Set<string> {
+  return new Set(siblings.map((sibling) => sibling.name));
 }
 
 /** Predict the first free name for a rename or move; the server remains authoritative. */
 export function allocateContextEntryArrivalName(
   typed: string,
-  occupied: NameOccupancy,
+  occupied: ReadonlySet<string>,
   kind: ContextCreateKind,
   current?: NamedRow,
 ): string {
   const stored = kind === "folder" ? null : storedFilename(typed, current);
   if (stored && !stored.ok) return typed.trim();
   const desired = stored
-    ? ({
-        kind: "document",
-        name: stored.filename.name,
-        extension: stored.filename.extension,
-      } as const)
-    : ({ kind: "folder", name: typed.trim() } as const);
+    ? { name: stored.filename.name, extension: stored.filename.extension }
+    : { name: typed.trim() };
   for (const candidate of filenameCandidates(desired))
-    if (!occupied.taken(candidate)) return candidate.filename;
+    if (!occupied.has(candidate)) return candidate;
   throw new Error("unreachable");
 }

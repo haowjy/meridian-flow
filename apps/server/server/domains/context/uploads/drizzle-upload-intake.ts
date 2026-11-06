@@ -1,8 +1,8 @@
 /** Drizzle lifecycle adapter for authoritative upload intake reservations. */
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import {
-  allocateFilename,
   type Filetype,
+  freeFilename,
   renderFilename,
   type UploadOwner,
 } from "@meridian/contracts/protocol";
@@ -11,7 +11,7 @@ import { projects, threads, uploadIntakes } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
-import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
+import { LIVE_TREE, visibleDocuments, visibleFolders } from "../tree/tree-view.js";
 import type {
   ReserveUploadResult,
   UploadIntakeRepository,
@@ -150,7 +150,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         await activeDb.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${owner.sourceId}, 0))`,
         );
-        const [documentNames, reservedNames] = await Promise.all([
+        const [documentNames, folderNames, reservedNames] = await Promise.all([
           activeDb
             .select({ name: liveDocuments.name, extension: liveDocuments.extension })
             .from(liveDocuments)
@@ -159,6 +159,12 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
                 eq(liveDocuments.contextSourceId, owner.sourceId),
                 isNull(liveDocuments.folderId),
               ),
+            ),
+          activeDb
+            .select({ name: liveFolders.name })
+            .from(liveFolders)
+            .where(
+              and(eq(liveFolders.contextSourceId, owner.sourceId), isNull(liveFolders.parentId)),
             ),
           activeDb
             .select({ path: uploadIntakes.finalPath })
@@ -173,13 +179,13 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         // The intake reservation index currently folds case, even though document keys do not.
         const used = new Set([
           ...documentNames.map((row) => renderFilename(row.name, row.extension).toLowerCase()),
+          ...folderNames.map((row) => row.name.toLowerCase()),
           ...reservedNames.map((row) => row.path.toLowerCase()),
         ]);
         // Upload reservations intentionally retain their historical case-folded index. The
         // document namespace itself remains case-sensitive; changing the index is a migration.
-        const finalPath = await allocateFilename(
-          { kind: "document", ...input.documentFilename },
-          ({ filename }) => used.has(filename.toLowerCase()),
+        const finalPath = await freeFilename(input.documentFilename, (filename) =>
+          used.has(filename.toLowerCase()),
         );
         const documentId = crypto.randomUUID();
         const [created] = await activeDb
@@ -328,3 +334,4 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
 }
 
 const liveDocuments = visibleDocuments(LIVE_TREE);
+const liveFolders = visibleFolders(LIVE_TREE);

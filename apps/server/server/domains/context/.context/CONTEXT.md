@@ -37,9 +37,12 @@ over a list. Only a link may also leave a registered extension off (`outline` fo
 (`ContextWriteBinaryOptions.filename`), so a copy's name is parsed once. Naming asks the row's kind
 (`storedFilename` with `{ extension, stored }`): a stored file keeps its literal name, a tracked
 document follows the alias rules, and a move with no typed name keeps the token's `name` and
-`extension` without parsing. Documents and folders share one namespace: a folder's
-comparison name uses the document-name codec, so `Lore.md` occupies the
-`Lore` document alias.
+`extension` without parsing. Documents and folders share one namespace by
+literal name: a folder clashes with a document when the folder's name equals the
+document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
+two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
+coexist; a link to `Lore.md` still reaches the document, because `resolveAddress` prefers a document at
+the written leaf or its alias over a folder.
 
 ## Access, source capabilities, and transactions
 
@@ -210,7 +213,7 @@ by another writer in the gap is neither undone nor refused; the only paths it ch
 are facts about the target (the occupant, `onlyAt`). A row that left the locked Work or area answers a non-final
 `io_error` (`namespace_changed`) and the caller looks it up again; `stale_target`
 from a move now comes from the destination-leaf CAS or a stale sibling anchor. An
-occupied destination leaf sends the arrival to the next alias-aware free name and
+occupied destination leaf sends the arrival to the next free name and
 returns that actual path. A delete with `onlyAt` (a model create's retraction) acts
 only on a row still at that path and otherwise answers `stale_target`. An absent,
 terminal, or denied identity destination returns `destination_missing`.

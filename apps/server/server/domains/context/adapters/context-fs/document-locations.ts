@@ -1,5 +1,4 @@
 /** Transactional namespace locks and live-path occupancy checks for context commands. */
-import { documentPartsForNamespaceClaim, folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, works } from "@meridian/database/schema";
@@ -12,7 +11,7 @@ import {
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
 import { ContextEntryConflictError } from "../../ports/context-document-store.js";
-import { LIVE_TREE, visibleDocuments, visibleFolders } from "../../tree/tree-view.js";
+import { LIVE_TREE, visibleFolders } from "../../tree/tree-view.js";
 import { loadWorkRestoreNamespaceRows } from "../../tree/tree-view-sql.js";
 
 export type ContextNamespace = {
@@ -206,43 +205,25 @@ export async function readTreeLocations(
 }
 
 /**
- * Caller holds the logical namespace lock; a folder's document alias participates in
- * document claims. Only the live tree occupies a path: a hidden node never blocks a live
- * entry.
+ * Whether a live folder is named exactly `filename`, which a document with that rendered
+ * filename would clash with. Caller holds the logical namespace lock. Only the live tree
+ * occupies a path: a hidden node never blocks a live entry.
  */
-export async function hasOppositeContextEntry(
+export async function hasLiveFolderNamed(
   db: Database,
   sourceId: string,
   parentId: string | null,
   filename: string,
-  kind: "file" | "folder",
 ): Promise<boolean> {
-  const tx = currentDrizzleDb(db);
-  if (kind === "file") {
-    const vf = visibleFolders(LIVE_TREE);
-    const siblings = await tx
-      .select({ name: vf.name })
-      .from(vf)
-      .where(
-        and(
-          eq(vf.contextSourceId, sourceId as never),
-          parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as never),
-        ),
-      );
-    return siblings.some((row) => folderDocumentName(row.name) === filename);
-  }
-  const vd = visibleDocuments(LIVE_TREE);
-  const parts = documentPartsForNamespaceClaim({ kind: "folder", filename });
-  if (!parts) return false;
-  const [row] = await tx
-    .select({ id: vd.id })
-    .from(vd)
+  const vf = visibleFolders(LIVE_TREE);
+  const [row] = await currentDrizzleDb(db)
+    .select({ id: vf.id })
+    .from(vf)
     .where(
       and(
-        eq(vd.contextSourceId, sourceId as never),
-        parentId === null ? isNull(vd.folderId) : eq(vd.folderId, parentId as never),
-        eq(vd.name, parts.name),
-        eq(vd.extension, parts.extension),
+        eq(vf.contextSourceId, sourceId as never),
+        parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as never),
+        eq(vf.name, filename),
       ),
     )
     .limit(1);
@@ -266,23 +247,10 @@ export async function guardWorkContextRestore(db: Database, workId: string): Pro
     ),
   );
   const rows = await loadWorkRestoreNamespaceRows(currentDrizzleDb(db), workId);
-  const files = new Map<string, boolean>();
-  const directories = new Map<string, boolean>();
-  const folderAliases = new Map<string, boolean>();
-  const key = (row: (typeof rows)[number], name: string) =>
-    JSON.stringify([row.source, row.parent, name]);
+  const names = new Map<string, boolean>();
   for (const row of rows) {
-    const namespace = row.kind === "file" ? files : directories;
-    const literal = key(row, row.name);
-    if (namespace.has(literal) && (row.arriving || namespace.get(literal)))
-      throw new ContextEntryConflictError();
-    namespace.set(literal, row.arriving || namespace.get(literal) === true);
-    if (row.kind === "folder") {
-      const alias = key(row, folderDocumentName(row.name));
-      folderAliases.set(alias, row.arriving || folderAliases.get(alias) === true);
-    }
+    const key = JSON.stringify([row.source, row.parent, row.name]);
+    if (names.has(key) && (row.arriving || names.get(key))) throw new ContextEntryConflictError();
+    names.set(key, row.arriving || names.get(key) === true);
   }
-  for (const [name, arriving] of files)
-    if (folderAliases.has(name) && (arriving || folderAliases.get(name)))
-      throw new ContextEntryConflictError();
 }

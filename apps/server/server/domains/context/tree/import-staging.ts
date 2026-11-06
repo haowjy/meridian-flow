@@ -2,7 +2,7 @@
 import type { AheadMint } from "@meridian/agent-edit/integration";
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
+import { freeFilename, renderFilename } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -16,7 +16,6 @@ import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { MarkdownDocumentStore } from "../../collab/index.js";
 import { lockNamespaceKeys } from "../adapters/context-fs/document-locations.js";
 import { resolveCanonicalAddresses } from "../adapters/document-address.js";
-import { allocateFilename } from "../context/paths.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ContextStagedCreation } from "../ports/context-staged-creation.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
@@ -210,14 +209,7 @@ export function createDrizzleContextStagedCreation(deps: {
         select x.area, d.folder_id, 'file', d.name, d.extension from destinations x join ${visibleDocumentsSql(LIVE_TREE)} d
           on d.context_source_id = x."sourceId" and d.folder_id is not distinct from x."folderId"`);
       const occupied = new Map(
-        destinations.map((row) => [
-          parentKey(row.area, row.folderId),
-          {
-            files: new Set<string>(),
-            folders: new Set<string>(),
-            folderAliases: new Set<string>(),
-          },
-        ]),
+        destinations.map((row) => [parentKey(row.area, row.folderId), new Set<string>()]),
       );
       const reserve = (row: {
         area: string;
@@ -228,17 +220,15 @@ export function createDrizzleContextStagedCreation(deps: {
       }) => {
         const names = occupied.get(parentKey(row.area, row.parentId));
         if (!names) throw new Error("Staged parent not in placement");
-        if (row.kind === "folder") {
-          names.folders.add(row.name);
-          names.folderAliases.add(folderDocumentName(row.name));
-        } else names.files.add(renderFilename(row.name, row.extension));
+        names.add(renderFilename(row.name, row.extension));
       };
       for (const row of siblings) reserve(row);
       for (const row of top) {
         const names = occupied.get(parentKey(row.area, row.parentId));
         if (
           !names ||
-          (await allocateFilename(row, names)) !== renderFilename(row.name, row.extension)
+          (await freeFilename(row, async (filename) => names.has(filename))) !==
+            renderFilename(row.name, row.extension)
         )
           return { kind: "changed" };
         reserve(row);
@@ -261,8 +251,8 @@ export function createDrizzleContextStagedCreation(deps: {
               ),
             )
         : [];
-      await tx.execute(sql`insert into folders (id, context_source_id, parent_id, name, document_alias)
-        select f.id, cs.id, f.parent_id, f.name, f.name from context_staged_folders f join context_sources cs
+      await tx.execute(sql`insert into folders (id, context_source_id, parent_id, name)
+        select f.id, cs.id, f.parent_id, f.name from context_staged_folders f join context_sources cs
           on cs.project_id = ${projectId} and cs.slug = f.area and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
         where f.staging_id = ${stagingId}`);
       await tx.execute(sql`insert into documents

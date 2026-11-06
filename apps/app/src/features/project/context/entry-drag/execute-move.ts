@@ -16,11 +16,7 @@ import {
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import {
-  allocateContextEntryArrivalName,
-  type NameOccupancy,
-  nameOccupancy,
-} from "../context-entry-name";
+import { allocateContextEntryArrivalName, nameOccupancy } from "../context-entry-name";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
 import { type MoveRow, recordFor, sameParent } from "./move-plan";
@@ -85,7 +81,7 @@ function namedRow(view: NamingView, entry: EntryRef) {
  * `Notes (2)` and `Notes (3)`), and a row that fails reserves nothing.
  */
 export function arrivals(view: NamingView, rows: readonly Arrival[]) {
-  const byParent = new Map<string, NameOccupancy>();
+  const byParent = new Map<string, Set<string>>();
   const staying = new Map<string, Set<string>>();
   for (const row of rows) {
     if (!row.before || !sameParent(row.before, row.after)) continue;
@@ -123,11 +119,7 @@ export function arrivals(view: NamingView, rows: readonly Arrival[]) {
         row.entry.kind,
         namedRow(view, row.entry),
       ),
-    reserve: (row: Arrival, name: string) =>
-      occupancy(row.after).claim({
-        kind: row.entry.kind === "folder" ? "folder" : "document",
-        filename: name,
-      }),
+    reserve: (row: Arrival, name: string) => occupancy(row.after).add(name),
   };
 }
 

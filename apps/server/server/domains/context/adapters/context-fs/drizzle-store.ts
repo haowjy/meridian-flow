@@ -60,7 +60,7 @@ import {
   loadHiddenFilenames,
 } from "../../tree/tree-view-sql.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
-import { hasOppositeContextEntry, lockContextSources } from "./document-locations.js";
+import { hasLiveFolderNamed, lockContextSources } from "./document-locations.js";
 
 type DocumentRow = Pick<
   VisibleDocument,
@@ -524,10 +524,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 }
 
-/**
- * What live entry already holds this file's canonical name: a document, or a folder whose
- * name or document alias it is. Null when free.
- */
+/** What live entry already holds this file's rendered filename: a document, or a folder of that name. Null when free. */
 async function liveFileOccupant(
   store: DrizzleContextDocumentStore,
   db: Database,
@@ -537,12 +534,11 @@ async function liveFileOccupant(
   if (await store.findDocument(input.folderId, input.name, input.extension)) {
     return "file";
   }
-  const folder = await hasOppositeContextEntry(
+  const folder = await hasLiveFolderNamed(
     db,
     sourceId,
     input.folderId,
     renderFilename(input.name, input.extension),
-    "file",
   );
   return folder ? "folder" : null;
 }

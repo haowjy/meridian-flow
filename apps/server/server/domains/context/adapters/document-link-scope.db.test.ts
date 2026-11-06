@@ -4,7 +4,6 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - prepared-snapshot loading, canonical historical spelling, and nested scope lifetime (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -144,7 +143,6 @@ if (!RUN) {
         id: PART,
         contextSourceId: SOURCE,
         name: "part1",
-        documentAlias: folderDocumentName("part1"),
       });
       const row = (docId: string, name: string, extra: Record<string, unknown> = {}) => ({
         id: docId,

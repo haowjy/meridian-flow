@@ -155,10 +155,11 @@ describe("ContextFS createUntitledDocument", () => {
     ).toMatchObject({ ok: false, error: { code: "conflict", occupantKind: "folder" } });
   });
 
-  it("allocates past folder prose aliases", async () => {
+  it("allocates past folders and does not skip a folder that only reads like another name", async () => {
     const { fs } = createUntitledFs({});
-    await fs.mkdir("Untitled 1.md");
-    await fs.mkdir("Untitled 2.txt");
+    await fs.mkdir("Untitled 1");
+    await fs.mkdir("Untitled 2");
+    await fs.mkdir("Untitled 9.md");
     expect(await fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).toMatchObject({
       ok: true,
       value: { name: "Untitled 3" },
@@ -567,17 +568,20 @@ describe("router through real ContextFS naming", () => {
     expect(await port.stat("manuscript://LICENSE")).toMatchObject({ ok: true });
   });
 
-  it("refuses create aliases and gives CAS moves an alias-aware free name", async () => {
+  it("refuses a create beside a folder of the same name and gives CAS moves a free name", async () => {
     const { fs, port } = harness();
-    await fs.mkdir("Lore.md");
+    await fs.mkdir("Lore");
     expect(await port.ensureTrackedDocument("manuscript://Lore")).toMatchObject({
       ok: false,
       error: { code: "conflict" },
     });
+    // Folder `Lore.md` is a different name from document `Lore`.
+    await fs.mkdir("Scroll.md");
+    expect(await port.ensureTrackedDocument("manuscript://Scroll")).toMatchObject({ ok: true });
     const chapter = await port.ensureTrackedDocument("manuscript://Chapter");
     expect(chapter.ok).toBe(true);
     // A namespace clash is a conflict result naming its occupant, never a throw.
-    await expect(fs.mkdir("Chapter.txt/child")).resolves.toEqual({
+    await expect(fs.mkdir("Chapter/child")).resolves.toEqual({
       ok: false,
       error: { code: "conflict", occupantKind: "file" },
     });
