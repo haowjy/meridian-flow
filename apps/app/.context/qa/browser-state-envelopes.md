@@ -1,7 +1,7 @@
 # Browser memory across a reload
 
 Start `pnpm dev` in the owned worktree, discover the HTTPS URL with
-`pnpm portless:list`, and sign in through dev-login. Use `./mf doc put` to seed
+`pnpm portless:list`, (the stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in). Use `./mf doc put` to seed
 a long chapter in a folder, a second document, and `./mf thread create` to make
 a chat. No model send is needed.
 

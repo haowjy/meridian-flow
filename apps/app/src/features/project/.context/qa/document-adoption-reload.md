@@ -3,7 +3,7 @@
 Protects the session-adoption commit: a New file that joins a draft and is
 reloaded inside the commit window must reopen, not wedge on "Couldn't open this
 document." Run on an owned `pnpm dev` stack (URLs from `pnpm portless:list`),
-signed in with dev-login, in a project with a draft Work. Use one named
+signed in by `DEV_AUTH_BYPASS=1`, in a project with a draft Work. Use one named
 `agent-browser` session per viewport.
 
 ## Phone branches
