@@ -297,7 +297,7 @@ export class ContextFS implements ContextSchemeAdapter {
           const from = {
             path: located.path,
             filetype: ref.value.kind === "tracked" ? ref.value.filetype : null,
-            sourceId: await this.store.contextSourceId(),
+            sourceId: located.contextSourceId,
           };
           const { extension: storedExtension } = located.document;
           const parsed = storedFilename(filename, { extension: storedExtension });
