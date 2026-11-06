@@ -88,7 +88,10 @@ and revert before committing.
    then stop. PASS: after the idle time the ask expires; the first entry is the writer's
    `Third person` (no `timed_out`), the second takes its Recommended option with
    `timed_out:true`, and the third, which has none, is `{"answer":null,"timed_out":true}`.
-   `./mf thread view` shows the same.
+   `./mf thread view` shows the same. Repeat with `--answer 'text:Make the fight more'`
+   for the first entry. PASS: it is `{"answer":"Make the fight more","free_text":true,
+   "timed_out":true}`, and `./mf thread view` shows `unsent text: …`: typed words the
+   writer never sent are not an answer.
 3. **Presence bumps the deadline.** On an open ask, note `continues at` in
    `./mf thread view`, run `./mf thread presence` (with `--answer none` per question)
    about halfway through the idle time. PASS: `continues at` moves to the idle time after
@@ -192,10 +195,18 @@ Open the chat in the browser with `agent-browser`, at desktop width and at 390 p
    moves on; Skip on the last question shows as pressed, and Send answers is enabled
    only once every question has an answer. Back shows each earlier question with its
    answer still chosen or typed.
-2. **Countdown follows interaction.** Note `continues at` in `./mf thread view`, pick an
+2. **Countdown follows activity.** Note `continues at` in `./mf thread view`, pick an
    option, and read it again. PASS: it moved to 4 minutes after the click, and the
    takeover's countdown follows. Typing within 30 seconds sends one more presence when
-   the 30 seconds are up, holding the typed words.
+   the 30 seconds are up, holding the typed words. Then change nothing: move the mouse,
+   scroll or press a key (on the first question, before any pick, too). PASS: within 30
+   seconds `continues at` moves again and no held answer is lost. After the answer
+   sends, further activity moves nothing.
+   - **Unsent words.** Type in "Or type your own answer" without Enter or Next and let
+     the ask time out. PASS: the receipt shows "Not sent: …" and counts the question
+     as unanswered, and the words are in the composer afterwards.
+   - **Focus on a new question.** Pick an option on question 1. PASS: question 2 shows no
+     focus ring on any option, and Tab reaches the first option next.
 3. **Failed send and Retry.** Make the socket drop `ask.answer` frames (wrap
    `WebSocket.prototype.send` in the page) and send. PASS: the receipt shows this
    device's answers with the pending dot at once; after 20 s the takeover returns with
@@ -203,8 +214,8 @@ Open the chat in the browser with `agent-browser`, at desktop width and at 390 p
    Retry: the frame carries the same `submissionId`, and the chat continues once.
 4. **Receipt.** PASS: a three-question receipt reads "3 questions: 2 answered, 1
    skipped" and expands to each question with its answer. After a walk-away timeout
-   (Timeout case 2) it lists the held answers, and "No answer" or "No answer, went
-   with …" for the rest.
+   (Timeout case 2) it lists the held answers, "Not sent: …" for typed words, and "No answer"
+   or "No answer, went with …" for the rest.
 5. **One question.** Open the one-question ask. PASS: it looks as before (no "1 of 1",
    no Back or Next), and an option, Skip or Enter in the field answers at once. Words
    left in the field when an option is picked, and the composer draft from before the
