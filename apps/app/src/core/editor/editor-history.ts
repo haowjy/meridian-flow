@@ -1,7 +1,6 @@
 /** One mounted editor's chronological history across Yjs edits and editor Apply commands. */
 import type { Editor } from "@tiptap/core";
-import type { Node as PMNode } from "@tiptap/pm/model";
-import { type Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import {
   getRelativeSelection,
   relativePositionToAbsolutePosition,
@@ -34,14 +33,6 @@ type RelativeSelection = ReturnType<typeof getRelativeSelection>;
 function insert(entries: Entry[], entry: Entry): void {
   const index = entries.findIndex((candidate) => candidate.sequence > entry.sequence);
   entries.splice(index < 0 ? entries.length : index, 0, entry);
-}
-
-/** Whether the selection touched the span of the document that `after` changed from `before`. */
-function overlapsChange(before: PMNode, after: PMNode, selection: Selection): boolean {
-  const start = before.content.findDiffStart(after.content);
-  const end = before.content.findDiffEnd(after.content);
-  if (start === null || end === null) return false;
-  return selection.from <= end.a && selection.to >= start;
 }
 
 /**
@@ -149,8 +140,6 @@ class MountedEditorHistory implements EditorHistoryHandle {
     const original = [...stack];
     stack.splice(0, stack.length, ...original.filter((item) => allowed.has(item)));
 
-    const before = this.relativeSelection();
-    const { doc: docBefore, selection: selectionBefore } = this.editor.state;
     this.suppressManagerEvents = true;
     this.managerGenerated = null;
     let popped: StackItem | null = null;
@@ -162,12 +151,10 @@ class MountedEditorHistory implements EditorHistoryHandle {
 
     this.reconcileNativeSegment(source, stack, original, allowed);
     const generated = this.managerGenerated as StackItem | null;
-    if (popped) this.restoreRange(popped);
-    // Redo gives back the range only if it was at the change: elsewhere it is unrelated.
-    if (before && overlapsChange(docBefore, this.editor.state.doc, selectionBefore)) {
-      generated?.meta.set(RANGE_META, before);
-    }
+    if (popped && direction === "undo") this.restoreRange(popped);
     if (popped && generated) {
+      const range = popped.meta.get(RANGE_META) as RelativeSelection | undefined;
+      if (range) generated.meta.set(RANGE_META, range);
       const known = popped.meta.get(HISTORY_META) as Entry | undefined;
       const moved: Entry = {
         kind: "yjs",
@@ -179,18 +166,14 @@ class MountedEditorHistory implements EditorHistoryHandle {
     }
   }
 
-  private relativeSelection(): RelativeSelection | null {
-    const binding = ySyncPluginKey.getState(this.editor.state)?.binding;
-    return binding ? getRelativeSelection(binding, this.editor.state) : null;
-  }
-
   /**
    * Gives back the range a change started from. Yjs undo maps the selection
    * the document has now, and a range that was moved or replaced has just been
    * removed, so it collapses into a caret. Every stack item that holds a change
    * from a range carries it in `RANGE_META`: taken by `rememberRange` before
-   * the dispatch that made the item, or for an item an undo or redo generates,
-   * just before that run. (y-tiptap saves its own copy on each item, but reads
+   * the dispatch that made the item, then carried through the items UndoManager
+   * generates for later redo and undo runs. Redo leaves y-tiptap's mapped
+   * selection alone. (y-tiptap saves its own copy on each item, but reads
    * it from the last transaction of a dispatch, which is the wrong range when a
    * plugin appends one.) Carets and node selections keep the mapped result.
    */
