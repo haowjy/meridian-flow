@@ -4,7 +4,6 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { EventRecord } from "@meridian/contracts/observability";
 import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
-import type { ModelResponse } from "@meridian/contracts/threads";
 import { useEffect, useMemo, useState } from "react";
 
 import { getJson, isMeridianApiError } from "@/client/api/http-client";
@@ -20,7 +19,9 @@ import {
   type LlmCallCacheComparison,
   type LlmCallOutcome,
   type LlmCallSummary,
+  type LlmCallTurn,
   pairLlmCallResponses,
+  settleStoppedCalls,
 } from "./derive-llm-calls";
 
 const EVENTS_PATH = "/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500";
@@ -80,7 +81,7 @@ function LlmCallsContent({
 }) {
   const { i18n } = useLingui();
   const [state, setState] = useState<CallsState>({ status: "loading" });
-  const [responsesByTurn, setResponsesByTurn] = useState<Record<string, ModelResponse[]>>({});
+  const [turnsById, setTurnsById] = useState<Record<string, LlmCallTurn>>({});
 
   useEffect(() => {
     let active = true;
@@ -123,22 +124,26 @@ function LlmCallsContent({
     };
   }, []);
 
-  const allCalls = useMemo(
+  const derivedCalls = useMemo(
     () => (state.status === "loaded" ? deriveLlmCalls(state.events) : []),
     [state],
+  );
+  const allCalls = useMemo(
+    () => settleStoppedCalls(derivedCalls, turnsById),
+    [derivedCalls, turnsById],
   );
   const responseThreadIds = useMemo(
     () =>
       filter
         ? [filter.threadId]
-        : [...new Set(allCalls.flatMap((call) => (call.threadId ? [call.threadId] : [])))],
-    [allCalls, filter],
+        : [...new Set(derivedCalls.flatMap((call) => (call.threadId ? [call.threadId] : [])))],
+    [derivedCalls, filter],
   );
   const responseThreadKey = responseThreadIds.join(",");
-  const responseCallKey = allCalls.map((call) => call.gatewayCallId).join(",");
+  const responseCallKey = derivedCalls.map((call) => call.gatewayCallId).join(",");
   useEffect(() => {
     let active = true;
-    setResponsesByTurn({});
+    setTurnsById({});
     const threadIds = responseThreadKey ? responseThreadKey.split(",") : [];
     if (threadIds.length === 0) {
       return () => {
@@ -149,12 +154,17 @@ function LlmCallsContent({
       threadIds.map((threadId) => getThreadSnapshot({ data: { threadId } }).catch(() => null)),
     ).then((snapshots) => {
       if (!active) return;
-      const responseRows = Object.fromEntries(
+      const turnRows = Object.fromEntries(
         snapshots
           .filter((snapshot) => snapshot !== null)
-          .flatMap((snapshot) => snapshot.turns.map((turn) => [turn.id, turn.responses])),
+          .flatMap((snapshot) =>
+            snapshot.turns.map((turn) => [
+              turn.id,
+              { status: turn.status, responses: turn.responses },
+            ]),
+          ),
       );
-      setResponsesByTurn(responseRows);
+      setTurnsById(turnRows);
     });
     return () => {
       active = false;
@@ -177,9 +187,9 @@ function LlmCallsContent({
     () =>
       pairLlmCallResponses(
         allCalls.filter((call) => !filter || call.threadId === filter.threadId),
-        responsesByTurn,
+        turnsById,
       ),
-    [allCalls, filter, responsesByTurn],
+    [allCalls, filter, turnsById],
   );
 
   return (
@@ -262,6 +272,12 @@ function CallCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const response = cacheComparison?.response;
+  const snapshot = response?.pricingSnapshot;
+  const metering =
+    typeof snapshot === "object" && snapshot !== null && !Array.isArray(snapshot)
+      ? snapshot.usageMeteringStatus
+      : undefined;
+  const meteringStatus = typeof metering === "string" ? metering : undefined;
   const correlation = [
     call.threadId ? `thread ${call.threadId}` : null,
     call.turnId ? `turn ${call.turnId}` : null,
@@ -294,6 +310,9 @@ function CallCard({
               >
                 {call.outcome}
               </span>
+              {call.errorCode ? (
+                <span className="font-mono text-meta text-muted-foreground">{call.errorCode}</span>
+              ) : null}
             </div>
             <p className="mt-1 truncate font-mono text-meta text-muted-foreground">
               {call.gatewayCallId}
@@ -319,6 +338,9 @@ function CallCard({
                 }
               />
               <Metric label="cache reset" value={response.cacheReset ? "Yes" : "No"} />
+              {meteringStatus ? (
+                <Metric label="usage metering" value={meteringStatus} emphasis />
+              ) : null}
               <Metric
                 label="predicted cache"
                 value={predictionLabel(cacheComparison)}
