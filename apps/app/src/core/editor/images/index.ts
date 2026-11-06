@@ -12,6 +12,7 @@
  */
 
 export { ImageIngressExtension } from "./ImageIngressExtension";
+export { imageDropDoor } from "./image-drop-door";
 export type {
   ImageBytesPort,
   ImageIngressHost,

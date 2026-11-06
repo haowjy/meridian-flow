@@ -21,7 +21,6 @@ import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { editorReferenceNode } from "@/core/editor/extensions/at-reference";
-import type { ReferenceDropOptions } from "@/core/editor/extensions/reference-drop";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
 import {
@@ -37,8 +36,7 @@ import {
   useAccountId,
   useAccountResourceProjection,
 } from "@/features/project/context/account-feature-context";
-import { activeDragSession } from "@/features/project/context/entry-drag/drag-session";
-import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
+import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
@@ -273,26 +271,20 @@ function ActiveSessionEditorView({
       linkAhead: (name: string) => linkAhead(name),
     };
   }, [effectiveEditable, identity.schemaType, linkAhead, sharedReferenceCatalog]);
-  const referenceDrop = useMemo<ReferenceDropOptions>(
-    () => ({
-      activeDrag: () => activeDragSession()?.entries ?? null,
-      content: (schema, entries) => {
-        if (!sharedReferenceCatalog) return null;
-        const nodes = entries.map((entry) => {
-          const row = sharedReferenceCatalog.resolveReference(entry.ref);
-          return row ? editorReferenceNode(schema, row) : null;
-        });
-        return nodes.every((node) => node !== null) ? nodes : null;
-      },
-      label: (kind) =>
-        kind === "accept"
-          ? t`Mention`
-          : kind === "unavailable"
-            ? t`Not available in this document`
-            : t`Can’t mention inside code`,
-      showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
-      clearHint: clearDragHint,
-    }),
+  const referenceDrop = useMemo(
+    () =>
+      referenceDropOptions({
+        catalog: () =>
+          sharedReferenceCatalog && {
+            ...sharedReferenceCatalog,
+            referenceNode: editorReferenceNode,
+          },
+        labels: {
+          accept: t`Mention`,
+          unavailable: t`Not available in this document`,
+          code: t`Can’t mention inside code`,
+        },
+      }),
     [sharedReferenceCatalog],
   );
   // What a pasted `[[Name]]` may name: the Editor's link index (the same one

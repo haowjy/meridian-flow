@@ -6,7 +6,6 @@ import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
 import { selectedSourceBlock } from "../chrome/chrome-context";
 import type { KeymapBinding } from "../chrome/keymap";
-import { pressOnInertTarget } from "../landing/press";
 import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
@@ -250,11 +249,6 @@ export const ObjectPhysicsExtension = Extension.create({
             view.dispatch(transaction);
             view.focus();
             return true;
-          },
-
-          /** A click on inert space (a margin, a gap between blocks) puts the caret where the landing says; presses on text and objects never get here. */
-          handleClick(view, _pos, event) {
-            return pressOnInertTarget(view, event);
           },
 
           /** The pointer's twin of Enter: a double-click on an object engages it, with no click-to-select step in between. */

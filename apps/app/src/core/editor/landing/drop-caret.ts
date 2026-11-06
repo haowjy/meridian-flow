@@ -1,4 +1,4 @@
-/** Shared ProseMirror drop-caret geometry and lifecycle. */
+/** The one drop caret: drawn where the plan lands, driven by `DropLandingExtension`. */
 
 import type { EditorState } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
@@ -10,22 +10,11 @@ export class DropCaretView {
   private cursorPos: number | null = null;
   private element: HTMLElement | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
-  private readonly handlers: { name: string; handler: (event: Event) => void }[];
 
-  constructor(
-    private readonly editorView: EditorView,
-    private readonly targetAt: (view: EditorView, event: DragEvent) => number | null,
-  ) {
-    this.handlers = (["dragover", "dragend", "drop", "dragleave"] as const).map((name) => {
-      const handler = (event: Event) => this[name](event as DragEvent);
-      editorView.dom.addEventListener(name, handler);
-      return { name, handler };
-    });
-  }
+  constructor(private readonly editorView: EditorView) {}
 
   destroy() {
-    for (const { name, handler } of this.handlers)
-      this.editorView.dom.removeEventListener(name, handler);
+    clearTimeout(this.timeout);
     this.setCursor(null);
   }
 
@@ -114,31 +103,15 @@ export class DropCaretView {
     this.element.style.height = `${(rect.bottom - rect.top) / scaleY}px`;
   }
 
-  private scheduleRemoval(timeout: number) {
+  /** Draw the caret at `pos`; a drag that ends unseen takes it away after a while. */
+  show(pos: number) {
+    this.setCursor(pos);
     clearTimeout(this.timeout);
-    this.timeout = setTimeout(() => this.setCursor(null), timeout);
+    this.timeout = setTimeout(() => this.setCursor(null), 5000);
   }
 
-  private dragover(event: DragEvent) {
-    if (!this.editorView.editable) {
-      this.setCursor(null);
-      return;
-    }
-    const target = this.targetAt(this.editorView, event);
-    this.setCursor(target);
-    if (target != null) this.scheduleRemoval(5000);
-  }
-
-  private dragend() {
-    this.scheduleRemoval(20);
-  }
-
-  private drop() {
-    this.scheduleRemoval(20);
-  }
-
-  private dragleave(event: DragEvent) {
-    const related = event.relatedTarget as Node | null;
-    if (!related || !this.editorView.dom.contains(related)) this.setCursor(null);
+  hide() {
+    clearTimeout(this.timeout);
+    this.setCursor(null);
   }
 }
