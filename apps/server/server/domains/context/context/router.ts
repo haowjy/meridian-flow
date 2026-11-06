@@ -518,27 +518,45 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return resolved;
   }
 
-  function fileDispatch<T extends Dispatch>(
+  /** The dispatch with its leaf rendered from the parts the name codec or the caller decided. */
+  function withFilename<T extends Dispatch, P extends { name: string; extension: string }>(
     dispatch: T,
-    binary?: ContextWriteBinaryOptions,
-    sourceExtension?: string,
-  ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
-    const segments = dispatch.path.split("/");
-    const filename = segments.pop() ?? "";
-    const parsed = binary?.filename
-      ? Ok(binary.filename)
-      : parseDocumentFilename(filename, { sourceExtension });
-    if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
-    const parts = binary
-      ? filenameForBinary(parsed.value, binary.fileType, binary.mimeType)
-      : parsed.value;
-    const path = [...segments, renderFilename(parts.name, parts.extension)].join("/");
-    return Ok({
+    parts: P,
+  ): T & { filename: P } {
+    const path = [
+      ...dispatch.path.split("/").slice(0, -1),
+      renderFilename(parts.name, parts.extension),
+    ].join("/");
+    return {
       ...dispatch,
       filename: parts,
       path,
       canonical: uriFor(dispatch.scheme, path, dispatch.authority),
-    });
+    };
+  }
+
+  function fileDispatch<T extends Dispatch>(
+    dispatch: T,
+    sourceExtension?: string,
+  ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
+    const parsed = parseDocumentFilename(dispatch.path.split("/").pop() ?? "", { sourceExtension });
+    return parsed.ok
+      ? Ok(withFilename(dispatch, parsed.value))
+      : Err({ ...parsed.error, uri: dispatch.canonical });
+  }
+
+  /** A binary's dispatch: a prose-shaped name takes its storage type's registered suffix. */
+  function binaryDispatch<T extends Dispatch>(
+    dispatch: T,
+    binary: ContextWriteBinaryOptions,
+  ): Result<T & { filename: { name: string; extension: string } }, ContextError> {
+    let parts: { name: string; extension: string } | undefined = binary.filename;
+    if (!parts) {
+      const parsed = parseDocumentFilename(dispatch.path.split("/").pop() ?? "");
+      if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
+      parts = parsed.value;
+    }
+    return Ok(withFilename(dispatch, filenameForBinary(parts, binary.fileType, binary.mimeType)));
   }
 
   /** Claim a new tracked URI through its adapter: the checks both create entries share. */
@@ -630,7 +648,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
       const resolved = await resolveMutation(uri, options?.origin);
       if (!resolved.ok) return resolved;
-      const r = fileDispatch(resolved.value, undefined, options?.sourceExtension);
+      const r = fileDispatch(resolved.value, options?.sourceExtension);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("entry");
@@ -783,7 +801,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     ): Promise<Result<ContextBinaryWriteResult, ContextError>> {
       const resolved = await resolveMutation(uri, options?.origin);
       if (!resolved.ok) return resolved;
-      const r = fileDispatch(resolved.value, options);
+      const r = binaryDispatch(resolved.value, options);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("intake");

@@ -78,6 +78,27 @@ export function findInMemoryContextDocumentsById(
   });
 }
 
+/** The live document at a tree address in one folder: its literal spelling, else its alias. */
+export function findInMemoryContextDocumentAt(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  folderId: string | null,
+  filename: string,
+): DocumentRow | null {
+  for (const leaf of addressCandidates(filename)) {
+    for (const doc of backing.documents.values()) {
+      if (
+        doc.contextSourceId === sourceId &&
+        doc.deletedAt === null &&
+        doc.folderId === folderId &&
+        renderFilename(doc.name, doc.extension) === leaf
+      )
+        return doc;
+    }
+  }
+  return null;
+}
+
 export function hasOppositeEntry(
   backing: InMemoryContextDocumentStoreBacking,
   sourceId: string,
@@ -249,18 +270,8 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const folder = await this.resolveFolderAt(view, dir.join("/"));
     if (folder.kind !== "found") return { kind: "not_found" };
     const folderId = folder.node?.id ?? null;
-    for (const leaf of addressCandidates(filename)) {
-      for (const doc of this.backing.documents.values()) {
-        if (
-          doc.contextSourceId === this.sourceId &&
-          doc.deletedAt === null &&
-          doc.folderId === folderId &&
-          renderFilename(doc.name, doc.extension) === leaf
-        )
-          return { kind: "found", node: this.publicDocument(doc) };
-      }
-    }
-    return { kind: "not_found" };
+    const doc = findInMemoryContextDocumentAt(this.backing, this.sourceId, folderId, filename);
+    return doc ? { kind: "found", node: this.publicDocument(doc) } : { kind: "not_found" };
   }
 
   private findFolderRecord(parentId: string | null, name: string): ContextFolder | null {

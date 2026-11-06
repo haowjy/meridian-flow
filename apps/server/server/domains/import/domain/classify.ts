@@ -60,9 +60,10 @@ export async function classify(filename: string, bytes: Uint8Array) {
   const kind =
     tracked.kind === "tracked" ? (tracked.schemaType === "code" ? "code" : "note") : "binary";
   // The file keeps its whole name, extension included, so Download gives back what was picked.
+  // A suffix with whitespace (`Vol. 2`) is part of the name, not an extension.
   const dot = filename.lastIndexOf(".");
   const named =
-    keptAsFile && !parsed.value.extension && dot > 0
+    keptAsFile && !parsed.value.extension && dot > 0 && !/\s/.test(filename.slice(dot + 1))
       ? { name: filename.slice(0, dot), extension: filename.slice(dot + 1) }
       : {};
   return { keptAsFile, facts: { ...parsed.value, ...named, kind, filetype, mimeType } as const };

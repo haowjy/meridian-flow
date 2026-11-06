@@ -11,13 +11,7 @@
  * creates the destination in one go for callers with nothing to join.
  */
 
-import {
-  filenameForBinary,
-  filetypeForExtension,
-  PROSE_EXTENSIONS,
-  renderFilename,
-  storedFilename,
-} from "@meridian/contracts/protocol";
+import { copiedFilename, renderFilename } from "@meridian/contracts/protocol";
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
 import {
@@ -110,27 +104,13 @@ export async function copyBinaryDocument(
   }
   const slash = input.destinationUri.lastIndexOf("/");
   // The name is decided here once and handed to `writeBinary`, which does not parse it again.
-  // A prose suffix other than the source's own is only a name: the file keeps its extension.
-  const typed = input.destinationUri.slice(slash + 1).trim();
-  const dot = typed.lastIndexOf(".");
-  const suffix = dot >= 0 ? typed.slice(dot + 1).toLowerCase() : "";
-  const bare =
-    PROSE_EXTENSIONS.has(suffix) && suffix !== input.source.extension.toLowerCase()
-      ? typed.slice(0, dot)
-      : typed;
-  const destinationParts = storedFilename(bare, {
+  const copied = copiedFilename(input.destinationUri.slice(slash + 1), {
     extension: input.source.extension,
-    stored: true,
+    editable: false,
   });
-  if (!destinationParts.ok) return Err({ ...destinationParts.error, uri: input.destinationUri });
-  const named = destinationParts.filename;
-  const parts = filenameForBinary(
-    { ...named, filetype: filetypeForExtension(named.extension) ?? "markdown" },
-    input.source.fileType,
-    input.source.mimeType ?? undefined,
-  );
-  const destinationUri =
-    input.destinationUri.slice(0, slash + 1) + renderFilename(parts.name, parts.extension);
+  if (!copied.ok) return Err({ ...copied.error, uri: input.destinationUri });
+  const { name, extension } = copied.filename;
+  const destinationUri = input.destinationUri.slice(0, slash + 1) + renderFilename(name, extension);
   const existing = await input.port.stat(destinationUri);
   if (existing.ok) {
     return Err({
@@ -153,7 +133,7 @@ export async function copyBinaryDocument(
     mimeType: prepared.value.mimeType,
     sizeBytes: prepared.value.sizeBytes,
     hasPreview: prepared.value.hasPreview,
-    filename: parts,
+    filename: { name, extension },
     metadata: { copiedFrom: input.copiedFrom },
     ...(input.origin ? { origin: input.origin } : {}),
   });

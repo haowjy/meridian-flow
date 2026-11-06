@@ -33,10 +33,10 @@ describe("entryNameStemEnd", () => {
   });
 
   it("selects the part before a visible extension", () => {
-    expect(entryNameStemEnd("outline.json", { extension: "json", stored: false })).toBe(
+    expect(entryNameStemEnd("outline.json", { extension: "json", editable: true })).toBe(
       "outline".length,
     );
-    expect(entryNameStemEnd("Vol. 2.json", { extension: "json", stored: false })).toBe(
+    expect(entryNameStemEnd("Vol. 2.json", { extension: "json", editable: true })).toBe(
       "Vol. 2".length,
     );
   });
@@ -96,7 +96,7 @@ describe("validateContextEntryName", () => {
         "settings",
         [{ entryId: "sibling", name: "settings.toml", kind: "file" }],
         "file",
-        { extension: "toml", stored: false },
+        { extension: "toml", editable: true },
       )?.level,
     ).toBe("error");
     expect(

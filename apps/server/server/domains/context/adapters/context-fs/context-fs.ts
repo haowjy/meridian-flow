@@ -7,6 +7,7 @@
 
 import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
+  canonicalLeaf,
   classifyFiletype,
   type Filetype,
   type ParsedDocumentFilename,
@@ -301,7 +302,7 @@ export class ContextFS implements ContextSchemeAdapter {
           };
           const parsed = storedFilename(filename, {
             extension: located.document.extension,
-            stored: from.filetype === null,
+            editable: from.filetype !== null,
           });
           if (!parsed.ok) return Err(parsed.error);
           const transition = moveFiletypeTransition(from, path, parsed.filename.filetype);
@@ -445,11 +446,11 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private holderUri(path: string): string {
     const { dir, filename } = splitPath(path);
-    const parsed = parseDocumentFilename(filename);
-    const canonicalPath = parsed.ok
-      ? joinPath(dir.join("/"), renderFilename(parsed.value.name, parsed.value.extension))
-      : path;
-    return canonicalContextUri(this.scheme, canonicalPath, this.holder.authority);
+    return canonicalContextUri(
+      this.scheme,
+      joinPath(dir.join("/"), canonicalLeaf(filename)),
+      this.holder.authority,
+    );
   }
 
   private async overwriteInTransaction(

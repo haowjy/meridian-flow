@@ -420,7 +420,7 @@ export class ContextTreeMover {
     const parts = target.typed
       ? storedFilename(target.leaf, {
           extension: sourceNode.extension,
-          stored: sourceNode.filetype === null,
+          editable: sourceNode.filetype !== null,
         })
       : {
           ok: true as const,

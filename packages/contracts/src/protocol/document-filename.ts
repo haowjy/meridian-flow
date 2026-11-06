@@ -92,10 +92,15 @@ export function renderFilename(name: string, extension: string): string {
   return extension ? `${name}.${extension}` : name;
 }
 
-/** Folder spelling stays literal, but valid document aliases cannot hide an opposite-kind claim. */
-export function folderDocumentName(filename: string): string {
+/** The canonical spelling of a filename (`ch1.md` is `ch1`); a name the codec refuses stays literal. */
+export function canonicalLeaf(filename: string): string {
   const parsed = parseDocumentFilename(filename);
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : filename;
+}
+
+/** Folder spelling stays literal, but valid document aliases cannot hide an opposite-kind claim. */
+export function folderDocumentName(filename: string): string {
+  return canonicalLeaf(filename);
 }
 
 export type NamespaceNameClaim = {
@@ -150,10 +155,10 @@ export async function allocateFilename(
   throw new Error("unreachable");
 }
 
-/** What a row says about its own name: its stored extension and whether it is a stored file. */
+/** What a row says about its own name: its stored extension and whether it is a tracked document. */
 export interface NamedRow {
   extension: string;
-  stored: boolean;
+  editable: boolean;
 }
 
 export type StoredFilenameResult =
@@ -174,7 +179,7 @@ function invalidName(message: string): StoredFilenameResult {
  * document follows the document rules. No row is a create. `filetype` null keeps the file's type.
  */
 export function storedFilename(typed: string, row?: NamedRow): StoredFilenameResult {
-  if (row?.stored) return fileName(typed, row);
+  if (row && !row.editable) return fileName(typed, row);
   const parsed = parseDocumentFilename(typed, { sourceExtension: row?.extension });
   return parsed.ok
     ? {
@@ -192,13 +197,13 @@ export function storedFilename(typed: string, row?: NamedRow): StoredFilenameRes
  * `filetype` is null while the extension is the row's, so the file keeps its type; any other
  * registered suffix names the type it would convert to, which the mover then refuses or accepts.
  * A kept prose file refuses a different prose suffix here, so the writer sees it at once.
- * The row's extension is compared lowercase and kept as stored; a cached row may lack it.
+ * The row's extension is compared lowercase and kept as stored.
  */
-function fileName(typed: string, row: { extension?: string }): StoredFilenameResult {
+function fileName(typed: string, row: NamedRow): StoredFilenameResult {
   const input = typed.trim();
   const dot = input.lastIndexOf(".");
   const suffix = dot >= 0 ? input.slice(dot + 1).toLowerCase() : "";
-  const stored = row.extension ?? "";
+  const stored = row.extension;
   const own = stored.toLowerCase();
   const ownSuffix = Boolean(suffix) && suffix === own;
   if (PROSE_EXTENSIONS.has(own) && PROSE_EXTENSIONS.has(suffix) && !ownSuffix)
@@ -222,11 +227,50 @@ function fileName(typed: string, row: { extension?: string }): StoredFilenameRes
 }
 
 /**
+ * The name a copy of a stored file gets: a prose suffix other than the row's own is only a name
+ * (a PNG copied to `x.md` is `x.png`), and a kept prose file never converts.
+ */
+export function copiedFilename(typed: string, row: NamedRow): StoredFilenameResult {
+  const input = typed.trim();
+  const dot = input.lastIndexOf(".");
+  const suffix = dot >= 0 ? input.slice(dot + 1).toLowerCase() : "";
+  const bare =
+    PROSE_EXTENSIONS.has(suffix) && suffix !== row.extension.toLowerCase()
+      ? input.slice(0, dot)
+      : input;
+  return fileName(bare, row);
+}
+
+/** Every (name, extension) pair that renders as `filename`: lookups stay exact and indexed. */
+export function filenameSplits(filename: string): { name: string; extension: string }[] {
+  const splits = [{ name: filename, extension: "" }];
+  for (let at = 1; at < filename.length - 1; at += 1) {
+    if (filename[at] === ".") {
+      splits.push({ name: filename.slice(0, at), extension: filename.slice(at + 1) });
+    }
+  }
+  return splits;
+}
+
+/**
+ * The parts a stored row renders as `filename`: its own `extension`, compared case-insensitively
+ * and cut off with the spelling the filename has; a row with no extension is all name.
+ */
+export function splitRendered(
+  filename: string,
+  extension: string,
+): { name: string; extension: string } {
+  const at = filename.length - extension.length - 1;
+  return extension && at > 0 && filename.slice(at).toLowerCase() === `.${extension.toLowerCase()}`
+    ? { name: filename.slice(0, at), extension: filename.slice(at + 1) }
+    : { name: filename, extension: "" };
+}
+
+/**
  * The spellings a tree lookup tries for a path's leaf, in order: as written (a file kept as
  * `binary.md` has that exact name), then the codec's alias (`ch1.md` is `ch1`).
  */
 export function addressCandidates(leaf: string): string[] {
-  const parsed = parseDocumentFilename(leaf);
-  const alias = parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : leaf;
+  const alias = canonicalLeaf(leaf);
   return alias === leaf ? [leaf] : [leaf, alias];
 }
