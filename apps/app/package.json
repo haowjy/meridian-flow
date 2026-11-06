@@ -103,7 +103,6 @@
     "@lingui/vite-plugin": "^6.4.0",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.1",
-    "@tanstack/react-query-devtools": "^5.101.1",
     "@types/babel__core": "^7.20.5",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",

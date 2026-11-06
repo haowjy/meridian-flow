@@ -52,12 +52,6 @@ const DebugOverlay =
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
     : null;
 
-const ReactQueryDevtools = import.meta.env.DEV
-  ? lazy(() =>
-      import("@tanstack/react-query-devtools").then((m) => ({ default: m.ReactQueryDevtools })),
-    )
-  : null;
-
 export const Route = createFileRoute("/_authenticated")({
   ...PERSISTENT_SHELL_OPTIONS,
   // `?settings=` is layout-owned so the settings overlay is URL-addressable from
@@ -207,11 +201,6 @@ function AuthenticatedProviderTree({
                 {DebugOverlay ? (
                   <Suspense fallback={null}>
                     <DebugOverlay />
-                  </Suspense>
-                ) : null}
-                {ReactQueryDevtools ? (
-                  <Suspense fallback={null}>
-                    <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
                   </Suspense>
                 ) : null}
               </DensityPopoverCollisionProvider>
