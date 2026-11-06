@@ -113,9 +113,9 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
       deletedLive: true,
     });
 
+    expect((await s.writer.delete("ch4")).ok).toBe(true);
     const live = runtime.ports.contextPorts.forProject(s.project.id, s.project.userId, new Map());
-    const moved = await live.move("manuscript://ch5", "manuscript://ch4", {
-      overwrite: true,
+    const moved = await live.commitWriterLocation("manuscript://ch5", "manuscript://ch4", {
       origin: { type: "human", userId: s.project.userId },
     });
     expect(moved.ok).toBe(true);

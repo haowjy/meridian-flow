@@ -43,7 +43,6 @@ export type ContextTargetExpectation =
   | { state: "occupied"; token: ContextLocationToken };
 
 interface PreparedContextMoveBase {
-  actorUserId?: string;
   /** Source location inspected by ContextTreeMover; commit must prove it still resolves. */
   source: ContextLocationToken;
   /** Project whose holders the move note counts (contract §10); absent, the move counts nothing. */
@@ -57,8 +56,6 @@ interface PreparedContextMoveBase {
   destinationPath: string;
   /** Destination state inspected during preparation; commit must prove it has not changed. */
   expectedTarget: ContextTargetExpectation;
-  /** Explicit opt-in to replace an occupied file target. Directories are never overwritten. */
-  overwrite: boolean;
   position?: ContextSiblingPosition;
 }
 

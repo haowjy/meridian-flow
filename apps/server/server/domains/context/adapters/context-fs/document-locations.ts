@@ -163,7 +163,7 @@ async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<
 }
 
 /**
- * Row-lock every document a move mutates (moved files and an overwrite victim), sorted. NO KEY
+ * Row-lock every document a move mutates (moved files), sorted. NO KEY
  * UPDATE is compatible with the journal's holder FK KEY SHARE but orders a same-source move
  * against derive certification and other moves of the same rows.
  */

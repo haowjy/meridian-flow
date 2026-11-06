@@ -13,11 +13,7 @@ import {
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
 import { createDrizzleContextCatalog } from "../../domains/context/adapters/context-catalog.js";
-import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
-import {
-  createAllowAllFileAccess,
-  createLocalFileAccessChanges,
-} from "../../domains/file-policy/index.js";
+import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import {
   createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository,
   createProjectRepositoryForTest,
@@ -44,8 +40,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
-    const { createDrizzleProjectWorkAuthorityResolver, createDrizzleProjectWorkRepository } =
-      await import("../../domains/projects/index.js");
+    const { createDrizzleProjectWorkAuthorityResolver } = await import(
+      "../../domains/projects/index.js"
+    );
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
@@ -1118,22 +1115,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await yjsState(DOCUMENT_ID)).toEqual(yjsBefore);
     });
 
-    it("keeps provisional naming across a system move without the writer-placement option", async () => {
-      const { projectId, port } = await arrangeUntitled();
-
-      const moved = await port.move(`scratch://@w1/Untitled 1`, "manuscript://Act 1/Untitled 1", {
-        origin: { type: "human", userId: USER_ID },
-      });
-      expect(moved).toMatchObject({ ok: true });
-
-      // Generic ContextPort.move never silently graduates a document when only its container changes.
-      await expect(promotedRow(projectId)).resolves.toMatchObject({
-        folderName: "Act 1",
-        name: "Untitled 1",
-        provisionalName: true,
-      });
-    });
-
     it("moves a folder and its children across schemes", async () => {
       const { workId, port } = await arrangeUntitled();
       await expect(
@@ -1312,7 +1293,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // A personal document moved into the project: only this project's holders count.
       const cast = await write("user://cast");
       await db.insert(schema.documentLinks).values([row(holder, cast), row(otherHolder, cast)]);
-      await expect(port.move("user://cast", "kb://cast")).resolves.toMatchObject({
+      await expect(port.commitWriterLocation("user://cast", "kb://cast")).resolves.toMatchObject({
         ok: true,
         value: { linkUpdate: { links: 1, documents: 1 } },
       });
@@ -1341,10 +1322,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .orderBy(schema.documentLinks.linkKey);
       const linksBefore = await holderLinks();
       await expect(
-        port.move("manuscript://Chapter 2", "manuscript://Chapter 3"),
+        port.commitWriterLocation("manuscript://Chapter 2", "manuscript://Chapter 3"),
       ).resolves.toMatchObject({ ok: true, value: { linkUpdate: { links: 2, documents: 1 } } });
       await expect(
-        port.move("manuscript://Chapter 1", "manuscript://Chapter 2"),
+        port.commitWriterLocation("manuscript://Chapter 1", "manuscript://Chapter 2"),
       ).resolves.toMatchObject({ ok: true, value: { linkUpdate: { links: 1, documents: 1 } } });
       await expect(port.stat("manuscript://Chapter 2")).resolves.toMatchObject({
         ok: true,

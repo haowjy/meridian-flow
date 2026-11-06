@@ -281,21 +281,15 @@ describe("context router scheme creation capabilities", () => {
   it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
     const { port, uploads } = createPort();
 
-    await expect(port.move(`scratch://@w7/old.md`, `uploads://old.md`)).resolves.toMatchObject({
-      ok: false,
-      error: {
-        code: "invalid_operation",
-        uri: "uploads://@c12/old.md",
-        message: expect.stringContaining("scratch://"),
-      },
-    });
     await expect(
       port.commitWriterLocation(`scratch://@w7/old.md`, `uploads://old.md`),
     ).resolves.toMatchObject({
       ok: false,
       error: { code: "invalid_operation", uri: "uploads://@c12/old.md" },
     });
-    await expect(port.move(`uploads://old.md`, `uploads://renamed.md`)).resolves.toEqual({
+    await expect(
+      port.commitWriterLocation(`uploads://old.md`, `uploads://renamed.md`),
+    ).resolves.toEqual({
       ok: true,
       value: { movedNodeId: "document-old", destinationPath: "renamed" },
     });

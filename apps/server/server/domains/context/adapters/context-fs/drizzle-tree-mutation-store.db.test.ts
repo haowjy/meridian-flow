@@ -144,7 +144,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             destinationFiletype: "markdown",
             graduateProvisionalName: false,
             expectedTarget: { state: "absent" },
-            overwrite: false,
           }),
         ).toMatchObject({ ok: true });
       }
@@ -232,7 +231,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationSourceId: SOURCE_ID,
           destinationPath: "after",
           expectedTarget: { state: "absent" },
-          overwrite: false,
         }),
       ).toMatchObject({ ok: true });
       expect(
@@ -304,7 +302,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationFiletype: "markdown",
           graduateProvisionalName: false,
           expectedTarget: { state: "absent" },
-          overwrite: false,
         }),
       ).toMatchObject({ ok: true });
       expect(
@@ -732,7 +729,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destinationSourceId: sourceId,
         destinationPath: "moved-holder",
         expectedTarget: { state: "absent" },
-        overwrite: false,
         destinationFiletype: "markdown",
         destinationFilename: { name: "moved-holder", extension: "" },
         graduateProvisionalName: false,

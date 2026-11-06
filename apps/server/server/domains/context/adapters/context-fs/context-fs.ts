@@ -965,13 +965,11 @@ export class ContextFS implements ContextSchemeAdapter {
       const committed = await this.mutationStore.commitMove({
         source,
         linkNoteProjectId: prepared.linkNoteProjectId,
-        actorUserId: prepared.actorUserId,
         destinationSourceId: prepared.destinationSourceId,
         destinationParentToken: prepared.destinationParentToken,
         destinationCreateFolders: prepared.destinationCreateFolders,
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
-        overwrite: prepared.overwrite,
         position: prepared.position,
         graduateProvisionalName: prepared.graduateProvisionalName,
         destinationFiletype: destinationFiletype.value,
@@ -991,13 +989,11 @@ export class ContextFS implements ContextSchemeAdapter {
     const committed = await this.mutationStore.commitMove({
       source,
       linkNoteProjectId: prepared.linkNoteProjectId,
-      actorUserId: prepared.actorUserId,
       destinationSourceId: prepared.destinationSourceId,
       destinationParentToken: prepared.destinationParentToken,
       destinationCreateFolders: prepared.destinationCreateFolders,
       destinationPath: prepared.destinationPath,
       expectedTarget: prepared.expectedTarget,
-      overwrite: prepared.overwrite,
       position: prepared.position,
     });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
