@@ -15,6 +15,8 @@ import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "../context/context-schemes";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { useContextRemovalProject } from "../context/use-context-removal-project";
+import { useFollowOpenDocumentPlacement } from "../context/use-follow-open-document-placement";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
@@ -55,7 +57,23 @@ export function MobileProject(props: MobileProjectProps) {
   };
   useDockReveal(openChatSheet);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { tabs } = useContextTabs(props.projectId);
+  const { tabs, selectedTabIdByWork } = useContextTabs(props.projectId);
+  const { selection } = useContextRemovalProject(props.projectId);
+  const selectedDocumentId =
+    selection.status === "bound" && selection.identity.kind === "server"
+      ? selection.identity.documentId
+      : props.editorWorkId
+        ? selectedTabIdByWork[props.editorWorkId]
+        : undefined;
+  useFollowOpenDocumentPlacement({
+    projectId: props.projectId,
+    editorWorkId: props.editorWorkId,
+    selectedDocumentId,
+    activeContextScheme: props.activeContextScheme,
+    activeContextPath: props.activeContextPath,
+    routeDisplayed: props.activeScreen === "context",
+    onOpenContextTarget: props.onOpenContextTarget,
+  });
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
   const localTab =
     selectedLocal?.kind === "new" || selectedLocal?.kind === "tracked" ? selectedLocal : undefined;

@@ -6,7 +6,7 @@ import {
   type ProjectContextTreeScheme,
   type Work,
 } from "@meridian/contracts/protocol";
-import { useCallback, useEffect, useLayoutEffect } from "react";
+import { useCallback, useLayoutEffect } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
@@ -20,17 +20,15 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import {
-  useAccountResourceProjection,
   useAccountResourceReplica,
   useContextRemovalCoordinator,
-  useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
-import { projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import type { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
+import { useFollowOpenDocumentPlacement } from "./context/use-follow-open-document-placement";
 import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
 import {
   type OpenContextRoute,
@@ -94,14 +92,12 @@ export function ContextViewerSurfaceController({
   const routeWorkId = editorWorkId ?? undefined;
   const captureNavigation = useCaptureProjectNavigation();
   const contextRemoval = useContextRemovalCoordinator();
-  const availability = useProjectContextAvailabilityCoordinator();
   const resources = useAccountResourceReplica();
-  const resourceProjection = useAccountResourceProjection(projectId);
 
   const { tabs } = useContextTabs(projectId);
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
-  const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
+  const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = editorWorkId ? editorTabsForWork(tabs, editorWorkId) : [];
   const removalState = useContextRemovalProject(projectId);
   const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
@@ -292,84 +288,15 @@ export function ContextViewerSurfaceController({
     [projectId, resources],
   );
 
-  useEffect(() => {
-    for (const tab of tabs) {
-      const projection = projectResourceTab(
-        projectId,
-        tab,
-        resourceProjection.records,
-        resourceProjection.placement,
-      );
-      if (projection.kind === "none") continue;
-      if (projection.kind === "terminal") {
-        // A terminal resource has already disappeared from the live catalog. Close its
-        // represented tab through the same removal path as an optimistic disappearance;
-        // closeVanished keeps live drafts open while ordinary tabs leave silently.
-        settleWriterClose(contextRemoval.closeVanished(projectId, tab));
-        void availability
-          .acceptCommittedDelete({
-            projectId,
-            deletedDocumentIds: projection.documentIds,
-            generation: projection.generation,
-            deletionVersion: projection.deletionVersion,
-          })
-          .catch((error: unknown) => reportError(error));
-        continue;
-      }
-      if (projection.kind === "removed") {
-        settleWriterClose(contextRemoval.closeVanished(projectId, tab));
-        continue;
-      }
-      const routeFollowsTab =
-        routeDisplayed &&
-        tab.kind !== "new" &&
-        projection.tab.kind !== "new" &&
-        selectedDocumentId === tab.documentId &&
-        activeContextScheme === tab.scheme &&
-        activeContextPath === tab.path &&
-        (projection.tab.scheme !== tab.scheme ||
-          projection.tab.path !== tab.path ||
-          projection.tab.workId !== tab.workId ||
-          projection.tab.rootThreadId !== tab.rootThreadId);
-      if (routeFollowsTab && projection.tab.kind !== "new")
-        void onOpenContextTarget(
-          {
-            scheme: projection.tab.scheme,
-            path: projection.tab.path,
-            workId: projection.tab.workId ?? routeWorkId,
-            ...(projection.tab.rootThreadId ? { rootThreadId: projection.tab.rootThreadId } : {}),
-            documentId: projection.tab.documentId,
-          },
-          // Keep the tab at the route's old locator until replacement is accepted. The
-          // prepared tab and address then commit together, so admission can retain the
-          // already-open document by identity while a move or rename is in flight.
-          { replace: true, tab: projection.tab },
-        ).then(
-          (settlement) => {
-            if (settlement.kind === "failed") reportError(settlement.error);
-          },
-          (error: unknown) => reportError(error),
-        );
-      else
-        void reconcileResourceTab(projectId, projection.resourceHandle, projection.tab).catch(
-          (error: unknown) => reportError(error),
-        );
-    }
-  }, [
-    activeContextPath,
-    activeContextScheme,
-    availability,
-    contextRemoval,
-    onOpenContextTarget,
+  useFollowOpenDocumentPlacement({
     projectId,
-    reconcileResourceTab,
-    resourceProjection.records,
-    resourceProjection.placement,
-    routeDisplayed,
-    routeWorkId,
+    editorWorkId: routeWorkId,
     selectedDocumentId,
-    tabs,
-  ]);
+    activeContextScheme,
+    activeContextPath,
+    routeDisplayed,
+    onOpenContextTarget,
+  });
 
   return (
     <ContextViewer

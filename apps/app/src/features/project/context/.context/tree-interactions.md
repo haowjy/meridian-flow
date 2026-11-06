@@ -135,7 +135,9 @@ move of it or a folder above it, that move's rollback after a refusal, or anothe
 document taking the path it holds or left never strands it. `resolveLocalDocumentAddress`
 returns it as `bound` and it outranks the server's answer for that path; admission
 then repairs the URL (and, on the phone, the crumbs) to its projected path, and the
-phone host finds the same document by identity meanwhile. A document under a pending
+phone host finds the same document by identity meanwhile. Desktop and phone also
+follow the replica's placement (`useFollowOpenDocumentPlacement`): a move or delete
+of the open document changes the URL at once. A document under a pending
 move carries `placementPending` for the same reason: a server alias for the path the
 writer just gave it cannot pull the route back.
 
