@@ -3,11 +3,10 @@
  *
  * Fetches the active file through `useProjectContextRead` (the signed-URL
  * read route), chooses the matching viewer body for its kind, and composes the
- * shared `ReadOnlyViewerFrame` at the host boundary. The Editor uses the
- * headered host; phone documents and the dock's document use the bare host
- * because their own chrome (top-bar breadcrumb, title chip) already names the
- * file. Only images, PDFs and binaries land here from the dock; a text file
- * mounts the editor.
+ * shared `ReadOnlyViewerFrame`. Every host's own chrome names the file: the
+ * Editor's document path, the dock's title chip, the phone's top bar. Only
+ * images, PDFs and binaries land here from the dock; a text file mounts the
+ * editor.
  */
 
 import { Trans } from "@lingui/react/macro";
@@ -16,40 +15,33 @@ import { AlertCircle } from "lucide-react";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { cn } from "@/lib/utils";
 import { previewKind } from "./preview-kind";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
 import { PdfViewer } from "./viewers/PdfViewer";
-import { ReadOnlyViewerFrame, type ReadOnlyViewerHeader } from "./viewers/ReadOnlyViewerFrame";
+import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
 import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
   editorWorkId: string | null;
   tab: Extract<ContextTab, { kind: "viewer" }>;
+  /** The surface's material; the dock paints its own and passes `bg-transparent`. */
+  className?: string;
 };
 
-export function ContextViewerHost(props: ContextViewerHostProps) {
-  return (
-    <ContextViewerContent {...props} header={{ name: props.tab.name, path: props.tab.path }} />
-  );
-}
-
-export function ContextViewerBareHost(props: ContextViewerHostProps) {
-  return <ContextViewerContent {...props} />;
-}
-
-function ContextViewerContent({
+export function ContextViewerHost({
   projectId,
   editorWorkId,
   tab,
-  header,
-}: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
+  className,
+}: ContextViewerHostProps) {
   const owner = isOwnedContextScheme(tab.scheme) ? tabContextOwner(tab) : { workId: editorWorkId };
   const read = useProjectContextRead(projectId, tab.scheme, tab.path, owner);
   if (read.status === "loading") {
     return (
-      <ReadOnlyViewerFrame header={header}>
+      <ReadOnlyViewerFrame className={className}>
         <div className="relative h-full" aria-busy>
           <DelayedContentSkeleton
             key={JSON.stringify([projectId, tab.scheme, tab.path, owner])}
@@ -61,7 +53,7 @@ function ContextViewerContent({
   }
   if (read.status === "error") {
     return (
-      <ViewerError>
+      <ViewerError className={className}>
         <AlertCircle className="size-4" aria-hidden />
         <Trans>Couldn't load this file.</Trans>
       </ViewerError>
@@ -85,7 +77,7 @@ function ContextViewerContent({
     case "text":
     case "markdown":
       return (
-        <ReadOnlyViewerFrame header={header}>
+        <ReadOnlyViewerFrame className={className}>
           <TextViewer
             source={
               read.data.kind === "tracked" ? { content: read.data.content } : { url: read.data.url }
@@ -99,7 +91,7 @@ function ContextViewerContent({
     case "image":
       return binary ? (
         <ReadOnlyViewerFrame
-          header={header}
+          className={className}
           footer={imageViewerFooter({ url: binary.url, name: tab.name })}
         >
           <ImageViewer
@@ -118,13 +110,13 @@ function ContextViewerContent({
       ) : null;
     case "pdf":
       return binary ? (
-        <ReadOnlyViewerFrame header={header}>
+        <ReadOnlyViewerFrame className={className}>
           <PdfViewer url={binary.url} name={tab.name} sizeBytes={binary.sizeBytes} />
         </ReadOnlyViewerFrame>
       ) : null;
     case "binary":
       return binary ? (
-        <ReadOnlyViewerFrame header={header}>
+        <ReadOnlyViewerFrame className={className}>
           <BinaryFallbackViewer
             url={binary.url}
             mimeType={binary.mimeType}
@@ -136,9 +128,14 @@ function ContextViewerContent({
   }
 }
 
-function ViewerError({ children }: { children: React.ReactNode }) {
+function ViewerError({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="grid h-full place-items-center bg-background px-6 text-center text-sm text-destructive">
+    <div
+      className={cn(
+        "grid h-full place-items-center bg-background px-6 text-center text-sm text-destructive",
+        className,
+      )}
+    >
       <div className="flex items-center gap-2">{children}</div>
     </div>
   );
