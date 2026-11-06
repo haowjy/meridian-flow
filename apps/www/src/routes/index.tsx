@@ -13,13 +13,13 @@ const getAppOrigin = createServerFn({ method: "GET" }).handler(
 
 export const Route = createFileRoute("/")({
   loader: () => getAppOrigin(),
-  // Before first paint, so the hero never flashes the stacked layout that
-  // no-script and reduced-motion visitors get.
+  // Before first paint, so the hero never flashes the stacked layout that no-script
+  // and reduced-motion visitors get. If the bundle never starts the film, stack after all.
   head: () => ({
     scripts: [
       {
         children:
-          "if(!matchMedia('(prefers-reduced-motion: reduce)').matches)document.documentElement.classList.add('cine')",
+          "if(!matchMedia('(prefers-reduced-motion: reduce)').matches){const h=document.documentElement;h.classList.add('cine');setTimeout(()=>{if(!h.classList.contains('film-ready'))h.classList.remove('cine')},6000)}",
       },
     ],
   }),

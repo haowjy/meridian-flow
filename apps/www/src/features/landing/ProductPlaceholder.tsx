@@ -302,7 +302,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
 
   return {
     element: slot,
-    set(next: ProductState, progress = 0) {
+    set(next: ProductState, progress: number, isPhone: boolean) {
       if (next !== state) {
         state = next;
         held = false;
@@ -316,7 +316,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
       typing.textContent = line.slice(0, Math.round(line.length * progress));
       reply.textContent = words.chat;
       note.textContent = words.note;
-      if (innerWidth < 820 && !held) view(progress < 0.45 ? "chat" : "page");
+      if (isPhone && !held) view(progress < 0.45 ? "chat" : "page");
     },
   };
 }

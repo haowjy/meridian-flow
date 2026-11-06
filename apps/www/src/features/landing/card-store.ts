@@ -29,7 +29,7 @@ export function createCardStore() {
 
   const advance = () => {
     if (state.step < QUESTIONS.length - 1) {
-      update({ ...state, step: state.step + 1 });
+      update({ ...state, step: state.step + 1, touched: true });
       return;
     }
     onSend?.();
@@ -47,7 +47,7 @@ export function createCardStore() {
     },
     advance,
     back() {
-      update({ ...state, step: state.step - 1 });
+      update({ ...state, step: state.step - 1, touched: true });
     },
     /** Skip takes the recommended answer, as the product does when its clock runs out. */
     skip() {
@@ -70,3 +70,17 @@ export function createCardStore() {
 }
 
 export type CardStore = ReturnType<typeof createCardStore>;
+
+/** Keeps the story text in step with the card, with or without the film. */
+export function bindStoryChoice(root: HTMLElement, store: CardStore) {
+  const part = (selector: string) => root.querySelector(selector) as HTMLElement;
+  const sync = () => {
+    const isReplaced = store.whoIsHe() === "a";
+    part("#r-a").hidden = !isReplaced;
+    part("#r-b").hidden = isReplaced;
+    part("#tw-a").hidden = !isReplaced;
+    part("#tw-b").hidden = isReplaced;
+  };
+  sync();
+  return store.subscribe(sync);
+}
