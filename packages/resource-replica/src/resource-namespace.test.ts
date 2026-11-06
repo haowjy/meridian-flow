@@ -325,8 +325,6 @@ describe("namespace record transitions", () => {
         result: {
           ok: true,
           value: {
-            movedNodeId: "document",
-            destinationPath: "chapters/after",
             destinationUri: "manuscript://chapters/after",
           },
         },
@@ -402,8 +400,6 @@ describe("namespace record transitions", () => {
         result: {
           ok: true,
           value: {
-            movedNodeId: "document",
-            destinationPath: "chapters/after",
             destinationUri: "manuscript://chapters/after",
           },
         },
@@ -954,7 +950,7 @@ it("refuses a move receipt for a different captured destination parent", () => {
         expected: { kind: "file", nodeId: "document" },
         destinationParent: { kind: "folder", folderId: "replacement" },
       },
-      result: { ok: true, value: { destinationPath: "B/A", destinationUri: "manuscript://B/A" } },
+      result: { ok: true, value: { destinationUri: "manuscript://B/A" } },
     },
   };
   expect(namespaceOutcomeMatches(attempt, outcome)).toBe(false);
@@ -1004,7 +1000,6 @@ it("matches immutable identity moves after the destination's path and owner chan
         result: {
           ok: true,
           value: {
-            destinationPath: "Renamed/before",
             destinationUri: "manuscript://Renamed/before",
           },
         },
@@ -1067,7 +1062,6 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
       result: {
         ok: true,
         value: {
-          destinationPath: "Renamed/New Arc/Part 1/A",
           destinationUri: "manuscript://Renamed/New Arc/Part 1/A",
         },
       },
@@ -1100,7 +1094,7 @@ describe("a name the writer typed with a prose suffix", () => {
         },
         result: {
           ok: true,
-          value: { movedNodeId: "document", destinationPath: "x", destinationUri },
+          value: { destinationUri },
         },
       },
     }) satisfies NamespaceOutcome;

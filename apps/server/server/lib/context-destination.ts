@@ -40,16 +40,12 @@ export function parseDestinationParent(
       scheme: parent.scheme,
       owner: {
         workId: parseWorkId(owner.workId),
-        ...(typeof owner.workHandle === "string" || owner.workHandle === null
-          ? { workHandle: owner.workHandle }
-          : {}),
         ...(owner.rootThreadId != null
           ? {
               rootThreadId: requireRequestId(
                 owner.rootThreadId,
                 "destinationParent.owner.rootThreadId",
               ),
-              rootThreadRef: typeof owner.rootThreadRef === "string" ? owner.rootThreadRef : null,
             }
           : {}),
       },

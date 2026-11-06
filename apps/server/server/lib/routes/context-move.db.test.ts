@@ -156,8 +156,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "moved" as const,
         ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
         scheme: destinationUri.value.scheme,
-        path: result.value.destinationPath,
-        name: result.value.destinationPath.split("/").at(-1),
+        path: destinationUri.value.path,
+        name: destinationUri.value.path.split("/").at(-1),
       };
     };
 

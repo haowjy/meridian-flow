@@ -22,7 +22,7 @@ const receipt = {
   },
   result: {
     ok: true,
-    value: { destinationPath: "Book/new.md", destinationUri: "manuscript://Book/new.md" },
+    value: { destinationUri: "manuscript://Book/new.md" },
   },
 } satisfies Extract<ContextOperationReceipt, { command: { kind: "move" } }>;
 

@@ -30,6 +30,7 @@ import type {
 } from "./resource-records";
 import {
   destinationParentLocation,
+  namespaceEntryIs,
   namespaceRequestId,
   sameDestinationParent,
 } from "./resource-records";
@@ -291,14 +292,6 @@ export function namespaceOutcomeMatches(
     );
   }
   return false;
-}
-
-/** Whether a receipt's command names the entry, and the kind of it, that this request sent. */
-function namespaceEntryIs(
-  expected: { kind: string; nodeId: string },
-  request: Extract<NamespaceRequest, { kind: "move" | "delete" }>,
-): boolean {
-  return expected.kind === request.body.kind && expected.nodeId === request.entryId;
 }
 
 function attemptIs<Kind extends NamespaceRequest["kind"]>(

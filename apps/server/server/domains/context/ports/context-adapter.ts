@@ -138,7 +138,6 @@ export type AdapterLocatedDocument = Omit<AdapterUntitledDocumentResult, "status
 
 export type AdapterMoveResult = {
   linkUpdate?: { links: number; documents: number };
-  movedNodeId?: string;
   path: string;
   locationVersion?: string;
 };

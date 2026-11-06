@@ -109,7 +109,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
 
-      expect(moved).toMatchObject({ ok: true, value: { destinationPath: "lore/chapter" } });
+      expect(moved).toMatchObject({
+        ok: true,
+        value: { destinationUri: "manuscript://lore/chapter" },
+      });
       const live = await tree.resolvePath(LIVE_TREE, {
         contextSourceId: s.manuscript,
         path: "lore",

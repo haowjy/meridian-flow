@@ -429,7 +429,7 @@ describe("canonical document naming laws", () => {
       ),
     ).toMatchObject({
       ok: true,
-      value: { destinationPath: "ch12", movedNodeId: prose.value.documentId },
+      value: { destinationUri: "manuscript://ch12" },
     });
     await fs.ensureTrackedDocument("config.toml");
     expect(
@@ -437,7 +437,7 @@ describe("canonical document naming laws", () => {
         destination: { kind: "at", folder: dispatch(""), createFolders: [] },
         name: "settings",
       }),
-    ).toMatchObject({ ok: true, value: { destinationPath: "settings.toml" } });
+    ).toMatchObject({ ok: true, value: { destinationUri: "manuscript://settings.toml" } });
     expect(await fs.ensureTrackedDocument("copied", { sourceExtension: "toml" })).toMatchObject({
       ok: true,
     });
@@ -476,7 +476,7 @@ describe("canonical document naming laws", () => {
       }),
     ).toMatchObject({
       ok: true,
-      value: { destinationPath: "Lore (2)" },
+      value: { destinationUri: "manuscript://Lore (2)" },
     });
     expect(
       await mover.commitWriterLocation(await movableAt(fs, "Lore"), dispatch(""), {
@@ -485,7 +485,7 @@ describe("canonical document naming laws", () => {
       }),
     ).toMatchObject({
       ok: true,
-      value: { destinationPath: "Chapter" },
+      value: { destinationUri: "manuscript://Chapter" },
     });
   });
 });
@@ -585,13 +585,13 @@ describe("router through real ContextFS naming", () => {
       await moveTo(port, "manuscript://Chapter", "manuscript://Lore", {
         expected: await entryAt(port, "manuscript://Chapter"),
       }),
-    ).toMatchObject({ ok: true, value: { destinationPath: "Lore (2)" } });
+    ).toMatchObject({ ok: true, value: { destinationUri: "manuscript://Lore (2)" } });
     await fs.mkdir("Other");
     expect(
       await moveTo(port, "manuscript://Other", "manuscript://Chapter.md", {
         expected: await entryAt(port, "manuscript://Other"),
       }),
-    ).toMatchObject({ ok: true, value: { destinationPath: "Chapter.md" } });
+    ).toMatchObject({ ok: true, value: { destinationUri: "manuscript://Chapter.md" } });
   });
 
   it.each([
