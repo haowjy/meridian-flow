@@ -242,7 +242,7 @@ describe("streamWithRetry retry-after", () => {
 
     await vi.advanceTimersByTimeAsync(0);
     controller.abort();
-    await expect(completion).rejects.toBe(controller.signal.reason);
+    await expect(completion).resolves.toEqual([]);
     expect(calls()).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -335,12 +335,12 @@ describe("cancel drain", () => {
       controller.abort();
       await vi.advanceTimersByTimeAsync(4_000);
       expect((await late).value).toEqual({ type: "text.delta", text: "late" });
-      let done = false;
+      let end: StreamEvent | undefined;
       const finish = stream.next().then((result) => {
-        done = result.done === true;
+        end = result.value;
       });
       await vi.advanceTimersByTimeAsync(1_000);
-      expect(done).toBe(true);
+      expect(end).toMatchObject({ type: "end", result: { meteringStatus: "missing_usage" } });
       await finish;
       expect(vi.getTimerCount()).toBe(0);
     } finally {

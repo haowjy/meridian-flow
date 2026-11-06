@@ -61,6 +61,12 @@ export async function writeModelResponse(
   return { row: mapModelResponse(row), inserted: true };
 }
 
+/** A response the provider metered. Rows from calls stopped before output record only that a call was made. */
+const hasMeteredUsage = or(
+  gt(schema.modelResponses.inputTokens, 0),
+  gt(schema.modelResponses.outputTokens, 0),
+);
+
 export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelResponseRepository {
   return {
     async create(input: CreateModelResponseInput) {
@@ -85,7 +91,13 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
         })
         .from(schema.modelResponses)
         .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
-        .where(and(eq(schema.turns.threadId, threadId), eq(schema.turns.role, "assistant")))
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            eq(schema.turns.role, "assistant"),
+            hasMeteredUsage,
+          ),
+        )
         .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
         .limit(1);
       return row
@@ -109,7 +121,13 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
         })
         .from(schema.modelResponses)
         .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
-        .where(and(inArray(schema.turns.id, turnIds), eq(schema.turns.role, "assistant")))
+        .where(
+          and(
+            inArray(schema.turns.id, turnIds),
+            eq(schema.turns.role, "assistant"),
+            hasMeteredUsage,
+          ),
+        )
         .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
         .limit(1);
       return row
@@ -161,7 +179,7 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
         .select({ inputTokens: schema.modelResponses.inputTokens })
         .from(schema.modelResponses)
         .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
-        .where(eq(schema.turns.threadId, threadId))
+        .where(and(eq(schema.turns.threadId, threadId), hasMeteredUsage))
         .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
         .limit(1);
       const [activity] = await activeDb

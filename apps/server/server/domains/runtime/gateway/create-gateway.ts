@@ -99,7 +99,14 @@ export function createGateway(config: GatewayConfig): Gateway {
     },
 
     async generate(request: GenerateRequest): Promise<GenerateResult> {
-      const result = await consumeStream(gateway.stream(request));
+      let result: GenerateResult;
+      try {
+        result = await consumeStream(gateway.stream(request));
+      } catch (error) {
+        // A stop before the call began leaves no terminal event; that is the stop, not a stream bug.
+        request.signal?.throwIfAborted();
+        throw error;
+      }
       // A stopped call ends with a partial or empty result, which is not a completed generation.
       request.signal?.throwIfAborted();
       return result;

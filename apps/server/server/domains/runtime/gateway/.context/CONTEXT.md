@@ -17,8 +17,9 @@ complete the port; the orchestrator persists a cancelled call's result when
 `shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable usage or
 `meteringStatus: "missing_usage"` (`attempt-stream.ts` stamps a stopped call that got no provider
 usage, including one stopped before any output: it ends at once with an empty result rather than
-waiting on the SDK, and costs zero). A stop before the attempt started made no call and leaves no
-response. Every adapter's `stream()` is the shared envelope in
+waiting on the SDK, and costs zero). A stop before an attempt starts, including one during retry backoff, made no call and ends the
+stream with no events and no response. A stop with the SDK hung ends the same way as one before
+output: at once, or at the 5s drain deadline once output has arrived. Every adapter's `stream()` is the shared envelope in
 `adapters/provider-stream.ts` around its own request map and collector; after an abort it yields `end`
 with whatever accumulated, possibly nothing, and `attempt-stream.ts` decides what a stop or timeout
 means.

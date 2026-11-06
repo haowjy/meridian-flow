@@ -45,17 +45,27 @@ export type FinalizedExecution = {
   report: SavedExecutionReport | null;
 };
 
-function publicText(blocks: Block[], responseId: string | null): string {
-  return blocks
-    .filter((block) => block.responseId === responseId && block.blockType === "text")
-    .map((block) => blockPlainText(block.blockType, block.content) ?? "")
-    .join("");
+/**
+ * Text of the turn's latest response that has any. A response with no text is skipped, so a
+ * call stopped before output cannot blank what an earlier response in the turn said.
+ */
+function publicText(blocks: Block[], responseIds: readonly string[]): string {
+  // A turn with no response row yet (crashed mid-stream) keeps its blocks unattached.
+  const candidates: (string | null)[] = responseIds.length ? [...responseIds].reverse() : [null];
+  for (const responseId of candidates) {
+    const text = blocks
+      .filter((block) => block.responseId === responseId && block.blockType === "text")
+      .map((block) => blockPlainText(block.blockType, block.content) ?? "")
+      .join("");
+    if (text) return text;
+  }
+  return "";
 }
 
 async function resolveReportContent(
   input: {
     turnId: TurnId;
-    responseId: string | null;
+    responseIds: readonly string[];
     capture: SavedExecutionReport["capture"];
     empty: boolean;
   },
@@ -65,7 +75,7 @@ async function resolveReportContent(
 
   const text = input.capture
     ? ""
-    : publicText(await deps.blocks.listByTurn(input.turnId), input.responseId);
+    : publicText(await deps.blocks.listByTurn(input.turnId), input.responseIds);
   return {
     source: input.capture
       ? ("return_result" as const)
@@ -286,11 +296,10 @@ export async function finalizeExecution(
               ? "cancelled"
               : "failed";
         const responses = await deps.repos.modelResponses.listByTurn(turn.id);
-        const finalResponseId = responses.at(-1)?.id ?? null;
         const content = await resolveReportContent(
           {
             turnId: turn.id,
-            responseId: finalResponseId,
+            responseIds: responses.map((row) => row.id),
             capture,
             empty: input.reportContent === "empty",
           },

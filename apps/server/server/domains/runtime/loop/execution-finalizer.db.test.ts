@@ -444,4 +444,50 @@ else
         costMillicredits: 7,
       });
     });
+
+    it("keeps the report text when the last response was stopped before any output", async () => {
+      // Risk: a stopped subagent's findings silently vanish because its last response row is empty.
+      const earlier = await repos.modelResponses.create({
+        turnId: ids.execution,
+        sequence: 0,
+        provider: "test",
+        model: "test-model",
+        priceSource: "unknown",
+        millicredits: "3",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      await repos.modelResponses.create({
+        turnId: ids.execution,
+        sequence: 1,
+        provider: "test",
+        model: "test-model",
+        priceSource: "unknown",
+        millicredits: "0",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      await repos.blocks.create({
+        turnId: ids.execution,
+        responseId: earlier.row.id,
+        blockType: "text",
+        sequence: 1,
+        content: "found the contradiction in chapter 12",
+      });
+      const terminal = await finalizeExecution(
+        { repos, eventWriter },
+        {
+          threadId: ids.child,
+          turnId: ids.execution,
+          cause: { kind: "cancelled", reason: "stop" },
+        },
+      );
+      expect(terminal.report).toMatchObject({
+        outcome: "cancelled",
+        source: "final_assistant",
+        summary: "found the contradiction in chapter 12",
+      });
+    });
   });
