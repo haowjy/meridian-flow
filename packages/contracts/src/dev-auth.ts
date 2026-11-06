@@ -63,14 +63,10 @@ export function resolveDevAuthUser(env: EnvLike): DevAuthUser | null {
  * passes; reaching it takes a page on that tailnet's Funnel that the developer opens.
  */
 export function devAuthAppliesToRequest(request: Request): boolean {
-  const host = request.headers.get("host");
-  if (!isLocalHostname(hostnameOf(host ? `http://${host}` : request.url))) return false;
+  if (!isLocalHost(request.headers.get("host"))) return false;
 
   const origin = request.headers.get("origin");
-  if (origin !== null) {
-    const hostname = hostnameOf(origin);
-    if (hostname === null || !isTrustedOriginHostname(hostname)) return false;
-  }
+  if (origin !== null && !isTrustedOriginHostname(hostnameOf(origin))) return false;
 
   if (request.headers.get("sec-fetch-site") !== "cross-site") return true;
   return (
@@ -90,7 +86,10 @@ function hostnameOf(url: string): string | null {
 
 const isTailnet = (hostname: string) => hostname.endsWith(".ts.net");
 
-function isLocalHostname(hostname: string | null): boolean {
+/** Whether a `Host` header names this machine or a tailnet (`localhost`, `127.0.0.1`, `*.localhost`, `*.ts.net`). */
+export function isLocalHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const hostname = hostnameOf(`http://${host}`);
   return (
     hostname !== null &&
     (hostname === "localhost" ||
@@ -100,10 +99,11 @@ function isLocalHostname(hostname: string | null): boolean {
   );
 }
 
-function isTrustedOriginHostname(hostname: string): boolean {
+function isTrustedOriginHostname(hostname: string | null): boolean {
   return (
-    hostname === "meridian.localhost" ||
-    hostname.endsWith(".meridian.localhost") ||
-    isTailnet(hostname)
+    hostname !== null &&
+    (hostname === "meridian.localhost" ||
+      hostname.endsWith(".meridian.localhost") ||
+      isTailnet(hostname))
   );
 }

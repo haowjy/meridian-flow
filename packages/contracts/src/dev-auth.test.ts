@@ -35,7 +35,10 @@ describe("resolveDevAuthUser", () => {
 
 describe("devAuthAppliesToRequest", () => {
   const req = (method: string, headers: Record<string, string> = {}) =>
-    new Request("https://server.meridian.localhost/api/x", { method, headers });
+    new Request("https://server.meridian.localhost/api/x", {
+      method,
+      headers: { host: "server.meridian.localhost", ...headers },
+    });
 
   it.each([
     ["no fetch metadata, no Origin (node client)", req("POST"), true],
@@ -50,7 +53,11 @@ describe("devAuthAppliesToRequest", () => {
     [
       "same-origin WebSocket",
       new Request("https://server.app.meridian.localhost/ws/yjs", {
-        headers: { origin: "https://app.meridian.localhost", upgrade: "websocket" },
+        headers: {
+          host: "server.app.meridian.localhost",
+          origin: "https://app.meridian.localhost",
+          upgrade: "websocket",
+        },
       }),
       true,
     ],
@@ -65,10 +72,7 @@ describe("devAuthAppliesToRequest", () => {
     ],
     [
       "tailnet origin through the proxy",
-      req("POST", {
-        host: "server.meridian.localhost",
-        origin: "https://laptop.tail1234.ts.net",
-      }),
+      req("POST", { origin: "https://laptop.tail1234.ts.net" }),
       true,
     ],
     [
