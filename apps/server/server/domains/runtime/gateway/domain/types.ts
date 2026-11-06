@@ -46,14 +46,18 @@ export interface PromptCacheDescriptor {
   longTtlMs: number | null;
 }
 
-/** Which cache lifetime a request wants: primary chats ask for long, subagents for short. */
-export type PromptCacheRetention = "short" | "long";
+/**
+ * Which cache lifetime a request wants: primary chats ask for long, subagents for short,
+ * and a one-shot call nothing reads again (a rolling summary) for none: no cache mark is sent.
+ */
+export type PromptCacheRetention = "none" | "short" | "long";
 
 /** The TTL a request with this retention gets from a model, for adapters and warm/cold prediction. */
 export function resolvePromptCacheTtlMs(
   cache: PromptCacheDescriptor,
   retention: PromptCacheRetention,
 ): number | null {
+  if (retention === "none") return null;
   return retention === "long" ? cache.longTtlMs : cache.shortTtlMs;
 }
 

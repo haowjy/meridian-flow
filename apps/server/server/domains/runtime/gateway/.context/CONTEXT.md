@@ -105,7 +105,7 @@ there is no provider-level default.
 `GenerateRequest.promptCacheRetention` is required and picks one
 (`resolvePromptCacheTtlMs`): the loop asks `long` for primary threads and `short`
 for subagents, fixed by thread kind so the cached prefix never varies mid-thread;
-the rolling summarizer passes `short` explicitly. `longCacheWrites` is true when the
+the rolling summarizer passes `none`, which resolves to a null lifetime so no cache mark is sent (a one-shot call would pay the write premium for an entry nothing reads; OpenAI keeps its 30m default, which Flow can't turn off). `longCacheWrites` is true when the
 request is long and the two lifetimes differ; when a provider omits the cache-write
 split by lifetime, the adapters attribute all writes to the lifetime the request asked for.
 `validateModelRegistry` (adapter-neutral) rejects a long lifetime shorter than the short
