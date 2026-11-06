@@ -1284,10 +1284,6 @@ msgstr ""
 msgid "Can’t mention that here"
 msgstr ""
 
-#: src/components/app/composer/Composer.tsx
-#~ msgid "Can’t mention that in this chat"
-#~ msgstr ""
-
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr ""
@@ -6441,10 +6437,6 @@ msgstr ""
 #: src/features/chat/document-display-name.ts
 msgid "Uploads for {name}"
 msgstr ""
-
-#: src/features/editor/SessionEditor.tsx
-#~ msgid "Uploads stay with their chat"
-#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx
