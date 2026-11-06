@@ -52,11 +52,12 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
 15. **Quick re-press.** Right after sweeping a range, press its letters again (second click) and
     move: the range moves, no word is selected. Without moving, the press places a caret.
 16. **Undo and redo.** After a move, Ctrl+Z puts the text back with the range selected at its
-    old place; Ctrl+Shift+Z moves it again, selected; one more Ctrl+Z restores it again. Select a
+    old place; Ctrl+Shift+Z moves it again and keeps y-tiptap's mapped selection; one more Ctrl+Z
+    restores the old range selected again. Select a
     phrase and type over it: Ctrl+Z gives the phrase back selected. Typing
     undo still leaves a caret. The restored range scrolls into view when it was far away: after an
-    autoscrolled move, Ctrl+Z brings the range on screen. Redo after a click elsewhere does not jump
-    to an unrelated selection.
+    autoscrolled move, Ctrl+Z brings the range on screen. Redo after a click elsewhere keeps that
+    mapped caret or selection instead of choosing a range from the changed text.
 17. **Into a touched block.** Sweep a range from mid-paragraph A to mid-paragraph B (also across a
     list item, a heading, a code block). Drop it in A's unselected head, then in B's unselected
     tail, and into a code block's unselected part: the text lands at the caret, nothing is lost or
