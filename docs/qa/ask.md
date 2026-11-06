@@ -197,8 +197,7 @@ Open the chat in the browser with `agent-browser`, at desktop width and at 390 p
    answer still chosen or typed.
 2. **Countdown follows activity.** Note `continues at` in `./mf thread view`, pick an
    option, and read it again. PASS: it moved to 4 minutes after the click, and the
-   takeover's countdown follows. Typing within 30 seconds sends one more presence when
-   the 30 seconds are up, holding the typed words. Then change nothing: move the mouse,
+   takeover's countdown follows. Typing reports within 5 seconds, holding the typed words. Then change nothing: move the mouse,
    press a key or use the wheel (on the first question, before any pick, too). PASS: within
    30 seconds `continues at` moves again and no held answer is lost. Then, from a second
    tab or `./mf thread presence` with other `--answer`s, change the held answers and move

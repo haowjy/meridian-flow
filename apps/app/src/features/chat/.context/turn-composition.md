@@ -77,12 +77,12 @@ words survive leaving the chat; an ask that ended meanwhile closes, and adds the
 chat opens again. Page activity and each draft change report `ask.presence`, so the server's idle deadline follows
 the writer. The draft carries an `owed` flag, set when a choice changes (not on Back or Next) and
 cleared when the server echoes those choices in `draftAnswers`; a report carries the answers only
-while it is set, at most once a second, and a clock-only report at most every 30 s. Because the
+while it is set, at most every 5 s, and a clock-only report at most every 30 s. Because the
 flag lives with the draft in session storage, a dropped frame, a failed send, leaving the chat or a
 reload re-sends on the next connect, mount or activity; pagehide and unmount send what waits. The server keeps those
 answers and sends them back as `ThreadAsk.draftAnswers`. A takeover the writer hasn't touched (a
 reload, another tab) follows them as they change, until the writer's first change makes the
-draft theirs. With two tabs on one ask the tab whose writer changed an answer last wins. A send refused as
+draft theirs. With two tabs on one ask the last report to reach the server wins, so a delayed re-send can replace a newer answer from another device. A send refused as
 `invalid_answer` moves the draft to the question the refusal names. The asking turn draws its receipt after its items and
 before its deliveries (`ask/AskReceipt.tsx`): a delivery placed under the asking
 turn arrived after the question. The `ask_user` tool row itself is hidden. Ask
