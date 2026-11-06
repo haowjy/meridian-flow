@@ -8,10 +8,12 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { compactionTurnMetadata } from "../../threads/index.js";
+import { MODEL_REGISTRY } from "../gateway/config/registry.js";
 import {
   CJK_CODE_POINT_TOKEN_RATES,
   estimateRequestTokens,
   FLOW_ABSOLUTE_CEILING,
+  outputReserveTokens,
   planCompaction,
   projectActiveHistoryWithBakes,
   resolveCompactionTrigger,
@@ -186,6 +188,20 @@ describe("resolveCompactionTrigger", () => {
         maxOutputTokens: 8_000,
       }).thresholdTokens,
     ).toBe(0);
+  });
+});
+
+describe("outputReserveTokens", () => {
+  it("leaves the notes step room above the default trigger on every registry model", () => {
+    for (const { model, pricing } of MODEL_REGISTRY.providers.flatMap((p) => p.offerings)) {
+      const { thresholdTokens, usableWindowTokens } = resolveCompactionTrigger({
+        contextWindow: model.contextWindow,
+        maxOutputTokens: model.maxOutputTokens,
+        inputTierTokens: pricing.inputTierTokens,
+      });
+      const notesLimit = usableWindowTokens - outputReserveTokens(model);
+      expect(notesLimit, model.id).toBeGreaterThan(thresholdTokens);
+    }
   });
 });
 
