@@ -139,9 +139,10 @@ identity in anchors or holds.
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
   boundary while skipping native no-ops. Undo and redo give back a range
   selection a change started from (a drag, a cut, typing over a selection),
-  taken from the popped item or, for items history generates, from just before
-  the run; Yjs alone would map the current selection, and a moved range has
-  just been removed. A caret keeps Yjs's result. Destroying the editor is terminal and
+  captured by `editor-history.ts` itself on `beforeTransaction` (and before each
+  undo or redo run, for the items that run generates), never read from
+  y-tiptap's copy, which a plugin's appended transaction makes wrong; Yjs alone
+  would map the current selection, and a moved range has just been removed. A caret keeps Yjs's result. Destroying the editor is terminal and
   discards only that mounted navigation history. Dock, Work, tree-only Apply, and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,

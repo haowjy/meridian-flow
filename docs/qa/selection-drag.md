@@ -52,7 +52,8 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
 15. **Quick re-press.** Right after sweeping a range, press its letters again (second click) and
     move: the range moves, no word is selected. Without moving, the press places a caret.
 16. **Undo and redo.** After a move, Ctrl+Z puts the text back with the range selected at its
-    old place; Ctrl+Shift+Z moves it again, selected; one more Ctrl+Z restores it again. Typing
+    old place; Ctrl+Shift+Z moves it again, selected; one more Ctrl+Z restores it again. Select a
+    phrase and type over it: Ctrl+Z gives the phrase back selected. Typing
     undo still leaves a caret. The restored range scrolls into view when it was far away: after an
     autoscrolled move, Ctrl+Z brings the range on screen. Redo after a click elsewhere does not jump
     to an unrelated selection.
