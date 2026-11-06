@@ -25,6 +25,7 @@ import {
   createTestDocumentRemoval,
   createTestRemovalDeps,
 } from "../../test-support/document-removal.js";
+import { deleteAt } from "../../test-support/entry-ref.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -334,7 +335,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(
-        port.delete("user://user", {
+        deleteAt(port, "user://user", {
           expected: { kind: "file", nodeId: userDocumentId },
         }),
       ).resolves.toMatchObject({

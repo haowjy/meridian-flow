@@ -17,6 +17,7 @@ import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import { type ContextMoveResult, renderFilename } from "@meridian/contracts/protocol";
 import { contextPortForThread } from "../../domains/context/context-port-resolution.js";
+import { contextAreaOf } from "../../domains/context/index.js";
 import type { RecordedBranchTreeChange } from "../../domains/context/ports/branch-tree.js";
 import type {
   ContextError,
@@ -193,11 +194,14 @@ async function commitLive(
       ...(input.command === "move" ? { destination: input.path } : {}),
     });
   if (input.command === "delete") {
-    const deleted = await port.delete(source.uri, {
-      expected: { kind: "file", nodeId: source.documentId },
-      origin,
-      inTransaction: () => record(),
-    });
+    const deleted = await port.delete(
+      { kind: "file", nodeId: source.documentId },
+      contextAreaOf(source.uri),
+      {
+        origin,
+        inTransaction: () => record(),
+      },
+    );
     if (!deleted.ok) return refuse(deleted.error);
     if (!recorded) throw new Error("A delete committed without its tree entry");
     return { handle: recorded, uri: source.uri };
@@ -205,13 +209,17 @@ async function commitLive(
   // The port takes the folder and the leaf apart; the leaf is what the model typed.
   const typed = await canonicalPath(call, input.path);
   const slash = typed.lastIndexOf("/");
-  const moved = await port.commitWriterLocation(source.uri, typed.slice(0, slash + 1), {
-    expected: { kind: "file", nodeId: source.documentId },
-    name: typed.slice(slash + 1),
-    origin,
-    ...(position ? { position } : {}),
-    inTransaction: (result: ContextMoveResult) => record(result.destinationUri),
-  });
+  const moved = await port.commitWriterLocation(
+    { kind: "file", nodeId: source.documentId },
+    contextAreaOf(source.uri),
+    {
+      destination: { kind: "at", folderUri: typed.slice(0, slash + 1) },
+      name: typed.slice(slash + 1),
+      origin,
+      ...(position ? { position } : {}),
+      inTransaction: (result: ContextMoveResult) => record(result.destinationUri),
+    },
+  );
   if (!moved.ok) return refuse(moved.error);
   // A destination naming the document where it already is moves nothing and records nothing.
   if (!recorded)

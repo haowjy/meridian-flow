@@ -82,7 +82,7 @@ function parseWorkId(raw: unknown) {
 function parseRootLocator(
   parent: Extract<NonNullable<MoveContextEntryRequest["destinationParent"]>, { kind: "root" }>,
 ): ContextLocator {
-  const path = (parent.createFolders ?? []).join("/");
+  const path = "";
   const { scheme } = parent;
   if (scheme === "uploads") throw uploadsNotMovable();
   const { workId, rootThreadId } = parent.owner;
@@ -193,10 +193,6 @@ export function parseContextMove(body: unknown): ParsedContextMove {
   };
 }
 
-function joinPath(parent: string, name: string): string {
-  return parent ? `${parent}/${name}` : name;
-}
-
 const MOVED: MoveContextEntryResult = { status: "moved" };
 
 export async function handleContextMoveRequest(
@@ -206,12 +202,8 @@ export async function handleContextMoveRequest(
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const move = parseContextMove(input.body);
   const requested = { kind: move.kind, nodeId: input.entryId };
-  const replay = await replayedResult(
-    deps,
-    input,
-    move.operationId,
-    moveCommand({ ...move, expected: requested }),
-  );
+  const command = moveCommand({ ...move, expected: requested });
+  const replay = await replayedResult(deps, input, move.operationId, command);
   if (replay) {
     if (!replay.ok) contextErrorToHttp(replay.error);
     return MOVED;
@@ -222,8 +214,8 @@ export async function handleContextMoveRequest(
   // Where it lands: the parent the writer chose. Without one the mover keeps the folder the row
   // is in under the locks, so the area is all this lookup supplies.
   const parent = move.destinationParent;
-  async function destinationLocator(): Promise<{ locator: ResolvedContextLocator; dir: string }> {
-    if (!parent) return { locator: source as ResolvedContextLocator, dir: "" };
+  async function destinationLocator(): Promise<ResolvedContextLocator> {
+    if (!parent) return source as ResolvedContextLocator;
     if (parent.kind === "folder") {
       const folder = await locateEntry(deps, {
         projectId: input.projectId,
@@ -233,13 +225,9 @@ export async function handleContextMoveRequest(
         missing: "destination_missing",
       });
       if (folder.locator.scope === "chat") throw uploadsNotMovable();
-      return {
-        locator: folder.locator,
-        dir: joinPath(folder.address.path, (parent.createFolders ?? []).join("/")),
-      };
+      return folder.locator;
     }
-    const root = parseRootLocator(parent);
-    return { locator: await resolveRootLocator(root), dir: root.path };
+    return resolveRootLocator(parseRootLocator(parent));
   }
   async function resolveRootLocator(locator: ContextLocator): Promise<ResolvedContextLocator> {
     if (locator.scope === "project") return locator;
@@ -266,7 +254,7 @@ export async function handleContextMoveRequest(
   const destination = await destinationLocator();
 
   const workIds = new Set(
-    [source as ResolvedContextLocator, destination.locator].flatMap((locator) =>
+    [source as ResolvedContextLocator, destination].flatMap((locator) =>
       locator.scope === "work" ? [locator.authority.workId] : [],
     ),
   );
@@ -300,41 +288,42 @@ export async function handleContextMoveRequest(
     await requireFileGrant(deps.fileAccess, input.userId, moved, "edit"),
     ...(parent?.kind === "folder"
       ? []
-      : [
-          await requireFileGrant(
-            deps.fileAccess,
-            input.userId,
-            containerFor(destination.locator),
-            "edit",
-          ),
-        ]),
+      : [await requireFileGrant(deps.fileAccess, input.userId, containerFor(destination), "edit")]),
   ];
   const result = await withEditGrants(deps.fileAccess, grants, () =>
     port.commitWriterLocation(
-      address.uri,
-      parent ? locatorUri(destination.locator, destination.dir) : null,
+      { kind: move.kind, nodeId: address.id },
+      locatorUri(source as ResolvedContextLocator, ""),
       {
         origin: { type: "human", userId: input.userId },
-        expected: requested,
-        nodeId: address.id,
-        destinationParent: parent,
+        destination: !parent
+          ? { kind: "keep" }
+          : parent.kind === "folder"
+            ? {
+                kind: "folder",
+                folderId: parent.folderId,
+                createFolders: parent.createFolders,
+                authorize: async (uri) => {
+                  const target = await resolveDestinationLocator(uri);
+                  const grant = await deps.fileAccess.authorize(
+                    { accountId: input.userId as UserId },
+                    containerFor(target),
+                    "edit",
+                  );
+                  return (
+                    !isFileAccessDenied(grant) &&
+                    (await deps.fileAccess.confirmEdit([grant])).length === 0
+                  );
+                },
+              }
+            : {
+                kind: "at",
+                folderUri: locatorUri(destination, ""),
+                createFolders: parent.createFolders,
+              },
         position: move.position,
         ...(move.name ? { name: move.name } : {}),
-        operationId: move.operationId,
-        authorizeDestination: parent
-          ? async (uri) => {
-              const target = await resolveDestinationLocator(uri);
-              const grant = await deps.fileAccess.authorize(
-                { accountId: input.userId as UserId },
-                containerFor(target),
-                "edit",
-              );
-              return (
-                !isFileAccessDenied(grant) &&
-                (await deps.fileAccess.confirmEdit([grant])).length === 0
-              );
-            }
-          : undefined,
+        operation: { id: move.operationId, command },
       },
     ),
   );

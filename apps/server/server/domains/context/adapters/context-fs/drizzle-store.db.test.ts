@@ -119,14 +119,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           const token = await context.tree.inspectMovable(source);
           if (!token.ok || !token.value) throw new Error(`Nothing to move at ${source}`);
           return mover.commitWriterLocation(
-            dispatch(source),
-            dispatch(destination.split("/").slice(0, -1).join("/")),
             {
-              name: destination.split("/").at(-1),
-              expected: {
-                kind: token.value.kind === "directory" ? "folder" : "file",
-                nodeId: token.value.nodeId,
+              kind: token.value.kind === "directory" ? "folder" : "file",
+              nodeId: token.value.nodeId,
+            },
+            dispatch(""),
+            {
+              destination: {
+                kind: "at",
+                folder: dispatch(destination.split("/").slice(0, -1).join("/")),
+                createFolders: [],
               },
+              name: destination.split("/").at(-1),
             },
           );
         },

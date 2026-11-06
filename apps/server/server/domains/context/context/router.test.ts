@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
-import { moveTo } from "../../../test-support/entry-ref.js";
+import { deleteAt, moveTo } from "../../../test-support/entry-ref.js";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
 import {
@@ -110,12 +110,12 @@ describe("context router deletion receipts", () => {
     });
 
     await expect(
-      port.delete("manuscript://old.md", {
+      deleteAt(port, "manuscript://old.md", {
         expected: { kind: "file", nodeId: "document-old" },
       }),
     ).resolves.toEqual({
       ok: false,
-      error: { code: "stale_target", uri: "manuscript://old.md" },
+      error: { code: "stale_target", uri: "manuscript://" },
     });
   });
 });

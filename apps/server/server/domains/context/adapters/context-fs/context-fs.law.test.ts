@@ -264,11 +264,14 @@ describe("ContextFS rename filetype invariant", () => {
       backing,
       mutationStore,
       move: async (source: string, destination: string) =>
-        mover.commitWriterLocation(
-          dispatch(source),
-          dispatch(destination.split("/").slice(0, -1).join("/")),
-          { name: destination.split("/").at(-1), expected: await movableAt(context, source) },
-        ),
+        mover.commitWriterLocation(await movableAt(context, source), dispatch(""), {
+          destination: {
+            kind: "at",
+            folder: dispatch(destination.split("/").slice(0, -1).join("/")),
+            createFolders: [],
+          },
+          name: destination.split("/").at(-1),
+        }),
     };
   }
 
@@ -419,19 +422,20 @@ describe("canonical document naming laws", () => {
     const prose = await fs.ensureTrackedDocument("ch12");
     if (!prose.ok) throw new Error("fixture failed");
     expect(
-      await mover.commitWriterLocation(dispatch("ch12"), dispatch(""), {
-        name: "ch12.md",
-        expected: { kind: "file", nodeId: prose.value.documentId },
-      }),
+      await mover.commitWriterLocation(
+        { kind: "file", nodeId: prose.value.documentId },
+        dispatch(""),
+        { destination: { kind: "at", folder: dispatch(""), createFolders: [] }, name: "ch12.md" },
+      ),
     ).toMatchObject({
       ok: true,
       value: { destinationPath: "ch12", movedNodeId: prose.value.documentId },
     });
     await fs.ensureTrackedDocument("config.toml");
     expect(
-      await mover.commitWriterLocation(dispatch("config.toml"), dispatch(""), {
+      await mover.commitWriterLocation(await movableAt(fs, "config.toml"), dispatch(""), {
+        destination: { kind: "at", folder: dispatch(""), createFolders: [] },
         name: "settings",
-        expected: await movableAt(fs, "config.toml"),
       }),
     ).toMatchObject({ ok: true, value: { destinationPath: "settings.toml" } });
     expect(await fs.ensureTrackedDocument("copied", { sourceExtension: "toml" })).toMatchObject({
@@ -466,18 +470,18 @@ describe("canonical document naming laws", () => {
       workScopeId: null,
     });
     expect(
-      await mover.commitWriterLocation(dispatch("Chapter"), dispatch(""), {
+      await mover.commitWriterLocation(await movableAt(fs, "Chapter"), dispatch(""), {
+        destination: { kind: "at", folder: dispatch(""), createFolders: [] },
         name: "Lore",
-        expected: await movableAt(fs, "Chapter"),
       }),
     ).toMatchObject({
       ok: true,
       value: { destinationPath: "Lore (2)" },
     });
     expect(
-      await mover.commitWriterLocation(dispatch("Lore"), dispatch(""), {
+      await mover.commitWriterLocation(await movableAt(fs, "Lore"), dispatch(""), {
+        destination: { kind: "at", folder: dispatch(""), createFolders: [] },
         name: "Chapter",
-        expected: await movableAt(fs, "Lore"),
       }),
     ).toMatchObject({
       ok: true,

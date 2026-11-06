@@ -14,6 +14,7 @@ import type {
   ContextEntryRef,
   ContextError,
   ContextMoveResult,
+  ContextOperationCommand,
   ContextOperationReceipt,
   ContextSiblingPosition,
   CopyContextEntriesResult,
@@ -413,18 +414,36 @@ export interface ContextWriteOptions {
   metadata?: DocumentCreationMetadata;
 }
 
-export interface ContextLocationOptions extends ContextWriteOptions {
-  destinationParent?: MoveContextEntryRequest["destinationParent"];
-  position?: MoveContextEntryRequest["position"];
-  /** Reconfirm the resolved destination's edit authority under its namespace locks. */
-  authorizeDestination?: (uri: string) => Promise<boolean>;
-  operationId?: string;
-  /** The node that moves, as the caller named it: found by id under the locks, wherever it is by then. */
-  expected: ContextEntryRef;
-  /** The id the node has now, when `expected` names one a join has since forwarded. */
-  nodeId?: string;
+/** A move or delete the writer's device sent, with the receipt command it answers a resend from. */
+export type ContextOperationInput<K extends ContextOperationCommand["kind"]> = {
+  id: string;
+  command: Extract<ContextOperationCommand, { kind: K }>;
+};
+
+/**
+ * Where a moved node lands. The node's own row is read under the locks, so none of these carry
+ * its path; `folderUri` and `folderId` name only the folder it goes into.
+ */
+export type ContextMoveDestination =
+  /** The folder the node is in: a rename or a reorder. */
+  | { kind: "keep" }
+  /** A folder by identity, read again under the locks; `authorize` rechecks edit there. */
+  | {
+      kind: "folder";
+      folderId: string;
+      createFolders?: readonly string[];
+      authorize: (uri: string) => Promise<boolean>;
+    }
+  /** A folder (or an area root) by address, which `createFolders` extends. */
+  | { kind: "at"; folderUri: string; createFolders?: readonly string[] };
+
+export interface ContextLocationChange {
+  destination: ContextMoveDestination;
   /** The name the writer typed, when they did; omitted keeps the node's own name. */
   name?: string;
+  position?: MoveContextEntryRequest["position"];
+  origin?: WriteProvenance;
+  operation?: ContextOperationInput<"move">;
   /**
    * Runs inside the move's own transaction once its rows are written, so a caller's record of
    * the move (the model's edit history) commits or rolls back with it.
@@ -449,15 +468,12 @@ export type ContextBranchTreeCommand = {
 
 export type ContextBranchTreeResult = { uri: string; moved: boolean };
 
-export interface ContextDeleteOptions extends ContextWriteOptions {
+export interface ContextDeleteOptions {
+  origin?: WriteProvenance;
   removal?: { reason: "discarded"; cause: RetractionCause };
-  operationId?: string;
-  /** The node as the caller named it; its receipt records this id. */
-  expected: ContextEntryRef;
-  /** The id the node has now, when `expected` names one a join has since forwarded. */
-  nodeId?: string;
+  operation?: ContextOperationInput<"delete">;
   /**
-   * Delete only while the node is still at this path of the URI's area; a node the writer has
+   * Delete only while the node is still at this path of its area; a node the writer has
    * renamed or moved since survives, and the delete answers `stale_target`.
    */
   onlyAt?: string;
@@ -598,21 +614,22 @@ export interface ContextPort {
   ): Promise<Result<ContextBranchTreeResult, ContextError>>;
 
   /**
-   * Commit a file's exact writer-facing identity and end provisional naming. `destinationUri` is
-   * the folder the node lands in (its parent folder is still the one named by
-   * `options.destinationParent`, when given); `null` keeps the folder the node is in, read under
-   * the locks. The leaf is `options.name`, else the node's own, read the same way.
+   * Move or rename the node `node` names, which the locks find by id wherever it is by then.
+   * `area` is the root URI of the scheme and owner it was last seen in: it picks the adapter
+   * and the locks, and names no entry. `change.destination` says where it lands and
+   * `change.name` what it is called there; whatever the change omits keeps the row's own value.
    */
   commitWriterLocation(
-    sourceUri: string,
-    destinationUri: string | null,
-    options: ContextLocationOptions,
+    node: ContextEntryRef,
+    area: string,
+    change: ContextLocationChange,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
-  /** Delete only the initiating file identity or folder kind at this URI. */
+  /** Delete the node `node` names, found by id under the locks (`area` as in the move). */
   delete(
-    uri: string,
-    options: ContextDeleteOptions,
+    node: ContextEntryRef,
+    area: string,
+    options?: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>>;
 
   list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;
