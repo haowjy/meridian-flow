@@ -1,0 +1,40 @@
+# Dragging a text selection
+
+Named risks: a press on a highlight that redraws it instead of dragging (the browser's text
+drag refuses a third click and, on macOS, waits), a drag that lifts but never lands or leaves
+the source behind, a click that follows a link after a drag, an Escape that doesn't cancel, a
+caret that vanishes while the pointer rests, and the composer or a second pane moving text
+instead of copying it.
+
+## Setup
+
+An owned stack (`pnpm dev`, `pnpm bootstrap` first on a fresh worktree). In a throwaway project
+seed `manuscript://Chapter 1` with two long paragraphs (each three or more lines), a link line
+(`[the notes](<manuscript://Notes>) and some words`), a 2×2 table and thirty filler
+paragraphs. Open it at 1440×900. Drive with a real mouse path (`agent-browser mouse
+move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need an explicit
+`clickCount`). Delete the project at the end.
+
+## Steps
+
+1. **Letters and gaps.** Sweep a range across two lines. Press on its letters, then on the space
+   between its lines, and move 10px: both lift (the highlight stays, a caret follows the pointer,
+   no drag image). A press right of the last highlighted word, or on unselected text, does not.
+2. **Move.** Release in another paragraph: the text moved and is still selected. Ctrl+Z puts it
+   back in one step.
+3. **No pause.** Press and move at once; it lifts the same.
+4. **Double-click, then press.** Double-click a word and press its letters at once (third click)
+   and move: the word moves.
+5. **No travel.** On a selection, click: caret there. Double-click: the word. Triple-click: the
+   paragraph.
+6. **Copy.** Hold Ctrl (Option on a Mac) while dragging: a copy, source unchanged.
+7. **Escape.** Press Escape mid-drag: caret gone, nothing changed, the selection stays; moving
+   on and releasing does nothing; a new drag works.
+8. **Own range.** Release inside the dragged range: nothing changes.
+9. **Link.** Select the link line, press the link, move a little and release on it: no
+   navigation. Drag it into the composer: the composer gets the link text, the editor keeps it.
+10. **Composer.** Drag plain text to the composer: copied, source unchanged.
+11. **Pause.** Hold still 6s over a spot: the caret stays; release lands there.
+12. **Autoscroll.** Hold still within 32px of the pane's bottom: it scrolls on its own.
+13. **Cells.** Select text inside a cell and drag it within the cell (moves) and out to a
+    paragraph (moves). Sweep across two cells: a cell selection; pressing it is native.

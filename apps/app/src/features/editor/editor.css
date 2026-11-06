@@ -530,3 +530,12 @@
   display: inline-flex;
   vertical-align: middle;
 }
+
+/* While the editor lifts a text selection (core/editor/landing/selection-drag.ts)
+   no native drag is running, so nothing sets the drag cursor: keep the I-beam
+   over everything the pointer crosses. */
+.selection-dragging,
+.selection-dragging * {
+  /* biome-ignore lint/complexity/noImportantStyles: beats every element's own cursor (links, handles) for the length of a drag. */
+  cursor: text !important;
+}

@@ -1,7 +1,8 @@
 /**
  * What a press puts the selection on, from where `landingAt` says it landed.
  *
- * A press on text belongs to the browser. This is for the presses with no text
+ * A press on text belongs to the browser, except one on a selection's highlight,
+ * which `selection-drag.ts` takes. This is for the presses with no text
  * under them: a margin, the gap between blocks, a cell's padding, the space
  * around a rendered diagram. It also owns the seam policy: where a caret goes
  * when the pointer is between blocks, and which neighbour wins.
