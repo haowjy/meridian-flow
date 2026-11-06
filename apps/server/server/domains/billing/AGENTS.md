@@ -14,5 +14,8 @@ Do not rebuild a payment-provider abstraction, subscription store, fake Stripe
 provider, or app-owned subscription state machine here. If code needs
 subscription status, ask Stripe or infer entitlement from unexpired ledger lots.
 
+A usage event debits once, however often it is replayed
+([ledger tests](adapters/__conformance__/drizzle-credit-ledger.db.test.ts)).
+
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for ports, adapters, and
 invariants.
