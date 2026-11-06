@@ -1661,6 +1661,7 @@
         "line": "* Same-kind span overlap is the client/server join rule (design D2).",
         "count": 1
       }
-    ]
+    ],
+    "middle-dot": []
   }
 }

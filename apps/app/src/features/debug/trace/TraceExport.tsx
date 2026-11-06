@@ -48,7 +48,7 @@ export function TraceExport({ entries }: { entries: readonly EventRecord[] }) {
   return (
     <div className="border-t border-border bg-background">
       <div className="flex flex-wrap items-center gap-2 p-2">
-        <span className="text-meta text-muted-foreground">Filtered JSONL · {entries.length}</span>
+        <span className="text-meta text-muted-foreground">Filtered JSONL ({entries.length})</span>
         <Button type="button" variant="outline" size="xs" className="text-meta" onClick={copy}>
           {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy"}
         </Button>

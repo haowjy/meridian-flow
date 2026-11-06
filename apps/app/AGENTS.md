@@ -49,7 +49,9 @@ lives in packages or server domains.
 ## Writer-facing screens
 
 - Separate adjacent facts with layout, typography, sentences, or parentheses,
-  never metadata-style `·`, `•`, `—`, or `|`; ordinary punctuation is fine
+  never metadata-style `·`, `•`, `—`, or `|`; a file-detail row may keep `·`
+  with a colocated `slop-lint: allow middle-dot file-detail row` comment;
+  ordinary punctuation is fine
   ([copy separation](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md)).
 - A row or menu shows only the actions that can succeed now; a fixed toolbar
   greys one instead, with the reason on hover. Feedback never pushes content
