@@ -24,8 +24,10 @@ test.describe("vertical slice", () => {
       await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`);
       await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
 
-      const editor = page.locator(".ProseMirror").first();
-      const dockComposer = page.locator(`[data-debug-composer="${fixture.threadId}"] textarea`);
+      const editor = page.locator('[data-editor-surface="live"] .ProseMirror');
+      const dockComposer = page.locator(
+        `[data-debug-composer="${fixture.threadId}"] [aria-label="Message"]`,
+      );
       await expect(editor).toBeVisible();
       await expect(dockComposer).toBeVisible();
 
@@ -55,7 +57,7 @@ test.describe("vertical slice", () => {
 
       await expect(page.getByText("Something went wrong!")).toHaveCount(0);
       await expect(editor).toBeVisible();
-      await expect(dockComposer).toHaveValue(unsentText);
+      await expect(dockComposer).toHaveText(unsentText);
     } finally {
       await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>
         db.end(),
@@ -78,13 +80,15 @@ test.describe("vertical slice", () => {
       await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
       await expect(page).toHaveURL(new RegExp(`/p/${fixture.projectId}/editor/kb/alpha\\.md`));
 
-      const editor = page.locator(".ProseMirror").first();
+      const editor = page.locator('[data-editor-surface="live"] .ProseMirror');
       await expect(editor).toBeVisible();
       await expect(editor).toHaveAttribute("contenteditable", "true");
       await expect(editor).toContainText("Alpha");
       await expect(editor).toContainText("Seed context.");
 
-      const dockComposer = page.locator(`[data-debug-composer="${fixture.threadId}"] textarea`);
+      const dockComposer = page.locator(
+        `[data-debug-composer="${fixture.threadId}"] [aria-label="Message"]`,
+      );
       await expect(dockComposer).toBeVisible();
 
       const uniqueMessage = `Vertical slice ${Date.now()}`;
