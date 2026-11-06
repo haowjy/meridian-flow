@@ -27,9 +27,10 @@ Browser history and phone navigation do not hand off.
 ## Where documents open
 
 Placement is decided once (`use-dock-placement.ts`). A chat door (link chip,
-receipt, passage, `@` reference), a Recent row, a left-tree click or a Scratch
-note opens *beside the chat* in the dock only on the wide Chat screen, where the
-chat is in the middle, and the address stays on the chat. Work Files and the
+receipt, passage, `@` reference) or a Recent row opens *beside the chat* in the
+dock only on the wide Chat screen, where the chat is in the middle, and the
+address stays on the chat. A left-tree pick, a Scratch note included, goes to
+the Editor on every screen. Work Files and the
 dock document's path menus may also replace the dock document on Work. The
 Editor screen (the chat is the dock) and the phone never hold a dock document:
 those picks open an Editor tab or route, and a Scratch note opens full screen on

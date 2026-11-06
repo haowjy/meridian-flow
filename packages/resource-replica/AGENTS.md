@@ -19,8 +19,8 @@ exports rather than implementation modules.
   and local CAS revisions are different fences. Replace canonical evidence only
   for strictly newer observations; a move receipt is historical evidence.
 - Placement order is one admitted record, not three reconstructions: each placement intent carries an
-  immutable `PlacementAdmission` (order, conflict scope, predecessors), and projection, dispatch and
-  Undo all read it (`placement-journal.ts`). Never infer order from adjacency, latest-per-entry or a
+  immutable `PlacementAdmission` (order, conflict scope, predecessors), and projection and dispatch
+  both read it (`placement-journal.ts`). Never infer order from adjacency, latest-per-entry or a
   scheduler queue.
 - Where a placement goes and what the server first makes there are separate. A placement is
 always `set-location` / `set-folder-location`; `ResourceDescriptor.materialization` says
