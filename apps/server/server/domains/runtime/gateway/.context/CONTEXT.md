@@ -154,10 +154,11 @@ declares `projectToolSchema` (copied onto `ModelInfo`; only Anthropic) to get
 `anthropicToolSchema` on its tools; the adapter reads the flag and `model.provider`, never a provider id literal.
 
 Every model declares a tokenizer family with no fallback; runtime compaction
-uses it for CJK estimates. Output limits are provider defaults unless a request
-sets one; adapters that require an explicit provider field use the registry
-maximum. That maximum also reserves input room for compaction and is not a
-lower Meridian per-call cap.
+uses it for CJK estimates. No request sets an output limit: adapters that
+require an explicit provider field send the registry maximum, and the others
+leave the provider default. That maximum is subtracted once from the usable
+input window for compaction. Optional work that needs room for one more output
+reserves `outputReserveTokens` (capped at 65,536), not the full maximum.
 
 Thread Agent bindings retain their resolved model selection. A retired or
 unregistered stored model fails route resolution before provider dispatch; no

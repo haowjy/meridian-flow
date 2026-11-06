@@ -16,7 +16,7 @@ import {
 export type ResolvedReasoning = "default" | "off" | { effort: ReasoningEffort };
 
 export interface ResolvedCall {
-  /** Lifetime to put on the wire for cache breakpoints; null when the provider publishes none. */
+  /** Lifetime to put on the wire for cache breakpoints; null when the provider publishes none or the retention is `none` (no mark sent). */
   cacheTtlMs: number | null;
   /** Whether cache writes are billed at the model's long lifetime. */
   longCacheWrites: boolean;
