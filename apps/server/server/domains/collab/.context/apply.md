@@ -33,7 +33,7 @@ can't remove the starting point or an intermediate delta.
 append's lock-to-root-commit `holdMs` joins them through an async diagnostic scope. Apply
 takes no draft lock outside that append, so `holdMs` covers its whole hold.
 
-The API-core recipe is [atomic Apply](../../../../../../docs/qa/atomic-apply.md). It
+The API-core recipe is [atomic Apply](qa/atomic-apply.md). It
 does not stand in for integrated browser FIFO and optimistic-review verification.
 
 ## The tree cut

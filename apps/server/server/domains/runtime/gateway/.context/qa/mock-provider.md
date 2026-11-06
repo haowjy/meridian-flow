@@ -3,7 +3,7 @@
 Use an owned stack with `MODEL_PROVIDER=mock pnpm dev`; discover its URLs with
 `pnpm portless:list` and sign in through `/dev-login`. These checks exercise the
 mock through real chat persistence and tools, not UI-injected fake rows.
-[Controls and fixtures](../debugging.md#mock-provider-responses).
+[Controls and fixtures](../../../../../../../../docs/debugging.md#mock-provider-responses).
 `pnpm dev:stacks` lists running stacks and their checkout names. Create a fresh
 chat and use the returned ID, rather than assuming a global `cN` handle:
 

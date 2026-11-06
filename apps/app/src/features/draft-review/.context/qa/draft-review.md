@@ -3,8 +3,8 @@
 The writer's room decides the review. Apply freezes a click; text Discard is a
 local undoable edit. Only a browser run proves what the writer sees.
 
-Ownership: [review runtime and commands](../../apps/app/src/features/draft-review/.context/draft-review.md).
-Use [`./mf`](../debugging.md) for setup and durable readback.
+Ownership: [review runtime and commands](../draft-review.md).
+Use [`./mf`](../../../../../../../docs/debugging.md) for setup and durable readback.
 
 ## Setup
 

@@ -6,7 +6,7 @@ Every chat failure is a `FailureCard` drawn where it is anchored.
 
 ## Setup
 
-Follow [Runtime probes](README.md) and [Queue controls](queue-controls.md#setup):
+Follow [Runtime probes](../../../../../../../docs/qa/README.md) and [Queue controls](queue-controls.md#setup):
 `MODEL_PROVIDER=mock pnpm dev --no-tailscale`, `MF_APP_URL` and `MF_SERVER_URL` passed explicitly,
 sign in at `/api/auth/dev-login` in `agent-browser --session cards`, open `/p/<projectId>/chats/<threadId>`
 at 1280 wide. `T` is a new thread (`./mf thread create`). Fault injection is the `fetch` wrapper
