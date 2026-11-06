@@ -81,6 +81,7 @@ export function namespaceContextRefusal(
         "permission_denied",
         { path: paths.path },
       );
+    case "not_found":
     case "stale_source":
     case "stale_target":
     case "operation_mismatch":
@@ -90,7 +91,7 @@ export function namespaceContextRefusal(
         ? namespaceRefusal(command, error.reason, paths)
         : namespaceRefusal(command, "unsupported", paths);
     default:
-      // Not found, an archived or missing Work, a bad name, an I/O failure: the port's own words.
+      // An archived or missing Work, a bad name, an I/O failure: the port's own words.
       return writeToolError(command, contextErrorMessage(error), "invalid_write", {
         path: paths.path,
       });
