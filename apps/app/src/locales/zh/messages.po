@@ -258,7 +258,7 @@ msgstr ""
 msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
 
-#. placeholder {0}: files[0].name
+#. placeholder {0}: listed[0].name
 #: src/core/editor/images/image-drop-door.ts
 msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
