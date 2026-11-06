@@ -1,9 +1,8 @@
 /** Atomic move/delete CAS operations over the shared in-memory context backing. */
 import { serializeRemovalIdentity } from "@meridian/contracts";
 import {
-  allocateFilename,
+  freeFilename,
   renderFilename as renderDocumentFilename,
-  sameNamespaceName,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { renderFilename, splitPath } from "../../context/paths.js";
@@ -158,6 +157,30 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       parentId = found.id;
     }
     return parentId;
+  }
+
+  /** The rendered filenames live in one folder, other than the moving node itself. */
+  private siblingNames(sourceId: string, parentId: string | null, movingId: string): Set<string> {
+    return new Set([
+      ...[...this.backing.documents.values()]
+        .filter(
+          (row) =>
+            row.id !== movingId &&
+            row.contextSourceId === sourceId &&
+            row.folderId === parentId &&
+            row.deletedAt === null,
+        )
+        .map((row) => renderFilename(row.name, row.extension)),
+      ...[...this.backing.folders.values()]
+        .filter(
+          (row) =>
+            row.id !== movingId &&
+            row.contextSourceId === sourceId &&
+            row.parentId === parentId &&
+            row.deletedAt === null,
+        )
+        .map((row) => row.name),
+    ]);
   }
 
   private ensureFolderPath(sourceId: string, dir: readonly string[]): string | null {
@@ -417,31 +440,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
               ? null
               : input.destinationParentToken.nodeId
             : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
-        targetBasename = await allocateFilename(
-          { kind: "document", ...input.destinationFilename },
-          (candidate) =>
-            [...this.backing.documents.values()]
-              .filter(
-                (row) =>
-                  row.id !== input.source.nodeId &&
-                  row.contextSourceId === input.destinationSourceId &&
-                  row.folderId === destParentId &&
-                  row.deletedAt === null,
-              )
-              .some((row) =>
-                sameNamespaceName(candidate, {
-                  kind: "document",
-                  filename: renderFilename(row.name, row.extension),
-                }),
-              ) ||
-            [...this.backing.folders.values()]
-              .filter(
-                (row) =>
-                  row.contextSourceId === input.destinationSourceId &&
-                  row.parentId === destParentId &&
-                  row.deletedAt === null,
-              )
-              .some((row) => sameNamespaceName(candidate, { kind: "folder", filename: row.name })),
+        targetBasename = await freeFilename(input.destinationFilename, (candidate) =>
+          this.siblingNames(input.destinationSourceId, destParentId, input.source.nodeId).has(
+            candidate,
+          ),
         );
         destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
         const { name, extension } = input.destinationFilename;
@@ -490,31 +492,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
             ? null
             : input.destinationParentToken.nodeId
           : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
-      targetBasename = await allocateFilename(
-        { kind: "folder", name: targetBasename },
-        (candidate) =>
-          [...this.backing.folders.values()]
-            .filter(
-              (row) =>
-                row.id !== input.source.nodeId &&
-                row.contextSourceId === input.destinationSourceId &&
-                row.parentId === destParentId &&
-                row.deletedAt === null,
-            )
-            .some((row) => sameNamespaceName(candidate, { kind: "folder", filename: row.name })) ||
-          [...this.backing.documents.values()]
-            .filter(
-              (row) =>
-                row.contextSourceId === input.destinationSourceId &&
-                row.folderId === destParentId &&
-                row.deletedAt === null,
-            )
-            .some((row) =>
-              sameNamespaceName(candidate, {
-                kind: "document",
-                filename: renderFilename(row.name, row.extension),
-              }),
-            ),
+      targetBasename = await freeFilename({ name: targetBasename }, (candidate) =>
+        this.siblingNames(input.destinationSourceId, destParentId, input.source.nodeId).has(
+          candidate,
+        ),
       );
       destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
       const subtree = this.collectSubtree(movedRoot.id, input.source.sourceId);

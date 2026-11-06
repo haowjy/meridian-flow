@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -262,7 +261,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         parentId: string | null;
         contextSourceId: string;
         name: string;
-        documentAlias: string;
       }> = [];
       for (let i = 0; i < 150; i++) {
         const name = randomUUID();
@@ -272,7 +270,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           parentId,
           contextSourceId: SOURCE_ID,
           name,
-          documentAlias: folderDocumentName(name),
         });
         names.push(name);
         parentId = id;
@@ -317,20 +314,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: EMPTY_FOLDER_ID,
           contextSourceId: SOURCE_ID,
           name: "empty",
-          documentAlias: folderDocumentName("empty"),
         },
         {
           id: NON_EMPTY_FOLDER_ID,
           contextSourceId: SOURCE_ID,
           name: "occupied",
-          documentAlias: folderDocumentName("occupied"),
         },
         {
           id: nestedFolderId,
           contextSourceId: SOURCE_ID,
           parentId: NON_EMPTY_FOLDER_ID,
           name: "nested",
-          documentAlias: folderDocumentName("nested"),
         },
       ]);
       await db.insert(documents).values([
@@ -454,7 +448,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: folderId,
         contextSourceId: SOURCE_ID,
         name: folderId,
-        documentAlias: folderDocumentName(folderId),
       });
       await db.insert(documents).values({
         id: documentId,
@@ -553,7 +546,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: parentId,
           contextSourceId: sourceId,
           name: "parent",
-          documentAlias: folderDocumentName("parent"),
         });
         await committed.insert(documents).values({
           id: childId,
@@ -677,8 +669,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             extension: "",
             filetype: "markdown",
           });
-        const folderName = index < 2 ? name : `${name}.md`;
-        const folder = () => right.ensureFolderPath([folderName]);
+        const folder = () => right.ensureFolderPath([name]);
         const results = await Promise.allSettled(
           fileFirst ? [file(), folder()] : [folder(), file()],
         );
@@ -689,8 +680,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
         expect(
           (await left.listDocuments(LIVE_TREE, null)).filter((row) => row.name === name).length +
-            (await left.listFolders(LIVE_TREE, null)).filter((row) => row.name === folderName)
-              .length,
+            (await left.listFolders(LIVE_TREE, null)).filter((row) => row.name === name).length,
         ).toBe(1);
       }
     });

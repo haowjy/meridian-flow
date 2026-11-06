@@ -5,7 +5,7 @@
  * - receipt lifetime, root representation, lineage-move policy, and provisional-name graduation
  */
 
-import { type ContextDestinationParent, folderDocumentName } from "@meridian/contracts/protocol";
+import type { ContextDestinationParent } from "@meridian/contracts/protocol";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -663,7 +663,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: folderId,
         contextSourceId: otherSourceId,
         name: "Destination",
-        documentAlias: folderDocumentName("Destination"),
       });
       await expect(
         moveTo(port, "scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {

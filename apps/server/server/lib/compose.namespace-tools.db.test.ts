@@ -512,7 +512,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: livePart as never,
         contextSourceId: SOURCE_ID,
         name: "part1",
-        documentAlias: "part1",
       });
       await runInDrizzleTransaction(db, () =>
         absorbHiddenFolder(db, { hidden: hiddenPart.id, into: livePart as never }),

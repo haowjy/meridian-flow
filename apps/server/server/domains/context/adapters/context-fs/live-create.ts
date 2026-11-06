@@ -12,11 +12,9 @@
  */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import {
-  allocateFilename,
   type ContextSiblingPosition,
   type Filetype,
-  namespaceName,
-  sameNamespaceName,
+  freeFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { testHook } from "../../../../shared/test-hooks.js";
@@ -362,25 +360,19 @@ export class LiveCreate {
       return Err({ code: "stale_target" });
     }
     const extra = { options: input.options };
-    const live = [
-      ...(await store.listDocuments(LIVE_TREE, folderId)).map(
-        (document) =>
-          ({
-            kind: "document",
-            filename: renderFilename(document.name, document.extension),
-          }) as const,
+    const live = new Set([
+      ...(await store.listDocuments(LIVE_TREE, folderId)).map((document) =>
+        renderFilename(document.name, document.extension),
       ),
-      ...(await store.listFolders(LIVE_TREE, folderId)).map(
-        (folder) => ({ kind: "folder", filename: folder.name }) as const,
-      ),
-    ];
+      ...(await store.listFolders(LIVE_TREE, folderId)).map((folder) => folder.name),
+    ]);
     let target: { name: string; extension: string; filetype: Filetype };
     let plan: LiveCreatePlan;
     let joinFrom: DocumentId | undefined;
     if (input.leaf === null) {
       // Untitled names skip what hidden documents hold: a scratch never joins an AI document.
       const hiddenNames = await store.listHiddenNames(folderId);
-      const taken = new Set([...live.map(namespaceName), ...hiddenNames]);
+      const taken = new Set([...live, ...hiddenNames]);
       target = {
         name: `Untitled ${highestUntitled(taken) + 1}`,
         extension: "",
@@ -388,9 +380,7 @@ export class LiveCreate {
       };
       plan = { kind: "mint", id: input.documentId };
     } else {
-      const free = await allocateFilename({ kind: "document", ...input.leaf }, (candidate) =>
-        live.some((claim) => sameNamespaceName(candidate, claim)),
-      );
+      const free = await freeFilename(input.leaf, (candidate) => live.has(candidate));
       const parsedFree = input.leaf.extension
         ? free.slice(0, -(input.leaf.extension.length + 1))
         : free;

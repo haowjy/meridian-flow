@@ -68,7 +68,6 @@ export async function createInBranch(
   const occupant = await tree.resolvePath(view, {
     contextSourceId: input.contextSourceId,
     path: filePath(input.dir, input.name, input.extension),
-    as: "document",
   });
   if (occupant.kind === "ambiguous") return Err(ambiguous(occupant.nodes));
   if (occupant.kind === "found") {
@@ -157,7 +156,6 @@ export async function findLiveCreateCandidate(
   const occupant = await tree.resolvePath(LIVE_TREE, {
     contextSourceId: at.contextSourceId,
     path,
-    as: "document",
   });
   if (occupant.kind === "found") {
     return { kind: "occupant", occupantKind: occupant.node.kind === "folder" ? "folder" : "file" };

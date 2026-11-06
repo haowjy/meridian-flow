@@ -98,60 +98,28 @@ export function canonicalLeaf(filename: string): string {
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : filename;
 }
 
-/** Folder spelling stays literal, but valid document aliases cannot hide an opposite-kind claim. */
-export function folderDocumentName(filename: string): string {
-  return canonicalLeaf(filename);
-}
-
-export type NamespaceNameClaim = {
-  kind: "document" | "folder";
-  filename: string;
-};
-
-/** The comparison name a node presents to a claim of the opposite kind. */
-export function namespaceName(claim: NamespaceNameClaim): string {
-  return claim.kind === "folder" ? folderDocumentName(claim.filename) : claim.filename;
-}
-
-/** The document row that could hold this namespace claim's document-facing alias. */
-export function documentPartsForNamespaceClaim(
-  claim: NamespaceNameClaim,
-): Pick<ParsedDocumentFilename, "name" | "extension"> | null {
-  const parsed = parseDocumentFilename(namespaceName(claim));
-  return parsed.ok ? { name: parsed.value.name, extension: parsed.value.extension } : null;
-}
-
-/** Documents and folders share aliases, while nodes of the same kind compare literally. */
-export function sameNamespaceName(left: NamespaceNameClaim, right: NamespaceNameClaim): boolean {
-  return left.kind === right.kind
-    ? left.filename === right.filename
-    : namespaceName(left) === namespaceName(right);
-}
-
-type DesiredFilename =
-  | { kind: "document"; name: string; extension: string }
-  | { kind: "folder"; name: string };
-
-/** The names an arrival tries in order: `name`, then `name (2)`, `name (3)`… from `startSuffix`. */
+/**
+ * The names an arrival tries in order: `name`, then `name (2)`, `name (3)`… from `startSuffix`.
+ * Siblings of either kind clash when their rendered filenames are equal, so a name is just a string.
+ */
 export function* filenameCandidates(
-  desired: DesiredFilename,
+  desired: { name: string; extension?: string },
   startSuffix = 1,
-): Generator<NamespaceNameClaim, never> {
+): Generator<string, never> {
   for (let suffix = startSuffix; ; suffix += 1) {
     const base = suffix === 1 ? desired.name : `${desired.name} (${suffix})`;
-    const filename = desired.kind === "document" ? renderFilename(base, desired.extension) : base;
-    yield { kind: desired.kind, filename };
+    yield renderFilename(base, desired.extension ?? "");
   }
 }
 
-/** Smallest available name at or after `startSuffix`. Callers own the atomic claim. */
-export async function allocateFilename(
-  desired: DesiredFilename,
-  isTaken: (candidate: NamespaceNameClaim) => boolean | Promise<boolean>,
+/** Smallest free name at or after `startSuffix`. Callers own the atomic claim. */
+export async function freeFilename(
+  desired: { name: string; extension?: string },
+  isTaken: (filename: string) => boolean | Promise<boolean>,
   startSuffix = 1,
 ): Promise<string> {
-  for (const candidate of filenameCandidates(desired, startSuffix))
-    if (!(await isTaken(candidate))) return candidate.filename;
+  for (const filename of filenameCandidates(desired, startSuffix))
+    if (!(await isTaken(filename))) return filename;
   throw new Error("unreachable");
 }
 

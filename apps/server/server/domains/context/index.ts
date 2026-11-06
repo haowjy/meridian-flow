@@ -22,7 +22,6 @@ export { createDrizzleProjectContextAvailability } from "./adapters/project-cont
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 export { deleteCommand, moveCommand } from "./context/context-operation-receipts.js";
 export {
-  allocateFilename,
   exportFilename,
   joinPath,
   renderFilename,

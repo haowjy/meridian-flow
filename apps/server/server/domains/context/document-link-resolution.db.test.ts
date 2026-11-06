@@ -5,7 +5,6 @@
  * - catalog-backed canonical navigation under Work-specific readability (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   branches,
@@ -102,7 +101,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: act,
         contextSourceId: source,
         name: "Act 1",
-        documentAlias: folderDocumentName("Act 1"),
       });
       const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
         listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),

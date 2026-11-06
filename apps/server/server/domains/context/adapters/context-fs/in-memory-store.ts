@@ -1,7 +1,6 @@
 import {
   addressCandidates,
-  allocateFilename,
-  folderDocumentName,
+  freeFilename,
   type RetractionCause,
 } from "@meridian/contracts/protocol";
 /**
@@ -111,14 +110,14 @@ export function hasOppositeEntry(
         (row) =>
           row.contextSourceId === sourceId &&
           row.parentId === parentId &&
-          folderDocumentName(row.name) === filename &&
+          row.name === filename &&
           row.deletedAt === null,
       )
     : [...backing.documents.values()].some(
         (row) =>
           row.contextSourceId === sourceId &&
           row.folderId === parentId &&
-          renderFilename(row.name, row.extension) === folderDocumentName(filename) &&
+          renderFilename(row.name, row.extension) === filename &&
           row.deletedAt === null,
       );
 }
@@ -313,7 +312,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     }
     // The catalog's entry-id space is global, and another source holding the id is final too.
     if (this.backing.documents.has(input.id)) throw new ContextEntryConflictError("folder");
-    const name = await allocateFilename({ kind: "folder", name: input.name }, ({ filename }) =>
+    const name = await freeFilename({ name: input.name }, (filename) =>
       Promise.resolve(
         this.findFolderRecord(input.parentId, filename) !== null ||
           hasOppositeEntry(this.backing, this.sourceId, input.parentId, filename, "folder"),

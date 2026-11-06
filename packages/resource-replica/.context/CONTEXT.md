@@ -98,7 +98,7 @@ typed name; no path or owner is compared, and replay does not depend on where th
 leaves the attempt submitted and it is resent under the same operation id. The attempt, its receipt
 and the id are immutable evidence; Copy still names its roots by path. File intents retain typed names for immutable
 transport while the contracts filename codec supplies canonical optimistic names.
-Folder suffix names stay literal and share main's document-alias collision checks.
+Folder names stay literal, and a folder clashes with a document of the same rendered filename.
 Receipt lookup and dispatch share a short account/resource lock with future
 identity and terminal transitions. Historical move receipts create a canonical
 refresh obligation; a post-receipt catalog or exact-ID availability lookup may

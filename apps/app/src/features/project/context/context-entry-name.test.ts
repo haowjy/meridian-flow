@@ -7,24 +7,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  entryNameKey,
   entryNameStemEnd,
   invalidContextEntryNameReason,
   validateContextEntryName,
 } from "./context-entry-name";
-
-describe("entryNameKey", () => {
-  it("makes every spelling of a prose name one key", () => {
-    const key = entryNameKey("Chapter 13");
-    expect(entryNameKey("Chapter 13.md")).toBe(key);
-    expect(entryNameKey("Chapter 13.txt")).toBe(key);
-    expect(entryNameKey("Chapter 13/")).toBe(key);
-  });
-
-  it("keeps a visible extension distinct from the prose name", () => {
-    expect(entryNameKey("notes.json")).not.toBe(entryNameKey("notes"));
-  });
-});
 
 describe("entryNameStemEnd", () => {
   it("selects all of a prose name, even a dotted one", () => {
@@ -78,6 +64,13 @@ describe("validateContextEntryName", () => {
       validateContextEntryName(
         "Lore.md",
         [{ entryId: "sibling", name: "Lore", kind: "file" }],
+        "folder",
+      ),
+    ).toBeNull();
+    expect(
+      validateContextEntryName(
+        "binary.md",
+        [{ entryId: "sibling", name: "binary.md", kind: "file" }],
         "folder",
       )?.level,
     ).toBe("error");

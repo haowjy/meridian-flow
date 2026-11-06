@@ -4,7 +4,7 @@
  * nodes are tombstoned, never hard-deleted. Every function runs in its caller's transaction.
  */
 import type { ContextSourceId, DocumentId, FolderId, ThreadId, UserId } from "@meridian/contracts";
-import { type DocumentRemovalCause, folderDocumentName } from "@meridian/contracts/protocol";
+import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
@@ -123,7 +123,6 @@ export function folderRowValues(
     contextSourceId: at.contextSourceId,
     parentId: at.parentId,
     name: at.name,
-    documentAlias: folderDocumentName(at.name),
     hidden: options.hidden,
     ...(options.orderPolicy ? { orderPolicy: options.orderPolicy } : {}),
   };

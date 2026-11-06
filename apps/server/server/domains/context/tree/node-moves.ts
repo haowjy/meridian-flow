@@ -13,7 +13,7 @@
  * locks of every source involved (current and final) and the row locks §14 names.
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
-import { allocateFilename, type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
+import { type Filetype, freeFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, folders } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -200,15 +200,11 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
 }
 
 async function freeTarget(db: Database, move: NodeMove): Promise<MoveTarget> {
-  const desired =
-    move.node.kind === "document"
-      ? ({ kind: "document", name: move.to.name, extension: move.to.extension ?? "" } as const)
-      : ({ kind: "folder", name: move.to.name } as const);
-  const filename = await allocateFilename(desired, async ({ filename }) => {
+  const extension = move.node.kind === "document" ? (move.to.extension ?? "") : "";
+  const filename = await freeFilename({ name: move.to.name, extension }, async (filename) => {
     const found = await createTreeReader(db).resolvePath(LIVE_TREE, {
       contextSourceId: move.to.contextSourceId,
       path: [...move.to.dir, filename].join("/"),
-      as: move.node.kind,
     });
     if (found.kind === "not_found") return false;
     if (found.kind === "ambiguous") return true;
@@ -218,7 +214,6 @@ async function freeTarget(db: Database, move: NodeMove): Promise<MoveTarget> {
     );
   });
   if (move.node.kind === "folder") return { ...move.to, name: filename };
-  const extension = move.to.extension ?? "";
   return {
     ...move.to,
     name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
@@ -227,9 +222,8 @@ async function freeTarget(db: Database, move: NodeMove): Promise<MoveTarget> {
 }
 
 /**
- * The final path and each ancestor it needs against the live tree: a claim of the node's
- * kind at the end (a document and a folder meet through the shared namespace), a folder at
- * every prefix. The node itself, at its own path, is no conflict.
+ * The final path and each ancestor it needs against the live tree: whatever holds the final
+ * path clashes, and a folder must hold every prefix. The node itself, at its own path, is no conflict.
  */
 async function checkFinalPath(
   db: Database,
@@ -243,7 +237,6 @@ async function checkFinalPath(
     const found = await tree.resolvePath(LIVE_TREE, {
       contextSourceId: move.to.contextSourceId,
       path: segments.slice(0, length).join("/"),
-      as: isFinal ? move.node.kind : "folder",
     });
     if (found.kind === "not_found" || isFinal) break;
     if (found.kind === "ambiguous" || found.node.kind === "document")
@@ -292,7 +285,6 @@ async function installMove(
       contextSourceId: to.contextSourceId,
       parentId,
       name: to.name,
-      documentAlias: folderDocumentName(to.name),
       updatedAt: now,
     })
     .where(eq(folders.id, node.id));

@@ -1,11 +1,6 @@
 /** Hidden-node yielding for the exact claims a live tree write installed. */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
-import {
-  allocateFilename,
-  documentPartsForNamespaceClaim,
-  folderDocumentName,
-  renderFilename,
-} from "@meridian/contracts/protocol";
+import { filenameSplits, freeFilename, renderFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
@@ -25,30 +20,25 @@ type Claim = {
   createdAt: Date;
 };
 
+/** The live rows whose rendered filename (a folder's whole name) is `filename` under `at`. */
 function matchingClaim(
-  claim: { kind: "document" | "folder"; filename: string },
+  filename: string,
   at: Pick<Claim, "contextSourceId" | "parentId">,
   excludeId?: string,
 ) {
-  const documentParts = documentPartsForNamespaceClaim(claim);
+  const splits = filenameSplits(filename).map(
+    (split) => sql`(d.name = ${split.name} AND d.extension = ${split.extension})`,
+  );
   return {
     document: sql`d.deleted_at IS NULL
       AND d.context_source_id = ${at.contextSourceId}::uuid
       AND d.folder_id IS NOT DISTINCT FROM ${at.parentId}::uuid
-      AND ${
-        documentParts
-          ? sql`d.name = ${documentParts.name} AND d.extension = ${documentParts.extension}`
-          : sql`false`
-      }
+      AND (${sql.join(splits, sql` OR `)})
       AND ${excludeId ? sql`d.id <> ${excludeId}::uuid` : sql`true`}`,
     folder: sql`f.deleted_at IS NULL
       AND f.context_source_id = ${at.contextSourceId}::uuid
       AND f.parent_id IS NOT DISTINCT FROM ${at.parentId}::uuid
-      AND ${
-        claim.kind === "document"
-          ? sql`f.document_alias = ${claim.filename}`
-          : sql`f.name = ${claim.filename}`
-      }
+      AND f.name = ${filename}
       AND ${excludeId ? sql`f.id <> ${excludeId}::uuid` : sql`true`}`,
   };
 }
@@ -74,7 +64,7 @@ export async function normalizeNames(db: Database, arrivals: readonly NodeRef[])
       installed.kind === "document"
         ? renderFilename(installed.name, installed.extension)
         : installed.name;
-    const matching = matchingClaim({ kind: installed.kind, filename }, installed);
+    const matching = matchingClaim(filename, installed);
     const losers = await tx.execute<Claim>(sql`
       SELECT * FROM (
         SELECT d.id::text, 'document'::text AS kind, d.context_source_id::text AS "contextSourceId",
@@ -91,11 +81,7 @@ export async function normalizeNames(db: Database, arrivals: readonly NodeRef[])
 
 async function renameHiddenClaim(db: Database, claim: Claim): Promise<void> {
   const tx = currentDrizzleDb(db);
-  const desired =
-    claim.kind === "document"
-      ? ({ kind: "document", name: claim.name, extension: claim.extension } as const)
-      : ({ kind: "folder", name: claim.name } as const);
-  const filename = await allocateFilename(desired, async (candidate) => {
+  const filename = await freeFilename(claim, async (candidate) => {
     const matching = matchingClaim(candidate, claim, claim.id);
     const [row] = await tx.execute<{ taken: boolean }>(sql`SELECT EXISTS (
       SELECT 1 FROM documents d WHERE ${matching.document}
@@ -116,7 +102,7 @@ async function renameHiddenClaim(db: Database, claim: Claim): Promise<void> {
   }
   await tx
     .update(folders)
-    .set({ name: filename, documentAlias: folderDocumentName(filename), updatedAt: now })
+    .set({ name: filename, updatedAt: now })
     .where(eq(folders.id, claim.id as FolderId));
   const subtree = await loadSubtreeNodes(tx, [claim.id as FolderId]);
   await bumpLocationVersions(db, {

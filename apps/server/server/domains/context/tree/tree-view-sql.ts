@@ -15,7 +15,7 @@
  * deleted ones its documents sit under.
  */
 import type { BranchId, ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
-import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
+import { renderFilename } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { branchTreeChanges, documents, folders } from "@meridian/database/schema";
 import { and, eq, getTableColumns, inArray, isNull, type SQL, Subquery, sql } from "drizzle-orm";
@@ -848,7 +848,7 @@ export async function loadHiddenFilenames(
       AND ${inFolder("f.parent_id")}`);
   return [
     ...docs.map((row) => renderFilename(row.name, row.extension)),
-    ...subfolders.map((row) => folderDocumentName(row.name)),
+    ...subfolders.map((row) => row.name),
   ];
 }
 

@@ -20,11 +20,9 @@
 
 import type { DocumentId, FolderId } from "@meridian/contracts";
 import {
-  allocateFilename,
   type ContextSiblingPosition,
-  type NamespaceNameClaim,
+  freeFilename,
   renderFilename,
-  sameNamespaceName,
   splitRendered,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
@@ -67,7 +65,7 @@ export async function planCopyTree(
   const planned = await planLevel(
     deps,
     [...input.dir],
-    parent.found ? await occupantClaims(deps, parent.id) : [],
+    parent.found ? await occupiedNames(deps, parent.id) : new Set(),
     input.roots,
   );
   const nodes = flatten(planned);
@@ -271,7 +269,7 @@ async function planHolds(
   plan: CopyPlan,
 ): Promise<boolean> {
   if (plan.dir.join("/") !== dir.join("/")) return false;
-  const taken = await occupantClaims(deps, parentId);
+  const taken = await occupiedNames(deps, parentId);
   for (const root of plan.roots) {
     const filename = await allocateName(root.source, taken);
     if (
@@ -279,7 +277,7 @@ async function planHolds(
     ) {
       return false;
     }
-    taken.push(claimOf(root.source, filename));
+    taken.add(filename);
   }
   return true;
 }
@@ -320,31 +318,25 @@ async function findDestinationParent(
 }
 
 /** The first free filename for a source among the names already taken. */
-function allocateName(source: CopySourceEntry, taken: readonly NamespaceNameClaim[]) {
-  return allocateFilename(
-    source.kind === "folder"
-      ? { kind: "folder", name: source.name }
-      : { kind: "document", name: source.name, extension: source.extension },
-    (candidate) => taken.some((claim) => sameNamespaceName(candidate, claim)),
+function allocateName(source: CopySourceEntry, taken: ReadonlySet<string>) {
+  return freeFilename(
+    { name: source.name, extension: source.kind === "folder" ? "" : source.extension },
+    (candidate) => taken.has(candidate),
   );
-}
-
-function claimOf(source: CopySourceEntry, filename: string): NamespaceNameClaim {
-  return { kind: source.kind === "folder" ? "folder" : "document", filename };
 }
 
 /** Allocate every name and mint every identity, parents before their children. */
 async function planLevel(
   deps: CopyTreeDeps,
   dir: readonly string[],
-  taken: NamespaceNameClaim[],
+  taken: Set<string>,
   sources: readonly CopySourceEntry[],
 ): Promise<PlannedCopyNode[]> {
   const planned: PlannedCopyNode[] = [];
   for (const source of sources) {
     const filename = await allocateName(source, taken);
     const path = [...dir, filename].join("/");
-    taken.push(claimOf(source, filename));
+    taken.add(filename);
     if (source.kind === "folder") {
       planned.push({
         kind: "folder",
@@ -354,7 +346,7 @@ async function planLevel(
         name: filename,
         path,
         uri: deps.holderUri(path),
-        children: await planLevel(deps, [...dir, filename], [], source.children),
+        children: await planLevel(deps, [...dir, filename], new Set(), source.children),
       });
       continue;
     }
@@ -373,19 +365,13 @@ async function planLevel(
 }
 
 /** Every name this parent holds for a reader: live folders and live documents. */
-async function occupantClaims(
-  deps: CopyTreeDeps,
-  parentId: string | null,
-): Promise<NamespaceNameClaim[]> {
+async function occupiedNames(deps: CopyTreeDeps, parentId: string | null): Promise<Set<string>> {
   const [folders, documents] = await Promise.all([
     deps.store.listFolders(LIVE_TREE, parentId),
     deps.store.listDocuments(LIVE_TREE, parentId),
   ]);
-  return [
-    ...folders.map((folder) => ({ kind: "folder" as const, filename: folder.name })),
-    ...documents.map((document) => ({
-      kind: "document" as const,
-      filename: renderFilename(document.name, document.extension),
-    })),
-  ];
+  return new Set([
+    ...folders.map((folder) => folder.name),
+    ...documents.map((document) => renderFilename(document.name, document.extension)),
+  ]);
 }

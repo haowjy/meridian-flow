@@ -5,13 +5,11 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  allocateFilename,
   filenameForBinary,
+  freeFilename,
   type NamedRow,
-  type NamespaceNameClaim,
   parseDocumentFilename,
   renderFilename,
-  sameNamespaceName,
   storedFilename,
 } from "./document-filename.js";
 import {
@@ -186,36 +184,13 @@ describe("storedFilename", () => {
   });
 });
 
-describe("namespace name claims", () => {
-  it("shares document-folder aliases and counts documents and whole folder names", async () => {
-    const claims = [
-      { kind: "folder", filename: "Lore.md" },
-      { kind: "document", filename: "Map" },
-      { kind: "folder", filename: "Map (2)" },
-    ] as const;
-    expect(
-      sameNamespaceName(
-        { kind: "document", filename: "Lore" },
-        { kind: "folder", filename: "Lore.md" },
-      ),
-    ).toBe(true);
-    expect(
-      sameNamespaceName(
-        { kind: "folder", filename: "Lore" },
-        { kind: "document", filename: "Lore.md" },
-      ),
-    ).toBe(false);
-    expect(
-      sameNamespaceName(
-        { kind: "folder", filename: "Lore" },
-        { kind: "folder", filename: "Lore.md" },
-      ),
-    ).toBe(false);
-    const taken = (candidate: NamespaceNameClaim) =>
-      claims.some((claim) => sameNamespaceName(candidate, claim));
+describe("free filenames", () => {
+  it("counts documents and folders by their literal rendered names", async () => {
+    const taken = new Set(["Lore.md", "Map", "Map (2)"]);
+    await expect(freeFilename({ name: "Map" }, (name) => taken.has(name))).resolves.toBe("Map (3)");
+    await expect(freeFilename({ name: "Lore" }, (name) => taken.has(name))).resolves.toBe("Lore");
     await expect(
-      allocateFilename({ kind: "document", name: "Map", extension: "" }, taken),
-    ).resolves.toBe("Map (3)");
-    await expect(allocateFilename({ kind: "folder", name: "Map" }, taken)).resolves.toBe("Map (3)");
+      freeFilename({ name: "Lore", extension: "md" }, (name) => taken.has(name)),
+    ).resolves.toBe("Lore (2).md");
   });
 });

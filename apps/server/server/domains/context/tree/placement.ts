@@ -13,7 +13,7 @@
  * source involved and the document locks of every target document.
  */
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
-import { allocateFilename, folderDocumentName } from "@meridian/contracts/protocol";
+import { freeFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -72,7 +72,6 @@ export async function walkFolders(
         contextSourceId,
         parentId,
         filename: name,
-        as: "folder",
       });
       if (found.kind === "found" && found.node.kind === "folder") {
         parentId = found.node.id;
@@ -142,18 +141,10 @@ export async function createLiveFolder(
 ): Promise<{ name: string }> {
   const { contextSourceId, parentId } = input;
   const tree = createTreeReader(db);
-  const name = await allocateFilename(
-    { kind: "folder", name: input.name },
-    async ({ filename }) => {
-      const occupant = await tree.childAt(LIVE_TREE, {
-        contextSourceId,
-        parentId,
-        filename,
-        as: "folder",
-      });
-      return occupant.kind !== "not_found";
-    },
-  );
+  const name = await freeFilename({ name: input.name }, async (filename) => {
+    const occupant = await tree.childAt(LIVE_TREE, { contextSourceId, parentId, filename });
+    return occupant.kind !== "not_found";
+  });
   await insertFolder(db, { contextSourceId, parentId, name }, { hidden: false, id: input.id });
   await claimDocumentLocation(db, contextSourceId, parentId, name);
   await absorbAt(db, input.id);
@@ -298,15 +289,8 @@ async function prepareLivePlacement(
   const ancestors = await placeAncestors(db, tree, target);
   if (!ancestors.ok) return ancestors;
   const { parentId } = ancestors.value;
-  const desired =
-    target.node.kind === "document"
-      ? ({
-          kind: "document",
-          name: target.at.name,
-          extension: target.at.extension ?? "",
-        } as const)
-      : ({ kind: "folder", name: target.at.name } as const);
-  const filename = await allocateFilename(desired, async ({ filename }) =>
+  const extension = target.node.kind === "document" ? (target.at.extension ?? "") : "";
+  const filename = await freeFilename({ name: target.at.name, extension }, async (filename) =>
     Boolean(
       ancestorTaken(
         [...ancestors.value.path, filename].join("/"),
@@ -314,13 +298,11 @@ async function prepareLivePlacement(
           contextSourceId: target.at.contextSourceId,
           parentId,
           filename,
-          as: target.node.kind,
         }),
         target.node,
       ),
     ),
   );
-  const extension = target.node.kind === "document" ? (target.at.extension ?? "") : undefined;
   const at: LiveLocation = {
     ...target.at,
     parentFolderId: parentId,
@@ -428,7 +410,6 @@ async function placeAncestors(
       contextSourceId,
       parentId,
       filename: row.name,
-      as: "folder",
     });
     if (holder.kind === "found" && holder.node.kind === "folder") {
       // One folder per path (decision 10): a hidden one folds into the visible holder; a
@@ -477,7 +458,7 @@ async function updatePlacedFolder(
     .set({
       parentId: change.parentId,
       ...(change.contextSourceId ? { contextSourceId: change.contextSourceId } : {}),
-      ...(change.name ? { name: change.name, documentAlias: folderDocumentName(change.name) } : {}),
+      ...(change.name ? { name: change.name } : {}),
       ...(change.clear === "hidden" ? { hidden: false } : {}),
       ...(change.clear === "deleted" ? { deletedAt: null } : {}),
       updatedAt: new Date(),
