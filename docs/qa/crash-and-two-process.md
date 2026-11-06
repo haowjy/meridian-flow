@@ -4,8 +4,7 @@ Two lock-free drafts probes. **P5** stops the server between a draft write's
 `COMMIT` and its acknowledgement and checks the resend lands once. **P6** runs two
 server processes on one database, with a tab on each typing into the same draft.
 Both run on an owned mock stack (`MODEL_PROVIDER=mock pnpm dev`) and read
-durable state with `tools/qa/draft-readback.ts`. Record the commit, date, stack
-and evidence path for each run, as the [catalog](README.md) asks.
+durable state with `tools/qa/draft-readback.ts`.
 
 ## Tools
 
@@ -34,9 +33,8 @@ and evidence path for each run, as the [catalog](README.md) asks.
   nothing committed), `draft.append.afterCommit` and
   `draft.rewrite.beforeCommit`
   (`apps/server/server/shared/test-hooks.ts`).
-- `collab.draft.rewrite_committed` reports each rewrite (`checkpoint`,
-  `compact`, `pull`, `reset`) with `holdMs` and `tailRows`. `holdMs` runs from
-  the draft row's `FOR UPDATE` to `COMMIT`.
+- `./mf log --source collab.draft --json` reports rewrite and append completion
+  events with their event names and timing fields.
 
 For about 30 seconds after a crash, the JSONL mirror (`logs/events/`) drops
 events, because the dead worker's directory lock is still live until it goes
@@ -67,8 +65,8 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
    - Its `text` matches the editor.
    - After a reload, the editor and `stateSha256` are unchanged.
    - Typing again with no arm file does not crash.
-4. Repeat with `HOOK_CRASH_AT=draft.append.beforeCommit` (phase 4). Count
-   the draft's receipts first:
+4. Repeat with `HOOK_CRASH_AT=draft.append.beforeCommit`. Set `db` to this
+  stack's `DATABASE_URL` before counting the draft's receipts:
    `select count(*) from document_edit_parts where placement->>'draftId' = '<draftId>'`
    with `psql "$db"`. Arm the file and type one word. The server exits after
    the append inserted its rows and receipts and before `COMMIT`, so nothing of
@@ -89,8 +87,8 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
    - Before the rerun, `revision`, `checkpointSeq` and the tail are unchanged.
    - The pull runs once more and commits: `revision` + 1, and the text carries
      the live edit.
-   - `logs/portless.log` shows one `rewrite_committed` with `rewrite: "pull"`
-     for that draft after `Restarting dev worker...`.
+   - `./mf log --source collab.draft --json` shows one `rewrite_committed` event
+     with `rewrite: "pull"` for that draft after `Restarting dev worker...`.
 
 ## P6: two servers on one database
 
@@ -119,16 +117,10 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
 4. PASS:
    - All 80 tokens are in `draft-readback`'s text, in each tab's order.
    - All 80 tokens are in both editors after a reload.
-   - Every key is acked, with no `1008` close and no reconnect: each
-     process's room takes the other's committed rows before it judges a frame.
-     The headless form of this step is the `two-process-frames` probe, and
-     `two-process-fold` and `two-process-compaction` cover a pull or compaction
-     folding the other process's row ([seam probes](drafts-lock-free-probes.md)).
-   - No frame is judged twice: appends are sequenced by the draft row's lock,
-     so neither process emits a `DraftCasConflictError` for a frame. Read
-     `collab.draft.append_committed` (debug) for each key's `waitMs` and `holdMs`.
+   - Every key is acked, with no `1008` close and no reconnect: each process's
+     room takes the other's committed rows before it judges a frame.
+   - No frame is judged twice: neither process emits a `DraftCasConflictError`.
    - A live edit pulled by both processes lands once; the loser sees `moved`.
    - Equal hashes after the reload are not enough on their own.
-   The second server mirrors events to `logs/events-p6b.server.meridian/`.
 5. Stop the second server with Ctrl-C, close only your browser sessions, and run
    `pnpm dev --stop`.

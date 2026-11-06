@@ -30,6 +30,30 @@ JSON in the active work directory. These are manual runtime probes, not CI tests
 5. Send a normal second message in an existing chat. Composer clears immediately;
    server readback has the new writer turn once and a reply.
 
+For the two real 400 cases, install the wrapper in the page before sending and
+restore it after each case. It must preserve the original request and response
+for the evidence:
+
+```js
+const fetch0 = window.fetch;
+window.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : input.url;
+  if (url.includes("/threads") && url.includes("/messages")) {
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    console.log("admission body", body);
+    return new Response(JSON.stringify({ error: "probe admission refusal" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+  return fetch0(input, init);
+};
+```
+
+For the create case, hold the create POST before calling `fetch0`, then release
+it after the browser has rendered both optimistic rows. A timeout is different:
+hold the request past 15 seconds, let the local row fail, then release ordinary
+fetch before remounting. Always set `window.fetch = fetch0` before the next case.
+
 ## Ordering, ownership and bounds
 
 6. Hold only the first create POST before dispatch. Send another message in that
@@ -52,167 +76,40 @@ JSON in the active work directory. These are manual runtime probes, not CI tests
    draft after the journal retires. A message recorded after the dissolve's read
    still carries complete creation inputs and is not swept as an old record.
 
+Use the same `fetch` wrapper to hold only the first create POST, without
+returning a response. The second send must remain optimistic and no admission
+request may run early. Release the promise, then read the server and confirm
+the two writer turns are in send order. This is the ownership window; it is not
+a lost response after a server commit.
+
 Remove every interception, close only the owned browser session, and stop only
 this worktree's stack with `pnpm dev --stop`. Never describe a synthetic browser
 403 as a real server rejection or a held-before-dispatch POST as a lost response
 after a server commit.
 
-## Deleted-chat server proof
+## Composer drafts
 
-Use an owned dev stack and a disposable chat. This checks HTTP availability,
-not the later client move/navigation policy.
-
-1. `./mf thread create --title "Deletion proof" --json`; save the id and project id.
-2. `./mf api DELETE /api/threads/<id>`. With the same identity,
-   `./mf api GET /api/threads/<id>/snapshot` must return HTTP 404 with
-   `error.code = thread_deleted` and `error.details.authenticatedUserId`.
-3. Repeat against GET and DELETE `/api/threads/<id>/admissions/<submissionId>`
-   and POST `/api/threads/<id>/messages` (any JSON body). Each owner gate must
-   return the same attested deletion code before reading/admitting anything.
-4. Repeat creation with that id and valid Agent selection through both
-   POST `/api/threads` and POST `/api/projects/<projectId>/threads`. Both must
-   return attested `thread_deleted`, not resurrect the chat.
-5. If a second dev account is available, authenticate it in a separate CLI
-   cookie jar and compare that chat's snapshot refusal with a random missing
-   UUID's refusal. The serialized envelopes must match byte-for-byte:
-   `thread_not_found`, attested to the second account, no deletion disclosure.
-6. Create a second disposable project and a live chat in it. Delete the project
-   with DELETE `/api/projects/<projectId>`. Repeat the four thread gates and
-   both existing-id creation routes: each returns `thread_deleted` with
-   `details.projectDeleted: true` and the authenticated user id, even though
-   the chat row itself is still live. Repeat with a trashed chat in that project.
-7. GET `/api/projects/<projectId>` and both creation routes with a new chat id
-   return HTTP 404 `project_deleted`, with `details.authenticatedUserId`.
-   Missing projects and foreign projects (live or deleted) retain the identical
-   generic `Project not found` refusal. Project DELETE remains idempotent;
-   context availability explicitly reads tombstones and retains its policy.
-8. A deleted chat in a live project, including a Work cascade, must have no
-   `projectDeleted` field at all (not `false`).
-9. Restore the disposable chat with POST `/api/threads/<id>/restore`, or leave
-   it in trash. Do not change another worktree's identity or stack.
-
-The DB gate contract also covers deleted parent projects, Work-cascade markers,
-purges, and disagreeing creator/project-owner rows. Run it with
-`pnpm test:db -- thread-deletion-proof`.
+1. Open a seeded chat. Type prose and select an `@` reference. Reload before the
+   250 ms debounce; both return. Open the chat in the Editor, type another draft,
+   reload, and repeat on a phone viewport.
+2. On All chats, type into the new-chat composer and insert a reference. Reload;
+   the project draft returns. Changing the prospective Work does not strand it.
+3. Send a draft, reload while admission is pending and after acknowledgement;
+   the journal/transcript owns the message and no duplicate composer draft returns.
+   Start another unsent message and reload; the new words do return.
+4. In two independent tabs, type different words and reload both. Each keeps its
+   own draft. Close one and open a fresh tab; it starts empty.
+5. Save a draft that references a file, delete it through `./mf doc rm`, and reload.
+   Successful catalog acquisition removes the missing atom while keeping prose;
+   offline or catalog errors keep the reference.
+6. Reload during an upload: the in-flight upload atom drops, while a completed
+   upload reference survives.
 
 ## Deleted-chat browser cleanup
 
-Use the mock-model worktree and a named browser session. Seed a chat titled
-"Arc 2 notes" with `./mf thread create --title 'Arc 2 notes'`. Abort only message
-POSTs to produce a failed writer row ("Make the elder colder"), then type more
-words in its box. Delete through `./mf api DELETE /api/threads/<id>`, remove the
-abort, and click Retry. New chat must contain the failed row then the box text,
-ahead of any older New chat writing, under the titled plural notice. Reload:
-words and notice remain exactly once. Dismiss the X: words remain. Repeat and
-Send: the note is gone and the new chat receives the words once.
-
-Repeat with an untitled chat, a collapsed dock, the chat kept warm behind All
-chats, and a dock covered by Changes or a document. Hidden chats move nothing.
-For a visible chat's own Delete, nothing moves; successful DELETE clears the
-journal and box. Delete a disposable parent project through the API: its chat's
-attested project deletion clears without transfer or a note. A random missing
-chat id must retain main's existing fallback and never run deletion cleanup.
-
-Reload with journal records and session boxes for off-screen deleted and live
-chats. The one bind pass clears only attested deleted destinations (up to four
-requests concurrently, 15 seconds each). In two browser tabs, deleting in one
-may remove the other's failed rows before that tab learns of deletion. This is
-accepted: the other tab still moves its own box once it learns. No extra lock
-prevents this rough edge.
-
-Cold-load a deleted chat URL with both a failed row and saved box text: the bind
-pass must defer that URL and the project's remembered dock chat until their panes
-report deletion. The words move together with the note, not vanish. Open a chat
-while bind cleanup waits on its submission lock: it must defer to that pane.
-Restore a moved chat, write new box words at the same composer revision, then
-delete again: the fresh words must move too. Refuse New chat storage or journal
-enumeration: the chat stays, words remain, and Couldn't send replaces Sending.
-Restore storage and Retry, Edit or wake: cleanup completes.
-
-Hold a message POST open, start own Delete, then deliver its attested deletion
-response before DELETE resolves: no words or notice move. A failed DELETE cancels
-that own-delete intent; an account rebind must fence it. Attach a file into a
-deleted project: the real error envelope reads "This project was deleted."
-
-Capture the titled and untitled note in desktop Chat, a 360px dock, and a 390px
-phone, each in light and dark. Crop out account identity and hide the TanStack
-launcher. These captures verify real responsive wrapping, not fixture markup.
-
-## Write-mode switch order
-
-Start with `MODEL_PROVIDER=mock pnpm dev`, open a chat in the browser, and script a
-reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`).
-
-1. Idle chat: choose the other mode in the composer. The control changes at once and a
-   quiet "Switched to…" notice (a mode icon, no rule, no compaction mark) with Stop sits at the
-   tail. Reload, and a second tab shows it too. The snapshot's run-state record (`liveState.runState.items`) lists the switch and
-   no switch turn exists yet (`./mf thread view`).
-   Switch back before anything else: the notice goes, nothing replaces it, and the model's next
-   request (`./mf thread context` after a message) contains no switch notice.
-   Instead send a message first: the notice stays, becomes the transcript line after the message,
-   and the reply says it knows the new mode.
-2. During the reply: choose the other mode. A "Switch to … queued" notice with Stop
-   sits at the tail; the same notice, reading "Switched to …", replaces it after the reply ends
-   only when a message or Retry starts the next reply, and stays pending otherwise. Stop removes it.
-3. During the reply: switch and switch back. Both notices disappear, no turn is
-   written, and `GET /api/threads/<id>/snapshot` shows no item in `liveState.runState.items`.
-4. Abort `**/controls` in the browser (`agent-browser network route "**/controls" --abort`),
-   switch, then send a message: the row says "Couldn't switch…" with Retry and no Stop (the
-   request left, so the server may hold it), and the message stays "Sending". Remove the route and
-   Retry: the row becomes queued and Stop appears; it stops on the server. Reload instead
-   and the switch is admitted before the message.
-5. Two tabs on one chat during a reply: switch in the typing tab. The other tab shows the
-   queued row and the chosen mode at once (the driver stamps the server's answer on the journal
-   record, and every tab reads the stamp), and Stop from the other tab empties the server's
-   inbox and both tabs' rows. A hidden tab that chose a switch holds its row until a visible tab's
-   driver posts it and stamps the answer (wrap `window.fetch` in the choosing tab so its
-   `POST **/controls` never answers, pick, then show the other tab; the choosing tab never shows
-   "Couldn't switch" and converges on the queued row). Stop an unposted switch in one tab
-   (abort `**/messages` so a message ahead holds it) and the watching tab drops the row and the mode.
-   While a reply ends with a queued switch, observe the DOM (a MutationObserver and a
-   `requestAnimationFrame` sampler over body text and the toolbar label): no sample lacks both
-   the row and the switch turn, and the toolbar never shows the old mode.
-6. A refused first send with a switch queued behind it: abort the create route, send, switch,
-   then set the message record's `state` to `rejected` in `localStorage` (the route tool can't
-   return a 4xx). Edit returns to New chat with the message's draft and clears the switch.
-7. New chat: pick a mode in the new-chat composer and send. The chat starts in it.
-8. Two chats in one Work: switch A, then B, with A's snapshot held
-   (`agent-browser network route "**/snapshot*" --abort`, then remove the route): the
-   new-chat composer shows B's choice after A's switch turn arrives, because the Work's
-   default is refetched, never patched from a frame.
-9. Steer, then switch, during a reply: once the later reply ends, the earlier one
-   shows Copy and its actions (the switch turn ends continuation).
-10. Two devices (two named browser sessions, one account, a slow reply): device 1 sends and
-    chooses the other mode, so both show the queued row. Device 2 chooses the original mode.
-    Sample both pages per frame (a MutationObserver and `requestAnimationFrame` over the row,
-    Stop and the toolbar label): device 2's row disappears at its click and never comes
-    back, the toolbar never reverts, device 1's row clears when the answer lands, and the
-    server's inbox holds only the message with no switch turn. Repeat three times.
-11. Read the live region (`[role=status]`) through a switch, its apply and a
-    switch back: "Switched to …" (idle) or "Switch to … queued" (during a reply) once, nothing
-    when it applies, and nothing for the switch back.
-    Reload with a switch queued: nothing is announced. A failed switch announces once, and
-    Retry or Stop clears "Couldn't switch…".
-12. Phone (390x844) and desktop: repeat 2, 3 and 10 at both sizes. Sample the page as in 5: after
-    the switch back there is no frame with the cancelled row or the old mode, on the one device
-    and on the second device (three runs each). Reload with a queued switch: the first sampled
-    frame after load already shows the row and the queued mode (read from the journal stamp),
-    and nothing is announced, at the load or at the apply.
-13. First seed with newer frames: reload a chat mid-reply while a second device queues a switch (delay
-    `**/snapshot*` with `agent-browser network route` so the frame lands before the snapshot). The
-    reloaded page shows the queued row and the queued mode once the snapshot lands, and a snapshot
-    that lists a switch it learned only from the fetch announces nothing.
-14. A failed first load: apply several switches in a chat, abort `**/snapshot*` with
-    `agent-browser network route`, and hard-reload. The chat shows its load failure with no
-    "Switch to … queued" rows and no "Switched to …" announcement, and the toolbar shows the
-    thread's mode. Remove the route and press Retry: the switch turns load and nothing is left over.
-15. An applied switch whose HTTP answer is lost: on device 1 wrap `window.fetch` so a `POST **/controls`
-    resolves 12 seconds late (the route tool can't delay), choose the other mode on an idle chat, then
-    send a message from device 2 so a run starts and applies the switch before the response lands.
-    Device 1 shows the applied mode and no row, before and after its delayed response, and the
-    switch turn sits above the reply in `./mf thread view`. A Stop on a quiet chat leaves its row
-    gone and stays gone without a reload, and the Work's default (new-chat composer) follows it.
-16. Draft count: in a draft-mode chat whose AI wrote two documents, the composer control and its
-    menu read "Drafts (2)" (accessible name "AI write mode: Drafts, 2 documents waiting"); with none
-    waiting, "Draft". In an Auto-apply chat the trigger reads "Auto-apply" but the menu's Draft option
-    still reads "Drafts (2)". Apply or discard a document and the count follows.
+With a failed writer row and saved composer text in a deleted chat, cold-load its
+URL. Bind cleanup waits for the pane to report attested deletion, then moves the
+row and words together into New chat exactly once. Restore the moved chat, type at
+the same composer revision, delete it again, and confirm the fresh words move too.
+If New chat storage or journal enumeration is refused, the chat stays in place
+and words remain; restore storage and Retry, Edit or wake to finish cleanup.

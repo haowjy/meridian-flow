@@ -16,21 +16,13 @@ Use only disposable checkouts and processes you own. Record the shared
    Discover the URL with `pnpm portless:list`, open it in a named
    `agent-browser` session and verify the Meridian screen replaces the scratch
    response. Check route owner cwd and configured backend ports.
-5. Repeat the conflict and takeover with `pnpm dev --restart`. Ordinary
-   `pnpm dev` against a healthy owned stack should still say `already running`.
-6. Stop only your stack (`pnpm dev --stop`), close your named browser session,
+5. Stop only your stack (`pnpm dev --stop`), close your named browser session,
    and terminate scratch processes. Remove disposable worktrees and their
    databases with the targeted cleanup tooling. Recheck unrelated route PIDs.
 
 ## Active identity after a Git change
 
-On an owned detached checkout, start with `pnpm dev --no-tailscale` and record
-the URLs and session metadata. Move HEAD with an owned empty commit while the
-stack stays running. `pnpm dev --no-tailscale` must say `already running` with
-the original URLs. `./mf project list` and the E2E URL resolver must discover
-that same stack, not new names derived from HEAD. Open the discovered app URL
-in a named browser session and verify Meridian still renders. `--print` must
-describe that active session; `--restart --print` must plan the new identity.
-Stop the old stack through its recorded identity and remove only your fixture.
-Capture the original database name before moving HEAD so cleanup can drop the
-database the stack actually used, not the name planned from the new commit.
+On an owned detached checkout, start with `pnpm dev --no-tailscale`, move HEAD
+with an owned empty commit, and run `pnpm dev --no-tailscale` again. It must say
+`already running` with the original URLs. `./mf project list`, the E2E URL
+resolver, and `--print` must find that active session rather than a new identity.

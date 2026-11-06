@@ -1,16 +1,17 @@
 # The model's create, move and delete
 
 Browser checks for the model's `write` `create`, `copy`, `move` and `delete`: in an auto-apply chat, tool rows,
-the turn card, its Undo, and a stopped reply's rollback (steps 1 to 4); in a draft-mode chat,
+the turn card, its Undo, and a stopped reply's rollback (steps 1 to 5); in a draft-mode chat,
 the pending rows, the Work notice on the live document, Apply, Discard and the model's undo
-(steps 5 to 8). Run the stack with `MODEL_PROVIDER=mock` so `./mf mock script` drives the
+(steps 6 to 13). Run the stack with `MODEL_PROVIDER=mock` so `./mf mock script` drives the
 model.
 
 ## Setup
 
-1. `MODEL_PROVIDER=mock pnpm dev`, then `./mf seed` five chapters `manuscript://ch1` to `ch5`,
-   with `ch3` linking `[the morning Lin Feng woke](manuscript://ch1)`, and a chat
-   "Chapter cleanup" (No Work, auto-apply).
+1. `MODEL_PROVIDER=mock pnpm dev`, then create five documents with
+   `./mf doc put "manuscript://ch1" --text @chapter.md` (repeat for ch2–ch5).
+   Put a link from ch3 to ch1 and create a "Chapter cleanup" chat (No Work,
+   auto-apply).
 2. Another Work with a draft of ch2: create the Work (`POST /api/projects/:id/works`), a chat in
    it with `./mf thread create --work w1`, switch that chat to Draft in the browser, then
    `./mf thread send` it a mock `read` of ch2 and, in a second step, a `replace` (`"in": 2`).
@@ -49,7 +50,7 @@ model.
 
 Do not add `ask_user` to this fixture: it ends the reply and waits for an answer.
 
-### Draft mode (steps 6 to 9)
+### Draft mode (steps 6 to 13)
 
 Setup: chapters `manuscript://ch1` to `ch5`; a Work "Ascension" (`w1`); a chat in it
 (`./mf thread create --work w1`) switched to draft mode, from the composer's write-mode menu or
@@ -85,7 +86,7 @@ the text it found or a block hash from that read.
    Redo deletes it again. Apply another drafted delete, then use the turn card's Undo; it restores
    the document. Apply once more, stop the reply so rollback runs, and verify rollback restores it.
    `write edits` lists each applied delete once. Moves and renames remain applied and cannot be
-   undone ([#1024](https://github.com/haowjy/meridian-flow/issues/1024)).
+   undone.
 
 With more than one file, the dock's Apply asks the same question in its footer
 ("Applying deletes ch2.") before it sends.
@@ -124,12 +125,3 @@ With more than one file, the dock's Apply asks the same question in its footer
    document identity remain hidden by the branch delete fact. Redo clears that fact and shows the
    same draft with its original content (or the same empty draft), listed once. Apply and Discard
    remain available on the restored row.
-
-## Last run
-
-- 2026-10-22, `feat/model-tool-surface-namespace-ui` after `ee4c2555c`, local stack, mock model:
-  steps 1 to 4 pass. Evidence: the work directory's `impl-pr3/evidence/phase-d/`.
-- 2026-10-22, `feat/model-tool-surface-namespace` (phase G), local stack, mock model: steps 5
-  to 8 pass. Evidence: the work directory's `impl-pr3/evidence/phase-g/`.
-- 2026-10-22, `feat/model-tool-surface-namespace-client` after `95dbe0806`, local stack, mock
-  model: step 9 passes, twice. Evidence: the work directory's `impl-pr3/evidence/ef-client/`.

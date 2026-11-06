@@ -58,7 +58,4 @@ chat and use the returned ID, rather than assuming a global `cN` handle:
    JSON and defaults containing `toolCalls` or `times` must fail configuration.
 
 Capture screenshots of partial thinking, persisted expanded thinking, the long
-response, tools and failure. Close the browser and stop the stack
-when finished. Low-level transport probes should also compare streamed and
-non-stream content/usage and cancellation with a slow consumer; the browser
-alone cannot measure wire chunk timing or HTTP backpressure.
+response, tools and failure. Close the browser and stop the stack when finished.

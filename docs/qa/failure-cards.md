@@ -1,12 +1,8 @@
 # Failure cards
 
-Browser checks for the cards `chatCards` decides: the failed reply, a refused and a lost Retry, a
-failed compaction, the handoff brief's failures, and the live region that announces them. Every
-chat failure is a `FailureCard` drawn where it is anchored; none is a bare red line, and one
-announcer speaks each card once. These steps were run as F27 to F29 in
-[#849](https://github.com/haowjy/meridian-flow/pull/849) and live here so they outlast that work. A
-step is not a claim that it passed on the current commit: record the commit, date, provider and
-evidence path after each run, in the active work directory.
+Browser checks for the cards `chatCards` decides: failed replies, Retry failures,
+failed compaction, handoff-brief failures and their live-region announcements.
+Every chat failure is a `FailureCard` drawn where it is anchored.
 
 ## Setup
 
@@ -82,46 +78,6 @@ generating brief. Restore `fetch` and press Try again: the brief stops and the c
   failed." once. Send another message: it is empty.
 - **On load:** reload a chat whose latest reply failed. The card shows and the live region stays empty.
 
-## Review boundaries
-
-- **Outstanding compaction:** after FC-04 fails, block usage as in
-  [usage waiting](usage-waiting.md) and press Try again. The replacement is queued;
-  both the browser and `./mf thread view` must omit the old `compaction-failed`
-  card. Drop the replacement's withdrawal: only `compact-withdraw-failed` has
-  Try again. A lost replacement enqueue likewise leaves recovery on the queued
-  command, never a second enqueue button on the old divider.
-- **Superseded brief:** lose the brief Retry's `POST /handoff/brief` response,
-  then create a newer brief from another client. Neither `brief-retry-lost` nor
-  historical failure copy or Retry may remain on the old seed.
-- **Unsaved switch:** temporarily make `Storage.prototype.setItem` throw only
-  for `meridian:chat-submissions:` keys. Switch write mode. Expect one queued
-  failure card and recovery action, not an unowned alert. Retry twice, restore
-  storage, and retry or withdraw; the card and its alert disappear. Restore the
-  original method in a `finally` block.
-- **Batch:** cause two watched failures in one projection (for example FC-03's
-  reply failure and lost Retry). Both sentences must reach the assertive region
-  together. Ending one card must not rewrite the region to the surviving
-  sentence and announce it again. Reloaded cards stay silent.
-- **Hand-back occurrences:** follow [QC-08](queue-controls.md#qc-08-failure-cards)
-  for refused Retry saves and reload. Hand-back resume keeps the last saved occurrence; it does
-  not use the send journal's new-attempt-on-replay policy.
-- **Occurrences across reload:** lose a message send and its Retry. Read the
-  journal's `occurrence` before reload; re-drive after reload and fail again.
-  The saved attempt increases and the new card key differs. The idempotent
-  `submissionId` need not change. Repeat with a failed write-mode switch.
-
-- **Two-tab replay:** open the same chat in two tabs, locally fail message POSTs
-  and admission lookups, and send once. After the initial attempts settle, saved
-  occurrence counters and request counts must stop increasing without a Retry,
-  reconnect or reload. Read counters from one focused tab: a focus change can
-  refetch the snapshot and replay once, but counters must stay flat while focus
-  is unchanged. One tab publishing attempt metadata must not wake the other
-  into another replay or announce that in-flight attempt as failed.
-
-Restore credits, fetch/storage wrappers and scripts after each injected failure.
-Raw `./mf` error lines are diagnostic; compare the `card` lines and anchors, not
-provider error strings, with the app's cards.
-
 ## FC-07: unavailable feed and correlated diagnostics
 
 On a loaded chat, use browser fault injection to close its WebSocket with 4401.
@@ -132,26 +88,8 @@ A recoverable disconnect or retryable subscription error must not create this
 card. Refuse one subscribe while another chat stays live: only the refused chat
 gets a card; retain it until that thread's subscribe acknowledgment.
 
-Read `[data-failure-id]` on a card and match it to the local trace's
-`failure.recorded` occurrenceId, then `./mf log --source client --full --json`.
+After a card appears, read its `[data-failure-id]` and the assertive live region.
 Exercise Retry, Dismiss, target completion/removal and pane unmount for a failed
-Stop, Send now, brief Stop, Retry and queued control. Each failure records once;
-retirement records once with the appropriate end, and a retry gets a new key.
-Restore a saved hand-back command: its saved attempt key must not be reminted.
-Server-owned reply/usage failures must not gain duplicate client records.
-
-For a non-chat owner, fail a Work goal save and Retry save, Cancel, or archive
-the Work. Copy stays beside the goal; the local failure records and ends once.
-Return HTTP 200 with `{}` for a validated app route (for example turn cancel):
-it must reject without changing state from the unproved body. Repeat with a
-valid body, a transport-envelope body, a 4xx and a 5xx.
-
-Block `/api/diagnostics/failures`: local records remain, there is one local
-`failure.ingest_failed` event per failed batch, and no recursive diagnostic
-requests or new cards. Stall one request: it times out after two seconds and
-the next batch can proceed. POST duplicate records: accept each occurrence once.
-Mix valid records with missing or foreign thread IDs: accept the metadata but
-strip unproven thread/turn correlation. Keep correlation for owned deleted
-threads. Reject another accountId, arbitrary text fields and more than 32
-records. Switch accounts during delivery: the old batch must not be accepted
-under the new account.
+Stop, Send now, brief Stop, Retry and queued control. Each failure announces once;
+reloads stay silent. Restore credits, fetch wrappers and mock scripts after each
+injected failure.

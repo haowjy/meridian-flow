@@ -1,931 +1,333 @@
 # Runtime protocol probes
 
-These back up the automated control, compaction, handoff, history and link identity
-contracts. They do not replace the project checks. `C` means a compaction turn;
-`B` an assistant continuation; `S` a handoff seed. Only `compact` is an inbox control; the handoff brief runs outside the inbox.
+These checks cover runtime control, compaction, failure, handoff, history and
+document-link behaviour that a database test cannot show. Use an owned
+`MODEL_PROVIDER=mock pnpm dev --no-tailscale` stack and the routes from
+`pnpm portless:list`.
 
-## Setup and evidence
+## Setup
 
-Use a disposable worktree. `pnpm bootstrap` provisions its database if needed.
-M4 migrations now follow main’s Work migrations as 0014–0024. If this
-worktree’s dev database applied them under their old 0010–0020 numbers, reset it
-with `pnpm db:reset`. DB tests provision their own fresh databases.
-Start `MODEL_PROVIDER=mock pnpm dev --no-tailscale`, then `pnpm portless:list`.
-Use only that worktree's routes. All commands below run from its checkout.
-Set `E` to a directory under the active work item's `evidence/`, not the repo.
-UUIDs can be generated with `node -p 'crypto.randomUUID()'`.
-
-Publish a private probe Agent and create a thread (the response uses `threadId`):
+Set `E` to a directory under the active work item's `evidence/` and use the
+same checkout for every command. Publish a private probe Agent and create a
+thread:
 
 ```bash
 ./mf api POST /api/agents --data '{"slug":"runtime-probe","content":"---\nname: Runtime Probe\nmode: primary\nmodel: mock-llm-v1\nautocompact: 100000\n---\nFollow the writer."}' --json > "$E/agent.json"
-./mf thread create --agent runtime-probe --work none --title 'Runtime probe' --json > "$E/thread.json"
+./mf thread create --agent runtime-probe --title 'Runtime probe' --json > "$E/thread.json"
 T=$(jq -r .threadId "$E/thread.json")
+compact() { K=$(node -p 'crypto.randomUUID()'); ./mf api POST "/api/threads/$T/controls" --data "{\"id\":\"$K\",\"control\":{\"kind\":\"compact\"}}" --json; }
 ```
 
-For a compactable thread, send tens of thousands of characters of distinctive
-history, then another writer/reply pair. The newer pair is normally retained. A short thread still compacts, using the minimal safe tail. Use `send --mock` for replies:
+For compaction, send distinctive history and a short tail. Poll
+`thread view --json` until the intended turn is pending or streaming before a
+racing action; a sleep alone does not prove the race window. Join background
+sends with `wait`. A cancelled send exits 5 and a failed send exits 1.
 
 ```bash
-./mf thread send "$T" "$(python3 -c 'print("The silver gate opens only for the keeper. " * 1400)')" \
-  --mock '[{"text":"The keeper remembers the silver gate."}]' --json > "$E/history.ndjson"
+./mf thread send "$T" "$(python3 -c 'print("The silver gate opens only for the keeper. " * 1400)')" --mock '[{"text":"The keeper remembers the silver gate."}]' --json > "$E/history.ndjson"
 ./mf thread send "$T" 'Remember the keeper.' --mock '[{"text":"The keeper waits."}]' --json > "$E/tail.ndjson"
 ```
 
-The snippets use these shell helpers. They use existing API routes, not new CLI verbs:
-
-```bash
-compact() {
-  K=$(node -p 'crypto.randomUUID()')
-  ./mf api POST "/api/threads/$T/controls" \
-    --data "{\"id\":\"$K\",\"control\":{\"kind\":\"compact\"}}" --json
-}
-# Add `instructions` beside `kind` to probe `/compact <instructions>`.
-```
-
-If the snapshot is already terminal, do not start a fresh `thread tail`: it
-may wait for an event that already happened. Poll `thread view --json` with a
-bounded deadline and check the control UUID and terminal status; use
-`thread tail --until-idle --timeout 60s` only while a run is active. During races,
-inspect `thread view` until the intended turn is pending/streaming before taking
-the next action; a sleep alone does not prove the race window was reached.
-Join every background `send` with `wait`. Cancelled sends exit 5 and failed sends
-exit 1; record those outcomes rather than masking them as successful runs.
-
-For every probe save `thread view --json`, `thread context --all --view raw
---json`, `log --thread "$T" --json`, and the control responses. Compare the
-serialized **message prefix**, not request IDs, timestamps, usage, or the newly
-appended writer message. Preserve the compared message arrays and their hashes.
-
-Worked examples: [C6a command transcript][c6a] and [merge-gate report][merge].
-The first merge-gate report explicitly failed real-provider scenarios because
-of billing settlement; its mock and crash successes are not evidence of real
-cache warmth. Historical run dates below come from timestamps in the saved JSON events
-and snapshots, not file modification times. The current catalog has not been run
-end-to-end as one suite.
-
 ## RP-1: Failed replies need explicit Retry
 
-- **Protects:** a failed reply consumes its adopted messages once, stays failed,
-  and is not restarted by release wakes or the 30-second sweep. Retry is an
-  ordinary no-input run with normal history; replaying its client ID returns
-  that turn. Pending non-control inbox rows do not block Retry.
-- **Stack:** mock, real wall clock.
-- **Steps:** install a sticky provider failure, send a message, and record the
-  failed assistant ID. Leave the thread idle for one sweep interval, then Retry
-  the failed turn twice with the same client-minted ID:
+Script a provider failure, send a message, wait through one sweep interval, and
+retry the failed turn twice with the same client id:
 
-  ```bash
-  ./mf mock script '[{"error":{"status":500,"message":"RP1 provider unavailable"}}]' --json > "$E/error-script.json"
-  ./mf thread send "$T" 'RP1 failed reply' --json > "$E/send.ndjson"
-  FAILED=$(tail -n 1 "$E/send.ndjson" | jq -r .turnId)
-  ./mf thread view "$T" --json > "$E/failed.json"
-  sleep 30
-  ./mf log --thread "$T" --json > "$E/idle.json"
-  RETRY=$(node -p 'crypto.randomUUID()')
-  ./mf api POST "/api/threads/$T/turns/$FAILED/retry" --data "{\"id\":\"$RETRY\"}" --json > "$E/retry.json"
-  ./mf api POST "/api/threads/$T/turns/$FAILED/retry" --data "{\"id\":\"$RETRY\"}" --json > "$E/retry-replay.json"
-  ```
+```bash
+./mf mock script '[{"error":{"status":500,"message":"RP1 provider unavailable"}}]' --json > "$E/error-script.json"
+./mf thread send "$T" 'RP1 failed reply' --json > "$E/send.ndjson"
+FAILED=$(tail -n 1 "$E/send.ndjson" | jq -r .turnId); sleep 30
+RETRY=$(node -p 'crypto.randomUUID()')
+./mf api POST "/api/threads/$T/turns/$FAILED/retry" --data "{\"id\":\"$RETRY\"}" --json
+./mf api POST "/api/threads/$T/turns/$FAILED/retry" --data "{\"id\":\"$RETRY\"}" --json
+```
 
-- **Expect:** no provider call during the idle interval; the first Retry returns
-  201 with a new failed assistant after the unchanged original; the replay
-  returns 200 with the same turn. A queued compact runs immediately after a
-  failure rather than waiting behind failed messages.
-- **Evidence:** failed and retried snapshots, timeline of gateway and turn
-  events, both response statuses, and no extra request during the idle interval.
-- **Provider-declined variant:** repeat with a sticky 404 error (`"message":
-  "RP1 retired model"`). In the chat, expect "The AI provider turned this
-  request down." and Retry on the latest failed reply. Clear that script with
-  `./mf mock clear --id <script-id>` (read the ID from `error-script.json`),
-  then click Retry. Expect a new reply without retyping; the old failure is not
-  drawn, and a failed reply that a later message follows shows no failure line
-  (a row with no text is gone). Before this fix, the current
-  provider-declined reply had no Retry. An inherited read-only failure must
-  still have no Retry.
-- **Forgetting variant (a failed attempt is one stored fact):** with a sticky
-  failure matched to a marker, check four cases in a browser and read
-  `./mf thread view` and `thread context` after each. (1) Moving on: send the
-  marker, then another message. The failed exchange and its message are gone
-  from the screen, the view and the next request, and the journal has
-  `turns.forgotten` with reason `forgotten`. (2) Retry: the writer's message
-  stays and appears once in the next request, with no failure trace
-  (reason `retried`). (3) `/compact` after an empty failure with an earlier
-  reply: the summary and context lack the abandoned message, and the next
-  reply works. (4) Forks: a fork cut before the failure holds nothing from it;
-  a fork cut after the move-on inherits the forgetting. A failed reply that
-  made a tool call, or one carried into a continuation, stays.
-- **Last run:** not recorded for this exact wall-clock recipe. Automated
-  sweep-boundary coverage is not a substitute for running it.
-
-## RP-9: Production signals drain; dev signals recover as crashes
-
-- **Protects:** production Nitro runs the bounded signal drain, while upstream
-  Nitro dev terminates its worker promptly and exercises crash repair.
-- **Stack:** mock provider, real process signals; run separately in dev and
-  production preview/start.
-- **Steps:** use the mock `cancel billing` response, which emits partial text
-  and usage before it stalls. Send a writer message, wait until the assistant
-  is streaming, record the server PID and send it SIGTERM; repeat with SIGINT
-  on a fresh thread. After each process exits, inspect the durable thread and
-  billing rows from a newly started server.
-- **Expect (production):** exit occurs after the in-flight paid response is
-  persisted and debited once. Its partial text means the reply draws something,
-  so a later message does not forget it. The reply is `error` with `This response failed.`
-  and internal shutdown reason, its adopted inbox message is acknowledged,
-  no successor starts during shutdown, and Retry works after restart.
-- **Expect (dev):** Ctrl+C and SIGTERM exit promptly. After restart, orphan
-  repair marks the reply failed with generic copy and the internal `orphaned`
-  reason and
-  acknowledges every message named by its receipt. Those messages are not
-  answered automatically; only never-adopted queued-behind messages remain in
-  the inbox. Recovery also deletes the stale `thread_run_leases` row and publishes
-  `meridian.thread.status` with `status.kind: asleep` after commit. A resumed
-  subscription/snapshot reads asleep, with no running turn. Send a new message
-  immediately after repair, before the old lease expiry, and confirm its reply
-  starts without waiting. Retry re-answers explicitly.
-- **Evidence:** signal and exit timestamps, process log showing signal-handler
-  ordering, settled reply and response rows, ledger debit, empty pending inbox,
-  post-restart Retry result, resumed snapshot, idle status frame, lease rows
-  before/after repair, and new-message start time relative to the old expiry.
-
-### Terminal compaction failure crash boundary
-
-The production-adapter DB regression in
-`runtime/adapters/drizzle-loop-ports.db.test.ts` captures a pending compaction
-candidate, calls `failCompactionSuccessor`, then runs orphan recovery without
-failure-close or run-session cleanup. The compaction and successor are failed,
-the adopted inbox is empty, and the thread is asleep with no lease row. The
-in-memory parity case lives in `runtime/loop/__tests__/inbox-drain.test.ts`.
-Run with `pnpm test:db`; these are adapter regressions, not a live process
-restart smoke check.
+Expect no provider call during the idle interval. The first Retry creates one
+new failed assistant after the unchanged original; replay returns the same
+turn. A queued compact runs after the failure. In the browser, a provider 404
+shows “The AI provider turned this request down.” and Retry; a later message
+removes the old failure line, while an inherited read-only failure has no Retry.
 
 ## RP-2: Commands wait for messages
 
-- **Protects:** `[A][/compact][B]` adopts A and B at the next tool boundary,
-  then compacts after the turn. Without another boundary, the next run answers
-  B before compacting. Send now preserves the queue; chat Stop instead hands
-  waiting messages back to the composer (see [queue controls](queue-controls.md)).
-- **Stack:** mock.
-- **Steps:** during a delayed reply, enqueue A, compact, then B and let the model
-  cross a tool boundary. Repeat without a later boundary, then with Send now.
-  Separately use chat Stop and confirm B returns to the composer before the
-  queued compaction runs. Enqueue compact alone and Stop. Withdraw a queued
-  compact while B waits.
-- **Expect:** the tool-boundary request ends with B and C follows the reply. In
-  no-boundary and Send now cases the successor request ends with B and C follows it.
-  Compact alone runs after Stop; Stop does not send handed-back messages.
-  Withdrawal leaves the messages and running reply unaffected.
-- **Evidence:** pending snapshots, complete request message arrays, C metadata,
-  and durable turn positions proving the chain matches writer-visible order.
-- **Last run:** not recorded for this exact recipe.
+During a delayed reply, enqueue A, compact, then B and let the model cross a
+tool boundary. Repeat without a later boundary and with Send now. Separately
+press chat Stop and withdraw a queued compact while B waits.
+
+```bash
+./mf thread send "$T" first --no-wait --mock '[{"text":"Before the boundary.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"text":"Held.","delayMs":20000}]' --json & FIRST=$!
+sleep 4; ./mf thread send "$T" A --no-wait --json; compact; ./mf thread send "$T" B --no-wait --json; wait "$FIRST"
+```
+
+Expect the tool-boundary request to end with B and the next request to compact.
+Without a later boundary and with Send now, the successor request ends with B.
+Stop hands B back to the composer before compaction; compact alone runs after
+Stop, and withdrawing it leaves the running reply and messages unchanged.
 
 ## RP-3: Withdraw only before the command starts
 
-- **Protects:** withdrawal/start ownership and replay outcomes
-  (`control-protocol`: `withdrawn` before start; `already_started` after).
-- **Stack:** mock.
-- **Steps:** use RP-2's delayed active reply, enqueue compact, and withdraw it
-  twice while queued. Repeat on a compactable idle thread with a delayed
-  summary, waiting until C is pending before withdrawing:
+Use a delayed active reply, enqueue compact, and withdraw the same control twice:
 
-  ```bash
-  ./mf thread send "$T" 'Hold the reply open.' --mock '[{"text":"Working","delayMs":5000}]' --json > "$E/withdraw-hi.ndjson" & SEND=$!
-  # Wait until streaming, then enqueue and withdraw the same control twice.
-  compact > "$E/withdrawn-compact.json"
-  ./mf api POST "/api/threads/$T/controls/$K/withdraw" --json > "$E/withdraw.json"
-  ./mf api POST "/api/threads/$T/controls/$K/withdraw" --json > "$E/withdraw-replay.json"
-  wait "$SEND"
+```bash
+./mf thread send "$T" 'Hold the reply open.' --mock '[{"text":"Working","delayMs":20000}]' --json > "$E/withdraw-hi.ndjson" & SEND=$!
+sleep 3; K=$(node -p 'crypto.randomUUID()')
+./mf api POST "/api/threads/$T/controls" --data "{\"id\":\"$K\",\"control\":{\"kind\":\"compact\"}}" --json
+./mf api POST "/api/threads/$T/controls/$K/withdraw" --json > "$E/withdraw.json"
+./mf api POST "/api/threads/$T/controls/$K/withdraw" --json > "$E/withdraw-replay.json"; wait "$SEND"
+```
 
-  # On a compactable idle thread, poll until C is pending after reservation.
-  ./mf mock script '[{"text":"Delayed summary","delayMs":10000}]' --json
-  compact > "$E/compact.json"
-  ./mf thread view "$T" --json
-  ./mf api POST "/api/threads/$T/controls/$K/withdraw" --json > "$E/withdraw.json"
-  ./mf thread tail "$T" --until-idle --timeout 60s --json
-  ```
-
-- **Expect:** withdrawal before start returns `withdrawn`, including on replay,
-  and creates no C. Withdrawal after C records the control id returns
-  `already_started`; it does not stop C, which completes normally.
-- **Evidence:** pre-withdraw snapshot, withdrawal outcome, terminal turn statuses.
-- **Last run:** not recorded for the `already_started` outcome.
+Expect `withdrawn` on the first request and replay, with no compaction turn.
+Repeat on an idle compactable thread, polling `thread view` until compaction is
+pending before withdrawing. That withdrawal returns `already_started`; the
+compaction continues normally.
 
 ## RP-4: Proactive autocompaction and byte-stable continuation
 
-- **Protects:** C/B successor protocol, arrival order, frozen request prefix
-  (`compaction-protocol`).
-- **Stack:** mock for structure; real provider separately for cache-read evidence.
-- **Steps:** publish a second Agent using setup's API with slug `runtime-probe-auto`
-  and `autocompact: 12000`. Create its thread. Send large replies with `--mock`
-  until the next send triggers C. Save context before the trigger, immediately
-  after C/B, and after one further short send:
+Publish a second Agent with a small `autocompact` value, create its thread, and
+send enough text to cross the threshold:
 
-  ```bash
-  ./mf thread context "$T" --all --view raw --json > "$E/before.json"
-  ./mf mock script '[{"text":"Short earlier context."},{"text":"Continue after C."}]' --json
-  ./mf thread send "$T" 'Continue the story' --json > "$E/trigger.ndjson"
-  ./mf thread context "$T" --all --view raw --json > "$E/after.json"
-  ./mf thread send "$T" 'And then?' --mock '[{"text":"Next beat."}]' --json
-  ./mf thread context "$T" --all --view raw --json > "$E/following.json"
-  ```
+```bash
+./mf api POST /api/agents --data '{"slug":"runtime-probe-auto","content":"---\nname: Runtime Probe Auto\nmode: primary\nmodel: mock-llm-v1\nautocompact: 12000\n---\nFollow the writer."}' --json > "$E/auto-agent.json"
+AUTO=$(./mf thread create --agent runtime-probe-auto --title 'Auto probe' --json | jq -r .threadId)
+./mf thread send "$AUTO" "$(python3 -c 'print("A planning sentence. " * 1500)')" --mock '[{"text":"Short earlier context."}]' --json
+./mf thread context "$AUTO" --all --view raw --json > "$E/before.json"
+./mf thread send "$AUTO" 'Continue the story' --mock '[{"text":"Continue after C."}]' --json > "$E/trigger.ndjson"
+./mf thread context "$AUTO" --all --view raw --json > "$E/after.json"
+./mf thread send "$AUTO" 'And then?' --mock '[{"text":"Next beat."}]' --json
+./mf thread context "$AUTO" --all --view raw --json > "$E/following.json"
+```
 
-- **Expect:** C then B in the same run; summary plus retained tail in the next
-  request. The following request extends the identical serialized prefix.
-- **Evidence:** C metadata, before/after/following requests, prefix comparison;
-  real-provider variant also records usage, cache reads and actual spend.
-- **Last run:** merge-gate §13–16 mock PASS; original real run FAIL (billing
-  settlement), 2026-09-28 (source commit not recorded in that report). Do not mark real PASS
-  from the mock result.
+Expect C then B in the same run, a summary plus retained tail in the next
+request, and an identical serialized prefix in the following request. The mock
+run proves structure; cache-read and spend claims require a separate real-model
+run.
 
 ## RP-5: Kill the server mid-summary
 
-- **Protects:** dead lease repair, consumed-at-start commands, and waiting
-  message delivery (`control-protocol` interrupted summary).
-- **Stack:** mock, isolated owned server process, real Postgres.
-- **Steps:** queue a 30-second summary, compact, and send a message while C is
-  pending. Save the pre-kill snapshot. Resolve this worktree's server wrapper
-  with `pnpm portless:list`, inspect its Nitro child and `/proc/<pid>/cwd`, then
-  `kill -9 <verified-owned-nitro-pid>`. Never kill Postgres or another stack.
-  Restart with `MODEL_PROVIDER=mock pnpm dev --restart --no-tailscale`; inspect.
-  Do not re-enqueue the compact command after restart.
+Queue a delayed summary, compact, and send a message while compaction is
+pending. Verify the server wrapper and Nitro child belong to this checkout
+through `pnpm portless:list` and `/proc/<pid>/cwd`, then kill only the verified
+Nitro PID. Restart with `MODEL_PROVIDER=mock pnpm dev --restart --no-tailscale`.
+Do not enqueue the compact again.
 
-  ```bash
-  ./mf thread tail "$T" --until-idle --timeout 120s --json
-  ./mf thread view "$T" --json
-  ./mf log --thread "$T" --json
-  ```
-
-- **Expect:** dead C is error with interrupted/recovery metadata; its consumed
-  command is not redelivered. The queued message remains pending and is
-  delivered after C. This is queued-behind work, not an adopted reply input: if
-  a reply itself crashes, repair acknowledges its adopted receipt and shows one
-  generically failed reply rather than answering those inputs automatically. No stuck
-  placeholders.
-- **Evidence:** PID/cwd ownership, kill result, pre/post snapshots, recovery
-  events, command id and final turn statuses.
-- **Last run:** not recorded for no-redelivery behavior.
+Expect the consumed compaction to fail with interrupted/recovery metadata and not
+be redelivered. The queued message remains pending and is delivered after
+recovery. If a reply itself crashes, its adopted receipt is acknowledged and
+one generic failed reply is shown; queued-behind messages are not answered by
+repair. There are no stuck placeholders.
 
 ## RP-8: Handoff brief, Stop, Retry, failure and source isolation
 
-- **Protects:** destination run-claim ownership, detached launch, Stop, Retry,
-  release wake, and orphan repair (`handoff/brief-service`).
-- **Stack:** mock; a real provider is required to compare predicted cache state
-  with actual cache use.
-- **Steps:** choose a settled reply ID `CUT` from source `T`, allocate `DEST`,
-  and use the exact selection returned by setup (do not guess a revision). Delay
-  the brief so the destination claim remains held:
+Choose a settled source turn `CUT`, allocate a destination, and use the exact
+Agent selection returned by setup:
 
-  ```bash
-  DEST=$(node -p 'crypto.randomUUID()')
-  jq --arg id "$DEST" --arg cut "$CUT" '{id:$id,originTurnId:$cut,agentSelection:.selection}' "$E/agent.json" > "$E/handoff-body.json"
-  ./mf mock script '[{"text":"Brief: keep the silver gate secret.","delayMs":5000}]' --json
-  ./mf api POST "/api/threads/$T/handoff" --data @"$E/handoff-body.json" --json
-  S=$(./mf thread view "$DEST" --json | jq -r '.turns[0].id')
-  ./mf thread send "$DEST" hi --mock '[{"text":"Hello from the destination."}]' --json > "$E/queued-hi.ndjson" & SEND=$!
-  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}" --json > "$E/retry-while-pending.json"
-  ./mf thread view "$DEST" --json
-  ./mf thread cancel "$DEST" --turn "$S" --json
-  wait "$SEND"  # Retry needs the destination claim free, including the queued reply.
-  ./mf mock script '[{"text":"Retried brief."}]' --json
-  S2=$(node -p 'crypto.randomUUID()')
-  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$S2\"}" --json > "$E/retry.json"
-  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$S2\"}" --json > "$E/retry-replay.json"
-  ./mf thread context "$DEST" --all --view raw --json
-  ```
+```bash
+DEST=$(node -p 'crypto.randomUUID()')
+jq --arg id "$DEST" --arg cut "$CUT" '{id:$id,originTurnId:$cut,agentSelection:.selection}' "$E/agent.json" > "$E/handoff-body.json"
+./mf mock script '[{"text":"Brief: keep the silver gate secret.","delayMs":5000}]' --json
+./mf api POST "/api/threads/$T/handoff" --data @"$E/handoff-body.json" --json
+./mf thread send "$DEST" hi --no-wait --json > "$E/queued-hi.ndjson" & SEND=$!
+./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}" --json
+./mf thread view "$DEST" --json; wait "$SEND"
+```
 
-- **Expect:** POST handoff returns before the brief ends. While it runs,
-  `thread.status` is `awake/generating` with no running turn id, queued work is
-  not answered, and Retry returns 409 `handoff_retry_unavailable`. Stop settles
-  S cancelled; claim release starts the queued reply. Retry after Stop appends
-  S2 and returns before its brief ends; replaying S2 returns the same seed with
-  200. Destination context contains the brief/source ref, never source transcript
-  text. The brief has no fallback: a failed attempt is a card on the
-  brief ("This handoff brief couldn't be generated. Try again.", the server's `turn.error`) and the
-  header's Retry is the next attempt while the failure is still actionable. A
-  failed Stop on a generating brief is a second card on it
-  ("Couldn't stop the brief." with Try again), and a refused or lost Retry is a card too
-  ("Couldn't retry." / "Couldn't start a new brief."); see [failure cards](failure-cards.md).
-- **Failure and writer Retry:** hold the brief with a delayed partial response
-  and `finishReason: "length"`, send a destination message before it ends, and
-  verify that the failed seed stays `error/max_tokens` while the queued message
-  is answered. After a later reply completes, the old brief has no failure card
-  or Retry, under the current failure-lifetime policy. Test the browser's Retry
-  on a separate failed handoff with no later reply: it appends a new seed, keeps
-  the old seed, and generates in place. A6's ordinary-run Retry describes failed
-  assistant replies, not handoff seeds. The API can still append a brief after
-  a later reply has settled; a held destination claim refuses it with 409.
-- **Crash variant:** start a second delayed handoff, kill the app process while
-  its brief is in flight, restart it, and wait one orphan-repair interval. S
-  settles with generic failure copy, internal `interrupted` reason, an
-  unavailable card, and a history read line; thread
-  status returns idle and a queued destination message is answered. No brief is
-  relaunched. That destination message was never adopted while S held the claim;
-  adopted inputs of a crashed reply instead fail once with that reply. A focused
-  PostgreSQL test covers ending-transaction failure: S
-  remains pending, the claim releases, and the next run repairs it.
-- **Evidence:** request status and response timing, source sentinel and source
-  lease before/after, destination queue and transcript, Retry HTTP status/code,
-  S/S2 states and card blocks. For real-provider runs also capture summary
-  path/cache metrics for recent and older cutoffs.
-- **Last run:** merge-gate §21–24 mock PASS; original real warm/cold run blocked
-  by billing settlement. 2026-09-28 (source commit not recorded).
-
-## RP-18: Fork prefix remains frozen as source grows and compacts
-
-- **Protects:** inherited cutoff/bake ownership (`compaction-protocol`).
-- **Stack:** mock.
-- **Steps:** choose settled `CUT`, allocate `FORK`, and fork. Send on the fork and
-  save context, then grow and compact the source via RP-6. Send on the fork again:
-
-  ```bash
-  FORK=$(node -p 'crypto.randomUUID()')
-  ./mf api POST "/api/threads/$T/fork" --data "{\"id\":\"$FORK\",\"originTurnId\":\"$CUT\"}" --json
-  ./mf thread send "$FORK" 'Fork before source growth' --mock '[{"text":"Fork reply."}]' --json
-  ./mf thread context "$FORK" --all --view raw --json > "$E/fork-before.json"
-  # Grow and compact source T, then:
-  ./mf thread send "$FORK" 'Fork after source compaction' --mock '[{"text":"Still independent."}]' --json
-  ./mf thread context "$FORK" --all --view raw --json > "$E/fork-after.json"
-  ```
-
-- **Expect:** inherited prefix bytes do not change; later source turns/C do not
-  appear in the fork's inherited transcript.
-- **Evidence:** source and fork snapshots plus inherited-prefix arrays/hashes.
-- **Last run:** merge-gate §8–12 PASS; 2026-09-28 (source commit not recorded).
+While the brief claim is held, the destination is awake without a running turn,
+queued work is not answered, and a brief Retry returns
+`handoff_retry_unavailable`. Cancel the seed with `./mf thread cancel "$DEST"
+--turn <seed-turn-id>`, then retry the brief with one id twice; the first
+appends one seed and the replay returns it. Destination context contains the
+brief/source reference, not source transcript text. A failed brief has its own
+card and Retry; it is not a fallback assistant reply. Repeat with a crashed
+brief and confirm one generic failure, no relaunch, and the queued destination
+message answered after repair.
 
 ## RP-10: Compaction elides stale document text
 
-- **Protects:** frozen revision elisions, not stale prose (`compaction-protocol` C5).
-- **Stack:** mock.
-- **Steps:** create a sentinel chapter and read it through a model tool call. Add
-  enough older history to compact, overwrite the document, compact and send again:
+Create and read a sentinel, overwrite it, compact, and inspect the successor
+request:
 
-  ```bash
-  ./mf doc put manuscript://rp10.md --text 'RP10_OLD_SENTINEL' --json
-  ./mf thread send "$T" 'Read the chapter' --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp10.md"}}]},{"text":"Read."}]' --json
-  ./mf doc put manuscript://rp10.md --text 'RP10_NEW_SENTINEL' --overwrite --json
-  ./mf mock script '[{"text":"Earlier planning context."}]' --json
-  compact
-  ./mf thread tail "$T" --until-idle --timeout 60s --json
-  ./mf thread send "$T" 'Continue' --mock '[{"text":"Continued."}]' --json
-  ./mf thread context "$T" --all --view raw --json
-  ```
+```bash
+./mf doc put manuscript://rp10.md --text 'RP10_OLD_SENTINEL' --json
+./mf thread send "$T" 'Read the chapter' --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp10.md"}}]},{"text":"Read."}]' --json
+./mf doc put manuscript://rp10.md --text 'RP10_NEW_SENTINEL' --overwrite --json
+./mf mock script '[{"text":"Earlier planning context."}]' --json; compact
+./mf thread tail "$T" --until-idle --timeout 60s --json
+./mf thread send "$T" Continue --mock '[{"text":"Continued."}]' --json
+./mf thread context "$T" --all --view raw --json
+```
 
-- **Expect:** the second `doc put --overwrite --json` reports `previousDocumentId`
-  equal to the first put's `documentId`; the post-C request excludes `RP10_OLD_SENTINEL`; retained stale
-  reads use the re-read stub. Historical debug captures may still contain old
-  text: inspect the successor request, not every captured request concatenated.
-- **Evidence:** read result, document overwrite, elision metadata, successor request.
-- **Last run:** exact C5 recipe not recorded. Merge-gate §20 demonstrates related
-  stale-read/history inspection, not this complete compaction sequence.
+Expect the overwrite to report the prior document id, the successor request to
+exclude `RP10_OLD_SENTINEL`, and retained stale reads to use the re-read stub.
 
 ## RP-11: `from` spawn and inspection filters
 
-- **Protects:** reference-only spawning, scope checks, explicit history inspection
-  (`handoff-protocol` C9 and `history-tools`).
-- **Stack:** mock, parent Agent with a configured foreground subagent target
-  (publish a subagent with setup's API, `mode: subagent`, and mock model).
-  The worked merge-gate script uses the default target; no new CLI verb is required.
-- **Steps:** seed a distinctive source sentinel, then script a foreground spawn:
+Publish a subagent target (`mode: subagent`) and script a foreground spawn from
+the current chat:
 
-  ```bash
-  ./mf thread send "$T" 'Spawn a reference check' --mock '[{"toolCalls":[{"name":"spawn","args":{"prompt":"Inspect the referenced chat","name":"Reference check","from":"current","mode":"foreground"}}]},{"text":"Child answer."},{"text":"Parent answer."}]' --json
-  ./mf thread view "$T" --json
-  ./mf thread context "$CHILD" --all --view raw --json
-  ```
+```bash
+./mf thread send "$T" 'Spawn a reference check' --mock '[{"toolCalls":[{"name":"spawn","args":{"prompt":"Inspect the referenced chat","name":"Reference check","from":"current","mode":"foreground"}}]},{"text":"Child answer."}]' --json
+./mf thread list --json
+```
 
-  Extract `CHILD` from the spawn result. Repeat with `from` set to a chat ref
-  outside the connected lineage, a trashed ref, and malformed input. Save thread
-  lists before/after. For inspection set `REF` to the source chat's public ref:
-
-  ```bash
-  ./mf thread send "$T" 'Inspect history' --mock "[{\"toolCalls\":[{\"name\":\"thread_ls\",\"args\":{\"depth\":1}},{\"name\":\"thread_ls\",\"args\":{\"depth\":2}},{\"name\":\"thread_ls\",\"args\":{\"depth\":3}},{\"name\":\"thread_history\",\"args\":{\"ref\":\"$REF\",\"order\":\"newest_first\",\"limit\":200}},{\"name\":\"thread_history\",\"args\":{\"ref\":\"$REF\",\"order\":\"oldest_first\",\"limit\":200,\"include\":[\"tool_results\",\"system_messages\",\"system_prompt\"]}}]},{\"text\":\"Inspection complete.\"}]" --json
-  ```
-
-  Follow returned cursors where the history exceeds one page. Repeat on the
-  compacted source and fork from RP-18.
-- **Expect:** child's first request has the reference/read instruction without
-  source history. Invalid `from` fails before creating a child or charging a
-  child run. Default inspection omits hidden tool payloads; explicit includes
-  reveal them once, with labelled origins and stale-read stubs.
-- **Evidence:** parent/child requests, tool results, before/after child list and
-  model-response usage, inspection cursors and filter inputs.
-- **Last run:** merge-gate §18–20 PASS for current/from-outside and inspection;
-  trashed/malformed variants not recorded there. 2026-09-28 (source commit not recorded).
+Extract the child id from the spawn result and inspect it with
+`./mf thread context <child> --all --view raw --json`. Repeat with `from` set to
+a chat outside the connected lineage, a trashed ref and malformed input. Invalid
+`from` must fail before creating or charging a child. For the source chat's
+public ref, script `thread_ls` at depths 1, 2 and 3 and `thread_history` with
+`newest_first` and `oldest_first`, including tool results and system messages;
+follow cursors past one page. Default inspection omits hidden tool payloads;
+explicit includes reveal them once with labelled origins and stale-read stubs.
 
 ## RP-12: Link identity
 
-- **Protects:** stored links name documents (`doc:` and `ahead:` refs); every read
-  spells the current path; a rename or move writes nothing into documents that
-  link to the moved one; a deleted target stays gone; the model never sees an id
-  (#729, #730).
-- **Stack:** mock for steps 1 to 6, then the real provider once. The scripts live
-  in the [link identity probe scripts][link-probes]; copy them anywhere and run
-  them from this checkout. Set the evidence directory `E` in each script's header
-  and the database name `DB` in `729-730-V-lib.py` to this worktree's database.
-- **Steps:**
-  1. Concurrent edit during a move. Run `729-730-V-app.py` with each of
-     `prefix`, `unlink`, `inside` and `adjacent`: the holder has
-     `[Target](final) waits.`, the thread's draft edits the label, unlinks it,
-     edits inside it or edits the suffix, then the target moves twice and is
-     renamed to `merged-729-730`.
-  2. Ahead ref: `729-730-V-ahead.py`. The model writes `[Next](ch9)`; create
-     `ch9`, rename it to `ch10`, then create a new `ch9`.
-  3. Stale path: `729-730-V-stale.py`. The model reads four holders, the target
-     is renamed, then block edits spell the old path with and without `.md`,
-     plus a `find` of the old spelling.
-     Typed `[Next](ch9.md)` must also read back `[Next](ch9)`. Create prose
-     `outline` beside `outline.json`: `[Outline](outline)` must prefer the prose
-     document. Delete the prose document: that path must reach the JSON file.
-     Inspect `ls` (prose, JSON and a folder), `grep`, and a missing-name `read`;
-     their paths, receipts and errors show no prose extension. Load a skill from
-     a source `SKILL.md`: the header and `ls` show `SKILL`, and either typed
-     spelling loads it. Published path descriptions teach `Chapter 13`, not a
-     prose suffix. Old probe scripts that assert added prose suffixes need their
-     assertions updated to this contract before use.
-  4. Gone and restore: `729-730-V-gone.py` (delete, resolver, a new document at
-     the old path) and `729-730-V-restore.py` (a Work-owned `scratch://` target:
-     delete the Work, restore it).
-  5. Move note: `729-730-V-movenote.py` (rename and folder move, counts, journals).
-  6. Gone link in the Editor: with `agent-browser`, open a chapter that links a
-     deleted document and a missing one; capture rest, hover, right-click and
-     click. Make a chat `@` reference through the composer picker, delete its
-     document and reload.
-  7. Real model: restart without `MODEL_PROVIDER=mock` with the provider key
-     exported. `729-730-V-real-a.py <tag>` seeds and runs turn 1; remove the
-     second link occurrence in the browser editor (right-click, Remove link);
-     `729-730-V-real-b.py <tag> before|inflight [delay]` moves the chapter, asks
-     for the label change and reads back.
-- **Expect:** every read, preview and receipt shows the new path. Label edits and
-  unlinks stay what was written (`[Renamed target](merged-729-730) waits.`,
-  `Target waits.`, `[Tar drafted get](merged-729-730) waits.`,
-  `[Target](merged-729-730) returns.`); the suffix is never linked. Holder
-  journals (updates, checkpoints, head sequence, state vector, draft
-  journal rows) are identical before and after every move. `ch9` reads `ch9`
-  then `ch10` and ignores the later `ch9`. Stale-path block edits keep the
-  document. A deleted target answers `gone` with no location from
-  `POST /api/projects/:id/links/resolve`, is not captured by a new document at
-  its path, and revives on Work restore. `linkUpdate.links` counts incoming
-  occurrences and `documents` counts holders; a moved document's own links are
-  not counted. The gone link is dashed, unfollowable and says
-  `No longer available` with no Open link; a missing one says
-  `Doesn't exist yet` and offers Create. No `doc:`, `ahead:` or UUID appears in
-  `thread context --all --view raw`.
-- **Evidence:** the `729-730-V-*-result.json` files (preview, live, journal
-  fingerprints, resolver answers, SQL rows), model transcripts, `thread context`
-  captures, chip screenshots and DOM extracts.
-- **Known limit:** a `find` quoting a link's old spelling after a move returns
-  `not_found` with a re-sync hint; one re-read recovers. `./mf doc put
-  --overwrite` is delete plus create, so it is not a writer edit.
-- **Last run:** 2026-10-09 on `7495b8d58`, mock then DeepSeek, all steps passed
-  (report: `impl-729-730/evidence/729-730-V-probes.md` in the same work item).
+Use current context routes and `./mf` rather than retired probe scripts. Create a
+holder and target, read the holder through a model tool, then move the target:
 
-## RP-13: Apply one change row, then Discard all, moves no prose
+```bash
+./mf doc put manuscript://rp12-holder.md --text '[Target](rp12-target) waits.' --json
+./mf doc put manuscript://rp12-target.md --text 'Target.' --json > "$E/target.json"
+TARGET=$(jq -r .documentId "$E/target.json"); P=$(jq -r .projectId "$E/thread.json")
+./mf api POST "/api/projects/$P/context/manuscript/move" --data "{\"operationId\":\"$(node -p 'crypto.randomUUID()')\",\"path\":\"rp12-target.md\",\"expected\":{\"kind\":\"file\",\"nodeId\":\"$TARGET\"},\"destinationScheme\":\"manuscript\",\"destinationFolderPath\":\"\",\"newName\":\"rp12-renamed.md\"}" --json
+./mf thread send "$T" 'Read the holder and target' --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp12-holder.md"}},{"name":"read","args":{"path":"manuscript://rp12-renamed.md"}}]},{"text":"Done."}]' --json
+```
 
-- **Protects:** applying a single change row changes exactly that row's prose, and
-  a following Discard all closes the branch without touching the document again,
-  including when the row list is filtered and the applied row was never opened.
-  This replaces the deleted `WorkChanges` unit case, which drove the same claim
-  through the client's row component.
-- **Stack:** mock, real wall clock.
-- **Precondition:** a project with one Work, a document in it, and a chat bound to
-  that Work so the model's write lands as a draft on the Work rather than live.
-- **Steps:** script one mock write of a known sentence, send it, and wait for the
-  draft to settle. Then read the Work's branch list and keep the document before
-  and after each command:
-
-  ```bash
-  ./mf mock script '[{"text":"RP13 first draft sentence."}]' --json > "$E/script.json"
-  ./mf thread send "$T" 'RP13 write' --json > "$E/send.ndjson"
-  ./mf doc read "$DOC" --json > "$E/before.json"
-  ./mf api GET "/api/projects/$P/works/$W/branches" --json > "$E/branches.json"
-
-  BRANCH=$(jq -r '.items[0].branchId' "$E/branches.json")
-  ITEM=$(jq -r '.items[0].itemKey' "$E/branches.json")
-  TOKEN=$(jq -r '.items[0].tokens.locationToken' "$E/branches.json")
-  APPLY=$(node -p 'crypto.randomUUID()')
-
-  ./mf api POST "/api/projects/$P/works/$W/branches/apply" \
-    --data "{\"branchId\":\"$BRANCH\",\"commandId\":\"$APPLY\",\"items\":[{\"itemKey\":\"$ITEM\",\"locationToken\":\"$TOKEN\"}]}" \
-    --json > "$E/apply.json"
-  ./mf doc read "$DOC" --json > "$E/after-apply.json"
-
-  DISCARD=$(node -p 'crypto.randomUUID()')
-  ./mf api POST "/api/projects/$P/works/$W/branches/discard" \
-    --data "{\"branchId\":\"$BRANCH\",\"commandId\":\"$DISCARD\"}" --json > "$E/discard.json"
-  ./mf doc read "$DOC" --json > "$E/after-discard.json"
-  ./mf api GET "/api/projects/$P/works/$W/branches" --json > "$E/branches-after.json"
-  ```
-
-- **Expect:** `apply` answers `completed` and moves only the applied row's text;
-  `discard` answers `{"status":"discarded"}`; `after-discard.json` is byte-identical
-  to `after-apply.json` (Discard never writes prose, whatever the row filter shows);
-  and the branch list afterwards does not report that branch as active. A `stale` or
-  `gone` apply status means the tokens from `branches.json` were already superseded, and
-  the run must be restarted rather than interpreted.
-- **Evidence:** the four document reads, `apply.json`, `discard.json`, the branch list
-  before and after, and the mock script id.
-- **Last run:** not recorded.
-
-## RP-14: Work archive and delete are durable, reversible and idempotent
-
-- **Protects:** archiving a Work stamps `archivedAt` and advances `entityRevision`
-  by one; unarchiving clears it; deleting sets `deletedAt` as a tombstone that
-  keeps the row in the catalogue, and repeating the delete changes nothing.
-  This replaces the deleted `WorkCollection` unit cases for archive and delete
-  durability. The Undo affordance itself stays a browser check, because undo is
-  client-side.
-- **Stack:** mock, real wall clock. No model call.
-- **Steps:**
-
-  ```bash
-  ./mf api GET  "/api/projects/$P/works"                > "$E/works-before.json"
-  ./mf api POST "/api/works/$W/archive"                 > "$E/archive.json"
-  ./mf api GET  "/api/projects/$P/works"                > "$E/works-archived.json"
-  ./mf api POST "/api/works/$W/unarchive"               > "$E/unarchive.json"
-  ./mf api GET  "/api/projects/$P/works"                > "$E/works-restored.json"
-  ./mf api DELETE "/api/works/$W"                       > "$E/delete.json"
-  ./mf api GET  "/api/projects/$P/works"                > "$E/works-deleted.json"
-  ./mf api DELETE "/api/works/$W"                       > "$E/delete-again.json"
-  ./mf api GET  "/api/projects/$P/works"                > "$E/works-after-twice.json"
-  ```
-
-- **Expect:** archive sets a non-null `archivedAt` on that row, leaves every other
-  row alone, and moves `entityRevision` from 1 to 2 on a fresh Work; unarchive
-  returns `archivedAt` to `null` (revision 3); `DELETE` answers with an empty body
-  and sets `deletedAt` while the row **stays in the catalogue**, so assert on
-  `deletedAt` and never on presence; the second `DELETE` leaves `deletedAt` and
-  `entityRevision` unchanged (revision 4 both times). Compare the Work row, not the
-  whole payload: the transport envelope carries a fresh `requestId` per request, so
-  two byte-identical documents are not expected. Use a Work created for this probe,
-  never one holding a document worth keeping.
-- **Evidence:** the six snapshots and every command status.
-- **Last run:** 2026-10-14 on `e0ba565c6` (worktree `test-trim`), mock, all steps
-  passed after two expectations were corrected by the run: delete is a tombstone
-  that keeps the row listed, and the envelope's `requestId` makes whole-payload
-  comparison wrong. Evidence: `/tmp/opencode/probe-rp14/`.
+Repeat with a stale old path, a deleted target and a new document at the old
+path. Reads, previews and receipts must show the current path; a deleted target
+is `gone` and is not captured by a new document at that path. No `doc:`, `ahead:`
+or UUID appears in `thread context --all --view raw`.
 
 ## RP-15: `send` proves its own message's fate
 
-- **Protects:** `./mf thread send` follows its reply through the shared `messageFate`
-  over one snapshot, and names what became of its own message: answered (by which
-  reply, with the chain's last reply as the result), handed back, or unproven. This
-  replaces the deleted interim-follow cases in `tools/mf` for steer, queued switch and
-  unrelated starts, whose risks are now `run-state.test.ts`.
-- **Stack:** mock. Use `--match` on each scripted reply, and `./mf mock clear` at the end.
-- **Steps:** (`T` is a fresh thread per case; `E` holds the evidence)
+Run these cases on a fresh thread, using `--match` scripts and clearing them
+after each case:
 
-  ```bash
-  # 1. Plain send
-  ./mf thread send "$T" 'c1 plain' --mock '[{"text":"Plain reply."}]' --json > "$E/1.ndjson"
-  # 2. Steer into a held reply: the result is the successor's own text
-  ./mf mock script '[{"text":"Held first reply.","delayMs":6000}]' --match 'c2 first'
-  ./mf mock script '[{"text":"Steer successor reply."}]' --match 'c2 steer'
-  ./mf thread send "$T" 'c2 first' --no-wait --json
-  ./mf thread send "$T" 'c2 steer' --json > "$E/2.ndjson"
-  # 3. Queued behind a held reply, then the chat's Stop
-  ./mf mock script '[{"text":"Held.","delayMs":30000}]' --match 'c3 first'
-  ./mf thread send "$T" 'c3 first' --no-wait --json
-  ./mf thread send "$T" 'c3 queued' --json > "$E/3.ndjson" & sleep 8
-  ./mf thread stop "$T" --json > "$E/3-stop.json"; wait
-  # 4. A scripted failing successor
-  ./mf mock script '[{"text":"Earlier reply text.","delayMs":5000}]' --match 'c4 first'
-  ./mf mock script '[{"error":{"status":400,"message":"scripted successor failure"}}]' --match 'c4 steer'
-  ./mf thread send "$T" 'c4 first' --no-wait --json
-  ./mf thread send "$T" 'c4 steer' --json > "$E/4.ndjson"
-  # 5. After each case
-  ./mf thread view "$T"; ./mf mock clear
-  ```
+```bash
+./mf thread send "$T" plain --mock '[{"text":"Plain reply."}]' --json
+./mf mock script '[{"text":"Held first.","delayMs":6000}]' --match first
+./mf mock script '[{"text":"Successor."}]' --match steer
+./mf thread send "$T" first --no-wait --json; ./mf thread send "$T" steer --json
+./mf mock script '[{"text":"Held.","delayMs":30000}]' --match queued-first
+./mf thread send "$T" queued-first --no-wait --json; ./mf thread send "$T" queued --json & SEND=$!
+sleep 8; ./mf thread stop "$T" --json; wait "$SEND"
+```
 
-- **Expect:** 1 exits 0 with `userTurnId`, `answeredBy` and `finalText` of that reply. 2 exits 0 with `turnId`
-  the successor and its text only. 3: `stop` exits 0 and its `handedBack` names the queued
-  message's id; the queued `send` exits 5 with `outcome: "handed_back"`, `turnId: null`;
-  the message is absent from `thread view`. 4 exits 1 with `turnId` the failed successor
-  and no text from the earlier reply. In every case `thread view` agrees with the claim.
-  A claim that `view` contradicts is a failure of the probe, not of the view.
-  Every `--json` run ends in exactly one `result` record, after its `message.delta` and
-  `message.completed` records (record order), and `./mf mock list` is empty after case 1 (`--mock`
-  removes its own script) and after the final `./mf mock clear`. The `tools/mf` cases deleted in L1c
-  (usage-block, failed-successor, NDJSON shape, `--mock` cleanup, idle `tail`) have their risks here and in
-  `run-state.test.ts`.
-- **Evidence:** each command, stdout, stderr and exit code, and the `thread view` after it.
-- **Last run:** 2026-10-16 on `1bfd1e703` (`feat/thread-sync-mf`, L1c's code, `./mf` on `ThreadSync`), mock;
-  all four cases passed, one `result` record each, `./mf mock list` empty after each. `liveView`: case 1
-  `matches`, case 2 `not_observed` `rewritten`, case 3 `not_observed` `no_turn` (handed back), case 4
-  `matches`. Earlier run: 2026-10-15 on `fa1040e86` (`feat/mf-send-fate`, B6), all four passed. Evidence:
-  `work/mf-client-unification/evidence/L1c/live/` in the docs repository.
+The plain send exits 0 with its writer turn, answer and final text. Stop hands
+the queued message back, its send exits 5 with `outcome: "handed_back"`, and it
+is absent from `thread view`. A failed successor exits 1 with its failed turn
+and does not claim the earlier reply's text.
+
+## RP-16: Every failure is logged once where it is classified and ends
+
+Read `./mf log --thread "$T" --name failure. --full` after each case. Make
+fresh threads `A` through `F` with `./mf thread create --agent runtime-probe`.
+
+```bash
+mk() { ./mf thread create --agent runtime-probe --title "$1" --json | jq -r .threadId; }
+A=$(mk RP16-A); B=$(mk RP16-B); D=$(mk RP16-D); E=$(mk RP16-E); F=$(mk RP16-F)
+FAIL='[{"error":{"status":500,"message":"RP16 failure"}}]'
+./mf mock script "$FAIL"; A_SEND=$(./mf thread send "$A" a1 --json); ./mf mock clear
+A_FAILED=$(jq -r '.turnId // .assistantTurnId' <<<"$A_SEND")
+./mf mock script '[{"text":"ok"}]'; ./mf api POST "/api/threads/$A/turns/$A_FAILED/retry" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}"
+./mf mock script "$FAIL"; ./mf thread send "$B" b1; ./mf mock clear; ./mf thread send "$B" b2 --mock '[{"text":"ok"}]'
+./mf mock script '[{"toolCalls":[{"name":"ls","args":{"path":"manuscript://"}}]},{"error":{"status":500,"message":"RP16"}}]'; ./mf thread send "$D" d1; ./mf mock clear; ./mf thread send "$D" d2 --mock '[{"text":"ok"}]'
+./mf mock script '[{"delayMs":6000,"error":{"status":500,"message":"RP16"}}]'; ./mf thread send "$E" e1 & P1=$!; sleep 2; ./mf thread send "$E" e2 --mock '[{"text":"ok"}]'; wait "$P1"
+./mf thread send "$F" f1 --mock '[{"text":"ok"}]'; ./mf mock script "$FAIL"
+FK=$(node -p 'crypto.randomUUID()'); ./mf api POST "/api/threads/$F/controls" --data "{\"id\":\"$FK\",\"control\":{\"kind\":\"compact\"}}"; ./mf mock clear
+./mf thread send "$F" f2 --mock '[{"text":"ok"}]'
+```
+
+Each failure has one `failure.recorded` and one `failure.ended` with the same
+occurrence id. The ending reason is `retried`, `forgotten` or `moved_on` based
+on the next writer action. A carried failure records both events in one
+millisecond. Usage block/clear adds one `usage:<threadId>:<episode>` record for
+each phase. `thread context --all` and `thread_history` contain no failure text.
 
 ## RP-17: `./mf` beside the browser
 
-- **Protects:** `./mf thread send` and `thread tail --until-idle` follow a chat through the same
-  `createThreadSync` the app runs, and never claim more than they proved. A `./mf` run is evidence for the
-  sync's rules (join, read application, frame order, the end-of-turn check), not for what the browser paints.
-- **Stack:** mock, an owned worktree stack with the browser showing the chat (`agent-browser`, one named session).
-- **Steps:** (`T` is a fresh thread per case; `E` holds the evidence)
+With the browser showing `T`, run the shared-client checks below:
 
-  ```bash
-  S='[{"text":"Part one.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":4000,"text":"Part two."}]'
-  # SY-01 setup: open the chat in the browser, then follow it from ./mf
-  ./mf thread send "$T" 'rp17 follow' --mock "$S" --json > "$E/sy01.ndjson"
-  # SY-04 setup: the browser has the chat open; a second send from ./mf
-  ./mf thread send "$T" 'rp17 other client' --mock '[{"text":"Reply to the other client."}]' --json > "$E/sy04.ndjson"
-  # SY-05 setup: stop a streaming reply while tailing
-  ./mf thread send "$T" 'rp17 stop' --no-wait --mock '[{"text":"Held.","delayMs":30000}]' --json
-  ./mf thread tail "$T" --until-idle --json > "$E/sy05.ndjson" & sleep 4
-  ./mf thread stop "$T" --json; wait
-  # Checkpoint step: the tail joins while the reply is still waiting to call its tool, so the tool's
-  # frames and the text arrive after the join, with reads landing between them
-  ./mf thread send "$T" 'rp17 checkpoint' --no-wait --mock '[{"delayMs":3000,"toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":3000,"text":"Hello there"}]' --json
-  ./mf thread tail "$T" --until-idle --json > "$E/checkpoint.ndjson"
-  ```
+```bash
+S='[{"text":"Part one.","toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":4000,"text":"Part two."}]'
+./mf thread send "$T" 'rp17 follow' --mock "$S" --json
+./mf thread send "$T" 'rp17 other client' --no-wait --mock '[{"text":"Reply to the other client."}]' --json
+./mf thread send "$T" 'rp17 stop' --no-wait --mock '[{"text":"Held.","delayMs":30000}]' --json
+./mf thread tail "$T" --until-idle --json > "$E/rp17-tail.ndjson" & TAIL=$!; sleep 4
+./mf thread stop "$T" --json; wait "$TAIL"
+./mf thread send "$T" checkpoint --no-wait --mock '[{"delayMs":3000,"toolCalls":[{"name":"thread_ls","args":{"depth":1}}]},{"delayMs":3000,"text":"Hello there"}]' --json
+./mf thread tail "$T" --until-idle --json > "$E/rp17-checkpoint.ndjson"
+```
 
-- **Expect:** every claim is as the scenario says (complete, handed back or cancelled, with the exit code), and
-  `thread view "$T"` agrees with each claim. The checkpoint run prints one `tool.started`, one
-  `tool.completed` and one `message.completed` whose text is the whole text, on one socket. (A tail that
-  joins after the tool finished replays nothing of it: the read holds it. Staged against committed writes
-  is `tools/mf`'s `names staged and committed writes honestly`.) Record every `liveView` and, for
-  each `not_observed`, its reason: `matches` is the expected case; `not_observed` is acceptable when its
-  reason holds (a rewritten turn, a turn a read ended first, a gap); a `differs` is classified (a true
-  disagreement is a defect in the shared rules, filed with its `liveDiff`; a false one is a defect in the check).
-  `liveView` is a diagnostic over client state: it never changes the claim or the exit code.
-- **Evidence:** each command, stdout, stderr and exit code, the `thread view`, the browser's chat text, and the
-  table of `liveView` records with their classes.
-- **Last run:** 2026-10-16 on `1bfd1e703` (`feat/thread-sync-mf`, L1c's code), mock, desktop browser beside
-  it; every claim and exit as expected, `thread view` agreed with each. `liveView` records: `send` with a
-  live browser, `matches`; `tail --until-idle` joining a reply with durable text already in its read (SY-01)
-  and a Stopped reply (SY-05), `not_observed` `rewritten`; the checkpoint run, `matches`. No `differs`.
-  Evidence: `work/mf-client-unification/evidence/L1c/` in the docs repository.
+Every claim and exit must agree with `thread view`. The checkpoint tail prints
+one tool start, one tool completion and one complete message on one socket.
+`liveView` is diagnostic only and never changes the exit-code claim.
 
-## RP-16: Every failure is logged once where it is classified and once where it ends
+## RP-18: Fork prefix remains frozen as source grows and compacts
 
-- **Protects:** the server's `failure.recorded` and `failure.ended` records
-  (`loop/failure-detection.ts`), one pair per occurrence, each carrying the same occurrence id.
-  Also that the model never reads a failure. Run it on the first check of any change to a
-  terminal writer, the append primitive, or the usage block.
-- **Stack:** mock. A usage block needs a thread's owner at zero credits.
-- **Steps:** make `mk() { ./mf thread create --agent runtime-probe --title "$1" --json | jq -r .threadId; }`
-  and read each result with `./mf log --thread "$X" --name failure. --full --since 2m`.
+Choose settled `CUT`, allocate `FORK`, and fork:
 
-  ```bash
-  FAIL='[{"error":{"status":500,"message":"RP16 failure"}}]'
-  # 1. retried: a failed reply, then Retry
-  ./mf mock script "$FAIL"; ./mf thread send "$A" 'a1'; ./mf mock clear
-  ./mf mock script '[{"text":"ok"}]'
-  ./mf api POST "/api/threads/$A/turns/$FAILED/retry" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}"
-  # 2. forgotten: an empty failure, then another message
-  ./mf mock script "$FAIL"; ./mf thread send "$B" 'b1'; ./mf mock clear
-  ./mf thread send "$B" 'b2' --mock '[{"text":"ok"}]'
-  # 3. moved_on: a failure that kept a tool call, then another message
-  ./mf mock script '[{"toolCalls":[{"name":"ls","args":{"path":"manuscript://"}}]},{"error":{"status":500,"message":"RP16"}}]'
-  ./mf thread send "$D" 'd1'; ./mf mock clear; ./mf thread send "$D" 'd2' --mock '[{"text":"ok"}]'
-  # 3b. a kept failure is ended once: a kept-tool failure A, Retry into another failure B, Retry again
-  ./mf mock script '[{"toolCalls":[{"name":"ls","args":{"path":"manuscript://"}}]},{"error":{"status":500,"message":"RP16"}}]'
-  ./mf thread send "$G" 'g1'; ./mf mock clear
-  ./mf mock script "$FAIL"   # Retry from A (id $A_ID) fails as B; then Retry from B (id $B_ID), which succeeds
-  # 4. carried: a slow failure while a second message is admitted
-  ./mf mock script '[{"delayMs":6000,"error":{"status":500,"message":"RP16"}}]'
-  ./mf thread send "$E" 'e1' & sleep 2; ./mf thread send "$E" 'e2' --mock '[{"text":"ok"}]'; wait
-  # 5. a failed compaction, then another message (forgotten)
-  ./mf thread send "$F" 'f1' --mock '[{"text":"ok"}]'; ./mf mock script "$FAIL"
-  ./mf api POST "/api/threads/$F/controls" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\",\"control\":{\"kind\":\"compact\"}}"
-  ./mf mock clear; ./mf thread send "$F" 'f2' --mock '[{"text":"ok"}]'
-  # 6. a failed handoff brief with no Retry (moved_on), then one with Retry (retried): see RP-8
-  # 7. usage: zero the owner's credit lots, send, restore them, wait one sweep (30 s)
-  ```
+```bash
+FORK=$(node -p 'crypto.randomUUID()')
+./mf api POST "/api/threads/$T/fork" --data "{\"id\":\"$FORK\",\"originTurnId\":\"$CUT\"}" --json
+./mf thread send "$FORK" 'Fork before source growth' --mock '[{"text":"Fork reply."}]' --json
+./mf thread context "$FORK" --all --view raw --json > "$E/fork-before.json"
+```
 
-- **Expect:** one `failure.recorded` per failed turn, whose `occurrenceId` is the turn id, then
-  exactly one `failure.ended` with the same id: `retried` (1; `byTurnId` is the Retry's turn),
-  `forgotten` (2 and 5; `byTurnId` is the writer's message), `moved_on` (3 and the no-Retry
-  brief; `byTurnId` is the message), and `retried` for the brief's Retry seed. A kept-tool failure
-  that two later Retries walk (3b) has exactly one `failure.ended` for A (`moved_on` by the first
-  Retry), never a second one by the second. The carried case
-  (4) writes both records in the same millisecond with `moved_on`. Usage writes
-  `usage:<threadId>:<episode>` twice, `recorded` on the block and `ended { resolved }` on the
-  clear, with the same episode. Payload values read as text, never `[redacted]`. Then
-  `./mf thread context "$X" --all` shows no `turn.error` text, and
-  `thread_history` has no `error:` line.
-- **Evidence:** the `log` output of each case, with the occurrence ids.
-- **Last run:** 2026-10-16 on `feat/failure-model-server`, mock, all seven passed. The mock
-  cannot script partial text followed by an error, or `max_tokens`, so the `max_tokens` and
-  partial-text cases are covered by the `thread_history` contract test and the classifier test.
+Grow and compact source `T`, then send on the fork again and capture context.
+The inherited prefix bytes do not change; later source turns and compaction do
+not appear in the fork transcript.
 
 ## RP-19: Observation frontiers survive a restart and a fork finds them
 
-- **Protects:** observation frontiers ([runtime document text](../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)). Each read or write result
-  the model receives records at most one row, keyed by that result block; `room_key` is
-  `draft:<workDraftId>` (the `document_drafts` row of kind `work_draft`, never the thread
-  peer) or `live:<documentId>:<authorityGeneration>`; `journal_position` is the room journal's
-  high-water mark at that cut. Lookup is the latest `recorded_seq`
-  among the conversation's blocks. A fork finds inherited rows with no copy. A staged write
-  records nothing; the step's save records on the write's block. An undo records in the version
-  its inverse ran on. Host-only: the model request carries no frontier text.
-- **Stack:** mock, owned fresh database. A gate run uses a detached checkout pinned to the
-  commit under test (`docs/qa/README.md`), not another lane's stack.
-- **SQL:** `tools/qa/probes/observation-frontiers.sh` dumps `observation_frontiers` joined to
-  `turn_blocks` and `turns`. Optional argument: a thread UUID, or a `live:` / `draft:` prefix.
-  `recorded_seq` is an identity: a replaced row leaves a gap.
-- **Seed:** write the chapter to a file and pass `--text @file`. A shell `$'\n'` is dash-literal
-  and becomes one heading whose text contains `\n`. Partial reads use 1-based `in` (heading is 1).
+Seed a chapter with a heading and three paragraphs. Read it, restart the stack,
+read paragraph 3 in the same and a fresh thread, then fork the original and
+repeat the partial read. Dump the rows after each phase:
 
-  ```bash
-  printf '%s\n' '# M1 Probe Chapter' '' 'The mountain stood above the mist.' '' \
-    'The river cut through the valley.' '' 'The sky held a single hawk.' > "$E/chapter.md"
-  ./mf doc put 'manuscript://M1 Chapter' --text @"$E/chapter.md" --json > "$E/doc.json"
-  ./mf thread create --title 'M1 frontier auto-apply' --json > "$E/thread.json"
-  T=$(jq -r .threadId "$E/thread.json")
-  ```
+```bash
+./mf doc put manuscript://rp19.md --text $'# Chapter\n\nOne.\n\nTwo.\n\nThree.' --json
+./mf thread send "$T" read --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://rp19.md"}}]},{"text":"Read."}]' --json
+tools/qa/probes/observation-frontiers.sh "$T"
+```
 
-- **Steps:**
+In a draft Work, the room key must be `draft:<work_draft.id>`, not a thread
+peer. Read then write and write then read; the read and saved write record once,
+the staged write records nothing, and an undo records a frontier in the room it
+changed. `recorded_seq` gaps are identity, not an error. The raw model request
+contains no frontier fields.
 
-  1. Auto-apply full read:
+## RP-20: Writes merge onto changed or partly read text
 
-     ```bash
-     ./mf thread send "$T" 'Read the whole chapter.' \
-       --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Chapter"}}]},{"text":"I have the whole chapter."}]' \
-       --json > "$E/cell1-send.ndjson"
-     # Capture the step-after-read request before any restart (in-memory ring).
-     ./mf thread context "$T" --all --view raw --json > "$E/cell6-context-raw.json"
-     tools/qa/probes/observation-frontiers.sh "$T"
-     ```
+Read a chapter, type into its target paragraph in the browser, then run a
+scripted replace based on the old text. Repeat in a draft Work, after a partial
+read, and from a second chat editing another block:
 
-  2. Restart, then partial-read paragraph 3 on `$T`. Control: the same partial read in a fresh thread.
+```bash
+./mf thread send "$T" 'Change the paragraph' --mock '[{"toolCalls":[{"name":"write","args":{"command":"replace","path":"manuscript://rp19.md","find":"Two.","replace":"Two becomes three."}}]},{"text":"Written."}]' --json
+./mf thread context "$T" --all --view raw --json
+```
 
-     ```bash
-     MODEL_PROVIDER=mock pnpm dev:restart --no-tailscale
-     PARTIAL='[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Chapter","in":3}}]},{"text":"The river paragraph."}]'
-     ./mf thread send "$T" 'Read paragraph 3 only.' --mock "$PARTIAL" --json > "$E/cell2-same-send.ndjson"
-     ./mf thread create --title 'M1 frontier control' --json > "$E/cell2-control-thread.json"
-     CT=$(jq -r .threadId "$E/cell2-control-thread.json")
-     ./mf thread send "$CT" 'Read paragraph 3 only.' --mock "$PARTIAL" --json > "$E/cell2-control-send.ndjson"
-     tools/qa/probes/observation-frontiers.sh live:
-     ```
+Writes land on the current Yjs room and show the resulting block plus
+`concurrent edits by the user`. Draft writes stay in the Work draft and leave
+live text unchanged. Missing targets return `not_found` and change no text.
 
-  3. Fork `$T` at the settled partial-read reply. Count rows by `source_block_id` before and after
-     the fork (before the fork's own read). Then partial-read paragraph 3 on the fork.
+## RP-21: Listed reads after compaction fit the budget, in listed order
 
-     ```bash
-     CUT=$(jq -r 'select(.type=="result").turnId' "$E/cell2-same-send.ndjson")
-     tools/qa/probes/observation-frontiers.sh > "$E/cell3-before.txt"
-     FORK=$(node -p 'crypto.randomUUID()')
-     ./mf api POST "/api/threads/$T/fork" --data "{\"id\":\"$FORK\",\"originTurnId\":\"$CUT\"}" --json > "$E/cell3-fork.json"
-     tools/qa/probes/observation-frontiers.sh > "$E/cell3-after-fork.txt"
-     ./mf thread send "$FORK" 'Read paragraph 3 only.' --mock "$PARTIAL" --json > "$E/cell3-fork-send.ndjson"
-     tools/qa/probes/observation-frontiers.sh "$FORK"
-     ```
+Create 12 small documents and show them through `read`. Queue a summary whose
+`## Documents to keep open` lists ordinary read JSON objects in a deliberate
+priority order, compact, and send a continuation. The summary has sequence 0;
+the re-shown blocks follow in listed order. Compact again with an empty section;
+the first three previous documents are selected in that order. Then list one
+document larger than half the headroom before four small documents: the large
+read is skipped whole, the small reads fit in order, and the divider shows only
+the small documents.
 
-  4. Draft mode: a Work, a draft-mode thread (`./mf thread create` has no write-mode flag), a write
-     to create the `work_draft`, then a read.
+Preserve heading, `in`, string-hash, `around`, `format: "outline"`,
+`format: "edits"`, `format: "full"`, and `version: "live"`/`"draft"` arguments
+exactly. Missing headings or hashes, invalid positions and denied versions are
+omitted and never retried as whole reads. A malformed object with a path
+suppresses that identity's default read; malformed input without a path is
+ignored. The first listed identity wins, and when the budget reaches zero the
+picker stops rather than retrying or truncating candidates.
 
-     ```bash
-     P=$(jq -r .projectId "$E/thread.json")
-     ./mf api POST "/api/projects/$P/works" --data '{"name":"M1 Draft Work"}' --json > "$E/work.json"
-     W=$(jq -r .id "$E/work.json")
-     ./mf api GET "/api/agents?projectId=$P&limit=100" --json | jq '.agents[] | select(.slug=="general").selection' > "$E/agent-selection.json"
-     jq -n --arg p "$P" --arg w "$W" --arg id "$(node -p 'crypto.randomUUID()')" \
-       --argjson sel "$(cat "$E/agent-selection.json")" \
-       '{id:$id,projectId:$p,title:"M1 frontier draft mode",agentSelection:$sel,workId:$w,aiWriteMode:"draft"}' \
-       > "$E/cell4-create-body.json"
-     ./mf api POST /api/threads --data @"$E/cell4-create-body.json" --json > "$E/cell4-thread.json"
-     DT=$(jq -r .id "$E/cell4-thread.json")
-     ./mf thread send "$DT" 'Change the last paragraph in the draft.' \
-       --mock '[{"toolCalls":[{"name":"write","args":{"command":"replace","path":"manuscript://M1 Chapter","in":4,"content":"The sky held a single hawk over the draft."}}]},{"text":"Drafted a sky change."}]' \
-       --json > "$E/cell4-write-send.ndjson"
-     ./mf thread send "$DT" 'Read the chapter.' \
-       --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Chapter"}}]},{"text":"Read the draft chapter."}]' \
-       --json > "$E/cell4-read-send.ndjson"
-     tools/qa/probes/observation-frontiers.sh "$DT"
-     # Compare room_key to document_drafts.id for kind work_draft vs thread_peer on this document.
-     ```
-
-  5. Staged write: a fresh auto-apply thread, one model step that reads then replaces. After the
-     step settles, the write's block has one frontier row whose `recorded_seq` is higher than the
-     read's, and the sequence advanced by exactly two (no staging insert). Repeat with the write
-     before the read in the same step: the read records from the reply's lease, the save still
-     records last on the write's block.
-
-     ```bash
-     printf '%s\n' '# Write Probe' '' 'Alpha paragraph.' '' 'Beta paragraph.' '' 'Gamma paragraph.' > "$E/write-chapter.md"
-     ./mf doc put 'manuscript://M1 Write' --text @"$E/write-chapter.md" --json > "$E/cell5-doc.json"
-     ./mf thread create --title 'M1 frontier staged write' --json > "$E/cell5-thread.json"
-     WT=$(jq -r .threadId "$E/cell5-thread.json")
-     ./mf thread send "$WT" 'Read the chapter then rewrite the last paragraph.' \
-       --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Write"}},{"name":"write","args":{"command":"replace","path":"manuscript://M1 Write","in":4,"content":"Gamma paragraph, rewritten."}}]},{"text":"Rewrote gamma."}]' \
-       --json > "$E/cell5-send.ndjson"
-     tools/qa/probes/observation-frontiers.sh "$WT"
-     printf '%s\n' '# Write Reverse' '' 'Alpha paragraph.' '' 'Beta paragraph.' '' 'Gamma paragraph.' > "$E/write-reverse.md"
-     ./mf doc put 'manuscript://M1 Write Reverse' --text @"$E/write-reverse.md" --json > "$E/cell5b-doc.json"
-     ./mf thread create --title 'M1 frontier staged write reverse' --json > "$E/cell5b-thread.json"
-     WTB=$(jq -r .threadId "$E/cell5b-thread.json")
-     ./mf thread send "$WTB" 'Rewrite the last paragraph then read the chapter.' \
-       --mock '[{"toolCalls":[{"name":"write","args":{"command":"replace","path":"manuscript://M1 Write Reverse","in":4,"content":"Gamma paragraph, rewritten first."}},{"name":"read","args":{"path":"manuscript://M1 Write Reverse"}}]},{"text":"Wrote then read."}]' \
-       --json > "$E/cell5b-send.ndjson"
-     tools/qa/probes/observation-frontiers.sh "$WTB"
-     ```
-
-  6. No model-visible change: inspect `$E/cell6-context-raw.json` (captured in step 1). The second
-     request is the step after the read.
-
-  7. Undo: on `$WT` (live, `manuscript://M1 Write`) and `$DT` (draft, `manuscript://M1 Chapter`).
-
-     ```bash
-     ./mf thread send "$WT" 'Undo the last write.' \
-       --mock '[{"toolCalls":[{"name":"write","args":{"command":"undo","path":"manuscript://M1 Write"}}]},{"text":"Undid the live write."}]' \
-       --json > "$E/cell7-live-send.ndjson"
-     ./mf thread send "$DT" 'Undo the last write.' \
-       --mock '[{"toolCalls":[{"name":"write","args":{"command":"undo","path":"manuscript://M1 Chapter"}}]},{"text":"Undid the draft write."}]' \
-       --json > "$E/cell7-draft-send.ndjson"
-     tools/qa/probes/observation-frontiers.sh "$WT"
-     tools/qa/probes/observation-frontiers.sh "$DT"
-     ```
-
-- **Expect:**
-  1. One `live:<documentId>:1` row with a non-null `journal_position` and `blocks: 4` in the read result.
-  2. Same-thread partial read after restart records a later journal position and returns `blocks: 1 of 4`.
-  3. Fork copies no rows (same count and `source_block_id` set before vs after). Its partial read records its own cut.
-  4. Read's `room_key` is `draft:<work_draft.id>`, not `draft:<thread_peer.id>`. Result `version: draft`.
-  5. Write block: one row, `recorded_seq` greater than the same-step read, in both orders, with no
-     seq consumed by the staged write. `tool.completed` then `tool.settled`.
-  6. Raw request text contains none of `frontier`, `snapshot`, `journal_position`.
-  7. Each undo block records one row: `live:<documentId>:<generation>` on `$WT`, and on `$DT`
-     `draft:<work_draft.id>` (the draft the inverse ran on), never the thread peer.
-- **Evidence:** each send NDJSON, the SQL dumps, the fork body, `document_drafts` ids next to
-  `room_key`, seq occupancy 1..last_value, and the captured model requests.
-- **Last run:** 2026-10-19 on `689678a032` (`feat/m1-frontier` revision 4), mock, all seven cells passed. Browser: none
-  (no writer-visible change). Recipe change this run: step 5 now includes the write-then-read
-  commands; step 7 has the undo send commands. Steps 5 and 7 passed again on `77667d7e1b`
-  (the save derives its room; a live undo reads its generation before the call), on the branch
-  worktree's own stack; evidence `work/concurrent-edit-design/m1/probe/r3-fix-cells-5-7.md`.
-
-## RP-20: Writes merge onto changed or partly read text and name concurrent authors
-
-- **Protects:** offline model writes and the attributed concurrent-change listing ([write architecture](../../packages/agent-edit/.context/write-architecture.md#offline-writes-merge)). A write plans on the model's latest view and merges onto the current Yjs room. Concurrent or partly read text never refuses it. A missing find or deleted block still returns `not_found`. Results group concurrent changes by `the user` or the model chat's permanent handle, capped at 8 KiB.
-- **Stack:** mock, with a browser for user typing. Use [#871 cells](871-cells.md) for the live and Work-draft concurrent-edit matrix.
-- **Steps:**
-  1. In a live chat, read a chapter. Type into the target paragraph in the browser, then run a scripted replace based on the old text.
-  2. Repeat in a draft-mode chat on its first write and after another user edit to the Work draft.
-  3. Read only a range that cuts through the target passage, then write the held target.
-  4. Have a second chat edit another block, then write from the first chat's older view.
-  5. Try a find string that matches nothing; delete a held block in the browser and try its hash.
-- **Expect:**
-  1. The write lands on the current room. Its normal receipt shows the resulting edited block and `concurrent edits by the user`.
-  2. First and later draft writes land in the Work draft; live stays unchanged. Concurrent user text and authors appear in the receipt.
-  3. The partly read write lands.
-  4. The receipt groups the other model's change under `concurrent edits by agent (cN)` using that chat's permanent handle; no internal id appears.
-  5. Both meaningless targets return `not_found` and change no text.
-- **Evidence:** each send NDJSON (`tool.completed` and `tool.settled`), final document text, and browser screenshots of live and draft receipts.
-- **Last run:** 2026-10-22 on `feat/no-region-refusal`, mock stack plus Chrome. Live and Work-draft first/later writes landed; user and `agent (c7)` attribution appeared; partial-read writes landed; missing-find and deleted-block targets returned `not_found`. Evidence: `work/unobstructed-writes/evidence/region-after/`.
-
-## RP-21: M2c re-shows every listed document that fits, most important first
-
-- **Protects:** no listed-document count cap or fixed token
-  budget; the only budget is half the compacted request's headroom under the
-  auto-compaction trigger, less 1,000 tokens of estimator slack. The budget
-  includes the list the server writes back into the summary. Without a trigger it
-  is unlimited.
-- **Stack:** mock, using the Agent and `compact` helper from Setup.
-- **Steps:**
-  1. Create 12 small documents with distinct URIs and show all 12 through `read`.
-     Queue a summary with narrative followed by `## Documents to keep open`
-     and 12 ordinary read JSON objects (for example, `{"path":"kb://notes"}`),
-     one per line in a deliberately chosen priority order
-     (not their read-recency order). Compact, then send a continuation.
-  2. Inspect `thread context --all --view raw --json` and
-     `thread view --blocks --json`. The summary has sequence 0; re-shown
-     blocks have sequences 1 through 12 in exactly the listed order. The first
-     listed read is the first block after the summary, not the last.
-  3. Compact that thread again with narrative and an empty keep-open section,
-     without any intervening document reads. Exactly the first three documents
-     from the previous re-show are selected, in that same order: among
-     documents on one compaction turn, earlier means more recent.
-  4. In a fresh thread read a document larger than half the available headroom,
-     plus four small documents. List the oversized document first, then the
-     small documents. Compact and continue. The large document is skipped
-     whole, the small documents appear in listed order, and the stored
-     summary's `## Documents to keep open` contains only the small documents'
-     admitted read arguments. The
-     successor's `tokensAfter` is below the trigger. Expand the compaction
-     divider in the browser: the Documents group shows exactly those small
-     documents, and the large one has no row.
-  5. For a genuinely spent budget, use enough fitting documents to consume all
-     available room after the reserved list. The picker must stop reading
-     further candidates once remaining room reaches zero (not read every
-     candidate merely because the list is now unbounded). To hit exact zero
-     cheaply, invoke the picker in a throwaway script with 1,000 candidates and
-     a budget of the estimated worst-case list plus the first rendered read;
-     count reader calls and require exactly one. Keep no test from this script.
-     Oversized candidates
-     while room remains are skipped, not truncated, so later small ones can fit.
-- **Evidence:** captured successor requests, persisted block sequences, divider
-  summary and `tokensAfter`, plus the browser screenshot. Compare the warm
-  summary request against its source: only the appended summary instruction
-  changes (its old “at most 10” clause is gone); tools, messages, system and
-  cache key otherwise stay identical.
-
-- **Last run:** 2026-10-19, C13 amendment after `d18594b1b0`, this branch's mock
-  stack. All 12 listed documents appeared in order (sequences 1–12); the next
-  empty-list compaction picked documents 1, 2, 3. An oversized first candidate
-  was omitted whole while four small candidates fit in order; `tokensAfter`
-  was 8,238 against the 100,000 trigger. The exact-zero picker probe read only
-  one of 1,000 candidates. Browser: expanded normal and omission dividers both
-  matched their stored summaries. Evidence: docs repository
-  `work/concurrent-edit-design/m2c/probe/c13/` (report and screenshots); raw
-  request captures remain at `/tmp/m2c-c13-probe/`.
+In the browser, expand the summary and selected/outline Read rows, continue and
+reload. The same selected text remains visible, and writer text stays in the
+editor.
