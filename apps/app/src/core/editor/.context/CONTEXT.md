@@ -137,7 +137,11 @@ identity in anchors or holds.
   capture at each Apply boundary, so nearby typing stays in separate native
   segments. History traversal is synchronous: Apply entries enqueue owner-held
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
-  boundary while skipping native no-ops. Destroying the editor is terminal and
+  boundary while skipping native no-ops. Undo and redo give back a range
+  selection a change started from (a drag, a cut, typing over a selection),
+  taken from the popped item or, for items history generates, from just before
+  the run; Yjs alone would map the current selection, and a moved range has
+  just been removed. A caret keeps Yjs's result. Destroying the editor is terminal and
   discards only that mounted navigation history. Dock, Work, tree-only Apply, and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
@@ -221,21 +225,25 @@ keyboard, pointer, drop, or draft-recovery answer.
   default when the press is on the highlight of a nonempty `TextSelection`
   (hit-tested on the DOM selection's client rects grown to the line height, so
   the space between lines counts), with focus, no modifier, an editable view
-  and a chrome kernel. `handleTripleClick` claims a third press there so
-  ProseMirror does not widen the selection. Past 4px it sends a synthetic
-  `dragstart` with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
+  and a chrome kernel. `handleDoubleClick` and `handleTripleClick` claim a
+  second or third press there so neither the browser nor ProseMirror widens
+  the selection; the claim also records a third press for the no-travel case. Past 4px it sends a synthetic
+  `dragstart` (at `view.dom`, positioned at the press, since a fast first move
+  may already be off the selection) with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
   on a target change and `dragover` (so the caret, the 5s caret timeout and
-  autoscroll behave as in a native drag); release sends `drop` only if the last
-  `dragover` was cancelled, then `dragend`. It is a pump into the pipeline
+  autoscroll behave as in a native drag); release sends one more `dragover` at the
+  release point (a fast drag lands where it is let go), then `drop` only if
+  that one was cancelled, then `dragend`. It is a pump into the pipeline
   below, not a second drop path: another surface mounting `LandingExtension`
-  (the composer, a second pane) reads it as it reads any drag and copies,
-  because the gesture clears TipTap's paste-rule memory of the source (which
-  would delete it after a cross-editor drop). A press that never travels
+  (the composer, a second pane) reads it as it reads any drag and copies.
+  (A pnpm patch to `@tiptap/core` removed the delete its paste-rule plugin made
+  of a drag's source after a drop into another editor; the landing decides move
+  or copy.) A press that never travels
   places a caret on release, or selects the textblock for a third press;
   `click` after a lift is swallowed (the link surface would follow a link).
   Escape goes through `chrome.beginDrag`; after a lift `pointermove` stops at
   the window so other panes' hover chrome stays down; a peer edit that changes
-  what the selection holds cancels. Left native: presses with a modifier (so
+  what the selection holds cancels (checked again at release). Left native: presses with a modifier (so
   Ctrl/Option-drag still carries text out of the window; Mac Option is
   unrun), read-only views, editors with no kernel (code documents, the
   composer as a source), cell selections, and objects (`ObjectPhysics`).

@@ -10,8 +10,11 @@
  * real `DataTransfer`) into the pipeline that already handles them:
  * ProseMirror's `view.dragging`, `LandingExtension`'s caret and doors, link
  * announcements, other surfaces' `LandingExtension` (the composer copies).
- * Release sends `drop` only when the last `dragover` was cancelled, the
- * browser's own rule, so a target that claims nothing gets nothing.
+ * Release first sends one `dragover` at the release point, so a fast drag
+ * lands where it is let go, then `drop` only if that `dragover` was cancelled:
+ * a target that claims nothing gets nothing. (A native drag also withholds
+ * `drop` from a target that set `dropEffect` to `none`; this one does not, and
+ * the doors check again on `drop`.)
  *
  * A press that never travels does what the browser would have done on
  * release: a caret there, or the paragraph for a third click. Presses it does
@@ -21,6 +24,7 @@
  */
 
 import type { Editor } from "@tiptap/core";
+import type { Slice } from "@tiptap/pm/model";
 import { Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
@@ -45,11 +49,12 @@ const modifiersOf = ({ ctrlKey, altKey, shiftKey, metaKey }: Modifiers): Modifie
 
 /**
  * Whether a press lands on the highlight of a text selection this gesture
- * takes. The rects are the browser's own highlight, so letters and the space
- * between lines of a multi-line range both count while a margin beside them
- * does not.
+ * takes. The rects are the browser's own highlight, grown to the line height,
+ * so letters and the space between lines of a multi-line range count. A block
+ * the range covers whole can report a full-width rect too, so its margin
+ * counts there; a press that doesn't travel still places a caret.
  */
-export function pressOnSelection(view: EditorView, editor: Editor, event: MouseEvent): boolean {
+function pressOnSelection(view: EditorView, editor: Editor, event: MouseEvent): boolean {
   const { selection } = view.state;
   if (event.button !== 0 || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) {
     return false;
@@ -83,64 +88,82 @@ export function pressOnSelection(view: EditorView, editor: Editor, event: MouseE
   return false;
 }
 
+/**
+ * The presses ProseMirror counted as a second or third click: a re-press on
+ * the highlight is this gesture's, so `handleDoubleClick` and
+ * `handleTripleClick` claim it (otherwise the browser or ProseMirror widens the
+ * selection to a word or paragraph). A third press that doesn't travel selects
+ * the paragraph, so the gesture reads the claim, not `detail`: ProseMirror's
+ * count is the one that decided.
+ */
+const thirdPresses = new WeakSet<MouseEvent>();
+
+export function claimRepress(
+  view: EditorView,
+  editor: Editor,
+  event: MouseEvent,
+  third: boolean,
+): boolean {
+  if (!pressOnSelection(view, editor, event)) return false;
+  if (third) thirdPresses.add(event);
+  return true;
+}
+
 /** Listens for qualifying presses on `view` for as long as it lives. Returns the teardown. */
 export function installSelectionDrag(view: EditorView, editor: Editor): () => void {
-  let active: { cancel: () => void } | null = null;
+  let cancel: (() => void) | null = null;
 
   const onMouseDown = (event: MouseEvent) => {
     // Runs after ProseMirror's own `mousedown` (registered first, on this
-    // element), which counted the click and ran `handleTripleClick`. Preventing
+    // element), which counted the click and ran the claims above. Preventing
     // the default here is what keeps the browser's text drag and its
     // highlight redraw away; ProseMirror's click machinery still sees the
     // `mouseup`.
-    if (active || !pressOnSelection(view, editor, event)) return;
+    if (cancel || !pressOnSelection(view, editor, event)) return;
     event.preventDefault();
-    active = startGesture(view, editor, event, () => {
-      active = null;
+    cancel = startGesture(view, editor, event, () => {
+      cancel = null;
     });
   };
 
   view.dom.addEventListener("mousedown", onMouseDown);
   return () => {
     view.dom.removeEventListener("mousedown", onMouseDown);
-    active?.cancel();
+    cancel?.();
   };
 }
 
+/** Runs one press-to-release gesture. Returns its cancel. */
 function startGesture(
   view: EditorView,
   editor: Editor,
   press: MouseEvent,
   onDone: () => void,
-): { cancel: () => void } {
+): () => void {
   const chrome = getEditorChrome(editor);
-  const doc = view.dom.ownerDocument;
-  const win = doc.defaultView ?? window;
-  const pressTarget = press.target as Element;
-  const triple = press.detail >= 3;
+  const ac = new AbortController();
+  const listen = (type: string, handler: (event: never) => void, capture = false) =>
+    window.addEventListener(type, handler as EventListener, { capture, signal: ac.signal });
+  const transfer = new DataTransfer();
 
-  let lifted = false;
-  /** Lifted at some point, so the `click` that follows the release is not a click. */
-  let dragged = false;
-  let x = press.clientX;
-  let y = press.clientY;
+  /** "ended" is a lift that finished (released, or cancelled with the button still down). */
+  let phase: "pressed" | "lifted" | "ended" = "pressed";
+  let pointer: MouseEvent = press;
   let modifiers = modifiersOf(press);
   let over: Element | null = null;
   let accepted = false;
   let tick: ReturnType<typeof setInterval> | undefined;
   let endChrome: (() => void) | undefined;
-  let transfer: DataTransfer | null = null;
+  let carried: Slice | undefined;
   let seenState = view.state;
 
-  const send = (type: string, target: Element, related: Element | null = null): DragEvent => {
+  const send = (type: string, target: Element, related: Element | null = null, at = pointer) => {
     const event = new DragEvent(type, {
       bubbles: true,
       cancelable: true,
       composed: true,
-      clientX: x,
-      clientY: y,
-      screenX: x + win.screenX,
-      screenY: y + win.screenY,
+      clientX: at.clientX,
+      clientY: at.clientY,
       dataTransfer: transfer,
       relatedTarget: related,
       ...modifiers,
@@ -151,7 +174,7 @@ function startGesture(
 
   /** One `dragover`, preceded by `dragleave`/`dragenter` when the element under the pointer changed. */
   const hover = () => {
-    const now = doc.elementFromPoint(x, y);
+    const now = view.dom.ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY);
     if (now !== over) {
       if (over?.isConnected) send("dragleave", over, now);
       if (now) send("dragenter", now, over);
@@ -160,11 +183,11 @@ function startGesture(
     accepted = over ? send("dragover", over).defaultPrevented : false;
   };
 
+  /** A peer's edit that changed what the selection holds: the drag no longer carries what was lifted. */
   const peerChangedSelection = () => {
     if (view.state === seenState) return false;
     seenState = view.state;
-    const slice = view.dragging?.slice;
-    return !slice || !view.state.selection.content().eq(slice);
+    return !carried || !view.state.selection.content().eq(carried);
   };
 
   const onTick = () => {
@@ -176,84 +199,44 @@ function startGesture(
     const scroller =
       over?.closest<HTMLElement>("[data-stable-layout-scroll]") ??
       view.dom.closest<HTMLElement>("[data-stable-layout-scroll]");
-    dragEdgeScroll(scroller, y);
+    dragEdgeScroll(scroller, pointer.clientY);
   };
 
   const lift = () => {
-    transfer = new DataTransfer();
-    send("dragstart", pressTarget);
+    // At the press, not the pointer: a fast first move may already be off the selection.
+    send("dragstart", view.dom, null, press);
     if (!view.dragging) {
-      // Nothing took the drag (a selection with no content): stay a plain press.
-      transfer = null;
+      // Nothing took the drag: stay a plain press.
       stop();
       return;
     }
-    // TipTap's paste-rule plugin remembers a drag that starts in an editor
-    // and deletes its selection after a drop into any other editor, copy or
-    // not. Its own `window` `dragend` listener forgets it; a surface that is
-    // a target copies, as this gesture promises.
-    win.dispatchEvent(new Event("dragend"));
-    lifted = true;
-    dragged = true;
+    carried = view.dragging.slice;
+    phase = "lifted";
     endChrome = chrome?.beginDrag(() => finish(false));
-    doc.documentElement.classList.add(ROOT_CLASS);
+    view.dom.ownerDocument.documentElement.classList.add(ROOT_CLASS);
     tick = setInterval(onTick, TICK_MS);
     hover();
   };
 
-  const swallowClick = () => {
-    const swallow = (event: Event) => event.stopPropagation();
-    win.addEventListener("click", swallow, { capture: true, once: true });
-    setTimeout(() => win.removeEventListener("click", swallow, { capture: true }), 100);
-  };
-
-  /** Ends a lifted drag: `drop` only when the last `dragover` was accepted, then `dragend`. */
-  const finish = (drop: boolean) => {
-    if (!lifted) return;
-    lifted = false;
+  /** Ends a lift. A release first asks the target once more at the release point, and `drop`s only if it accepts. */
+  const finish = (release: boolean) => {
+    if (phase !== "lifted") return;
+    phase = "ended";
     clearInterval(tick);
-    if (drop) {
+    if (release && !peerChangedSelection()) {
       hover();
       if (accepted && over) send("drop", over);
     } else if (over?.isConnected) {
       send("dragleave", over);
     }
     send("dragend", view.dom);
-    doc.documentElement.classList.remove(ROOT_CLASS);
+    view.dom.ownerDocument.documentElement.classList.remove(ROOT_CLASS);
     endChrome?.();
-    endChrome = undefined;
   };
 
   const stop = () => {
-    win.removeEventListener("pointermove", onMove, true);
-    win.removeEventListener("pointercancel", onLost, true);
-    win.removeEventListener("mouseup", onUp);
-    win.removeEventListener("blur", onLost);
-    win.removeEventListener("keydown", onKey, true);
-    win.removeEventListener("keyup", onKey, true);
+    ac.abort();
     onDone();
-  };
-
-  const onMove = (event: PointerEvent) => {
-    if (event.buttons === 0) {
-      // The button came up somewhere we never heard about.
-      onLost();
-      return;
-    }
-    x = event.clientX;
-    y = event.clientY;
-    modifiers = modifiersOf(event);
-    if (dragged && !lifted) return; // cancelled: the button is still down, the gesture is over
-    if (lifted) {
-      // Hover chrome elsewhere reads `pointermove`; a native drag sends none.
-      event.stopPropagation();
-      return;
-    }
-    if (Math.abs(x - press.clientX) + Math.abs(y - press.clientY) >= LIFT_PX) lift();
-  };
-
-  const onKey = (event: KeyboardEvent) => {
-    modifiers = modifiersOf(event);
   };
 
   const onLost = () => {
@@ -261,43 +244,68 @@ function startGesture(
     stop();
   };
 
-  const onUp = (event: MouseEvent) => {
-    x = event.clientX;
-    y = event.clientY;
+  const track = (event: MouseEvent) => {
+    pointer = event;
     modifiers = modifiersOf(event);
-    if (lifted) finish(true);
-    if (dragged) {
-      swallowClick();
+  };
+
+  listen(
+    "pointermove",
+    (event: PointerEvent) => {
+      if (event.buttons === 0) {
+        // The button came up somewhere we never heard about.
+        onLost();
+        return;
+      }
+      track(event);
+      if (phase === "lifted") {
+        // Hover chrome elsewhere reads `pointermove`; a native drag sends none.
+        event.stopPropagation();
+      } else if (
+        phase === "pressed" &&
+        Math.abs(event.clientX - press.clientX) + Math.abs(event.clientY - press.clientY) >= LIFT_PX
+      ) {
+        lift();
+      }
+    },
+    true,
+  );
+  listen("pointercancel", onLost, true);
+  listen("blur", onLost);
+  const onKey = (event: KeyboardEvent) => {
+    modifiers = modifiersOf(event);
+  };
+  listen("keydown", onKey, true);
+  listen("keyup", onKey, true);
+  listen("mouseup", (event: MouseEvent) => {
+    track(event);
+    finish(true);
+    if (phase === "ended") {
+      // The `click` after a lift is not a click (the link surface would follow a link).
+      window.addEventListener("click", (click) => click.stopPropagation(), {
+        capture: true,
+        once: true,
+        signal: AbortSignal.timeout(100),
+      });
     } else if (!event.defaultPrevented) {
       // ProseMirror's `mouseup` ran first and did not take this one; the
       // browser would have collapsed the selection to a caret here.
-      placeCaret(view, x, y, triple);
+      placeCaret(view, event.clientX, event.clientY, thirdPresses.has(press));
     }
     stop();
-  };
+  });
 
-  win.addEventListener("pointermove", onMove, true);
-  win.addEventListener("pointercancel", onLost, true);
-  win.addEventListener("mouseup", onUp);
-  win.addEventListener("blur", onLost);
-  win.addEventListener("keydown", onKey, true);
-  win.addEventListener("keyup", onKey, true);
-
-  return {
-    cancel: onLost,
-  };
+  return onLost;
 }
 
 /** The caret a click makes at the pointer, or the pressed textblock for a third click. */
-function placeCaret(view: EditorView, x: number, y: number, triple: boolean): void {
+function placeCaret(view: EditorView, x: number, y: number, third: boolean): void {
   const at = view.posAtCoords({ left: x, top: y });
   if (!at) return;
   const $pos = view.state.doc.resolve(at.pos);
   const selection =
-    triple && $pos.parent.isTextblock
+    third && $pos.parent.isTextblock
       ? TextSelection.create(view.state.doc, $pos.start(), $pos.end())
-      : $pos.parent.inlineContent
-        ? TextSelection.create(view.state.doc, at.pos)
-        : Selection.near($pos);
+      : Selection.near($pos);
   view.dispatch(view.state.tr.setSelection(selection));
 }
