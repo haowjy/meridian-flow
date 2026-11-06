@@ -78,6 +78,8 @@ export interface FigureAssetService {
   ): Promise<FigureAssetResult<GetFigureSignedUrlResponse>>;
 }
 
+const MAX_NAME_COPIES = 100;
+
 function ok<T>(value: T): FigureAssetResult<T> {
   return { ok: true, value };
 }
@@ -138,6 +140,16 @@ function sanitizeKeyPart(value: string): string {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return sanitized || "asset";
+}
+
+/** The file name a picture keeps in `assets/`: the writer's own, made safe as one path segment. */
+function assetStem(filename?: string | null): string {
+  const stem = filename
+    ?.replace(/\.[^.]+$/, "")
+    .replace(/[/\\]+/g, "-")
+    .replace(/^[@.\s]+/, "")
+    .trim();
+  return stem || "figure";
 }
 
 function createObjectKey(input: {
@@ -212,8 +224,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
       }
       const uniqueId = generateId();
       const extension = extensionFor(input.mimeType, input.filename);
-      const basename = sanitizeKeyPart(input.filename?.replace(/\.[^.]+$/, "") ?? "figure");
-      const assetUri = `manuscript://assets/${sanitizeKeyPart(uniqueId)}-${basename}.${extension}`;
+      const stem = assetStem(input.filename);
       const key = createObjectKey({
         projectId: input.projectId,
         documentId: input.hostDocumentId,
@@ -243,10 +254,13 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
       });
 
       let assetDocumentId: string | undefined;
+      let assetUri = "";
       try {
-        const created = await options.contextPorts
-          .forProject(input.projectId, input.userId, new Map())
-          .writeBinary(assetUri, {
+        const context = options.contextPorts.forProject(input.projectId, input.userId, new Map());
+        // The same picture dropped twice keeps both: "map.png", then "map (2).png".
+        for (let copy = 1; copy <= MAX_NAME_COPIES && !assetDocumentId; copy += 1) {
+          assetUri = `manuscript://assets/${stem}${copy === 1 ? "" : ` (${copy})`}.${extension}`;
+          const created = await context.writeBinary(assetUri, {
             storageUrl: put.value.storageUrl,
             mimeType: input.mimeType,
             fileType,
@@ -254,7 +268,9 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
             hasPreview,
             origin: { type: "human", userId: input.userId },
           });
-        if (created.ok) assetDocumentId = created.value.documentId;
+          if (created.ok) assetDocumentId = created.value.documentId;
+          else if (created.error.code !== "conflict") break;
+        }
       } catch (error) {
         await options.release.keys([key]);
         return err("repository_error", errorMessage(error, "Failed to create figure asset"));

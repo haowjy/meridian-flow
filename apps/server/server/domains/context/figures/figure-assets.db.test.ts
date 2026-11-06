@@ -134,7 +134,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!uploaded.ok) throw new Error(uploaded.error.message);
       expect(uploaded.value.assetDocumentId).not.toBe(HOST_DOCUMENT_ID);
       expect(uploaded.value.figure.src).toBe(`asset:${uploaded.value.assetDocumentId}`);
-      expect(uploaded.value.assetPath).toBe(`assets/${ASSET_KEY_ID}-map.png`);
+      expect(uploaded.value.assetPath).toBe("assets/map.png");
 
       const [after] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
       expect(after).toEqual(before);
@@ -150,9 +150,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: { kind: "tracked" },
       });
-      await expect(
-        context.stat(`manuscript://assets/${ASSET_KEY_ID}-map.png`),
-      ).resolves.toMatchObject({ ok: true, value: { kind: "binary" } });
+      await expect(context.stat("manuscript://assets/map.png")).resolves.toMatchObject({
+        ok: true,
+        value: { kind: "binary" },
+      });
 
       const signed = await service.getSignedFigureUrl({
         projectId: PROJECT_ID,
