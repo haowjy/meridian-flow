@@ -13,16 +13,20 @@ import ts from "typescript";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const BASELINE_PATH = resolve(ROOT, "tools/ci/slop-lint-baseline.json");
-const CATEGORIES = ["swallowed-error", "suppression", "decision-id"];
+const CATEGORIES = ["swallowed-error", "suppression", "decision-id", "middle-dot"];
 const CATEGORY_MESSAGES = {
   "swallowed-error": "Handle or surface the error instead of silently discarding it.",
   suppression: "Fix the type or lint error instead of adding a suppression.",
   "decision-id": "Delete the decision ID; explain the invariant in the comment instead.",
+  "middle-dot":
+    "Separate UI facts with spacing, weight or muted color; use a sentence or parentheses in text.",
 };
-const ALLOW_PATTERN = /slop-lint:\s*allow\s+(swallowed-error|suppression|decision-id)\s+(.+?)\s*$/i;
+const ALLOW_PATTERN =
+  /slop-lint:\s*allow\s+(swallowed-error|suppression|decision-id|middle-dot)\s+(.+?)\s*$/i;
 const ALLOW_MARKER = /slop-lint:\s*allow\b/i;
 const SUPPRESSION_PATTERN = /\bbiome-ignore(?:-all)?\b|@ts-(?:ignore|expect-error|nocheck)\b/g;
 const DECISION_PATTERN = /\b[DW]\d+\b/g;
+const MIDDLE_DOT_EXCEPTION_REASON = /file-detail row/i;
 
 const args = new Set(process.argv.slice(2));
 const updateBaseline = args.has("--update-baseline");
@@ -226,6 +230,41 @@ function collectCommentFindings(sourceFile, text, lines, findings, directives) {
   }
 }
 
+function stringText(node) {
+  if (
+    ts.isStringLiteral(node) ||
+    ts.isNoSubstitutionTemplateLiteral(node) ||
+    ts.isTemplateHead(node) ||
+    ts.isTemplateMiddle(node) ||
+    ts.isTemplateTail(node) ||
+    ts.isJsxText(node)
+  ) {
+    return node.text;
+  }
+  return null;
+}
+
+function collectMiddleDotFindings(sourceFile, lines, findings) {
+  function visit(node) {
+    const text = stringText(node);
+    if (text?.includes("\u00b7")) {
+      for (const match of text.matchAll(/\u00b7/g)) {
+        addFinding(
+          findings,
+          sourceFile,
+          lines,
+          "middle-dot",
+          node.getStart(sourceFile) + match.index,
+          "middle dot used as a separator",
+        );
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+}
+
 function collectFindings() {
   const findings = new Map(CATEGORIES.map((category) => [category, new Map()]));
   const directives = [];
@@ -242,6 +281,7 @@ function collectFindings() {
     const lines = text.split("\n");
     collectSwallowedErrors(sourceFile, lines, findings.get("swallowed-error"));
     collectCommentFindings(sourceFile, text, lines, findings, directives);
+    collectMiddleDotFindings(sourceFile, lines, findings.get("middle-dot"));
   }
 
   for (const category of CATEGORIES) {
@@ -252,6 +292,7 @@ function collectFindings() {
           candidate.path === finding.path &&
           !candidate.used &&
           candidate.reason &&
+          (category !== "middle-dot" || MIDDLE_DOT_EXCEPTION_REASON.test(candidate.reason)) &&
           candidate.lineNumber >= finding.lineNumber - 1 &&
           candidate.lineNumber <= finding.lineNumber,
       );

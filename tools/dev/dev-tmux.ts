@@ -266,7 +266,7 @@ async function main(): Promise<void> {
       sharedPorts: plan.sharedPorts,
     });
     teardownSessions(store, sessionNames);
-    console.log(`stopped · ${session.sessionName}`);
+    console.log(`stopped: ${session.sessionName}`);
     return;
   }
   await stopOrphanDevSessions(repoRoot, collectOrphanDevSessions(repoRoot));
