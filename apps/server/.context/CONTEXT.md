@@ -100,7 +100,9 @@ sibling voluma project. Startup guards (`server/lib/startup-guards.ts`) accept a
 placeholder credentials. `pnpm bootstrap` applies schema only; the dev user is
 provisioned on first sign-in. With `DEV_AUTH_BYPASS=1` (local dev only) `resolveUser`
 returns the dev user and startup skips WorkOS validation. The startup plugin's boot
-failure ends the process, because Nitro does not await plugins.
+failure ends a built server's process, because Nitro does not await plugins. Under
+`nitro dev` it does not exit: the plugin runs in a worker thread that Nitro restarts
+without limit, so the worker stays up and the per-request auth rules still refuse.
 
 ## ThreadEventHub
 

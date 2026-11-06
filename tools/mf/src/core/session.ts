@@ -219,7 +219,7 @@ export function createSession(input: {
   return { serverUrl: input.serverUrl, cookie: input.cookie, ca: input.ca, request };
 }
 
-function resolvePortlessOrigins(repoRoot: string): { app: string; server: string } {
+function resolvePortlessServerOrigin(repoRoot: string): string {
   let output: string;
   try {
     output = execFileSync(path.join(repoRoot, "node_modules", ".bin", "portless"), ["list"], {
@@ -232,7 +232,7 @@ function resolvePortlessOrigins(repoRoot: string): { app: string; server: string
     throw new CliError("unavailable", "Portless is not running", { hint: STACK_HINT });
   }
   try {
-    return resolveCheckoutRouteUrls(repoRoot, output);
+    return resolveCheckoutRouteUrls(repoRoot, output).server;
   } catch (error) {
     throw new CliError("unavailable", error instanceof Error ? error.message : String(error), {
       hint: STACK_HINT,
@@ -248,7 +248,6 @@ export async function openSession(input: {
   repoRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<Session> {
-  const serverUrl =
-    input.env.MF_SERVER_URL?.trim() || resolvePortlessOrigins(input.repoRoot).server;
+  const serverUrl = input.env.MF_SERVER_URL?.trim() || resolvePortlessServerOrigin(input.repoRoot);
   return createSession({ serverUrl, cookie: input.env.MF_COOKIE?.trim() ?? "", ca: portlessCa() });
 }
