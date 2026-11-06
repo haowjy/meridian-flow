@@ -432,9 +432,9 @@ export function createAskService(deps: {
           // otherwise never accumulate a step.
           const bucket = (at: Date | null) =>
             Math.floor((at?.getTime() ?? 0) / PRESENCE_PUBLISH_MS);
-          const draftChanged =
-            JSON.stringify(updated.draftAnswers) !== JSON.stringify(stored.draftAnswers);
-          if (!draftChanged && bucket(updated.deadlineAt) === bucket(stored.deadlineAt))
+          // A presence carrying answers always publishes: the echo is the sender's ack, even
+          // when the answers equal the stored ones.
+          if (!input.answers && bucket(updated.deadlineAt) === bucket(stored.deadlineAt))
             return null;
           await persistAndAppendEvents(deps, input.threadId, async () => ({
             result: undefined,
