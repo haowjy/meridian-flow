@@ -112,10 +112,10 @@ diff --git a/src/PasteRule.ts b/src/PasteRule.ts
 index d050b8d0611c80a0e669ebde88f9279a2ef39d7b..4d04e30b51b62dcc390f0ab54a0910caba0bf340 100644
 --- a/src/PasteRule.ts
 +++ b/src/PasteRule.ts
-@@ -180,7 +180,6 @@ function run(config: {
+@@ -180,7 +180,5 @@ function run(config: {
  }
  
- // When dragging across editors, must get another editor instance to delete selection content.
+-// When dragging across editors, must get another editor instance to delete selection content.
 -let tiptapDragFromOtherEditor: Editor | null = null
  
  const createClipboardPasteEvent = (text: string) => {
