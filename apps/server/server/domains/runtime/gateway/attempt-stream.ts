@@ -356,7 +356,7 @@ export async function* streamWithRetry(
       if (timeoutEvent) {
         sawError = timeoutEvent;
       } else if (emittedOutput && request.signal?.aborted) {
-        // Some adapters reject the interrupted read before emitting final usage.
+        // The stop can reject this read before the adapter emits final usage.
         // Continue on the same reader; the original cancel deadline still wins.
         try {
           while (true) {
