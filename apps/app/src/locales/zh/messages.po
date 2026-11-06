@@ -146,6 +146,13 @@ msgstr "{0, plural, other {# 分钟后继续}}"
 #~ msgid "{0, plural, one {Copying # item to {destinationName}…} other {Copying # items to {destinationName}…}}"
 #~ msgstr ""
 
+#. placeholder {0}: copy.copies.length
+#. placeholder {1}: copy.destinationName
+#. placeholder {2}: copy.destinationName
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "{0, plural, one {Couldn't copy # item to {1}.} other {Couldn't copy # items to {2}.}}"
+msgstr ""
+
 #. placeholder {0}: sources.length
 #: src/features/project/context/entry-drag/copy-refusal.ts
 msgid "{0, plural, one {Couldn't copy # item to {destination}.} other {Couldn't copy # items to {destination}.}}"
@@ -156,15 +163,25 @@ msgstr ""
 msgid "{0, plural, one {Couldn't copy # item.} other {Couldn't copy # items.}}"
 msgstr ""
 
+#. placeholder {0}: rows.length
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "{0, plural, one {Couldn't delete # item.} other {Couldn't delete # items.}}"
+msgstr ""
+
 #. placeholder {0}: failed.length
 #: src/features/project/context/entry-drag/move-operation.ts
 #~ msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
 #~ msgstr ""
 
-#. placeholder {0}: failed.length
-#: src/features/project/context/entry-drag/move-operation.ts
-#~ msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
-#~ msgstr ""
+#. placeholder {0}: rows.length
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "{0, plural, one {Couldn't move # item to {destination}.} other {Couldn't move # items to {destination}.}}"
+msgstr ""
+
+#. placeholder {0}: rows.length
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
+msgstr ""
 
 #. placeholder {0}: card.count
 #: src/features/chat/chat-card-copy.ts
@@ -1920,6 +1937,12 @@ msgid "Couldn't copy"
 msgstr ""
 
 #. placeholder {0}: only.name
+#. placeholder {1}: copy.destinationName
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "Couldn't copy {0} to {1}."
+msgstr ""
+
+#. placeholder {0}: only.name
 #: src/features/project/context/entry-drag/copy-refusal.ts
 #~ msgid "Couldn't copy {0} to {destination}."
 #~ msgstr ""
@@ -1943,8 +1966,8 @@ msgstr ""
 
 #. placeholder {0}: copy.destinationName
 #: src/features/project/context/entry-drag/use-entry-list.tsx
-msgid "Couldn't copy these items to {0}."
-msgstr ""
+#~ msgid "Couldn't copy these items to {0}."
+#~ msgstr ""
 
 #: src/features/editor/SchemaNotices.tsx
 msgid "Couldn't copy. Select the text to copy it."
@@ -1991,8 +2014,8 @@ msgstr ""
 msgid "Couldn't delete"
 msgstr ""
 
-#. placeholder {0}: target.name
-#: src/features/project/context/use-delete-context-entry.ts
+#. placeholder {0}: only.name
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "Couldn't delete {0}."
 msgstr ""
 
@@ -2002,8 +2025,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/entry-drag/RefusalToasts.tsx
-msgid "Couldn't delete {name}."
-msgstr ""
+#~ msgid "Couldn't delete {name}."
+#~ msgstr ""
 
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Couldn't delete {title}"
@@ -2133,21 +2156,26 @@ msgstr ""
 #. placeholder {0}: failed.name
 #. placeholder {1}: move.destinationName
 #: src/features/project/context/entry-drag/use-entry-list.tsx
-msgid "Couldn't move {0} to {1}."
+#~ msgid "Couldn't move {0} to {1}."
+#~ msgstr ""
+
+#. placeholder {0}: only.name
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "Couldn't move {0} to {destination}."
 msgstr ""
 
-#. placeholder {0}: lost.name
-#: src/features/project/context/entry-drag/move-operation.ts
-#~ msgid "Couldn't move {0}."
+#. placeholder {0}: only.name
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "Couldn't move {0}."
+msgstr ""
+
+#: src/features/project/context/entry-drag/RefusalToasts.tsx
+#~ msgid "Couldn't move {name} to {to}."
 #~ msgstr ""
 
 #: src/features/project/context/entry-drag/RefusalToasts.tsx
-msgid "Couldn't move {name} to {to}."
-msgstr ""
-
-#: src/features/project/context/entry-drag/RefusalToasts.tsx
-msgid "Couldn't move {name}."
-msgstr ""
+#~ msgid "Couldn't move {name}."
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/move-operation.ts
 #~ msgid "Couldn't move it back."

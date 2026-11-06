@@ -93,7 +93,6 @@ const SERVER_FEED_DOT: Record<ServerFeedState, string> = {
 
 function DebugPill({ onDisable }: { onDisable: () => void }) {
   const debugState = useDebugState();
-  // The Activity region rises above the pill (and its open panel) instead of covering it.
   const [open, setOpen] = useState(false);
   const [traceViewerTarget, setTraceViewerTarget] = useState<TraceViewerTarget | null>(null);
   const [llmCallsViewerTarget, setLlmCallsViewerTarget] = useState<LlmCallsViewerTarget | null>(

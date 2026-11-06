@@ -125,7 +125,7 @@ export function entryNameNow({ records, placement }: PlacementView, ref: EntryRe
 }
 
 /** Whether `folderId` is `start` itself or sits above it. */
-function within(view: PlacementView, start: ParentRef | null, folderId: string): boolean {
+export function within(view: PlacementView, start: ParentRef | null, folderId: string): boolean {
   const seen = new Set<string>();
   let parent = start;
   while (parent?.kind === "folder" && !seen.has(parent.folderId)) {

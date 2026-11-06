@@ -1,7 +1,7 @@
 /**
  * A refused Copy, derived from the operations journal: what to say about it. The journal keeps a
- * refused Copy until it is resolved, so a refusal that arrived while this tab was closed still
- * reads here.
+ * refused Copy until the writer closes its toast or Retry lands, so a refusal that arrived while
+ * this tab was closed still reads here.
  */
 import { plural, t } from "@lingui/core/macro";
 import type { ContextError } from "@meridian/contracts/protocol";
@@ -12,7 +12,7 @@ import { entryNameNow, type PlacementView, type ReadyCopy } from "./move-plan";
 export type CopyRefusal = {
   operationId: string;
   message: string;
-  /** The same Copy again; absent once the destination is gone. */
+  /** The same Copy again; absent once a source or the destination is gone. */
   copy?: ReadyCopy;
 };
 
@@ -26,16 +26,17 @@ export function copyRefusals(
     const intent = operation.intents.find((candidate) => candidate.state === "needs-repair");
     if (intent?.desired.kind !== "copy") return [];
     const copy = intent.desired;
-    const sources = copy.roots.map(
-      (root) => entryNameNow(view, { kind: root.kind, id: root.sourceId }) ?? root.predictedName,
+    const names = copy.roots.map((root) =>
+      entryNameNow(view, { kind: root.kind, id: root.sourceId }),
     );
+    const sources = names.map((name, index) => name ?? copy.roots[index]?.predictedName ?? "");
     const destination = destinationName(view, copy);
     const scheme = destinationScheme(view, copy);
     return [
       {
         operationId: operation.operationId,
         message: describeRefusal(sources, destination, reasonOf(intent)),
-        ...(destination && scheme
+        ...(destination && scheme && names.every(Boolean)
           ? {
               copy: {
                 kind: "ready" as const,
