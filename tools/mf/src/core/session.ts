@@ -1,6 +1,7 @@
 /**
- * Authenticated session against this worktree's running dev stack: origin discovery,
- * dev-login cookie (memory only), and bounded requests to the app's own API.
+ * Session against a running stack: origin discovery, the optional `MF_COOKIE`, and
+ * bounded requests to the app's own API. A local stack with `DEV_AUTH_BYPASS=1` needs
+ * no cookie.
  */
 import { execFileSync } from "node:child_process";
 import http, { type IncomingHttpHeaders } from "node:http";
@@ -176,7 +177,7 @@ export function httpError(method: string, requestPath: string, response: RawResp
   const summary = `${method} ${requestPath} → HTTP ${response.status}: ${message}`;
   if (response.status === 401) {
     return new CliError("unavailable", summary, {
-      hint: "Dev login did not authenticate. Check WORKOS_DEV_AUTOLOGIN and the dev login credentials.",
+      hint: "Not authenticated. Local stack: set DEV_AUTH_BYPASS=1 in .env and restart `pnpm dev`. Staging: set MF_COOKIE to a signed-in session cookie.",
       details,
       httpStatus: response.status,
     });
@@ -218,39 +219,6 @@ export function createSession(input: {
   return { serverUrl: input.serverUrl, cookie: input.cookie, ca: input.ca, request };
 }
 
-function sessionCookie(headers: IncomingHttpHeaders): string {
-  const cookie = (headers["set-cookie"] ?? [])
-    .map((entry) => entry.split(";", 1)[0])
-    .filter(Boolean)
-    .join("; ");
-  if (!cookie) {
-    throw new CliError("unavailable", "Dev login did not return a session cookie", {
-      hint: "Set WORKOS_DEV_AUTOLOGIN=1 with WORKOS_DEV_LOGIN_EMAIL/PASSWORD, then restart `pnpm dev`.",
-    });
-  }
-  return cookie;
-}
-
-async function devLogin(appUrl: string, ca: string[] | undefined): Promise<string> {
-  const response = await rawRequest({
-    url: new URL("/api/auth/dev-login", appUrl).toString(),
-    method: "GET",
-    ca,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
-    maxResponseBytes: 64 * 1024,
-  });
-  if (response.status !== 302) {
-    throw new CliError(
-      "unavailable",
-      `Dev login failed with HTTP ${response.status}: ${response.body.slice(0, 200)}`,
-      {
-        hint: "Dev login needs WORKOS_DEV_AUTOLOGIN=1, a non-production app, and WORKOS_DEV_LOGIN_EMAIL/PASSWORD for a WorkOS password user whose email domain no SSO connection claims (see the WorkOS error above).",
-      },
-    );
-  }
-  return sessionCookie(response.headers);
-}
-
 function resolvePortlessOrigins(repoRoot: string): { app: string; server: string } {
   let output: string;
   try {
@@ -273,21 +241,14 @@ function resolvePortlessOrigins(repoRoot: string): { app: string; server: string
 }
 
 /**
- * MF_SERVER_URL (+ MF_COOKIE or MF_APP_URL) targets an explicit stack; otherwise the
- * current worktree's Portless routes are discovered and dev-login mints the cookie.
+ * MF_SERVER_URL targets an explicit stack; otherwise the current worktree's Portless
+ * server route is discovered. MF_COOKIE is sent when set.
  */
 export async function openSession(input: {
   repoRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<Session> {
-  const ca = portlessCa();
-  const explicitServer = input.env.MF_SERVER_URL?.trim();
-  if (explicitServer) {
-    const cookie =
-      input.env.MF_COOKIE?.trim() ??
-      (input.env.MF_APP_URL?.trim() ? await devLogin(input.env.MF_APP_URL.trim(), ca) : "");
-    return createSession({ serverUrl: explicitServer, cookie, ca });
-  }
-  const origins = resolvePortlessOrigins(input.repoRoot);
-  return createSession({ serverUrl: origins.server, cookie: await devLogin(origins.app, ca), ca });
+  const serverUrl =
+    input.env.MF_SERVER_URL?.trim() || resolvePortlessOrigins(input.repoRoot).server;
+  return createSession({ serverUrl, cookie: input.env.MF_COOKIE?.trim() ?? "", ca: portlessCa() });
 }

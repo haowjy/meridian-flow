@@ -257,7 +257,7 @@ async function main(): Promise<void> {
     env: {
       ...process.env,
       // Only the built client must be production-mode. The local server keeps
-      // dev login and debug routes available against the worktree server.
+      // the dev auth bypass and debug routes available against the worktree server.
       NODE_ENV: "development",
       HOST: "127.0.0.1",
       PORT: String(appPort),

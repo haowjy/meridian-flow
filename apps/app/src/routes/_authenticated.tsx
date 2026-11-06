@@ -1,7 +1,6 @@
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, Suspense, useCallback, useEffect } from "react";
 import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
@@ -36,7 +35,6 @@ import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { parseProjectAddress } from "@/features/project/routing/project-address";
 import { originalBrowserSearch } from "@/router-search";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
-import { isDevAutologinEnabled } from "@/server/dev-auth";
 import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
 
 // Composition-root prerequisite: product descendants create both client
@@ -60,22 +58,6 @@ const ReactQueryDevtools = import.meta.env.DEV
     )
   : null;
 
-/**
- * Decide where to send an UNAUTHENTICATED request, server-side.
- * Returns the `/dev-login` intermediary screen when dev-autologin is enabled (it
- * runs the dev-login script on a known, addressable path); otherwise WorkOS sign-in.
- */
-const resolveUnauthRedirect = createServerFn({ method: "GET" })
-  .inputValidator((data: { returnPathname: string }) => data)
-  .handler(async ({ data }): Promise<{ to: string } | { href: string }> => {
-    if (isDevAutologinEnabled()) {
-      return { to: "/dev-login" };
-    }
-
-    const href = await getSignInUrl({ data: { returnPathname: data.returnPathname } });
-    return { href };
-  });
-
 export const Route = createFileRoute("/_authenticated")({
   ...PERSISTENT_SHELL_OPTIONS,
   // `?settings=` is layout-owned so the settings overlay is URL-addressable from
@@ -88,8 +70,8 @@ export const Route = createFileRoute("/_authenticated")({
     const { user: workosUser } = await getAuth();
     if (!workosUser) {
       const path = `${location.pathname}${originalBrowserSearch(location.search)}`;
-      const target = await resolveUnauthRedirect({ data: { returnPathname: path } });
-      throw redirect(target);
+      const href = await getSignInUrl({ data: { returnPathname: path } });
+      throw redirect({ href });
     }
 
     const now = Date.now();

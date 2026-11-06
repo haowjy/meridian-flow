@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { devAuthIdentity } from "@meridian/contracts/dev-auth";
 import { EventType } from "@meridian/contracts/protocol";
 import {
   createDb,
@@ -21,13 +22,31 @@ import {
   createDrizzleEventJournalWriter,
   createThreadEventHub,
 } from "../server/domains/threads/index.js";
-import {
-  cookieAuthHeaders,
-  mintWorkOsDevSession,
-  resolveDevInternalUserId,
-} from "./workos-dev-session.js";
 
 applyDevEnvToProcess();
+
+/** Resolve internal `public.users.id` for the dev auth user (post-bootstrap). */
+async function resolveDevInternalUserId(
+  databaseUrl: string,
+  externalUserId: string,
+): Promise<string> {
+  const { default: postgres } = await import("postgres");
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id::text AS id FROM public.users WHERE external_id = ${externalUserId} LIMIT 1
+    `;
+    const id = rows[0]?.id;
+    if (!id) {
+      throw new Error(
+        `No public.users row for external_id=${externalUserId}; run pnpm bootstrap first`,
+      );
+    }
+    return id;
+  } finally {
+    await sql.end();
+  }
+}
 
 const serverUrl = process.env.SMOKE_SERVER_URL;
 const databaseUrl = process.env.DATABASE_URL;
@@ -96,9 +115,8 @@ function waitForEventTypes(ws: WebSocket, expected: Set<string>): Promise<string
   });
 }
 
-const session = await mintWorkOsDevSession();
-const authHeaders = cookieAuthHeaders(session);
-const userId = await resolveDevInternalUserId(databaseUrl, session.externalUserId);
+// The server runs with DEV_AUTH_BYPASS=1, so requests carry no credentials.
+const userId = await resolveDevInternalUserId(databaseUrl, devAuthIdentity(process.env).externalId);
 const db = createDb(databaseUrl);
 const projectId = randomUUID();
 const workId = randomUUID();
@@ -151,9 +169,7 @@ await db.insert(creditTransactions).values({
   metadata: { source: "smoke" },
 });
 
-const ws = new WebSocket(wsUrlFor(serverUrl), {
-  headers: authHeaders,
-});
+const ws = new WebSocket(wsUrlFor(serverUrl));
 await waitForOpen(ws);
 
 const eventsPromise = waitForEventTypes(
@@ -172,7 +188,7 @@ await subscribedPromise;
 
 const response = await fetch(new URL(`/api/threads/${threadId}/messages`, serverUrl), {
   method: "POST",
-  headers: { ...authHeaders, "content-type": "application/json" },
+  headers: { "content-type": "application/json" },
   body: JSON.stringify({ text: "hello phase three" }),
 });
 if (response.status !== 202)
@@ -181,9 +197,7 @@ const postBody = (await response.json()) as { userTurnId: string; assistantTurnI
 const seenEvents = await eventsPromise;
 ws.close();
 
-const catchupWs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: authHeaders,
-});
+const catchupWs = new WebSocket(wsUrlFor(serverUrl));
 await waitForOpen(catchupWs);
 const catchupPromise = waitForSubscribed(catchupWs);
 catchupWs.send(JSON.stringify({ type: "subscribe", requestId: "r1", threadId, lastSeq: "0" }));
@@ -195,9 +209,7 @@ const contentSeq = catchupFrame.catchup?.find(
 )?.seq;
 if (!contentSeq) throw new Error("catchup missing content seq");
 
-const resumeWs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: authHeaders,
-});
+const resumeWs = new WebSocket(wsUrlFor(serverUrl));
 await waitForOpen(resumeWs);
 const resumePromise = waitForSubscribed(resumeWs);
 resumeWs.send(
