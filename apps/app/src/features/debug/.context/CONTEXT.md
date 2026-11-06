@@ -10,7 +10,7 @@ that already owns it, and add a signal to the pill only when no inspector owns i
 | Next-turn system prompt, tools, and gateway parameters | Alt+click the composer |
 | Gateway lifecycle and canonical model requests | **LLM Calls** pop-out |
 | Client and server event streams | **Streams** pop-out |
-| Query cache and thread lifecycle | TanStack Query Devtools |
+| Thread lifecycle | `./mf thread view` |
 | Zustand stores | Redux DevTools |
 | Raw WebSocket frames | Browser Network tools |
 
