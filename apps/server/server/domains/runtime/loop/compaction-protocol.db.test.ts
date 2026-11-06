@@ -956,6 +956,7 @@ else
             model: "gpt-5.6-luna",
             inputTokens: 100_000,
             outputTokens: 20,
+            usage: { inputTokens: 100_000, outputTokens: 20 },
             requestMessageCount: 7,
             priceSource: "unknown",
             predictedCacheState: "cold",
@@ -985,6 +986,42 @@ else
       const terminal = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
       expect(terminal).toMatchObject({ role: "assistant", status: "error" });
       expect(terminal?.error).toBe("This response failed.");
+    });
+
+    it("settles a summary's long cache writes at the long rate", async () => {
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
+        kind: "complete",
+        text: "Earlier facts.",
+        model: "claude-opus-5-5",
+        modelResponses: [
+          {
+            id: crypto.randomUUID(),
+            turnId,
+            sequence: 0,
+            provider: "anthropic",
+            model: "claude-opus-5-5",
+            usage: {
+              inputTokens: 1_000_000,
+              outputTokens: 0,
+              cacheWriteTokens: 1_000_000,
+              cacheWriteLongTokens: 1_000_000,
+            },
+            requestMessageCount: 7,
+            priceSource: "unknown",
+            predictedCacheState: "cold",
+            predictedCacheReason: "summary_transcript",
+          },
+        ],
+      }));
+      const rig = await fixture({ summarizer });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      await run.execute();
+      const [row] = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(row?.costUsd).toBe("8.000000");
     });
 
     it.each([
@@ -1301,6 +1338,7 @@ else
               model: "gpt-5.6-luna",
               inputTokens: 100,
               outputTokens: 10,
+              usage: { inputTokens: 100, outputTokens: 10 },
               requestMessageCount: 2,
               predictedCacheState: "cold",
               predictedCacheReason: "summary_transcript",
@@ -1486,6 +1524,7 @@ else
               model: "gpt-5.6-luna",
               inputTokens: 100,
               outputTokens: 10,
+              usage: { inputTokens: 100, outputTokens: 10 },
               requestMessageCount: 7,
               priceSource: "unknown",
               predictedCacheState: "cold",
@@ -1722,6 +1761,7 @@ else
             model: "gpt-5.6-luna",
             inputTokens: 100,
             outputTokens: 10,
+            usage: { inputTokens: 100, outputTokens: 10 },
             requestMessageCount: 7,
             predictedCacheState: "cold",
             predictedCacheReason: "summary_transcript",
@@ -1776,6 +1816,7 @@ else
             model: "gpt-5.6-luna",
             inputTokens: 100,
             outputTokens: 10,
+            usage: { inputTokens: 100, outputTokens: 10 },
             requestMessageCount: 7,
             predictedCacheState: "cold",
             predictedCacheReason: "summary_transcript",
@@ -1856,6 +1897,7 @@ else
               model: "gpt-5.6-luna",
               inputTokens: 100,
               outputTokens: 10,
+              usage: { inputTokens: 100, outputTokens: 10 },
               requestMessageCount: 7,
               priceSource: "unknown",
               predictedCacheState: "cold",
@@ -2041,6 +2083,7 @@ else
             model: "gpt-5.6-luna",
             inputTokens: 100,
             outputTokens: 10,
+            usage: { inputTokens: 100, outputTokens: 10 },
             requestMessageCount: 7,
             priceSource: "unknown" as const,
             predictedCacheState: "cold" as const,

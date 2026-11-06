@@ -207,6 +207,7 @@ export function createConversationSummarizer(
             predictedCacheReason: prediction.reason,
             requestStartedAt: new Date().toISOString(),
             finishReason: "error",
+            usage,
           };
           // Reserve the row before entering the gateway. Even a throwing/aborted stream is an attempt.
           modelResponses.push(row);
@@ -265,6 +266,7 @@ export function createConversationSummarizer(
             );
           }
           Object.assign(row, {
+            usage,
             inputTokens: usage.inputTokens,
             outputTokens: usage.outputTokens,
             reasoningTokens: usage.reasoningTokens ?? null,

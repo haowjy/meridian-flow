@@ -456,6 +456,7 @@ else
         model: "gpt-5.6-luna",
         inputTokens: 1_000,
         outputTokens: 10,
+        usage: { inputTokens: 1_000, outputTokens: 10 },
         requestMessageCount: 1,
         predictedCacheState: "cold" as const,
         predictedCacheReason: "summary_transcript" as const,
