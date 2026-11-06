@@ -1,6 +1,6 @@
 /**
  * Shared public.users fixture identity for DB-backed tests.
- * Never overlaps the dev-login user (WORKOS_DEV_LOGIN_EMAIL / test@meridian.dev).
+ * Never overlaps the dev auth bypass user (`<DEV_AUTH_USER_ID>@example.com`).
  */
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
@@ -75,7 +75,7 @@ export function assertLocalDevPostgresOrExplicitAllow(databaseUrl: string | unde
   }
 }
 
-/** Seed or refresh a dedicated fixture user; never reads WORKOS_DEV_LOGIN_EMAIL. */
+/** Seed or refresh a dedicated fixture user; never uses the dev auth bypass email. */
 export async function resolveDbTestFixtureUserId(
   databaseUrl: string,
   options: { fixtureUserId: string; suite: string },

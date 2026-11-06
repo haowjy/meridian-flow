@@ -1,7 +1,7 @@
 # Editor schema notices
 
 Start the owned worktree with `pnpm dev` and discover its HTTPS URL with
-`pnpm portless:list`. Sign in through `/api/auth/dev-login` and open a seeded
+`pnpm portless:list`. The stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in. Open a seeded
 manuscript in the Editor.
 
 A normal document does not produce schema notices. For a visual probe, supply

@@ -107,8 +107,8 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
 
    Run the same `select current_database(), host(inet_server_addr()), inet_server_port()`
    with `psql "$db"`. PASS: it equals the tool's `db-identity` line.
-2. Sign in on `https://p6b.app.meridian.localhost` (dev login) and on the
-   stack's own app URL, each in its own named `agent-browser` session. Open the
+2. Sign in on `https://p6b.app.meridian.localhost` (that checkout's `.env` also needs
+   `DEV_AUTH_BYPASS=1`) and on the stack's own app URL, each in its own named `agent-browser` session. Open the
    same draft in both. Each tab's `/ws/yjs` reaches only its own server: with
    the second server's process stopped (`kill -STOP`), its tab's upgrade hangs
    while the other tab's succeeds.

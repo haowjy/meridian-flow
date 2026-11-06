@@ -1,9 +1,3 @@
-/**
- * /logout route — clears the WorkOS session via `signOut()` in its loader.
- * `signOut()` answers with a redirect to api.workos.com, which a client-side
- * navigation would `fetch` and fail on CORS: reach this route with a full
- * document navigation (`<a href="/logout">`), never `<Link>`.
- */
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { signOut } from "@workos/authkit-tanstack-react-start";

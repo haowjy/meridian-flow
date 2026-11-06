@@ -2,7 +2,7 @@
 
 Use an owned worktree, database and **named agent-browser session** (never the
 shared default browser). Start `MODEL_PROVIDER=mock pnpm dev`, discover HTTPS
-URLs with `pnpm portless:list`, and sign in through dev-login. Use `./mf` for
+URLs with `pnpm portless:list`, (the stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in). Use `./mf` for
 fixtures and server readback. Keep screenshots, DOM, request traces and readback
 JSON in the active work directory. These are manual runtime probes, not CI tests.
 

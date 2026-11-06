@@ -147,7 +147,6 @@ PROBE_DIR="$(mktemp -d "/tmp/$CHECK_ID.XXXXXX")"
 T="$(jq -r .threadId "$PROBE_DIR/chat.json")"; P="$(jq -r .projectId "$PROBE_DIR/chat.json")"
 ./mf thread send "$T" seed --mock '[{"text":"Earlier completed reply."}]' --json
 ./mf thread tail "$T" --timeout 5m --json > "$PROBE_DIR/tail.jsonl" & TAIL_PID=$!
-agent-browser --session "$CHECK_ID" open "$MF_APP_URL/api/auth/dev-login"
 agent-browser --session "$CHECK_ID" open "$MF_APP_URL/p/$P/chats/$T"
 agent-browser --session "$CHECK_ID" wait --text "Earlier completed reply."
 agent-browser --session "$CHECK_ID" set offline on

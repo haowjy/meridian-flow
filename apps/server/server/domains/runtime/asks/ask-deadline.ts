@@ -3,9 +3,11 @@
  * the writer is interacting (`ask.presence`).
  *
  * The idle clock restarts on every report of activity on the page; the hard limit runs from the
- * moment the ask opened and never moves. Both clocks end a buffer before a default cache lifetime
- * so the next model call can still reuse the cache; a chat whose model caches for less can miss
- * it during the wait.
+ * moment the ask opened and never moves. Only primary chats ask, so the hard limit is the clock
+ * that protects the cache: it ends a buffer before the primary default lifetime, and a chat whose
+ * model caches for less can miss its cache during the wait. The idle clock protects no cache. It
+ * sets how long a question waits on a writer who has gone quiet, and takes its length from the
+ * subagent default.
  */
 
 import {

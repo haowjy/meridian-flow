@@ -750,6 +750,20 @@
       "when": 1793301254660,
       "tag": "0112_ask_multi_question_rows",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1793987641106,
+      "tag": "0113_drop_dead_price_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1793987701106,
+      "tag": "0114_drop_dead_price_fields_validate",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 /**
  * The streaming envelope every provider adapter shares: `start`, open the SDK stream,
  * map each frame to canonical events, then `end`. Adapters pass closures over their own
- * accumulator, so the driver knows nothing of provider wire shapes.
+ * accumulator, so this envelope knows nothing of provider wire shapes.
  *
  * After an abort, `end` carries whatever accumulated, possibly nothing, whether the SDK
  * swallowed the abort or threw it. That `end` is not success: `streamWithRetry` owns what

@@ -1,5 +1,5 @@
 import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
-import type { DevMode } from "./dev-mode";
+import { type DevMode, isTruthy } from "./dev-mode";
 import type { DevSessionMetadata } from "./dev-session-state";
 import {
   resolveSharedDevServicePorts,
@@ -115,6 +115,12 @@ export function createDevSessionCommand({
   worktreePrefix?: string;
   force?: boolean;
 }): DevSessionCommand {
+  const lan = isTruthy(env.PORTLESS_LAN);
+  if ((mode === "funnel" || lan) && env.DEV_AUTH_BYPASS === "1") {
+    throw new Error(
+      "DEV_AUTH_BYPASS=1 signs every request in as the dev user; --funnel and PORTLESS_LAN publish the stack beyond this machine. Unset DEV_AUTH_BYPASS, drop --funnel, or unset PORTLESS_LAN.",
+    );
+  }
   const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix);
   const portsByService = sharedPortsByService(sharedPorts);
   const commands = DEV_SERVICES.filter(

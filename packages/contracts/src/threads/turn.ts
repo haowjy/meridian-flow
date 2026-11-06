@@ -28,12 +28,7 @@ export const finishReasonSchema = z.enum([
   "stop_sequence",
   "error",
 ]);
-export const priceSourceSchema = z.enum([
-  "computed",
-  "provider_reported",
-  "configured_rate",
-  "unknown",
-]);
+export const priceSourceSchema = z.enum(["computed", "unknown"]);
 
 export const turnDeliverySchema = z.object({ byTurnId: z.string().nullable() });
 export type TurnDelivery = z.infer<typeof turnDeliverySchema>;
@@ -63,7 +58,6 @@ export const modelResponseSchema = z.object({
   sequence: z.number(),
   provider: z.string(),
   model: z.string(),
-  providerRequestId: z.string().nullable().optional(),
   inputTokens: z.number(),
   outputTokens: z.number(),
   reasoningTokens: z.number().nullable().optional(),

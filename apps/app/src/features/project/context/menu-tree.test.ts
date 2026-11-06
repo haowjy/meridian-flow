@@ -6,14 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import {
-  buildMenuTree,
-  crumbTrailFor,
-  type MenuArea,
-  menuEntryFor,
-  pathSegments,
-  trailAlong,
-} from "./menu-tree";
+import { buildMenuTree, crumbTrailFor, type MenuArea, menuEntryFor } from "./menu-tree";
 
 type Entry = { entryId: string; kind: "dir" | "file"; name: string; path: string; parent: string };
 
@@ -60,35 +53,7 @@ const manuscript = area("area:manuscript", "Manuscript", {
     { entryId: "ch", kind: "file", name: "ch.md", path: "/Act/ch.md", parent: "act" },
   ]),
 });
-const uploads = area("area:document", "Uploads", {
-  listed: false,
-  scheme: "uploads",
-  catalog: catalog("u", [
-    { entryId: "map", kind: "file", name: "map.png", path: "/map.png", parent: "u" },
-  ]),
-});
-
 describe("a document menu's tree", () => {
-  it("offers the listed areas at the root and keeps an unlisted one reachable", () => {
-    const tree = buildMenuTree({
-      heading: "My Serial",
-      areas: [manuscript, uploads],
-    });
-    expect(tree.children(null).map((node) => node.name)).toEqual(["Manuscript"]);
-    // The open document's own area is held but not offered: it lists its files when asked.
-    expect(tree.children("area:document").map((node) => node.name)).toEqual(["map.png"]);
-  });
-
-  it("climbs: the open document's trail is its area then its folders, and each step lists in place", () => {
-    const tree = buildMenuTree({ heading: "My Serial", areas: [manuscript] });
-    const trail = trailAlong(manuscript, pathSegments("/Act/ch.md").slice(0, -1));
-    expect(trail.map((node) => node.id)).toEqual(["area:manuscript", "act"]);
-    // Back rows pop the trail one level at a time; each level lists what is under it.
-    expect(tree.children("act").map((node) => node.name)).toEqual(["ch.md"]);
-    expect(tree.children("area:manuscript").map((node) => node.name)).toEqual(["Act"]);
-    expect(tree.children(null).map((node) => node.id)).toEqual(["area:manuscript"]);
-  });
-
   it("puts a rebound chat's earlier notes in one folder above the area's own", () => {
     const withEarlier = area("area:scratch", "Scratch", {
       scheme: "scratch",

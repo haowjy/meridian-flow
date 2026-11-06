@@ -230,6 +230,77 @@ describe("writer frames racing rewrites (postgres)", () => {
     expect(dirty).toHaveLength(3);
   });
 
+  it("keeps model and writer authorship on their own durable draft receipts", async () => {
+    const draftId = await draftWithChange();
+    const writer = await writerFrame(draftId, appendParagraph("Writer first."));
+    try {
+      await expect(writer.send()).resolves.toEqual({ admitted: true });
+    } finally {
+      writer.destroy();
+    }
+
+    const journals = await db
+      .select()
+      .from(schema.draftWriteJournal)
+      .where(eq(schema.draftWriteJournal.draftId, draftId))
+      .orderBy(schema.draftWriteJournal.id);
+    expect(journals).toHaveLength(2);
+    const [modelRow, writerRow] = journals;
+    if (!modelRow || !writerRow) throw new Error("expected model and writer journal rows");
+    expect(modelRow).toMatchObject({
+      source: "agent",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      actorUserId: null,
+      toolCallId: "draft",
+    });
+    expect(writerRow).toMatchObject({
+      source: "writer",
+      threadId: null,
+      turnId: null,
+      actorUserId: USER_ID,
+      toolCallId: null,
+    });
+
+    const edits = await db
+      .select({
+        actor: schema.documentEdits.actor,
+        actorUserId: schema.documentEdits.actorUserId,
+        threadId: schema.documentEdits.threadId,
+        turnId: schema.documentEdits.turnId,
+        responseId: schema.documentEdits.responseId,
+        origin: schema.documentEditParts.origin,
+      })
+      .from(schema.documentEditParts)
+      .innerJoin(
+        schema.documentEdits,
+        eq(schema.documentEditParts.editId, schema.documentEdits.id),
+      );
+    const editByRowId = new Map(
+      edits.map((edit) => [(edit.origin as { kind: string; rowId?: number }).rowId, edit]),
+    );
+    expect(editByRowId.get(modelRow.id)).toEqual(
+      expect.objectContaining({
+        actor: "agent",
+        actorUserId: null,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: fixture.responseId,
+        origin: { kind: "pending", draftId, rowId: modelRow.id },
+      }),
+    );
+    expect(editByRowId.get(writerRow.id)).toEqual(
+      expect.objectContaining({
+        actor: "human",
+        actorUserId: USER_ID,
+        threadId: null,
+        turnId: null,
+        responseId: null,
+        origin: { kind: "pending", draftId, rowId: writerRow.id },
+      }),
+    );
+  });
+
   it.each([
     "pull",
     "frame",
