@@ -3,6 +3,7 @@
  * test hook controller the crash and race probes arm) and runs config validation at
  * boot, logging warnings through the process EventSink.
  */
+import { isMainThread } from "node:worker_threads";
 import { emitEvent, unknownToEventPayload } from "../domains/observability";
 import { getApp } from "../lib/app";
 import { validateAuthConfiguration } from "../lib/auth";
@@ -61,18 +62,26 @@ async function boot() {
 /**
  * Nitro calls plugins without awaiting them, and the crash policy logs and
  * survives unhandled rejections, so an async plugin's failure would leave a
- * misconfigured server listening. A boot failure must end the process.
+ * misconfigured server listening. A boot failure must end a built server's process.
+ * In `nitro dev` the plugin runs in a worker thread that Nitro restarts without
+ * limit when it exits, so there the worker stays up and the per-request auth rules
+ * still refuse.
  */
 export default function startupPlugin() {
-  boot().catch((error: unknown) => {
-    // The sink may not flush before the exit below; stderr always does.
-    console.error("Server startup failed:", error);
-    emitEvent(eventSink, {
-      level: "error",
-      source: "plugins.startup",
-      name: "startup.failed",
-      payload: unknownToEventPayload(error),
-    });
-    process.exit(1);
+  boot().catch(async (error: unknown) => {
+    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    process.stderr.write(`Server startup failed: ${detail}\n`);
+    try {
+      emitEvent(eventSink, {
+        level: "error",
+        source: "plugins.startup",
+        name: "startup.failed",
+        payload: unknownToEventPayload(error),
+      });
+      await eventSink.flush();
+    } catch {
+      // A throwing sink must not skip the exit; stderr above already has the error.
+    }
+    if (isMainThread) process.exit(1);
   });
 }
