@@ -12,17 +12,21 @@ prefix.
 
 ## Port and attempt policy
 
-`Gateway.stream()` yields canonical `StreamEvent`s; `generate()` and `listModels()`
-complete the port; the orchestrator persists a cancelled call's result when
-`shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable usage or
-`meteringStatus: "missing_usage"` (`attempt-stream.ts` stamps a stopped call that got no provider
-usage, including one stopped before any output: it ends at once with an empty result rather than
-waiting on the SDK, and costs zero). A stop before an attempt starts, including one during retry backoff, made no call and ends the
-stream with no events and no response. A stop with the SDK hung ends the same way as one before
-output: at once, or at the 5s drain deadline once output has arrived. Every adapter's `stream()` is the shared envelope in
-`adapters/provider-stream.ts` around its own request map and collector; after an abort it yields `end`
-with whatever accumulated, possibly nothing, and `attempt-stream.ts` decides what a stop or timeout
-means.
+`Gateway.stream()` yields canonical `StreamEvent`s and `listModels()` completes the port
+(`consumeStream` reduces a stream to one result); the orchestrator persists a cancelled call's
+result when `shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable
+usage or `meteringStatus: "missing_usage"`. A stop ends the attempt stream with exactly one `end`
+on every path (`attempt-stream.ts`): a timeout stays an error, but an adapter error, an
+adapter that ends without a terminal event, or a rejection after the caller's stop all become the
+synthetic empty `end`. The stop stamps that `end` (and any real `end` that arrives after the stop)
+with `finishReason: null`, since the adapter's reason says nothing true, and with
+`missing_usage` when no provider usage arrived. A stop before output ends at once rather than
+waiting on a hung SDK. A stop once output has arrived waits for the provider's own `end`, or
+at the 5s drain deadline gives up and keeps a row with no text: the text the writer saw
+streaming is lost (see `FUTURE`). A stop before an attempt starts, including one during retry
+backoff, made no call and ends the stream with no events and no response. Every adapter's
+`stream()` is the shared envelope in `adapters/provider-stream.ts` around its own request map and
+collector; after an abort it yields `end` with whatever accumulated, possibly nothing.
 Where the routed model is known, `attempt-stream.ts` calls `resolveCall()`
 (`domain/resolve-call.ts`) once and hands the adapter a `ResolvedCall`:
 `{ cacheTtlSeconds, longCacheWrites, reasoning: "default" | "off" | { effort } }`. Adapters

@@ -179,12 +179,15 @@ export function resolveAttemptTimeouts(
   };
 }
 
-/** What a call stopped before any output left behind: nothing generated, usage unknown. */
+/**
+ * What a stop leaves when the provider's own end cannot be waited for: nothing generated and usage
+ * unknown. Text streamed before a stop at the drain deadline is not in it.
+ */
 function emptyResult(model: ModelInfo): GenerateResult {
   return {
     content: [],
     toolCalls: [],
-    finishReason: "end_turn",
+    finishReason: null,
     usage: { inputTokens: 0, outputTokens: 0 },
     model: model.id,
     provider: model.provider,
@@ -278,7 +281,7 @@ export async function* streamWithRetry(
     // One subscription and one absolute cancel deadline for the entire attempt.
     let cancelTimer: ReturnType<typeof setTimeout> | undefined;
     // A stop ends the stream once: with the error for a timeout, otherwise with a synthetic end.
-    type Stop = { error?: unknown };
+    type Stop = { kind: "stop"; error?: unknown };
     let stop!: (result: Stop) => void;
     const stopped = new Promise<Stop>((resolve) => {
       stop = resolve;
@@ -286,29 +289,28 @@ export async function* streamWithRetry(
     const onAbort = () => {
       const timeout = getModelAttemptTimeout(attemptSignal.signal);
       if (timeout) {
-        stop({ error: timeout });
+        stop({ kind: "stop", error: timeout });
       } else if (!emittedOutput) {
         // End at once rather than wait on an SDK that may hang: the call was made, so the
         // empty result is stamped missing_usage and settled like any cancelled call.
-        stop({});
+        stop({ kind: "stop" });
       } else {
-        cancelTimer = setTimeout(() => stop({}), CANCEL_DRAIN_TIMEOUT_MS);
+        cancelTimer = setTimeout(() => stop({ kind: "stop" }), CANCEL_DRAIN_TIMEOUT_MS);
       }
     };
     attemptSignal.signal.addEventListener("abort", onAbort, { once: true });
-    if (attemptSignal.signal.aborted) onAbort();
     const stoppedEnd = (): ArrivingEvent => ({
       event: { type: "end", result: emptyResult(model) },
       arrivedAt: now(),
       estimatedBytes: 0,
       arrivedBeforeBackpressure: !backpressured,
     });
+    // The caller's stop, as opposed to this attempt's own timeout, which stays an error.
+    const stoppedByCaller = () =>
+      request.signal?.aborted === true && !modelAttemptTimeoutEvent(attemptSignal.signal);
     const read = async (): Promise<IteratorResult<ArrivingEvent>> => {
-      const next = await Promise.race([
-        stopped.then(({ error }) => ({ kind: "stop" as const, error })),
-        buffer.next().then((result) => ({ kind: "next" as const, result })),
-      ]);
-      if (next.kind === "next") return next.result;
+      const next = await Promise.race([stopped, buffer.next()]);
+      if (!("kind" in next)) return next;
       if (next.error !== undefined) throw next.error;
       return { done: false, value: stoppedEnd() };
     };
@@ -316,14 +318,14 @@ export async function* streamWithRetry(
       if (arrival.event.type !== "end" && arrival.event.type !== "error") return arrival.event;
       const terminal = arrival.event.result;
       if (!terminal) return arrival.event;
-      // A cancel can land before the provider's usage arrives (OpenAI-compatible sends it in the
-      // final chunk). Mark it here so every adapter's partial result is settled and persisted.
-      const result =
-        arrival.event.type === "end" &&
-        request.signal?.aborted &&
-        !hasBillableTokenUsage(terminal.usage)
-          ? withMissingUsageMetering(terminal)
-          : terminal;
+      // A stopped call's finish reason is the adapter's default, not what happened. A stop can
+      // also land before the provider's usage arrives (OpenAI-compatible sends it in the final
+      // chunk). Mark both here so every adapter's partial result is settled and persisted.
+      let result = terminal;
+      if (arrival.event.type === "end" && request.signal?.aborted) {
+        result = { ...terminal, finishReason: null };
+        if (!hasBillableTokenUsage(terminal.usage)) result = withMissingUsageMetering(result);
+      }
       return {
         ...arrival.event,
         result: {
@@ -348,10 +350,18 @@ export async function* streamWithRetry(
     try {
       while (true) {
         const next = await read();
-        if (next.done) break;
+        if (next.done) {
+          // The adapter ended without a terminal event; after a stop, the stop is that event.
+          if (stoppedByCaller()) yield timeTerminalEvent(stoppedEnd());
+          break;
+        }
         if (!attemptSignal.signal.aborted) attemptSignal.notifyProgress();
         const { event } = next.value;
         if (event.type === "error") {
+          if (stoppedByCaller()) {
+            yield timeTerminalEvent(stoppedEnd());
+            return;
+          }
           // If the attempt was killed by a timer, surface that timeout event
           // (retryable) instead of whatever the SDK emitted.
           sawError = modelAttemptTimeoutEvent(attemptSignal.signal) ?? event;
@@ -372,7 +382,7 @@ export async function* streamWithRetry(
       const timeoutEvent = modelAttemptTimeoutEvent(attemptSignal.signal);
       if (timeoutEvent) {
         sawError = timeoutEvent;
-      } else if (request.signal?.aborted) {
+      } else if (stoppedByCaller()) {
         // The adapter rejected because of the stop; the stop still ends the stream with its end.
         yield timeTerminalEvent(stoppedEnd());
         return;

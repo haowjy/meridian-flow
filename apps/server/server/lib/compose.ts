@@ -1395,18 +1395,18 @@ export function createInMemoryAppServices(): AppServices {
   return {
     gateway: {
       async *stream(request) {
-        const result = await this.generate(request);
-        yield { type: "start" as const, model: result.model, provider: result.provider };
-        yield { type: "end" as const, result };
-      },
-      async generate(request) {
-        return {
-          content: [],
-          toolCalls: [],
-          finishReason: "end_turn" as const,
-          usage: { inputTokens: 0, outputTokens: 0 },
-          model: request.model ?? "in-memory",
-          provider: "in-memory",
+        const model = request.model ?? "in-memory";
+        yield { type: "start" as const, model, provider: "in-memory" };
+        yield {
+          type: "end" as const,
+          result: {
+            content: [],
+            toolCalls: [],
+            finishReason: "end_turn" as const,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            model,
+            provider: "in-memory",
+          },
         };
       },
       listModels: () => [],

@@ -21,7 +21,7 @@ export class GatewayStreamError extends Error {
 }
 
 /**
- * Collect a canonical stream into a GenerateResult (for generate()).
+ * Collect a canonical stream into a GenerateResult.
  *
  * Iterates all events, ignoring intermediate deltas. The "end" event carries
  * the complete GenerateResult. Error events are thrown as GatewayStreamError

@@ -86,10 +86,6 @@ export function createModelAttemptSignal(
   parent: AbortSignal | undefined,
   timeouts: ModelAttemptTimeouts,
 ): ModelAttemptSignal {
-  if (parent?.aborted) {
-    return { signal: parent, notifyProgress: () => {}, cleanup: () => {} };
-  }
-
   const controller = new AbortController();
   let stallTimer: ReturnType<typeof setTimeout> | undefined;
   let ceilingTimer: ReturnType<typeof setTimeout> | undefined;

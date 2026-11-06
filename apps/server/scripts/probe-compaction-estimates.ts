@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
 import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
 import type { GenerateRequest } from "../server/domains/runtime/gateway/index.js";
-import { createGatewayFromEnv } from "../server/domains/runtime/gateway/index.js";
+import { consumeStream, createGatewayFromEnv } from "../server/domains/runtime/gateway/index.js";
 import {
   CJK_CODE_POINT_TOKEN_RATES,
   estimateRequestTokens,
@@ -159,11 +159,13 @@ async function completeToolTranscript(
         }
       : message,
   );
-  const prime = await gateway.generate({
-    ...request,
-    model,
-    messages: transcript,
-  });
+  const prime = await consumeStream(
+    gateway.stream({
+      ...request,
+      model,
+      messages: transcript,
+    }),
+  );
   const call = prime.toolCalls.find(({ name }) => name === TOOL.name);
   if (!call)
     throw new Error(
@@ -334,7 +336,7 @@ for (const [provider, key] of providerKeys) {
     }
     const estimate = estimateRequestTokens({ request, baseline: null, tokenizer: model.tokenizer });
     try {
-      const result = await gateway.generate(request);
+      const result = await consumeStream(gateway.stream(request));
       const reported = result.usage.inputTokens;
       const ratio = reported === 0 ? "n/a" : (estimate / reported).toFixed(3);
       console.log(
@@ -366,8 +368,8 @@ for (const [provider, key] of providerKeys) {
           tokenizer: model.tokenizer,
         });
         const [noImages, noFile] = await Promise.all([
-          gateway.generate(withoutImages),
-          gateway.generate(withoutFile),
+          consumeStream(gateway.stream(withoutImages)),
+          consumeStream(gateway.stream(withoutFile)),
         ]);
         console.log(
           `${provider} | image-heavy (no images) | ${noImages.model} | ${noImagesEstimate} | ${noImages.usage.inputTokens} | ${(noImagesEstimate / noImages.usage.inputTokens).toFixed(3)}`,

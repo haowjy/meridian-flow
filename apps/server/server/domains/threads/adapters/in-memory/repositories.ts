@@ -67,13 +67,13 @@ import { TURN_GRAPH, type TurnGraph } from "../../ports/turn-graph.js";
 import { createInMemoryExecutionReportRepository } from "./execution-report-repository.js";
 import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
-// USD rollups are display-side only; integer millicredits in the billing
-// ledger are the money truth. Keep this local float helper out of billing
-// decisions.
 function hasMeteredUsage(response: { inputTokens: number; outputTokens: number }): boolean {
   return response.inputTokens > 0 || response.outputTokens > 0;
 }
 
+// USD rollups are display-side only; integer millicredits in the billing
+// ledger are the money truth. Keep this local float helper out of billing
+// decisions.
 function addDecimal(a: string, b: string): string {
   return (parseFloat(a) + parseFloat(b)).toFixed(6);
 }
