@@ -14,9 +14,11 @@ import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import {
   type ComponentPropsWithoutRef,
   type ForwardedRef,
+  Fragment,
   type ReactElement,
   type ReactNode,
   useCallback,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -59,6 +61,8 @@ export type DrillAction = {
   icon: LucideIcon;
   onSelect: () => void;
   disabled?: boolean;
+  /** A warning under the label: what the action will also do (a moved row arriving renamed). */
+  note?: string | null;
   /** Selecting the action opens these in place of the tree, with a back row; `onSelect` is unused. */
   choices?: readonly DrillAction[];
 };
@@ -163,25 +167,36 @@ export function DrillInMenuBody({
   const entries = foldersOnly ? children.filter((node) => node.folder) : children;
   const currentActions = actions?.(trail) ?? [];
   const choosing = currentActions.find((action) => action.key === choosingKey && action.choices);
+  const noteId = useId();
   const choose = (key: string | null) => {
     setChoosingKey(key);
     focusFirstRow();
   };
 
   const actionItem = (action: DrillAction) => (
-    <DropdownMenuItem
-      key={action.key}
-      disabled={action.disabled}
-      onSelect={(event) => {
-        event.preventDefault();
-        if (action.choices) choose(action.key);
-        else action.onSelect();
-      }}
-    >
-      <action.icon aria-hidden />
-      <span className="min-w-0 flex-1 truncate">{action.label}</span>
-      {action.choices ? <ChevronRight className="ml-auto" aria-hidden /> : null}
-    </DropdownMenuItem>
+    <Fragment key={action.key}>
+      <DropdownMenuItem
+        disabled={action.disabled}
+        aria-describedby={action.note ? `${noteId}-${action.key}` : undefined}
+        onSelect={(event) => {
+          event.preventDefault();
+          if (action.choices) choose(action.key);
+          else action.onSelect();
+        }}
+      >
+        <action.icon aria-hidden />
+        <span className="min-w-0 flex-1 truncate">{action.label}</span>
+        {action.choices ? <ChevronRight className="ml-auto" aria-hidden /> : null}
+      </DropdownMenuItem>
+      {action.note ? (
+        <p
+          id={`${noteId}-${action.key}`}
+          className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
+        >
+          {action.note}
+        </p>
+      ) : null}
+    </Fragment>
   );
 
   if (choosing?.choices) {

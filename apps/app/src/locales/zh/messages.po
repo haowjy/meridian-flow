@@ -113,8 +113,8 @@ msgstr ""
 
 #. placeholder {0}: renamed.length
 #: src/features/project/context/entry-drag/drop-choice.ts
-#~ msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
-#~ msgstr ""
+msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+msgstr ""
 
 #. placeholder {0}: result.outsideLinks.count
 #: src/features/export/ExportProjectDialog.tsx
@@ -308,8 +308,8 @@ msgstr "{0} 词元/秒"
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
 #: src/features/project/context/entry-drag/drop-choice.ts
-#~ msgid "{0} will be renamed {1}"
-#~ msgstr ""
+msgid "{0} will be renamed {1}"
+msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to archive {work}?"
@@ -560,8 +560,8 @@ msgid "{name} was removed when the reply that created it didn't finish, so this 
 msgstr ""
 
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "{name} will be renamed {as}"
-msgstr ""
+#~ msgid "{name} will be renamed {as}"
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
