@@ -21,7 +21,6 @@ import {
   splitDocumentFile,
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
-import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import { createCopyIdentityMap, remapCopiedBlocks } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
@@ -96,7 +95,6 @@ export async function resolveDocumentAddress(
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
   const { filePath: basePath, fragment } = splitDocumentFile(path);
-  const canonicalPath = documentPathKey(basePath) + (fragment === undefined ? "" : `#${fragment}`);
   if (command === "create" || command === "copy") {
     if (fragment) return writeToolError(command, `${command} does not accept a #fragment in path`);
     const ensureOptions = {
@@ -126,7 +124,7 @@ export async function resolveDocumentAddress(
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
       return writeToolError(command, documentNotFoundMessage(command), "document_not_found", {
-        path: canonicalPath,
+        path: path,
       });
     }
     // A URI naming no Work, no scheme or no live chat addresses no document; the reason says
@@ -139,14 +137,14 @@ export async function resolveDocumentAddress(
         ref.error.slip !== undefined);
     if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
       return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
-        path: canonicalPath,
+        path: path,
       });
     }
     return writeToolError(
       command,
       contextErrorMessage(ref.error),
       unknownAddress ? "document_not_found" : "invalid_write",
-      unknownAddress ? { path: canonicalPath } : {},
+      unknownAddress ? { path: path } : {},
     );
   }
   if (ref.value.kind !== "tracked") {
@@ -160,7 +158,7 @@ export async function resolveDocumentAddress(
     );
   }
   if (!ref.value.documentId) {
-    return writeToolError(command, `Document id missing for ${canonicalPath}`);
+    return writeToolError(command, `Document id missing for ${path}`);
   }
   return {
     documentId: ref.value.documentId,
@@ -580,7 +578,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         try {
           await retractCreatedTrackedDocument({
             port: context.port,
-            path: parsed.path,
+            uri: address.uri,
             documentId: address.documentId,
             cause: "create_failed",
           });
@@ -604,7 +602,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       deps.responseWrites.trackStagedCreate({
         responseId,
         port: context.port,
-        path: parsed.path,
+        uri: address.uri,
         documentId: address.documentId,
       });
     }

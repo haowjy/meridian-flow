@@ -5,6 +5,7 @@ export interface ContextOperationReceiptStore {
   transaction<T>(operationId: string, operation: () => Promise<T>): Promise<T>;
   savepoint<T>(operation: () => Promise<T>): Promise<T>;
   lookup(operationId: string): Promise<ContextOperationReceipt | null>;
-  observationVersion(command: ContextOperationReceipt["command"]): Promise<string>;
+  /** The namespace generation of the authority that owns `address`. */
+  observationVersion(address: string): Promise<string>;
   insert(receipt: ContextOperationReceipt): Promise<void>;
 }

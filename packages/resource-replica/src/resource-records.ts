@@ -56,7 +56,7 @@ export function ownerOf(location: ResourceOwner): ResourceOwner {
     : { workId: location.workId, workHandle: location.workHandle };
 }
 /** What decides whether two owners are the same: the Work, or the lineage. Handles follow. */
-export type ResourceOwnerKey = {
+type ResourceOwnerKey = {
   workId: string | null;
   workHandle?: string | null;
   rootThreadId?: string | null;
@@ -69,6 +69,35 @@ export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): bool
     (left.workHandle ?? null) === (right.workHandle ?? null) &&
     (left.rootThreadId ?? null) === (right.rootThreadId ?? null) &&
     (left.chatId ?? null) === (right.chatId ?? null)
+  );
+}
+/** A parent as a request or a record carries it: a folder by id, or a root by scheme and owner. */
+type ParentLike =
+  | { kind: "folder"; folderId: string; createFolders?: readonly string[] }
+  | {
+      kind: "root";
+      scheme: string;
+      owner: { workId: string | null; rootThreadId?: string | null; chatId?: string | null };
+      createFolders?: readonly string[];
+    };
+/**
+ * Whether two parents are the same place, with the same folders to create beneath it. A Work or
+ * lineage is its id: the server acts on ids, so a handle that differs does not make a parent differ.
+ */
+export function sameDestinationParent(
+  left: ParentLike | undefined,
+  right: ParentLike | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  if (JSON.stringify(left.createFolders ?? []) !== JSON.stringify(right.createFolders ?? []))
+    return false;
+  if (left.kind === "folder" || right.kind === "folder")
+    return left.kind === "folder" && right.kind === "folder" && left.folderId === right.folderId;
+  return (
+    left.scheme === right.scheme &&
+    left.owner.workId === right.owner.workId &&
+    (left.owner.rootThreadId ?? null) === (right.owner.rootThreadId ?? null) &&
+    (left.owner.chatId ?? null) === (right.owner.chatId ?? null)
   );
 }
 /** A picked folder identity or a qualified area's root. Paths are observations, not edges. */
@@ -162,7 +191,7 @@ export type ResourceDescriptor = ResourceKey & {
         initialization?: "reserved";
       }
     | { kind: "unacquired" };
-  /** Stable editor/viewer classification retained when no catalog checkpoint is available. */
+  /** Editor/viewer classification retained when no catalog checkpoint is available; a rename can change its `extension`. */
   classification: CatalogFileClassification;
   /**
    * How the server first materializes this identity, while it holds no such document: an untitled
@@ -235,29 +264,25 @@ export type NamespaceRequest =
     }
   | {
       kind: "move";
-      scheme: ProjectContextTreeScheme;
-      sourceWorkHandle: string | null;
-      destinationWorkHandle: string | null;
-      /** Handles of the lineages named by the body's root thread ids; they identify receipt URIs. */
-      sourceRootThreadRef?: string | null;
-      destinationRootThreadRef?: string | null;
+      /** The entry the URL names: a request carries no path or owner, only the row's id. */
+      entryId: string;
       body: MoveContextEntryRequest;
     }
-  | {
-      kind: "delete";
-      scheme: ProjectContextTreeScheme;
-      workId: string | null;
-      workHandle: string | null;
-      rootThreadId?: string | null;
-      rootThreadRef?: string | null;
-      body: DeleteContextEntryRequest;
-    }
+  | { kind: "delete"; entryId: string; body: DeleteContextEntryRequest }
   | {
       kind: "copy";
       /** Owner of the destination parent when sent, so each root's answered path becomes a full location. */
       owner: ResourceOwner;
       body: CopyContextEntriesRequest;
     };
+
+/** Whether a receipt's command names the entry, and the kind of it, that this request sent. */
+export function namespaceEntryIs(
+  expected: { kind: string; nodeId: string },
+  request: Extract<NamespaceRequest, { kind: "move" | "delete" }>,
+): boolean {
+  return expected.kind === request.body.kind && expected.nodeId === request.entryId;
+}
 
 /**
  * The identity a request is replayed under: a move's or delete's operation id, a create's document

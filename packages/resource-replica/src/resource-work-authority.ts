@@ -135,19 +135,3 @@ export function ownerListedInScope(
     ? scope.kind === "user"
     : scope.kind === "project" && scope.projectId === projectId;
 }
-
-/** The owner fields a move request carries for its source and destination locations. */
-export function moveOwnerFields(source: ResourceOwner, destination: ResourceOwner) {
-  return {
-    sourceWorkHandle: source.workHandle ?? null,
-    destinationWorkHandle: destination.workHandle ?? null,
-    sourceRootThreadRef: source.rootThreadRef ?? null,
-    destinationRootThreadRef: destination.rootThreadRef ?? null,
-    body: {
-      sourceWorkId: source.workId,
-      destinationWorkId: destination.workId,
-      sourceRootThreadId: source.rootThreadId ?? null,
-      destinationRootThreadId: destination.rootThreadId ?? null,
-    },
-  };
-}

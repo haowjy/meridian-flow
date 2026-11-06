@@ -36,6 +36,7 @@ import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreatio
 import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
 import type { FilesRoute } from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
+import { subscribeFolderReveal } from "./tree-reveal";
 import { useDeleteContextEntry } from "./use-delete-context-entry";
 import { useTreeExpansion } from "./use-tree-expansion";
 
@@ -262,6 +263,19 @@ function SchemeSection({
     [catalog, setExpandedEntryIds],
   );
 
+  const openFolder = useCallback(
+    (folderId: string) => {
+      const entry = catalog?.normalized.entries.get(folderId);
+      if (entry?.kind !== "folder") return;
+      setExpanded(true);
+      revealPath(`/${entry.path.join("/")}`);
+      setExpandedEntryIds((current) => ({ ...current, [entry.entryId]: true }));
+    },
+    [catalog, revealPath, setExpanded, setExpandedEntryIds],
+  );
+
+  useEffect(() => subscribeFolderReveal(openFolder), [openFolder]);
+
   const importSnapshot = useImportsSnapshot(imports?.coordinator ?? null);
   const arrived = useRef(new Set<string>());
   useEffect(() => {
@@ -274,15 +288,9 @@ function SchemeSection({
         continue;
       arrived.current.add(importId);
       setExpanded(true);
-      const parent = summary.destination.folderId
-        ? catalog?.normalized.entries.get(summary.destination.folderId)
-        : null;
-      if (parent?.kind === "folder") {
-        revealPath(`/${parent.path.join("/")}`);
-        setExpandedEntryIds((current) => ({ ...current, [parent.entryId]: true }));
-      }
+      if (summary.destination.folderId) openFolder(summary.destination.folderId);
     }
-  }, [importSnapshot, projectId, scheme, setExpanded, revealPath, setExpandedEntryIds, catalog]);
+  }, [importSnapshot, projectId, scheme, setExpanded, openFolder]);
 
   useEffect(() => {
     if (!activeLocationPath) {

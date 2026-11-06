@@ -132,6 +132,7 @@ export function mapAuthoritativeFile(input: {
         input.chatOwned,
       ),
     ),
+    extension: document.extension,
     ...persistedClassification,
     provisionalName: document.provisionalName,
     rank: document.rank,

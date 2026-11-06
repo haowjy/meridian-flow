@@ -46,6 +46,7 @@ export function toFileRef(
         ...base,
         kind: "binary",
         fileType: ref.fileType,
+        extension: ref.extension,
         storageUrl: ref.storageUrl,
         mimeType: ref.mimeType,
         hasPreview: ref.hasPreview,

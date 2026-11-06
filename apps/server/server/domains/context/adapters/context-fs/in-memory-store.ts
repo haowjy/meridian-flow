@@ -1,7 +1,7 @@
 import {
+  addressCandidates,
   allocateFilename,
   folderDocumentName,
-  parseDocumentFilename,
   type RetractionCause,
 } from "@meridian/contracts/protocol";
 /**
@@ -76,6 +76,27 @@ export function findInMemoryContextDocumentsById(
     const { contextSourceId: _contextSourceId, deletedAt: _deletedAt, ...document } = row;
     return [{ ...document }];
   });
+}
+
+/** The live document at a tree address in one folder: its literal spelling, else its alias. */
+export function findInMemoryContextDocumentAt(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  folderId: string | null,
+  filename: string,
+): DocumentRow | null {
+  for (const leaf of addressCandidates(filename)) {
+    for (const doc of backing.documents.values()) {
+      if (
+        doc.contextSourceId === sourceId &&
+        doc.deletedAt === null &&
+        doc.folderId === folderId &&
+        renderFilename(doc.name, doc.extension) === leaf
+      )
+        return doc;
+    }
+  }
+  return null;
 }
 
 export function hasOppositeEntry(
@@ -248,15 +269,9 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const { dir, filename } = splitPath(normalizeTreePath(path));
     const folder = await this.resolveFolderAt(view, dir.join("/"));
     if (folder.kind !== "found") return { kind: "not_found" };
-    // The literal stored name, as the Drizzle tree resolves it; ContextFS adds the alias lookup.
-    const parsed = parseDocumentFilename(filename, { storageBacked: true });
-    if (!parsed.ok) return { kind: "not_found" };
-    const document = this.findDocumentRecord(
-      folder.node?.id ?? null,
-      parsed.value.name,
-      parsed.value.extension,
-    );
-    return document ? { kind: "found", node: document } : { kind: "not_found" };
+    const folderId = folder.node?.id ?? null;
+    const doc = findInMemoryContextDocumentAt(this.backing, this.sourceId, folderId, filename);
+    return doc ? { kind: "found", node: this.publicDocument(doc) } : { kind: "not_found" };
   }
 
   private findFolderRecord(parentId: string | null, name: string): ContextFolder | null {

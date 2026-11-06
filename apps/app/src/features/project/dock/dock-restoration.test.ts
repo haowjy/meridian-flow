@@ -120,6 +120,7 @@ function resources(snapshot = empty) {
                 provisionalName: false,
                 hasProperties: false,
                 observationVersion: "1",
+                extension: "",
                 editable: true as const,
                 filetype: "markdown" as const,
                 schemaType: "document" as const,
@@ -138,7 +139,12 @@ function localRecord(): ResourceRecord {
       revision: 1,
       identity: { documentId: "doc", revision: 1 },
       content: { kind: "exact", databaseName: "local", schema: null },
-      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      classification: {
+        extension: "",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
       materialization: {
         kind: "untitled",
         folderPath: "",

@@ -19,6 +19,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
+import { entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 import { createInMemoryObjectStore, createObjectRelease } from "../storage/index.js";
@@ -160,8 +161,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         },
       });
       const binary = { fileType: "image", mimeType: "image/png", sizeBytes: 1 } as const;
+      const raceId = crypto.randomUUID();
       const uploading = racing.createBinaryDocument({
         ...binary,
+        id: raceId,
         folderId: null,
         name: "race",
         extension: "png",
@@ -169,7 +172,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       });
       await publication;
       let moveDone = false;
-      const moving = port.move("manuscript://race.png", "manuscript://raced.png").finally(() => {
+      const moving = moveTo(port, "manuscript://race.png", "manuscript://raced.png", {
+        expected: { kind: "file", nodeId: raceId },
+      }).finally(() => {
         moveDone = true;
       });
       // The move either finishes in the gap (the defect) or queues behind the upload.
@@ -269,7 +274,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       // the ref waiting at the destination settles on it.
       const castRef = await register("kb://cast.toml");
       const cast = await create("user://cast.toml");
-      expect(await port.move("user://cast.toml", "kb://cast.toml")).toMatchObject({ ok: true });
+      expect(
+        await moveTo(port, "user://cast.toml", "kb://cast.toml", {
+          expected: await entryAt(port, "user://cast.toml"),
+        }),
+      ).toMatchObject({
+        ok: true,
+      });
       expect(await settlement(castRef)).toBe(cast);
 
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
@@ -277,7 +288,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       const vacated = await register("manuscript://branches/ch2.toml");
       expect(await settlement(vacated)).toBe(moved);
       const destination = await register("manuscript://part-two/ch2.toml");
-      expect(await port.move("manuscript://branches", "manuscript://part-two")).toMatchObject({
+      expect(
+        await moveTo(port, "manuscript://branches", "manuscript://part-two", {
+          expected: await entryAt(port, "manuscript://branches"),
+        }),
+      ).toMatchObject({
         ok: true,
       });
       expect(await settlement(destination)).toBe(moved);

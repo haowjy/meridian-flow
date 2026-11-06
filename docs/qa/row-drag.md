@@ -49,10 +49,8 @@ browser reports no fine pointer, so rows render at touch height.
    Manuscript row over the User header, docked above Scratch: no light, no
    hint, no change (User is the writer's, in every project).
 7. Drag `chapter-1` into a folder that already holds a `chapter-1`: the hint
-   reads "Move to <folder>" with a warning line under it, "chapter-1 will be
-   renamed chapter-1 (2)" (two clashing rows: "2 items will be renamed"). Move…
-   shows the same line under that folder's Move action. Drop: the row arrives
-   as `chapter-1 (2)`; no toast shows.
+   reads "Move to <folder>". Drop: the row arrives as `chapter-1 (2)`, selected
+   and revealed; no toast shows. Move… shows no warning either.
 8. Run [Mention drops](mention-drop.md). A writing drop copies references and
    never enters this recipe's move route.
 9. After every drag, check that no region stays lit
@@ -113,14 +111,14 @@ The app no longer sends a payload the server refuses, so rewrite the first
 matching request in the page (`window.fetch`). Leave later POSTs unrewritten so
 a resend would show as a second request.
 
-- **Move:** on the first `POST …/context/manuscript/move`, parse the JSON body
-  and set `destinationWorkId` to any UUID. The server answers 400
-  "`destinationWorkId` is not valid for manuscript" as
+- **Move:** on the first `POST …/context/entries/<id>/move`, parse the JSON body
+  and set `destinationParent` to `{"kind":"bogus"}`. The server answers 400
+  "Destination parent is invalid" as
   `{kind:"error", error:{code:"bad_request", retryable:false, …}}`.
-- **Delete:** on the first `POST …/context/<scheme>/delete`, drop `expected`.
-  The server answers 400 "expected target is required" with the same envelope.
+- **Delete:** on the first `POST …/context/entries/<id>/delete`, drop `kind`.
+  The server answers 400 "Entry kind is required" with the same envelope.
 
-One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
+One-shot move rewrite (swap the `if` for delete and `delete body.kind`):
 
 ```js
 (() => {
@@ -130,14 +128,14 @@ One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
     const url = String((u && u.url) || u);
     if (
       !used &&
-      url.includes("/context/manuscript/move") &&
+      url.includes("/context/entries/") && url.endsWith("/move") &&
       i &&
       i.method === "POST" &&
       typeof i.body === "string"
     ) {
       used = true;
       const body = JSON.parse(i.body);
-      body.destinationWorkId = "11111111-1111-4111-8111-111111111111";
+      body.destinationParent = { kind: "bogus" };
       return o.call(this, u, { ...i, body: JSON.stringify(body) });
     }
     return o.apply(this, arguments);

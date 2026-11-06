@@ -186,7 +186,12 @@ it("parents a refused create by the folder that holds its shown location", () =>
       revision: 1,
       identity: { documentId: "d", revision: 1 },
       content: { kind: "exact", databaseName: "c", schema: null },
-      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      classification: {
+        extension: "",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
       materialization: { kind: "untitled", folderPath, provisionalName: "Untitled" },
       canonical: null,
       serverHold: "local",

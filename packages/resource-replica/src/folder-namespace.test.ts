@@ -82,12 +82,11 @@ function receipt(name: string, ok: boolean, operationId = name): ContextOperatio
         owner: { workId: null },
       },
       kind: "move",
-      sourceUri: "manuscript://A",
-      destinationUri: `manuscript://${name}`,
       expected: { kind: "folder", nodeId: "folder" },
+      name,
     },
     result: ok
-      ? { ok: true, value: { destinationPath: name } }
+      ? { ok: true, value: { destinationUri: `manuscript://${name}` } }
       : { ok: false, error: { code: "conflict", uri: `manuscript://${name}` } },
   };
 }
@@ -202,7 +201,7 @@ it.each([
     await reconcile(reopened, {
       readOutcome: async () => null,
       submit: async (_project, request) => {
-        expect(request).toMatchObject({ body: { path: "A", newName: "C" } });
+        expect(request).toMatchObject({ entryId: "folder", body: { name: "C" } });
         return { kind: "operation", receipt: receipt("C", true, "repair") };
       },
     }),
@@ -224,7 +223,8 @@ it("dispatches despite a foreign catalog move during receipt lookup", async () =
       },
       submit: async (_project, request) => {
         expect(request).toMatchObject({
-          body: { path: "A", expected: { kind: "folder", nodeId: "folder" } },
+          entryId: "folder",
+          body: { kind: "folder" },
         });
         return { kind: "operation", receipt: receipt("B", false) };
       },
@@ -274,7 +274,8 @@ it("admits recursive deletion in the folder journal and settles a delete receipt
     submit: async (_projectId, request) => {
       expect(request).toMatchObject({
         kind: "delete",
-        body: { path: "A", expected: { kind: "folder", nodeId: "folder" } },
+        entryId: "folder",
+        body: { kind: "folder" },
       });
       return {
         kind: "operation",
@@ -283,13 +284,13 @@ it("admits recursive deletion in the folder journal and settles a delete receipt
           operationId: "delete-folder",
           command: {
             kind: "delete",
-            uri: "manuscript://A",
             expected: { kind: "folder", nodeId: "folder" },
           },
           result: {
             ok: true,
             value: {
               status: "deleted",
+              uri: "manuscript://A",
               removed: [
                 {
                   documentId: "child",
@@ -362,7 +363,8 @@ it.each([
     submit: async (_project, request) => {
       expect(request).toMatchObject({
         kind: "delete",
-        body: { path: "A", expected: { kind: "folder", nodeId: "folder" } },
+        entryId: "folder",
+        body: { kind: "folder" },
       });
       return {
         kind: "operation",
@@ -371,12 +373,16 @@ it.each([
           operationId: "delete",
           command: {
             kind: "delete",
-            uri: "manuscript://A",
             expected: { kind: "folder", nodeId: "folder" },
           },
           result: {
             ok: true,
-            value: { status: "deleted", removed: [], availabilityGeneration: "2" },
+            value: {
+              status: "deleted",
+              uri: "manuscript://A",
+              removed: [],
+              availabilityGeneration: "2",
+            },
           },
         },
       };
@@ -466,6 +472,7 @@ it.each([
 
       hasProperties: false,
       provisionalName: false,
+      extension: "",
       editable: true,
       filetype: "markdown",
       schemaType: "document",
@@ -556,6 +563,7 @@ it.each([
         identity: { documentId: "doc", revision: 1 },
         content: { kind: "unacquired" as const },
         classification: {
+          extension: "",
           editable: true as const,
           filetype: "markdown" as const,
           schemaType: "document" as const,

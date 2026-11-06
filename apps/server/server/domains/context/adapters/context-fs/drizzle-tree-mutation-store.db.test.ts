@@ -142,9 +142,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             destinationPath: to,
             destinationFilename: { name: to, extension: "" },
             destinationFiletype: "markdown",
-            graduateProvisionalName: false,
             expectedTarget: { state: "absent" },
-            overwrite: false,
           }),
         ).toMatchObject({ ok: true });
       }
@@ -232,7 +230,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationSourceId: SOURCE_ID,
           destinationPath: "after",
           expectedTarget: { state: "absent" },
-          overwrite: false,
         }),
       ).toMatchObject({ ok: true });
       expect(
@@ -302,9 +299,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationPath: "short",
           destinationFilename: { name: "short", extension: "" },
           destinationFiletype: "markdown",
-          graduateProvisionalName: false,
           expectedTarget: { state: "absent" },
-          overwrite: false,
         }),
       ).toMatchObject({ ok: true });
       expect(
@@ -732,10 +727,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destinationSourceId: sourceId,
         destinationPath: "moved-holder",
         expectedTarget: { state: "absent" },
-        overwrite: false,
         destinationFiletype: "markdown",
         destinationFilename: { name: "moved-holder", extension: "" },
-        graduateProvisionalName: false,
       });
       const doc = new Y.Doc();
       try {

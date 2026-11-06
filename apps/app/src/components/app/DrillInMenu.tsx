@@ -14,11 +14,9 @@ import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import {
   type ComponentPropsWithoutRef,
   type ForwardedRef,
-  Fragment,
   type ReactElement,
   type ReactNode,
   useCallback,
-  useId,
   useRef,
   useState,
 } from "react";
@@ -32,7 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-/** The list scrolls between the caption and the actions, which stay in reach on a long folder. */
+/** The list scrolls above the actions, which stay in reach on a long folder. */
 const MENU_CLASS =
   "flex w-64 max-w-[calc(100vw-1rem)] flex-col overflow-hidden max-h-[min(26rem,var(--radix-dropdown-menu-content-available-height))]";
 
@@ -61,8 +59,6 @@ export type DrillAction = {
   icon: LucideIcon;
   onSelect: () => void;
   disabled?: boolean;
-  /** A warning under the label: what the action will also do (rows arriving renamed). */
-  note?: string | null;
   /** Selecting the action opens these in place of the tree, with a back row; `onSelect` is unused. */
   choices?: readonly DrillAction[];
 };
@@ -78,7 +74,6 @@ export type DrillInMenuProps = {
   openAt: readonly DrillNode[];
   /** Footer actions for the level on screen; the caller closes the menu when one is done. */
   actions?: (trail: readonly DrillNode[]) => readonly DrillAction[];
-  caption?: ReactNode;
   status?: ReactNode;
   isDisabled?: (node: DrillNode) => boolean;
   /** Lists folders alone: a destination picker has nothing to do with a file. */
@@ -141,7 +136,6 @@ export function DrillInMenuBody({
   openAt,
   actions,
   onPick,
-  caption,
   status,
   isDisabled,
   foldersOnly,
@@ -169,36 +163,25 @@ export function DrillInMenuBody({
   const entries = foldersOnly ? children.filter((node) => node.folder) : children;
   const currentActions = actions?.(trail) ?? [];
   const choosing = currentActions.find((action) => action.key === choosingKey && action.choices);
-  const noteId = useId();
   const choose = (key: string | null) => {
     setChoosingKey(key);
     focusFirstRow();
   };
 
   const actionItem = (action: DrillAction) => (
-    <Fragment key={action.key}>
-      <DropdownMenuItem
-        disabled={action.disabled}
-        aria-describedby={action.note ? `${noteId}-${action.key}` : undefined}
-        onSelect={(event) => {
-          event.preventDefault();
-          if (action.choices) choose(action.key);
-          else action.onSelect();
-        }}
-      >
-        <action.icon aria-hidden />
-        <span className="min-w-0 flex-1 truncate">{action.label}</span>
-        {action.choices ? <ChevronRight className="ml-auto" aria-hidden /> : null}
-      </DropdownMenuItem>
-      {action.note ? (
-        <p
-          id={`${noteId}-${action.key}`}
-          className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
-        >
-          {action.note}
-        </p>
-      ) : null}
-    </Fragment>
+    <DropdownMenuItem
+      key={action.key}
+      disabled={action.disabled}
+      onSelect={(event) => {
+        event.preventDefault();
+        if (action.choices) choose(action.key);
+        else action.onSelect();
+      }}
+    >
+      <action.icon aria-hidden />
+      <span className="min-w-0 flex-1 truncate">{action.label}</span>
+      {action.choices ? <ChevronRight className="ml-auto" aria-hidden /> : null}
+    </DropdownMenuItem>
   );
 
   if (choosing?.choices) {
@@ -216,7 +199,6 @@ export function DrillInMenuBody({
         onCloseAutoFocus={onCloseAutoFocus}
         onEscapeKeyDown={onEscapeKeyDown}
       >
-        {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
         <DropdownMenuItem
           onSelect={(event) => {
             event.preventDefault();
@@ -251,7 +233,6 @@ export function DrillInMenuBody({
       onCloseAutoFocus={onCloseAutoFocus}
       onEscapeKeyDown={onEscapeKeyDown}
     >
-      {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
       {folder ? (
         <DropdownMenuItem
           onSelect={(event) => {

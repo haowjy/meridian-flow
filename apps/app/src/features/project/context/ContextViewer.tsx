@@ -230,11 +230,7 @@ export function ContextViewer({
           ) : null}
           {activeTab?.kind === "viewer" ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <ContextViewerHost
-                projectId={projectId}
-                editorWorkId={editorWorkId}
-                tab={activeTab}
-              />
+              <ContextViewerHost projectId={projectId} tab={activeTab} />
             </div>
           ) : null}
           {optimisticTab ? (

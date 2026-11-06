@@ -269,6 +269,76 @@ export class IndexedDbResourceMetadata
     // version, not an edit of 5: browsers that ran the release branch already hold a v5 database,
     // and the automatic schema diff would skip every upgrade step for them.
     this.database.version(6).stores({ operations: "operationId,projectId" });
+    // Moves and deletes are requested by entry id now (`namespace-requests.ts`). An attempt
+    // recorded before that holds a path-and-owner request and a receipt in the old shape, which
+    // the journal's validation would reject on every later commit and the transport can no longer
+    // send. They go in every state, with the refresh obligation that waited on them. A pending
+    // create and an operation (Copy) keep their shape and stay; so does an intent no attempt has
+    // been recorded for, which is built fresh when it is sent, unless it is cancelled: its neighbour
+    // is gone and the validator would reject it. Same database name: a new one would
+    // lose `resource.content.databaseName`, the pointer to each document's Yjs store.
+    this.database
+      .version(7)
+      .stores({})
+      .upgrade(async (transaction) => {
+        const recordedByPath = (intent: NamespaceIntent) =>
+          intent.attempts.some(
+            ({ request }) => request.kind === "move" || request.kind === "delete",
+          );
+        const sentOperations = (intents: readonly NamespaceIntent[]) =>
+          new Set(
+            intents
+              .filter(recordedByPath)
+              .flatMap((intent) =>
+                intent.attempts.flatMap(({ request }) =>
+                  request.kind === "move" || request.kind === "delete"
+                    ? [request.body.operationId]
+                    : [],
+                ),
+              ),
+          );
+        const intents = transaction.table<NamespaceIntent, string>("intents");
+        const resources = transaction.table<ResourceDescriptor, string>("resources");
+        const folders = transaction.table<FolderNamespaceRecord, string>("folders");
+        const stored = await intents.toArray();
+        const operations = sentOperations(stored);
+        // A cancelled intent is justified by a neighbour (a later delete, an earlier refusal). Once
+        // that neighbour goes, the validator rejects the cancelled one on every commit; it has no
+        // attempt and nothing left to do, so it goes with the record's other lost intents.
+        const losers = new Set(stored.filter(recordedByPath).map(({ handle }) => handle));
+        await intents.bulkDelete(
+          stored
+            .filter(
+              (intent) =>
+                recordedByPath(intent) ||
+                (intent.state === "cancelled" && losers.has(intent.handle)),
+            )
+            .map(({ intentId }) => intentId),
+        );
+        for (const resource of await resources.toArray()) {
+          const refresh = resource.obligations.canonicalRefresh;
+          if (!refresh || !operations.has(refresh.operationId)) continue;
+          const { canonicalRefresh: _cleared, ...obligations } = resource.obligations;
+          await resources.put({ ...resource, obligations });
+        }
+        for (const folder of await folders.toArray()) {
+          const folderOperations = sentOperations(folder.intents);
+          const refresh = folder.canonicalRefresh;
+          const named =
+            refresh &&
+            (operations.has(refresh.operationId) || folderOperations.has(refresh.operationId));
+          if (!folder.intents.some(recordedByPath) && !named) continue;
+          const { canonicalRefresh: _cleared, ...rest } = folder;
+          await folders.put({
+            ...(named ? rest : folder),
+            intents: folder.intents.filter(
+              (intent) =>
+                !recordedByPath(intent) &&
+                !(intent.state === "cancelled" && folder.intents.some(recordedByPath)),
+            ),
+          });
+        }
+      });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");

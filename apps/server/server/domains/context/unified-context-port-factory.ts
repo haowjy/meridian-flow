@@ -274,6 +274,7 @@ function buildUnifiedContextPort(input: {
     typeof import("./context/context-tree-mover.js").ContextTreeMover
   >[2];
   copy?: ContextCopyCommandDeps;
+  eventSink?: EventSink;
 }): ContextPort {
   const { scope, storeResolvers, commandTransaction } = input;
   const assembly: AdapterAssembly = {
@@ -391,6 +392,7 @@ function buildUnifiedContextPort(input: {
     resolveDestinationFolder: input.resolveDestinationFolder,
     operationReceipts: input.operationReceipts,
     moveLinks: input.moveLinks,
+    ...(input.eventSink ? { eventSink: input.eventSink } : {}),
     ...(input.copy ? { copy: input.copy } : {}),
   });
 }
@@ -736,6 +738,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         commandTransaction: commandTransaction(projectId, userId),
         placements,
         ...(options.copy ? { copy: options.copy } : {}),
+        ...(options.eventSink ? { eventSink: options.eventSink } : {}),
       });
     },
     forWork(authority, projectId, userId, workAuthorities, thread) {
@@ -753,6 +756,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         commandTransaction: commandTransaction(projectId, userId),
         placements,
         ...(options.copy ? { copy: options.copy } : {}),
+        ...(options.eventSink ? { eventSink: options.eventSink } : {}),
       });
     },
   };

@@ -1,4 +1,5 @@
 /** Latest writer commands supersede repair blockers and safe queued namespace work. */
+import { type NamedRow, storedFilename } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
 import type {
   NamespaceIntent,
@@ -150,6 +151,18 @@ export function placementDestination(
     Boolean(record.resource.obligations.canonicalRefresh),
   )?.desired;
   return owner?.kind === "set-location" ? owner.destination : undefined;
+}
+
+/**
+ * The naming facts the row shows: its classification's, unless a pending rename already changed
+ * the extension. A cached record from before `extension` existed has none; that is read as "".
+ */
+export function shownRow(projectId: string | null, record: ResourceRecord): NamedRow {
+  const { classification } = record.resource;
+  const row = { extension: classification.extension ?? "", editable: classification.editable };
+  const name = placementDestination(projectId, record)?.name;
+  const named = name === undefined ? null : storedFilename(name, row);
+  return named?.ok ? { ...row, extension: named.filename.extension } : row;
 }
 
 /**

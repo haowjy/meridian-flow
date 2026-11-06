@@ -4,6 +4,7 @@ export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { guardWorkContextRestore } from "./adapters/context-fs/document-locations.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
+export { fileRefOfVisible } from "./adapters/context-fs/file-ref.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
@@ -19,6 +20,7 @@ export {
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
+export { deleteCommand, moveCommand } from "./context/context-operation-receipts.js";
 export {
   allocateFilename,
   exportFilename,
@@ -32,6 +34,7 @@ export {
 } from "./context/restore-removed-documents.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
+  contextAreaOf,
   parseContextUri,
   parseUnifiedContextUri,
   toCanonical,
@@ -100,12 +103,14 @@ export type {
   BinaryFileRef,
   ContextCreateUntitledDocumentOptions,
   ContextCreateUntitledDocumentResult,
+  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextFileEntry,
   ContextListEntry,
   ContextListing,
   ContextListOptions,
+  ContextLocationChange,
   ContextPort,
   ContextReadResult,
   ContextScheme,

@@ -25,6 +25,7 @@ import {
   type NamespaceNameClaim,
   renderFilename,
   sameNamespaceName,
+  splitRendered,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import {
@@ -357,7 +358,7 @@ async function planLevel(
       });
       continue;
     }
-    const { name, extension } = splitAllocatedFilename(filename, source.extension);
+    const { name, extension } = splitRendered(filename, source.extension);
     planned.push({
       kind: "file",
       source,
@@ -369,16 +370,6 @@ async function planLevel(
     });
   }
   return planned;
-}
-
-/** A rendered filename split back into the stored name and extension. */
-function splitAllocatedFilename(
-  filename: string,
-  extension: string,
-): { name: string; extension: string } {
-  return extension && filename.endsWith(`.${extension}`)
-    ? { name: filename.slice(0, -(extension.length + 1)), extension }
-    : { name: filename, extension: "" };
 }
 
 /** Every name this parent holds for a reader: live folders and live documents. */

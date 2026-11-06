@@ -12,6 +12,9 @@ active-destination lifecycle belong here.
   destination mounted. Current identity and first-send recovery remain route-owned.
 - Phone views may mount and unmount by destination. Do not apply desktop
   persistent-surface rules to this shell.
+- A move or delete of the open document follows the replica's placement through
+  `useFollowOpenDocumentPlacement`, the same effect as the desktop Editor. Don't
+  add a second phone-only follow.
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for routing, session, and
 chrome contracts.

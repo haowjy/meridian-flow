@@ -11,18 +11,18 @@ import type {
 } from "@meridian/contracts/context-uri";
 import type {
   ContextDestinationParent,
+  ContextEntryRef,
   ContextError,
   ContextMoveResult,
+  ContextOperationCommand,
   ContextOperationReceipt,
   ContextSiblingPosition,
   CopyContextEntriesResult,
   CopyContextEntryView,
-  DeleteContextEntryRequest,
   DeleteContextEntryResult,
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
-  NamespaceNameClaim,
   RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
@@ -274,6 +274,8 @@ export interface TrackedFileRef extends BaseFileRef {
 export interface BinaryFileRef extends BaseFileRef {
   kind: "binary";
   fileType: DocumentFileType;
+  /** The stored extension, which the leaf alone cannot tell from a document's suffix. */
+  extension: string;
   /** Stable object-store reference for storage-backed files. */
   storageUrl: string;
   /** Persisted MIME type for the stored object, when known. */
@@ -413,13 +415,36 @@ export interface ContextWriteOptions {
   metadata?: DocumentCreationMetadata;
 }
 
-export interface ContextLocationOptions extends ContextWriteOptions {
-  destinationParent?: MoveContextEntryRequest["destinationParent"];
+/** A move or delete the writer's device sent, with the receipt command it answers a resend from. */
+export type ContextOperationInput<K extends ContextOperationCommand["kind"]> = {
+  id: string;
+  command: Extract<ContextOperationCommand, { kind: K }>;
+};
+
+/**
+ * Where a moved node lands. The node's own row is read under the locks, so none of these carry
+ * its path; `folderUri` and `folderId` name only the folder it goes into.
+ */
+export type ContextMoveDestination =
+  /** The folder the node is in: a rename or a reorder. */
+  | { kind: "keep" }
+  /** A folder by identity, read again under the locks; `authorize` rechecks edit there. */
+  | {
+      kind: "folder";
+      folderId: string;
+      createFolders?: readonly string[];
+      authorize: (uri: string) => Promise<boolean>;
+    }
+  /** A folder (or an area root) by address, which `createFolders` extends. */
+  | { kind: "at"; folderUri: string; createFolders?: readonly string[] };
+
+export interface ContextLocationChange {
+  destination: ContextMoveDestination;
+  /** The name the writer typed, when they did; omitted keeps the node's own name. */
+  name?: string;
   position?: MoveContextEntryRequest["position"];
-  /** Reconfirm the resolved destination's edit authority under its namespace locks. */
-  authorizeDestination?: (uri: string) => Promise<boolean>;
-  operationId?: string;
-  expected?: MoveContextEntryRequest["expected"];
+  origin?: WriteProvenance;
+  operation?: ContextOperationInput<"move">;
   /**
    * Runs inside the move's own transaction once its rows are written, so a caller's record of
    * the move (the model's edit history) commits or rolls back with it.
@@ -427,31 +452,36 @@ export interface ContextLocationOptions extends ContextWriteOptions {
   inTransaction?: (moved: ContextMoveResult) => Promise<void>;
 }
 
-export interface ContextMoveOptions extends ContextWriteOptions {
-  overwrite?: boolean;
-}
-
-/** What `changeInBranch` does: the document it names must be at the source address. */
+/**
+ * What `changeInBranch` does to the document it names, wherever the branch has it now. `area` is
+ * the root URI of the scheme and owner it was last seen in, as for `commitWriterLocation`.
+ */
 export type ContextBranchTreeCommand = {
   documentId: string;
+  area: string;
   changedBy: BranchChangeAuthor;
   record(change: RecordedBranchTreeChange): Promise<void>;
 } & (
   | {
       op: "move";
-      sourceUri: string;
       destinationUri: string;
       position?: MoveContextEntryRequest["position"];
     }
-  | { op: "delete"; uri: string }
+  | { op: "delete" }
 );
 
+/** `uri` is where a move landed; a delete answers its area and `moved: false`. */
 export type ContextBranchTreeResult = { uri: string; moved: boolean };
 
-export interface ContextDeleteOptions extends ContextWriteOptions {
+export interface ContextDeleteOptions {
+  origin?: WriteProvenance;
   removal?: { reason: "discarded"; cause: RetractionCause };
-  operationId?: string;
-  expected: DeleteContextEntryRequest["expected"];
+  operation?: ContextOperationInput<"delete">;
+  /**
+   * Delete only while the node is still at this path of its area; a node the writer has
+   * renamed or moved since survives, and the delete answers `stale_target`.
+   */
+  onlyAt?: string;
   /** Runs inside the delete's own transaction once the removal is written (see the move's). */
   inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
 }
@@ -464,6 +494,8 @@ export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   sizeBytes: number;
   /** A preview of the object was stored beside it (`saveImagePreview` said so). */
   hasPreview?: boolean;
+  /** The destination's name already decided (a copy's); the leaf of the path is then not parsed. */
+  filename?: { name: string; extension: string };
 }
 
 /**
@@ -514,14 +546,6 @@ export interface ContextPort {
   createTrackedDocument(
     uri: string,
     markdown: string,
-    options?: ContextWriteOptions,
-  ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
-
-  /** Allocate the first free leaf at `uri`, then create its identity and initial content together. */
-  createTrackedDocumentAtFreeName(
-    uri: string,
-    markdown: string,
-    reserved: readonly NamespaceNameClaim[],
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
@@ -578,12 +602,6 @@ export interface ContextPort {
     options: ContextWriteBinaryOptions,
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
-  move(
-    sourceUri: string,
-    destinationUri: string,
-    options?: ContextMoveOptions,
-  ): Promise<Result<ContextMoveResult, ContextError>>;
-
   /**
    * A draft-mode chat's move or delete (D26, D45): facts in its Work's branch, never the
    * shared tree and never the mover. Each end must participate in the branch tree; its content
@@ -594,17 +612,23 @@ export interface ContextPort {
     command: ContextBranchTreeCommand,
   ): Promise<Result<ContextBranchTreeResult, ContextError>>;
 
-  /** Commit a file's exact writer-facing identity and end provisional naming. */
+  /**
+   * Move or rename the node `node` names, which the locks find by id wherever it is by then.
+   * `area` is the root URI of the scheme and owner it was last seen in: it picks the adapter
+   * and the locks, and names no entry. `change.destination` says where it lands and
+   * `change.name` what it is called there; whatever the change omits keeps the row's own value.
+   */
   commitWriterLocation(
-    sourceUri: string,
-    destinationUri: string,
-    options?: ContextLocationOptions,
+    node: ContextEntryRef,
+    area: string,
+    change: ContextLocationChange,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
-  /** Delete only the initiating file identity or folder kind at this URI. */
+  /** Delete the node `node` names, found by id under the locks (`area` as in the move). */
   delete(
-    uri: string,
-    options: ContextDeleteOptions,
+    node: ContextEntryRef,
+    area: string,
+    options?: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>>;
 
   list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;

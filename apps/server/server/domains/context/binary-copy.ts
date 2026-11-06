@@ -11,7 +11,7 @@
  * creates the destination in one go for callers with nothing to join.
  */
 
-import { filenameForBinary, renderFilename, storedFilename } from "@meridian/contracts/protocol";
+import { copiedFilename, renderFilename } from "@meridian/contracts/protocol";
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
 import {
@@ -103,19 +103,14 @@ export async function copyBinaryDocument(
     throw new Error("A binary copy's grant must name its source document");
   }
   const slash = input.destinationUri.lastIndexOf("/");
-  // The source URI leaf is its stored name, so a prose suffix on it marks a kept file.
-  const destinationParts = storedFilename(
-    input.destinationUri.slice(slash + 1),
-    input.source.uri.slice(input.source.uri.lastIndexOf("/") + 1),
-  );
-  if (!destinationParts.ok) return Err({ ...destinationParts.error, uri: input.destinationUri });
-  const parts = filenameForBinary(
-    destinationParts.filename,
-    input.source.fileType,
-    input.source.mimeType ?? undefined,
-  );
-  const destinationUri =
-    input.destinationUri.slice(0, slash + 1) + renderFilename(parts.name, parts.extension);
+  // The name is decided here once and handed to `writeBinary`, which does not parse it again.
+  const copied = copiedFilename(input.destinationUri.slice(slash + 1), {
+    extension: input.source.extension,
+    editable: false,
+  });
+  if (!copied.ok) return Err({ ...copied.error, uri: input.destinationUri });
+  const { name, extension } = copied.filename;
+  const destinationUri = input.destinationUri.slice(0, slash + 1) + renderFilename(name, extension);
   const existing = await input.port.stat(destinationUri);
   if (existing.ok) {
     return Err({
@@ -138,6 +133,7 @@ export async function copyBinaryDocument(
     mimeType: prepared.value.mimeType,
     sizeBytes: prepared.value.sizeBytes,
     hasPreview: prepared.value.hasPreview,
+    filename: { name, extension },
     metadata: { copiedFrom: input.copiedFrom },
     ...(input.origin ? { origin: input.origin } : {}),
   });

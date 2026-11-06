@@ -76,7 +76,7 @@ Use a `__delay` of `8000` to `14000` where a step says "hold".
    first inside the folder and the second ranked between the folder and its next sibling.
 5. Refusal with contents: in a Manuscript folder `Dest`, hold and create `Doomed`, add a
    document and a folder in it, then delete `Dest` with `./mf api POST
-   .../context/manuscript/delete` (`expected: {kind: "folder", nodeId}`) before the POST
+   .../context/entries/<DestId>/delete` (`kind: "folder"`) before the POST
    goes out. One POST answers 409 `destination_missing`. `Doomed` and both children are
    listed in Unfiled with a mark, each `needs-repair`; the document's identity bar offers
    "File it". Move… on `Doomed` to Manuscript lands it under the same id; the children keep
@@ -102,7 +102,7 @@ Use a `__delay` of `8000` to `14000` where a step says "hold".
     `folderId`). Reset `__cf`, set `__lose`, create `Outer`; `Outer`'s record is
     `serverHold: "uncertain"`. Create `Inner` inside it: a `pending` intent whose destination
     parent is `Outer`'s id and whose predecessor is `Outer`. Delete `Outer` on the server
-    (`expected: {kind: "folder", nodeId}`), set `__refuse2`, clear `__hold`. After the replay:
+    (`kind: "folder"`), set `__refuse2`, clear `__hold`. After the replay:
     `Outer` has a new `folderId` (its handle is unchanged, the old id is in `aliases`),
     `serverHold: "local"`; the conflict create is `superseded` and the retry `needs-repair`;
     `Inner`'s original intent is `cancelled` and a new one (`<id>@<new folder id>`) names the
@@ -122,7 +122,7 @@ Use a `__delay` of `8000` to `14000` where a step says "hold".
 12. Phone: a refused folder row in Files → Unfiled says "Couldn't create this folder. Try
     another place." with Move… and Rename under it (drive the phone over CDP as in
     [refused-create](refused-create.md) step 14). Move… opens at the refused destination;
-    Move to Manuscript lands the folder and its mark goes.
+    Move here lands the folder and its mark goes.
 
 ## Server refusals a folder create can get
 

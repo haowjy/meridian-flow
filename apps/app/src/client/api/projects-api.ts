@@ -25,12 +25,12 @@ import {
   apiProjectContextCreateFolderPath,
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
-  apiProjectContextDeletePath,
+  apiProjectContextEntryDeletePath,
+  apiProjectContextEntryMovePath,
   apiProjectContextLineagePath,
-  apiProjectContextMovePath,
   apiProjectContextOperationPath,
-  apiProjectContextReadPath,
   apiProjectDocumentAddressPath,
+  apiProjectDocumentReadPath,
   apiProjectPath,
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
@@ -387,18 +387,16 @@ export async function createContextFolder(
 }
 
 /**
- * Move (and optionally rename) a context entry across folders or schemes.
- * Paths in the request/response are scheme-relative WITHOUT a leading slash
- * (the tree DTO uses leading slashes — callers translate at this seam).
+ * Move or rename one entry (file or folder) by its id. The server finds the row, so the request
+ * carries no path or owner, and sends only what the writer chose (`MoveContextEntryRequest`).
  */
 export async function moveContextEntry(
   projectId: string,
-  sourceScheme: ProjectContextTreeScheme,
+  entryId: string,
   body: MoveContextEntryRequest,
   init?: RequestInitOptions,
 ): Promise<MoveContextEntryResult> {
-  return postJson(urlFor(apiProjectContextMovePath(projectId, sourceScheme), init), body, {
-    acceptErrorResponse: acceptsContextConflict,
+  return postJson(urlFor(apiProjectContextEntryMovePath(projectId, entryId), init), body, {
     headers: init?.headers,
     signal: init?.signal,
   });
@@ -470,13 +468,12 @@ export function getTrashedDocument(
 
 export async function deleteContextEntry(
   projectId: string,
-  scheme: ProjectContextTreeScheme,
+  entryId: string,
   body: DeleteContextEntryRequest,
-  opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
 ): Promise<DeleteContextEntryResult> {
   return postJson<DeleteContextEntryResult>(
-    urlFor(apiProjectContextDeletePath(projectId, scheme, opts), init),
+    urlFor(apiProjectContextEntryDeletePath(projectId, entryId), init),
     body,
     {
       headers: init?.headers,
@@ -486,16 +483,17 @@ export async function deleteContextEntry(
   );
 }
 
-export async function getProjectContextRead(
+export async function getProjectDocumentRead(
   projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  opts?: ProjectContextRequestOptions,
+  documentId: string,
   init?: RequestInitOptions,
 ): Promise<ContextReadResponse> {
   return getJson<ContextReadResponse>(
-    urlFor(apiProjectContextReadPath(projectId, scheme, path, opts), init),
-    { headers: init?.headers, schema: contextReadResponseSchema },
+    urlFor(apiProjectDocumentReadPath(projectId, documentId), init),
+    {
+      headers: init?.headers,
+      schema: contextReadResponseSchema,
+    },
   );
 }
 

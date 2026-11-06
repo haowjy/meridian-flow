@@ -28,8 +28,16 @@ out of a lineage, but may not create notes or move files into one.
 
 URI paths reject `..`, normalize slash segments, and reserve a leading `@` in
 writer-created names for authority qualifiers. Canonical filename parsing is
-owned by `@meridian/contracts/protocol`; exact parsed names win before any
-extension-omitted lookup. Documents and folders share one namespace: a folder's
+owned by `@meridian/contracts/protocol`. Every tree lookup of a typed name asks
+`addressCandidates` (literal, then the codec's alias); `TreeReader.resolveAddress` is the one
+tree walk over them, `matchDocumentAddress` and the client catalog's `findPath` the same order
+over a list. Only a link may also leave a registered extension off (`outline` for
+`outline.json`): `matchDocumentPath` adds that unique-match step after the address, and no
+`stat`, route or other tree lookup does. A binary write carries its decided name parts
+(`ContextWriteBinaryOptions.filename`), so a copy's name is parsed once. Naming asks the row's kind
+(`storedFilename` with `{ extension, stored }`): a stored file keeps its literal name, a tracked
+document follows the alias rules, and a move with no typed name keeps the token's `name` and
+`extension` without parsing. Documents and folders share one namespace: a folder's
 comparison name uses the document-name codec, so `Lore.md` occupies the
 `Lore` document alias.
 
@@ -64,10 +72,7 @@ collab's document-aware engine; they never seed a Y.Doc with an assumed
 Markdown schema. Binary documents are storage-backed and are read through
 storage, not the text engine. A whole-file `write` overwrites a living document and
 answers `not_found` at an empty path: it never creates (W52); creation is
-`createTrackedDocument`, `createTrackedDocumentAtFreeName`, `createBoundDocument`
-or `ensureTrackedDocument`. The free-name command owns allocation, identity and
-initial content together; callers supply only batch reservations and use its
-authoritative URI.
+`createTrackedDocument`, `createBoundDocument` or `ensureTrackedDocument`.
 
 ## Grep
 
@@ -196,16 +201,26 @@ folder rename or move that lands on a hidden folder's path absorbs it (never
 refused); a recursive delete, or a move to a source fewer branches may hold,
 first splits hidden contents into hidden twins at their old paths, so a
 writer's live folder operations never disturb a branch's hidden rows. Identity moves resolve a folder
-in the live view, then resolve it again under namespace locks; stale plans
-return `stale_target`, while an occupied destination leaf sends the arrival to
-the next alias-aware free name and returns that actual path. An absent,
+in the live view, then resolve it again under namespace locks. The mover finds the
+moved row by id under the locks and builds the destination there: the leaf is
+`change.name` or the row's own, the folder is the row's own (`keep`), a folder read by
+id (`folder`), or an address (`at`, a root or the model's typed folder, which
+`createFolders` may extend). No path of the node reaches the mover from outside, so a rename or move
+by another writer in the gap is neither undone nor refused; the only paths it checks
+are facts about the target (the occupant, `onlyAt`). A row that left the locked Work or area answers a non-final
+`io_error` (`namespace_changed`) and the caller looks it up again; `stale_target`
+from a move now comes from the destination-leaf CAS or a stale sibling anchor. An
+occupied destination leaf sends the arrival to the next alias-aware free name and
+returns that actual path. A delete with `onlyAt` (a model create's retraction) acts
+only on a row still at that path and otherwise answers `stale_target`. An absent,
 terminal, or denied identity destination returns `destination_missing`.
 Location-only CAS tokens fence moves and deletes. A `createFolders` suffix is
 validated beneath the identity anchor in the same transaction; a missing
 anchor creates nothing. Folder deletes validate the supplied folder identity
-before recursive mutation. Every `ContextPort.delete` names the expected entry
-kind and, for a file, its initiating document id; a mismatch or replacement is
-`stale_target` and acknowledges nothing. There is no path-only file delete.
+before recursive mutation. Every `ContextPort.delete` names its node and an area root
+URI (adapter and locks only); a row that is gone is `not_found`, and with `onlyAt` one
+that has left the place is `stale_target` and acknowledges nothing. There is no
+path-addressed delete. A refusal's `uri` names the area, not the entry.
 Work deletion soft-deletes its owned sources, documents, and folders marked
 `deletedByWorkId`; restore clears only those, so separately deleted content
 stays deleted.
@@ -342,6 +357,19 @@ key is locked before source preflight; typed domain refusal rolls back tree and
 catalog DML before recording the outcome, while infrastructure failure stays
 retryable. A reused operation ID cannot replan a different command. Receipt
 lookup needs current project access, not the old path or Work.
+
+Move and delete are addressed by entry id. `ContextTreeMover` takes the node
+(`{kind, nodeId}`, at the id it has now) and an area, and finds its row under the namespace
+locks (`inspectNode`); the area only decides which adapter and locks to take. A row found in
+another Work or area than the one locked, or a destination folder that now resolves to another
+scope, answers a non-final `io_error` with `reason: "namespace_changed"`: no receipt is recorded and
+the resend relocates the entry and authorizes again. The receipt command is a function of the
+request alone (`expected` with the id the request carried, `destinationParent`, `position`, and
+`name` only when the writer typed one). The route builds it once (`moveCommand`, `deleteCommand`)
+and passes it as `operation` beside the node, so a resend is recognised without locating anything; the address lives in the result
+(`destinationUri`, and `uri` on a delete), and the observation version reads its generation from it
+(`user://` uses the user's counter). A move with no `name` keeps the row's name and one with no
+`destinationParent` keeps its folder.
 
 ## Document content and filetype rules
 

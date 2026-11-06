@@ -18,11 +18,12 @@ const receipt = {
   operationId: "move",
   command: {
     kind: "move",
-    sourceUri: "manuscript://old.md",
-    destinationUri: "manuscript://Book/new.md",
     expected: { kind: "file", nodeId: "entry" },
   },
-  result: { ok: true, value: { destinationPath: "Book/new.md" } },
+  result: {
+    ok: true,
+    value: { destinationUri: "manuscript://Book/new.md" },
+  },
 } satisfies Extract<ContextOperationReceipt, { command: { kind: "move" } }>;
 
 function intent(overrides: Partial<NamespaceIntent> = {}): NamespaceIntent {
@@ -52,16 +53,8 @@ function settled(overrides: Partial<NamespaceIntent> = {}): NamespaceIntent {
         attemptId: "attempt",
         request: {
           kind: "move",
-          scheme: "manuscript",
-          sourceWorkHandle: null,
-          destinationWorkHandle: null,
-          body: {
-            operationId: "move",
-            path: "old.md",
-            expected: { kind: "file", nodeId: "entry" },
-            destinationScheme: "manuscript",
-            destinationFolderPath: "Book",
-          },
+          entryId: "entry",
+          body: { operationId: "move", kind: "file" },
         },
         outcome: { kind: "operation", receipt },
       },

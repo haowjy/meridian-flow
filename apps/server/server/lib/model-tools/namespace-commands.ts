@@ -17,6 +17,7 @@ import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import { type ContextMoveResult, renderFilename } from "@meridian/contracts/protocol";
 import { contextPortForThread } from "../../domains/context/context-port-resolution.js";
+import { contextAreaOf } from "../../domains/context/index.js";
 import type { RecordedBranchTreeChange } from "../../domains/context/ports/branch-tree.js";
 import type {
   ContextError,
@@ -139,8 +140,9 @@ async function containerGrant(
 
 /**
  * The live move or delete, its tree entry recorded inside the mutation's own transaction. The
- * placement before is read just ahead of it: the port's own check (the document still at the
- * source path) fails the command if it moved in between.
+ * placement before is read just ahead of it. The port acts on the document by id, so a rename or
+ * move by the writer in between does not fail the command: the document lands where the model
+ * typed.
  */
 async function commitLive(
   deps: ToolWiringDeps,
@@ -155,7 +157,6 @@ async function commitLive(
   });
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
-  const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
   const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
   if (position && "output" in position) return position;
   if (!before?.living)
@@ -193,33 +194,32 @@ async function commitLive(
       ...(input.command === "move" ? { destination: input.path } : {}),
     });
   if (input.command === "delete") {
-    const deleted = await port.delete(source.uri, {
-      expected: { kind: "file", documentId: source.documentId },
-      origin,
-      inTransaction: () => record(),
-    });
+    const deleted = await port.delete(
+      { kind: "file", nodeId: source.documentId },
+      contextAreaOf(source.uri),
+      {
+        origin,
+        inTransaction: () => record(),
+      },
+    );
     if (!deleted.ok) return refuse(deleted.error);
     if (!recorded) throw new Error("A delete committed without its tree entry");
     return { handle: recorded, uri: source.uri };
   }
-  const moved = await port.commitWriterLocation(source.uri, input.path, {
-    expected: { kind: "file", nodeId: source.documentId },
-    origin,
-    ...(position ? { position } : {}),
-    inTransaction: async (result: ContextMoveResult) => {
-      const wanted = wantedAt ? parseContextUri(wantedAt) : null;
-      const landedAt = result.destinationUri
-        ? result.destinationUri
-        : wanted?.ok
-          ? formatParsedContextUri(
-              wanted.value.scheme,
-              result.destinationPath,
-              wanted.value.authority,
-            )
-          : input.path;
-      await record(landedAt);
+  // The port takes the folder and the leaf apart; the leaf is what the model typed.
+  const typed = await canonicalPath(call, input.path);
+  const slash = typed.lastIndexOf("/");
+  const moved = await port.commitWriterLocation(
+    { kind: "file", nodeId: source.documentId },
+    contextAreaOf(source.uri),
+    {
+      destination: { kind: "at", folderUri: typed.slice(0, slash + 1) },
+      name: typed.slice(slash + 1),
+      origin,
+      ...(position ? { position } : {}),
+      inTransaction: (result: ContextMoveResult) => record(result.destinationUri),
     },
-  });
+  );
   if (!moved.ok) return refuse(moved.error);
   // A destination naming the document where it already is moves nothing and records nothing.
   if (!recorded)
@@ -227,17 +227,7 @@ async function commitLive(
       path: source.uri,
       destination: input.path,
     });
-  const wanted = wantedAt ? parseContextUri(wantedAt) : null;
-  const uri = moved.value.destinationUri
-    ? moved.value.destinationUri
-    : wanted?.ok
-      ? formatParsedContextUri(
-          wanted.value.scheme,
-          moved.value.destinationPath,
-          wanted.value.authority,
-        )
-      : input.path;
-  return { handle: recorded, uri };
+  return { handle: recorded, uri: moved.value.destinationUri };
 }
 
 /**
@@ -293,6 +283,7 @@ async function commitDrafted(
   };
   const command = {
     documentId: source.documentId,
+    area: contextAreaOf(source.uri),
     changedBy: { threadId, ...(turnId ? { turnId } : {}) },
     record,
   };
@@ -301,11 +292,10 @@ async function commitDrafted(
       ? {
           ...command,
           op: "move",
-          sourceUri: source.uri,
           destinationUri: input.path,
           ...(position ? { position } : {}),
         }
-      : { ...command, op: "delete", uri: source.uri },
+      : { ...command, op: "delete" },
   );
   if (!changed.ok)
     return namespaceContextRefusal(input.command, changed.error, {
@@ -318,7 +308,7 @@ async function commitDrafted(
       destination: input.path,
     });
   if (!recorded) throw new Error(`A drafted ${input.command} committed without its tree entry`);
-  return { handle: recorded, uri: changed.value.uri };
+  return { handle: recorded, uri: input.command === "move" ? changed.value.uri : source.uri };
 }
 
 /**

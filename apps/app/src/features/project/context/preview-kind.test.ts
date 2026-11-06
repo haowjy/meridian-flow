@@ -26,7 +26,6 @@ function tab(name: string, fileType: ViewerTab["fileType"] = "binary"): ViewerTa
 
 const tracked = (filetype: "markdown" | "text" | "json"): ContextReadResponse => ({
   kind: "tracked",
-  path: "/x",
   schemaType: filetype === "json" ? "code" : "document",
   filetype,
   content: "",
@@ -37,7 +36,6 @@ const binary = (
   fileType: ViewerTab["fileType"] = "binary",
 ): ContextReadResponse => ({
   kind: "binary",
-  path: "/x",
   url: "https://example.test/x",
   fileType,
   mimeType,

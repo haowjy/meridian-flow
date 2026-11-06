@@ -21,7 +21,10 @@ import {
 import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
 import { lockContextSources } from "./adapters/context-fs/document-locations.js";
-import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
+import {
+  DrizzleContextDocumentStore,
+  locateDocumentById,
+} from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
@@ -318,8 +321,9 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.readableSourceStore())?.findDocument(folderId, name, extension) ?? null;
   }
 
-  async findDocumentById(view: TreeView, documentId: string) {
-    return (await this.readableSourceStore())?.findDocumentById(view, documentId) ?? null;
+  /** A document by id is the project's, not this source's: it never waits on the source. */
+  findDocumentById(view: TreeView, documentId: string) {
+    return locateDocumentById(this.db, view, documentId);
   }
 
   /** A forward is the project's, not this source's: it never waits on the source. */
