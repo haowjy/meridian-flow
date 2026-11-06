@@ -60,5 +60,5 @@ contract before changing the probe. Probes use their own Works and documents;
 with `--keep`, drop only the named scratch database.
 
 [lock-free]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/drafts-without-locks.md
-[probes]: ../../tools/qa/probes/drafts-lock-free/
-[collab-context]: ../../apps/server/server/domains/collab/.context/CONTEXT.md#transaction-and-lock-contracts
+[probes]: ../../../../../../../tools/qa/probes/drafts-lock-free
+[collab-context]: ../CONTEXT.md#transaction-and-lock-contracts

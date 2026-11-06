@@ -157,7 +157,7 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   and background report bodies and change trails not fetched. Card wording and failure
   copy are drawn by React, so compare cards as raw props only. The app draws
   the same function's output, so compare a chat in the browser by row identity, row
-  kind, item kinds and visible text with [the chat-session recipe](qa/chat-session.md). `send` and `tail --until-idle` run the app's
+  kind, item kinds and visible text with [the chat-session recipe](../apps/app/src/features/chat/.context/qa/chat-session.md). `send` and `tail --until-idle` run the app's
   `ThreadSync`: the same read-first join, read application, frame ordering and missing-row recovery.
   Each result is proved by one applied snapshot, not by the mixed-version client value.
   `liveView` is a separate end-of-turn diagnostic: when stream frames end a turn, its next applied
@@ -166,7 +166,7 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   it first permanently prevents a stream claim for that turn; a tail joining mid-reply commonly
   reports `rewritten`. An empty claimed assistant set reports `no_turn`.
   - These checks do not certify browser rendering, tools, reasoning, interrupts, optimistic UI,
-    row placement, queued rows or dividers. Verify the screen with [the browser recipes](qa/chat-session.md).
+    row placement, queued rows or dividers. Verify the screen with [the browser recipes](../apps/app/src/features/chat/.context/qa/chat-session.md).
   - Neither `matches` nor `differs` changes the proven outcome or exit code. A disagreement is
     a debugging lead, not an automatic exit 6. The guarantee and its limits are in
     [`./mf` claims are proofs][mf-claims].
@@ -437,7 +437,7 @@ from the real runtime, not fabricated model output.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.
 
 The `ask_user` tool is available in primary chats. Queue a tool call with the shape
-shown in [the ask QA recipe](qa/ask.md); answer it with `./mf thread answer`.
+shown in [the ask QA recipe](../apps/server/server/domains/runtime/.context/qa/ask.md); answer it with `./mf thread answer`.
 It remains unavailable in child chats until question forwarding lands. A mock
 script does not bypass tool availability or permissions.
 

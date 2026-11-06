@@ -93,7 +93,7 @@ budgets:
 
 Write few unit tests. A new test protects a named risk that no probe or other test
 already exercises, and asserts what the code produces, not mocks or call counts. Prefer probes
-in the [runtime probe catalog](docs/qa/README.md). A test pinned to a redesignable
+in `.context/qa/` beside their code, indexed in [docs/qa](docs/qa/README.md). A test pinned to a redesignable
 decision lists it under `Pins implementation decisions` in its header; change the
 decision, change the test.
 

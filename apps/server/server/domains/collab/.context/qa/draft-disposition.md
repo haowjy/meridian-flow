@@ -1,6 +1,6 @@
 # Text-derived draft disposition
 
-The [draft-disposition runner](../../tools/qa/probes/draft-disposition/run.mts)
+The [draft-disposition runner](../../../../../../../tools/qa/probes/draft-disposition/run.mts)
 drives the production inverse and branch-Discard adapters against a new
 migrated PostgreSQL database. It is an adapter probe, not browser or HTTP Apply
 verification.

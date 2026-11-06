@@ -6,7 +6,7 @@ and phone widths in light and dark.
 
 ## Setup
 
-Follow [Runtime probes](README.md): `MODEL_PROVIDER=mock pnpm dev --no-tailscale`,
+Follow [Runtime probes](../../../../../../../docs/qa/README.md): `MODEL_PROVIDER=mock pnpm dev --no-tailscale`,
 `pnpm portless:list`, routes that carry this worktree's prefix, `MF_APP_URL` and `MF_SERVER_URL`
 passed explicitly. Sign in at `/api/auth/dev-login` in `agent-browser` (`--session qc`; a second
 `--session qc2` is an independent tab with its own `sessionStorage`). Dark is
