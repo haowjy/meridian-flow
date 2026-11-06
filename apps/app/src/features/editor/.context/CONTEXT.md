@@ -18,7 +18,7 @@ The toolbar row shares the prose edge, while the identity bar is pane-wide.
 a manuscript scrolls until its last line sits in the pane's upper half, so a
 writer never types against the bottom edge. The reserve belongs on the
 ProseMirror node so blank space remains caret territory (a press there lands
-the caret at document end, as a gapcursor after an object). The ProseMirror
+where the walk in `core/editor/landing` says). The ProseMirror
 node spans the whole pane and carries the margin as its own padding, so gutter
 presses and drops are the editor's own: `core/editor/landing` resolves the
 presses with no text under them and every drop, and the frame only sets the

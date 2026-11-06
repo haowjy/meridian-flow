@@ -16,7 +16,7 @@ selection bubbles and no ad-hoc surfaces.
   single `EditorChromeHost` in `SessionEditor`; do not add ad-hoc portals or
   surfaces to `EditorView`.
 - Keep prose geometry in `editor-column.ts` and caret placement in
-  `core/editor/landing`. Layout components guard presses; they do not
+  `core/editor/landing`. Layout components do not answer presses or
   choose selection policy.
 - `EditorScopeProvider` is the sole app-to-editor scope seam. Consumers read
   `{ projectId, workId, rootThreadId }` with `useEditorScope`; scope is runtime

@@ -1,6 +1,6 @@
 /**
  * Where a point in the editor lands: the one answer to "what is under the
- * pointer" for a press and (from the next step) a drag.
+ * pointer" for a press and a drag.
  *
  * Pure over a `Geometry` port, so the walk runs on fake boxes. It is total:
  * every point gets a landing, including a margin or the space below the last
@@ -17,7 +17,7 @@ import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-t
 
 export type Point = { x: number; y: number };
 
-export type Rect = { left: number; right: number; top: number; bottom: number };
+type Rect = { left: number; right: number; top: number; bottom: number };
 
 export type Geometry = {
   /** The box of the node starting at `pos`. */

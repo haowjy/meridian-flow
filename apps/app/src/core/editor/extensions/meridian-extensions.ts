@@ -235,7 +235,11 @@ export const MeridianTable = Table.extend({
   // a column-resize press must claim first, and the cell-sweep drag must arm
   // its listeners before the router claims an inert padding press.
   addProseMirrorPlugins() {
-    return [tableSweepPastePlugin(), ...(this.parent?.() ?? []), cellInteriorPressPlugin()];
+    return [
+      tableSweepPastePlugin(),
+      ...(this.parent?.() ?? []),
+      cellInteriorPressPlugin(this.editor),
+    ];
   },
 
   addAttributes() {

@@ -20,7 +20,7 @@ import {
   snapToWordEdge,
 } from "../../landing/inline-snap";
 import type { Landing, Point } from "../../landing/point-landing";
-import { viewGeometry } from "../../landing/view-geometry";
+import { nodeRect } from "../../landing/view-geometry";
 
 export type ReferenceDropEntry = Readonly<{
   ref: Readonly<{ kind: "file" | "folder"; id: string }>;
@@ -84,7 +84,7 @@ function referenceDropPlan(options: ReferenceDropOptions) {
       doc,
       snapOutOfIdentityLink(
         doc,
-        snapOutOfAtom(doc, snapOutOfCode(doc, landing.pos), point, viewGeometry(view)),
+        snapOutOfAtom(doc, snapOutOfCode(doc, landing.pos), point, nodeRect(view)),
       ),
     );
     const content = spaced(view, pos, nodes);

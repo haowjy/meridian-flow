@@ -11,8 +11,9 @@
  *
  * Doors for rows and files arrive as options from the composition root
  * (`core/editor/config.ts`), so this file imports neither lane. A host with no
- * door for a payload leaves it alone: a code document has the slice door only,
- * and the composer leaves files to its own drop zone.
+ * door for a payload leaves its `dragover` and `drop` events unclaimed: a code
+ * document has the slice door only, and the composer leaves files to its own
+ * drop zone.
  */
 
 import { type Editor, Extension } from "@tiptap/core";
@@ -63,7 +64,7 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
     let caret: DropCaretView | null = null;
 
     const landingOf = (view: EditorView, event: DragEvent): Landing =>
-      landingAt(view.state, { x: event.clientX, y: event.clientY }, viewGeometry(view));
+      landingAt(view.state, { x: event.clientX, y: event.clientY }, viewGeometry(view, editor));
     const pointOf = (event: DragEvent): Point => ({ x: event.clientX, y: event.clientY });
     const draggedFiles = (transfer: DataTransfer | null): DraggedFile[] =>
       Array.from(transfer?.items ?? [])
@@ -92,13 +93,49 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
       }
     }
 
+    function over(view: EditorView, event: DragEvent): void {
+      if (!view.editable) return;
+      const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
+      const current = plan(view, event, kind);
+      if (!current) {
+        clear();
+        return;
+      }
+      if (kind === "files") files?.active(editor, current.kind === "accept");
+      if (current.kind === "accept") caret?.show(current.pos);
+      else caret?.hide();
+      if (current.hint) hint?.show(owner, { kind: current.kind, label: current.hint }, event);
+      else hint?.clear(owner);
+
+      // Claimed whatever the plan says, and `dropEffect` carries a refusal:
+      // an unclaimed drag is a drop the browser opens or lands its own way.
+      event.preventDefault();
+      if (event.dataTransfer) {
+        if (current.kind === "refuse") event.dataTransfer.dropEffect = "none";
+        else if (kind === "entries" && !view.dragging) event.dataTransfer.dropEffect = "copy";
+      }
+    }
+
+    function leave(view: EditorView, event: DragEvent): void {
+      const related = event.relatedTarget as Node | null;
+      if (!related || !view.dom.contains(related)) clear();
+    }
+
     return [
       new Plugin({
         view: (view) => {
           caret = new DropCaretView(view);
+          // Direct listeners: a node view (a rendered diagram, a figure) stops
+          // `dragover` before it reaches `handleDOMEvents`.
+          const onOver = (event: DragEvent) => over(view, event);
+          const onLeave = (event: DragEvent) => leave(view, event);
+          view.dom.addEventListener("dragover", onOver);
+          view.dom.addEventListener("dragleave", onLeave);
           return {
             update: (current, previous) => caret?.update(current, previous),
             destroy() {
+              view.dom.removeEventListener("dragover", onOver);
+              view.dom.removeEventListener("dragleave", onLeave);
               clear();
               caret?.destroy();
               caret = null;
@@ -107,36 +144,6 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
         },
         props: {
           handleDOMEvents: {
-            dragover(view, event) {
-              if (!view.editable) return false;
-              const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
-              const current = plan(view, event, kind);
-              if (!current) {
-                clear();
-                return false;
-              }
-              if (kind === "files") files?.active(editor, true);
-              if (current.kind === "accept") caret?.show(current.pos);
-              else caret?.hide();
-              if (current.hint)
-                hint?.show(owner, { kind: current.kind, label: current.hint }, event);
-              else hint?.clear(owner);
-
-              // A refused file is claimed too: unclaimed, the browser opens it.
-              if (current.kind === "accept" || kind === "files") event.preventDefault();
-              if (event.dataTransfer) {
-                if (current.kind === "refuse") event.dataTransfer.dropEffect = "none";
-                else if (kind === "entries") event.dataTransfer.dropEffect = "copy";
-              }
-              return true;
-            },
-
-            dragleave(view, event) {
-              const related = event.relatedTarget as Node | null;
-              if (!related || !view.dom.contains(related)) clear();
-              return false;
-            },
-
             dragend() {
               clear();
               return false;
@@ -150,22 +157,26 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
               if (view.dragging) return false;
               const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
               if (kind === "none" || !(kind === "entries" ? entries : files)) return false;
+              const dropped = Array.from(event.dataTransfer?.files ?? []);
+              // A files drag that carries none is not ours to name.
+              if (kind === "files" && dropped.length === 0) return false;
 
               // Claimed even when nothing lands: a file nobody claimed is a
               // file the browser opens, and the manuscript would be gone.
               event.preventDefault();
-              event.stopPropagation();
               const landing = landingOf(view, event);
               if (kind === "entries") {
-                const dropped = entries?.(view, landing, pointOf(event));
-                if (dropped?.kind === "accept") dropped.commit(view);
-              } else files?.drop(editor, Array.from(event.dataTransfer?.files ?? []), landing);
+                // Rows only: the tree's own window listeners must not see this drop.
+                event.stopPropagation();
+                const planned = entries?.(view, landing, pointOf(event));
+                if (planned?.kind === "accept") planned.commit(view);
+              } else files?.drop(editor, dropped, landing);
               return true;
             },
           },
 
           /** A click on inert space (a margin, a gap between blocks) puts the caret where the landing says; presses on text and objects never get here. */
-          handleClick: (view, _pos, event) => pressOnInertTarget(view, event),
+          handleClick: (view, _pos, event) => pressOnInertTarget(view, editor, event),
 
           // Text and nodes: an editor selection moved or copied, or text from
           // outside. Consumed whether or not it lands, so ProseMirror's own

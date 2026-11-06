@@ -29,7 +29,7 @@ export function referenceDropOptions({
       });
       return nodes.every((node) => node !== null) ? nodes : null;
     },
-    label: (kind) => labels[kind === "accept" ? "accept" : kind],
+    label: (kind) => labels[kind],
     showHint: showDragHint,
     clearHint: clearDragHint,
   };

@@ -1,5 +1,4 @@
 /** Shared docked-toolbar and scrolling layout for document editor surfaces. */
-import type { Editor } from "@tiptap/react";
 import type { ReactNode, Ref, UIEventHandler } from "react";
 
 import { cn } from "@/lib/utils";
@@ -12,11 +11,11 @@ export type EditorSurfaceFrameProps = {
   toolbar?: ReactNode;
   children: ReactNode;
   /**
-   * When given, the whole scroll area is caret territory (the ProseMirror node
-   * spans it, so a margin press is the editor's own to answer): the cursor
-   * promises it. The pane must not have click-dead margins.
+   * The whole scroll area is caret territory (the ProseMirror node spans it,
+   * so a margin press is the editor's own to answer): the cursor promises it.
+   * The pane must not have click-dead margins.
    */
-  editor?: Editor | null;
+  textCursor?: boolean;
   scrollClassName?: string;
   scrollRef?: Ref<HTMLDivElement>;
   onScroll?: UIEventHandler<HTMLDivElement>;
@@ -26,7 +25,7 @@ export function EditorSurfaceFrame({
   notices,
   toolbar,
   children,
-  editor,
+  textCursor,
   scrollClassName,
   scrollRef,
   onScroll,
@@ -67,7 +66,7 @@ export function EditorSurfaceFrame({
         // containing block of everything portalled into it.
         className={cn(
           "relative flex min-h-0 flex-1 flex-col overflow-y-auto",
-          editor && "cursor-text",
+          textCursor && "cursor-text",
           scrollClassName,
         )}
         data-stable-layout-scroll
