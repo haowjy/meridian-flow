@@ -72,9 +72,10 @@ function selectionPress(view: EditorView, event: MouseEvent): "on" | "beside" | 
     return null;
   const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
   if (!at || at.pos < selection.from || at.pos > selection.to) return null;
-  if (at.pos === selection.from && event.clientX < view.coordsAtPos(selection.from).left)
+  const start = view.coordsAtPos(selection.from);
+  if (at.pos === selection.from && (event.clientY < start.top || event.clientX < start.left))
     return "beside";
-  if (at.pos === selection.to && event.clientX > view.coordsAtPos(selection.to).left)
+  if (at.pos === selection.to && event.clientX > view.coordsAtPos(selection.to, -1).left)
     return "beside";
   return "on";
 }
