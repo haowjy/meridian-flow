@@ -24,7 +24,7 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextDocumentHost, type EditableContextTab } from "../context/ContextDocumentHost";
-import { ContextViewerBareHost } from "../context/ContextViewerHost";
+import { ContextViewerHost } from "../context/ContextViewerHost";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
@@ -337,7 +337,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     return (
       <>
         {capture}
-        <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
+        <ContextViewerHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
       </>
     );
   }

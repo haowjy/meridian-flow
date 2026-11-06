@@ -57,7 +57,7 @@ export function ImageViewer({
     });
   };
   return (
-    <div className="grid h-full min-h-0 place-items-center overflow-auto bg-background p-4 md:p-6">
+    <div className="grid h-full min-h-0 place-items-center overflow-auto p-4 md:p-6">
       {!drawUrl || failedUrl === drawUrl ? (
         <FileCard name={name} mimeType={mimeType} sizeBytes={sizeBytes} url={url} />
       ) : (

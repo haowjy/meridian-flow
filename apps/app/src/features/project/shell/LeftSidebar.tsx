@@ -14,11 +14,9 @@ import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
-import { serverTabFromFile } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
-import { useDockPlacement } from "../dock/use-dock-placement";
 import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
@@ -68,10 +66,6 @@ export function LeftSidebar({
   onCollapse,
 }: LeftSidebarProps) {
   const trashNavigation = useProjectTrashNavigation();
-  // A tree click is a known file, so it enters at the dock's commit boundary: beside the
-  // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
-  // and the Editor path everywhere else (see `use-dock-placement`).
-  const placement = useDockPlacement();
   const titleEditor = useRef<TitleEditHandle>(null);
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (
@@ -79,13 +73,8 @@ export function LeftSidebar({
     file: ContextFile,
     options?: { focus?: true },
   ) => {
-    if (placement.besideChat) {
-      const tab = serverTabFromFile(scheme, file, {});
-      if (tab) {
-        placement.commit(tab, undefined, options?.focus);
-        return;
-      }
-    }
+    // The tree is navigation: on every screen, a pick goes to the Editor, unlike a chat
+    // mention, which peeks in the dock.
     if (!file.editable) {
       onSelectContextPath(file.path, scheme);
       return;

@@ -15,7 +15,21 @@ import { useImportMilestone } from "./milestones";
 import { readPicked } from "./read-picked";
 import { problemSentences } from "./reason-copy";
 import { PickInputs } from "./SelectionPicker";
-import { toastPresentation } from "./toast-presentation";
+import { type ToastState, toastPresentation } from "./toast-presentation";
+
+/**
+ * The states that follow the writer to other projects. A result, or a card waiting on the
+ * writer, stays with its project: it is about that project's files.
+ */
+const IN_PROGRESS: ReadonlySet<ToastState> = new Set([
+  "reading",
+  "uploading",
+  "elsewhere",
+  "stop",
+  "waiting",
+  "organizing",
+  "adding",
+]);
 
 export function ImportToasts({ coordinator }: { coordinator: ImportCoordinator }) {
   const { imports } = useImportsSnapshot(coordinator);
@@ -215,7 +229,7 @@ function ImportToast({
     otherProject,
     project,
   ]);
-  useActivityToast(importId, spec);
+  useActivityToast(importId, otherProject && !IN_PROGRESS.has(state) ? null : spec);
   return (
     <PickInputs
       folderRef={folder}
