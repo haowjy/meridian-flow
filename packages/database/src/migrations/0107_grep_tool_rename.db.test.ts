@@ -76,23 +76,24 @@ describe.skipIf(!runDbTests || !databaseUrl)("0107 grep tool rename", () => {
       await migrate(session);
 
       const [uses] = await session`SELECT count(*)::int AS n FROM turn_blocks
-        WHERE content->>'toolName' = 'search' OR content->>'toolName' = 'grep' AND content->'input' ? 'scope'`;
+        WHERE turn_id = ${turn}
+          AND (content->>'toolName' = 'search' OR content->>'toolName' = 'grep' AND content->'input' ? 'scope')`;
       expect(uses?.n).toBe(0);
       const [first] =
-        await session`SELECT content FROM turn_blocks WHERE content->>'toolCallId' = 'c0' AND block_type = 'tool_use'`;
+        await session`SELECT content FROM turn_blocks WHERE turn_id = ${turn} AND content->>'toolCallId' = 'c0' AND block_type = 'tool_use'`;
       // Decoded as `search` compared it, then escaped; the case-insensitivity it had is kept.
       expect(first?.content).toMatchObject({
         toolName: "grep",
         input: { pattern: "a\\.b_c \\(x\\)", path: "kb://", "-i": true },
       });
       const [result] =
-        await session`SELECT content FROM turn_blocks WHERE block_type = 'tool_result'`;
+        await session`SELECT content FROM turn_blocks WHERE turn_id = ${turn} AND block_type = 'tool_result'`;
       expect(result?.content).toMatchObject({
         output: "text",
         result: { files: [{ uri: "kb://a" }], totalFiles: 1, exact: true },
       });
       const [read] =
-        await session`SELECT content FROM turn_blocks WHERE content->>'toolName' = 'read'`;
+        await session`SELECT content FROM turn_blocks WHERE turn_id = ${turn} AND content->>'toolName' = 'read'`;
       expect(read?.content).toEqual({
         toolCallId: "r",
         toolName: "read",

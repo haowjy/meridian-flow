@@ -1,8 +1,8 @@
 # Chat Files menu
 
 The Files dropdown combines shared Scratch and files attached in this chat. Use an
-owned `pnpm dev` stack and URLs from `pnpm portless:list`; sign in with
-dev-login. Drive it with `agent-browser` under one session name. Attach through
+owned `pnpm dev` stack and URLs from `pnpm portless:list`; the stack runs with
+`DEV_AUTH_BYPASS=1`, so the app opens signed in. Drive it with `agent-browser` under one session name. Attach through
 the composer's Attach file input (`agent-browser upload`), since the files must
 come in through the real intake.
 
