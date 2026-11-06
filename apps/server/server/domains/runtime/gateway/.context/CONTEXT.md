@@ -90,38 +90,35 @@ provider advertisement is not argument authority.
 A provider lists offerings: `{ model, pricing, promptCache? }`. What an endpoint caches
 and charges belongs to the provider serving the model, not to the model (DeepSeek uses
 the Anthropic adapter and caches differently). `ModelInfo` stays flat and carries the
-offering's resolved descriptor `promptCache: { kind, shortTtlMs, longTtlMs }`. Both
-lifetimes are required; `null` means the provider documents none. An offering with no
-`promptCache` takes `DEFAULT_PROMPT_CACHE` (explicit, 5 minutes short, 1 hour long);
-there is no provider-level default.
+offering's `promptCache: { kind, shortTtlMs, longTtlMs }`. `null` means the provider
+documents no lifetime. Offerings spell out their own descriptor or take
+`DEFAULT_PROMPT_CACHE`; there is no provider-level default.
 
 | Provider | kind | short | long |
 | --- | --- | --- | --- |
 | Anthropic (Claude) | explicit | 5m | 1h |
 | OpenAI (GPT-5.6+) | automatic | 30m | 12h (the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl`; the 30m default is never sent) |
 | DeepSeek | automatic | 1h | 1h (lower bound of its documented "a few hours to a few days"; an estimate) |
-| Gemini | automatic | null | null (no documented lifetime) |
+| Gemini | automatic | null | null |
 
-`GenerateRequest.promptCacheRetention` is required and picks one
-(`resolvePromptCacheTtlMs`): the loop asks `long` for primary threads and `short`
-for subagents, fixed by thread kind so the cached prefix never varies mid-thread;
-the rolling summarizer passes `none`, which resolves to a null lifetime so no cache mark is sent (a one-shot call would pay the write premium for an entry nothing reads; OpenAI keeps its 30m default, which Flow can't turn off). `longCacheWrites` is true when the
-request is long and the two lifetimes differ; when a provider omits the cache-write
-split by lifetime, the adapters attribute all writes to the lifetime the request asked for.
-`validateModelRegistry` (adapter-neutral) rejects a long lifetime shorter than the short
-one, one null with the other set, and two lifetimes with a `cacheWriteUsdPerMillionTokens`
-but no `cacheWriteLongUsdPerMillionTokens`. Each adapter keeps one table of the lifetimes its wire can express, used for both the
-creation-time check and the request mapping: OpenAI accepts 30m and 12h (sending
-`prompt_cache_options` for 12h, whichever lifetime the request resolves to) and Anthropic
-5m/1h for explicit models.
-Only `explicit` offerings get `cache_control` on the wire. The Anthropic adapter marks
-the last system block and the last block of the two most recent wire `user` messages (tool
-results are user turns there), walking back past a block that cannot carry the mark
-(thinking, empty text); DeepSeek gets none and keeps a joined `system` string. The loop
-assembles requests with no marks, so every Anthropic-format request, summarizer calls
-included, is marked the same way. Automatic offerings receive no marks. A null
-lifetime means unknown, not infinite: prediction reads it as cold
-(`ttl_unknown`), so Gemini always reads cold.
+`GenerateRequest.promptCacheRetention` is required: `long` for primary threads, `short`
+for subagents (fixed by thread kind so the cached prefix never varies mid-thread), and
+`none` for the rolling summarizer, which resolves to a null lifetime so no mark is sent
+(OpenAI still keeps its 30m default; Flow can't turn it off). `longCacheWrites` is true when
+the request is long and the two lifetimes differ; when a provider omits the cache-write
+split by lifetime, adapters attribute all writes to the lifetime the request asked for.
+`validateModelRegistry` rejects a long lifetime shorter than the short one, one null with
+the other set, and two lifetimes with `cacheWriteUsdPerMillionTokens` but no
+`cacheWriteLongUsdPerMillionTokens`. Each adapter keeps one table of the lifetimes its wire
+can express, used for both the creation-time check and the request mapping (OpenAI: 30m and
+12h; Anthropic: 5m and 1h, explicit models only).
+
+Only `explicit` offerings get `cache_control`. The Anthropic adapter marks the last system
+block and the last block of the two most recent wire `user` messages (tool results are user
+turns there), walking back past a block that cannot carry a mark (thinking, empty text);
+DeepSeek gets none and keeps a joined `system` string. The loop places no marks, so every
+Anthropic-format request, summarizer calls included, is marked the same way. A null lifetime
+means unknown, not infinite: cache prediction reads it as cold (`ttl_unknown`).
 
 Claude and GPT-5.6+ bill cache writes by the TTL written. `Usage.cacheWriteLongTokens`
 (Anthropic's `cache_creation.ephemeral_1h_input_tokens`; OpenAI's
@@ -175,11 +172,13 @@ at tool registration.
 
 `LIVE_TEST_MODEL=<registry model id>` sends every gateway call to that model, whatever
 the request, chat binding or Agent names. `createGatewayFromEnv` validates it (known id,
-provider key set) and wraps the gateway once (`config/live-test-model.ts`); it also refuses it in production (not staging; a staging deploy must set `APP_ENV=staging`). The wrapper rewrites the request's model
-and lists every registry id, keyed or not, with the override's facts, because
-availability checks, compaction, image support and tokenizer look models
-up by the stored id. Cache prediction is the exception: a chat bound to a model other than the override reads cold
-(`model_changed`), because its stored responses name the routed model, so its summaries take the rolling path. `getDefaultModel()` stays the real default, so seeding and child
-bindings never record the override. Costing needs no hook: it prices the provider and model the response reports.
-Stored bindings, Agent files and the catalog still show the model they name. The name has
-no `FLOW_` prefix because it is not a provider key.
+provider key set), refuses it in production (a staging deploy must set `APP_ENV=staging`),
+and wraps the gateway once (`config/live-test-model.ts`). The wrapper rewrites the
+request's model and lists every registry id, keyed or not, with the override's facts,
+because availability checks, compaction, image support and the tokenizer look models up by
+the stored id. Stored bindings, Agent files and the catalog still show the model they
+name, and `getDefaultModel()` stays the real default, so seeding never records the
+override. Cache prediction is the exception: a chat bound to another model reads cold
+(`model_changed`), because its stored responses name the routed model, so its summaries
+take the rolling path. Costing prices the provider and model the response reports. The
+name has no `FLOW_` prefix because it is not a provider key.

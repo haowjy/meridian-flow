@@ -31,7 +31,7 @@ The same S3 adapter path serves development and production; only endpoint and
 credentials differ. Dev bucket isolation belongs to `tools/dev`, not this
 domain.
 
-## Invariants
+## Contracts
 
 - Storage URLs are durable; signed URLs are ephemeral.
 - This module knows keys, bytes, and MIME types only.
