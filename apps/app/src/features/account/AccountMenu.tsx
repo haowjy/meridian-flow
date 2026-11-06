@@ -1,5 +1,4 @@
 import { t } from "@lingui/core/macro";
-import { Link } from "@tanstack/react-router";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 
 import {
@@ -48,7 +47,8 @@ export function AccountMenu() {
         <DropdownMenuItem onSelect={() => open()}>{t`Settings`}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link to="/logout">{t`Log out`}</Link>
+          {/* signOut() redirects to api.workos.com; a client-side <Link> would fetch it and fail CORS. */}
+          <a href="/logout">{t`Log out`}</a>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
