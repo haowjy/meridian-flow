@@ -138,3 +138,33 @@ it("does not restore a range from a position inside a deleted paragraph", () => 
   expect(liveAbsolutePosition(binding, inside)).toBeNull();
   document.destroy();
 });
+
+it("undoes every part of an insertion whose redone copy was split", () => {
+  const document = new Y.Doc();
+  const array = document.getArray<number>("array");
+  const manager = new Y.UndoManager(array, { captureTimeout: 0 });
+
+  array.insert(0, [1, 2, 3]);
+  array.insert(2, [6, 7]);
+  document.transact(() => {
+    array.delete(1, 1);
+    array.insert(1, [8]);
+  });
+  array.delete(0, 1);
+  array.delete(1, 2);
+  manager.undo();
+  array.insert(2, [9]);
+
+  for (const expected of [
+    [8, 6, 7, 3],
+    [1, 8, 6, 7, 3],
+    [1, 2, 6, 7, 3],
+    [1, 2, 3],
+  ]) {
+    manager.undo();
+    expect(array.toJSON()).toEqual(expected);
+  }
+
+  manager.destroy();
+  document.destroy();
+});
