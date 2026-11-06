@@ -19,6 +19,7 @@ export async function readBoundedBody(
   const chunks: Uint8Array[] = [];
   let total = 0;
   const abort = () => {
+    // slop-lint: allow swallowed-error cancelling a body that already errored or closed has nothing left to report
     void reader.cancel().catch(() => {});
   };
   signal?.addEventListener("abort", abort, { once: true });
@@ -32,6 +33,7 @@ export async function readBoundedBody(
       }
       total += value.byteLength;
       if (total > maxBytes) {
+        // slop-lint: allow swallowed-error the request is refused as too large whether or not the cancel lands
         await reader.cancel().catch(() => {});
         throw tooLarge();
       }

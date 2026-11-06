@@ -1,5 +1,5 @@
 /**
- * Whole-document copy of a binary file (D24): the one place a copy depends on
+ * Whole-document copy of a binary file: the one place a copy depends on
  * how a document is stored. It duplicates the storage object, so deleting
  * either file never removes the other's bytes, and creates the destination
  * with `metadata.copiedFrom` through the copier's own port: in a draft-mode chat
@@ -41,7 +41,7 @@ export interface PreparedBinaryCopy {
   hasPreview: boolean;
 }
 
-/** Duplicate a binary's stored bytes for a destination that does not exist yet (D24). */
+/** Duplicate a binary's stored bytes for a destination that does not exist yet. */
 export async function prepareBinaryCopy(input: {
   objectStore: ObjectStorePort;
   source: Pick<BinaryFileRef, "uri" | "storageUrl" | "mimeType" | "hasPreview">;

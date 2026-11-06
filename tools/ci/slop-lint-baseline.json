@@ -188,11 +188,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/core/resources/indexeddb-resource-metadata.ts",
-        "line": "void promise.finally(() => this.operations.delete(promise)).catch(() => undefined);",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/core/resources/resource-content-access.ts",
         "line": "} catch {",
         "count": 1
@@ -355,11 +350,6 @@
       {
         "path": "apps/app/src/features/project/context/ContextDocumentHost.tsx",
         "line": "void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/project/context/entry-drag/move-notice.tsx",
-        "line": "const back = await undoMove(window.result.moved, { resources, projectId }).catch(() => null);",
         "count": 1
       },
       {
@@ -635,18 +625,8 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/editor/EditorSurfaceFrame.tsx",
-        "line": "{/* biome-ignore lint/a11y/noStaticElementInteractions: the mousedown is",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/editor/surfaces/objects/CodeBlockChips.tsx",
         "line": "// biome-ignore lint/a11y/noStaticElementInteractions: the mousedown only keeps the caret where it was; every control inside is a button",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/project/context/ContextTreePanel.tsx",
-        "line": "{/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). */}",
         "count": 1
       },
       {
@@ -989,11 +969,6 @@
       {
         "path": "apps/server/server/domains/context/adapters/context-fs/create-placement.ts",
         "line": "* deletes, which are facts in the Work's branch (D26).",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/context/binary-copy.ts",
-        "line": "* Whole-document copy of a binary file (D24): the one place a copy depends on",
         "count": 1
       },
       {

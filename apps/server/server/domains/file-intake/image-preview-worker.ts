@@ -7,6 +7,7 @@
  */
 import { parentPort } from "node:worker_threads";
 import { decode as decodeBmp } from "bmp-ts";
+// slop-lint: allow suppression heic-decode has no types to declare
 // @ts-expect-error heic-decode ships no type declarations
 import decodeHeic from "heic-decode";
 import sharp from "sharp";

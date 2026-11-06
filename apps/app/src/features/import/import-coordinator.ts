@@ -243,8 +243,8 @@ export class ImportCoordinator {
         this.records.delete(id);
       }
       this.publish();
+      // slop-lint: allow swallowed-error a failed background read cannot erase the last durable summary
     } catch {
-      /* A failed background read cannot erase the last durable summary. */
     } finally {
       if (this.polling === signal) this.polling = null;
       if (!signal.aborted) {

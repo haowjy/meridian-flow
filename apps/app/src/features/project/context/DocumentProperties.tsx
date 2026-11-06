@@ -77,6 +77,7 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
           <div className={editorColumnChrome}>
             <div
               // Scrollable regions take the keyboard so a long block can be read without a mouse.
+              // slop-lint: allow suppression a capped block must be keyboard-scrollable, and the rule can't see that
               // biome-ignore lint/a11y/noNoninteractiveTabindex: the keyboard scrolls a capped block
               tabIndex={0}
               className="focus-ring max-h-60 overflow-y-auto rounded-md pb-3 pl-4"

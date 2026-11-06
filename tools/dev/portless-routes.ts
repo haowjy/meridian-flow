@@ -23,6 +23,7 @@ export function resolvePortlessProxyPort(env: NodeJS.ProcessEnv = process.env): 
       10,
     );
     if (isPort(recorded)) return recorded;
+    // slop-lint: allow swallowed-error a missing state file is the first run's normal state
   } catch {
     // A missing state file means the proxy has not run yet; fall through.
   }

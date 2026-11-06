@@ -5,7 +5,7 @@
  * version its surface shows (live, or a draft tab's draft). It then, in order:
  *
  * 1. duplicates every binary's object — bytes leave the database's reach before any row
- *    names them, and their keys are released if no transaction commits to name them (D24);
+ *    names them, and their keys are released if no transaction commits to name them;
  * 2. asks the destination adapter to plan the tree (names and identities; a root takes the
  *    device's `copyId` when it sent one), and binds each
  *    document's content for the address its copy will have through

@@ -32,7 +32,7 @@ function typeLabel(name: string, mimeType: string): string {
 export function FileCard({ name, mimeType, sizeBytes, url, className }: FileCardProps) {
   const details = [typeLabel(name, mimeType), sizeBytes === null ? "" : formatBytes(sizeBytes)]
     .filter(Boolean)
-    .join(" · ");
+    .join(", ");
   return (
     <span
       contentEditable={false}
