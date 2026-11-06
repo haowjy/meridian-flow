@@ -8,7 +8,6 @@
 import { t } from "@lingui/core/macro";
 import type {
   ContextSiblingPosition,
-  NamedRow,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import type { ParentRef, ResourceDestination } from "@meridian/resource-replica";
@@ -44,7 +43,6 @@ export type PickedEntry = {
   id: string;
   name: string;
   path: string;
-  row: NamedRow | null;
 };
 
 type EntryDestinationPickerProps = {
@@ -189,7 +187,6 @@ function OpenPicker({
           {
             entry: ref,
             name: entry.name,
-            row: entry.row,
             typed: name,
             before,
             after,
@@ -242,7 +239,7 @@ function OpenPicker({
     destinationName,
     scheme,
     into,
-    copies: [{ entry: ref, name: entry.name, row: entry.row, view: LIVE_VIEW }],
+    copies: [{ entry: ref, name: entry.name, view: LIVE_VIEW }],
   });
 
   return (

@@ -23,7 +23,6 @@ import type {
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
-  ParsedDocumentFilename,
   RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
@@ -496,7 +495,7 @@ export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   /** A preview of the object was stored beside it (`saveImagePreview` said so). */
   hasPreview?: boolean;
   /** The destination's name already decided (a copy's); the leaf of the path is then not parsed. */
-  filename?: ParsedDocumentFilename;
+  filename?: { name: string; extension: string };
 }
 
 /**

@@ -191,7 +191,7 @@ export type ResourceDescriptor = ResourceKey & {
         initialization?: "reserved";
       }
     | { kind: "unacquired" };
-  /** Stable editor/viewer classification retained when no catalog checkpoint is available. */
+  /** Editor/viewer classification retained when no catalog checkpoint is available; a rename can change its `extension`. */
   classification: CatalogFileClassification;
   /**
    * How the server first materializes this identity, while it holds no such document: an untitled

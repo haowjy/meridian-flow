@@ -13,7 +13,7 @@ import type {
   ProjectId,
   WorkId,
 } from "@meridian/contracts";
-import { addressCandidates, namespaceName } from "@meridian/contracts/protocol";
+import { addressCandidates, filenameSplits, namespaceName } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
@@ -312,17 +312,6 @@ type VisibleFolderRow = {
   hidden: boolean;
   locationVersion: bigint;
 };
-
-/** Every (name, extension) pair that renders as `filename`: lookups stay exact and indexed. */
-function filenameSplits(filename: string): { name: string; extension: string }[] {
-  const splits = [{ name: filename, extension: "" }];
-  for (let at = 1; at < filename.length - 1; at += 1) {
-    if (filename[at] === ".") {
-      splits.push({ name: filename.slice(0, at), extension: filename.slice(at + 1) });
-    }
-  }
-  return splits;
-}
 
 function folderPath(chain: readonly FolderLink[] | undefined, filename: string): string {
   return chainPrefix(chain ?? []) + filename;

@@ -22,7 +22,6 @@ import { copyRows } from "./execute-copy";
 import { currentView, moveRows, type ReplicaContext } from "./execute-move";
 import {
   entryNameNow,
-  entryRowNow,
   type MoveRow,
   type PlacementView,
   parentName,
@@ -244,7 +243,6 @@ function rowFailure(
   const row: MoveRow = {
     entry,
     name,
-    row: entryRowNow(view, entry),
     typed: place.name,
     before: current,
     after: place.parent,

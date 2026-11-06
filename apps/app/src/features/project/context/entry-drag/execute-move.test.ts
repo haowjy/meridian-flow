@@ -14,6 +14,7 @@ const holding = (names: string[]): NamingView => ({
   placement: {
     childrenAt: () =>
       names.map((name) => ({ kind: "folder", entryId: `held-${name}`, name }) as CatalogEntry),
+    namedRow: () => ({ extension: "", editable: true }),
   },
 });
 

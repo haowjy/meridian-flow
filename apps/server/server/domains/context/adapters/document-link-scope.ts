@@ -18,13 +18,13 @@ import {
   documentPathKey,
   type LinkView,
   matchDocumentPath,
+  omittedExtensionPath,
   parseContextUri,
   parseLinkRef,
 } from "@meridian/contracts";
 import {
   contextOwner,
   PROJECT_CONTEXT_AVAILABILITY_MAX_IDS,
-  parseDocumentFilename,
   type ResolvedContextOwner,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
@@ -510,7 +510,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         if (status.kind === "hidden") hidden.push({ row, at: status });
         if (status.kind !== "visible") continue;
         push(index.byUri, status.address.uri, row);
-        const stem = stemOf(status.address.uri);
+        const stem = omittedExtensionPath(status.address.uri);
         if (stem) push(index.byStem, stem, row);
       }
       hidden.sort(
@@ -659,14 +659,6 @@ function push(map: Map<string, Row[]>, key: string, row: Row) {
   const rows = map.get(key);
   if (!rows) map.set(key, [row]);
   else if (!rows.some((existing) => existing.id === row.id)) rows.push(row);
-}
-
-/** The address with its registered extension omitted; prose names have none to omit. */
-function stemOf(uri: string): string | null {
-  const name = parseDocumentFilename(uri.slice(uri.lastIndexOf("/") + 1));
-  return name.ok && name.value.extension
-    ? uri.slice(0, uri.lastIndexOf("/") + 1) + name.value.name
-    : null;
 }
 
 function uuidList(ids: readonly string[]): SQL {

@@ -10,7 +10,6 @@ import type {
   ContextOwner,
   ContextSiblingPosition,
   CopyContextEntryView,
-  NamedRow,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
@@ -22,7 +21,6 @@ import {
   type ResourcePlacement,
   type ResourceRecord,
   resourceIdentityIndex,
-  shownExtension,
 } from "@meridian/resource-replica";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { schemeLabel } from "../context-schemes";
@@ -46,7 +44,12 @@ export type PlacementView = {
   folders?: readonly FolderNamespaceRecord[];
   placement: Pick<
     ResourcePlacement,
-    "resourceLocation" | "parentForResource" | "folderLocation" | "parentForFolder" | "childrenAt"
+    | "resourceLocation"
+    | "parentForResource"
+    | "folderLocation"
+    | "parentForFolder"
+    | "childrenAt"
+    | "namedRow"
   >;
 };
 
@@ -63,7 +66,6 @@ export type MoveView = PlacementView & {
 export type PlacedEntry = {
   ref: EntryRef;
   name: string;
-  row: NamedRow | null;
   location: ResourceLocation;
   parent: ParentRef;
 };
@@ -72,7 +74,6 @@ export type PlacedEntry = {
 export type MoveRow = {
   entry: EntryRef;
   name: string;
-  row: NamedRow | null;
   /** A Move… retry keeps the writer's refused name; a drag uses the row's current name. */
   typed?: string;
   before: ParentRef;
@@ -99,7 +100,7 @@ const NONE: MovePlan = { kind: "none" };
 // Hovering plans on every `dragover`; one index per snapshot keeps each plan linear in the selection.
 const recordIndexes = new WeakMap<readonly ResourceRecord[], ResourceIdentityIndex>();
 
-function recordFor(records: readonly ResourceRecord[], documentId: string) {
+export function recordFor(records: readonly ResourceRecord[], documentId: string) {
   let index = recordIndexes.get(records);
   if (!index) {
     index = resourceIdentityIndex(records);
@@ -113,22 +114,13 @@ function placeEntryRef({ records, placement }: PlacementView, ref: EntryRef): Pl
   if (ref.kind === "folder") {
     const location = placement.folderLocation(ref.id);
     const parent = placement.parentForFolder(ref.id);
-    return location && parent ? { ref, name: location.name, row: null, location, parent } : null;
+    return location && parent ? { ref, name: location.name, location, parent } : null;
   }
   const record = recordFor(records, ref.id);
   const location = record ? placement.resourceLocation(record) : null;
   if (!record || !location) return null;
   const parent = placement.parentForResource(record);
-  const row = {
-    extension: shownExtension(null, record),
-    stored: !record.resource.classification.editable,
-  };
-  return parent ? { ref, name: location.name, row, location, parent } : null;
-}
-
-/** The naming facts `ref` carries now: a file's row, null for a folder or a row that is gone. */
-export function entryRowNow(view: PlacementView, ref: EntryRef): NamedRow | null {
-  return placeEntryRef(view, ref)?.row ?? null;
+  return parent ? { ref, name: location.name, location, parent } : null;
 }
 
 /** The name `ref` carries now; null once the row is gone. */
@@ -350,7 +342,6 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
           {
             entry: source.ref,
             name: source.name,
-            row: source.row,
             before: source.parent,
             after: into,
           },
@@ -363,7 +354,6 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
 export type CopyRow = {
   entry: EntryRef;
   name: string;
-  row: NamedRow | null;
   view: CopyContextEntryView;
 };
 
@@ -396,7 +386,6 @@ export function planCopy(view: PlacementView, resolved: ResolvedDrop | null): Co
   const copies = sources.map((source) => ({
     entry: source.ref,
     name: source.name,
-    row: source.row,
     view: source.view,
   }));
   if (!position) return { kind: "ready", destinationName, scheme, into, copies };
@@ -454,7 +443,6 @@ function planPositioned(
     return {
       entry: source.ref,
       name: source.name,
-      row: source.row,
       before: source.parent,
       after: into,
       position: previous ? ({ kind: "after", siblingId: previous.ref.id } as const) : position,

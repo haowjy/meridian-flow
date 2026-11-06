@@ -7,7 +7,6 @@
  * move needs no list on screen. Results are data; selection belongs to the caller.
  */
 
-import type { NamedRow } from "@meridian/contracts/protocol";
 import {
   type ParentRef,
   placementParentKey,
@@ -24,7 +23,7 @@ import {
 } from "../context-entry-name";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
-import { type MoveRow, sameParent } from "./move-plan";
+import { type MoveRow, recordFor, sameParent } from "./move-plan";
 
 /** The replica and project a Move and a Copy act through. */
 export type ReplicaContext = {
@@ -36,7 +35,7 @@ export type ReplicaContext = {
 export type NamingView = {
   records: readonly ResourceRecord[];
   folders?: Awaited<ReturnType<AccountResourceReplica["readProjection"]>>["folders"];
-  placement: Pick<ResourcePlacement, "childrenAt">;
+  placement: Pick<ResourcePlacement, "childrenAt" | "namedRow">;
 };
 
 export type MoveResult = {
@@ -49,8 +48,6 @@ export type MoveResult = {
 export type Arrival = {
   entry: EntryRef;
   name: string;
-  /** The file's own naming facts; a folder has none. */
-  row: NamedRow | null;
   /** The name the writer asked for (a Move… retry keeps a refused rename); the row's own otherwise. */
   typed?: string;
   before?: ParentRef;
@@ -73,6 +70,12 @@ async function placeEntry(
   if (!key) throw new Error("Document is not in the replica");
   const result = await resources.setLocation(projectId, key, location, typed);
   return result.operationId ?? null;
+}
+
+/** The file's naming facts as the replica shows them now; a folder, or a row that is gone, has none. */
+function namedRow(view: NamingView, entry: EntryRef) {
+  const record = entry.kind === "file" ? recordFor(view.records, entry.id) : undefined;
+  return record ? view.placement.namedRow(record) : undefined;
 }
 
 /**
@@ -118,7 +121,7 @@ export function arrivals(view: NamingView, rows: readonly Arrival[]) {
         row.typed ?? row.name,
         occupancy(row.after),
         row.entry.kind,
-        row.row ?? undefined,
+        namedRow(view, row.entry),
       ),
     reserve: (row: Arrival, name: string) =>
       occupancy(row.after).claim({

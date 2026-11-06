@@ -1,7 +1,6 @@
 /** Atomic move/delete CAS operations over the shared in-memory context backing. */
 import { serializeRemovalIdentity } from "@meridian/contracts";
 import {
-  addressCandidates,
   allocateFilename,
   renderFilename as renderDocumentFilename,
   sameNamespaceName,
@@ -24,6 +23,7 @@ import {
   claimLocation,
   type DocumentRow,
   type FolderRow,
+  findInMemoryContextDocumentAt,
   hasOppositeEntry,
   type InMemoryContextDocumentStoreBacking,
   memoryFileLocations,
@@ -217,19 +217,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     if (!filename) return null;
     const folderId = await this.findFolderId(sourceId, dir);
     if (folderId === MISSING_FOLDER) return null;
-    for (const leaf of addressCandidates(filename)) {
-      for (const doc of this.backing.documents.values()) {
-        if (
-          doc.contextSourceId === sourceId &&
-          doc.deletedAt === null &&
-          doc.folderId === folderId &&
-          renderFilename(doc.name, doc.extension) === leaf
-        ) {
-          return doc;
-        }
-      }
-    }
-    return null;
+    return findInMemoryContextDocumentAt(this.backing, sourceId, folderId, filename);
   }
 
   async inspect(sourceId: string, path: string): Promise<ContextLocationToken | null> {

@@ -6,11 +6,7 @@ import {
   parseContextUri,
   splitDocumentHrefSuffix,
 } from "./context-uri.js";
-import {
-  addressCandidates,
-  parseDocumentFilename,
-  renderFilename,
-} from "./protocol/document-filename.js";
+import { addressCandidates, canonicalLeaf, filenameSplits } from "./protocol/document-filename.js";
 import { filetypeForExtension } from "./protocol/filetype.js";
 
 export { splitDocumentHrefSuffix } from "./context-uri.js";
@@ -94,18 +90,25 @@ export function spellDocumentHref(holderUri: string | null, target: LinkAddress)
 /** Canonicalize only the filename: folder segments are literal names. */
 export function documentPathKey(path: string): string {
   const slash = path.lastIndexOf("/");
-  const parsed = parseDocumentFilename(path.slice(slash + 1));
-  return parsed.ok
-    ? path.slice(0, slash + 1) + renderFilename(parsed.value.name, parsed.value.extension)
-    : path;
+  return path.slice(0, slash + 1) + canonicalLeaf(path.slice(slash + 1));
 }
 
-/** Stored basename keys a link's path can match, with or without its registered extension. */
+/**
+ * Stored names a link's path can match: every split of its canonical leaf, because a file kept
+ * as `page.html` is stored as name `page` and extension `html`.
+ */
 export function documentPathCandidateNames(path: string): string[] {
-  const key = documentPathKey(path);
-  const basename = key.slice(key.lastIndexOf("/") + 1);
-  const parsed = parseDocumentFilename(basename);
-  return parsed.ok ? [...new Set([parsed.value.name, basename])] : [basename];
+  return filenameSplits(canonicalLeaf(path.slice(path.lastIndexOf("/") + 1))).map(
+    (split) => split.name,
+  );
+}
+
+/** `path` without its registered extension (`a/again.md` is `a/again`); null when it has none. */
+export function omittedExtensionPath(path: string): string | null {
+  const dot = path.lastIndexOf(".");
+  return dot > path.lastIndexOf("/") + 1 && filetypeForExtension(path.slice(dot + 1)) !== null
+    ? path.slice(0, dot)
+    : null;
 }
 
 /** The candidate a tree lookup finds at a path: its exact spelling, else its alias (`ch1.md` is `ch1`). */
@@ -135,17 +138,10 @@ export function matchDocumentPath<T>(
   const found = matchDocumentAddress(candidates, path, pathOf);
   if (found) return found;
   const slash = path.lastIndexOf("/");
-  const alias = addressCandidates(path.slice(slash + 1)).at(-1) ?? "";
-  const wanted = path.slice(0, slash + 1) + alias;
-  const loose = candidates.filter((candidate) => {
-    const value = pathOf(candidate);
-    const dot = value.lastIndexOf(".");
-    return (
-      dot > value.lastIndexOf("/") + 1 &&
-      filetypeForExtension(value.slice(dot + 1)) !== null &&
-      value.slice(0, dot) === wanted
-    );
-  });
+  const wanted = path.slice(0, slash + 1) + canonicalLeaf(path.slice(slash + 1));
+  const loose = candidates.filter(
+    (candidate) => omittedExtensionPath(pathOf(candidate)) === wanted,
+  );
   return loose.length === 1 ? (loose[0] ?? null) : null;
 }
 

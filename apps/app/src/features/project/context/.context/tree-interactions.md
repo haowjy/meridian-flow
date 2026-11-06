@@ -50,7 +50,7 @@ swallowing a same-tick `focus()`.
 
 Names are compared and submitted as the contracts codec stores them
 (`storedFilename`, `entryNameKey` in `context-entry-name.ts`), given the row's own
-facts (`NamedRow`: its catalog `extension` and whether it is a stored file, never read from
+facts (`NamedRow`: its catalog `extension` and whether it is `editable`, never read from
 the suffix): a prose name has no extension, so `Chapter 13.md` typed on `Chapter 13` is no change and
 beside `Chapter 13` predicts `Chapter 13 (2)`; a bare name keeps the renamed file's visible
 extension (`settings` on `config.toml`). Folder-to-folder comparison is literal;

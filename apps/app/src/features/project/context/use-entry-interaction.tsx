@@ -1,10 +1,6 @@
 /** One namespace interaction model for tree, phone and Work Files rows. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type {
-  ContextOwner,
-  NamedRow,
-  ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useState } from "react";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { TabOwner } from "@/client/stores";
@@ -117,15 +113,13 @@ export function useEntryInteraction({
           : { name: node.name, path: node.path, kind: "dir", entryId: node.entryId, owner, scheme },
       );
   };
-  const row: NamedRow | null =
-    node.kind === "file" ? { extension: node.extension, stored: !node.editable } : null;
   const rename: UseRenameEntryFormOptions = {
     projectId,
     owner: resolvedOwner,
     scheme,
     entryId: id,
     currentName: node.name,
-    ...(row ? { row } : {}),
+    ...(node.kind === "file" ? { row: node } : {}),
     repairName: node.namespaceRepairMove ? undefined : node.namespaceRepairName,
     siblings,
     kind,
@@ -146,7 +140,7 @@ export function useEntryInteraction({
       // Closed, it still names the action it would open for.
       action: picking ?? "move",
       from: { scheme, owner: resolvedOwner },
-      entry: { id, name: node.name, path: node.path, kind, row },
+      entry: { id, name: node.name, path: node.path, kind },
       repairMove: node.namespaceRepairMove,
       open: picking !== null && actions.includes(picking),
       onOpenChange: (open: boolean) => {

@@ -5,12 +5,13 @@ import {
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
 import {
+  canonicalLeaf,
   filenameCandidates,
   type NamedRow,
   type NamespaceNameClaim,
   namespaceName,
   parseDocumentFilename,
-  renderFilename,
+  splitRendered,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -21,22 +22,18 @@ import type { ContextCreateKind } from "./context-create-kind";
  */
 export function entryNameKey(name: string): string {
   const bare = name.trim().replace(/\/$/, "");
-  const parsed = parseDocumentFilename(bare);
-  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : bare;
+  return canonicalLeaf(bare);
 }
 
 /** A tracked document's naming facts from its canonical name: a registered suffix is its own. */
 export function documentRow(name: string): NamedRow {
   const parsed = parseDocumentFilename(name);
-  return { extension: parsed.ok ? parsed.value.extension : "", stored: false };
+  return { extension: parsed.ok ? parsed.value.extension : "", editable: true };
 }
 
 /** Where the part a writer renames ends: before the row's extension, otherwise the whole name. */
 export function entryNameStemEnd(name: string, row?: NamedRow): number {
-  const extension = row?.extension ?? "";
-  return extension && name.toLowerCase().endsWith(`.${extension}`)
-    ? name.length - extension.length - 1
-    : name.length;
+  return splitRendered(name, row?.extension ?? "").name.length;
 }
 
 function validationReason(error: ContextEntryValidationError): string {
@@ -112,7 +109,7 @@ export function validateContextEntryName(
   }
   // A stored file compares by its literal name, so a kept `again.md` is its own name beside a
   // document `again`; a document compares as the codec reads it.
-  const key = current?.stored ? candidate : entryNameKey(candidate);
+  const key = current && !current.editable ? candidate : entryNameKey(candidate);
   const occupant = siblings.find((sibling) =>
     sibling.kind === "dir"
       ? kind === "folder"

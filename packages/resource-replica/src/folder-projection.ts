@@ -5,11 +5,7 @@ import { catalogEntryParent } from "./catalog-installation";
 import { folderBaseLocation, folderListedLocally } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
 import { projectOptimisticSiblingOrder } from "./optimistic-sibling-order";
-import {
-  owningLocationIntent,
-  placementDestination,
-  shownExtension,
-} from "./resource-intent-policy";
+import { owningLocationIntent, placementDestination, shownRow } from "./resource-intent-policy";
 import { projectResourceLocation } from "./resource-projection";
 import type {
   FolderNamespaceRecord,
@@ -284,7 +280,7 @@ export function createResourcePlacement(
         provisionalName: location.provisional,
         rank: record.resource.canonicalRank,
         ...record.resource.classification,
-        extension: shownExtension(projectId, record),
+        extension: shownRow(projectId, record).extension,
       } satisfies CatalogFileEntry);
     }
     projected = [...projectedById.values()];
@@ -462,6 +458,7 @@ export function createResourcePlacement(
     },
     folderLocation: (id: string) => graph.locations.get(id) ?? null,
     parentForFolder: graph.parentForFolder,
+    namedRow: (record: ResourceRecord) => shownRow(projectId, record),
     parentForResource: (record: ResourceRecord) => {
       const destination = placementDestination(projectId, record);
       if (destination) return destination.parent;
