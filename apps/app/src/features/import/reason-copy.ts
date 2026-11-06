@@ -12,7 +12,7 @@ function failureSentence(reason: ImportEntryReason | null | undefined): string {
     case "too_large":
       return t`It's over the import size limit.`;
     case "kept_as_file":
-      return t`Couldn't read this Word document. Kept as a file.`;
+      return t`Couldn't turn this into a document. Kept as a file.`;
     case "changed_after_pick":
       return t`Changed after you picked it.`;
     case "upload_lost":

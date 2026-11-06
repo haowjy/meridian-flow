@@ -32,6 +32,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+/** The list scrolls between the caption and the actions, which stay in reach on a long folder. */
+const MENU_CLASS =
+  "flex w-64 max-w-[calc(100vw-1rem)] flex-col overflow-hidden max-h-[min(26rem,var(--radix-dropdown-menu-content-available-height))]";
+
 export type DrillNode = {
   id: string;
   /** The document a file entry opens, when it differs from `id`. */
@@ -77,6 +81,8 @@ export type DrillInMenuProps = {
   caption?: ReactNode;
   status?: ReactNode;
   isDisabled?: (node: DrillNode) => boolean;
+  /** Lists folders alone: a destination picker has nothing to do with a file. */
+  foldersOnly?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCloseAutoFocus?: (event: Event) => void;
@@ -138,6 +144,7 @@ export function DrillInMenuBody({
   caption,
   status,
   isDisabled,
+  foldersOnly,
   onCloseAutoFocus,
   onEscapeKeyDown,
 }: Omit<DrillInMenuProps, "children" | "open" | "onOpenChange">) {
@@ -158,7 +165,8 @@ export function DrillInMenuBody({
   const [choosingKey, setChoosingKey] = useState<string | null>(null);
 
   const folder = trail.at(-1) ?? null;
-  const entries = tree.children(folder?.id ?? null);
+  const children = tree.children(folder?.id ?? null);
+  const entries = foldersOnly ? children.filter((node) => node.folder) : children;
   const currentActions = actions?.(trail) ?? [];
   const choosing = currentActions.find((action) => action.key === choosingKey && action.choices);
   const noteId = useId();
@@ -179,7 +187,7 @@ export function DrillInMenuBody({
         }}
       >
         <action.icon aria-hidden />
-        {action.label}
+        <span className="min-w-0 flex-1 truncate">{action.label}</span>
         {action.choices ? <ChevronRight className="ml-auto" aria-hidden /> : null}
       </DropdownMenuItem>
       {action.note ? (
@@ -198,7 +206,7 @@ export function DrillInMenuBody({
       <DropdownMenuContent
         ref={contentRef}
         align="start"
-        className="w-64 max-w-[calc(100vw-1rem)]"
+        className={MENU_CLASS}
         onKeyDown={(event) => {
           if (event.key === "ArrowLeft") {
             event.preventDefault();
@@ -224,7 +232,7 @@ export function DrillInMenuBody({
             {status}
           </div>
         ) : null}
-        {choosing.choices.map(actionItem)}
+        <div className="min-h-0 overflow-y-auto">{choosing.choices.map(actionItem)}</div>
       </DropdownMenuContent>
     );
   }
@@ -233,7 +241,7 @@ export function DrillInMenuBody({
     <DropdownMenuContent
       ref={contentRef}
       align="start"
-      className="w-64 max-w-[calc(100vw-1rem)]"
+      className={MENU_CLASS}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft" && trail.length > 0) {
           event.preventDefault();
@@ -256,29 +264,31 @@ export function DrillInMenuBody({
           <span className="min-w-0 flex-1 truncate font-medium">{folder.title ?? folder.name}</span>
         </DropdownMenuItem>
       ) : null}
-      {entries.length === 0 ? (
+      {entries.length === 0 && !foldersOnly ? (
         <p className="px-2 py-1.5 text-sm text-muted-foreground">
           <Trans>Nothing here yet.</Trans>
         </p>
       ) : (
-        entries.map((node) => (
-          <DropdownMenuItem
-            key={node.id}
-            disabled={isDisabled?.(node)}
-            aria-current={isHere(node.id) ? "true" : undefined}
-            className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
-            onSelect={(event) => {
-              if (node.folder) {
-                event.preventDefault();
-                drill([...trail, node]);
-              } else onPick(node);
-            }}
-          >
-            <node.icon aria-hidden />
-            <span className="min-w-0 flex-1 truncate">{node.name}</span>
-            {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
-          </DropdownMenuItem>
-        ))
+        <div className="min-h-0 overflow-y-auto">
+          {entries.map((node) => (
+            <DropdownMenuItem
+              key={node.id}
+              disabled={isDisabled?.(node)}
+              aria-current={isHere(node.id) ? "true" : undefined}
+              className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
+              onSelect={(event) => {
+                if (node.folder) {
+                  event.preventDefault();
+                  drill([...trail, node]);
+                } else onPick(node);
+              }}
+            >
+              <node.icon aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{node.name}</span>
+              {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
+            </DropdownMenuItem>
+          ))}
+        </div>
       )}
       {status ? (
         <div role="alert" className="px-2 py-1.5 text-xs text-destructive">

@@ -76,14 +76,14 @@ it("routes a marked export without recreating wrapper or area folders", async ()
   ]);
 });
 it("uses actual signatures rather than trusting text-looking file names", async () => {
-  expect(await classify("scan.txt", Buffer.from("%PDF-1.5"))).toMatchObject({
+  expect((await classify("scan.txt", Buffer.from("%PDF-1.5"))).facts).toMatchObject({
     kind: "binary",
     extension: "pdf",
   });
-  expect(await classify("Draft.md", Buffer.from("{\\rtf1\\ansi Chapter}"))).toMatchObject({
+  expect((await classify("Draft.md", Buffer.from("{\\rtf1\\ansi Chapter}"))).facts).toMatchObject({
     kind: "binary",
   });
-  expect(await classify("Chapter.docx", new Uint8Array())).toMatchObject({
+  expect((await classify("Chapter.docx", new Uint8Array())).facts).toMatchObject({
     kind: "docx",
     name: "Chapter",
   });
