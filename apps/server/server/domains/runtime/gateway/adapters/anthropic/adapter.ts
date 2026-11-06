@@ -18,6 +18,7 @@ import type {
   GenerateRequest,
   ModelInfo,
   ProviderConfig,
+  ResolvedCall,
   StreamEvent,
 } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
@@ -61,21 +62,18 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
   const providerId = config.id;
 
   return {
-    providerId,
-    async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
+    async *stream(
+      request: GenerateRequest,
+      model: ModelInfo,
+      call: ResolvedCall,
+    ): AsyncIterable<StreamEvent> {
       // Create a fresh accumulator per stream call — each generate request
       // gets its own streaming state.
-      const acc = createStreamAccumulator(model.id, providerId);
+      const acc = createStreamAccumulator(model.id, providerId, call.longCacheWrites);
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
-        const params = toAnthropicMessageParams(
-          request,
-          model.id,
-          model.maxOutputTokens,
-          providerId,
-          model.promptCache.ttlMs,
-        );
+        const params = toAnthropicMessageParams(request, model, call);
         const stream = await client.messages.create(params, { signal: request.signal });
 
         for await (const event of stream) {

@@ -58,4 +58,4 @@ invalid body is **400** `invalid_stop`. The route requires ownership of the
 thread.
 
 Probe steps for every outcome are in
-[the Stop and hand-back recipe](../qa/stop-and-hand-back.md).
+[the Stop and hand-back recipe](../../apps/server/server/domains/runtime/.context/qa/stop-and-hand-back.md).

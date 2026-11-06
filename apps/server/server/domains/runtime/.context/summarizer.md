@@ -13,7 +13,7 @@ its thread; handoff owns S and uses the cutoff owner's thread. Both project thro
 runtime.
 
 Branch requests preserve the source request's fields (output limit, tools, tool
-choice, reasoning, cache key, marks) and add only the summary instruction, so the
+choice, reasoning, cache key, cache retention) and add only the summary instruction, so the
 cached prefix doesn't change. The warm branch's retained-scope rule exempts
 `## Documents to keep open`, so documents shown only in the retained tail can be
 listed; the rolling path sees only the cut, and the server's recent-document defaults

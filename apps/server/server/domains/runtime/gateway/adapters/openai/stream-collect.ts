@@ -39,6 +39,8 @@ import { parseToolCallArguments } from "../../helpers/parse-tool-arguments.js";
 // ── Accumulator ───────────────────────────────────────────────────
 
 interface StreamAccumulator {
+  // The request asked for the long cache lifetime: the attribution when the provider omits the write split.
+  longCacheWrites: boolean;
   // Unindexed fallback content. Most Responses output has `output_index`; text
   // that arrives through auxiliary events such as refusals does not, so it is
   // appended after indexed content rather than being guessed into the order.
@@ -108,8 +110,13 @@ function emptyUsage(): Usage {
   return { inputTokens: 0, outputTokens: 0 };
 }
 
-export function createStreamAccumulator(model: string, provider: string): StreamAccumulator {
+export function createStreamAccumulator(
+  model: string,
+  provider: string,
+  longCacheWrites: boolean,
+): StreamAccumulator {
   return {
+    longCacheWrites,
     contentParts: [],
     textPartsByOutputIndex: new Map(),
     reasoningItems: new Map(),
@@ -189,7 +196,7 @@ function findToolCallEntry(
 
 // ── Usage mapping ─────────────────────────────────────────────────
 
-export function mapUsage(usage: OpenAI.Responses.ResponseUsage): Usage {
+export function mapUsage(usage: OpenAI.Responses.ResponseUsage, longCacheWrites: boolean): Usage {
   // Responses reports canonical input/output token totals directly, but cache
   // hits and reasoning tokens live in provider-specific detail objects
   // (`input_tokens_details.cached_tokens`, `output_tokens_details.reasoning_tokens`).
@@ -197,11 +204,16 @@ export function mapUsage(usage: OpenAI.Responses.ResponseUsage): Usage {
   // SDK's ResponseUsage shape. Meridian only sets optional Usage fields when the
   // provider reports a positive value.
   //
-  // No `cacheWriteTokens` here: the installed SDK (6.45.0) has no
-  // `cache_write_tokens`-shaped field anywhere in Responses or Chat
-  // Completions usage, and OpenAI's own pricing has no separate cache-write
-  // tier (unlike Anthropic) — only a discount on cached reads. There is
-  // nothing to parse.
+  // GPT-5.6+ also bills cache writes: `cache_write_tokens` is their total, split by
+  // lifetime in `cache_write_tokens_details` (`ttl_30m_tokens` + `ttl_12h_tokens`), and
+  // `cached_tokens` excludes them. The installed SDK (6.45.0) predates these fields, so
+  // they are read through a local shape.
+  const details = usage.input_tokens_details as
+    | (OpenAI.Responses.ResponseUsage["input_tokens_details"] & {
+        cache_write_tokens?: number;
+        cache_write_tokens_details?: { ttl_12h_tokens?: number };
+      })
+    | undefined;
   const result: Usage = {
     inputTokens: usage.input_tokens,
     outputTokens: usage.output_tokens,
@@ -209,6 +221,13 @@ export function mapUsage(usage: OpenAI.Responses.ResponseUsage): Usage {
 
   if (usage.input_tokens_details?.cached_tokens > 0) {
     result.cacheReadTokens = usage.input_tokens_details.cached_tokens;
+  }
+  if (details?.cache_write_tokens && details.cache_write_tokens > 0) {
+    result.cacheWriteTokens = details.cache_write_tokens;
+    const long =
+      details.cache_write_tokens_details?.ttl_12h_tokens ??
+      (longCacheWrites ? details.cache_write_tokens : 0);
+    if (long > 0) result.cacheWriteLongTokens = long;
   }
 
   if (usage.output_tokens_details?.reasoning_tokens > 0) {
@@ -455,7 +474,7 @@ export function* eventsFromResponseStreamEvent(
       // subscribers see token counts before the adapter later emits the final
       // end event with the assembled GenerateResult.
       if (response.usage) {
-        acc.usage = mapUsage(response.usage);
+        acc.usage = mapUsage(response.usage, acc.longCacheWrites);
         yield { type: "usage", usage: acc.usage };
       }
       if (response.error) {

@@ -647,7 +647,7 @@ else
             toolCalls: [],
             finishReason: "tool_use",
             usage: lowUsage,
-            model: "gpt-4.1-mini",
+            model: "gpt-5.6-luna",
             provider: "openai",
           },
         ],
@@ -1037,7 +1037,7 @@ else
         toolCalls: [],
         finishReason: "tool_use" as const,
         usage: lowUsage,
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         provider: "openai",
       };
 

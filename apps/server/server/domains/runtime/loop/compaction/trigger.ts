@@ -12,6 +12,19 @@ export interface ResolveCompactionTriggerInput {
   concurrentRenderSafetyTokens?: number;
 }
 
+/**
+ * Room to keep free for one more model output when checking whether optional work fits under
+ * the usable window. `maxOutputTokens` is the wire cap and can be far larger than any real
+ * reply (DeepSeek: 393,216); using it here would push the limit below the compaction trigger
+ * and silently disable the notes step and shrink rolling-summary segments. `trigger.ts`'s
+ * usable window already subtracts the full cap once.
+ */
+export function outputReserveTokens(model: { maxOutputTokens: number }): number {
+  return Math.min(model.maxOutputTokens, OUTPUT_RESERVE_CEILING_TOKENS);
+}
+
+const OUTPUT_RESERVE_CEILING_TOKENS = 65_536;
+
 export type CompactionTriggerSource = "agent_tokens" | "agent_percent" | "config_default";
 
 export interface CompactionTrigger {

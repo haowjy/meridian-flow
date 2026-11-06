@@ -118,7 +118,7 @@ else
         runClaim: authority,
         boundThreads: () => [ids.caller, ids.child],
         gateway: {
-          ...createInertGateway("gpt-4.1-mini"),
+          ...createInertGateway("gpt-5.6-luna"),
           async *stream(request) {
             requests.push(request);
             if (requests.length === 1) {
@@ -196,7 +196,7 @@ else
                   requests.length === 1 && boundary === "tool" ? "tool_use" : "end_turn",
                 usage: { inputTokens: 1000000, outputTokens: 1000000 },
                 provider: "openai",
-                model: "gpt-4.1-mini",
+                model: "gpt-5.6-luna",
               },
             };
           },

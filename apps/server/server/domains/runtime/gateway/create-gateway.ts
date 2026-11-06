@@ -5,38 +5,28 @@
  * retry/deadline driver lives in attempt-stream.ts.
  *
  * ── how it works ──
- * 1. createAdapter() maps each ProviderConfig.adapter string to its factory.
+ * 1. createAdapter() maps each ProviderConfig.adapter to its factory.
  * 2. buildProviderRegistry() indexes models by ID so resolveRoute() can look up
  *    adapter + model in O(1).
  * 3. gateway.stream() is the main entry point:
- *    a. Without fallback: resolve the primary route, stream with retry.
- *    b. With fallback: iterate the provider list; for each, streamForProvider()
- *       runs streamWithRetry(). On a retryable error before committed output,
- *       move to the next provider. After committed output, propagate.
- * 4. Per-attempt timeout policy is resolved per model through
- *    resolveModelAttemptTimeouts (model override, then gateway config, then the
- *    process default) and handed to streamWithRetry.
+ *    Resolve the model's route and stream it with retry. Routing errors are
+ *    non-retryable invalid_request errors; there is no cross-provider fallback.
+ * 4. Per-attempt timeout policy is resolved through
+ *    resolveAttemptTimeouts (gateway config, then the process default) and handed to streamWithRetry.
  * 5. gateway.generate() is the convenience wrapper: consumeStream(gateway.stream()).
  */
 import { createAnthropicAdapter } from "./adapters/anthropic/adapter.js";
+import { assertCacheTtlsOnWire as assertAnthropicCacheTtlsOnWire } from "./adapters/anthropic/request-map.js";
 import { createOpenAIResponsesAdapter } from "./adapters/openai/adapter.js";
+import { assertCacheTtlsOnWire as assertOpenAICacheTtlsOnWire } from "./adapters/openai/request-map.js";
 import { createOpenAICompatibleAdapter } from "./adapters/openai-compatible/adapter.js";
-import { createOpenRouterAdapter } from "./adapters/openrouter/adapter.js";
-import { settleOpenRouterCancelledResult } from "./adapters/openrouter/cancel-settlement.js";
-import {
-  DEFAULT_OPENROUTER_BASE_URL,
-  resolveOpenRouterApiKey,
-} from "./adapters/openrouter/config.js";
 import {
   type ModelAttemptTimeoutOverrides,
-  resolveModelAttemptTimeouts,
+  resolveAttemptTimeouts,
   streamWithRetry,
 } from "./attempt-stream.js";
 import { consumeStream } from "./consume-stream.js";
-import { settleGenericCancelledResult } from "./domain/cancel-settlement.js";
 import type {
-  CancelledResultSettlement,
-  CancelledResultSettlementInput,
   GatewayConfig,
   GenerateRequest,
   GenerateResult,
@@ -46,217 +36,74 @@ import type {
 } from "./domain/index.js";
 import type { Gateway } from "./ports/gateway.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
-import {
-  buildProviderRegistry,
-  fallbackProviderIds,
-  type ProviderRegistry,
-  type ResolvedRoute,
-  resolveRoute,
-  resolveRouteForProvider,
-} from "./routing.js";
-import { isCommittedOutputEvent } from "./stream-events.js";
+import { buildProviderRegistry, resolveRoute } from "./routing.js";
 
-/** Maps a ProviderConfig.adapter string to its concrete ProviderAdapter factory. */
+/** Maps a ProviderConfig.adapter to its concrete ProviderAdapter factory. */
 function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdapter {
   switch (config.adapter) {
     case "openai-compatible":
       return createOpenAICompatibleAdapter(config);
-    case "openrouter":
-      return createOpenRouterAdapter(config);
     case "anthropic":
       return createAnthropicAdapter(config);
     case "openai":
       return createOpenAIResponsesAdapter(config);
-    default:
-      throw new Error(`Unknown adapter: ${config.adapter}`);
   }
-}
-
-function resolveSettlementProvider(
-  registry: ProviderRegistry,
-  input: CancelledResultSettlementInput,
-  defaultModel: string | undefined,
-): ProviderConfig | undefined {
-  if (input.result) {
-    return registry.providers.find((provider) => provider.id === input.result?.provider);
-  }
-
-  try {
-    return resolveRoute(registry, { model: input.model, messages: [] }, defaultModel)
-      .providerConfig;
-  } catch {
-    return undefined;
-  }
-}
-
-async function settleCancelledResultForGateway(
-  registry: ProviderRegistry,
-  input: CancelledResultSettlementInput,
-  defaultModel: string | undefined,
-): Promise<CancelledResultSettlement | null> {
-  const providerConfig = resolveSettlementProvider(registry, input, defaultModel);
-  if (providerConfig?.adapter === "openrouter") {
-    const apiKey = resolveOpenRouterApiKey(providerConfig.auth);
-    return settleOpenRouterCancelledResult({
-      ...input,
-      model: input.result?.model ?? input.model,
-      provider: providerConfig.id,
-      baseUrl: providerConfig.baseUrl ?? DEFAULT_OPENROUTER_BASE_URL,
-      ...(apiKey ? { apiKey } : {}),
-    });
-  }
-
-  return settleGenericCancelledResult(input);
 }
 
 /**
- * Stream for a specific provider, resolving the model from the registry.
- * Handles error cases: no model specified, model not served by this provider,
- * no adapter registered.
+ * Reject a provider whose models ask for cache lifetimes its wire cannot express.
+ * Separate from adapter construction so the env factory can check every registry
+ * row, including providers whose key is not set in this deployment.
  */
-async function* streamForProvider(
-  registry: ProviderRegistry,
-  providerId: string,
-  request: GenerateRequest,
-  defaultModel: string | undefined,
-  retry: GatewayConfig["retry"],
-  timeoutOverrides: ModelAttemptTimeoutOverrides,
-): AsyncGenerator<StreamEvent> {
-  const modelId = request.model ?? defaultModel;
-  if (!modelId) {
-    yield {
-      type: "error",
-      code: "invalid_request",
-      message: "No model specified",
-      retryable: false,
-    };
-    return;
+export function assertModelsOnWire(config: Pick<ProviderConfig, "adapter" | "models">): void {
+  for (const model of config.models) {
+    if (config.adapter === "anthropic") assertAnthropicCacheTtlsOnWire(model);
+    else if (config.adapter === "openai") assertOpenAICacheTtlsOnWire(model);
   }
-
-  let route: ResolvedRoute;
-  try {
-    route = resolveRouteForProvider(registry, providerId, modelId);
-  } catch (err) {
-    yield {
-      type: "error",
-      code: "invalid_request",
-      message: err instanceof Error ? err.message : String(err),
-      retryable: false,
-    };
-    return;
-  }
-
-  yield* streamWithRetry(
-    route.adapter,
-    request,
-    route.model,
-    retry,
-    resolveModelAttemptTimeouts(route.model, timeoutOverrides),
-  );
 }
 
 export function createGateway(config: GatewayConfig): Gateway {
-  const adapters = new Map<string, ProviderAdapter>();
-  for (const provider of config.providers) {
-    adapters.set(provider.id, createAdapter(provider));
-  }
-  const registry = buildProviderRegistry(config.providers, adapters, {
-    onWarning: config.onWarning,
-  });
+  for (const provider of config.providers) assertModelsOnWire(provider);
+  const registry = buildProviderRegistry(
+    config.providers.map((provider) => ({ config: provider, adapter: createAdapter(provider) })),
+    config.onWarning,
+  );
 
   const gateway: Gateway = {
     async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
       const retry = config.retry;
-      const fallback = config.fallback;
       const timeoutOverrides: ModelAttemptTimeoutOverrides = {
         attemptStallMs: config.attemptStallMs,
         attemptCeilingMs: config.attemptCeilingMs,
       };
 
-      // ── No fallback: single-provider path ──
-      // Resolve the primary route and stream with retry. Routing errors
-      // (unknown model, missing adapter) are surfaced as non-retryable
-      // invalid_request errors.
-      if (!fallback?.enabled) {
-        try {
-          const route = resolveRoute(registry, request, config.defaultModel);
-          yield* streamWithRetry(
-            route.adapter,
-            request,
-            route.model,
-            retry,
-            resolveModelAttemptTimeouts(route.model, timeoutOverrides),
-          );
-        } catch (err) {
-          yield {
-            type: "error",
-            code: "invalid_request",
-            message: err instanceof Error ? err.message : String(err),
-            retryable: false,
-          };
-        }
-        return;
-      }
-
-      // ── Fallback: multi-provider path ──
-      // Build the ordered fallback chain (primary first, then config.order or
-      // registry order). For each provider in the chain:
-      //   - Stream events. If committed output was emitted before the error,
-      //     propagate the error immediately (no fallback).
-      //   - On a retryable error with no committed output: move to the next
-      //     provider.
-      //   - On a non-retryable error: yield and return.
-      // If all providers fail, yield the last error.
-      const providerIds = fallbackProviderIds(
-        registry,
-        request,
-        config.defaultModel,
-        fallback.order,
-      );
-
-      let lastError: StreamEvent | undefined;
-      for (const providerId of providerIds) {
-        let failed = false;
-        let emittedCommittedOutput = false;
-        for await (const event of streamForProvider(
-          registry,
-          providerId,
+      // Routing errors (unknown model, missing adapter) are surfaced as
+      // non-retryable invalid_request errors.
+      try {
+        const route = resolveRoute(registry, request, config.defaultModel);
+        yield* streamWithRetry(
+          route.adapter,
           request,
-          config.defaultModel,
+          route.model,
           retry,
-          timeoutOverrides,
-        )) {
-          if (event.type === "error") {
-            lastError = event;
-            if (emittedCommittedOutput || !event.retryable) {
-              yield event;
-              return;
-            }
-            failed = true;
-            break;
-          }
-          yield event;
-          emittedCommittedOutput ||= isCommittedOutputEvent(event);
-          if (event.type === "end") return;
-        }
-        if (!failed) return;
+          resolveAttemptTimeouts(timeoutOverrides),
+        );
+      } catch (err) {
+        yield {
+          type: "error",
+          code: "invalid_request",
+          message: err instanceof Error ? err.message : String(err),
+          retryable: false,
+        };
       }
-
-      if (lastError) yield lastError;
     },
 
     async generate(request: GenerateRequest): Promise<GenerateResult> {
       return consumeStream(gateway.stream(request));
     },
 
-    async settleCancelledResult(
-      input: CancelledResultSettlementInput,
-    ): Promise<CancelledResultSettlement | null> {
-      return settleCancelledResultForGateway(registry, input, config.defaultModel);
-    },
-
     listModels(): ModelInfo[] {
-      return [...registry.modelsById.values()].map((e) => e.model);
+      return [...registry.values()].map((e) => e.model);
     },
 
     getDefaultModel(): string | undefined {

@@ -8,11 +8,13 @@
  * secrets from a secret store.
  */
 import { mockModelDefaultResponseSchema } from "@meridian/contracts/protocol";
+import { isProductionEnv } from "../../../../lib/production-env.js";
 import { createMockScriptQueue, type MockScriptQueue } from "../adapters/mock/script-queue.js";
 import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
-import { createGateway } from "../create-gateway.js";
+import { assertModelsOnWire, createGateway } from "../create-gateway.js";
 import type { ProviderConfig, TraceSpan } from "../domain/index.js";
 import type { Gateway } from "../ports/gateway.js";
+import { withLiveTestModel } from "./live-test-model.js";
 import {
   buildProviderConfigs,
   defaultGatewayOptions,
@@ -20,6 +22,7 @@ import {
   mockProviderConfig,
   parseEnvMs,
 } from "./providers.js";
+import { MODEL_REGISTRY, registryProviderConfigs } from "./registry.js";
 
 export interface GatewayFromEnv {
   gateway: Gateway;
@@ -51,12 +54,16 @@ function resolveDefaultProvider(
 function formatGatewayStartupInfo(
   providers: ProviderConfig[],
   defaultModel: string | undefined,
+  liveTestModel?: string,
 ): GatewayStartupInfo {
   const provider = resolveDefaultProvider(providers, defaultModel) ?? "unknown";
-  const message =
+  const base =
     provider === "mock" || !defaultModel
       ? `gateway: ${provider}`
       : `gateway: ${provider}/${defaultModel}`;
+  const message = liveTestModel
+    ? `${base} (LIVE_TEST_MODEL on: every call goes to ${liveTestModel})`
+    : base;
   return {
     provider,
     model: defaultModel,
@@ -83,9 +90,29 @@ export async function createGatewayFromEnv(
     onInfo?: (info: GatewayStartupInfo) => void;
   },
 ): Promise<GatewayFromEnv> {
+  // A bad row must fail here, not in the deployment that happens to hold that provider's key.
+  for (const provider of registryProviderConfigs(MODEL_REGISTRY)) assertModelsOnWire(provider);
   let cleanup: (() => Promise<void>) | undefined;
   let mockScript: MockScriptQueue | undefined;
   const { providers, defaultModel: registryDefaultModel } = buildProviderConfigs(env);
+
+  // Validate before starting the mock server, so a bad value leaves nothing to clean up.
+  const liveTestModel = env.LIVE_TEST_MODEL;
+  if (liveTestModel && isProductionEnv({ rawNodeEnv: env.NODE_ENV, rawAppEnv: env.APP_ENV })) {
+    throw new Error(
+      "LIVE_TEST_MODEL: not allowed in production; unset it. On staging, set APP_ENV=staging.",
+    );
+  }
+  if (liveTestModel && !providers.some((p) => p.models.some((m) => m.id === liveTestModel))) {
+    const inRegistry = MODEL_REGISTRY.providers.some((p) =>
+      p.offerings.some((o) => o.model.id === liveTestModel),
+    );
+    throw new Error(
+      inRegistry
+        ? `LIVE_TEST_MODEL=${liveTestModel}: its provider has no API key set`
+        : `LIVE_TEST_MODEL=${liveTestModel}: not a registry model id`,
+    );
+  }
 
   if (providers.length === 0) {
     let baseUrl = options?.mockBaseUrl;
@@ -106,7 +133,7 @@ export async function createGatewayFromEnv(
   const gatewayOptions = defaultGatewayOptions(providers, registryDefaultModel);
   const defaultModel = gatewayOptions.defaultModel;
   if (!defaultModel) throw new Error("Gateway configuration has no default model");
-  const startupInfo = formatGatewayStartupInfo(providers, defaultModel);
+  const startupInfo = formatGatewayStartupInfo(providers, defaultModel, liveTestModel);
   if (options?.onInfo) {
     options.onInfo(startupInfo);
   }
@@ -119,5 +146,10 @@ export async function createGatewayFromEnv(
     onWarning: options?.onWarning,
   });
 
-  return { gateway, defaultModel, cleanup, ...(mockScript ? { mockScript } : {}) };
+  return {
+    gateway: liveTestModel ? withLiveTestModel(gateway, liveTestModel) : gateway,
+    defaultModel,
+    cleanup,
+    ...(mockScript ? { mockScript } : {}),
+  };
 }

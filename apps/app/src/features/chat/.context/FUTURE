@@ -31,7 +31,7 @@
 
 - A merged delivery group (two child completions on one reply) can't be produced
   live on the mock, because the server wakes the parent on each completion. Add a
-  mock script for it and a `docs/qa/chat-session.md` step checking the
+  mock script for it and a `apps/app/src/features/chat/.context/qa/chat-session.md` step checking the
   `./mf thread view` grouping against the screen.
 
 - A row below a finishing reply hops by the reply's height change for one frame
