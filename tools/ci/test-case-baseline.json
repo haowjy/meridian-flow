@@ -276,7 +276,7 @@
     "apps/server/server/domains/runtime/loop/__tests__/read-tool-recovery.integration.test.ts": 2,
     "apps/server/server/domains/runtime/loop/__tests__/response-save-boundary.test.ts": 1,
     "apps/server/server/domains/runtime/loop/available-skills.test.ts": 1,
-    "apps/server/server/domains/runtime/loop/compaction-protocol.db.test.ts": 34,
+    "apps/server/server/domains/runtime/loop/compaction-protocol.db.test.ts": 35,
     "apps/server/server/domains/runtime/loop/compaction.test.ts": 10,
     "apps/server/server/domains/runtime/loop/compaction/elide.test.ts": 1,
     "apps/server/server/domains/runtime/loop/context-builder.test.ts": 2,

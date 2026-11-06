@@ -15,18 +15,12 @@ export async function settleSummaryResponses(input: {
   if (input.rows.length === 0) return;
   await persistAndAppendEvents(input.deps, input.thread.id, async () => {
     const events = [];
-    for (const { providerData, ...row } of input.rows) {
+    for (const { usage, providerData, ...row } of input.rows) {
       const cost = await input.accounting.computeAndDebit(
         {
           provider: row.provider,
           model: row.model,
-          usage: {
-            inputTokens: row.inputTokens ?? 0,
-            outputTokens: row.outputTokens ?? 0,
-            reasoningTokens: row.reasoningTokens ?? undefined,
-            cacheReadTokens: row.cacheReadTokens ?? undefined,
-            cacheWriteTokens: row.cacheWriteTokens ?? undefined,
-          },
+          usage,
           providerData,
         },
         input.thread,
