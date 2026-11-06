@@ -1,5 +1,5 @@
 /**
- * The one copy remap (D24, 2c): a stored document's blocks become a new document's
+ * The one copy remap: a stored document's blocks become a new document's
  * content, with every link inside the copied set pointed at its copy and every other
  * link left naming what it named.
  *

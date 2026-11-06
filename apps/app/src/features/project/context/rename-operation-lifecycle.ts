@@ -126,7 +126,8 @@ export class RenameOperationLifecycle {
         : null;
     const folder =
       subject.kind === "folder"
-        ? await this.replica.readKnownFolder(subject.id).catch(() => null)
+        ? // slop-lint: allow swallowed-error a failed lookup only costs the note, as for a document above
+          await this.replica.readKnownFolder(subject.id).catch(() => null)
         : null;
     const handle = known?.key.handle ?? folder?.handle;
     if (this.closed || !handle) return;

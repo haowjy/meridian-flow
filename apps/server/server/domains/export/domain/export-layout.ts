@@ -2,6 +2,7 @@
 import { DEFAULT_EXPORT_AREA_NAMES, type ProjectExportOptions } from "@meridian/contracts";
 import type { ExportDocument, ExportSourceRoot } from "../ports/export-snapshot.js";
 export function portableName(name: string): string {
+  // slop-lint: allow suppression the control range is the point of the pattern
   // biome-ignore lint/suspicious/noControlCharactersInRegex: ZIP names must exclude filesystem control bytes.
   const safe = name.replace(/[\x00-\x1f<>:"/\\|?*]/g, "_").replace(/[. ]+$/, "");
   return !safe || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(safe) ? `_${safe}` : safe;
