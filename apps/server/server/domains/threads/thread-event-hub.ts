@@ -293,9 +293,13 @@ export function createThreadEventHub(
         return;
       }
       for await (const entry of readThrough(threadId, state.journalCursor, head)) {
-        // Seqs are contiguous per thread, so a hole is retention deleting rows this hub never
-        // sent. Its projector can't continue, and only a fresh subscribe can tell the client.
-        if (entry.seq !== state.journalCursor + 1n) {
+        // A hole below the floor is retention deleting rows this hub never sent. Its projector
+        // can't continue, and only a fresh subscribe can tell the client. Above the floor a hole
+        // is a rolled-back allocation.
+        if (
+          entry.seq !== state.journalCursor + 1n &&
+          state.journalCursor + 1n < (await retainedTransportFloor(threadId, head))
+        ) {
           for (const framesLost of [...state.framesLostListeners]) framesLost();
           await initializeFromJournal(threadId, state, head);
           return;
