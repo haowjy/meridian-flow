@@ -47,16 +47,63 @@ export function resolveDevAuthUser(env: EnvLike): DevAuthUser | null {
 
 /**
  * Whether the dev user applies to this request. The `wos-session` cookie was
- * SameSite=Lax, which kept other sites from acting as the user; without it, a
- * cross-site request is unauthenticated unless it is a top-level GET navigation,
- * which is what Lax allowed: `dest=document` excludes framing, also `mode=navigate`. Node clients (`./mf`, smoke scripts) send no
- * `Sec-Fetch-Site` and pass.
+ * SameSite=Lax, which kept other sites from acting as the user; without it the
+ * server must refuse them itself. Fetch metadata alone can't: Chrome sends no
+ * `Sec-Fetch-*` on WebSocket handshakes, nor to a plain-HTTP host that DNS
+ * rebinding pointed at loopback. So, in order, the request is refused when:
+ *
+ * 1. its `Host` isn't a local name (`localhost`, `127.0.0.1`, `*.localhost`, `*.ts.net`);
+ * 2. it carries an `Origin` that is unparsable (`null` included) or isn't
+ *    `meridian.localhost`, `*.meridian.localhost` or `*.ts.net`;
+ * 3. `Sec-Fetch-Site` is `cross-site`, unless it is a top-level GET navigation
+ *    (what Lax allowed; `dest=document` excludes framing).
+ *
+ * Node clients (`./mf`, smoke scripts) send no `Origin` or fetch metadata and pass.
+ * Residual: the dev proxy rewrites `Host`, so another tailnet's `*.ts.net` origin
+ * passes; reaching it takes a page on that tailnet's Funnel that the developer opens.
  */
 export function devAuthAppliesToRequest(request: Request): boolean {
+  const host = request.headers.get("host");
+  if (!isLocalHostname(hostnameOf(host ? `http://${host}` : request.url))) return false;
+
+  const origin = request.headers.get("origin");
+  if (origin !== null) {
+    const hostname = hostnameOf(origin);
+    if (hostname === null || !isTrustedOriginHostname(hostname)) return false;
+  }
+
   if (request.headers.get("sec-fetch-site") !== "cross-site") return true;
   return (
     request.method === "GET" &&
     request.headers.get("sec-fetch-mode") === "navigate" &&
     request.headers.get("sec-fetch-dest") === "document"
+  );
+}
+
+function hostnameOf(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+const isTailnet = (hostname: string) => hostname.endsWith(".ts.net");
+
+function isLocalHostname(hostname: string | null): boolean {
+  return (
+    hostname !== null &&
+    (hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".localhost") ||
+      isTailnet(hostname))
+  );
+}
+
+function isTrustedOriginHostname(hostname: string): boolean {
+  return (
+    hostname === "meridian.localhost" ||
+    hostname.endsWith(".meridian.localhost") ||
+    isTailnet(hostname)
   );
 }
