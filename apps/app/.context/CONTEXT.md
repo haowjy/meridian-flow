@@ -231,9 +231,8 @@ the app-wide focus-ring CSS for app-moved focus; Work archive focus uses it so
 focus following a pointer command stays quiet.
 
 E2E fixtures may seed relational project/Work/thread/context shells through the
-authenticated API or SQL, but never write Yjs content or
-`documents.markdown_projection`; Yjs is authoritative and projection is a
-derived cache. Teardown removes context sources and relies on cascades.
+authenticated API or SQL, but never write Yjs content or the `document_blocks`
+rows; Yjs is authoritative and those rows are derived from it. Teardown removes context sources and relies on cascades.
 
 Related server contracts live in [the server context](../../server/server/domains/threads/.context/CONTEXT.md).
 
