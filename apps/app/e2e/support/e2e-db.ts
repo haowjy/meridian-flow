@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { devAuthIdentity } from "@meridian/contracts/dev-auth";
+import { deserializeTransport } from "@meridian/contracts/protocol";
 import type { APIRequestContext } from "@playwright/test";
 import postgres from "postgres";
 import { applyDevEnvToProcess } from "../../../../tools/dev/lib/dev-env";
@@ -55,26 +56,30 @@ export async function seedProjectFixture(
   const contextSourceId = randomUUID();
   const title = `${input.titlePrefix} ${projectId.slice(0, 8)}`;
 
+  // The product's own routes provision the project (with its No Work row), the Work and the
+  // thread; only the knowledge-base source below has no route.
+  await postJson(request, "/api/projects", { id: projectId, title });
+  await postJson(request, `/api/projects/${projectId}/works`, { id: workId, name: "Main Arc" });
+  const agentsResponse = await request.get(`/api/agents?projectId=${projectId}&limit=100`);
+  if (!agentsResponse.ok()) {
+    throw new Error(
+      `GET /api/agents failed: ${agentsResponse.status()} ${await agentsResponse.text()}`,
+    );
+  }
+  const agents = deserializeTransport(
+    (await agentsResponse.json()) as { agents: { slug: string; selection: unknown }[] },
+  );
+  const general = agents.agents.find((agent) => agent.slug === "general");
+  if (!general) throw new Error("Fixture project has no general agent");
+  await postJson(request, "/api/threads", {
+    id: threadId,
+    projectId,
+    workId,
+    title,
+    agentSelection: general.selection,
+  });
+
   await db.begin(async (tx) => {
-    await tx`
-      INSERT INTO projects (id, user_id, name, slug, is_personal)
-      VALUES (${projectId}, ${input.userId}, ${title}, ${`e2e-${projectId}`}, false)
-    `;
-    await tx`
-      INSERT INTO works (id, project_id, created_by_user_id, name, handle)
-      VALUES (${workId}, ${projectId}, ${input.userId}, 'Main Arc', 'w1')
-    `;
-    await tx`
-      INSERT INTO project_handle_counters (project_id, kind, n) VALUES (${projectId}, 'work', 1)
-    `;
-    await tx`
-      INSERT INTO threads (id, root_thread_id, project_id, created_by_user_id, title, kind, status)
-      VALUES (${threadId}, ${threadId}, ${projectId}, ${input.userId}, ${title}, 'primary', 'idle')
-    `;
-    await tx`
-      INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)
-      VALUES (${threadId}, ${workId}, ${projectId}, true)
-    `;
     await tx`
       INSERT INTO context_sources (id, project_id, name, slug, scope, adapter_type, is_primary, sort_order)
       VALUES (${contextSourceId}, ${projectId}, 'Knowledge Base', 'kb', 'project', 'local', false, 1)
@@ -109,6 +114,13 @@ export async function seedProjectFixture(
       title,
     });
     throw error;
+  }
+}
+
+async function postJson(request: APIRequestContext, path: string, data: unknown): Promise<void> {
+  const response = await request.post(path, { data });
+  if (!response.ok()) {
+    throw new Error(`POST ${path} failed: ${response.status()} ${await response.text()}`);
   }
 }
 
