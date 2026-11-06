@@ -1,47 +1,21 @@
 # FUTURE — nice-to-have follow-ups (project shell)
 
-- Dark mode activation (whole-app change, new behavior):
-  the 墨 night-study ladder is designed and recorded in
-  packages/design-tokens/src/ink-jade.css (header comment) — page stays lit,
-  walls double their whisper, actives lighten, inks flip. Needs a theme toggle
-  + `.dark` overrides for the FULL token set (cards, borders, review tints),
-  not just the shell ladder.
-- PaneHeader chip seating unification: the centered chat title chip
-  (features/chat/ThreadSwitcherPopover.tsx, variant="tab") sizes itself
-  `h-9` against the h-10 band because PaneHeader centers its title slot;
-  ContextTabBar seats chips via items-stretch instead. The stronger move is
-  one adaptive band-chip geometry (PaneHeader items-stretch + grammar-owned
-  fit) so no consumer knows the band height. Low urgency while both values
-  are stable.
-- Chats as a working-set tab strip (an idea the owner raised): multiple chat
-  tabs and a "+" in the centered chat band, like document tabs. Needs an
-  "open chats" model (close ≠ delete, overflow, ordering) and a decision on how
-  chat navigation relates to the sidebar. The current single-title tab chip is
-  compatible with it.
-- Clay secondary (palette proposal, not adopted): a cinnabar-family secondary
-  surface (~oklch(0.92 0.012 29)) if secondary chips ever need to leave the
-  page-neutral ladder.
-- Future pin/favorite mark: red is now spent on the shelf surface — a pin mark
-  cannot rely on cinnabar alone if the rail ever warms toward red; use shape/weight or
-  the reserved gold voice.
-- DockViewSwitch ARIA: the contained segmented switch still uses
-  role="tablist"/"tab" markup (dock/DockHeader.tsx). Decide whether tabs
-  semantics (views of one surface) or a radiogroup/toggle-group better
-  matches the interaction, and align keyboard behavior with the choice.
-- Bounded live sessions for restored desks (#217 follow-on, research-backed):
-  the persisted desk (context-tabs-store/editor-workspace-state.ts) restores
-  every open tab, and the document-session registry keeps a live
-  websocket-subscribed Y.Doc per open tab — a 30-tab desk means 30 live
-  sessions on every reload. Editor VIEWS are already bounded
-  (ContextEditorMountHost MAX_MOUNTED_EDITORS=6, LRU); sessions are not.
-  The move: lazy-connect background tabs' sessions on first view (same
-  LRU shape as the view warm set), keeping only active/recent tabs live.
-  Prior art: the Yjs FAQ warns against hydrating many Y.Docs.
-- Multi-pane Editor layout: the current workspace deliberately owns one selected
-  document view per browser tab. A split-view design must first define focus,
-  history, tab membership, and session-retention semantics; do not stretch the
-  single-selection workspace reducer into two implicit selections.
-- Work page tab search: switching between Chats and Files resets each tab's
-  search (`work/WorkChatsTab.tsx`, `work/WorkFilesTab.tsx` own it as component
-  state). Keeping it means putting the Work chat search in the project address,
-  as the chat index does with `q`.
+- Dark mode: the night-study ladder is designed in
+  `packages/design-tokens/src/ink-jade.css` (header comment). It needs a theme toggle and `.dark`
+  overrides for the full token set, not just the shell ladder.
+- PaneHeader chip seating: the centered chat title chip sizes itself `h-9` against the h-10 band
+  because PaneHeader centers its title slot, while ContextTabBar seats chips with `items-stretch`.
+  One adaptive band-chip geometry would mean no consumer knows the band height.
+- Chats as a working-set tab strip: multiple chat tabs and a "+" in the centered chat band. Needs an
+  "open chats" model (close ≠ delete, overflow, ordering) and a decision on how chat navigation
+  relates to the sidebar.
+- Bounded live sessions for restored desks (#217): the persisted desk restores every open tab, and
+  the session registry keeps a live websocket-subscribed Y.Doc per tab, so a 30-tab desk means 30
+  live sessions on every reload. Editor views are already bounded by `MAX_MOUNTED_EDITORS`. Move:
+  lazy-connect background tabs' sessions on first view, with the same LRU shape. The Yjs FAQ warns
+  against hydrating many Y.Docs.
+- Multi-pane Editor layout: a split-view design first defines focus, history, tab membership and
+  session retention; stretching the single-selection workspace reducer into two implicit selections
+  won't hold.
+- Work page tab search: switching between Chats and Files resets each tab's search. Keeping it means
+  putting the Work chat search in the project address, as the chat index does with `q`.

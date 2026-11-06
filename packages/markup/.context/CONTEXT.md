@@ -1,4 +1,4 @@
-# markup — contracts and invariants
+# markup — contracts
 
 This page covers the codec and shared link-scope contracts. The codec owns
 syntax and canonical wire spelling; hosts own identity assignment and storage.
@@ -265,7 +265,7 @@ MDX, which preserves entity-encoded literal newlines and braces. `Layout`
 wrapping is applied by the runtime block hook even through list and blockquote
 child serializers, so alignment on nested paragraphs round-trips.
 
-## Preprocessed source invariant
+## Preprocessed source
 
 `parse()` applies the accumulated preprocess chain first, parses that transformed
 string, stores it as `runtime.source`, then runs post-parse hooks before PM
