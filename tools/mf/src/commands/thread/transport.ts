@@ -36,6 +36,30 @@ export function createThreadClient(session: Session): ThreadSocketClient {
   });
 }
 
+const CONNECT_TIMEOUT_MS = 10_000;
+
+/** A thread client with its socket connected, for a command that sends and reads a reply. */
+export async function connectThreadClient(session: Session): Promise<ThreadSocketClient> {
+  const transport = createThreadClient(session);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new CliError("timeout", "Timed out connecting the thread socket")),
+      CONNECT_TIMEOUT_MS,
+    );
+    const stop = transport.onConnectionState((state) => {
+      if (state.kind !== "connected") return;
+      clearTimeout(timer);
+      queueMicrotask(() => stop());
+      resolve();
+    });
+    transport.connect();
+  }).catch((error) => {
+    transport.disconnect();
+    throw error;
+  });
+  return transport;
+}
+
 type SubscriptionItem =
   | { type: "event"; event: SequencedEvent }
   | { type: "live"; state: ThreadLiveState }

@@ -44,13 +44,36 @@ allow the target, and the action policy must allow the operation.
 Advertisement and the per-turn gate use this policy. Dispatch and direct
 executor calls do not silently reapply it; callers must choose the policy seam.
 `ask_user` creates a durable question for a primary chat and ends that execution.
-The answer's tool result is written onto the asking turn before an internal
+One call carries 1–4 questions (`questionAskPayloadSchema`, the one schema for the tool's
+input and the stored payload), each with 2–4 options and an optional `recommended`. They
+are one ask row: the writer answers the set with one submission, and the tool result is
+`{answers: [{question, answer, free_text?, skipped?, timed_out?, unsent_text?}]}`, one entry per question
+in order (flags and extra keys appear only when true), each echoing its question text. The answer's tool result is written onto the asking turn before an internal
 continuation starts through ordinary request assembly. The tool and the Mars
 capability share one name. Subagents never get `ask_user`
 (`projectToolPolicy`): a child does its task with reasonable calls, or stops and
 says in its report what is missing (`SUBAGENT_GUIDANCE`). The parent carries on
 from the report: it does the work itself, sends the child what it needs, or asks
 the writer with its own `ask_user` (the spawn description says so).
+
+A question ask times out on a clock the server owns (`asks/ask-deadline.ts`): 4 minutes
+idle, restarted by each `ask.presence` message the takeover sends while the writer is active
+on the page (any pointer, key, wheel or touch, at most one per 30 s; not `scroll`, which the page causes itself), and never past 55 minutes after the ask opened (`asks.opened_at`). A presence
+message that carries `answers` (sent only when the writer changed one) also stores them
+(`asks.draft_answers`); one without leaves the stored answers alone, so a tab that only sees
+activity can't overwrite newer answers from another tab or device. It publishes
+`ask.updated` whenever the message carries `answers` (the echo is the sender's ack, even when
+the answers equal the stored ones), and otherwise only when the deadline crosses a 30 s step (the
+deadline is whole seconds). The stored answers go to the owner's clients as
+`ThreadAsk.draftAnswers`. A refused presence is logged (`ask.presence.refused`, with its reason); no frame goes
+back. When the deadline passes, `expireDue` resolves
+from the stored answers: a held option or skip stands as the writer's answer; held typed words
+become `unsent{text}` (the model gets `answer: null` with the words in `unsent_text` and `timed_out`, the receipt says
+they weren't sent, and they return to the composer); every other question takes its
+Recommended option (`timeout{label|null}`). A presence that races the sweep
+settles under the thread lock; the sweep resolves only an ask whose deadline is still due.
+Permission asks have no deadline and take no presence.
+The tool has one input shape (`questions`, 1-4), in every thread's stored definition too.
 
 A tool asks through its handler's `request` capability (`RequestToolHandlerContext`):
 the ask service's one creation call (`AskService.request`) opens the question or
