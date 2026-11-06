@@ -25,6 +25,7 @@ import {
   nameOccupancy,
   validateContextEntryName,
 } from "./context-entry-name";
+import { describeRenames } from "./entry-drag/drop-choice";
 import { destinationOwner } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
@@ -83,12 +84,7 @@ export function useRenameEntryForm({
       if (!authority) throw unavailable();
       const destination = {
         parent: await resources.parentForEntry(projectId, entryId),
-        name: allocateContextEntryArrivalName(
-          name,
-          nameOccupancy(filteredSiblings),
-          kind,
-          currentName,
-        ),
+        name: allocateContextEntryArrivalName(name, occupancy, kind, currentName),
       };
       if (kind === "folder") {
         return resources
@@ -110,6 +106,8 @@ export function useRenameEntryForm({
     [siblings, entryId],
   );
 
+  const occupancy = useMemo(() => nameOccupancy(filteredSiblings), [filteredSiblings]);
+
   // Select the name sans a visible extension on focus ("outline" in
   // "outline.json"); a prose name has none, so all of it.
   const select = useCallback(
@@ -126,7 +124,14 @@ export function useRenameEntryForm({
     initialError: repairName
       ? t`That rename couldn't be completed. Choose another name or try again.`
       : undefined,
-    validate: (draft) => validateContextEntryName(draft, [], kind, currentName),
+    validate: (draft) => {
+      const invalid = validateContextEntryName(draft, [], kind, currentName);
+      if (invalid || !draft.trim()) return invalid;
+      const as = allocateContextEntryArrivalName(draft, occupancy, kind, currentName);
+      const name = allocateContextEntryArrivalName(draft, nameOccupancy([]), kind, currentName);
+      const message = as === name ? null : describeRenames([{ name, as }]);
+      return message ? { level: "warning", message } : null;
+    },
     onCommit: async (typed) => {
       // Typing the name it already has, another way (`Chapter 13.md`), is no change.
       if (kind === "file" && storedName(typed) === currentName) return onDone();
