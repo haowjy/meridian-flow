@@ -1,6 +1,6 @@
 /** Durable inverse delivery to live rooms and review trails. */
 import { and, eq, inArray } from "drizzle-orm";
-import { afterAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import {
@@ -222,7 +222,7 @@ it("an already-connected live room sees Undo, Redo and immediate rollback withou
         ),
       );
     expect(await view.draftStore.listActiveWorkDraftIds(ALPHA_ID)).toEqual([]);
-    expect(prose()).toBe("Alpha Gamma.\n\nBlue.");
+    await vi.waitFor(() => expect(prose()).toBe("Alpha Gamma.\n\nBlue."));
     for (const direction of ["undo", "redo"] as const) {
       const broadcasts = view.hocuspocus.broadcasts.length;
       expect(
@@ -234,7 +234,11 @@ it("an already-connected live room sees Undo, Redo and immediate rollback withou
         }),
       ).toMatchObject({ status: "reversed", acceptedParts: 1 });
       expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
-      expect(prose()).toBe(direction === "undo" ? "Alpha Beta.\n\nBlue." : "Alpha Gamma.\n\nBlue.");
+      await vi.waitFor(() =>
+        expect(prose()).toBe(
+          direction === "undo" ? "Alpha Beta.\n\nBlue." : "Alpha Gamma.\n\nBlue.",
+        ),
+      );
     }
     const broadcasts = view.hocuspocus.broadcasts.length;
     await view.collab.finalizeResponseRollback(
@@ -245,7 +249,7 @@ it("an already-connected live room sees Undo, Redo and immediate rollback withou
       },
     );
     expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
-    expect(prose()).toBe("Alpha Beta.\n\nBlue.");
+    await vi.waitFor(() => expect(prose()).toBe("Alpha Beta.\n\nBlue."));
   } finally {
     peer.destroy();
     await harness.dispose();
