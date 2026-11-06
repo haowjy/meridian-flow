@@ -62,7 +62,8 @@ on the page (any pointer, key, wheel or touch, at most one per 30 s; not `scroll
 message that carries `answers` (sent only when the writer changed one) also stores them
 (`asks.draft_answers`); one without leaves the stored answers alone, so a tab that only sees
 activity can't overwrite newer answers from another tab or device. It publishes
-`ask.updated` only when the answers changed or the deadline moved 30 s or more (the
+`ask.updated` whenever the message carries `answers` (the echo is the sender's ack, even when
+the answers equal the stored ones), and otherwise only when the deadline crosses a 30 s step (the
 deadline is whole seconds). The stored answers go to the owner's clients as
 `ThreadAsk.draftAnswers`. A refused presence is logged (`ask.presence.refused`, with its reason); no frame goes
 back. When the deadline passes, `expireDue` resolves
