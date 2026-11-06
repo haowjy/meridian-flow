@@ -14,7 +14,9 @@ import type { GenerateRequest, ModelInfo } from "../domain/index.js";
 import type { Gateway } from "../ports/gateway.js";
 import { MODEL_REGISTRY } from "./registry.js";
 
-const REGISTRY_MODEL_IDS = MODEL_REGISTRY.providers.flatMap((p) => p.models.map((m) => m.id));
+const REGISTRY_MODEL_IDS = MODEL_REGISTRY.providers.flatMap((p) =>
+  p.offerings.map((o) => o.model.id),
+);
 
 export function withLiveTestModel(gateway: Gateway, modelId: string): Gateway {
   const override = gateway.listModels().find((model) => model.id === modelId);

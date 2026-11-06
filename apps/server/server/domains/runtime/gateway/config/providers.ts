@@ -41,7 +41,7 @@ const MOCK_MODEL: ModelInfo = {
   displayName: "Mock LLM",
   contextWindow: 128_000,
   maxOutputTokens: 4096,
-  promptCache: { kind: "none", ttlMs: null },
+  promptCache: { kind: "none", shortTtlMs: null, longTtlMs: null },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };

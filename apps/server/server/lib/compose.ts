@@ -653,7 +653,7 @@ export async function createProductionAppPorts(input: {
   const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-flash";
   if (
     !MODEL_REGISTRY.providers.some((provider) =>
-      provider.models.some((model) => model.id === summarizerModel),
+      provider.offerings.some((offering) => offering.model.id === summarizerModel),
     )
   ) {
     throw new Error(`Unknown compaction summarizer model: ${summarizerModel}`);

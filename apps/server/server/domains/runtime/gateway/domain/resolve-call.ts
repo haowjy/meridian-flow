@@ -58,7 +58,8 @@ export function resolveCall(
   const { promptCache } = model;
   return {
     cacheTtlMs: resolvePromptCacheTtlMs(promptCache, request.promptCacheRetention),
-    longCacheWrites: request.promptCacheRetention === "long" && promptCache.longTtlMs !== undefined,
+    longCacheWrites:
+      request.promptCacheRetention === "long" && promptCache.longTtlMs !== promptCache.shortTtlMs,
     reasoning: resolveReasoning(request.reasoning, model.reasoning),
   };
 }

@@ -51,9 +51,9 @@ const ONE_HOUR_MS = 60 * 60 * 1_000;
 
 /** Reject, at construction, a model whose explicit cache lifetimes this API cannot be sent. */
 export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
-  const { kind, ttlMs, longTtlMs } = model.promptCache;
+  const { kind, shortTtlMs, longTtlMs } = model.promptCache;
   if (kind !== "explicit") return;
-  for (const ttl of [ttlMs, longTtlMs ?? FIVE_MINUTES_MS]) {
+  for (const ttl of [shortTtlMs, longTtlMs]) {
     if (ttl !== FIVE_MINUTES_MS && ttl !== ONE_HOUR_MS) {
       throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
     }
@@ -394,11 +394,13 @@ function mapToolChoice(
 
 export function toAnthropicMessageParams(
   request: GenerateRequest,
-  model: Pick<ModelInfo, "id" | "maxOutputTokens" | "reasoning">,
+  model: Pick<ModelInfo, "id" | "maxOutputTokens" | "reasoning" | "promptCache">,
   call: ResolvedCall,
   providerId = "anthropic",
 ): Anthropic.Messages.MessageCreateParamsStreaming {
-  const cacheControl = cacheControlForTtl(call.cacheTtlMs);
+  // Only an explicit-cache model gets cache_control: DeepSeek, on this adapter, caches on its own.
+  const cacheControl =
+    model.promptCache.kind === "explicit" ? cacheControlForTtl(call.cacheTtlMs) : undefined;
   const maxTokens = request.maxTokens ?? model.maxOutputTokens;
   const system = extractSystem(request.messages, cacheControl);
   const tools = mapTools(request.tools, providerId);

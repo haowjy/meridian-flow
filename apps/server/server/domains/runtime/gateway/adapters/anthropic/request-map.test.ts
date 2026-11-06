@@ -26,7 +26,15 @@ function toParams(
       : { efforts: ["low", "medium", "high", "max"] as const };
   return toAnthropicMessageParams(
     request,
-    { ...model, reasoning },
+    {
+      ...model,
+      reasoning,
+      promptCache: {
+        kind: providerId === "deepseek" ? ("automatic" as const) : ("explicit" as const),
+        shortTtlMs: cacheTtlMs,
+        longTtlMs: cacheTtlMs,
+      },
+    },
     {
       cacheTtlMs,
       longCacheWrites: false,
