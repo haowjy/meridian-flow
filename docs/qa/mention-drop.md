@@ -35,9 +35,8 @@ Chromium's hidden drag payload or ProseMirror's event order.
    code block: no caret appears, the hint reads **Can’t mention inside code**,
    and content does not change.
 5. Drag a row the surface's `@` catalog cannot name, including an area root.
-   The hint reads **Can’t mention that in this chat** over the composer and
-   **Uploads stay with their chat** over the manuscript (a chat upload dragged
-   from the Files menu is the case a writer reaches); content does not change.
+   The hint reads **Can’t mention that here** over the composer and the
+   manuscript alike; content does not change.
 6. Insert a multiword reference with `@`, then drop a row over the middle of
    its label. The caret snaps to the nearer outside edge and the whole original
    reference remains one chip after the drop. Repeat over a composer reference
@@ -81,15 +80,18 @@ it trails the last move by one `dragover`.
 
 ## Text dropped in a table cell
 
-16. In a table, select a second table's cells (or the whole second table) and
-    drag them into a cell. During the drag the caret stands in the cell and no
-    refusal shows. On drop the cell holds the dragged text on one line, no
-    table nests, and the grid keeps its row and column counts. Copy (hold
-    Ctrl, or Option on Mac) leaves the source; a move deletes it, unless
-    deleting would change the source table's own grid, which is refused with
-    **Can’t put that in a table cell**. Drag a picture together with table
-    text: the same refusal. Drag a selection onto its own range: nothing
-    changes and no hint shows.
+16. Tables keep their grid. Drag a selection that runs from a paragraph into a
+    second table onto a cell of the first table: the hint reads **Can’t put
+    that in a table cell** and nothing changes. Drag the same selection onto
+    a paragraph (a move, not a copy): the hint reads **Can’t move part of a
+    table**, because deleting it would cut the table. Hold Ctrl (Option on
+    Mac) to copy: the paragraph takes it. Drag the second table by its block
+    handle onto a cell: refused, no table nests. Drag a paragraph, a picture
+    or a chip, with other text, onto a cell: it lands in the cell and both
+    grids keep their row and column counts. Drag a selection onto its own
+    range: nothing changes and no hint shows. A highlighted row of cells drags
+    only the word under the browser's selection; that word lands in the
+    cell like any text.
 
 ## Ownership and recovery
 

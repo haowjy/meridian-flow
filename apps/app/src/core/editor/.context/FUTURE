@@ -21,3 +21,4 @@
 - **Two press edges.** A press exactly on a cell border can land in the
   neighbouring cell, and the first sweep started in the margin can catch the
   block handle.
+- **A highlighted row of cells drags only one word.** The browser drags the word under its own selection, not the cells' text, so the row can't move or copy as one.

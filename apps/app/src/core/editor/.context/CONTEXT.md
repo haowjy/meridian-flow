@@ -250,11 +250,11 @@ keyboard, pointer, drop, or draft-recovery answer.
   caret. Inline code is not a fence: a tree row or picture there snaps to the
   span's edge; a text slice stays in the span. A file that is not a picture
   shows `Only pictures can be dropped here` while dragging. A drop never changes
-  a table's rows or columns, spills out of its cell or nests a table (Markdown
-  can't hold one). A slice that can't land in a cell whole lands as its text
-  there, the way it does in a code block, with a moved source deleted; one with
-  a picture or chip in it, or whose moved source can't be deleted without
-  breaking its own table, is refused with `Can’t put that in a table cell`.
+  the rows or columns of any table, spills out of its cell or nests a table
+  (Markdown can't hold one). One that would is refused: `Can’t put that in a
+  table cell` when it lands in a cell, `Can’t move part of a table` when a
+  move's deletion would cut a table elsewhere. A slice that changes nothing is
+  refused with no hint. A picture or chip in an ordinary slice lands in a cell.
   A move onto the selection's own range changes nothing and shows no hint.
 - StarterKit's dropcursor stays disabled; two landings answering one drag is
   the bug this prevents. `landing/drop-caret.ts` draws the one caret.
