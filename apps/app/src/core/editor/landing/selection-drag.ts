@@ -71,7 +71,11 @@ function pressOnSelection(view: EditorView, event: MouseEvent): boolean {
   if (target.closest('[contenteditable="false"]') !== view.dom.closest('[contenteditable="false"]'))
     return false;
   const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
-  return !!at && at.pos >= selection.from && at.pos <= selection.to;
+  if (!at || at.pos < selection.from || at.pos > selection.to) return false;
+  if (at.pos === selection.from && event.clientX < view.coordsAtPos(selection.from).left)
+    return false;
+  if (at.pos === selection.to && event.clientX > view.coordsAtPos(selection.to).left) return false;
+  return true;
 }
 
 /**
