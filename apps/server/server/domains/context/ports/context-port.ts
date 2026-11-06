@@ -421,7 +421,7 @@ export interface ContextLocationOptions extends ContextWriteOptions {
   operationId?: string;
   /** The node that moves: found by id under the locks, wherever it is by then. */
   expected: ContextEntryRef;
-  /** The name the writer typed, when they did: the receipt's command keeps what was asked. */
+  /** The name the writer typed, when they did; omitted keeps the node's own name. */
   name?: string;
   /**
    * Runs inside the move's own transaction once its rows are written, so a caller's record of
@@ -587,10 +587,15 @@ export interface ContextPort {
     command: ContextBranchTreeCommand,
   ): Promise<Result<ContextBranchTreeResult, ContextError>>;
 
-  /** Commit a file's exact writer-facing identity and end provisional naming. */
+  /**
+   * Commit a file's exact writer-facing identity and end provisional naming. `destinationUri` is
+   * the folder the node lands in (its parent folder is still the one named by
+   * `options.destinationParent`, when given); `null` keeps the folder the node is in, read under
+   * the locks. The leaf is `options.name`, else the node's own, read the same way.
+   */
   commitWriterLocation(
     sourceUri: string,
-    destinationUri: string,
+    destinationUri: string | null,
     options: ContextLocationOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 

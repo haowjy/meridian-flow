@@ -41,7 +41,7 @@ import {
 import { createUntitledContextDocument } from "../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
 import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
-import { entryAt } from "./entry-ref.js";
+import { entryAt, moveTo } from "./entry-ref.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
@@ -400,7 +400,7 @@ export function branchTreeCommands(
     },
     async move(from, to) {
       const port = await livePort();
-      return port.commitWriterLocation(uri(from), uri(to), {
+      return moveTo(port, uri(from), uri(to), {
         origin: human(),
         expected: await entryAt(port, uri(from)),
       });

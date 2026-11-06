@@ -139,8 +139,9 @@ async function containerGrant(
 
 /**
  * The live move or delete, its tree entry recorded inside the mutation's own transaction. The
- * placement before is read just ahead of it: the port's own check (the document still at the
- * source path) fails the command if it moved in between.
+ * placement before is read just ahead of it. The port acts on the document by id, so a rename or
+ * move by the writer in between does not fail the command: the document lands where the model
+ * typed.
  */
 async function commitLive(
   deps: ToolWiringDeps,
@@ -202,23 +203,15 @@ async function commitLive(
     if (!recorded) throw new Error("A delete committed without its tree entry");
     return { handle: recorded, uri: source.uri };
   }
-  const moved = await port.commitWriterLocation(source.uri, input.path, {
+  // The port takes the folder and the leaf apart; the leaf is what the model typed.
+  const typed = wantedAt ?? input.path;
+  const slash = typed.lastIndexOf("/");
+  const moved = await port.commitWriterLocation(source.uri, typed.slice(0, slash + 1), {
     expected: { kind: "file", nodeId: source.documentId },
+    name: typed.slice(slash + 1),
     origin,
     ...(position ? { position } : {}),
-    inTransaction: async (result: ContextMoveResult) => {
-      const wanted = wantedAt ? parseContextUri(wantedAt) : null;
-      const landedAt = result.destinationUri
-        ? result.destinationUri
-        : wanted?.ok
-          ? formatParsedContextUri(
-              wanted.value.scheme,
-              result.destinationPath,
-              wanted.value.authority,
-            )
-          : input.path;
-      await record(landedAt);
-    },
+    inTransaction: (result: ContextMoveResult) => record(result.destinationUri),
   });
   if (!moved.ok) return refuse(moved.error);
   // A destination naming the document where it already is moves nothing and records nothing.
@@ -227,17 +220,7 @@ async function commitLive(
       path: source.uri,
       destination: input.path,
     });
-  const wanted = wantedAt ? parseContextUri(wantedAt) : null;
-  const uri = moved.value.destinationUri
-    ? moved.value.destinationUri
-    : wanted?.ok
-      ? formatParsedContextUri(
-          wanted.value.scheme,
-          moved.value.destinationPath,
-          wanted.value.authority,
-        )
-      : input.path;
-  return { handle: recorded, uri };
+  return { handle: recorded, uri: moved.value.destinationUri };
 }
 
 /**

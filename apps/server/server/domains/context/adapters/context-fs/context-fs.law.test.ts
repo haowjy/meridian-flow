@@ -7,7 +7,7 @@
 import { type DocumentId, documentTitleFromUri } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
-import { entryAt } from "../../../../test-support/entry-ref.js";
+import { entryAt, moveTo } from "../../../../test-support/entry-ref.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
 import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
@@ -264,9 +264,11 @@ describe("ContextFS rename filetype invariant", () => {
       backing,
       mutationStore,
       move: async (source: string, destination: string) =>
-        mover.commitWriterLocation(dispatch(source), dispatch(destination), {
-          expected: await movableAt(context, source),
-        }),
+        mover.commitWriterLocation(
+          dispatch(source),
+          dispatch(destination.split("/").slice(0, -1).join("/")),
+          { name: destination.split("/").at(-1), expected: await movableAt(context, source) },
+        ),
     };
   }
 
@@ -417,7 +419,8 @@ describe("canonical document naming laws", () => {
     const prose = await fs.ensureTrackedDocument("ch12");
     if (!prose.ok) throw new Error("fixture failed");
     expect(
-      await mover.commitWriterLocation(dispatch("ch12"), dispatch("ch12.md"), {
+      await mover.commitWriterLocation(dispatch("ch12"), dispatch(""), {
+        name: "ch12.md",
         expected: { kind: "file", nodeId: prose.value.documentId },
       }),
     ).toMatchObject({
@@ -426,7 +429,8 @@ describe("canonical document naming laws", () => {
     });
     await fs.ensureTrackedDocument("config.toml");
     expect(
-      await mover.commitWriterLocation(dispatch("config.toml"), dispatch("settings"), {
+      await mover.commitWriterLocation(dispatch("config.toml"), dispatch(""), {
+        name: "settings",
         expected: await movableAt(fs, "config.toml"),
       }),
     ).toMatchObject({ ok: true, value: { destinationPath: "settings.toml" } });
@@ -462,7 +466,8 @@ describe("canonical document naming laws", () => {
       workScopeId: null,
     });
     expect(
-      await mover.commitWriterLocation(dispatch("Chapter"), dispatch("Lore"), {
+      await mover.commitWriterLocation(dispatch("Chapter"), dispatch(""), {
+        name: "Lore",
         expected: await movableAt(fs, "Chapter"),
       }),
     ).toMatchObject({
@@ -470,7 +475,8 @@ describe("canonical document naming laws", () => {
       value: { destinationPath: "Lore (2)" },
     });
     expect(
-      await mover.commitWriterLocation(dispatch("Lore"), dispatch("Chapter"), {
+      await mover.commitWriterLocation(dispatch("Lore"), dispatch(""), {
+        name: "Chapter",
         expected: await movableAt(fs, "Lore"),
       }),
     ).toMatchObject({
@@ -572,13 +578,13 @@ describe("router through real ContextFS naming", () => {
       error: { code: "conflict", occupantKind: "file" },
     });
     expect(
-      await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore", {
+      await moveTo(port, "manuscript://Chapter", "manuscript://Lore", {
         expected: await entryAt(port, "manuscript://Chapter"),
       }),
     ).toMatchObject({ ok: true, value: { destinationPath: "Lore (2)" } });
     await fs.mkdir("Other");
     expect(
-      await port.commitWriterLocation("manuscript://Other", "manuscript://Chapter.md", {
+      await moveTo(port, "manuscript://Other", "manuscript://Chapter.md", {
         expected: await entryAt(port, "manuscript://Other"),
       }),
     ).toMatchObject({ ok: true, value: { destinationPath: "Chapter.md" } });
@@ -593,7 +599,7 @@ describe("router through real ContextFS naming", () => {
     expect(original.ok).toBe(true);
     const before = [...backing.documents.values()].map((row) => ({ ...row }));
     expect(
-      await port.commitWriterLocation(`manuscript://${source}`, `manuscript://${destination}`, {
+      await moveTo(port, `manuscript://${source}`, `manuscript://${destination}`, {
         expected: await entryAt(port, `manuscript://${source}`),
       }),
     ).toMatchObject({ ok: false, error: { code: "invalid_operation" } });

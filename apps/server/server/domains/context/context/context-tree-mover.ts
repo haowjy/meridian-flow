@@ -147,7 +147,7 @@ export class ContextTreeMover {
    */
   async commitWriterLocation(
     source: ContextTreeDispatch,
-    destination: ContextTreeDispatch,
+    destination: ContextTreeDispatch | null,
     options: LocationChangePolicy,
   ): Promise<Result<ContextMoveResult, ContextError>> {
     const { expected, operationId, destinationParent, position, name } = options;
@@ -170,13 +170,17 @@ export class ContextTreeMover {
     return this.changeLocation(source, destination, options);
   }
 
+  /**
+   * `folder` is where the node lands, or null for the folder it is in; neither the folder nor the
+   * leaf is known until the node is read under the locks, so the finished path is built there.
+   */
   private async changeLocation(
     source: ContextTreeDispatch,
-    destination: ContextTreeDispatch,
+    folder: ContextTreeDispatch | null,
     policy: LocationChangePolicy,
   ): Promise<Result<ContextMoveResult, ContextError>> {
     await this.moveLinks?.flush(source);
-    let lockedDestination = destination;
+    let lockedDestination = folder ?? source;
     const destinationResolver = policy.resolveDestination;
     const scopeOf = (dispatch: ContextTreeDispatch) => ({
       scheme: dispatch.scheme,
@@ -185,6 +189,7 @@ export class ContextTreeMover {
     return this.commandExecutor
       .run(
         async () => {
+          let into = folder ?? source;
           if (policy.resolveDestination) {
             const current = await policy.resolveDestination();
             if (!current.ok) return current;
@@ -194,9 +199,16 @@ export class ContextTreeMover {
               current.value.scheme !== lockedDestination.scheme ||
               current.value.workScopeId !== lockedDestination.workScopeId
             )
-              return namespaceChanged(destination.canonical);
-            destination = current.value;
+              return namespaceChanged(into.canonical);
+            into = current.value;
           }
+          const sourceToken = await this.inspectSource(source, policy.expected);
+          if (!sourceToken.ok) return sourceToken;
+          // The node's own folder and name, as the locks see them, fill what the caller left out.
+          const leaf = policy.name ?? basename(sourceToken.value.path);
+          if (!leaf) return Err({ code: "invalid_operation", uri: into.canonical });
+          const path = joinPath(folder ? into.path : dirname(sourceToken.value.path), leaf);
+          const destination = { ...into, path, canonical: uriAt(into, path) };
           if (
             policy.authorizeDestination &&
             !(await policy.authorizeDestination(destination.canonical))
@@ -208,8 +220,6 @@ export class ContextTreeMover {
           if (!source.adapter.tree || !destination.adapter.tree) {
             return Err({ code: "permission_denied", uri: destination.canonical });
           }
-          const sourceToken = await this.inspectSource(source, policy.expected);
-          if (!sourceToken.ok) return sourceToken;
 
           const prepared = await this.prepareMove(sourceToken.value, source, destination, policy);
           if (!prepared.ok) return prepared;
@@ -247,7 +257,7 @@ export class ContextTreeMover {
               if (current.ok) lockedDestination = current.value;
               return [source, lockedDestination].map(scopeOf);
             }
-          : [source, destination].map(scopeOf),
+          : [source, folder ?? source].map(scopeOf),
       )
       .catch((error) => lifecycleCommandFailure(error, source.canonical));
   }

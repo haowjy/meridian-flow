@@ -19,3 +19,17 @@ export async function entryAt(
   if (!folder?.folderId) throw new Error(`Nothing to move at ${uri}`);
   return { kind: "folder", nodeId: folder.folderId };
 }
+
+/** A move to the address a writer typed: the folder is everything before the last slash, the leaf what follows. */
+export function moveTo(
+  port: Pick<ContextPort, "commitWriterLocation">,
+  from: string,
+  to: string,
+  options: Parameters<ContextPort["commitWriterLocation"]>[2],
+) {
+  const slash = to.lastIndexOf("/");
+  return port.commitWriterLocation(from, to.slice(0, slash + 1), {
+    ...options,
+    name: to.slice(slash + 1),
+  });
+}
