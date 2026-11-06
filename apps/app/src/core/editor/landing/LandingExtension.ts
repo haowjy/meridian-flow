@@ -86,16 +86,13 @@ export const LandingExtension = Extension.create<LandingOptions>({
       }
     }
 
+    // A null `relatedTarget` also means a refused file was released: the browser
+    // sends `dragleave` instead of `drop`, and an OS file has no `dragend`. Chrome
+    // sends the same null when the pointer crosses into SVG, but its `dragover`
+    // follows in the same task and redraws before anything paints.
     function leave(view: EditorView, event: DragEvent): void {
       const related = event.relatedTarget as Node | null;
-      if (related) {
-        if (!view.dom.contains(related)) clear();
-        return;
-      }
-      // Chrome leaves `relatedTarget` null when the pointer crosses into SVG,
-      // which is still inside the editor. Believe the point, not the null.
-      const at = view.dom.ownerDocument.elementFromPoint(event.clientX, event.clientY);
-      if (!at || !view.dom.contains(at)) clear();
+      if (!related || !view.dom.contains(related)) clear();
     }
 
     return [
