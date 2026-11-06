@@ -69,10 +69,19 @@ function ImportCard({
         : parent?.kind === "folder"
           ? parent.path.join("/")
           : "";
+    // Loose files have no folder of their own: go to one of them, one that needs a look first.
+    const file =
+      root?.kind === "folder"
+        ? null
+        : [...problems, ...(detail?.entries ?? [])]
+            .map((entry) => catalog?.findDocument(entry.documentId))
+            .find(Boolean);
     void navigate({
       to: projectAddressHref({
         projectId: summary.projectId,
-        destination: { kind: "browse", scheme, path },
+        destination: file
+          ? { kind: "document", scheme, path: file.path.replace(/^\/+/, "") }
+          : { kind: "browse", scheme, path },
         work: { kind: "absent" },
       }),
     });

@@ -368,10 +368,15 @@ export class ContextFS implements ContextSchemeAdapter {
     const parsed = parseDocumentPath(path);
     if (!parsed.ok || !parsed.value) return Ok(null);
     const { dir, name, extension } = parsed.value;
-    const found = await this.store.resolveDocumentAt(
-      view,
-      joinPath(dir.join("/"), renderFilename(name, extension)),
-    );
+    // A file kept under a prose suffix (`binary.md`) has that exact name; the codec would drop it.
+    const exact = await this.store.resolveDocumentAt(view, path);
+    const found =
+      exact.kind === "not_found"
+        ? await this.store.resolveDocumentAt(
+            view,
+            joinPath(dir.join("/"), renderFilename(name, extension)),
+          )
+        : exact;
     if (found.kind === "ambiguous")
       return Err(found.outlived ? OUTLIVED_PATH_FAULT : AMBIGUOUS_PATH_FAULT);
     return Ok(found.kind === "found" ? found.node : null);

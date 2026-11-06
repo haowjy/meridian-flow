@@ -97,7 +97,7 @@ top or bottom quarter.
 9. Escape: the headless drag ignores the key, so dispatch
    `window.dispatchEvent(new Event('dragend'))` mid-drag; the line and hint go.
 10. Move… on a chapter (desktop keyboard: focus its `…`, Enter, type `m`,
-    Enter, End, Enter): its own folder offers "Change position in Act 1", which
+    Enter, End, Enter): its own folder offers "Change position", which
     lists "Move to the top of Act 1", "Move after <sibling>" and "Move to the
     bottom of Act 1", minus the place it holds. Choose one: the row moves and
     focus returns to the row. Repeat on the phone

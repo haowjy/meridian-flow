@@ -1392,10 +1392,14 @@ msgstr ""
 msgid "Change"
 msgstr ""
 
+#: src/features/project/context/EntryDestinationPicker.tsx
+msgid "Change position"
+msgstr ""
+
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryDestinationPicker.tsx
-msgid "Change position in {0}"
-msgstr ""
+#~ msgid "Change position in {0}"
+#~ msgstr ""
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 msgid "Change reference"

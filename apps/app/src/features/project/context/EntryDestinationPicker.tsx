@@ -297,7 +297,7 @@ function OpenPicker({
             {
               key: "position",
               icon: ArrowDownUp,
-              label: t`Change position in ${folder.name}`,
+              label: t`Change position`,
               disabled: pending,
               onSelect: () => undefined,
               choices: positions.map((choice) => ({
