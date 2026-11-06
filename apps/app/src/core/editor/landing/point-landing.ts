@@ -10,17 +10,20 @@
  */
 
 import type { Node as PMNode } from "@tiptap/pm/model";
-import type { EditorState, Selection } from "@tiptap/pm/state";
+import type { EditorState } from "@tiptap/pm/state";
 
-import { isOpaqueObject, isSourceBlock } from "../objects/object-types";
+import { caretInsideNodeAt } from "../objects/object-selection";
+import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
 
 export type Point = { x: number; y: number };
 
 export type Rect = { left: number; right: number; top: number; bottom: number };
 
 export type Geometry = {
-  /** The box of the node starting at `pos`, or null when it has no DOM. */
-  rectOf(pos: number): Rect | null;
+  /** The box of the node starting at `pos`. */
+  rectOf(pos: number): Rect;
+  /** Does the editor have focus? A blurred editor draws every diagram as a picture. */
+  focused(): boolean;
   /** `posAtCoords` for a point already inside a textblock's box. */
   inlineAt(x: number, y: number): number | null;
 };
@@ -33,10 +36,10 @@ export type Landing =
   /** Inside a real code block's text (or clamped to one where no textblock fits). */
   | { kind: "source"; pos: number };
 
-type Child = { node: PMNode; pos: number };
+export type Child = { node: PMNode; pos: number };
 
 /** A list's content is one item type repeated, whatever the schema names it. */
-export function isList(node: PMNode): boolean {
+function isList(node: PMNode): boolean {
   return /^\w*[iI]tem\+$/.test(String(node.type.spec.content));
 }
 
@@ -44,12 +47,27 @@ export function isTable(node: PMNode): boolean {
   return node.type.spec.tableRole === "table";
 }
 
-export function landingAt(state: EditorState, point: Point, geometry: Geometry): Landing {
-  const { doc, selection } = state;
-  let container: Child = { node: doc, pos: -1 };
+/**
+ * `start` is the container to walk from (a pressed cell); the default is the
+ * document.
+ */
+export function landingAt(
+  state: EditorState,
+  origin: Point,
+  geometry: Geometry,
+  start?: Child,
+): Landing {
+  let container: Child = start ?? { node: state.doc, pos: -1 };
   let parent: PMNode | null = null;
+  let point = origin;
 
   for (;;) {
+    // A wide table scrolls inside its wrapper, and a cell scrolled out of view
+    // must not take a margin press.
+    if (isTable(container.node)) {
+      const box = geometry.rectOf(container.pos);
+      point = { x: clamp(origin.x, box.left, box.right), y: origin.y };
+    }
     const children = childrenOf(container);
     if (children.length === 0) return { kind: "seam", pos: container.pos + 1 };
 
@@ -72,16 +90,16 @@ export function landingAt(state: EditorState, point: Point, geometry: Geometry):
     if (!child) return { kind: "seam", pos: container.pos + 1 };
     const rect = geometry.rectOf(child.pos);
     const index = children.indexOf(child);
-    if (!rect) return seamBefore(container, children, index, point, geometry);
 
     const { node } = child;
     const inside = within(rect, point);
     const showsSource =
-      isSourceBlock(node) && !(isOpaqueObject(node) && !caretIn(selection, child));
+      isSourceBlock(node) &&
+      !(isOpaqueObject(node) && !caretInsideNodeAt(state, geometry.focused(), child.pos));
     if (showsSource && inside) {
-      return { kind: "source", pos: clampInto(geometry.inlineAt(point.x, point.y), child, 0) };
+      return { kind: "source", pos: clampInto(geometry.inlineAt(point.x, point.y), child) };
     }
-    if (node.isLeaf || isOpaqueObject(node) || isSourceBlock(node)) {
+    if (isObjectLike(node)) {
       const after = point.y >= (rect.top + rect.bottom) / 2;
       return seamBefore(container, children, after ? index + 1 : index, point, geometry);
     }
@@ -123,7 +141,7 @@ function childrenOf({ node, pos }: Child): Child[] {
 
 /**
  * Binary search over the children's boxes: the child holding `y`, else the
- * children just above and below it. A child with no box counts as above `y`.
+ * children just above and below it.
  */
 function findByY(children: readonly Child[], y: number, geometry: Geometry) {
   let low = 0;
@@ -131,7 +149,7 @@ function findByY(children: readonly Child[], y: number, geometry: Geometry) {
   while (low <= high) {
     const mid = (low + high) >> 1;
     const rect = geometry.rectOf(children[mid].pos);
-    if (!rect || y > rect.bottom) low = mid + 1;
+    if (y > rect.bottom) low = mid + 1;
     else if (y < rect.top) high = mid - 1;
     else return { hit: children[mid], above: null, below: null };
   }
@@ -147,7 +165,6 @@ function nearestByDistance(
   let best = Number.POSITIVE_INFINITY;
   for (const child of children) {
     const rect = geometry.rectOf(child.pos);
-    if (!rect) continue;
     const distance = Math.hypot(
       Math.max(rect.left - point.x, 0, point.x - rect.right),
       Math.max(rect.top - point.y, 0, point.y - rect.bottom),
@@ -169,7 +186,6 @@ function nearerOf(
   if (!above || !below) return above ?? below;
   const upper = geometry.rectOf(above.pos);
   const lower = geometry.rectOf(below.pos);
-  if (!upper || !lower) return above;
   return y - upper.bottom <= lower.top - y ? above : below;
 }
 
@@ -181,12 +197,8 @@ function allowsSeam(
   below: PMNode,
 ): boolean {
   if (isList(container)) return false;
-  if (parent && isList(parent)) return objectLike(above) || objectLike(below);
+  if (parent && isList(parent)) return isObjectLike(above) || isObjectLike(below);
   return true;
-}
-
-function objectLike(node: PMNode): boolean {
-  return node.isLeaf || isOpaqueObject(node) || isSourceBlock(node);
 }
 
 /**
@@ -207,7 +219,7 @@ function seamBefore(
   const pos = after ? after.pos : before ? before.pos + before.node.nodeSize : container.pos + 1;
 
   const empty = [before, after].flatMap((child) =>
-    child?.node.isTextblock && child.node.content.size === 0 && !objectLike(child.node)
+    child?.node.isTextblock && child.node.content.size === 0 && !isObjectLike(child.node)
       ? [child]
       : [],
   );
@@ -220,18 +232,14 @@ function seamBefore(
 
   const source = [after, before].find((child) => child && isSourceBlock(child.node));
   if (!source) return { kind: "seam", pos };
-  return { kind: "source", pos: clampInto(pos, source, 0) };
+  return { kind: "source", pos: clampInto(pos, source) };
 }
 
-function caretIn(selection: Selection, { node, pos }: Child): boolean {
-  return selection.from > pos && selection.to < pos + node.nodeSize;
-}
-
-/** A position clamped into the block's own text range; `fallback` stands in for no answer. */
-function clampInto(at: number | null, { node, pos }: Child, fallback: number): number {
+/** A position clamped into the block's own text range; no answer takes its start. */
+function clampInto(at: number | null, { node, pos }: Child): number {
   const start = pos + 1;
   const end = Math.max(start, pos + node.nodeSize - 1);
-  return clamp(at ?? start + fallback, start, end);
+  return clamp(at ?? start, start, end);
 }
 
 function within(rect: Rect, { x, y }: Point): boolean {

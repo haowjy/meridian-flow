@@ -36,7 +36,6 @@
  * `landing/press.ts`, and it is not what makes this file safe.
  */
 import type { Editor, NodeViewProps } from "@tiptap/core";
-import { NodeSelection } from "@tiptap/pm/state";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import { useCallback, useSyncExternalStore } from "react";
 
@@ -46,29 +45,10 @@ import {
   diagramProviderFor,
   useDiagramRender,
 } from "./diagrams";
-import { engageObject, selectObjectTransaction } from "./objects";
+import { caretInsideNodeAt, engageObject, selectObjectTransaction } from "./objects";
 
 /**
- * Is a live caret in this node's text, as opposed to standing on the node?
- *
- * Two things are deliberately not "inside":
- *
- * - a `NodeSelection` on the fence, which is how a writer picks a diagram up
- *   (law 1's click, or an arrow-walk), not how they edit its text;
- * - an unfocused editor, whose selection is only where the caret WOULD be. A
- *   document that opens on a diagram would otherwise show syntax until the
- *   writer clicked something, and no keystroke is at risk until focus is here.
- */
-export function caretInsideNode(editor: Editor, pos: number | undefined): boolean {
-  const node = pos === undefined ? null : editor.state.doc.nodeAt(pos);
-  if (pos === undefined || !node || !editor.isFocused) return false;
-  if (editor.state.selection instanceof NodeSelection) return false;
-  const { from, to } = editor.state.selection;
-  return from > pos && to < pos + node.nodeSize;
-}
-
-/**
- * `caretInsideNode`, subscribed and read fresh on every render.
+ * `caretInsideNodeAt`, subscribed and read fresh on every render.
  *
  * Not local state written from an effect: a face held in state is a second copy
  * of the answer, and a copy can disagree with the selection for a frame. The
@@ -89,7 +69,10 @@ function useCaretInsideNode(editor: Editor, getPos: () => number | undefined): b
     },
     [editor],
   );
-  const read = () => caretInsideNode(editor, getPos());
+  const read = () => {
+    const pos = getPos();
+    return pos !== undefined && caretInsideNodeAt(editor.state, editor.isFocused, pos);
+  };
   return useSyncExternalStore(subscribe, read, read);
 }
 

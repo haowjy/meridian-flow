@@ -57,8 +57,8 @@ export function EditorSurfaceFrame({
       ) : null}
       <div
         ref={scrollRef}
-        // flex-col so canvas children can take the editorColumnFill chain —
-        // the prose node must fill the scroll area for click-below-text focus.
+        // flex-col so the editor can take the editorColumnFill chain and fill
+        // the scroll area.
         // cursor-text: the whole scroll area is caret territory when an editor
         // is attached — the cursor must promise what the press delivers.
         // relative: this pane is the coordinate space every piece of measured
