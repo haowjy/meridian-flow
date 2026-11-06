@@ -14,6 +14,7 @@ import type { EditorState } from "@tiptap/pm/state";
 
 import { caretInsideNodeAt } from "../objects/object-selection";
 import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
+import { snapOutOfAtom } from "./inline-snap";
 
 export type Point = { x: number; y: number };
 
@@ -38,13 +39,13 @@ export type Landing =
 
 export type Child = { node: PMNode; pos: number };
 
-/** A list's content is one item type repeated, whatever the schema names it. */
-function isList(node: PMNode): boolean {
-  return /^\w*[iI]tem\+$/.test(String(node.type.spec.content));
-}
-
 export function isTable(node: PMNode): boolean {
   return node.type.spec.tableRole === "table";
+}
+
+export function isTableCell(node: PMNode): boolean {
+  const role = node.type.spec.tableRole;
+  return role === "cell" || role === "header_cell";
 }
 
 /**
@@ -81,8 +82,10 @@ export function landingAt(
         return seamBefore(container, children, children.length, point, geometry);
       }
       // Between two children, where the container allows a seam.
-      if (above && below && allowsSeam(container.node, parent, above.node, below.node)) {
-        return seamBefore(container, children, children.indexOf(below), point, geometry);
+      if (above && below) {
+        const index = children.indexOf(below);
+        if (allowsSeam(container.node, parent, index, above.node, below.node))
+          return seamBefore(container, children, index, point, geometry);
       }
     }
 
@@ -113,7 +116,9 @@ export function landingAt(
           kind: "inline",
           pos: point.y >= (rect.top + rect.bottom) / 2 ? end : child.pos + 1,
         };
-      return { kind: "inline", pos: clamp(at, child.pos + 1, end) };
+      // A pointer over a chip lands on its nearer side.
+      const pos = snapOutOfAtom(state.doc, clamp(at, child.pos + 1, end), point, geometry.rectOf);
+      return { kind: "inline", pos };
     }
     parent = container.node;
     container = child;
@@ -121,7 +126,7 @@ export function landingAt(
 }
 
 /** A table lists its cells, not its rows: a `rowspan` cell is found from the row it reaches into. */
-function childrenOf({ node, pos }: Child): Child[] {
+export function childrenOf({ node, pos }: Child): Child[] {
   const start = pos + 1;
   const children: Child[] = [];
   if (isTable(node)) {
@@ -189,15 +194,27 @@ function nearerOf(
   return y - upper.bottom <= lower.top - y ? above : below;
 }
 
-/** No seam inside a list or between the text children of a list item; a figure beside text still gets one. */
+/**
+ * A seam is legal where the container can hold a paragraph there. Between the
+ * text children of a list item it would split the item's own text (the item's
+ * parent is a list: it cannot hold a paragraph and is not a table), so only a
+ * neighbouring object (a figure) gets one.
+ */
 function allowsSeam(
   container: PMNode,
   parent: PMNode | null,
+  index: number,
   above: PMNode,
   below: PMNode,
 ): boolean {
-  if (isList(container)) return false;
-  if (parent && isList(parent)) return isObjectLike(above) || isObjectLike(below);
+  const paragraph = container.type.schema.nodes.paragraph;
+  if (!paragraph || !container.canReplaceWith(index, index, paragraph)) return false;
+  if (
+    parent &&
+    !isTable(parent) &&
+    !parent.canReplaceWith(parent.childCount, parent.childCount, paragraph)
+  )
+    return isObjectLike(above) || isObjectLike(below);
   return true;
 }
 

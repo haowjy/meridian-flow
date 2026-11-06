@@ -14,7 +14,14 @@ import { type EditorState, type Selection, TextSelection } from "@tiptap/pm/stat
 import type { EditorView } from "@tiptap/pm/view";
 import { gapCursorFits } from "../objects/object-selection";
 import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
-import { type Child, type Geometry, isTable, landingAt, type Point } from "./point-landing";
+import {
+  type Child,
+  childrenOf,
+  type Geometry,
+  isTable,
+  landingAt,
+  type Point,
+} from "./point-landing";
 import { viewGeometry } from "./view-geometry";
 
 /**
@@ -151,13 +158,7 @@ function writerTextEdge(node: PMNode, pos: number, direction: 1 | -1): number | 
   }
   if (node.isAtom || !node.isBlock) return null;
 
-  let offset = pos + 1;
-  const children: { node: PMNode; pos: number }[] = [];
-  for (let index = 0; index < node.childCount; index += 1) {
-    const child = node.child(index);
-    children.push({ node: child, pos: offset });
-    offset += child.nodeSize;
-  }
+  const children = childrenOf({ node, pos });
   if (direction === -1) children.reverse();
 
   for (const child of children) {
@@ -173,13 +174,9 @@ function nearestWriterText(
   boundary: number,
   direction: 1 | -1,
 ): number | null {
-  const blocks: { node: PMNode; pos: number }[] = [];
-  let pos = scope.start;
-  for (let index = 0; index < scope.node.childCount; index += 1) {
-    const child = scope.node.child(index);
-    if (direction === 1 ? pos >= boundary : pos < boundary) blocks.push({ node: child, pos });
-    pos += child.nodeSize;
-  }
+  const blocks = childrenOf({ node: scope.node, pos: scope.start - 1 }).filter(({ pos }) =>
+    direction === 1 ? pos >= boundary : pos < boundary,
+  );
   if (direction === -1) blocks.reverse();
 
   for (const block of blocks) {

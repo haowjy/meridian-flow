@@ -13,14 +13,8 @@ import { yUndoPluginKey } from "@tiptap/y-tiptap";
 
 import type { DropLandingOptions } from "../../landing/DropLandingExtension";
 import type { DropHint, DropPlan } from "../../landing/drop-plan";
-import {
-  snapOutOfAtom,
-  snapOutOfCode,
-  snapOutOfIdentityLink,
-  snapToWordEdge,
-} from "../../landing/inline-snap";
-import type { Landing, Point } from "../../landing/point-landing";
-import { nodeRect } from "../../landing/view-geometry";
+import { snapOutOfCode, snapOutOfIdentityLink, snapToWordEdge } from "../../landing/inline-snap";
+import type { Landing } from "../../landing/point-landing";
 
 export type ReferenceDropEntry = Readonly<{
   ref: Readonly<{ kind: "file" | "folder"; id: string }>;
@@ -47,9 +41,9 @@ export function referenceDropDoor(
   };
 }
 
-/** The plan for a row drag at `landing`; `point` is where the pointer is. */
+/** The plan for a row drag at `landing`. */
 function referenceDropPlan(options: ReferenceDropOptions) {
-  return (view: EditorView, landing: Landing, point: Point): DropPlan => {
+  return (view: EditorView, landing: Landing): DropPlan => {
     const refuse = (reason: ReferenceDropRefusalReason): DropPlan => ({
       kind: "refuse",
       hint: options.label(reason),
@@ -64,12 +58,7 @@ function referenceDropPlan(options: ReferenceDropOptions) {
     if (landing.kind === "seam") {
       const paragraph = view.state.schema.nodes.paragraph;
       const content = Fragment.fromArray(separated(view, nodes));
-      const $seam = view.state.doc.resolve(landing.pos);
-      if (
-        !paragraph?.validContent(content) ||
-        !$seam.parent.canReplaceWith($seam.index(), $seam.index(), paragraph)
-      )
-        return refuse("unavailable");
+      if (!paragraph?.validContent(content)) return refuse("unavailable");
       const block = paragraph.create(null, content);
       return {
         kind: "accept",
@@ -80,13 +69,7 @@ function referenceDropPlan(options: ReferenceDropOptions) {
     }
 
     const { doc } = view.state;
-    const pos = snapToWordEdge(
-      doc,
-      snapOutOfIdentityLink(
-        doc,
-        snapOutOfAtom(doc, snapOutOfCode(doc, landing.pos), point, nodeRect(view)),
-      ),
-    );
+    const pos = snapToWordEdge(doc, snapOutOfIdentityLink(doc, snapOutOfCode(doc, landing.pos)));
     const content = spaced(view, pos, nodes);
     if (!content) return refuse("unavailable");
     return {
