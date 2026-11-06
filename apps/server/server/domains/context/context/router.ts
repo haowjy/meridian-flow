@@ -917,6 +917,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
       const deleted = await treeMover.delete(r.value, {
         expected: { kind: "file", nodeId: options.documentId },
+        onlyAt: r.value.path,
         removal: { reason: "discarded", cause: options.cause },
       });
       if (
