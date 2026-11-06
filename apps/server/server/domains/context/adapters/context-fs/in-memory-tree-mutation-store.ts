@@ -217,18 +217,21 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     if (!filename) return null;
     const folderId = await this.findFolderId(sourceId, dir);
     if (folderId === MISSING_FOLDER) return null;
-    const parsed = parseDocumentFilename(filename);
-    if (!parsed.ok) return null;
-    const { name, extension } = parsed.value;
-    for (const doc of this.backing.documents.values()) {
-      if (
-        doc.contextSourceId === sourceId &&
-        doc.deletedAt === null &&
-        doc.folderId === folderId &&
-        doc.name === name &&
-        doc.extension === extension
-      ) {
-        return doc;
+    // The exact stored name first (a file kept as `binary.md`), then the codec's alias.
+    for (const storageBacked of [true, false]) {
+      const parsed = parseDocumentFilename(filename, { storageBacked });
+      if (!parsed.ok) continue;
+      const { name, extension } = parsed.value;
+      for (const doc of this.backing.documents.values()) {
+        if (
+          doc.contextSourceId === sourceId &&
+          doc.deletedAt === null &&
+          doc.folderId === folderId &&
+          doc.name === name &&
+          doc.extension === extension
+        ) {
+          return doc;
+        }
       }
     }
     return null;
@@ -254,6 +257,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           "/",
         ),
         filetype: doc.filetype,
+        extension: doc.extension,
       };
     }
     const folder = await this.findFolderAtPath(sourceId, normalized);
@@ -370,7 +374,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       }
 
       const previousLocations = memoryFileLocations(this.backing, input.source.sourceId);
-      if (input.source.kind === "file") {
+      if ("destinationFilename" in input) {
         if (targetToken?.kind === "file" && input.overwrite) await this.runBeforeDestructiveWrite();
         await this.runBeforeDestructiveWrite();
         const sourceAfterHooks = await this.inspect(input.source.sourceId, input.source.path);
@@ -399,10 +403,8 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
               ? null
               : input.destinationParentToken.nodeId
             : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
-        const wanted = parseDocumentFilename(targetBasename);
-        if (!wanted.ok) return Err({ code: "invalid_operation" });
         targetBasename = await allocateFilename(
-          { kind: "document", name: wanted.value.name, extension: wanted.value.extension },
+          { kind: "document", ...input.destinationFilename },
           (candidate) =>
             [...this.backing.documents.values()]
               .filter(
@@ -436,9 +438,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           targetRow.updatedAt = now;
           this.markMutatorWrite();
         }
-        const parsed = parseDocumentFilename(targetBasename);
-        if (!parsed.ok) return Err({ code: "invalid_operation" });
-        const { name, extension } = parsed.value;
+        const { name, extension } = input.destinationFilename;
         const basenameChanged = targetBasename !== treeBasename(input.source.path);
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;

@@ -125,7 +125,7 @@ export async function inspectTreeLocation(
   // A document answers at the name it is stored under, which is how a file kept as `binary.md`
   // is found, then at its canonical one (`ch1.md` is `ch1`); a folder only at its literal name.
   const resolve = (at: string) =>
-    tree.resolveAddress(view, { contextSourceId: sourceId as ContextSourceId, path: at });
+    tree.resolvePath(view, { contextSourceId: sourceId as ContextSourceId, path: at });
   const literal = await resolve(normalized);
   const documentPath = canonicalDocumentPath(normalized);
   const canonical =
@@ -139,6 +139,7 @@ export async function inspectTreeLocation(
       sourceId,
       path: document.path,
       filetype: isStorageBackedDocument(document) ? null : document.fileType,
+      extension: document.extension,
     };
   }
   if (literal.kind !== "found" || literal.node.kind !== "folder") return null;
@@ -346,23 +347,17 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         });
       }
 
-      const isFile = input.source.kind === "file";
-      const parsed = isFile ? parseDocumentFilename(targetBasename) : null;
-      if (parsed && !parsed.ok) return Err({ code: "invalid_operation" });
-      const { name, extension } = parsed?.ok
-        ? parsed.value
-        : { name: targetBasename, extension: undefined };
+      const file = "destinationFilename" in input ? input : null;
       const moved = await moveNode(this.db, {
-        node: isFile
-          ? { kind: "document", id: input.source.nodeId as DocumentId }
+        node: file
+          ? { kind: "document", id: file.source.nodeId as DocumentId }
           : { kind: "folder", id: input.source.nodeId as FolderId },
         to: {
           contextSourceId: input.destinationSourceId as ContextSourceId,
           dir: treePathSegments(targetParentPath),
-          name,
-          ...(extension === undefined ? {} : { extension }),
+          ...(file ? file.destinationFilename : { name: targetBasename }),
         },
-        filetype: input.destinationFiletype ?? null,
+        filetype: file?.destinationFiletype ?? null,
       });
       if (!moved.ok) rollback(moved.error.code);
       const afterPlacement = await liveSiblingPlacement(this.db, movedRef);

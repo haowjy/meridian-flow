@@ -294,6 +294,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         overwrite: true,
         graduateProvisionalName: false,
         destinationFiletype: "markdown",
+        destinationFilename: { name: "rollback-target", extension: "" },
       });
       const [targetAfter] = await db
         .select({ deletedAt: documents.deletedAt })

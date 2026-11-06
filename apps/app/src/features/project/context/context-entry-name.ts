@@ -24,10 +24,20 @@ export function entryNameKey(name: string): string {
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : bare;
 }
 
+/**
+ * A sibling file's key from its stored name. Unlike a typed name, a stored name keeps a prose
+ * suffix only when a file was kept under it, so `again.md` is its own name beside a document `again`.
+ */
+function storedNameKey(name: string): string {
+  const parsed = parseDocumentFilename(name, { storageBacked: true });
+  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : name;
+}
+
 /** Where the part a writer renames ends: before a visible extension, otherwise the whole name. */
 export function entryNameStemEnd(name: string, kind: ContextCreateKind = "file"): number {
   if (kind === "folder") return name.length;
-  const parsed = parseDocumentFilename(name);
+  // A prose suffix on a displayed name is a kept file's own extension (`binary.md`).
+  const parsed = parseDocumentFilename(name, { storageBacked: true });
   const extension = parsed.ok ? parsed.value.extension : "";
   return extension && name.toLowerCase().endsWith(`.${extension}`)
     ? name.length - extension.length - 1
@@ -105,11 +115,13 @@ export function validateContextEntryName(
     if (!stored.ok) return { level: "error", message: stored.message };
     candidate = stored.name;
   }
-  const key = entryNameKey(candidate);
+  // Renaming a kept file (`again.md`) names another kept file, not a document's alias.
+  const kept = current !== undefined && storedNameKey(current) !== entryNameKey(current);
+  const key = kept ? storedNameKey(candidate) : entryNameKey(candidate);
   const occupant = siblings.find((sibling) =>
     kind === "folder" && sibling.kind === "dir"
       ? sibling.name === candidate
-      : entryNameKey(sibling.name) === key,
+      : (sibling.kind === "dir" ? entryNameKey(sibling.name) : storedNameKey(sibling.name)) === key,
   );
   if (occupant) {
     return {

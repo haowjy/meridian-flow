@@ -9,12 +9,11 @@ import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/c
 import {
   classifyFiletype,
   type Filetype,
-  filetypeForKnownPath,
-  filetypeForPath,
   type NamespaceNameClaim,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   type RetractionCause,
+  storedFilename,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -153,13 +152,11 @@ function trackedSchemaForPersistedFiletype(
 function moveFiletypeTransition(
   source: Pick<Extract<ContextLocationToken, { kind: "file" }>, "filetype" | "path">,
   destinationPath: string,
-  parsedFiletype?: Filetype | null,
+  destinationFiletype: Filetype | null,
 ): Result<Filetype | null, AdapterFault> {
   if (source.filetype === null) {
-    const knownDestinationFiletype =
-      parsedFiletype === undefined ? filetypeForKnownPath(destinationPath) : parsedFiletype;
-    if (knownDestinationFiletype === null) return Ok(null);
-    const destination = classifyFiletype(knownDestinationFiletype);
+    if (destinationFiletype === null) return Ok(null);
+    const destination = classifyFiletype(destinationFiletype);
     if (destination.kind !== "tracked") return Ok(null);
     return Err({
       code: "invalid_operation",
@@ -170,7 +167,6 @@ function moveFiletypeTransition(
 
   const sourceSchema = trackedSchemaForPersistedFiletype(source.filetype);
   if (!sourceSchema.ok) return sourceSchema;
-  const destinationFiletype = parsedFiletype ?? filetypeForPath(destinationPath);
   const destination = classifyFiletype(destinationFiletype);
   if (destination.kind !== "tracked") {
     return Err({
@@ -301,14 +297,26 @@ export class ContextFS implements ContextSchemeAdapter {
         // extension, and a rename never converts a document to another file type.
         move: async (path, { from, ...command }) => {
           const { dir, filename } = splitPath(path);
-          const current = parseDocumentFilename(splitPath(from.path).filename);
-          const parsed = parseDocumentFilename(filename, {
-            sourceExtension: current.ok ? current.value.extension : "",
-          });
+          // The stored extension, not the branch path's leaf: a kept `binary.md` and a document
+          // `binary` share a leaf alias, and the row says which this is.
+          const located = await this.store.findDocumentById(
+            await this.readTreeView(),
+            command.documentId as DocumentId,
+          );
+          if (!located) return Err({ code: "stale_source" });
+          const { extension: storedExtension } = located.document;
+          const parsed = storedFilename(filename, { extension: storedExtension });
           if (!parsed.ok) return Err(parsed.error);
-          const transition = moveFiletypeTransition(from, path, parsed.value.filetype);
+          // A storage-backed file keeps its type unless the extension changes.
+          const transition = moveFiletypeTransition(
+            from,
+            path,
+            from.filetype === null && parsed.filename.extension === storedExtension
+              ? null
+              : parsed.filename.filetype,
+          );
           if (!transition.ok) return transition;
-          const { name, extension } = parsed.value;
+          const { name, extension } = parsed.filename;
           const moved = await branchTree.move(
             { dir, name, extension },
             {
@@ -368,10 +376,13 @@ export class ContextFS implements ContextSchemeAdapter {
     const parsed = parseDocumentPath(path);
     if (!parsed.ok || !parsed.value) return Ok(null);
     const { dir, name, extension } = parsed.value;
-    const found = await this.store.resolveDocumentAt(
-      view,
-      joinPath(dir.join("/"), renderFilename(name, extension)),
-    );
+    // A file kept under a prose suffix (`binary.md`) has that exact name; the codec would drop it.
+    const exact = await this.store.resolveDocumentAt(view, path);
+    const canonical = joinPath(dir.join("/"), renderFilename(name, extension));
+    const found =
+      exact.kind === "not_found" && canonical !== path
+        ? await this.store.resolveDocumentAt(view, canonical)
+        : exact;
     if (found.kind === "ambiguous")
       return Err(found.outlived ? OUTLIVED_PATH_FAULT : AMBIGUOUS_PATH_FAULT);
     return Ok(found.kind === "found" ? found.node : null);
@@ -941,14 +952,14 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
-    if (prepared.source.kind === "file") {
+    if ("destinationFilename" in prepared) {
       // The mover found the source through its own adapter's inspectMovable,
       // which filters by that source's view in this transaction.
       const source = prepared.source;
       const destinationFiletype = moveFiletypeTransition(
         source,
         prepared.destinationPath,
-        "destinationFiletype" in prepared ? prepared.destinationFiletype : undefined,
+        prepared.destinationFiletype,
       );
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
@@ -962,9 +973,9 @@ export class ContextFS implements ContextSchemeAdapter {
         expectedTarget: prepared.expectedTarget,
         overwrite: prepared.overwrite,
         position: prepared.position,
-        graduateProvisionalName:
-          "graduateProvisionalName" in prepared && prepared.graduateProvisionalName === true,
+        graduateProvisionalName: prepared.graduateProvisionalName,
         destinationFiletype: destinationFiletype.value,
+        destinationFilename: prepared.destinationFilename,
       });
       if (!committed.ok) return Err(this.mutationFault(committed.error));
       return Ok({

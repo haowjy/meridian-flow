@@ -451,17 +451,24 @@ export class ContextTreeMover {
       policy.target === "exact",
     );
     if (!targetPath.ok) return targetPath;
-    let destinationFiletype: Filetype | null | undefined;
+    let fileDestination:
+      | {
+          destinationFiletype: Filetype | null;
+          destinationFilename: { name: string; extension: string };
+        }
+      | undefined;
     if (sourceToken.value.kind === "file") {
-      const targetInput = basename(targetPath.value);
-      const targetParts = storedFilename(targetInput, sourceBasename);
+      const { extension, filetype } = sourceToken.value;
+      const targetParts = storedFilename(basename(targetPath.value), { extension });
       if (!targetParts.ok) return Err({ ...targetParts.error, uri: destination.canonical });
-      destinationFiletype =
-        sourceToken.value.filetype === null &&
-        !targetParts.filename.extension &&
-        targetInput.trim() === targetParts.filename.name
-          ? null
-          : targetParts.filename.filetype;
+      fileDestination = {
+        // A storage-backed file keeps its type unless the extension changes.
+        destinationFiletype:
+          filetype === null && targetParts.filename.extension === extension
+            ? null
+            : targetParts.filename.filetype,
+        destinationFilename: targetParts.filename,
+      };
       targetPath = Ok(joinPath(dirname(targetPath.value), targetParts.name));
     }
     if (!targetPath.ok) return targetPath;
@@ -501,15 +508,15 @@ export class ContextTreeMover {
       expectedTarget,
       overwrite: policy.overwrite,
     };
-    return sourceToken.value.kind === "file"
-      ? Ok({
-          ...prepared,
-          source: sourceToken.value,
-          destinationFiletype,
-          graduateProvisionalName:
-            policy.target === "exact" && policy.graduateProvisionalName === true,
-        })
-      : Ok({ ...prepared, source: sourceToken.value });
+    if (sourceToken.value.kind === "directory")
+      return Ok({ ...prepared, source: sourceToken.value });
+    if (!fileDestination) throw new Error("a file move names its destination");
+    return Ok({
+      ...prepared,
+      source: sourceToken.value,
+      ...fileDestination,
+      graduateProvisionalName: policy.target === "exact" && policy.graduateProvisionalName === true,
+    });
   }
 
   private async inspect(
