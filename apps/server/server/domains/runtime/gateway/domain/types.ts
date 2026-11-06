@@ -223,7 +223,7 @@ export interface GenerateRequest {
    * ignores it.
    */
   promptCacheKey?: string;
-  /** Cache lifetime wanted; fixed per thread kind so the cached prefix never changes mid-thread. */
+  /** Cache lifetime wanted; fixed per thread kind (`none` for one-shot calls nothing re-reads) so the cached prefix never changes mid-thread. */
   promptCacheRetention: PromptCacheRetention;
   /** Observability-only context; adapters must never map it into provider requests. */
   correlation?: {

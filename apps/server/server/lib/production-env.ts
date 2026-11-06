@@ -1,6 +1,6 @@
 /**
- * The production rule shared by the debug-path gate and the gateway. Pure so the gateway needn't
- *
+ * The production rule shared by the debug-path gate and the gateway. Pure, so the gateway
+ * needn't read the environment itself.
  *
  * Production as every environment gate sees it: `APP_ENV=production`, or
  * `NODE_ENV=production` with `APP_ENV` unset or `dev`, so a deployed process
