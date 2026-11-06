@@ -116,6 +116,22 @@ export function arrivals(view: NamingView, rows: readonly Arrival[]) {
   };
 }
 
+/**
+ * The rows a move would rename on arrival, for the warning shown before it
+ * happens. It predicts exactly as `moveRows` places, as if every row arrives.
+ */
+export function renamesOnArrival(
+  rows: readonly Arrival[],
+  view: NamingView,
+): { name: string; as: string }[] {
+  const names = arrivals(view, rows);
+  return rows.flatMap((row) => {
+    const as = names.name(row);
+    names.reserve(row, as);
+    return as !== (row.typed ?? row.name) ? [{ name: row.name, as }] : [];
+  });
+}
+
 export async function currentView(context: ReplicaContext) {
   const snapshot = await context.resources.readProjection(context.projectId);
   return {

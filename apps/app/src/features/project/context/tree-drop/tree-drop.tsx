@@ -38,9 +38,13 @@ export type TreeDropTarget = {
 /**
  * What dropping an internal payload on a target would do. `accept` lights the
  * target and allows the drop; `refuse` leaves it unlit with the no-drop cursor and says why. A
- * null verdict leaves the target quiet (the drop would change nothing).
+ * null verdict leaves the target quiet (the drop would change nothing). An
+ * accept's `warning` says what the drop will also do that the writer may not
+ * expect (rows arriving renamed), while there is still time to let go elsewhere.
  */
-export type EntriesVerdict = { kind: "accept"; label: string } | { kind: "refuse"; label: string };
+export type EntriesVerdict =
+  | { kind: "accept"; label: string; warning?: string | null }
+  | { kind: "refuse"; label: string };
 
 export type EntriesRoute = {
   verdict(target: TreeDropTarget): EntriesVerdict | null;
@@ -382,16 +386,4 @@ export function useWindowDropGuard() {
       window.removeEventListener("drop", guard);
     };
   }, []);
-}
-
-const EDGE_PX = 32;
-const SCROLL_STEP_PX = 14;
-
-/** Scrolls a container while a drag is within 32 px of its top or bottom. */
-export function dragEdgeScroll(container: HTMLElement | null, event: DragEvent) {
-  if (!container) return;
-  if (dragPayloadKind(Array.from(event.dataTransfer?.types ?? [])) === "none") return;
-  const rect = container.getBoundingClientRect();
-  if (event.clientY < rect.top + EDGE_PX) container.scrollTop -= SCROLL_STEP_PX;
-  else if (event.clientY > rect.bottom - EDGE_PX) container.scrollTop += SCROLL_STEP_PX;
 }

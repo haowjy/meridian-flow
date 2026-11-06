@@ -27,6 +27,7 @@ import { activeDragSession } from "./drag-session";
 import {
   askLabel,
   type DropAction,
+  describeRenames,
   dropChoices,
   insideItself,
   moveLabel,
@@ -34,6 +35,7 @@ import {
   type PendingChoice,
 } from "./drop-choice";
 import { runCopy, runMove } from "./entry-failure";
+import { renamesOnArrival } from "./execute-move";
 import {
   type MoveArea,
   type MoveView,
@@ -114,12 +116,24 @@ export function useEntryList({
       const { view } = drop;
       // A drop that asks offers what the menu would; the hint is the first thing it offers.
       if (resolved.asks) {
-        const first = dropChoices(view, resolved, target).items.find((item) => item.enabled);
-        return first ? { kind: "accept", label: askLabel(first.label) } : null;
+        const { items, plans } = dropChoices(view, resolved, target);
+        const first = items.find((item) => item.enabled);
+        if (!first) return null;
+        // A move renames a row the writer already has; a copy is new, so it needs no warning.
+        const moved = first.action === "move" ? (plans.move?.moves ?? []) : [];
+        return {
+          kind: "accept",
+          label: askLabel(first.label),
+          warning: describeRenames(renamesOnArrival(moved, view)),
+        };
       }
       const planned = planMove(view, resolved);
       if (planned.kind !== "ready") return null;
-      return { kind: "accept", label: moveLabel(planned) };
+      return {
+        kind: "accept",
+        label: moveLabel(planned),
+        warning: describeRenames(renamesOnArrival(planned.moves, view)),
+      };
     };
     // `dragover` repeats many times a second over one target; its answer changes
     // only with the drag, the target or what the list shows.

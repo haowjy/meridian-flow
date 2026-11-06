@@ -137,7 +137,13 @@ identity in anchors or holds.
   capture at each Apply boundary, so nearby typing stays in separate native
   segments. History traversal is synchronous: Apply entries enqueue owner-held
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
-  boundary while skipping native no-ops. Destroying the editor is terminal and
+  boundary while skipping native no-ops. Undo gives back the range a change
+  started from (a drag, a cut, typing over a selection), captured by
+  `editor-history.ts` on `beforeTransaction` and carried through the stack items
+  that UndoManager generates. It is never read from y-tiptap's copy, which a
+  plugin's appended transaction makes wrong; Yjs alone would map the current
+  selection, and a moved range has just been removed. Redo and a caret keep
+  y-tiptap's mapped selection. Destroying the editor is terminal and
   discards only that mounted navigation history. Dock, Work, tree-only Apply, and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
@@ -213,6 +219,43 @@ keyboard, pointer, drop, or draft-recovery answer.
   one. A press that lands
   where the caret already stands is left to the browser, which knows the line
   the caret is on. A press in a cell stays in that cell.
+- **A selection drag** (`landing/selection-drag.ts`) is the one press on text
+  the editor takes. The browser's own text drag refuses a press that counts as a
+  third click and, on macOS browsers, waits 150ms (from their source; not run
+  here), so the editor lifts the selection itself. ProseMirror's `mousedown`
+  runs first (it counts clicks), then a listener on `view.dom` prevents the
+  default when the press is on the highlight of a nonempty `TextSelection` or
+  `AllSelection` (the test ProseMirror's own `dragstart` applies: `posAtCoords`
+  at the pointer lies in the selection's range; at either end, its x-coordinate
+  must also be on the selected side of the caret, so half of the adjacent glyph
+  does not count). The space between lines and the blank past a covered line's
+  last word count, but not unselected text after the range, count. The view must
+  also be focused and editable, with no modifier and a chrome kernel.
+  `handleDoubleClick` and `handleTripleClick` claim a
+  second or third press there so neither the browser nor ProseMirror widens
+  the selection; the claim also records a third press for the no-travel case. The file has two halves:
+  `startGesture` follows the mouse (click or lift; ignores a `mouseup` from any
+  button but the left) and `liftSelection` pumps the drag events, so a block
+  gesture could reuse the first. Past 4px it sends a synthetic
+  `dragstart` (at `view.dom`, positioned at the press, since a fast first move
+  may already be off the selection) with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
+  on a target change and `dragover` (so the caret, the 5s caret timeout and
+  autoscroll behave as in a native drag); release sends one more `dragover` at the
+  release point (a fast drag lands where it is let go), then `drop` only if
+  that one was cancelled, then `dragend`. It is a pump into the pipeline
+  below, not a second drop path: another surface mounting `LandingExtension`
+  (the composer, a second pane) reads it as it reads any drag and copies.
+  (A pnpm patch to `@tiptap/core` removed the delete its paste-rule plugin made
+  of a drag's source after a drop into another editor; the landing decides move
+  or copy.) A press that never travels
+  places a caret on release, or selects the textblock for a third press;
+  `click` after a lift is swallowed (the link surface would follow a link).
+  Escape goes through `chrome.beginDrag`; after a lift `pointermove` stops at
+  the window so other panes' hover chrome stays down; a peer edit that changes
+  what the selection holds cancels (checked again at release). Left native: presses with a modifier (so
+  Ctrl/Option-drag still carries text out of the window; Mac Option is
+  unrun), read-only views, editors with no kernel (code documents, the
+  composer as a source), cell selections, and objects (`ObjectPhysics`).
 - **A drop** (`landing/LandingExtension.ts`) picks the door for the drag once:
   `view.dragging ? sliceDoor : doors[kind]`, where the kind comes from its
   types (`landing/drag-payload.ts`: tree rows, files, or text). It asks the walk
@@ -250,8 +293,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   a `NodeSelection`, and the caret is inside it.
 - **What refuses.** Text dropped into a fence becomes plain characters (a hard
   break is a newline); a slice holding a picture or chip is refused (`Can’t put
-  that inside code`), and a move that lands in a block the selection reaches
-  into changes nothing. A picture over a fence is refused (`Can’t put a picture
+  that inside code`). A picture over a fence is refused (`Can’t put a picture
   inside code`) and a tree row too (`Can’t mention inside code`), each with no
   caret. Inline code is not a fence: a tree row or picture there snaps to the
   span's edge; a text slice stays in the span. A file that is not a picture
@@ -261,7 +303,25 @@ keyboard, pointer, drop, or draft-recovery answer.
   table cell` when it lands in a cell, `Can’t move part of a table` when a
   move's deletion would cut a table elsewhere. A slice that changes nothing is
   refused with no hint. A picture or chip in an ordinary slice lands in a cell.
-  A move onto the selection's own range changes nothing and shows no hint.
+  A move onto the selection's own range changes nothing and shows no hint; the
+  unselected part of a block the selection reaches into is an ordinary landing.
+- **A move keeps its lines.** Taking a text range out of several textblocks
+  never joins them (`landing/range-removal.ts`): a block the range reaches into
+  keeps its unselected text and type, with adjacent prose whitespace trimmed so
+  the remainder does not start or end with the moved line's space. Code keeps
+  its whitespace. A block the range covers whole goes, and so do the containers
+  that would be left empty. A block its parent can't lose (a list item's first
+  paragraph, the last block, or the last paragraph in a table cell) stays,
+  emptied; a fully covered table leaves as one block. A move inside one
+  textblock, a node move and a `CellSelection` still use `deleteSelection`.
+  Several carried lines land at a gap: before the landing textblock at its start,
+  after it at its end, or at a split inside it. The slice closes into blocks and
+  ProseMirror fits those blocks where the schema requires it. Lists keep their
+  container and order. A whole top-level textblock keeps its type; a top-level
+  textblock cut by the source selection takes the landing's type, and a cut last
+  block joins the landing's tail. This applies to copies because the door reads
+  their source selection too. A slice from outside has no source selection and
+  keeps its types. A single-line slice and a landing in code are unchanged.
 - StarterKit's dropcursor stays disabled; two landings answering one drag is
   the bug this prevents. `landing/drop-caret.ts` draws the one caret.
   Keyboard behavior follows the same reading, so no input device places a
