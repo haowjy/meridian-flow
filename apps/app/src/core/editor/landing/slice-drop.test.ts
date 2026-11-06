@@ -1,6 +1,6 @@
 /** Multi-line slice drops preserve valid container structure and source order. */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import type { Node as PMNode } from "@tiptap/pm/model";
+import { type Node as PMNode, Slice } from "@tiptap/pm/model";
 import { EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { expect, it } from "vitest";
 import { droppedSlicePlan } from "./slice-drop";
@@ -16,6 +16,21 @@ const textblockPositions = (doc: PMNode) => {
   });
   return positions;
 };
+
+function clipboardSlice(slice: Slice): Slice {
+  let { content, openStart, openEnd } = slice;
+  while (
+    openStart > 1 &&
+    openEnd > 1 &&
+    content.childCount === 1 &&
+    content.firstChild?.childCount === 1
+  ) {
+    openStart--;
+    openEnd--;
+    content = content.firstChild.content;
+  }
+  return new Slice(content, openStart, openEnd);
+}
 
 function dropRange(
   doc: PMNode,
@@ -34,7 +49,7 @@ function dropRange(
     doc,
     selection: TextSelection.create(doc, from, to),
   });
-  const slice = editorState.selection.content();
+  const slice = clipboardSlice(editorState.selection.content());
   const view = {
     get state() {
       return editorState;
@@ -74,6 +89,43 @@ it("keeps copied list items and their nested list in order", () => {
 
   expect(state.doc.textBetween(state.selection.from, state.selection.to, "\n")).toBe(
     "rst bullet text\nsecond bullet text\nnested kid text\nthird bullet text\nfourth b",
+  );
+  expect(state.doc.toJSON()).toEqual(
+    schema
+      .node("doc", null, [
+        list,
+        paragraph("land"),
+        schema.node("bullet_list", null, [
+          item("rst bullet text"),
+          item("second bullet text", [nested]),
+          item("third bullet text"),
+          item("fourth b"),
+        ]),
+        paragraph("ing words"),
+      ])
+      .toJSON(),
+  );
+});
+
+it("keeps a copied quote at one quote level", () => {
+  const quote = (...lines: string[]) => schema.node("blockquote", null, lines.map(paragraph));
+  const source = quote("q one", "q two", "q three");
+  const state = dropRange(
+    schema.node("doc", null, [source, paragraph("landing words")]),
+    { from: ["q one", 2], to: ["q three", 3] },
+    ["landing words", 4],
+    true,
+  );
+
+  expect(state.doc.toJSON()).toEqual(
+    schema
+      .node("doc", null, [
+        source,
+        paragraph("land"),
+        quote("one", "q two", "q t"),
+        paragraph("ing words"),
+      ])
+      .toJSON(),
   );
 });
 
