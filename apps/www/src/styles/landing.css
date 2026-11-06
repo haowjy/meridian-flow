@@ -14,11 +14,21 @@
   --lh: 775px;
   --hx: clamp(28px, 5vw, 72px);
   --hw: clamp(300px, 30vw, 440px);
-  --hy: max(80px, calc((100vh + 56px - 455px) / 2));
+  --hy: max(80px, calc((100vh + 56px - min(25vw + 87px, 474px)) / 2));
   --cw: clamp(270px, 25vw, 360px);
   --cy: 30vh;
   --hubY: 40vh;
-  --filmh: 840vh;
+  --filmh: 800vh;
+  /* The product block on the first screen, for the paint before script measures it.
+     tan(atan2()) divides a length by a length. */
+  --hero-block: min(
+    100vw - var(--hx) - var(--hw) - 64px,
+    max(620px, (100vh - 120px) / 0.625),
+    940px
+  );
+  --hero-block-scale: tan(atan2(var(--hero-block), var(--lw)));
+  --hero-block-x: calc(100vw - var(--hero-block) - 36px);
+  --hero-block-y: max(80px, calc((100vh + 56px - var(--hero-block) * 0.625) / 2));
 }
 
 [data-ui-theme='dark'] {
@@ -1065,12 +1075,6 @@ html:not([data-auto='idle']) .play small {
   padding: 0;
   z-index: 4;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.5s ease-out;
-}
-
-.film-ready .slotwrap {
-  opacity: 1;
 }
 
 .cine .slot {
@@ -1082,6 +1086,8 @@ html:not([data-auto='idle']) .play small {
   height: var(--lh);
   margin: 0;
   transform-origin: 0 0;
+  transform: translate(var(--hero-block-x), var(--hero-block-y)) scale(var(--hero-block-scale));
+  filter: brightness(0.84) saturate(0.92);
   pointer-events: none;
   box-shadow:
     0 0 90px color-mix(in oklab, var(--mkt-glow) 22%, transparent),
@@ -1336,6 +1342,11 @@ html:not([data-auto='idle']) .play small {
     --hw: calc(100vw - 40px);
     --cw: calc(100vw - 40px);
     --cy: 106px;
+    --lw: 390px;
+    --hero-block: calc(100vw - 24px);
+    --hero-block-x: 12px;
+    --hero-block-y: 376px;
+    --lh: calc((100vh - 388px) / var(--hero-block-scale));
   }
 
   .row {

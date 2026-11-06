@@ -1,4 +1,4 @@
-/** The story the page tells. Text the visitor's answers change lives here. */
+/** The card's questions and the product block's lines that follow the answers. */
 
 export type AnswerKey = "a" | "b";
 
@@ -65,7 +65,7 @@ export const MUSE_REPLY: Record<AnswerKey, { chat: string; note: string }> = {
     note: "Replaced at chapter 380. The man aboard after that has the scar on his right hand, on purpose.",
   },
   b: {
-    chat: "I read every chapter that quotes the log and put the hints in 146, 263 and 380. Ise’s notes now say volume two is unreliable.",
-    note: "Scar across the left palm (chapter 9). The right-hand scar in chapter 412 stands: Ise’s log is the error.",
+    chat: "I read every chapter that quotes the log and put the hints in 146, 263 and 380. His notes now say Ise’s log is unreliable.",
+    note: "The right-hand scar in chapter 412 stands: Ise’s log is the error.",
   },
 };

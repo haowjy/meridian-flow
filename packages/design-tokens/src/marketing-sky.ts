@@ -13,11 +13,12 @@ export const MARKETING_SKY = {
   seaDeep: [0.005, 0.011, 0.018],
   dawnSky: [0.06, 0.15, 0.17],
   sun: [1, 0.8, 0.5],
+  dawnSeaLift: [0.02, 0.02, 0.02],
   veil: [0.012, 0.02, 0.034],
   starCool: [0.74, 0.84, 1],
   starWarm: [1, 0.86, 0.68],
   meridianLine: [0.5, 0.56, 0.6],
 } as const satisfies Record<string, LinearRgb>;
 
-/** The sky's darkest tone, for the browser's own chrome. */
-export const MARKETING_THEME_COLOR = "#06100f";
+/** `--mkt-night` as hex, for the browser's own chrome. Mirrored in www's `site.webmanifest`. */
+export const MARKETING_THEME_COLOR = "#010a0b";

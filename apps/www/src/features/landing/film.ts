@@ -3,9 +3,14 @@ import type { ProductSlot } from "./ProductPlaceholder";
 import { createSky, type Sky, type SkyFrame } from "./sky";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const PHONE_WIDTH = 820;
-const WIDE_WINDOW = 2000;
+/** The breakpoints in landing.css. Queries, not widths: scrollbars must not split the two. */
+const PHONE_QUERY = "(max-width: 819px)";
+const WIDE_QUERY = "(min-width: 2000px)";
 const WIDE_CONTENT = 1600;
+/** Below this a phone is on its side: the product goes beside the words, not under them. */
+const SIDEWAYS_HEIGHT = 500;
+/** A touch device's address bar resizes the window by less than this. */
+const ADDRESS_BAR_HEIGHT = 120;
 const AUTOPLAY_TAIL_SECONDS = 2.5;
 
 const clamp = (value: number, low = 0, high = 1) => Math.min(high, Math.max(low, value));
@@ -35,6 +40,11 @@ const BEATS = [
   ["leave", 0.45, 3],
 ] as const;
 type Beat = (typeof BEATS)[number][0];
+
+export const AUTOPLAY_MINUTES =
+  Math.round(
+    ((BEATS.reduce((total, beat) => total + beat[2], 0) + AUTOPLAY_TAIL_SECONDS) / 60) * 2,
+  ) / 2;
 
 type Rect = { x: number; y: number; w: number };
 type Line = { path: SVGPathElement; dot: SVGCircleElement; length: number };
@@ -94,22 +104,9 @@ function typewriter(element: HTMLElement, caretClass: string) {
   };
 }
 
-/** Keeps the story text in step with the card. Runs with or without the film. */
-export function bindStoryChoice(root: HTMLElement, store: CardStore) {
-  const part = (selector: string) => root.querySelector(selector) as HTMLElement;
-  const sync = () => {
-    const isReplaced = store.whoIsHe() === "a";
-    part("#r-a").hidden = !isReplaced;
-    part("#r-b").hidden = isReplaced;
-    part("#tw-a").hidden = !isReplaced;
-    part("#tw-b").hidden = isReplaced;
-  };
-  sync();
-  return store.subscribe(sync);
-}
-
 /** Reduced motion: the stacked page over a still night sky. */
-function startStill(root: HTMLElement, signal: AbortSignal) {
+function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
+  store.setOnSend(() => root.querySelector("#the-twist")?.scrollIntoView());
   const sky = createSky(root.querySelector("#sky") as HTMLCanvasElement, signal);
   const frame: SkyFrame = {
     lampX: 0.2,
@@ -130,6 +127,7 @@ function startStill(root: HTMLElement, signal: AbortSignal) {
   };
   render();
   addEventListener("resize", render, { signal });
+  sky.onRestored(render);
 }
 
 /**
@@ -144,7 +142,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
     html.classList.remove("cine");
-    startStill(root, signal);
+    startStill(root, store, signal);
     return () => controller.abort();
   }
   html.classList.add("cine");
@@ -182,7 +180,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const worldTypers = ["#w0", "#w1", "#w2", "#w3"].map((id) => typewriter(one(id), "me"));
   const allTypers = [...typers, turnTypers.a, turnTypers.b, ...worldTypers];
 
-  let wideWindow = 0;
+  let windowWidth = 0;
   let width = 0;
   let height = 0;
   let isPhone = false;
@@ -192,6 +190,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   let layoutWidth = 1240;
   let chapterFrom = 0;
   let chapterTo = 0;
+  let turnTargets = { a: 0, b: 0 };
   const beats = {} as Record<Beat, readonly [number, number, number]>;
   let filmTop = 0;
   let endTop = 0;
@@ -331,10 +330,10 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   }
 
   function measure() {
-    wideWindow = html.clientWidth;
-    width = wideWindow >= WIDE_WINDOW ? WIDE_CONTENT : wideWindow;
+    windowWidth = html.clientWidth;
+    width = matchMedia(WIDE_QUERY).matches ? WIDE_CONTENT : windowWidth;
     height = innerHeight;
-    isPhone = width < PHONE_WIDTH;
+    isPhone = matchMedia(PHONE_QUERY).matches;
     barHeight = isPhone ? 90 : 56;
     const set = (name: string, value: number) => html.style.setProperty(name, `${value}px`);
 
@@ -347,14 +346,20 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     set("--lh", isPhone ? 760 : 775);
 
     if (isPhone) {
-      const columnWidth = width - 40;
+      const sideways = height < SIDEWAYS_HEIGHT;
+      const columnWidth = sideways ? width * 0.46 : width - 40;
       set("--hx", 20);
       set("--hy", barHeight + 18);
       set("--hw", columnWidth);
       set("--cw", columnWidth);
       set("--cy", barHeight + 16);
-      heroRect = { x: 12, y: barHeight + 18 + hero.offsetHeight + 16, w: width - 24 };
-      workspaceRect = { x: 12, y: barHeight + 16 + caption.offsetHeight + 14, w: width - 24 };
+      const beside = { x: width * 0.5, y: barHeight + 10, w: width * 0.5 - 12 };
+      heroRect = sideways
+        ? beside
+        : { x: 12, y: barHeight + 18 + hero.offsetHeight + 16, w: width - 24 };
+      workspaceRect = sideways
+        ? beside
+        : { x: 12, y: barHeight + 16 + caption.offsetHeight + 14, w: width - 24 };
       set("--lh", Math.round((height - heroRect.y - 12) / (heroRect.w / layoutWidth)));
     } else {
       const left = clamp(width * 0.05, 28, 72);
@@ -405,6 +410,14 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const anchor = height * 0.44;
     chapterFrom = middleOf(one(".open")) - anchor;
     chapterTo = middleOf(one("#p3")) - anchor;
+    const turnParagraphs = [one("#r-a"), one("#r-b")].map((paragraph) => {
+      const wasHidden = paragraph.hidden;
+      paragraph.hidden = false;
+      const middle = middleOf(paragraph);
+      paragraph.hidden = wasHidden;
+      return middle - anchor;
+    });
+    turnTargets = { a: turnParagraphs[0], b: turnParagraphs[1] };
 
     let position = 0;
     let seconds = 0;
@@ -475,9 +488,11 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       grade < 0.995
         ? `brightness(${grade.toFixed(3)}) saturate(${(1 - (1 - grade) * 0.5).toFixed(3)})`
         : "none";
-    block.classList.toggle("live", rise > 0.98 && leave < 0.05);
-    if (hints > 0) slot.set("hints", progress(hints, 0.08, 0.95));
-    else slot.set("team");
+    const live = rise > 0.98 && leave < 0.05;
+    block.classList.toggle("live", live);
+    block.inert = !live;
+    if (hints > 0) slot.set("hints", progress(hints, 0.08, 0.95), isPhone);
+    else slot.set("team", 0, isPhone);
 
     show(world, ease(progress(push, 0.6, 1)) * (1 - ease(progress(worldP, 0.84, 1))));
     worldTypers.forEach((typer, index) => {
@@ -500,13 +515,12 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
         ? clamp(1 - ease(progress(asked, 0, 0.12)) + ease(progress(asked, 0.9, 1)))
         : 1 - ease(progress(out, 0, 0.28));
     show(chapter, chapterIn * chapterDim * (1 - ease(progress(twistP, 0.02, 0.2))));
-    const turnTarget = middleOf(one(store.whoIsHe() === "a" ? "#r-a" : "#r-b")) - height * 0.44;
-    const scrollY_ = lerp(
+    const chapterOffset = lerp(
       lerp(chapterFrom, chapterTo, ease(write) * 0.3 + write * 0.7),
-      turnTarget,
+      turnTargets[store.whoIsHe()],
       ease(progress(turn, 0, 0.4)),
     );
-    chapter.style.transform = `translate3d(0,${-scrollY_}px,0)`;
+    chapter.style.transform = `translate3d(0,${-chapterOffset}px,0)`;
     typers[0].set(progress(write, 0.04, 0.42), write > 0.02 && write < 0.42);
     typers[1].set(progress(write, 0.42, 0.9), write >= 0.42 && write < 0.9);
     typers[2].set(progress(write, 0.5, 0.98), write >= 0.5 && write < 0.985);
@@ -600,8 +614,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const toEnd = ease(
       progress(raw, endTop - height * 0.8, Math.min(documentHeight - height, endTop)),
     );
-    const heroCenter = (heroRect.x + heroRect.w / 2 - wideWindow / 2) / height;
-    const workspaceCenter = (workspaceRect.x + workspaceRect.w / 2 - wideWindow / 2) / height;
+    const heroCenter = (heroRect.x + heroRect.w / 2 - windowWidth / 2) / height;
+    const workspaceCenter = (workspaceRect.x + workspaceRect.w / 2 - windowWidth / 2) / height;
     const spread =
       lerp(heroRect.w / 2 / height, (workspaceRect.w / 2 / height) * 0.9, dawn) * (1 - push * 0.9);
     const toTwist = ease(progress(twistP, 0, 0.5));
@@ -629,6 +643,11 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
         ease(progress(twistP, 0.05, 0.45)) * (1 - ease(progress(twistP, 0.8, 1))) * 1.1,
     };
   }
+
+  const glide = { active: false, time: 0, from: 0, to: 0 };
+  const cancelGlide = () => {
+    glide.active = false;
+  };
 
   /* Autoplay */
   type AutoplayState = "idle" | "playing" | "paused" | "done";
@@ -673,6 +692,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   };
 
   const togglePlay = () => {
+    cancelGlide();
     if (autoplay.state === "playing") {
       pause();
       return;
@@ -699,8 +719,9 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   addEventListener(
     "pointerdown",
     (event) => {
-      const onCard = event.target instanceof Element && event.target.closest("#card");
-      if (!onPlayControl(event) && !onCard) pause();
+      if (onPlayControl(event)) return;
+      pause();
+      cancelGlide();
     },
     passive,
   );
@@ -714,7 +735,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   );
 
   /* Jump links */
-  const jumpTargets = (hash: string) => {
+  const jumpTargets = (hash: string): number => {
     const along = (name: Beat, share: number) =>
       beats[name][0] + (beats[name][1] - beats[name][0]) * share;
     const targets: Record<string, number> = {
@@ -724,7 +745,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       "#the-workspace": along("hints", 0.1),
       "#top": 0,
     };
-    return targets[hash];
+    return targets[hash] ?? 0;
   };
   for (const link of all<HTMLAnchorElement>(".jumps a, .word")) {
     link.addEventListener(
@@ -732,6 +753,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       (event) => {
         event.preventDefault();
         pause();
+        cancelGlide();
         measure();
         scrollTo(0, filmTop + jumpTargets(link.hash));
       },
@@ -740,7 +762,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   }
 
   /* After Send answers, glide on to the turn in the story. */
-  const glide = { active: false, time: 0, from: 0, to: 0 };
   const GLIDE_SECONDS = 1.4;
   store.setOnSend(() => {
     if (autoplay.state === "playing") return;
@@ -749,9 +770,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     glide.from = scrollY;
     glide.to = filmTop + beats.ask[1] + 1;
   });
-  const cancelGlide = () => {
-    glide.active = false;
-  };
   addEventListener("wheel", cancelGlide, passive);
   addEventListener("touchmove", cancelGlide, passive);
   addEventListener("keydown", cancelGlide, { signal });
@@ -820,13 +838,18 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
   // A phone's address bar firing resize mid-scroll would otherwise rebuild the layout.
   let measuredWidth = innerWidth;
+  let measuredHeight = innerHeight;
   addEventListener(
     "resize",
     () => {
-      if (innerWidth !== measuredWidth || !("ontouchstart" in window)) {
-        measuredWidth = innerWidth;
-        measure();
-      }
+      const isAddressBar =
+        "ontouchstart" in window &&
+        innerWidth === measuredWidth &&
+        Math.abs(innerHeight - measuredHeight) < ADDRESS_BAR_HEIGHT;
+      if (isAddressBar) return;
+      measuredWidth = innerWidth;
+      measuredHeight = innerHeight;
+      measure();
     },
     { signal },
   );
@@ -836,6 +859,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   document.fonts.ready.then(() => {
     if (!signal.aborted) measure();
   });
+  if (location.hash) scrollTo(0, filmTop + jumpTargets(location.hash));
   current = scrollY - filmTop;
   html.classList.add("film-ready");
   frameRequest = requestAnimationFrame(frame);

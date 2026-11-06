@@ -68,7 +68,7 @@ void main(){
       f*=1.87;
     }
     vec3 sea=mix(hz*.5,${vec3(C.seaDeep)},smoothstep(0.,.3,d));
-    sea=mix(sea,dawnc*.5+vec3(.02),DAWN*exp(-d*2.2));
+    sea=mix(sea,dawnc*.5+${vec3(C.dawnSeaLift)},DAWN*exp(-d*2.2));
     float px=max(abs(uv.x-L.x+rr*d*.055)-WIN,0.);
     float glit=.3+.7*smoothstep(.1,1.5,rr);
     sea+=lampc*exp(-abs(px)/(.004+d*.11))*glit*exp(-d*2.6)*LAMP*.62;
@@ -116,23 +116,32 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     alpha: false,
     powerPreference: "low-power",
   });
-  const program = gl ? linkProgram(gl) : null;
-  let usable = gl !== null && program !== null;
+  let uniforms = gl ? connect(gl) : null;
   let resolution = 0.8;
+  let onRestored = () => {};
 
-  canvas.addEventListener("webglcontextlost", () => (usable = false), { signal });
-
-  const uniform = (name: string) =>
-    (gl as WebGLRenderingContext).getUniformLocation(program as WebGLProgram, name);
-  const sizeU = usable ? uniform("R") : null;
-  const lampU = usable ? uniform("L") : null;
-  const timeU = usable ? uniform("T") : null;
-  const floats = usable
-    ? Object.entries(FLOAT_UNIFORMS).map(([name, key]) => [uniform(name), key] as const)
-    : [];
+  // A phone can discard a background tab's context. Without preventDefault it never returns.
+  canvas.addEventListener(
+    "webglcontextlost",
+    (event) => {
+      event.preventDefault();
+      uniforms = null;
+    },
+    { signal },
+  );
+  canvas.addEventListener(
+    "webglcontextrestored",
+    () => {
+      if (!gl) return;
+      uniforms = connect(gl);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      onRestored();
+    },
+    { signal },
+  );
 
   const resize = () => {
-    if (!gl || !usable) return;
+    if (!gl || !uniforms) return;
     const scale = Math.min(devicePixelRatio || 1, 1.5) * resolution;
     const width = Math.round(innerWidth * scale);
     const height = Math.round(innerHeight * scale);
@@ -150,14 +159,30 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
       resolution = Math.max(0.45, resolution - 0.1);
       resize();
     },
+    /** For a static sky, which has no next frame to redraw it. */
+    onRestored(callback: () => void) {
+      onRestored = callback;
+    },
     draw(frame: SkyFrame, time: number) {
-      if (!gl || !usable) return;
-      gl.uniform2f(sizeU, canvas.width, canvas.height);
-      gl.uniform2f(lampU, frame.lampX, frame.lampY);
-      gl.uniform1f(timeU, time);
-      for (const [location, key] of floats) gl.uniform1f(location, frame[key]);
+      if (!gl || !uniforms) return;
+      gl.uniform2f(uniforms.size, canvas.width, canvas.height);
+      gl.uniform2f(uniforms.lamp, frame.lampX, frame.lampY);
+      gl.uniform1f(uniforms.time, time);
+      for (const [location, key] of uniforms.floats) gl.uniform1f(location, frame[key]);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
+  };
+}
+
+function connect(gl: WebGLRenderingContext) {
+  const program = linkProgram(gl);
+  if (!program) return null;
+  const location = (name: string) => gl.getUniformLocation(program, name);
+  return {
+    size: location("R"),
+    lamp: location("L"),
+    time: location("T"),
+    floats: Object.entries(FLOAT_UNIFORMS).map(([name, key]) => [location(name), key] as const),
   };
 }
 

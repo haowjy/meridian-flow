@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { createCardStore } from "./card-store";
-import { bindStoryChoice, startFilm } from "./film";
+import { bindStoryChoice, createCardStore } from "./card-store";
+import { AUTOPLAY_MINUTES, startFilm } from "./film";
 import { createProductSlot, ProductPlaceholder } from "./ProductPlaceholder";
 import { QuestionCard } from "./QuestionCard";
 
@@ -48,7 +48,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               <button type="button" className="play" data-play data-big>
                 <PlayIcon />
                 <span>Play the story</span>
-                <small>1.5 min</small>
+                <small>{AUTOPLAY_MINUTES} min</small>
               </button>
             </div>
 

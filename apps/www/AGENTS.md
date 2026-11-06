@@ -8,11 +8,15 @@ authenticated.
 
 ## Landing page
 
-- React renders the markup once, so the page is server-rendered and stacks without
-  script. `features/landing/film.ts` then owns that DOM frame by frame: typed text,
-  `hidden`, positions. `LandingPage` holds no state, so React never re-renders what
-  the film writes. State lives in the leaves (`TopBar`, `QuestionCard`) or in
-  `card-store.ts`.
+- React renders the markup, so the page is server-rendered and stacks without script.
+  `features/landing/film.ts` then writes that DOM frame by frame: typed text, `hidden`,
+  positions, labels. React only touches what its own render changes, so a component
+  must never render a changing value into a node the film writes. A value the visitor
+  changes goes through `card-store.ts`, which the card, the prose and the product block
+  all read.
+- The first screen paints from CSS alone: `landing.css` positions the product block
+  with the same geometry `measure()` uses. Change one and you change both, or the
+  block jumps on hydration.
 - Colour comes from token roles. Night regions set `data-ui-theme="dark"` on
   themselves; the product block and question card sit outside them, on the light
   root. Values no role covers go in `design-tokens/src/marketing.css`, or
