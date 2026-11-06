@@ -55,7 +55,7 @@ import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { ImageIngressExtension, ImageUploadPresenceExtension, imageDropDoor } from "./images";
-import { DropLandingExtension } from "./landing/DropLandingExtension";
+import { LandingExtension } from "./landing/LandingExtension";
 import { LinkSurfaceExtension, WikilinkPasteExtension, type WikilinkPasteOptions } from "./links";
 import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
 import { ObjectPhysicsExtension } from "./objects";
@@ -174,7 +174,7 @@ function pickCursorColor(peers: PeerAwareness): string {
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
   // Off for a different reason than the rest of this list: the stock
-  // dropcursor computes its own landing. `DropLandingExtension` draws the one
+  // dropcursor computes its own landing. `LandingExtension` draws the one
   // caret (jade, matching the block drag's drop line) from the plan it lands.
   dropcursor: false,
   // Gapcursor is deliberately ABSENT from this list (absent = enabled): it is
@@ -351,7 +351,7 @@ export function createStandaloneEditorExtensions({
       // whole document's.
       AutoPairExtension,
       // Text drags only: the same caret and landing the document shows.
-      DropLandingExtension,
+      LandingExtension,
     ];
   }
   return [
@@ -413,8 +413,8 @@ export function createStandaloneEditorExtensions({
     // Where dragged content lands, and the caret that promises it. The lanes
     // that know a payload (rows, files) hand it their doors here, so the
     // landing imports neither.
-    DropLandingExtension.configure({
-      ...(referenceDrop && referenceDropDoor(referenceDrop)),
+    LandingExtension.configure({
+      entries: referenceDrop && referenceDropDoor(referenceDrop),
       files: imageDropDoor,
     }),
     // Chrome mounts only on the document schema: a code file is one code

@@ -16,7 +16,7 @@ import {
 import { dropPoint } from "@tiptap/pm/transform";
 import type { EditorView } from "@tiptap/pm/view";
 
-import type { DropPlan } from "./drop-plan";
+import type { DropDoor, DropPlan } from "./drop-plan";
 import { isTable, isTableCell, type Landing } from "./point-landing";
 
 type SliceSource = {
@@ -38,18 +38,67 @@ export function dragSource(view: EditorView, event: DragEvent): SliceSource {
   return { moved: Boolean(dragging) && !event[copyModifier], node: dragging?.node ?? null };
 }
 
+/** Drags inside the editor, and text dragged in from outside whose content is unknown until the drop. */
+export const sliceDoor: DropDoor = {
+  plan({ view }, landing, event) {
+    return slicePlan(view, landing, view.dragging?.slice ?? null, dragSource(view, event));
+  },
+};
+
+/**
+ * `handleDrop`'s plan: the slice ProseMirror resolved for this drop, landed at
+ * `landing`. Text from outside is read again where it lands (see below).
+ */
+export function droppedSlicePlan(
+  view: EditorView,
+  event: DragEvent,
+  slice: Slice,
+  landing: Landing,
+): DropPlan {
+  const source = dragSource(view, event);
+  return slicePlan(
+    view,
+    landing,
+    view.dragging ? slice : (reparsedOutsideCode(view, event, landing) ?? slice),
+    source,
+  );
+}
+
+/**
+ * Text from outside, dropped beside a rendered diagram. ProseMirror parsed it
+ * against the raw position, inside the diagram's hidden fence, and handed back
+ * literal characters; the landing is outside it, so the text is read again as
+ * the host would read it there. Null when nothing needs reading again, or the
+ * host has no text parser (the literal slice stands).
+ */
+function reparsedOutsideCode(view: EditorView, event: DragEvent, landing: Landing): Slice | null {
+  if (landing.kind === "source") return null;
+  const raw = view.posAtCoords({ left: event.clientX, top: event.clientY });
+  if (!raw || !view.state.doc.resolve(raw.pos).parent.type.spec.code) return null;
+  const text = event.dataTransfer?.getData("text/plain");
+  if (!text) return null;
+
+  const $landing = view.state.doc.resolve(landing.pos);
+  let slice = view.someProp("clipboardTextParser", (parse) => parse(text, $landing, false, view));
+  if (!slice) return null;
+  view.someProp("transformPasted", (transform) => {
+    slice = transform(slice as Slice, view, false);
+  });
+  return slice;
+}
+
 /**
  * The plan for a slice at `landing`. A null slice is an external drag still in
  * the air: its content is unknown, so the caret is the landing.
  */
-export function slicePlan(
+function slicePlan(
   view: EditorView,
   landing: Landing,
   slice: Slice | null,
   source: SliceSource,
 ): DropPlan {
   const { state } = view;
-  if (!slice) return { kind: "accept", pos: landing.pos, commit: () => {} };
+  if (!slice) return { kind: "accept", pos: landing.pos };
 
   if (landing.kind === "source") {
     // A code block holds characters: a slice reads as its text and its hard

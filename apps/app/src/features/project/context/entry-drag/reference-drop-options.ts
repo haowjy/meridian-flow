@@ -7,7 +7,6 @@
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import type { ReferenceDropOptions } from "@/core/editor/extensions/reference-drop";
 
-import { clearDragHint, showDragHint } from "../tree-drop/drag-hint";
 import { activeDragSession } from "./drag-session";
 
 export function referenceDropOptions({
@@ -30,7 +29,5 @@ export function referenceDropOptions({
       return nodes.every((node) => node !== null) ? nodes : null;
     },
     label: (kind) => labels[kind],
-    showHint: showDragHint,
-    clearHint: clearDragHint,
   };
 }

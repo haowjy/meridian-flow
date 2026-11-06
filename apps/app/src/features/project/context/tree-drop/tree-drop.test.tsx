@@ -6,8 +6,8 @@
  */
 import { act, type ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
+import { MERIDIAN_ENTRIES_MIME } from "@/core/editor/landing/drag-payload";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { MERIDIAN_ENTRIES_MIME } from "./drag-payload";
 import {
   type EntriesVerdict,
   TreeDropScope,

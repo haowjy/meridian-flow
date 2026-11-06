@@ -5,7 +5,7 @@
  * resolvable rows into mentions, while every other surface ignores the drag rather than pasting
  * stray text.
  */
-import { MERIDIAN_ENTRIES_MIME } from "../tree-drop/drag-payload";
+import { MERIDIAN_ENTRIES_MIME } from "@/core/editor/landing/drag-payload";
 import type { DragEntry, DragSource, EntryDrag } from "./entry";
 
 let active: EntryDrag | null = null;

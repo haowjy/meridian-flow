@@ -1,4 +1,4 @@
-/** The one drop caret: drawn where the plan lands, driven by `DropLandingExtension`. */
+/** The one drop caret: drawn where the plan lands, driven by `LandingExtension`. */
 
 import type { EditorState } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
