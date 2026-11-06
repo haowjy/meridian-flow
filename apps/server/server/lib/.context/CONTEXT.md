@@ -122,10 +122,15 @@ project's row, hidden and deleted rows are 404; a User-area file is reachable fr
 user's projects). Edit is granted on the row `held` names, never on the id the request carried (a
 join forwards), and for a folder on its area's container; uploads are refused. A move also needs
 edit on the destination area unless the destination is a folder, which is rechecked under the move
-locks (`authorizeDestination`). `destination_missing` stays non-retryable repair. The request
+locks (`canEditContextUri`, passed as the folder destination's `authorize`). The two routes share
+`runEntryCommand` (`context-entry-route.ts`); owner resolution and the edit recheck are
+`context-locator.ts`'s `resolveLocator` and `canEditContextUri`, shared with Copy and create, and the
+destination parsers are in `context-destination.ts`. `destination_missing` stays non-retryable repair. The request
 sends `name` and `destinationParent` only when the writer chose them (see
-`MoveContextEntryRequest`); `locateEntry` supplies the rest. URI callers (the model) go through the
-port with the same node and keep path semantics for the destination.
+`MoveContextEntryRequest`); `locateEntry` supplies the rest. The model goes through the port with the
+same node and an `at` destination: the folder it typed, validated by the mover with the reasons
+`resolveMutation` gives, and `onlyAt` for a create's retraction, which records the address the create
+landed at (`address.uri`), not what the model typed.
 
 The app's durable namespace queue resends any move, delete, create-untitled or create-folder it
 has not settled, and it settles a refusal only from a typed non-retryable 4xx (the
