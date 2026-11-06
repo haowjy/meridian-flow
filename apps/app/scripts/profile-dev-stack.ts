@@ -9,6 +9,8 @@ import path from "node:path";
 import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 
+import { isLocalHost } from "@meridian/contracts/dev-auth";
+
 import { getApiRouteOwner } from "../src/server/api-route-ownership";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -267,12 +269,22 @@ async function main(): Promise<void> {
   const appExit = observeChild(app);
   const resources = new Set<() => void>();
 
+  // Refuse before `proxyHeaders` rewrites `Host`: this gateway has no Vite in front of
+  // it, so the server's dev-auth rule would otherwise only see the rewritten local Host.
   const gateway = http.createServer((request, response) => {
+    if (!isLocalHost(request.headers.host)) {
+      response.writeHead(403).end();
+      return;
+    }
     const pathname = new URL(request.url ?? "/", "http://gateway.local").pathname;
     const serverOwned = getApiRouteOwner(pathname) === "server";
     proxyHttp(request, response, serverOwned ? apiOrigin : appOrigin, serverOwned, resources);
   });
   gateway.on("upgrade", (request, socket, head) => {
+    if (!isLocalHost(request.headers.host)) {
+      socket.destroy();
+      return;
+    }
     const pathname = new URL(request.url ?? "/", "http://gateway.local").pathname;
     if (getApiRouteOwner(pathname) !== "server") {
       socket.destroy();
