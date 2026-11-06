@@ -49,8 +49,10 @@ browser reports no fine pointer, so rows render at touch height.
    Manuscript row over the User header, docked above Scratch: no light, no
    hint, no change (User is the writer's, in every project).
 7. Drag `chapter-1` into a folder that already holds a `chapter-1`: the hint
-   reads "Move to <folder>". Drop: the row arrives as `chapter-1 (2)`, selected
-   and revealed; no toast shows. Move… shows no warning either.
+   reads "Move to <folder>" with a warning line under it, "chapter-1 will be
+   renamed chapter-1 (2)" (two clashing rows: "2 items will be renamed"). Move…
+   shows the same line under Move here. Drop: the row arrives as `chapter-1 (2)`;
+   no toast shows. Copy to… shows no warning.
 8. Run [Mention drops](mention-drop.md). A writing drop copies references and
    never enters this recipe's move route.
 9. After every drag, check that no region stays lit

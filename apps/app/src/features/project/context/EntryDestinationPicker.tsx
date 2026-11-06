@@ -28,9 +28,10 @@ import { Button } from "@/components/ui/button";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
+import { describeRenames } from "./entry-drag/drop-choice";
 import { LIVE_VIEW } from "./entry-drag/entry";
 import { copyRows } from "./entry-drag/execute-copy";
-import { moveRows } from "./entry-drag/execute-move";
+import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
 import { moveRefusal, parentOf, type ReadyCopy, sameParent } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { destinationParent, type MoveDestination } from "./move-entry";
@@ -305,12 +306,17 @@ function OpenPicker({
               })),
             },
           ];
+        const after = destination && !already && destinationParent(destination, works, noWork);
+        const renamed = after
+          ? renamesOnArrival([{ entry: ref, name: entry.name, typed: name, after }], view)
+          : [];
         return [
           {
             key: "move",
             icon: FolderInput,
             label: already ? t`Already in ${folder.name}` : t`Move here`,
             disabled: already || pending,
+            note: describeRenames(renamed),
             onSelect: () => {
               void move(trail);
             },
