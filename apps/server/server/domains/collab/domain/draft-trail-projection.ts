@@ -1,12 +1,18 @@
 /** Canonical live-effect trail navigation and committed-record persistence. */
-import type { CanonicalBlockIdentity } from "@meridian/agent-edit/integration";
+import type {
+  AgentEditCodecFactory,
+  AgentEditModel,
+  CanonicalBlockIdentity,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 
+import { describeTrailBlocks, trailBlockChanges } from "./document-difference.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
 } from "./ports/change-trail-persistence.js";
+import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import {
   bodyFromHashline,
   type CanonicalBlockIdentityV1,
@@ -16,6 +22,87 @@ import {
   normalizeTrailPushes,
   type RawTrailChange,
 } from "./trail-read-kernel.js";
+
+export type LiveTrailProjector = (input: {
+  documentId: string;
+  beforeState: Uint8Array;
+  afterState: Uint8Array;
+  receiptId: string;
+  threadId: string;
+  turnId: string;
+}) => Promise<void>;
+
+export function createLiveTrailProjector(input: {
+  model: AgentEditModel;
+  codec: AgentEditCodecFactory;
+  links: DocumentLinkScopes;
+  persistence: Pick<ChangeTrailPersistence, "record">;
+  resolveDocumentTitle(documentId: string): Promise<string>;
+}): LiveTrailProjector {
+  return async ({ documentId, beforeState, afterState, receiptId, threadId, turnId }) => {
+    const beforeDoc = createProjectionDoc(beforeState);
+    const afterDoc = createProjectionDoc(afterState);
+    try {
+      await input.links.within({ documentId }, async () => {
+        await input.links.prepare({
+          holders: [{ documentId, view: { kind: "live" } }],
+          docs: [beforeDoc, afterDoc],
+        });
+        const codec = input.codec.forScope(
+          input.links.holder({ documentId, view: { kind: "live" } }),
+        );
+        const before = describeTrailBlocks(beforeDoc, input.model, codec);
+        const after = describeTrailBlocks(afterDoc, input.model, codec);
+        const changedBlocks = trailBlockChanges(before, after);
+        const changes = preparedTrailChanges({
+          documentId: documentId as DocumentId,
+          changedBlocks,
+          receiptId,
+          ownersByBlock: new Map(
+            changedBlocks.map((block) => [block.blockId, [{ threadId, turnId }]]),
+          ),
+          before: before.map((block) => ({
+            hash: block.id,
+            serialized: block.serialized,
+            ...block.identity,
+          })),
+          blockIdentities: new Map(
+            after.map((block) => [
+              block.id,
+              { documentId: documentId as DocumentId, ...block.identity },
+            ]),
+          ),
+          afterIds: new Set(after.map((block) => block.id)),
+          afterById: new Map(after.map((block) => [block.id, block.block])),
+          afterDoc,
+        });
+        const trails = normalizeTrailPushes([
+          {
+            pushId: receiptId,
+            receiptId,
+            threadId,
+            changes,
+            journalOwners: [{ threadId, turnId }],
+          },
+        ]);
+        if (trails.length === 0) return;
+        await input.persistence.record({
+          trails,
+          documentTitles: new Map([[documentId, await input.resolveDocumentTitle(documentId)]]),
+        });
+      });
+    } finally {
+      beforeDoc.destroy();
+      afterDoc.destroy();
+    }
+  };
+}
+
+function createProjectionDoc(state: Uint8Array): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  Y.applyUpdate(doc, state);
+  return doc;
+}
 
 type TrailProjectionLocation = {
   kind: RawTrailChange["kind"];

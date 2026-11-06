@@ -92,10 +92,24 @@ export type CollabJournal = CheckpointJournal &
     headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
   };
 
+export type LiveTrailProjectionInput = {
+  documentId: string;
+  beforeState: Uint8Array;
+  afterState: Uint8Array;
+  mutation: Extract<
+    NonNullable<import("@meridian/agent-edit/integration").JournalBatchAppendEntry["mutation"]>,
+    { mode: "live" }
+  >;
+  receiptId: string;
+};
+
+export type LiveTrailProjector = (input: LiveTrailProjectionInput) => Promise<void>;
+
 export type DrizzleCollabPersistence = {
   journal: CollabJournal;
   seeds: InitialDocumentSeeds;
   store: CollabFacadeStore;
+  setLiveTrailProjector(projector: LiveTrailProjector): void;
 };
 
 const asDocumentId = (value: string) => value as DocumentId;
@@ -549,7 +563,10 @@ async function materializeCurrentCheckpoint(
   }
 }
 
-export function createDrizzleJournal(db: JournalDb): CollabJournal {
+export function createDrizzleJournal(
+  db: JournalDb,
+  options: { liveTrailProjector?: LiveTrailProjector } = {},
+): CollabJournal {
   return {
     headSchemaVersion: (documentId) => findHeadSchemaVersion(db, documentId),
 
@@ -669,6 +686,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
               : {}),
           })),
           updateRows,
+          options.liveTrailProjector,
         );
 
         return updateRows.map((row, index) => ({
@@ -1027,11 +1045,17 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
 }
 
 export function createDrizzleCollabPersistence(db: JournalDb): DrizzleCollabPersistence {
-  const journal = createDrizzleJournal(db);
+  let liveTrailProjector: LiveTrailProjector | undefined;
+  const journal = createDrizzleJournal(db, {
+    liveTrailProjector: (input) => liveTrailProjector?.(input) ?? Promise.resolve(),
+  });
   return {
     journal,
     seeds: createServerInitialDocumentSeeds(db),
     store: createDrizzleCollabFacadeStore(db),
+    setLiveTrailProjector(projector) {
+      liveTrailProjector = projector;
+    },
   };
 }
 
@@ -1048,6 +1072,7 @@ async function captureLiveEdits(
   states: Map<string, Uint8Array>,
   entries: readonly import("@meridian/agent-edit/integration").JournalBatchAppendEntry[],
   rows: readonly { id: number }[],
+  liveTrailProjector?: LiveTrailProjector,
 ): Promise<void> {
   for (const [docId, state] of states) {
     const doc = createCollabYDoc({ gc: false }),
@@ -1056,12 +1081,15 @@ async function captureLiveEdits(
         {
           mutation: NonNullable<(typeof entries)[number]["mutation"]>;
           receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
+          beforeState: Uint8Array;
+          afterState: Uint8Array;
         }
       >();
     try {
       Y.applyUpdate(doc, state);
       for (const [i, entry] of entries.entries()) {
         if (entry.docId !== docId) continue;
+        const beforeEntryState = Y.encodeStateAsUpdate(doc);
         const receipts = captureReceiptRows(
           doc,
           (entry.mutation?.editParts ?? [entry.update]).map((update) => ({
@@ -1071,12 +1099,18 @@ async function captureLiveEdits(
         );
         if (!entry.mutation) continue;
         const key = entry.mutation.writeId ?? String(rows[i].id),
-          group = groups.get(key) ?? { mutation: entry.mutation, receipts: [] };
+          group = groups.get(key) ?? {
+            mutation: entry.mutation,
+            receipts: [],
+            beforeState: beforeEntryState,
+            afterState: Y.encodeStateAsUpdate(doc),
+          };
         group.receipts.push(...receipts);
+        group.afterState = Y.encodeStateAsUpdate(doc);
         groups.set(key, group);
       }
-      for (const { mutation, receipts } of groups.values())
-        await recordDocumentEdit(db, {
+      for (const { mutation, receipts, beforeState, afterState } of groups.values()) {
+        const receiptId = await recordDocumentEdit(db, {
           documentId: asDocumentId(docId),
           threadId: asThreadId(mutation.threadId),
           turnId: asOptionalTurnId(mutation.turnId ?? undefined),
@@ -1091,6 +1125,16 @@ async function captureLiveEdits(
             origin: receipts[i].origin,
           })),
         });
+        if (mutation.mode === "live" && mutation.actorKind === "agent" && liveTrailProjector) {
+          await liveTrailProjector({
+            documentId: docId,
+            beforeState,
+            afterState,
+            mutation,
+            receiptId,
+          });
+        }
+      }
     } finally {
       doc.destroy();
     }

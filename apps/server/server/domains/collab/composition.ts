@@ -1,5 +1,6 @@
 /** Production dependency graph for the server collab domain. */
 
+import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
@@ -115,6 +116,7 @@ import { createDraftProjection } from "./domain/draft-projection.js";
 import { createDraftProvenanceReader } from "./domain/draft-provenance.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
+import { createLiveTrailProjector } from "./domain/draft-trail-projection.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
@@ -179,6 +181,7 @@ type CollabDomainDeps = {
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const persistence = createDrizzleCollabPersistence(deps.db);
+  const trail = createDrizzleChangeTrailAggregateWriter(deps.db);
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     onArrival: (id) => deps.arrivals?.settle([id]) ?? Promise.resolve(0),
@@ -327,6 +330,26 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     inTransaction: isInDrizzleTransaction,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
   });
+  const projectLiveTrail = createLiveTrailProjector({
+    model: runtime.model,
+    codec: runtime.codec,
+    links: deps.links,
+    persistence: trail,
+    resolveDocumentTitle: async (id) => documentTitleFromUri(await documentUriResolver(id)) ?? id,
+  });
+  persistence.setLiveTrailProjector(
+    async ({ documentId, beforeState, afterState, mutation, receiptId }) => {
+      if (!mutation.turnId) return;
+      await projectLiveTrail({
+        documentId,
+        beforeState,
+        afterState,
+        receiptId,
+        threadId: mutation.threadId,
+        turnId: mutation.turnId,
+      });
+    },
+  );
   const projectionRefresher = { refresh: runDocumentWriteHook };
 
   const workBranchPendingStore = createDrizzleWorkBranchPendingStore(deps.db);
@@ -501,7 +524,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       model: runtime.model,
       codec: runtime.codec,
       links: deps.links,
-      trail: createDrizzleChangeTrailAggregateWriter(deps.db),
+      trail,
       arrivals: deps.arrivals,
       catalog: deps.catalogMutations,
       removal: deps.documentRemoval,
