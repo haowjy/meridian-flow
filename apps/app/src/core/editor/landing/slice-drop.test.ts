@@ -94,9 +94,12 @@ it("empties a swept table cell without moving or scrambling the other cells", ()
   );
 
   const lines: string[] = [];
+  let tables = 0;
   state.doc.descendants((node) => {
+    if (node.type.name === "table") tables++;
     if (node.isTextblock) lines.push(node.textContent);
   });
+  expect(tables).toBe(1);
   expect(lines).toEqual([
     "one",
     "two",

@@ -36,12 +36,21 @@ export function removeRange(transaction: Transaction, from: number, to: number):
       return false;
     }
     if (node.isTextblock) {
-      const start = Math.max(from, pos + 1);
-      const stop = Math.min(to, end - 1);
+      let start = Math.max(from, pos + 1);
+      let stop = Math.min(to, end - 1);
       const whole =
         node.content.size === 0 ? from <= pos && to >= end : start <= pos + 1 && stop >= end - 1;
       if (whole) wholeBlocks.push(pos);
-      else if (start < stop) removals.push({ kind: "text", from: start, to: stop });
+      else if (start < stop) {
+        if (stop === end - 1) {
+          while (start > pos + 1 && /\s/u.test(transaction.doc.textBetween(start - 1, start)))
+            start--;
+        }
+        if (start === pos + 1) {
+          while (stop < end - 1 && /\s/u.test(transaction.doc.textBetween(stop, stop + 1))) stop++;
+        }
+        removals.push({ kind: "text", from: start, to: stop });
+      }
       return false;
     }
     if (node.isLeaf && pos >= from && end <= to) wholeBlocks.push(pos);

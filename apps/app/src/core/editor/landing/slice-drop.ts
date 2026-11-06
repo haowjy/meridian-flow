@@ -268,7 +268,11 @@ function blocksAtLanding(
     const insideCell = Array.from({ length: shared }, (_, index) => shared - index).some((depth) =>
       isTableCell($from.node(depth)),
     );
-    if (!insideCell && shared > 0) {
+    if (insideCell) {
+      let open = slice.content.childCount === 1 ? slice.content.firstChild : null;
+      while (open && !isTableCell(open) && open.childCount === 1) open = open.firstChild;
+      if (open && isTableCell(open)) nodes = open.content.content.slice();
+    } else if (shared > 0) {
       let content = Fragment.from(nodes.map(closeNode));
       for (let depth = shared; depth > 0; depth--) {
         const source = $from.node(depth);
