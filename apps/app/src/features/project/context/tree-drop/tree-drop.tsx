@@ -21,9 +21,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { clearDragHint, showDragHint } from "@/core/editor/landing/drag-hint-store";
+import { type DragPayloadKind, dragPayloadKind } from "@/core/editor/landing/drag-payload";
 import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
-import { clearDragHint, showDragHint } from "./drag-hint";
-import { type DragPayloadKind, dragPayloadKind } from "./drag-payload";
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;

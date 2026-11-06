@@ -30,7 +30,7 @@ import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
 import { referenceDropDoor } from "@/core/editor/extensions/reference-drop";
-import { DropLandingExtension } from "@/core/editor/landing/DropLandingExtension";
+import { LandingExtension } from "@/core/editor/landing/LandingExtension";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
@@ -270,8 +270,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
       }),
       // Rows and text only: desktop files are `useFileDrop`'s, below.
-      DropLandingExtension.configure(
-        referenceDropDoor(
+      LandingExtension.configure({
+        entries: referenceDropDoor(
           referenceDropOptions({
             catalog: () => {
               const catalog = referenceCatalogRef.current;
@@ -284,7 +284,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             },
           }),
         ),
-      ),
+      }),
       ComposerCommandExtension.configure({
         catalog: () => {
           const skills = availableSkillsRef.current;

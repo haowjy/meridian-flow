@@ -11,10 +11,8 @@ import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 
-import type { DropLandingOptions } from "../../landing/DropLandingExtension";
-import type { DropHint, DropPlan } from "../../landing/drop-plan";
+import type { DropDoor, DropPlan } from "../../landing/drop-plan";
 import { snapOutOfCode, snapOutOfIdentityLink, snapToWordEdge } from "../../landing/inline-snap";
-import type { Landing } from "../../landing/point-landing";
 
 export type ReferenceDropEntry = Readonly<{
   ref: Readonly<{ kind: "file" | "folder"; id: string }>;
@@ -27,57 +25,49 @@ export type ReferenceDropOptions = {
   /** Resolves identities through the host's live `@` catalog and builds its exact node shape. */
   content: (schema: Schema, entries: readonly ReferenceDropEntry[]) => readonly PMNode[] | null;
   label: (kind: "accept" | ReferenceDropRefusalReason) => string;
-  showHint: (owner: string, hint: DropHint, point: { clientX: number; clientY: number }) => void;
-  clearHint: (owner: string) => void;
 };
 
-/** The row door's options for `DropLandingExtension`: the plan, and the hint it is shown with. */
-export function referenceDropDoor(
-  options: ReferenceDropOptions,
-): Pick<DropLandingOptions, "entries" | "hint"> {
+/** The door for project-tree rows. */
+export function referenceDropDoor(options: ReferenceDropOptions): DropDoor {
   return {
-    entries: referenceDropPlan(options),
-    hint: { show: options.showHint, clear: options.clearHint },
-  };
-}
+    plan: ({ view }, landing) => {
+      const refuse = (reason: ReferenceDropRefusalReason): DropPlan => ({
+        kind: "refuse",
+        hint: options.label(reason),
+      });
+      const entries = options.activeDrag();
+      if (!entries?.length) return refuse("unavailable");
+      const nodes = options.content(view.state.schema, entries);
+      if (!nodes || nodes.length !== entries.length) return refuse("unavailable");
+      if (landing.kind === "source") return refuse("code");
 
-/** The plan for a row drag at `landing`. */
-function referenceDropPlan(options: ReferenceDropOptions) {
-  return (view: EditorView, landing: Landing): DropPlan => {
-    const refuse = (reason: ReferenceDropRefusalReason): DropPlan => ({
-      kind: "refuse",
-      hint: options.label(reason),
-    });
-    const entries = options.activeDrag();
-    if (!entries?.length) return refuse("unavailable");
-    const nodes = options.content(view.state.schema, entries);
-    if (!nodes || nodes.length !== entries.length) return refuse("unavailable");
-    if (landing.kind === "source") return refuse("code");
+      const hint = options.label("accept");
+      if (landing.kind === "seam") {
+        const paragraph = view.state.schema.nodes.paragraph;
+        const content = Fragment.fromArray(separated(view, nodes));
+        if (!paragraph?.validContent(content)) return refuse("unavailable");
+        const block = paragraph.create(null, content);
+        return {
+          kind: "accept",
+          pos: landing.pos,
+          hint,
+          effect: "copy",
+          commit: (target) => insert(target, landing.pos, block, (end) => end - 1),
+        };
+      }
 
-    const hint = options.label("accept");
-    if (landing.kind === "seam") {
-      const paragraph = view.state.schema.nodes.paragraph;
-      const content = Fragment.fromArray(separated(view, nodes));
-      if (!paragraph?.validContent(content)) return refuse("unavailable");
-      const block = paragraph.create(null, content);
+      const { doc } = view.state;
+      const pos = snapToWordEdge(doc, snapOutOfIdentityLink(doc, snapOutOfCode(doc, landing.pos)));
+      const content = spaced(view, pos, nodes);
+      if (!content) return refuse("unavailable");
       return {
         kind: "accept",
-        pos: landing.pos,
+        pos,
         hint,
-        commit: (target) => insert(target, landing.pos, block, (end) => end - 1),
+        effect: "copy",
+        commit: (target) => insert(target, pos, content, (end) => end),
       };
-    }
-
-    const { doc } = view.state;
-    const pos = snapToWordEdge(doc, snapOutOfIdentityLink(doc, snapOutOfCode(doc, landing.pos)));
-    const content = spaced(view, pos, nodes);
-    if (!content) return refuse("unavailable");
-    return {
-      kind: "accept",
-      pos,
-      hint,
-      commit: (target) => insert(target, pos, content, (end) => end),
-    };
+    },
   };
 }
 
