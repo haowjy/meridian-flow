@@ -31,14 +31,12 @@ import {
   type WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
 
+import { REPLY_FINISHED_EVENT_TYPES } from "../ports/event-journal.js";
 import { WriteModeSwitchMetadataCodec } from "./turn-metadata.js";
 
 /** Projecting these rows leaves the same state as a new projector; their own frames still need prior state. */
-export const PROJECTOR_RESET_EVENT_TYPES = [
-  "turn.completed",
-  "turn.cancelled",
-  "turn.error",
-] as const satisfies readonly OrchestratorEvent["type"][];
+export const PROJECTOR_RESET_EVENT_TYPES =
+  REPLY_FINISHED_EVENT_TYPES satisfies readonly OrchestratorEvent["type"][];
 
 function parseAguiEvent(input: Record<string, unknown>): AGUIEvent {
   return EventSchemas.parse(input);
