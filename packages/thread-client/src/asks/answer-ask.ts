@@ -4,7 +4,14 @@
  */
 import type { AskAnswer } from "@meridian/contracts/threads";
 import type { ThreadTransport } from "../socket/thread-transport";
-import { beginAskAnswer, type ChatAsks, failAskAnswer, markAskAnswer, receiveAsks } from "./asks";
+import {
+  beginAskAnswer,
+  type ChatAsks,
+  clearAskAnswer,
+  failAskAnswer,
+  markAskAnswer,
+  receiveAsks,
+} from "./asks";
 
 export type AnswerAskPorts = {
   transport: Pick<ThreadTransport, "answerAsk">;
@@ -15,7 +22,10 @@ export type AnswerAskPorts = {
   newSubmissionId(): string;
 };
 
-export type AnswerAskResult = "answered" | "not_open" | "failed";
+export type AnswerAskResult =
+  | { kind: "answered" | "not_open" | "failed" }
+  /** The server refused the answer; `questionIndex` names the question at fault, when one is. */
+  | { kind: "invalid_answer"; questionIndex?: number };
 
 export async function answerAsk(
   ports: AnswerAskPorts,
@@ -32,7 +42,7 @@ export async function answerAsk(
   const reply = await ports.transport.answerAsk({ threadId, askId, submissionId, answer });
   if (reply.type === "ask.answer.ok") {
     ports.update((asks) => receiveAsks(asks, [reply.ask]));
-    return "answered";
+    return { kind: "answered" };
   }
   if (reply.type === "ask.answer.error" && reply.code === "ask_not_open") {
     // Another tab, the parent or the deadline won. The reply names the resolution when it can;
@@ -42,10 +52,15 @@ export async function answerAsk(
       ports.update((asks) => receiveAsks(asks, [winner]));
       void ports.refresh().catch(() => undefined);
     } else await settleAsk(ports, askId);
-    return "not_open";
+    return { kind: "not_open" };
+  }
+  if (reply.type === "ask.answer.error" && reply.code === "invalid_answer") {
+    // Not a transport failure: the same answer would be refused again, so no Retry waits for it.
+    ports.update((asks) => clearAskAnswer(asks, askId, submissionId));
+    return { kind: "invalid_answer", questionIndex: reply.questionIndex };
   }
   ports.update((asks) => failAskAnswer(asks, askId, submissionId));
-  return "failed";
+  return { kind: "failed" };
 }
 
 /**
