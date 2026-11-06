@@ -38,6 +38,7 @@ import {
   containerOf,
   locatorUri,
   type ResolvedContextLocator,
+  resolveLocatorUri,
 } from "./context-locator.js";
 import { parseDestinationParent } from "./context-move-route.js";
 import {
@@ -412,7 +413,7 @@ export async function handleContextCopyRequest(
   const resolvedDestination =
     folderUri === null
       ? (destinationLocator as ResolvedContextLocator)
-      : await resolveLocatorUri(deps, input.projectId, folderUri);
+      : await resolveDestinationUri(deps, input.projectId, folderUri);
   if (!resolvedDestination) {
     contextErrorToHttp({ code: "destination_missing", uri: destinationUri });
   }
@@ -447,7 +448,7 @@ export async function handleContextCopyRequest(
         ? {}
         : {
             authorizeDestination: async (uri: string) => {
-              const target = await resolveLocatorUri(deps, input.projectId, uri);
+              const target = await resolveDestinationUri(deps, input.projectId, uri);
               if (!target) return false;
               const grant = await deps.fileAccess.authorize(
                 { accountId: input.userId as UserId },
@@ -474,32 +475,13 @@ async function resolveFolderUri(port: ContextPort, folderId: string): Promise<st
 }
 
 /** A resolved destination URI, for the file-policy recheck under the command's locks. */
-async function resolveLocatorUri(
+async function resolveDestinationUri(
   deps: ContextCopyRouteDeps,
   projectId: string,
   uri: string,
 ): Promise<ResolvedContextLocator | null> {
-  const parsed = parseUnifiedContextUri(uri);
-  if (!parsed.ok) return null;
-  const { scheme, path, authority } = parsed.value;
-  if (scheme === "uploads") return null;
-  if (authority.kind === "work") {
-    const resolved = await deps.workAuthorityResolver.byHandle(projectId, authority.workHandle);
-    if (!resolved) return null;
-    return { scope: "work", scheme: scheme as never, path, authority: resolved };
-  }
-  if (authority.kind === "lineage") {
-    const lineage = await deps.contextPorts.lineages.byRef(projectId, authority.rootThreadRef);
-    if (!lineage) return null;
-    return {
-      scope: "lineage",
-      scheme: "scratch",
-      path,
-      rootThreadId: lineage.rootThreadId,
-      authority: { kind: "lineage", rootThreadRef: authority.rootThreadRef },
-    };
-  }
-  return { scope: "project", scheme: scheme as never, path };
+  const resolved = await resolveLocatorUri(deps, projectId, uri);
+  return resolved.ok && resolved.value.scope !== "chat" ? resolved.value : null;
 }
 
 function uploadsUri(chatRef: string, path: string): string {

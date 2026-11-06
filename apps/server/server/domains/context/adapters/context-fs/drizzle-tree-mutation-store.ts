@@ -33,7 +33,12 @@ import { bumpLocationVersions } from "../../tree/node-locations.js";
 import { moveNode } from "../../tree/node-moves.js";
 import { lockDocuments } from "../../tree/node-rows.js";
 import { liveSiblingPlacement, placeLiveSibling } from "../../tree/sibling-order.js";
-import { createTreeReader, LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
+import {
+  createTreeReader,
+  LIVE_TREE,
+  type TreeView,
+  type VisibleDocument,
+} from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import {
   lockContextSources,
@@ -87,6 +92,17 @@ function rollback(code: ContextTreeMutationError["code"]): never {
   throw new ContextTreeMutationRollback(code);
 }
 
+function fileToken(document: VisibleDocument): Extract<ContextLocationToken, { kind: "file" }> {
+  return {
+    kind: "file",
+    nodeId: document.id,
+    sourceId: document.contextSourceId,
+    path: document.path,
+    filetype: isStorageBackedDocument(document) ? null : document.fileType,
+    extension: document.extension,
+  };
+}
+
 /** The node at `path` in the selected tree, as a location token; null when nothing is there. */
 export async function inspectTreeLocation(
   db: Database,
@@ -132,15 +148,7 @@ export async function inspectTreeLocation(
     documentPath === null || documentPath === normalized ? null : await resolve(documentPath);
   for (const found of [literal, canonical]) {
     if (found?.kind !== "found" || found.node.kind !== "document") continue;
-    const document = found.node.document;
-    return {
-      kind: "file",
-      nodeId: document.id,
-      sourceId,
-      path: document.path,
-      filetype: isStorageBackedDocument(document) ? null : document.fileType,
-      extension: document.extension,
-    };
+    return fileToken(found.node.document);
   }
   if (literal.kind !== "found" || literal.node.kind !== "folder") return null;
   return { kind: "directory", nodeId: literal.node.folder.id, sourceId, path: normalized };
@@ -221,6 +229,27 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     return inspectTreeLocation(this.db, sourceId, path, view);
   }
 
+  /** The live node with this id, where it is now; null when it is gone, hidden, or not of that kind. */
+  async inspectNode(node: {
+    kind: ContextLocationToken["kind"];
+    id: string;
+  }): Promise<ContextLocationToken | null> {
+    const tree = createTreeReader(this.db);
+    if (node.kind === "file") {
+      const found = await tree.findById(LIVE_TREE, node.id as DocumentId);
+      return found.kind === "found" ? fileToken(found.document) : null;
+    }
+    const folder = await tree.findFolderById(LIVE_TREE, node.id as FolderId);
+    return folder
+      ? {
+          kind: "directory",
+          nodeId: folder.id,
+          sourceId: folder.contextSourceId,
+          path: folder.path,
+        }
+      : null;
+  }
+
   private async expectationStillMatches(
     sourceId: string,
     path: string,
@@ -243,7 +272,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         return Err({ code: "invalid_operation" });
       }
 
-      const sourceNow = await this.inspect(input.source.sourceId, input.source.path);
+      const sourceNow = await this.inspectNode({
+        kind: input.source.kind,
+        id: input.source.nodeId,
+      });
       if (!sameLocation(sourceNow, input.source)) return Err({ code: "stale_source" });
       if (
         !(await this.expectationStillMatches(
@@ -393,7 +425,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   ): Promise<Result<void, ContextTreeMutationError>> {
     return this.withMutationTransaction(async () => {
       await lockContextSources(this.db, [source.sourceId]);
-      const current = await this.inspect(source.sourceId, source.path);
+      const current = await this.inspectNode({ kind: "file", id: source.nodeId });
       if (!sameLocation(current, source)) return Err({ code: "stale_source" });
       const graduated = await currentDrizzleDb(this.db)
         .update(documents)
@@ -423,7 +455,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const token = command.root;
       await lockContextSources(this.db, [token.sourceId]);
       if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
-      const current = await this.inspect(token.sourceId, token.path);
+      const current = await this.inspectNode({ kind: token.kind, id: token.nodeId });
       if (!sameLocation(current, token)) return Err({ code: "stale_source" });
       const now = new Date();
 
