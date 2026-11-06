@@ -22,7 +22,6 @@ import {
   type ProjectRepository,
   type ProjectWorkAuthorityResolver,
   requireProjectOwner,
-  type WorkRepository,
 } from "../domains/projects/index.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import {
@@ -41,7 +40,6 @@ import { requireRequestId } from "./request-id.js";
 export interface ContextMoveRouteDeps {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   projectRepo: ProjectRepository;
-  workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
@@ -417,18 +415,15 @@ export async function handleContextMoveRequest(
   );
   const primaryWorkId =
     resolvedMove.source.scope === "work" ? resolvedMove.source.authority.workId : [...workIds][0];
-  const works = await deps.workRepo.listByProject(input.projectId, { lifecycle: "all" });
   const port = await contextPortForProjectAuthorities({
     deps: {
       contextPorts: deps.contextPorts,
-      works: deps.workRepo,
       workAuthorityResolver: deps.workAuthorityResolver,
     },
     projectId: input.projectId,
     userId: input.userId,
     workIds,
     primaryWorkId,
-    projectWorks: works,
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
   // Move and rename need edit on what moves and on the folder it lands in (file-access §2).

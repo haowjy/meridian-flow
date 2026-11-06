@@ -99,6 +99,12 @@ export function meridianErrorFromGateway(
   });
 }
 
+/**
+ * The code of a tool failure that is a caught exception rather than a deliberate refusal. Its
+ * message can carry SQL or internal ids, so the app shows generic copy for this code alone.
+ */
+export const TOOL_EXCEPTION_CODE = "tool_exception";
+
 export function meridianErrorFromTool(
   message: string,
   details?: JsonValue,

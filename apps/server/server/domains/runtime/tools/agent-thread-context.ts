@@ -43,7 +43,7 @@ export interface ResolveAgentThreadTurnContextInput {
 
 /** Mandatory closing instruction for subagent threads; owns the prompt's last layer. */
 export const SUBAGENT_GUIDANCE =
-  "You are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.";
+  "You are a subagent. Do the task, making reasonable calls where it leaves choices open, and finish by calling return_result with a report for your parent that says what you assumed. If you can't do it, stop and report what is missing.";
 
 /** States a `read` agent's permission (the chain's minimum) up front so it rarely meets a refusal (file-access §8). */
 const READ_PERMISSION_GUIDANCE =

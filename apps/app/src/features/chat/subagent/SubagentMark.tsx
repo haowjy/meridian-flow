@@ -3,6 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { cn } from "@/lib/utils";
 import { subagentMarkName } from "./display";
+import type { SubagentRunStatus } from "./run-model";
 
 export function SubagentMark({
   agentName,
@@ -11,7 +12,7 @@ export function SubagentMark({
   decorative = false,
 }: {
   agentName?: string | null;
-  status: "running" | "done" | "stopped" | "unknown";
+  status: SubagentRunStatus;
   className?: string;
   /** Hide from assistive tech where adjacent text already states the outcome. */
   decorative?: boolean;
@@ -19,13 +20,13 @@ export function SubagentMark({
   const name = subagentMarkName(agentName);
   const initial = name.charAt(0).toLocaleUpperCase();
   // The ring is the status: a spinning arc while running, then solid green
-  // (finished) or red (stopped). No corner badge, so the mark stays centered.
+  // (finished) or red (failed or stopped). No corner badge, so the mark stays centered.
   const markClassName = cn(
     "relative grid size-6 shrink-0 place-items-center rounded-full border-[1.5px] bg-background text-[11px] font-medium text-foreground",
     status === "running" &&
       "border-border after:absolute after:inset-[-1.5px] after:rounded-full after:border-[1.5px] after:border-transparent after:border-t-primary motion-safe:after:animate-spin",
     status === "done" && "border-primary",
-    status === "stopped" && "border-destructive",
+    (status === "failed" || status === "cancelled") && "border-destructive",
     status === "unknown" && "border-border",
     className,
     // After `className`: a size override like `text-[10px]` would otherwise
@@ -46,9 +47,11 @@ export function SubagentMark({
       ? t`Running`
       : status === "done"
         ? t`Finished`
-        : status === "stopped"
-          ? t`Stopped`
-          : t`Status unknown`;
+        : status === "failed"
+          ? t`Failed`
+          : status === "cancelled"
+            ? t`Stopped`
+            : t`Status unknown`;
   return (
     <span role="img" aria-label={label} className={markClassName}>
       {initial}

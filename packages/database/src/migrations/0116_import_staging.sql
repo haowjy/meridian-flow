@@ -38,7 +38,6 @@ CREATE TABLE "collab_staged_states" (
 	"state" "bytea" NOT NULL,
 	"state_vector" "bytea" NOT NULL,
 	"attribution_manifest" jsonb NOT NULL,
-	"markdown" text NOT NULL,
 	CONSTRAINT "collab_staged_states_staging_id_document_id_pk" PRIMARY KEY("staging_id","document_id")
 );
 --> statement-breakpoint

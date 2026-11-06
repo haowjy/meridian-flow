@@ -6,10 +6,16 @@ import { z } from "zod";
 
 export const API_DEBUG_MOCK_MODEL_SCRIPT_PATH = "/api/debug/mock-model/script";
 
-const toolCallSchema = z.strictObject({
-  name: z.string().min(1),
-  args: z.record(z.string(), z.unknown()).default({}),
-});
+const toolCallSchema = z
+  .strictObject({
+    name: z.string().min(1),
+    args: z.record(z.string(), z.unknown()).optional(),
+    /** The arguments string sent as is, for malformed JSON; replaces `args`. */
+    rawArgs: z.string().max(100_000).optional(),
+  })
+  .refine((call) => call.args === undefined || call.rawArgs === undefined, {
+    message: "a tool call takes args or rawArgs, not both",
+  });
 
 const responseFields = {
   /** Choose one text source: literal text, an authored sample, or generated lorem. */

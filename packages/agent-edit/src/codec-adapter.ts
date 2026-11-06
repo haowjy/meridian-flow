@@ -23,7 +23,10 @@ export interface AgentEditCodec {
   /** Serialize a single block with the hash prefix used by agent-edit echoes. */
   serializeBlock(block: PMNode, hash: string): string;
 
-  /** Batch version of serializeBlock for callers that already have aligned hashes. */
+  /**
+   * Bodies of blocks shown to the model under `hashes[i]`, recording the links each
+   * showed in the shown-link ledger. Compose the line with `toHashline`.
+   */
   serializeBlocks(blocks: readonly PMNode[], hashes: readonly string[]): string[];
 
   /**
@@ -72,7 +75,7 @@ function agentEditCodecForScope(markup: MarkupCodec, links: DocumentLinkScope): 
     serializeBlocks(blocks, hashes) {
       const bodies = markup.serializeBlocks(blocks, links);
       ledger.record(blocks, hashes, bodies);
-      return bodies.map((body, index) => toHashline(hashes[index] ?? "", body));
+      return bodies;
     },
 
     shownLinks: (items) => ledger.shownLinks(items),

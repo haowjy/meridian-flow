@@ -383,7 +383,7 @@ accompany any of them. Unknown fields and conflicting text sources are rejected.
 | `delayMs` | Wait 0–120,000 ms before starting the response, including errors. |
 | `chunkSize` | Unicode characters per text, thinking, or tool-argument chunk; 1–65,536, default 24. |
 | `chunkDelayMs` | Interval between chunks, 0–10,000 ms. Scripts default to 0 (burst output); without `MOCK_MODEL_RESPONSE` or a matching script, the dev default uses 20 ms. Approximate character rate is `chunkSize * 1000 / chunkDelayMs`; network and application processing add overhead. |
-| `toolCalls` | `[{ "name": "read", "args": { "path": "scratch://Mock scene" } }]`. Up to 100 calls; names and arguments go to the real tool registry. |
+| `toolCalls` | `[{ "name": "read", "args": { "path": "scratch://Mock scene" } }]`. Up to 100 calls; names and arguments go to the real tool registry. `rawArgs` instead of `args` sends the arguments string as is, for a malformed-JSON tool call. |
 | `finishReason` | `length` for truncation or `content_filter` for a filtered response. Sends all supplied text, then marks the response failed; the partial text remains above a failed-response card. Does not shorten text for you. Omit for normal completion or tool execution. |
 | `error` | `{ "status": 503, "message": "Unavailable" }` instead of content. Cannot be combined with response content or streaming controls. |
 | `times` | Number of model calls consuming this step (1–1,000). An error without `times` keeps answering every matching call, including retries, until the script is cleared. |
@@ -422,7 +422,7 @@ from the real runtime, not fabricated model output.
 - [Thinking and critique](../tools/mf/fixtures/mock-thinking.json): paced thinking followed by a formatted critique.
 - [Large output](../tools/mf/fixtures/mock-large.json): 10,000 lorem words with paragraph breaks.
 - [Sample rotation](../tools/mf/fixtures/mock-samples.json): scene, critique, outline and Markdown on four model calls. Queue with `mock script`; `send --mock` removes unconsumed steps when that send finishes.
-- [Document tools](../tools/mf/fixtures/mock-tools.json): create/overwrite `scratch://Mock scene`, then read, list and search it, followed by a final answer. The fixture fixes this path in the current chat's Scratch, not manuscript files. Read it with `./mf doc read "scratch://@<chat-ref>/Mock scene"` (for example, chat ref `c7`).
+- [Document tools](../tools/mf/fixtures/mock-tools.json): create/overwrite `scratch://Mock scene`, then read, list and grep it, followed by a final answer. The fixture fixes this path in the current chat's Scratch, not manuscript files. Read it with `./mf doc read "scratch://@<chat-ref>/Mock scene"` (for example, chat ref `c7`).
 - [Retry recovery](../tools/mf/fixtures/mock-recovery.json): one 503, then a successful outline. The gateway is the only retry layer; provider SDK clients use `maxRetries: 0`.
 - [Truncated response](../tools/mf/fixtures/mock-truncated.json): a partial sentence with the provider's length finish reason.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.

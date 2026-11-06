@@ -59,6 +59,11 @@
       "path": "apps/server/server/domains/collab/adapters/drizzle-turn-live-lineage.ts",
       "forms": ["read"],
       "reason": "Turn lineage: the created document's copiedFrom metadata by the id the turn's own create entry names, so a copy's receipt line can name its source; answers no visibility question"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-block-text.ts",
+      "forms": ["read"],
+      "reason": "Stored block text and word counts of the ids a caller already listed; each read is checked for freshness and a draft reader's own Work"
     }
   ]
 }

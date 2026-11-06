@@ -95,7 +95,9 @@ whole hook, or `pnpm typecheck:staged` to isolate typechecking.
 ## PR body and changelog
 
 `check-pr-body.mjs` requires every template section and validates the structured
-`## Changelog` section through `pr-changelog.mjs`. Locally, `pnpm check:pr-body
+`## Changelog` section through `pr-changelog.mjs`. When the diff changes product
+source under `apps/` or `packages/` (tests excepted), the body must carry a
+screenshot or GIF, or a "Browser: none" claim with its reason. Locally, `pnpm check:pr-body
 [body.md]` checks a draft or the branch's open PR; it is the last step of
 `pnpm check`, which skips it before a PR exists. `pnpm changelog` runs
 `build-changelog.mjs`, which uses that same parser to build Markdown or JSON from

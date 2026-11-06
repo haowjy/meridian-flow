@@ -20,7 +20,7 @@ import {
   renderAgentEditResult,
   WriteToolInputSchema,
 } from "@meridian/agent-edit/integration";
-import { askToolInputSchema } from "@meridian/contracts/components";
+import { type AskToolInput, askToolInputSchema } from "@meridian/contracts/components";
 import {
   aiWriteModeSchema,
   INVALID_WORK_NAME,
@@ -31,13 +31,13 @@ import {
   WORK_STATUS_MAX_LENGTH,
 } from "@meridian/contracts/works";
 import { z } from "zod";
-import { readDocumentText, searchDocumentText, writeDocumentText } from "./document-text.js";
+import { grepDocumentText, readDocumentText, writeDocumentText } from "./document-text.js";
+import { renderGrepResult } from "./grep-result.js";
 import { documentHistorySummary, workHistorySummary } from "./history-summaries.js";
 import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-arguments.js";
 import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
-import { renderSearchResult } from "./search-result.js";
-import type { ToolExecutionError, ToolRegistration } from "./types.js";
+import type { RequestToolHandlerContext, ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
 
 /** A Work handle as the model writes it: trimmed, and `@w3` means Work `w3`. A name is answered by the handler. */
@@ -173,13 +173,40 @@ const LsToolInputSchema = z
   .strict();
 export type LsToolInput = z.output<typeof LsToolInputSchema>;
 
-const SearchToolInputSchema = z
+const GrepToolInputSchema = z
   .object({
-    pattern: z.string().min(1).describe("Literal text, not a regex."),
-    scope: z
+    pattern: z
       .string()
       .min(1)
-      .describe("URI prefix to search under, e.g. kb:// or kb://protocols.")
+      .max(512)
+      .describe(
+        "RE2 regular expression, ripgrep's dialect: no lookaround or backreferences. Matches each line of document text as `read` shows it; `^` and `$` anchor lines. Case-sensitive unless `-i`. Link destinations are not searched.",
+      ),
+    path: z
+      .string()
+      .min(1)
+      .describe("URI prefix to search under, e.g. kb://, kb://protocols or a document.")
+      .optional(),
+    glob: z
+      .string()
+      .min(1)
+      .describe(
+        "Only addresses below the scheme root matching this glob, e.g. lore/** or *chapter-0*.",
+      )
+      .optional(),
+    output_mode: z
+      .enum(["content", "files_with_matches", "count"])
+      .describe(
+        "content (default): matching passages with block hashes. files_with_matches: file URIs only. count: file URIs with match counts.",
+      )
+      .optional(),
+    "-i": z.boolean().describe("Ignore case.").optional(),
+    head_limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .describe("Most files returned; default 50. The result says how many matched in all.")
       .optional(),
     verbose: z
       .boolean()
@@ -188,21 +215,29 @@ const SearchToolInputSchema = z
     version: DocumentVersionSchema.optional(),
   })
   .strict();
-export type SearchToolInput = z.output<typeof SearchToolInputSchema>;
+export type GrepToolInput = z.output<typeof GrepToolInputSchema>;
 
 export const AskToolInputSchema = askToolInputSchema;
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "grep", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
 
 /**
- * Concrete handlers for every core tool. The mapped type makes adding a new
- * core tool an exhaustive wiring change instead of silently publishing a stub.
+ * Concrete handlers for every core tool the composition root binds. The mapped type
+ * makes adding a new core tool an exhaustive wiring change instead of silently
+ * publishing a stub. `ask_user` needs nothing from the root: it only makes a request.
  */
-export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
+export type CoreToolHandlers = {
+  [Name in Exclude<CoreToolName, "ask_user">]: ServerToolHandler;
+};
+
+async function askUser(input: unknown, ctx: RequestToolHandlerContext) {
+  const outcome = await ctx.request({ kind: "question", payload: input as AskToolInput });
+  return outcome.kind === "refused" ? { isError: true, output: outcome.refusal } : outcome;
+}
 
 /**
  * The document tools' handlers and error formatter return agent-edit results,
@@ -283,6 +318,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       input: WorkCommandSchema,
       execution: { type: "server", handler: handlers.work },
+      // A command the policy asks about becomes a permission request.
+      capability: "request",
       historySummary: workHistorySummary,
       historyKind: (input) =>
         input.command === "list" || input.command === "show" ? "routine" : "receipt",
@@ -308,16 +345,16 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "search",
-        description: `${DOCUMENT_NAMES_DESCRIPTION}\nSearch document text across all context files.`,
-        inputSchema: modelToolSchema(SearchToolInputSchema),
+        name: "grep",
+        description: `${DOCUMENT_NAMES_DESCRIPTION}\nSearch document text across all context files with a regular expression.`,
+        inputSchema: modelToolSchema(GrepToolInputSchema),
       },
-      input: SearchToolInputSchema,
-      execution: { type: "server", handler: handlers.search },
-      documentText: searchDocumentText,
+      input: GrepToolInputSchema,
+      execution: { type: "server", handler: handlers.grep },
+      documentText: grepDocumentText,
       historyKind: "routine",
       timeoutMs: 30_000,
-      renderResult: renderSearchResult,
+      renderResult: renderGrepResult,
     },
     {
       source: "core",
@@ -329,7 +366,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         inputSchema: modelToolSchema(AskToolInputSchema),
       },
       input: AskToolInputSchema,
-      execution: { type: "server", handler: handlers.ask_user },
+      execution: { type: "server", handler: askUser },
+      capability: "request",
     },
   ];
 }

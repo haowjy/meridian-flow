@@ -201,6 +201,7 @@ async function reshowImportantFiles(args: {
           ? [{ sourceBlockId: blocks[index]?.id as string, frontier: read.evidence.frontier }]
           : [],
       ),
+      touched: kept.flatMap(({ read }) => (read.touchedDocumentId ? [read.touchedDocumentId] : [])),
     },
     fullyReshownDocumentIds: new Set(
       kept

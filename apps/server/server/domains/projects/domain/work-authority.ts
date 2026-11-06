@@ -11,6 +11,8 @@ export interface ProjectWorkAuthorityResolver {
   byId(projectId: ProjectId, workId: WorkId): Promise<ResolvedWorkAuthority | null>;
   byHandle(projectId: ProjectId, workHandle: WorkHandle): Promise<ResolvedWorkAuthority | null>;
   noWork(projectId: ProjectId): Promise<ResolvedWorkAuthority | null>;
+  /** Every non-deleted named Work in the project, in one read; No Work has no handle and is left out. */
+  listForProject(projectId: ProjectId): Promise<ResolvedWorkAuthority[]>;
   lockById(projectId: ProjectId, workId: WorkId): Promise<ResolvedWorkAuthority | null>;
 }
 

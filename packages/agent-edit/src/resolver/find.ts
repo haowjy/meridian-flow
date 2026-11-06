@@ -1,14 +1,14 @@
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { BlockRef, DocHandle } from "../handles.js";
+import type { BlockRef } from "../handles.js";
 import type { FindSplice } from "../links/find-splice.js";
 import { markdownPlainText, markdownTextView } from "../model/markdown-text-view.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { ProjectedBlock } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
 
 export interface FindContext {
-  doc: DocHandle;
-  model: AgentEditModel;
   codec: AgentEditCodec;
+  /** The one projection of the document being resolved against. */
+  projected: readonly ProjectedBlock[];
 }
 
 export interface FindMatch {
@@ -84,10 +84,6 @@ function matchSerializedText(
   };
 }
 
-export function serializeBlockBody(ctx: FindContext, block: BlockRef): string {
-  return ctx.model.serializeBlockBodies(ctx.doc, ctx.codec, [block])[0] ?? "";
-}
-
 export function serializePmBlockBody(
   ctx: Pick<FindContext, "codec">,
   block: Parameters<AgentEditCodec["serialize"]>[0][number],
@@ -95,26 +91,16 @@ export function serializePmBlockBody(
   return ctx.codec.serializeBlockBodies([block])[0] ?? "";
 }
 
-export function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
-  const allBlocks = ctx.model.getBlocks(ctx.doc);
-  const indexByBlock = new Map<BlockRef, number>();
-  allBlocks.forEach((block, index) => {
-    indexByBlock.set(block, index);
-  });
-  const selected = scope.blocks
-    .map((block) => ({ block, index: indexByBlock.get(block) }))
-    .filter((entry): entry is { block: BlockRef; index: number } => entry.index !== undefined);
-  const bodies = ctx.model.serializeBlockBodies(
-    ctx.doc,
-    ctx.codec,
-    selected.map((entry) => entry.block),
-  );
+function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
+  // A scope is a contiguous run of top-level blocks starting at `startIndex`.
+  const selected = ctx.projected.slice(scope.startIndex, scope.startIndex + scope.blocks.length);
+  const bodies = ctx.codec.serializeBlockBodies(selected.map((block) => block.node));
   let cursor = 0;
-  return selected.map((entry, bodyIndex) => {
+  return selected.map((block, bodyIndex) => {
     const body = bodies[bodyIndex] ?? "";
     const serialized = {
-      block: entry.block,
-      index: entry.index,
+      block: block.ref,
+      index: scope.startIndex + bodyIndex,
       body,
       start: cursor,
       end: cursor + body.length,

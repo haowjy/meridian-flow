@@ -9,7 +9,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { prosemirrorBlocksForDoc } from "../model/y-prosemirror.js";
+import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { expectOutcome, outcomeText } from "./test-support/assertions.js";
 import { codec, harness, schema } from "./test-support/write-tool-harness.js";
 
@@ -36,7 +36,11 @@ function harnessWith(blocks: readonly PMNode[]) {
 }
 
 function exported(doc: Y.Doc): string {
-  return codec.serialize(prosemirrorBlocksForDoc(doc, schema));
+  return codec.serialize(
+    yProsemirrorModel(schema)
+      .projectBlocks(doc)
+      .map((block) => block.node),
+  );
 }
 
 function overwrite(ctx: ReturnType<typeof harness>, content: string) {
@@ -94,7 +98,11 @@ describe("overwrite with a document's own export", () => {
     const read = await ctx.core.read({ file: DOC_ID }, {});
     expectOutcome(read, "success");
     expect(outcomeText(read)).toContain('<img src="assets/map.png" alt="World map" width="240" />');
-    expect(prosemirrorBlocksForDoc(ctx.doc, schema)[0]?.firstChild?.type.name).toBe("image");
+    expect(
+      yProsemirrorModel(schema)
+        .projectBlocks(ctx.doc)
+        .map((block) => block.node)[0]?.firstChild?.type.name,
+    ).toBe("image");
   });
 
   it("records nothing when a find is replaced with itself", async () => {

@@ -26,7 +26,7 @@ function resolveResponse(step: MockModelStep, requestCount: number, promptTokens
   const toolCalls = (step.toolCalls ?? []).map((call, index) => ({
     id: `call_mock_${requestCount}_${index}`,
     type: "function" as const,
-    function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) },
+    function: { name: call.name, arguments: call.rawArgs ?? JSON.stringify(call.args ?? {}) },
   }));
   const reasoningTokens = Math.ceil(Buffer.byteLength(reasoning, "utf8") / 3);
   const outputTokens = Math.max(
