@@ -63,7 +63,9 @@ it finished. Failed organize offers Try again or Stop, never partial import.
 `import_finished` clears confirmation and records the lost Stop race before any
 optional detail read. Stop stays hidden, and Adding counts organized as well as
 prepared files until the server says finished. A clean completion acknowledges
-at once, or when an open popup that shows it closes; closing the popup acknowledges a result that
+at once, or when an open popup that shows it closes. A finished import that skipped a file the
+writer would care about (anything but `hidden` and `trash`) needs the writer, like a needs-look
+result; closing the popup acknowledges a result that
 needed a look. An import refused before it starts toasts (`notifyFailure`) and closes locally; durable terminal acknowledgements apply across tabs.
 
 `pending-roots.ts` is the five-rule projection. Catalog identity wins; historical

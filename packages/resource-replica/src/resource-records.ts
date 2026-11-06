@@ -218,7 +218,7 @@ export type ResourceDescriptor = ResourceKey & {
     cleanup?: {
       obligationId: string;
       exactDatabaseName: string;
-      /** A local deletion's Undo window: the content is kept until then (epoch ms). */
+      /** A local deletion's window: the content is kept until then (epoch ms). */
       notBefore?: number;
     };
   };
@@ -307,7 +307,7 @@ export type PlacementPredecessor = {
 
 /**
  * Where a placement stands in the account's causal order. Written once with the intent, under the
- * account's cross-tab admission lock, and never revised: dispatch, projection and Undo all read it.
+ * account's cross-tab admission lock, and never revised: dispatch and projection read it.
  */
 export type PlacementAdmission = {
   /** Account-wide admission sequence, comparable across file and folder journals. */
@@ -417,7 +417,7 @@ export type FolderNamespaceRecord = ResourceKey & {
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   canonicalRefresh?: { operationId: string; observationVersion?: string };
-  /** A local deletion's Undo window: the folder, its place and its children stay recoverable until then (epoch ms). */
+  /** A local deletion's window: the folder and its children are kept until then (epoch ms). */
   localDeletion?: { obligationId: string; notBefore: number };
   /** Exact-ID availability proves this folder is gone, never descendant document deletion. */
   terminal?: { generation: string };

@@ -1,8 +1,8 @@
 /**
  * Causal order of placement intents across every file and folder journal. Each placement is
  * admitted once, behind the unresolved intents it conflicts with; projection folds unresolved
- * intents in that order, dispatch waits on the predecessors, and Undo asks who owns a subject's
- * placement. All three read this one record instead of rebuilding history from adjacency.
+ * intents in that order, and dispatch waits on the predecessors.
+ * Both read this one record instead of rebuilding history from adjacency.
  */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
