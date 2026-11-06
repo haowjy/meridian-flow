@@ -1,0 +1,245 @@
+diff --git a/dist/yjs.cjs b/dist/yjs.cjs
+index 5b5690eb2f172cd99d244ff33394ff59f44fe103..a3d089f9177ec37b530f92eb8373d96135036cc8 100644
+--- a/dist/yjs.cjs
++++ b/dist/yjs.cjs
+@@ -3523,18 +3523,38 @@ const popStackItem = (undoManager, stack, eventType) => {
+        */
+       const itemsToDelete = [];
+       let performedChange = false;
++      /**
++       * @param {Item} item
++       */
++      const deleteIfInScope = item => {
++        if (!item.deleted && scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), item))) {
++          itemsToDelete.push(item);
++        }
++      };
+       iterateDeletedStructs(transaction, stackItem.insertions, struct => {
+-        if (struct instanceof Item) {
+-          if (struct.redone !== null) {
+-            let { item, diff } = followRedone(store, struct.id);
+-            if (diff > 0) {
+-              item = getItemCleanStart(transaction, createID(item.id.client, item.id.clock + diff));
+-            }
+-            struct = item;
++        if (!(struct instanceof Item)) {
++          return
++        }
++        if (struct.redone === null) {
++          deleteIfInScope(struct);
++          return
++        }
++        // The redone copy of struct may have been split since (and its parts redone again on
++        // their own), so look up each part of struct's range separately. Trim every target to its
++        // part so we never delete content that this stack item didn't insert.
++        const end = struct.id.clock + struct.length;
++        for (let clock = struct.id.clock; clock < end;) {
++          const { item, diff, len } = followRedone(store, createID(struct.id.client, clock));
++          const partLen = math.min(len, end - clock);
++          clock += partLen;
++          if (!(item instanceof Item) || item.deleted) {
++            continue
+           }
+-          if (!struct.deleted && scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), /** @type {Item} */ (struct)))) {
+-            itemsToDelete.push(struct);
++          const part = getItemCleanStart(transaction, createID(item.id.client, item.id.clock + diff));
++          if (part.length > partLen) {
++            getItemCleanEnd(transaction, store, createID(part.id.client, part.id.clock + partLen - 1));
+           }
++          deleteIfInScope(part);
+         }
+       });
+       iterateDeletedStructs(transaction, stackItem.deletions, struct => {
+@@ -9567,6 +9587,7 @@ const followRedone = (store, id) => {
+    */
+   let nextID = id;
+   let diff = 0;
++  let len = Infinity;
+   let item;
+   do {
+     if (diff > 0) {
+@@ -9574,10 +9595,11 @@ const followRedone = (store, id) => {
+     }
+     item = getItem(store, nextID);
+     diff = nextID.clock - item.id.clock;
++    len = math.min(len, item.length - diff);
+     nextID = item.redone;
+   } while (nextID !== null && item instanceof Item)
+   return {
+-    item, diff
++    item, diff, len
+   }
+ };
+ 
+diff --git a/dist/yjs.mjs b/dist/yjs.mjs
+index 10d633d8e71171b2702c45376553832504921877..fbaf9ebce2d992fb654caa882d52c12694099ffc 100644
+--- a/dist/yjs.mjs
++++ b/dist/yjs.mjs
+@@ -3486,18 +3486,38 @@ const popStackItem = (undoManager, stack, eventType) => {
+        */
+       const itemsToDelete = [];
+       let performedChange = false;
++      /**
++       * @param {Item} item
++       */
++      const deleteIfInScope = item => {
++        if (!item.deleted && scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), item))) {
++          itemsToDelete.push(item);
++        }
++      };
+       iterateDeletedStructs(transaction, stackItem.insertions, struct => {
+-        if (struct instanceof Item) {
+-          if (struct.redone !== null) {
+-            let { item, diff } = followRedone(store, struct.id);
+-            if (diff > 0) {
+-              item = getItemCleanStart(transaction, createID(item.id.client, item.id.clock + diff));
+-            }
+-            struct = item;
++        if (!(struct instanceof Item)) {
++          return
++        }
++        if (struct.redone === null) {
++          deleteIfInScope(struct);
++          return
++        }
++        // The redone copy of struct may have been split since (and its parts redone again on
++        // their own), so look up each part of struct's range separately. Trim every target to its
++        // part so we never delete content that this stack item didn't insert.
++        const end = struct.id.clock + struct.length;
++        for (let clock = struct.id.clock; clock < end;) {
++          const { item, diff, len } = followRedone(store, createID(struct.id.client, clock));
++          const partLen = math.min(len, end - clock);
++          clock += partLen;
++          if (!(item instanceof Item) || item.deleted) {
++            continue
+           }
+-          if (!struct.deleted && scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), /** @type {Item} */ (struct)))) {
+-            itemsToDelete.push(struct);
++          const part = getItemCleanStart(transaction, createID(item.id.client, item.id.clock + diff));
++          if (part.length > partLen) {
++            getItemCleanEnd(transaction, store, createID(part.id.client, part.id.clock + partLen - 1));
+           }
++          deleteIfInScope(part);
+         }
+       });
+       iterateDeletedStructs(transaction, stackItem.deletions, struct => {
+@@ -9530,6 +9550,7 @@ const followRedone = (store, id) => {
+    */
+   let nextID = id;
+   let diff = 0;
++  let len = Infinity;
+   let item;
+   do {
+     if (diff > 0) {
+@@ -9537,10 +9558,11 @@ const followRedone = (store, id) => {
+     }
+     item = getItem(store, nextID);
+     diff = nextID.clock - item.id.clock;
++    len = math.min(len, item.length - diff);
+     nextID = item.redone;
+   } while (nextID !== null && item instanceof Item)
+   return {
+-    item, diff
++    item, diff, len
+   }
+ };
+ 
+diff --git a/src/structs/Item.js b/src/structs/Item.js
+index fca5827090ca1b0fd6fdff1b74d260308e6c9196..97860bf787f2f4a261161ec09627c10cf7018735 100644
+--- a/src/structs/Item.js
++++ b/src/structs/Item.js
+@@ -28,6 +28,7 @@ import {
+ import * as error from 'lib0/error'
+ import * as binary from 'lib0/binary'
+ import * as array from 'lib0/array'
++import * as math from 'lib0/math'
+ 
+ /**
+  * @todo This should return several items
+@@ -42,6 +43,7 @@ export const followRedone = (store, id) => {
+    */
+   let nextID = id
+   let diff = 0
++  let len = Infinity
+   let item
+   do {
+     if (diff > 0) {
+@@ -49,10 +51,11 @@ export const followRedone = (store, id) => {
+     }
+     item = getItem(store, nextID)
+     diff = nextID.clock - item.id.clock
++    len = math.min(len, item.length - diff)
+     nextID = item.redone
+   } while (nextID !== null && item instanceof Item)
+   return {
+-    item, diff
++    item, diff, len
+   }
+ }
+ 
+diff --git a/src/utils/UndoManager.js b/src/utils/UndoManager.js
+index 98410e4deafbf24e7fa6d6a2226700b09276b6dc..d14d1350e8953626a6bf4acf74249ec509663ab6 100644
+--- a/src/utils/UndoManager.js
++++ b/src/utils/UndoManager.js
+@@ -8,11 +8,13 @@ import {
+   isParentOf,
+   followRedone,
+   getItemCleanStart,
++  getItemCleanEnd,
+   isDeleted,
+   addToDeleteSet,
+   YEvent, Transaction, Doc, Item, GC, DeleteSet, AbstractType // eslint-disable-line
+ } from '../internals.js'
+ 
++import * as math from 'lib0/math'
+ import * as time from 'lib0/time'
+ import * as array from 'lib0/array'
+ import * as logging from 'lib0/logging'
+@@ -72,18 +74,38 @@ const popStackItem = (undoManager, stack, eventType) => {
+        */
+       const itemsToDelete = []
+       let performedChange = false
++      /**
++       * @param {Item} item
++       */
++      const deleteIfInScope = item => {
++        if (!item.deleted && scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), item))) {
++          itemsToDelete.push(item)
++        }
++      }
+       iterateDeletedStructs(transaction, stackItem.insertions, struct => {
+-        if (struct instanceof Item) {
+-          if (struct.redone !== null) {
+-            let { item, diff } = followRedone(store, struct.id)
+-            if (diff > 0) {
+-              item = getItemCleanStart(transaction, createID(item.id.client, item.id.clock + diff))
+-            }
+-            struct = item
++        if (!(struct instanceof Item)) {
++          return
++        }
++        if (struct.redone === null) {
++          deleteIfInScope(struct)
++          return
++        }
++        // The redone copy of struct may have been split since (and its parts redone again on
++        // their own), so look up each part of struct's range separately. Trim every target to its
++        // part so we never delete content that this stack item didn't insert.
++        const end = struct.id.clock + struct.length
++        for (let clock = struct.id.clock; clock < end;) {
++          const { item, diff, len } = followRedone(store, createID(struct.id.client, clock))
++          const partLen = math.min(len, end - clock)
++          clock += partLen
++          if (!(item instanceof Item) || item.deleted) {
++            continue
+           }
+-          if (!struct.deleted && scope.some(type => type === transaction.doc || isParentOf(/** @type {AbstractType<any>} */ (type), /** @type {Item} */ (struct)))) {
+-            itemsToDelete.push(struct)
++          const part = getItemCleanStart(transaction, createID(item.id.client, item.id.clock + diff))
++          if (part.length > partLen) {
++            getItemCleanEnd(transaction, store, createID(part.id.client, part.id.clock + partLen - 1))
+           }
++          deleteIfInScope(part)
+         }
+       })
+       iterateDeletedStructs(transaction, stackItem.deletions, struct => {
