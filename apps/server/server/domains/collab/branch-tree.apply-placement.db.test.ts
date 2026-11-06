@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
-import { documents } from "@meridian/database/schema";
+import { documentEdits, documents } from "@meridian/database/schema";
 import {
   acknowledgeResourceTerminalCleanup,
   applyCatalogChanges,
@@ -10,7 +11,12 @@ import {
 import { ReplicaHarness } from "@meridian/resource-replica/test-support";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
+import {
+  handleApplyClickRequest,
+  selectBranchRouteServices,
+} from "../../lib/branch-review-route.js";
 import { runInRootDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { itemFor } from "../../test-support/branch-tree-scenario.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { acquireTreeScope } from "../context/tree/mutation-scope.js";
@@ -70,6 +76,70 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(await restore(runtime, map)).toMatchObject({ kind: "restored" });
     expect.soft(await live.idAt("atlas/map"), "the new map stays").toBe(newMap);
     expect.soft(await live.idAt("atlas/map (2)"), "the restored map lands beside it").toBe(map);
+  });
+
+  it("keeps model tree authorship separate from the writer's Apply settlement", async () => {
+    const { runtime, s } = await start();
+    const work = await s.work("Apply attribution", "draft");
+    const documentId = await s.writer.createDocument("chapter", "Chapter.");
+    const moved = await s.model(work).now("write", {
+      command: "move",
+      from: { path: "chapter" },
+      path: "published/chapter",
+    });
+    expect(moved.isError ?? false, JSON.stringify(moved.output)).toBe(false);
+
+    const item = itemFor(await s.items(work), documentId);
+    if (!item.tree?.revision) throw new Error("the model move has no tree revision");
+    const applied = await handleApplyClickRequest(selectBranchRouteServices(runtime.app), {
+      projectId: s.project.id,
+      workId: work.id,
+      userId: s.project.userId,
+      documentId,
+      request: {
+        commandId: randomUUID(),
+        baseViewDelta: [],
+        groupIds: [],
+        tree: { revision: item.tree.revision },
+      },
+    });
+    expect(applied).toMatchObject({ status: "applied" });
+
+    const receipts = await db
+      .select({
+        actor: documentEdits.actor,
+        actorUserId: documentEdits.actorUserId,
+        threadId: documentEdits.threadId,
+        turnId: documentEdits.turnId,
+        kind: documentEdits.kind,
+        treeChange: documentEdits.treeChange,
+      })
+      .from(documentEdits)
+      .where(eq(documentEdits.documentId, documentId))
+      .orderBy(documentEdits.id);
+    expect(receipts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actor: "agent",
+          actorUserId: null,
+          threadId: work.threadId,
+          turnId: work.turnId,
+          kind: "write",
+          treeChange: expect.objectContaining({ op: "move" }),
+        }),
+        expect.objectContaining({
+          actor: "human",
+          actorUserId: s.project.userId,
+          threadId: null,
+          turnId: null,
+          kind: "write",
+          treeChange: expect.objectContaining({
+            op: "settle",
+            settles: expect.objectContaining({ as: "applied" }),
+          }),
+        }),
+      ]),
+    );
   });
 
   it("projects the restore on the device that deleted the folder, from the server's own receipt, catalog and availability (E-8, F23)", async () => {

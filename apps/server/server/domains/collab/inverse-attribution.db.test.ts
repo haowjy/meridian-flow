@@ -1,5 +1,5 @@
 /** Durable inverse delivery to live rooms and review trails. */
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
@@ -19,6 +19,151 @@ const db = createTestDatabase();
 const fixture = () => inverseFixture(db);
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
+
+it("records model undo, redo and revert with model provenance", async () => {
+  const { harness, view, responseId, context } = await fixture();
+  try {
+    const core = view.collab.agentEdit();
+    const address = { documentId: ALPHA_ID, file: "alpha.md" };
+    expect(
+      await core.write(
+        { ...address, command: "replace", find: "Beta", content: "Gamma", tool_use_id: "write" },
+        context,
+      ),
+    ).toMatchObject({ status: "success" });
+    await harness.commit(responseId);
+
+    for (const command of ["undo", "redo"] as const)
+      expect(await core.write({ ...address, command }, context)).toMatchObject({
+        status: "success",
+      });
+    expect(await core.write({ ...address, command: "revert", edit: "e1" }, context)).toMatchObject({
+      status: "success",
+    });
+
+    const rows = await db
+      .select({
+        actor: schema.documentEdits.actor,
+        actorUserId: schema.documentEdits.actorUserId,
+        threadId: schema.documentEdits.threadId,
+        turnId: schema.documentEdits.turnId,
+        responseId: schema.documentEdits.responseId,
+        kind: schema.documentEdits.kind,
+      })
+      .from(schema.documentEdits)
+      .where(
+        and(
+          eq(schema.documentEdits.documentId, ALPHA_ID),
+          eq(schema.documentEdits.actor, "agent"),
+          inArray(schema.documentEdits.kind, ["undo", "redo", "revert"]),
+        ),
+      )
+      .orderBy(schema.documentEdits.id);
+    expect(rows).toHaveLength(3);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          actor: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId,
+          kind: "undo",
+        },
+        {
+          actor: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId,
+          kind: "redo",
+        },
+        {
+          actor: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId,
+          kind: "revert",
+        },
+      ]),
+    );
+  } finally {
+    await harness.dispose();
+  }
+});
+
+it("records writer card undo and redo with the writer's user identity", async () => {
+  const { harness, view, responseId, context } = await fixture();
+  try {
+    expect(
+      await view.collab.agentEdit().write(
+        {
+          command: "replace",
+          documentId: ALPHA_ID,
+          file: "alpha.md",
+          find: "Beta",
+          content: "Gamma",
+          tool_use_id: "write",
+        },
+        context,
+      ),
+    ).toMatchObject({ status: "success" });
+    await harness.commit(responseId);
+    for (const direction of ["undo", "redo"] as const)
+      expect(
+        await view.collab.reverseTurn({
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          direction,
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).toMatchObject({ status: "reversed", acceptedParts: 1 });
+
+    const rows = await db
+      .select({
+        actor: schema.documentEdits.actor,
+        actorUserId: schema.documentEdits.actorUserId,
+        threadId: schema.documentEdits.threadId,
+        turnId: schema.documentEdits.turnId,
+        responseId: schema.documentEdits.responseId,
+        kind: schema.documentEdits.kind,
+      })
+      .from(schema.documentEdits)
+      .where(
+        and(
+          eq(schema.documentEdits.documentId, ALPHA_ID),
+          eq(schema.documentEdits.actor, "human"),
+          inArray(schema.documentEdits.kind, ["undo", "redo"]),
+        ),
+      )
+      .orderBy(schema.documentEdits.id);
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          actor: "human",
+          actorUserId: USER_ID,
+          threadId: null,
+          turnId: null,
+          responseId: null,
+          kind: "undo",
+        },
+        {
+          actor: "human",
+          actorUserId: USER_ID,
+          threadId: null,
+          turnId: null,
+          responseId: null,
+          kind: "redo",
+        },
+      ]),
+    );
+  } finally {
+    await harness.dispose();
+  }
+});
+
 it("an already-connected live room sees Undo, Redo and immediate rollback without a repairing read", async () => {
   const { harness, view, responseId, context } = await fixture();
   const peer = new Y.Doc({ gc: false });
