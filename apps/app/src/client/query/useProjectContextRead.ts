@@ -12,17 +12,15 @@
  * 0`) and keep it in cache only briefly. UI state is honest via
  * `ContextReadStatus` instead of `array.length`.
  *
- * The query is keyed by document identity when the tab has one: a rename is
- * the same file at a new path, and the bytes already on screen stay. A 404
- * after that is the move not having landed yet — keep those bytes rather than
- * treating the file as gone.
+ * The query is keyed by document identity: a rename or move is the same file at
+ * a new path, and the bytes already on screen stay. The route is still addressed
+ * by path, so while the writer's own move is unconfirmed (`settling`) nothing is
+ * read: the server doesn't know the new path yet. The read follows when it lands.
  */
 
-import { isOwnedContextScheme } from "@meridian/contracts/context-uri";
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-import { httpErrorStatus } from "@/client/api/http-client";
 import { getProjectContextRead } from "@/client/api/projects-api";
 
 import { type ContextOwner, contextRequestOptionsForScheme } from "./context-request-options";
@@ -36,59 +34,31 @@ export type ContextReadStatus = {
   refetch: () => Promise<ContextReadResponse | null>;
 };
 
-export function contextReadQueryKey(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  owner: ContextOwner = {},
-  documentId?: string,
-) {
-  const identity = documentId ?? path;
-  if (!isOwnedContextScheme(scheme)) {
-    return ["projects", projectId, "context", scheme, "read", identity] as const;
-  }
-  const ownerId = owner.chatThreadId ?? owner.rootThreadId ?? owner.workId;
-  return ownerId
-    ? (["projects", projectId, "context", scheme, ownerId, "read", identity] as const)
-    : (["projects", projectId, "context", scheme, "read", identity] as const);
+function contextReadQueryKey(projectId: string, documentId: string, owner: ContextOwner) {
+  const ownerId = owner.chatThreadId ?? owner.rootThreadId ?? owner.workId ?? null;
+  return ["projects", projectId, "context", "read", documentId, ownerId] as const;
 }
 
 export function useProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme | null,
   path: string | null,
-  options: { enabled?: boolean; documentId?: string } & ContextOwner,
+  options: { enabled?: boolean; documentId: string; settling?: boolean } & ContextOwner,
 ): ContextReadStatus {
   const callerEnabled = options.enabled ?? true;
-  const resolvedScheme = scheme ?? "kb";
   const enabled = callerEnabled && Boolean(scheme) && Boolean(path);
   const contextOpts = scheme ? contextRequestOptionsForScheme(scheme, options) : undefined;
-  const queryClient = useQueryClient();
-  const queryKey = contextReadQueryKey(
-    projectId,
-    resolvedScheme,
-    path ?? "",
-    options,
-    options.documentId,
-  );
+  const settling = options.settling === true;
   const result = useQuery({
-    queryKey,
-    queryFn: async () => {
-      try {
-        return await getProjectContextRead(
-          projectId,
-          scheme as ProjectContextTreeScheme,
-          path as string,
-          contextOpts,
-        );
-      } catch (error) {
-        if (httpErrorStatus(error) !== 404) throw error;
-        const cached = queryClient.getQueryData<ContextReadResponse>(queryKey);
-        if (cached) return cached;
-        throw error;
-      }
-    },
-    enabled,
+    queryKey: contextReadQueryKey(projectId, options.documentId, options),
+    queryFn: () =>
+      getProjectContextRead(
+        projectId,
+        scheme as ProjectContextTreeScheme,
+        path as string,
+        contextOpts,
+      ),
+    enabled: enabled && !settling,
     // Signed URLs are short-lived. Re-fetch on focus / remount, never cache hot.
     staleTime: 0,
     gcTime: 60_000,
@@ -110,6 +80,6 @@ export function useProjectContextRead(
     status: result.isError ? "error" : result.data ? "ready" : "loading",
     isError: result.isError,
     isFetching: result.isFetching,
-    refetch: async () => (await result.refetch()).data ?? null,
+    refetch: async () => (settling ? result.data : (await result.refetch()).data) ?? null,
   };
 }

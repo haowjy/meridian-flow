@@ -205,7 +205,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    Move into a folder, Copy, Delete and Restore each kept file at the root and in a folder:
    each keeps its name and suffix and still opens as a card. With a document `binary` beside
    a kept `binary.md`, each opens its own content and a link `[x](binary.md)` binds the kept
-   file, `[x](binary)` the document. Rename the open kept file: its tab stays active. In a
+   file, `[x](binary)` the document. Rename the open kept file, and Move it to another area: its tab stays active and its card stays, also after closing the tab and clicking the row, and after a reload. In a
    draft-mode chat an agent `write move` of a kept file keeps its suffix too.
 13. Reconcile a re-picked folder. To stop mid-upload at a known point, wrap
    `XMLHttpRequest.prototype.send` in the page so `POST …/imports/<id>/files` fails
