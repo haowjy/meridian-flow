@@ -233,6 +233,8 @@ async function subscribeThread(
           if (lease.phase === "active") flushBuffered();
         });
       },
+      // The client reconnects from its own position and takes the replay gap path.
+      () => peer.close(1011, "frames_lost"),
     );
     if (!currentLease()) {
       unsubscribe();

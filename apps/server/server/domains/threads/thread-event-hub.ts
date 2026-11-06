@@ -46,6 +46,7 @@ type ThreadHubState = {
   draining: Promise<void> | null;
   drainRequested: boolean;
   listeners: Set<(event: SequencedEventInternal) => void>;
+  framesLostListeners: Set<() => void>;
 };
 
 type ThreadEventHubDeps = {
@@ -169,6 +170,7 @@ export function createThreadEventHub(
         draining: null,
         drainRequested: false,
         listeners: new Set(),
+        framesLostListeners: new Set(),
       };
       threads.set(threadId, state);
     }
@@ -250,6 +252,31 @@ export function createThreadEventHub(
     return replayed;
   }
 
+  async function initializeFromJournal(
+    threadId: ThreadId,
+    state: ThreadHubState,
+    head: bigint,
+  ): Promise<void> {
+    // Build privately: a failed page must not publish a partial projector. The head and
+    // reset belong to the live owner, never to whichever subscriber arrived first.
+    const cursor = await deps.journalReader.lastSeqBefore(
+      threadId,
+      head + 1n,
+      PROJECTOR_RESET_EVENT_TYPES,
+    );
+    const projector = createOrchestratorEventProjector();
+    const events: SequencedEventInternal[] = [];
+    for await (const entry of readThrough(threadId, cursor, head)) {
+      const event = entry.payload as OrchestratorEvent;
+      events.push(...toSequencedEvents(entry.seq, projector.project(event), event));
+      if (events.length > HOT_CACHE_LIMIT) events.splice(0, events.length - HOT_CACHE_LIMIT);
+    }
+    state.projector = projector;
+    state.events = events;
+    state.journalCursor = head;
+    state.initialized = true;
+  }
+
   async function drainCommittedJournal(threadId: ThreadId): Promise<void> {
     const state = threads.get(threadId);
     if (!state) return;
@@ -262,27 +289,17 @@ export function createThreadEventHub(
     state.draining = (async () => {
       const head = await deps.journalReader.headSeq(threadId);
       if (!state.initialized) {
-        // Build privately: a failed page must not publish a partial projector. The head and
-        // reset belong to the live owner, never to whichever subscriber arrived first.
-        const cursor = await deps.journalReader.lastSeqBefore(
-          threadId,
-          head + 1n,
-          PROJECTOR_RESET_EVENT_TYPES,
-        );
-        const projector = createOrchestratorEventProjector();
-        const events: SequencedEventInternal[] = [];
-        for await (const entry of readThrough(threadId, cursor, head)) {
-          const event = entry.payload as OrchestratorEvent;
-          events.push(...toSequencedEvents(entry.seq, projector.project(event), event));
-          if (events.length > HOT_CACHE_LIMIT) events.splice(0, events.length - HOT_CACHE_LIMIT);
-        }
-        state.projector = projector;
-        state.events = events;
-        state.journalCursor = head;
-        state.initialized = true;
+        await initializeFromJournal(threadId, state, head);
         return;
       }
       for await (const entry of readThrough(threadId, state.journalCursor, head)) {
+        // Seqs are contiguous per thread, so a hole is retention deleting rows this hub never
+        // sent. Its projector can't continue, and only a fresh subscribe can tell the client.
+        if (entry.seq !== state.journalCursor + 1n) {
+          for (const framesLost of [...state.framesLostListeners]) framesLost();
+          await initializeFromJournal(threadId, state, head);
+          return;
+        }
         const event = entry.payload as OrchestratorEvent;
         const projected = toSequencedEvents(entry.seq, state.projector.project(event), event);
         state.journalCursor = entry.seq;
@@ -319,16 +336,16 @@ export function createThreadEventHub(
   ): Promise<SequencedEventInternal[]> {
     const state = threads.get(threadId);
     if (state && afterSeq >= cursorSeqForJournalHead(state.journalCursor)) return [];
+    const hotEvents = state?.events ?? [];
+    if (hotEvents.length > 0 && afterSeq >= hotEvents[0].seq - 1n) {
+      return hotEvents.filter((entry) => entry.seq > afterSeq);
+    }
     const throughJournalSeq = state?.journalCursor ?? 0n;
     const floor = state ? await retainedTransportFloor(threadId, throughJournalSeq) : 0n;
     // The floor row's own frames close messages opened by rows pruned before it, so a cursor
     // inside that row can't be rebuilt either.
     if (floor > 0n && journalSeqForEventSeq(afterSeq) <= floor) {
       throw new ThreadEventReplayGapError(afterSeq, cursorSeqForJournalHead(throughJournalSeq));
-    }
-    const hotEvents = state?.events ?? [];
-    if (hotEvents.length > 0 && afterSeq >= hotEvents[0].seq - 1n) {
-      return hotEvents.filter((entry) => entry.seq > afterSeq);
     }
 
     return replayFromJournal(threadId, afterSeq, throughJournalSeq);
@@ -372,6 +389,7 @@ export function createThreadEventHub(
       threadId: ThreadId,
       afterSeq: bigint,
       listener: (event: SequencedEventInternal) => void,
+      onFramesLost?: () => void,
     ): Promise<{
       catchup: SequencedEventInternal[];
       unsubscribe: () => void;
@@ -394,6 +412,7 @@ export function createThreadEventHub(
       }
       state.listeners.delete(guardListener);
       state.listeners.add(listener);
+      if (onFramesLost) state.framesLostListeners.add(onFramesLost);
 
       const maxCatchupSeq = catchupEvents.reduce(
         (max, entry) => (entry.seq > max ? entry.seq : max),
@@ -408,6 +427,7 @@ export function createThreadEventHub(
         catchup,
         unsubscribe: () => {
           state.listeners.delete(listener);
+          if (onFramesLost) state.framesLostListeners.delete(onFramesLost);
           onListenerRemoved(threadId);
         },
       };
