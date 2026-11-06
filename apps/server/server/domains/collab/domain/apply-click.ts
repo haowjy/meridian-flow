@@ -28,7 +28,8 @@ import { BranchCommandExistsError, type BranchCommands } from "./branch-commands
 import type { BranchReviewIdentity } from "./branch-review-identity.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
-import type { TrailOwner } from "./trail-read-kernel.js";
+
+type ApplyOwner = { threadId: string; turnId: string | null };
 
 export type ApplyClickCommand = Parameters<CollabBranches["draftReview"]["applyClick"]>[0];
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
@@ -49,14 +50,13 @@ export type CompiledClick = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   groups: CompiledApplyGroup[];
-  owners: readonly TrailOwner[];
-  effects: { side: "base" | "draft"; index: number; owners: readonly TrailOwner[] }[];
+  owners: readonly ApplyOwner[];
 };
 type CompiledApplyGroup = {
   groupId: string;
   patched: readonly PMNode[];
   record: ApplyEntry;
-  owners: readonly TrailOwner[];
+  owners: readonly ApplyOwner[];
 };
 export interface ApplyCommandStore {
   loadBase(command: ApplyClickCommand): Promise<DraftBase | null>;
@@ -144,13 +144,13 @@ export function compileClick(
     const compileGroup = (groupId: string): CompiledApplyGroup => {
       const group = projection.groups.find((candidate) => candidate.id === groupId);
       if (!group) throw new ApplyClickRefused("malformed");
-      const owners = new Map<string, TrailOwner>();
+      const owners = new Map<string, ApplyOwner>();
       for (const index of classifications.get(groupId)?.members ?? []) {
         const part = provenance.parts[index];
-        if (part?.threadId && part.turnId)
+        if (part?.threadId)
           owners.set(`${part.threadId}:${part.turnId}`, {
             threadId: part.threadId,
-            turnId: part.turnId,
+            turnId: part.turnId ?? null,
           });
       }
       const groupOwners = [...owners.values()];
@@ -174,39 +174,15 @@ export function compileClick(
       ),
     );
     const selected = projection.groups.filter((group) => request.groupIds.includes(group.id));
-    const ownerByHunk = new Map(
-      selected.flatMap((group) => {
-        const compiled = groups.find((candidate) => candidate.groupId === group.id);
-        return group.hunks.map((hunk) => [hunk.index, compiled?.owners ?? []] as const);
-      }),
-    );
-    const effects: CompiledClick["effects"] = [];
     const selectedPatches = composeHunks(
       schema,
       projection.diff,
       selected.flatMap((group) => group.hunks.map((hunk) => projection.diff.hunks[hunk.index])),
       "apply",
-      (hunk, blocks) => {
-        const hunkIndex = projection.diff.hunks.indexOf(hunk);
-        const effectOwners = ownerByHunk.get(hunkIndex) ?? [];
-        for (const index of blocks) effects.push({ side: "draft", index, owners: effectOwners });
-        const baseSide = projection.diff.base;
-        const deleted = new Set<number>();
-        for (let offset = hunk.from; offset < hunk.to; offset++) {
-          const index = baseSide.blockOf[offset];
-          if (
-            !blocks.length ||
-            (hunk.from <= baseSide.starts[index] && hunk.to >= baseSide.starts[index + 1])
-          )
-            deleted.add(index);
-        }
-        for (const index of deleted) effects.push({ side: "base", index, owners: effectOwners });
-      },
     );
     return {
       schema,
       optimistic,
-      effects,
       patched: applySpanPatches(optimistic, selectedPatches, "base"),
       groups,
       owners: [...owners.values()],

@@ -111,18 +111,8 @@ export function bodyFromHashline(serialized: string | null): HistoricalBody {
   return { status: "available", markdown: splitHashline(serialized)?.body ?? serialized };
 }
 
-export type TrailOwner = { threadId: string; turnId: string };
 export type RawTrailChange = Omit<TrailChangeV1, "ordinal"> & {
-  owner: TrailOwner | null;
   sequence: number;
-};
-
-export type RawTrailPush = {
-  pushId: string;
-  receiptId: string;
-  threadId: string;
-  changes: readonly RawTrailChange[];
-  journalOwners: readonly (TrailOwner | null)[];
 };
 
 export type NormalizedTrail = {
@@ -133,48 +123,7 @@ export type NormalizedTrail = {
   counts: { changes: number; documents: number };
 };
 
-function ownerKey(owner: NormalizedTrail["owner"]): string {
-  return owner.kind === "turn"
-    ? `turn:${owner.threadId}:${owner.turnId}`
-    : `shared:${owner.threadId}`;
-}
-
-export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): NormalizedTrail[] {
-  const grouped = new Map<string, { owner: NormalizedTrail["owner"]; changes: RawTrailChange[] }>();
-  const append = (owner: NormalizedTrail["owner"], change: RawTrailChange) => {
-    const key = ownerKey(owner);
-    const group = grouped.get(key) ?? { owner, changes: [] };
-    group.changes.push(change);
-    grouped.set(key, group);
-  };
-  for (const push of pushes) {
-    const hasOwnedChange = push.changes.some((change) => change.owner !== null);
-    for (const change of push.changes) {
-      if (change.owner) {
-        append({ kind: "turn", ...change.owner }, change);
-      } else if (!hasOwnedChange) {
-        append({ kind: "shared", threadId: push.threadId, turnId: null }, change);
-      }
-    }
-  }
-  return [...grouped.values()]
-    .sort((left, right) => ownerKey(left.owner).localeCompare(ownerKey(right.owner)))
-    .map(({ owner, changes }) => {
-      const folded = foldChanges(changes);
-      return {
-        owner,
-        changes: folded,
-        counts: {
-          changes: folded.length,
-          documents: new Set(
-            folded.flatMap((change) => (change.documentId ? [change.documentId] : [])),
-          ).size,
-        },
-      };
-    });
-}
-
-function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
+export function foldTrailChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
   const ordered = [...changes].sort(
     (a, b) => a.sequence - b.sequence || a.changeId.localeCompare(b.changeId),
   );
@@ -198,10 +147,18 @@ function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
       beforeBlockIdentity: previous.beforeBlockIdentity,
       beforeText: previous.beforeText,
     };
-    if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(identity);
+    const beforeBody = bodyFromHashline(combined.beforeText);
+    const afterBody = bodyFromHashline(combined.afterTextAtReceipt);
+    if (
+      combined.beforeText === combined.afterTextAtReceipt ||
+      (beforeBody.status === "available" &&
+        afterBody.status === "available" &&
+        beforeBody.markdown === afterBody.markdown)
+    )
+      folded.delete(identity);
     else folded.set(identity, combined);
   }
-  return [...folded.values()].map(({ owner: _owner, sequence: _sequence, ...change }, ordinal) => ({
+  return [...folded.values()].map(({ sequence: _sequence, ...change }, ordinal) => ({
     ...change,
     ordinal,
   }));

@@ -1,5 +1,5 @@
 /**
- * Atomic Apply: Work lock, command claim, committed live effect, prefix-authored base and trail.
+ * Atomic Apply: Work lock, command claim, committed live effect and prefix-authored base.
  * A click's tree cut runs first, keyed on the branch's logical state for the document and its
  * live state (design-v2 §4): a delete removes it live, a move moves it (or restores it there,
  * or reveals it there), a creation reveals it; then the branch's row goes with settlement rows.
@@ -18,12 +18,7 @@ import {
   removeApplyRecords,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
-import type {
-  AgentEditCodecFactory,
-  AgentEditModel,
-  InversePart,
-  UpdateJournal,
-} from "@meridian/agent-edit/integration";
+import type { InversePart, UpdateJournal } from "@meridian/agent-edit/integration";
 import { computeInverse } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
@@ -76,15 +71,8 @@ import {
 } from "../domain/apply-click.js";
 import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import type { Branches } from "../domain/branches.js";
-import { describeTrailBlocks, trailBlockChanges } from "../domain/document-difference.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import { DraftStaleUpdateError } from "../domain/draft-store.js";
-import {
-  persistDurableTrailRecords,
-  preparedTrailChanges,
-} from "../domain/draft-trail-projection.js";
-import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
-import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
@@ -114,10 +102,6 @@ export function createDrizzleApplyClick(
     coordinator: Pick<DraftCoordinator, "loadBase" | "prepareAppend">;
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
-    model: AgentEditModel;
-    codec: AgentEditCodecFactory;
-    links: DocumentLinkScopes;
-    trail: ChangeTrailPersistence;
     arrivals?: Pick<DocumentArrivals, "settle">;
     catalog: ContextCatalogMutationPort;
     removal: DocumentRemoval;
@@ -399,7 +383,7 @@ export function createDrizzleApplyClick(
               } finally {
                 write.dispose();
               }
-              await tx
+              const reversedOwners = await tx
                 .update(applyCommandEffects)
                 .set({ unappliedBy: commandId })
                 .where(
@@ -411,6 +395,15 @@ export function createDrizzleApplyClick(
                     ),
                     isNull(applyCommandEffects.unappliedBy),
                   ),
+                )
+                .returning({ owners: applyCommandEffects.owners });
+              const dirtyOwners = reversedOwners.flatMap((effect) => effect.owners ?? []);
+              if (dirtyOwners.length)
+                await tx.insert(changeTrailDirtyLog).values(
+                  dirtyOwners.flatMap((owner) => [
+                    { threadId: owner.threadId, turnId: owner.turnId },
+                    { threadId: owner.threadId, turnId: null },
+                  ]),
                 );
               const answer: import("@meridian/contracts/branches").UnapplyClickResult = {
                 status: "unapplied",
@@ -713,56 +706,34 @@ export function createDrizzleApplyClick(
                         readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
                         click.patched,
                       );
-                      const before = await deps.links.within(
-                        { documentId: command.documentId },
-                        async () => {
-                          await deps.links.prepare({
-                            holders: [{ documentId: command.documentId, view: { kind: "live" } }],
-                            docs: [live],
-                            stored: merged.blocks,
-                          });
-                          const codec = deps.codec.forScope(
-                            deps.links.holder({
-                              documentId: command.documentId,
-                              view: { kind: "live" },
-                            }),
-                          );
-                          const before = describeTrailBlocks(live, deps.model, codec);
-                          const liveEffects: { groupId: string; seq: number | null }[] = [];
-                          for (const group of click.groups) {
-                            const groupMerge = rebase(
+                      const liveEffects: { groupId: string; seq: number | null }[] = [];
+                      for (const group of click.groups) {
+                        const groupMerge = rebase(
+                          schema,
+                          click.optimistic,
+                          readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+                          group.patched,
+                        );
+                        update = undefined;
+                        live.transact(
+                          () =>
+                            writeBlocks(
+                              live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
                               schema,
-                              click.optimistic,
-                              readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-                              group.patched,
-                            );
-                            update = undefined;
-                            live.transact(
-                              () =>
-                                writeBlocks(
-                                  live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-                                  schema,
-                                  groupMerge.blocks,
-                                ),
-                              "apply",
-                            );
-                            const seq = update
-                              ? await deps.live.append(
-                                  command.documentId,
-                                  update,
-                                  { seq: 0, origin: `human:${command.envelope.accountId}` },
-                                  snapshot.authority,
-                                )
-                              : null;
-                            liveEffects.push({ groupId: group.groupId, seq });
-                          }
-                          return {
-                            before,
-                            after: describeTrailBlocks(live, deps.model, codec),
-                            liveEffects,
-                          };
-                        },
-                      );
+                              groupMerge.blocks,
+                            ),
+                          "apply",
+                        );
+                        const seq = update
+                          ? await deps.live.append(
+                              command.documentId,
+                              update,
+                              { seq: 0, origin: `human:${command.envelope.accountId}` },
+                              snapshot.authority,
+                            )
+                          : null;
+                        liveEffects.push({ groupId: group.groupId, seq });
+                      }
                       await testHook("apply.afterLive");
                       const baseEffects: {
                         groupId: string;
@@ -819,7 +790,7 @@ export function createDrizzleApplyClick(
                       }
                       await tx.insert(applyCommandEffects).values(
                         click.groups.map((group, ordinal) => {
-                          const liveEffect = before.liveEffects.find(
+                          const liveEffect = liveEffects.find(
                             (effect) => effect.groupId === group.groupId,
                           );
                           const baseEffect = baseEffects.find(
@@ -834,13 +805,13 @@ export function createDrizzleApplyClick(
                             documentId: command.documentId,
                             draftId: base.snapshot.draftId,
                             liveUpdateSeq: liveEffect.seq,
+                            owners: [...group.owners],
                             baseStart: baseEffect.start,
                             baseDelta: baseEffect.delta,
                           };
                         }),
                       );
-                      const seq =
-                        before.liveEffects.find((effect) => effect.seq !== null)?.seq ?? null;
+                      const seq = liveEffects.find((effect) => effect.seq !== null)?.seq ?? null;
                       const receiptId = randomUUID();
                       const [push] = await tx
                         .insert(pushLineage)
@@ -855,75 +826,6 @@ export function createDrizzleApplyClick(
                         .returning({ id: pushLineage.id });
                       if (!push) throw new Error("Missing Apply lineage");
                       const owners = click.owners;
-                      const changes = trailBlockChanges(before.before, before.after);
-                      const ownersByBlock = new Map<string, typeof owners>();
-                      const effectOwners = new Map<string, typeof owners>();
-                      for (const effect of click.effects) {
-                        const key = `${effect.side}:${effect.index}`;
-                        effectOwners.set(key, [...(effectOwners.get(key) ?? []), ...effect.owners]);
-                      }
-                      for (const entry of merged.correspondence) {
-                        const reached = entry.sources.flatMap(
-                          (source) => effectOwners.get(`${source.side}:${source.index}`) ?? [],
-                        );
-                        const ids =
-                          entry.output === null
-                            ? entry.sources
-                                .filter((source) => source.side === "live")
-                                .map((source) => before.before[source.index]?.id)
-                            : [
-                                before.after[entry.output]?.id,
-                                ...entry.sources
-                                  .filter((source) => source.side === "live")
-                                  .map((source) => before.before[source.index]?.id),
-                              ];
-                        for (const id of ids)
-                          if (id)
-                            ownersByBlock.set(id, [...(ownersByBlock.get(id) ?? []), ...reached]);
-                      }
-                      for (const [id, owners] of ownersByBlock)
-                        ownersByBlock.set(id, [
-                          ...new Map(
-                            owners.map((owner) => [`${owner.threadId}:${owner.turnId}`, owner]),
-                          ).values(),
-                        ]);
-                      await persistDurableTrailRecords(
-                        [
-                          {
-                            push,
-                            record: {
-                              documentId: command.documentId,
-                              documentTitle: node?.target.name ?? "Document",
-                              receiptId,
-                              threadIds: [...new Set(owners.map((owner) => owner.threadId))],
-                              journalOwners: owners,
-                              changes: preparedTrailChanges({
-                                documentId: command.documentId,
-                                changedBlocks: changes,
-                                receiptId,
-                                ownersByBlock,
-                                before: before.before.map((block) => ({
-                                  hash: block.id,
-                                  serialized: block.serialized,
-                                  ...block.identity,
-                                })),
-                                blockIdentities: new Map(
-                                  before.after.map((block) => [
-                                    block.id,
-                                    { documentId: command.documentId, ...block.identity },
-                                  ]),
-                                ),
-                                afterIds: new Set(before.after.map((block) => block.id)),
-                                afterById: new Map(
-                                  before.after.map((block) => [block.id, block.block]),
-                                ),
-                                afterDoc: live,
-                              }),
-                            },
-                          },
-                        ],
-                        deps.trail,
-                      );
                       if (owners.length)
                         await tx.insert(changeTrailDirtyLog).values(
                           owners.flatMap((owner) => [

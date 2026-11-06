@@ -160,7 +160,7 @@ describe("change trail dirty signals (postgres)", () => {
       FOR EACH ROW EXECUTE FUNCTION fail_trail_cut()`);
     try {
       await expect(writer().reconcileTerminalOwners()).rejects.toThrow();
-      expect(await signals()).toEqual(before);
+      expect(await signals()).toEqual(before.filter((signal) => signal.turnId === TURN_ID));
       expect(await db.select().from(schema.changeTrailShells)).toEqual([]);
       expect(await db.select().from(schema.changeTrailDeliveryOutbox)).toEqual([]);
     } finally {

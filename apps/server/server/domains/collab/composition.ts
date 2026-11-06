@@ -61,7 +61,6 @@ import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
-import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
@@ -498,10 +497,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       coordinator: draftCoordinator,
       live: persistence.journal,
       liveCoordinator,
-      model: runtime.model,
-      codec: runtime.codec,
-      links: deps.links,
-      trail: createDrizzleChangeTrailAggregateWriter(deps.db),
       arrivals: deps.arrivals,
       catalog: deps.catalogMutations,
       removal: deps.documentRemoval,

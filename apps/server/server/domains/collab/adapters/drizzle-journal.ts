@@ -16,6 +16,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import {
   agentEditWidCounters,
+  documentEditParts,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
@@ -805,11 +806,6 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         const existing = await latestCheckpoint(txDb, docId, captured);
         if (existing && existing.upToSeq >= upToSeq) return;
         await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
-        if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
-          await txDb
-            .delete(documentYjsCheckpoints)
-            .where(eq(documentYjsCheckpoints.id, existing.id));
-        }
       });
     },
 
@@ -838,9 +834,8 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
           .limit(1);
         const checkpointSeq = checkpoint?.upToSeq ?? 0;
-        // Compaction folds a contiguous seq prefix, so every retained update sits strictly
-        // above the latest compacted checkpoint; reconstruction can safely start from the
-        // newest checkpoint below the earliest retained update.
+        // Current authority reads start at the checkpoint. Earlier rows remain only when
+        // immutable receipt bytes do not cover them for historical trail reconstruction.
         const candidateRows = await txDb
           .select()
           .from(documentYjsUpdates)
@@ -878,16 +873,18 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           // already covers it and this compaction folds no new rows.
           await retireThrough(txDb, docId, compactedThroughSeq);
 
-          await txDb
-            .delete(documentYjsUpdates)
-            .where(
-              and(
-                eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-                eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
-                eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
-                lte(documentYjsUpdates.id, compactedThroughSeq),
-              ),
-            );
+          await txDb.delete(documentYjsUpdates).where(
+            and(
+              eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+              eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
+              eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
+              lte(documentYjsUpdates.id, compactedThroughSeq),
+              sql`EXISTS (SELECT 1 FROM ${documentEditParts} part
+                  WHERE part.origin->>'kind' = 'live'
+                    AND (part.origin->>'seq')::bigint = ${documentYjsUpdates.id}
+                    AND part.update = ${documentYjsUpdates.updateData})`,
+            ),
+          );
         }
 
         return { updatesFolded: foldRows.length };
@@ -1071,11 +1068,14 @@ async function captureLiveEdits(
         );
         if (!entry.mutation) continue;
         const key = entry.mutation.writeId ?? String(rows[i].id),
-          group = groups.get(key) ?? { mutation: entry.mutation, receipts: [] };
+          group = groups.get(key) ?? {
+            mutation: entry.mutation,
+            receipts: [],
+          };
         group.receipts.push(...receipts);
         groups.set(key, group);
       }
-      for (const { mutation, receipts } of groups.values())
+      for (const { mutation, receipts } of groups.values()) {
         await recordDocumentEdit(db, {
           documentId: asDocumentId(docId),
           threadId: asThreadId(mutation.threadId),
@@ -1091,6 +1091,7 @@ async function captureLiveEdits(
             origin: receipts[i].origin,
           })),
         });
+      }
     } finally {
       doc.destroy();
     }

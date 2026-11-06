@@ -56,11 +56,6 @@ import {
   writeBlocks,
 } from "../../../../packages/agent-edit/src/diff/index.ts";
 import {
-  createAgentEditCodecFactory,
-  yProsemirrorModel,
-} from "../../../../packages/agent-edit/src/integration.ts";
-import { mdxCodec } from "../../../../packages/markup/src/index.ts";
-import {
   createScratchDatabase,
   gate,
   independently,
@@ -96,6 +91,13 @@ const fileAccess = createFileAccess({
   readAgentChain: async () => [],
 });
 const commands = createDrizzleBranchCommands(h.db);
+const trail = createDrizzleChangeTrailAggregateWriter(h.db, createStaticDocumentLinkScopes());
+
+async function projectTrails() {
+  do {
+    await trail.reconcileTerminalOwners();
+  } while ((await h.raw`select 1 from change_trail_dirty_log limit 1`).length);
+}
 
 async function fixture(
   baseText: string[],
@@ -136,10 +138,6 @@ async function fixture(
         recovered++;
       },
     },
-    model: yProsemirrorModel(schema),
-    codec: createAgentEditCodecFactory(mdxCodec({ schema })),
-    links: createStaticDocumentLinkScopes(),
-    trail: createDrizzleChangeTrailAggregateWriter(h.db),
     catalog: { refreshSources: async () => "0" },
     arrivals: { settle: async () => 0 },
     removal: createTestDocumentRemoval(h.db),
@@ -872,6 +870,12 @@ try {
       const c = f.click();
       await h.raw`delete from change_trail_dirty_log where thread_id=${f.threadId}`;
       await applied(f, c);
+      assert.ok(
+        (
+          await h.raw`select 1 from change_trail_dirty_log where thread_id=${f.threadId} and turn_id=${f.turnId}`
+        ).length,
+      );
+      await projectTrails();
       const rows =
         await h.raw`select d.changes from change_trail_document_details d join change_trail_shells s on s.id=d.trail_id where s.thread_id=${f.threadId}`;
       assert.equal(rows.length, 1);
@@ -879,11 +883,6 @@ try {
       assert.match(rows[0].changes[0].beforeText, /Base/);
       assert.match(rows[0].changes[0].afterTextAtReceipt, /Changed/);
       assert.ok(rows[0].changes[0].navigation);
-      assert.ok(
-        (
-          await h.raw`select 1 from change_trail_dirty_log where thread_id=${f.threadId} and turn_id=${f.turnId}`
-        ).length,
-      );
       f.close();
     },
   );
@@ -929,6 +928,7 @@ try {
       const c = f.click();
       if (mode === "live move") await f.liveWrite([original[1], original[0], original[2]]);
       await applied(f, c);
+      await projectTrails();
       for (const [owner, expected, forbidden] of mode === "shared paragraph"
         ? ([
             [f, second, original[1]],
@@ -976,6 +976,7 @@ try {
     f.room.clientID = client++;
     await f.type([replacement, original[2], original[3].replace("old", "AI")], true, other);
     await applied(f, f.click());
+    await projectTrails();
     for (const owner of [f, other]) {
       const rows =
         await h.raw`select d.changes from change_trail_document_details d join change_trail_shells s on s.id=d.trail_id where s.thread_id=${owner.threadId} and s.turn_id=${owner.turnId}`;

@@ -6,8 +6,8 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
+  foldTrailChanges,
   liveBlockTarget,
-  normalizeTrailPushes,
   type RawTrailChange,
   validateLiveBlockTarget,
 } from "./trail-read-kernel.js";
@@ -37,7 +37,6 @@ function change(overrides: Partial<RawTrailChange> = {}): RawTrailChange {
     beforeText: "before",
     afterTextAtReceipt: "after",
     navigation: { kind: "unavailable", reason: "capture_failed" },
-    owner: { threadId: "thread-a", turnId: "turn-a" },
     sequence: 1,
     ...overrides,
   };
@@ -55,35 +54,44 @@ describe("trail navigation", () => {
 describe("trail normalization", () => {
   it("folds repeated changes with the same canonical block identity", () => {
     const identity = { documentId: "doc-a", clientID: 42, clock: 7 };
-    const trails = normalizeTrailPushes([
-      {
-        pushId: "p1",
-        receiptId: "r1",
-        threadId: "thread-a",
-        journalOwners: [{ threadId: "thread-a", turnId: "turn-a" }],
-        changes: [
-          change({
-            changeId: "canonical-change",
-            beforeBlockIdentity: identity,
-            afterBlockIdentity: identity,
-          }),
-          change({
-            changeId: "must-not-split",
-            beforeBlockIdentity: identity,
-            afterBlockIdentity: identity,
-            beforeText: "after",
-            afterTextAtReceipt: "final",
-            sequence: 2,
-          }),
-        ],
-      },
+    const changes = foldTrailChanges([
+      change({
+        changeId: "canonical-change",
+        beforeBlockIdentity: identity,
+        afterBlockIdentity: identity,
+      }),
+      change({
+        changeId: "must-not-split",
+        beforeBlockIdentity: identity,
+        afterBlockIdentity: identity,
+        beforeText: "after",
+        afterTextAtReceipt: "final",
+        sequence: 2,
+      }),
     ]);
 
-    expect(trails[0].changes).toHaveLength(1);
-    expect(trails[0].changes[0]).toMatchObject({
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
       changeId: "canonical-change",
       beforeText: "before",
       afterTextAtReceipt: "final",
     });
+
+    const undone = foldTrailChanges([
+      change({
+        beforeBlockIdentity: identity,
+        afterBlockIdentity: identity,
+        beforeText: "fe62|Alpha base.",
+        afterTextAtReceipt: "fe62|Gamma base.",
+      }),
+      change({
+        beforeBlockIdentity: identity,
+        afterBlockIdentity: identity,
+        beforeText: "fe62d|Gamma base.",
+        afterTextAtReceipt: "fe62d|Alpha base.",
+        sequence: 2,
+      }),
+    ]);
+    expect(undone).toEqual([]);
   });
 });

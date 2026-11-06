@@ -772,6 +772,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.fileAccess);
   const changeTrailDelivery = createChangeTrailWorker({
     db: ports.db,
+    links: ports.linkScopes,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
   });

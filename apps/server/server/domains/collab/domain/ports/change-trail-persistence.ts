@@ -1,18 +1,4 @@
-import type {
-  NormalizedTrail,
-  RawTrailChange,
-  TrailChangeV1,
-  TrailOwner,
-} from "../trail-read-kernel.js";
-
-export type DurableTrailRecord = {
-  documentId: string;
-  documentTitle: string;
-  receiptId: string;
-  threadIds: readonly string[];
-  journalOwners: readonly (TrailOwner | null)[];
-  changes: readonly RawTrailChange[];
-};
+import type { NormalizedTrail, TrailChangeV1 } from "../trail-read-kernel.js";
 
 export type ChangeTrailPersistence = {
   record(input: {

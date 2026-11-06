@@ -1,19 +1,13 @@
-/** Canonical live-effect trail navigation and committed-record persistence. */
 import type { CanonicalBlockIdentity } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 
-import type {
-  ChangeTrailPersistence,
-  DurableTrailRecord,
-} from "./ports/change-trail-persistence.js";
 import {
   bodyFromHashline,
   type CanonicalBlockIdentityV1,
   canonicalBlockKey,
   deletionBoundaryTarget,
   liveBlockTarget,
-  normalizeTrailPushes,
   type RawTrailChange,
 } from "./trail-read-kernel.js";
 
@@ -28,7 +22,6 @@ export function preparedTrailChanges(input: {
   documentId: DocumentId;
   changedBlocks: readonly ApplyBlockChange[];
   receiptId: string;
-  ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
   before: readonly {
     hash: string;
     serialized: string;
@@ -138,7 +131,6 @@ export function preparedTrailChanges(input: {
       block.afterText !== null &&
       afterBody.status === "available" &&
       afterBody.markdown.length === 0;
-    const owners = input.ownersByBlock.get(block.blockId) ?? [null];
     const afterBlockIdentity = block.afterBlockIdentity;
     const afterIdentity =
       emptiedSurvivingBlock || contentRelocated || !afterBlockIdentity
@@ -167,50 +159,23 @@ export function preparedTrailChanges(input: {
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
-    return owners.map((owner, ownerIndex) => ({
-      changeId: `${input.receiptId}:${canonicalBlockKey(stableIdentity)}`,
-      documentId: input.documentId,
-      pushId: null,
-      receiptId: input.receiptId,
-      kind: location.kind,
-      beforeBlockIdentity: location.beforeIdentity,
-      afterBlockIdentity: location.afterIdentity,
-      beforeText: block.beforeText,
-      afterTextAtReceipt: contentRelocated ? null : block.afterText,
-      navigation: location.navigation,
-      owner,
-      sequence: sequence * 1000 + ownerIndex,
-    }));
+    return [
+      {
+        changeId: `${input.receiptId}:${canonicalBlockKey(stableIdentity)}`,
+        documentId: input.documentId,
+        pushId: null,
+        receiptId: input.receiptId,
+        kind: location.kind,
+        beforeBlockIdentity: location.beforeIdentity,
+        afterBlockIdentity: location.afterIdentity,
+        beforeText: block.beforeText,
+        afterTextAtReceipt: contentRelocated ? null : block.afterText,
+        navigation: location.navigation,
+        sequence,
+      },
+    ];
   });
 }
-export async function persistDurableTrailRecords(
-  committed: readonly {
-    record: DurableTrailRecord;
-    push: { id: number };
-  }[],
-  persistence: Pick<ChangeTrailPersistence, "record">,
-): Promise<void> {
-  const normalized = normalizeTrailPushes(
-    committed.flatMap(({ record, push }) => {
-      const pushId = String(push.id);
-      const changes = record.changes.map((change) => ({ ...change, pushId }));
-      return record.threadIds.map((threadId) => ({
-        pushId,
-        receiptId: record.receiptId,
-        threadId,
-        changes,
-        journalOwners: record.journalOwners,
-      }));
-    }),
-  );
-  await persistence.record({
-    trails: normalized,
-    documentTitles: new Map(
-      committed.map(({ record }) => [record.documentId, record.documentTitle]),
-    ),
-  });
-}
-
 type ApplyBlockChange = {
   blockId: string;
   beforeBlockIdentity: CanonicalBlockIdentity | null;

@@ -575,6 +575,7 @@ export const applyCommandEffects = pgTable(
     draftId: text("draft_id").notNull(),
     /** Null means live already held the group's text: Un-Apply removes no live or base text. */
     liveUpdateSeq: bigint("live_update_seq", { mode: "number" }),
+    owners: jsonb("owners").$type<Array<{ threadId: string; turnId: string | null }>>(),
     /** The command's base before its first group; stored once rather than once per group. */
     baseStart: jsonb("base_start").$type<unknown[]>(),
     /** This group's bounded change to the preceding committed base. */

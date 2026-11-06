@@ -10,6 +10,7 @@ import {
   type Database,
   documentEditParts,
   documentEdits,
+  documentYjsHeads,
   documentYjsUpdates,
   draftWriteJournal,
   type EditOrigin,
@@ -68,6 +69,14 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
     if (!input.treeChange) throw new Error("An edit with no parts must be a tree entry");
     return edit.id;
   }
+  const live = input.receipts.some((part) => part.origin.kind === "live");
+  const [head] = live
+    ? await db
+        .select({ checkpointId: documentYjsHeads.latestCheckpointId })
+        .from(documentYjsHeads)
+        .where(eq(documentYjsHeads.documentId, input.documentId))
+        .limit(1)
+    : [];
   await db.insert(documentEditParts).values(
     input.receipts.map((p, ordinal) => ({
       editId: edit.id,
@@ -77,7 +86,10 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       frontier: p.frontier,
       aliases: p.aliases,
       targets: p.targets ?? [],
-      origin: p.origin,
+      origin:
+        p.origin.kind === "live" && head?.checkpointId !== null && head?.checkpointId !== undefined
+          ? { ...p.origin, checkpointId: head.checkpointId }
+          : p.origin,
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {
@@ -89,8 +101,8 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       })
       .where(eq(draftWriteJournal.id, p.origin.rowId));
   }
-  const live = input.receipts.filter((p) => p.origin.kind === "live");
-  for (const seq of new Set(live.map((p) => (p.origin.kind === "live" ? p.origin.seq : 0)))) {
+  const liveParts = input.receipts.filter((p) => p.origin.kind === "live");
+  for (const seq of new Set(liveParts.map((p) => (p.origin.kind === "live" ? p.origin.seq : 0)))) {
     const ordinals = input.receipts.flatMap((p, ordinal) =>
       p.origin.kind === "live" && p.origin.seq === seq ? [ordinal] : [],
     );
