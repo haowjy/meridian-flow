@@ -38,14 +38,38 @@ describe("devAuthAppliesToRequest", () => {
     new Request("https://server.meridian.localhost/api/x", { method, headers });
 
   it.each([
-    ["no fetch metadata (node client)", req("POST"), true],
+    ["no fetch metadata, no Origin (node client)", req("POST"), true],
     ["same-origin", req("POST", { "sec-fetch-site": "same-origin" }), true],
     ["same-site", req("POST", { "sec-fetch-site": "same-site" }), true],
     ["cross-site POST", req("POST", { "sec-fetch-site": "cross-site" }), false],
     [
-      "cross-site WebSocket upgrade",
-      req("GET", { "sec-fetch-site": "cross-site", "sec-fetch-mode": "websocket" }),
+      "WebSocket from a foreign origin (Chrome sends no sec-fetch-*)",
+      req("GET", { origin: "https://evil.example", upgrade: "websocket" }),
       false,
+    ],
+    [
+      "same-origin WebSocket",
+      new Request("https://server.app.meridian.localhost/ws/yjs", {
+        headers: { origin: "https://app.meridian.localhost", upgrade: "websocket" },
+      }),
+      true,
+    ],
+    ["Origin on a loopback port", req("GET", { origin: "http://127.0.0.1:1234" }), false],
+    ["Origin null", req("POST", { origin: "null" }), false],
+    [
+      "rebound Host",
+      new Request("http://attacker.example:3000/api/x", {
+        headers: { host: "attacker.example:3000" },
+      }),
+      false,
+    ],
+    [
+      "tailnet origin through the proxy",
+      req("POST", {
+        host: "server.meridian.localhost",
+        origin: "https://laptop.tail1234.ts.net",
+      }),
+      true,
     ],
     [
       "cross-site top-level navigation",
