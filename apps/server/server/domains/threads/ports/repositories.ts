@@ -149,9 +149,13 @@ export interface ModelResponseRepository {
   /** Inserts a response row, or returns the existing row plus `inserted:false` on response-id replay. */
   create(input: CreateModelResponseInput): Promise<CreateModelResponseResult>;
   findById(id: string): Promise<ModelResponse | null>;
-  /** Most recent non-compaction response by turn position and sequence; cache and estimate facts. */
+  /**
+   * Most recent response the provider metered (input or output tokens), by turn position and
+   * sequence; cache and estimate facts. A row from a call stopped before output is a record that
+   * the call was made, not a response, and is skipped.
+   */
   findLatestByThread(threadId: ThreadId): Promise<LatestModelResponse | null>;
-  /** Most recent response whose turn belongs to the supplied active ancestor chain. */
+  /** Same as `findLatestByThread`, limited to the supplied active ancestor chain. */
   findLatestForTurns(turnIds: readonly TurnId[]): Promise<LatestModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
   listByThread(threadId: ThreadId): Promise<ModelResponse[]>;

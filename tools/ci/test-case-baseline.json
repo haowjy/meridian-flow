@@ -267,7 +267,7 @@
     "apps/server/server/domains/runtime/loop/compaction/elide.test.ts": 1,
     "apps/server/server/domains/runtime/loop/context-builder.test.ts": 2,
     "apps/server/server/domains/runtime/loop/control-protocol.db.test.ts": 41,
-    "apps/server/server/domains/runtime/loop/execution-finalizer.db.test.ts": 4,
+    "apps/server/server/domains/runtime/loop/execution-finalizer.db.test.ts": 5,
     "apps/server/server/domains/runtime/loop/forget-failed-attempt.test.ts": 24,
     "apps/server/server/domains/runtime/loop/image-context.test.ts": 4,
     "apps/server/server/domains/runtime/loop/next-inbox-work.test.ts": 10,

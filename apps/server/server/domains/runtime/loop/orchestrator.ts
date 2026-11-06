@@ -970,6 +970,8 @@ async function persistModelResponse(input: {
   blockSeq: number;
   /** Ids of the inbox batch this response carries; acked in the persist transaction. */
   inboxAckIds: string[];
+  /** The call was stopped: the adapter's finish reason says nothing true, so none is stored. */
+  stopped?: true;
 }): Promise<{
   responseId: string;
   updatedTurn: Turn;
@@ -1019,7 +1021,7 @@ async function persistModelResponse(input: {
           millicredits: computedCost.millicredits,
           priceSource: computedCost.priceSource,
           pricingSnapshot: computedCost.pricingSnapshot,
-          finishReason: result.finishReason,
+          finishReason: input.stopped ? null : result.finishReason,
           ...modelResponseTimingFields(result),
           rawUsage: toJsonValue(result.usage),
           requestMessageCount: input.requestMessageCount,
@@ -1130,6 +1132,7 @@ async function settleCancelledResponse(input: {
       blockSeq: input.blockSeq,
       // The terminal cancellation retires the lease receipt after settlement.
       inboxAckIds: [],
+      stopped: true,
     });
     currentTurn = persistedResponse.updatedTurn;
     input.allBlocks.push(...persistedResponse.createdBlocks);
