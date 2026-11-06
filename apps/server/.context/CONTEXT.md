@@ -184,6 +184,8 @@ stall guard never kills a slow-but-streaming model.
 
 In dev, the repository `logs/` tree is generated observability output, not source input. `nitro.config.ts` excludes it through Rolldown's active `watch.exclude` seam so JSONL mirror writes cannot rebuild Nitro and orphan in-flight work. Keep the exclusion rooted at the repository log directory and on the Rolldown seam; Nitro's own watcher option is inert. The same `watch.exclude` also skips `**/node_modules/**`: a `pnpm install` in a sibling worktree hardlinks shared store files, and the resulting ctime change would otherwise rebuild Nitro mid-reply. The glob is computed here, independently of `tools/dev/lib/dev-env.ts`'s `resolveDevLogDir`: moving the dev log directory, or setting an absolute `LOG_DIR` under a watched tree, needs this exclusion to move in the same change.
 
+Editing `nitro.config.ts` under a running `nitro dev` drops the server's listener: the process stays alive and every route answers 502 until `pnpm dev:restart`.
+
 ## Route conventions
 
 ### Request IDs
