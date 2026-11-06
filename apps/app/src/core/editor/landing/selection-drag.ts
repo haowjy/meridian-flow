@@ -5,7 +5,9 @@
  * `findings/text-drag.md` in the editor-followups work), and brings a drag
  * image; this gesture has neither.
  *
- * It is a pump, not a second drop path. It feeds the drag events a native drag
+ * Two halves that change independently: `startGesture` follows the mouse and
+ * decides click or lift; `liftSelection` is the pump. The pump is not a second
+ * drop path. It feeds the drag events a native drag
  * would send (`dragstart`, `dragenter`, `dragover`, `drop`, `dragend`, with a
  * real `DataTransfer`) into the pipeline that already handles them:
  * ProseMirror's `view.dragging`, `LandingExtension`'s caret and doors, link
@@ -26,11 +28,10 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import type { Slice } from "@tiptap/pm/model";
 import { AllSelection, Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import { getEditorChrome } from "../chrome";
+import { type EditorChrome, getEditorChrome } from "../chrome";
 import { dragEdgeScroll } from "./edge-scroll";
 
 /** Pointer travel that lifts the selection, ProseMirror's own slop. */
@@ -57,14 +58,14 @@ const modifiersOf = ({ ctrlKey, altKey, shiftKey, metaKey }: Modifiers): Modifie
  * count, and unselected text after the range's end does not. A press that
  * doesn't travel still places a caret.
  */
-function pressOnSelection(view: EditorView, editor: Editor, event: MouseEvent): boolean {
+function pressOnSelection(view: EditorView, event: MouseEvent): boolean {
   const { selection } = view.state;
   if (event.button !== 0 || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) {
     return false;
   }
   if (!(selection instanceof TextSelection || selection instanceof AllSelection) || selection.empty)
     return false;
-  if (!view.editable || !view.hasFocus() || !getEditorChrome(editor)) return false;
+  if (!view.editable || !view.hasFocus()) return false;
   const target = event.target;
   if (!(target instanceof Element) || !view.dom.contains(target)) return false;
   if (target.closest('[contenteditable="false"]') !== view.dom.closest('[contenteditable="false"]'))
@@ -76,10 +77,10 @@ function pressOnSelection(view: EditorView, editor: Editor, event: MouseEvent): 
 /**
  * The presses ProseMirror counted as a second or third click: a re-press on
  * the highlight is this gesture's, so `handleDoubleClick` and
- * `handleTripleClick` claim it (otherwise the browser or ProseMirror widens the
- * selection to a word or paragraph). A third press that doesn't travel selects
- * the paragraph, so the gesture reads the claim, not `detail`: ProseMirror's
- * count is the one that decided.
+ * `handleTripleClick` claim it (otherwise the browser or ProseMirror widens
+ * the selection to a word or paragraph). A third press that doesn't travel
+ * selects the paragraph, so the gesture reads the claim, not `detail`:
+ * ProseMirror's count is the one that decided.
  */
 const thirdPresses = new WeakSet<MouseEvent>();
 
@@ -89,7 +90,7 @@ export function claimRepress(
   event: MouseEvent,
   third: boolean,
 ): boolean {
-  if (!pressOnSelection(view, editor, event)) return false;
+  if (!getEditorChrome(editor) || !pressOnSelection(view, event)) return false;
   if (third) thirdPresses.add(event);
   return true;
 }
@@ -104,9 +105,10 @@ export function installSelectionDrag(view: EditorView, editor: Editor): () => vo
     // the default here is what keeps the browser's text drag and its
     // highlight redraw away; ProseMirror's click machinery still sees the
     // `mouseup`.
-    if (cancel || !pressOnSelection(view, editor, event)) return;
+    const chrome = getEditorChrome(editor);
+    if (cancel || !chrome || !pressOnSelection(view, event)) return;
     event.preventDefault();
-    cancel = startGesture(view, editor, event, () => {
+    cancel = startGesture(view, chrome, event, () => {
       cancel = null;
     });
   };
@@ -118,105 +120,34 @@ export function installSelectionDrag(view: EditorView, editor: Editor): () => vo
   };
 }
 
-/** Runs one press-to-release gesture. Returns its cancel. */
+/**
+ * Follows one press from `mousedown` to its end and decides what it was: a
+ * click (a caret, or the paragraph for a third press) or, once the pointer
+ * has travelled `LIFT_PX`, a lift, which `liftSelection` then carries. It
+ * knows the mouse and nothing of drag events. Returns its cancel.
+ */
 function startGesture(
   view: EditorView,
-  editor: Editor,
+  chrome: EditorChrome,
   press: MouseEvent,
   onDone: () => void,
 ): () => void {
-  const chrome = getEditorChrome(editor);
   const ac = new AbortController();
   const listen = (type: string, handler: (event: never) => void, capture = false) =>
     window.addEventListener(type, handler as EventListener, { capture, signal: ac.signal });
-  const transfer = new DataTransfer();
+  const input: PumpInput = { pointer: press, modifiers: modifiersOf(press) };
+  let lift: Lift | null = null;
 
-  /** "ended" is a lift that finished (released, or cancelled with the button still down). */
-  let phase: "pressed" | "lifted" | "ended" = "pressed";
-  let pointer: MouseEvent = press;
-  let modifiers = modifiersOf(press);
-  let over: Element | null = null;
-  let accepted = false;
-  let tick: ReturnType<typeof setInterval> | undefined;
-  let endChrome: (() => void) | undefined;
-  let carried: Slice | undefined;
-  let seenState = view.state;
-
-  const send = (type: string, target: Element, related: Element | null = null, at = pointer) => {
-    const event = new DragEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      clientX: at.clientX,
-      clientY: at.clientY,
-      dataTransfer: transfer,
-      relatedTarget: related,
-      ...modifiers,
-    });
-    target.dispatchEvent(event);
-    return event;
-  };
-
-  /** One `dragover`, preceded by `dragleave`/`dragenter` when the element under the pointer changed. */
-  const hover = () => {
-    const now = view.dom.ownerDocument.elementFromPoint(pointer.clientX, pointer.clientY);
-    if (now !== over) {
-      if (over?.isConnected) send("dragleave", over, now);
-      if (now) send("dragenter", now, over);
-      over = now;
+  /** Takes the pointer's position, and lifts once it is `LIFT_PX` from the press (a flick can release before any move far enough). */
+  const track = (event: MouseEvent) => {
+    input.pointer = event;
+    input.modifiers = modifiersOf(event);
+    if (
+      !lift &&
+      Math.abs(event.clientX - press.clientX) + Math.abs(event.clientY - press.clientY) >= LIFT_PX
+    ) {
+      lift = liftSelection(view, chrome, press, input);
     }
-    accepted = over ? send("dragover", over).defaultPrevented : false;
-  };
-
-  /** A peer's edit that changed what the selection holds: the drag no longer carries what was lifted. */
-  const peerChangedSelection = () => {
-    if (view.state === seenState) return false;
-    seenState = view.state;
-    return !carried || !view.state.selection.content().eq(carried);
-  };
-
-  const onTick = () => {
-    if (peerChangedSelection()) {
-      finish(false);
-      return;
-    }
-    hover();
-    const scroller =
-      over?.closest<HTMLElement>("[data-stable-layout-scroll]") ??
-      view.dom.closest<HTMLElement>("[data-stable-layout-scroll]");
-    dragEdgeScroll(scroller, pointer.clientY);
-  };
-
-  const lift = () => {
-    // At the press, not the pointer: a fast first move may already be off the selection.
-    send("dragstart", view.dom, null, press);
-    if (!view.dragging) {
-      // Nothing took the drag: stay a plain press.
-      stop();
-      return;
-    }
-    carried = view.dragging.slice;
-    phase = "lifted";
-    endChrome = chrome?.beginDrag(() => finish(false));
-    view.dom.ownerDocument.documentElement.classList.add(ROOT_CLASS);
-    tick = setInterval(onTick, TICK_MS);
-    hover();
-  };
-
-  /** Ends a lift. A release first asks the target once more at the release point, and `drop`s only if it accepts. */
-  const finish = (release: boolean) => {
-    if (phase !== "lifted") return;
-    phase = "ended";
-    clearInterval(tick);
-    if (release && !peerChangedSelection()) {
-      hover();
-      if (accepted && over) send("drop", over);
-    } else if (over?.isConnected) {
-      send("dragleave", over);
-    }
-    send("dragend", view.dom);
-    view.dom.ownerDocument.documentElement.classList.remove(ROOT_CLASS);
-    endChrome?.();
   };
 
   const stop = () => {
@@ -225,24 +156,15 @@ function startGesture(
   };
 
   const onLost = () => {
-    finish(false);
+    lift?.cancel();
     stop();
-  };
-
-  const track = (event: MouseEvent) => {
-    pointer = event;
-    modifiers = modifiersOf(event);
   };
 
   /** A release the gesture heard, from `mouseup` or from a `pointermove` that says no button is down. */
   const release = (event: MouseEvent) => {
     track(event);
-    // A flick can release before any move far enough to lift: the release
-    // point decides, and the drag lands where it was let go.
-    if (phase === "pressed" && travelled(event)) lift();
-    if (ac.signal.aborted) return;
-    finish(true);
-    if (phase === "ended") {
+    if (lift) {
+      lift.release();
       // The `click` after a lift is not a click (the link surface would follow a link).
       window.addEventListener("click", (click) => click.stopPropagation(), {
         capture: true,
@@ -257,9 +179,6 @@ function startGesture(
     stop();
   };
 
-  const travelled = (event: MouseEvent) =>
-    Math.abs(event.clientX - press.clientX) + Math.abs(event.clientY - press.clientY) >= LIFT_PX;
-
   listen(
     "pointermove",
     (event: PointerEvent) => {
@@ -270,25 +189,128 @@ function startGesture(
         return;
       }
       track(event);
-      if (phase === "lifted") {
-        // Hover chrome elsewhere reads `pointermove`; a native drag sends none.
-        event.stopPropagation();
-      } else if (phase === "pressed" && travelled(event)) {
-        lift();
-      }
+      // Hover chrome elsewhere reads `pointermove`; a native drag sends none.
+      if (lift) event.stopPropagation();
     },
     true,
   );
   listen("pointercancel", onLost, true);
   listen("blur", onLost);
   const onKey = (event: KeyboardEvent) => {
-    modifiers = modifiersOf(event);
+    input.modifiers = modifiersOf(event);
   };
   listen("keydown", onKey, true);
   listen("keyup", onKey, true);
-  listen("mouseup", release);
+  listen("mouseup", (event: MouseEvent) => {
+    if (event.button === 0) release(event);
+  });
 
   return onLost;
+}
+
+/** Where the pointer is and which modifiers are down: the gesture writes it, the lift reads it. */
+type PumpInput = { pointer: MouseEvent; modifiers: Modifiers };
+
+/** A lifted selection. Both calls end it, and either is safe to call again. */
+type Lift = {
+  /** Ends it at the pointer: one more `dragover` there, then `drop` only if that was accepted. */
+  release(): void;
+  /** Ends it without a drop. */
+  cancel(): void;
+};
+
+/**
+ * Lifts the selection with the drag events a native drag would send, and
+ * keeps them coming until released or cancelled: by `release`, `cancel`, the
+ * chrome's Escape, or a peer's edit that changes what the selection holds.
+ */
+function liftSelection(
+  view: EditorView,
+  chrome: EditorChrome,
+  press: MouseEvent,
+  input: PumpInput,
+): Lift {
+  const transfer = new DataTransfer();
+  const doc = view.dom.ownerDocument;
+  let over: Element | null = null;
+  let ended = false;
+  const carried = view.state.selection.content();
+  let seenState = view.state;
+  let diverged = false;
+
+  const send = (
+    type: string,
+    target: Element,
+    related: Element | null = null,
+    at = input.pointer,
+  ) => {
+    const event = new DragEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: at.clientX,
+      clientY: at.clientY,
+      dataTransfer: transfer,
+      relatedTarget: related,
+      ...input.modifiers,
+    });
+    target.dispatchEvent(event);
+    return event;
+  };
+
+  /** One `dragover`, preceded by `dragleave`/`dragenter` when the element under the pointer changed. Whether the target accepts. */
+  const hover = () => {
+    const now = doc.elementFromPoint(input.pointer.clientX, input.pointer.clientY);
+    if (now !== over) {
+      if (over?.isConnected) send("dragleave", over, now);
+      if (now) send("dragenter", now, over);
+      over = now;
+    }
+    return over ? send("dragover", over).defaultPrevented : false;
+  };
+
+  /** Whether a peer's edit has changed what the selection holds, so the drag no longer carries what was lifted. */
+  const carriedChanged = () => {
+    if (view.state !== seenState) {
+      seenState = view.state;
+      diverged = !view.state.selection.content().eq(carried);
+    }
+    return diverged;
+  };
+
+  const finish = (release: boolean) => {
+    if (ended) return;
+    ended = true;
+    clearInterval(tick);
+    // A release first asks the target once more at the release point, and `drop`s only if it accepts.
+    if (release && !carriedChanged()) {
+      if (hover() && over) send("drop", over);
+    } else if (over?.isConnected) {
+      send("dragleave", over);
+    }
+    send("dragend", view.dom);
+    doc.documentElement.classList.remove(ROOT_CLASS);
+    endChrome();
+  };
+
+  // At the press, not the pointer: a fast first move may already be off the selection.
+  send("dragstart", view.dom, null, press);
+  const endChrome = chrome.beginDrag(() => finish(false));
+  doc.documentElement.classList.add(ROOT_CLASS);
+  const tick = setInterval(() => {
+    if (carriedChanged()) {
+      finish(false);
+      return;
+    }
+    hover();
+    const scroller =
+      over?.closest<HTMLElement>("[data-stable-layout-scroll]") ??
+      view.dom.closest<HTMLElement>("[data-stable-layout-scroll]");
+    dragEdgeScroll(scroller, input.pointer.clientY);
+  }, TICK_MS);
+  hover();
+
+  return { release: () => finish(true), cancel: () => finish(false) };
 }
 
 /** The caret a click makes at the pointer, or the pressed textblock for a third click. */
