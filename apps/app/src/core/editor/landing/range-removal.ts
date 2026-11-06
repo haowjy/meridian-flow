@@ -23,16 +23,30 @@ export function crossesTextblocks(selection: Selection): boolean {
 
 type Removal =
   | { kind: "text"; from: number; to: number }
-  | { kind: "blocks"; from: number; to: number }
-  | { kind: "block"; pos: number };
+  | {
+      kind: "block";
+      from: number;
+      to: number;
+      parent: PMNode;
+      fromIndex: number;
+      toIndex: number;
+    };
 
 export function removeRange(transaction: Transaction, from: number, to: number): void {
   const removals: Removal[] = [];
-  const wholeBlocks: number[] = [];
-  transaction.doc.nodesBetween(from, to, (node: PMNode, pos: number) => {
+  transaction.doc.nodesBetween(from, to, (node, pos, parent, index) => {
     const end = pos + node.nodeSize;
     if (isTable(node) && from <= pos && to >= end) {
-      wholeBlocks.push(pos);
+      addBlockRemoval(removals, node, pos, parent, index);
+      return false;
+    }
+    if (
+      node.isBlock &&
+      !node.isTextblock &&
+      !node.type.spec.tableRole &&
+      coversBlockContent(node, pos, from, to)
+    ) {
+      addBlockRemoval(removals, node, pos, parent, index);
       return false;
     }
     if (node.isTextblock) {
@@ -50,79 +64,83 @@ export function removeRange(transaction: Transaction, from: number, to: number):
         }
         whole = start === pos + 1 && stop === end - 1;
       }
-      if (whole) wholeBlocks.push(pos);
+      if (whole) addBlockRemoval(removals, node, pos, parent, index);
       else if (start < stop) removals.push({ kind: "text", from: start, to: stop });
       return false;
     }
-    if (node.isLeaf && pos >= from && end <= to) wholeBlocks.push(pos);
+    if (node.isLeaf && pos >= from && end <= to)
+      addBlockRemoval(removals, node, pos, parent, index);
     return !node.isLeaf;
   });
-  removals.push(...mergedWholeBlocks(transaction.doc, wholeBlocks));
   // Last first, so each removal leaves the earlier positions alone.
   for (const removal of removals.sort((a, b) => removalStart(b) - removalStart(a))) {
-    if (removal.kind === "text" || removal.kind === "blocks")
-      transaction.delete(removal.from, removal.to);
-    else removeBlock(transaction, removal.pos);
+    if (removal.kind === "text") transaction.delete(removal.from, removal.to);
+    else removeBlocks(transaction, removal);
   }
 }
 
 function removalStart(removal: Removal): number {
-  return removal.kind === "block" ? removal.pos : removal.from;
+  return removal.from;
+}
+
+function addBlockRemoval(
+  removals: Removal[],
+  node: PMNode,
+  pos: number,
+  parent: PMNode | null,
+  index: number,
+): void {
+  if (!parent) return;
+  const previous = removals.at(-1);
+  if (previous?.kind !== "block" || previous.parent !== parent || previous.to !== pos) {
+    removals.push({
+      kind: "block",
+      from: pos,
+      to: pos + node.nodeSize,
+      parent,
+      fromIndex: index,
+      toIndex: index + 1,
+    });
+    return;
+  }
+  previous.to = pos + node.nodeSize;
+  previous.toIndex = index + 1;
+}
+
+function removeBlocks(
+  transaction: Transaction,
+  removal: Extract<Removal, { kind: "block" }>,
+): void {
+  if (removal.parent.canReplace(removal.fromIndex, removal.toIndex)) {
+    transaction.delete(removal.from, removal.to);
+    return;
+  }
+  let pos = removal.from;
+  const positions: number[] = [];
+  for (let index = removal.fromIndex; index < removal.toIndex; index++) {
+    positions.push(pos);
+    pos += removal.parent.child(index).nodeSize;
+  }
+  for (let index = positions.length - 1; index >= 0; index--)
+    removeBlock(transaction, positions[index] as number);
+}
+
+function coversBlockContent(node: PMNode, pos: number, from: number, to: number): boolean {
+  let first = Number.POSITIVE_INFINITY;
+  let last = Number.NEGATIVE_INFINITY;
+  node.descendants((child, offset) => {
+    if (!child.isLeaf) return true;
+    first = Math.min(first, pos + 1 + offset);
+    last = Math.max(last, pos + 1 + offset + child.nodeSize);
+    return false;
+  });
+  return first !== Number.POSITIVE_INFINITY && from <= first && to >= last;
 }
 
 type RemovableChild = {
-  pos: number;
-  parent: PMNode;
-  index: number;
   from: number;
   to: number;
 };
-
-/** Collapses sibling blocks into one step without emptying a required container. */
-function mergedWholeBlocks(doc: PMNode, positions: number[]): Removal[] {
-  const found = positions.map((pos) => removableChild(doc, pos));
-  const removals: Removal[] = [];
-  for (let at = 0; at < found.length; ) {
-    const first = found[at];
-    if (!first) {
-      removals.push({ kind: "block", pos: positions[at] as number });
-      at++;
-      continue;
-    }
-    const run = [first];
-    let next = at + 1;
-    while (next < found.length) {
-      const candidate = found[next];
-      const previous = run.at(-1) as RemovableChild;
-      if (
-        !candidate ||
-        candidate.parent !== first.parent ||
-        candidate.index !== previous.index + 1 ||
-        candidate.from !== previous.to
-      )
-        break;
-      run.push(candidate);
-      next++;
-    }
-    const endIndex = (run.at(-1) as RemovableChild).index + 1;
-    if (run.length > 1 && first.parent.canReplace(first.index, endIndex)) {
-      removals.push({ kind: "blocks", from: first.from, to: (run.at(-1) as RemovableChild).to });
-    } else if (run.length > 2 && first.parent.canReplace(first.index + 1, endIndex)) {
-      removals.push(
-        { kind: "block", pos: first.pos },
-        {
-          kind: "blocks",
-          from: (run[1] as RemovableChild).from,
-          to: (run.at(-1) as RemovableChild).to,
-        },
-      );
-    } else {
-      removals.push(...run.map(({ pos }) => ({ kind: "block" as const, pos })));
-    }
-    at = next;
-  }
-  return removals;
-}
 
 function removableChild(doc: PMNode, pos: number): RemovableChild | null {
   const $pos = doc.resolve(pos);
@@ -132,7 +150,7 @@ function removableChild(doc: PMNode, pos: number): RemovableChild | null {
     const from = $pos.posAtIndex(index, depth);
     const child = parent.child(index);
     if (parent.canReplace(index, index + 1)) {
-      return { pos, parent, index, from, to: from + child.nodeSize };
+      return { from, to: from + child.nodeSize };
     }
     if (isTableCell(parent)) break;
     if (parent.childCount > 1) break;
@@ -146,18 +164,12 @@ function removableChild(doc: PMNode, pos: number): RemovableChild | null {
  * last block) keeps its place, emptied.
  */
 function removeBlock(transaction: Transaction, pos: number): void {
-  const $pos = transaction.doc.resolve(pos);
-  for (let depth = $pos.depth; depth >= 0; depth--) {
-    const parent = $pos.node(depth);
-    const index = $pos.index(depth);
-    const before = $pos.posAtIndex(index, depth);
-    if (parent.canReplace(index, index + 1)) {
-      transaction.delete(before, before + parent.child(index).nodeSize);
-      return;
-    }
-    if (isTableCell(parent)) break;
-    if (parent.childCount > 1) break;
+  const removable = removableChild(transaction.doc, pos);
+  if (removable) {
+    transaction.delete(removable.from, removable.to);
+    return;
   }
+  const $pos = transaction.doc.resolve(pos);
   const block = $pos.nodeAfter;
   if (block?.isTextblock && block.content.size > 0)
     transaction.delete(pos + 1, pos + block.nodeSize - 1);
