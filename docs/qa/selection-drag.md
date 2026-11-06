@@ -51,8 +51,14 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
     move: the range moves, no word is selected. Without moving, the press places a caret.
 16. **Undo and redo.** After a move, Ctrl+Z puts the text back with the range selected at its
     old place; Ctrl+Shift+Z moves it again, selected; one more Ctrl+Z restores it again. Typing
-    undo still leaves a caret.
+    undo still leaves a caret. The restored range scrolls into view when it was far away: after an
+    autoscrolled move, Ctrl+Z brings the range on screen. Redo after a click elsewhere does not jump
+    to an unrelated selection.
 17. **Into a touched block.** Sweep a range from mid-paragraph A to mid-paragraph B (also across a
     list item, a heading, a code block). Drop it in A's unselected head, then in B's unselected
     tail, and into a code block's unselected part: the text lands at the caret, nothing is lost or
     doubled, and Ctrl+Z restores text and highlight. A drop inside the range stays a no-op.
+18. **Every painted highlight.** Ctrl+A, then drag a little: the document is lifted and a drop on
+    itself changes nothing; dragging it into the composer copies and leaves the document as it was.
+    Sweep a range across several paragraphs and press in the blank past a line's last word: it lifts
+    like a press on the letters. A press in the margin beside a line outside the range stays native.

@@ -27,7 +27,7 @@
 
 import type { Editor } from "@tiptap/core";
 import type { Slice } from "@tiptap/pm/model";
-import { Selection, TextSelection } from "@tiptap/pm/state";
+import { AllSelection, Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
 import { getEditorChrome } from "../chrome";
@@ -52,7 +52,8 @@ const modifiersOf = ({ ctrlKey, altKey, shiftKey, metaKey }: Modifiers): Modifie
 /**
  * Whether a press lands on the highlight of a text selection this gesture
  * takes. The rects are the browser's own highlight, grown to the line height,
- * so letters and the space between lines of a multi-line range count. A block
+ * so letters and the space between lines of a multi-line range count, and in
+ * a multi-block range the sliver past each line's last word. A block
  * the range covers whole can report a full-width rect too, so its margin
  * counts there; a press that doesn't travel still places a caret.
  */
@@ -61,7 +62,8 @@ function pressOnSelection(view: EditorView, editor: Editor, event: MouseEvent): 
   if (event.button !== 0 || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) {
     return false;
   }
-  if (!(selection instanceof TextSelection) || selection.empty) return false;
+  if (!(selection instanceof TextSelection || selection instanceof AllSelection) || selection.empty)
+    return false;
   if (!view.editable || !view.hasFocus() || !getEditorChrome(editor)) return false;
   const target = event.target;
   if (!(target instanceof Element) || !view.dom.contains(target)) return false;
@@ -76,11 +78,17 @@ function pressOnSelection(view: EditorView, editor: Editor, event: MouseEvent): 
   // each rect to the line height or the space between lines would not count.
   const style = getComputedStyle(target);
   const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
+  // Across blocks the highlight also paints the sliver past each line's last
+  // word, out to the editor's right edge.
+  const multiBlock = !(
+    selection.$from.parent.isTextblock && selection.$from.sameParent(selection.$to)
+  );
+  const editorRight = view.dom.getBoundingClientRect().right;
   for (const rect of range.getClientRects()) {
     const lead = Math.max(0, (lineHeight - rect.height) / 2);
     if (
       event.clientX >= rect.left &&
-      event.clientX <= rect.right &&
+      event.clientX <= (multiBlock ? editorRight : rect.right) &&
       event.clientY >= rect.top - lead &&
       event.clientY <= rect.bottom + lead
     ) {
