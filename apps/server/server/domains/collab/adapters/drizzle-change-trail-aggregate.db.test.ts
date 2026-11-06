@@ -91,16 +91,16 @@ describe("change trail aggregate projections (postgres)", () => {
     const states = async () =>
       (await db.select().from(schema.changeTrailShells)).map((row) => row.state);
     await writer.reconcileTerminalOwners();
-    expect((await states()).filter((state) => state === "settling")).toHaveLength(99);
+    expect((await states()).filter((state) => state === "settling")).toHaveLength(98);
     await writer.reconcileTerminalOwners();
     expect((await states()).filter((state) => state === "settling")).toHaveLength(101);
     await writer.reconcileTerminalOwners();
-    expect((await states()).filter((state) => state === "settled")).toHaveLength(100);
+    expect((await states()).filter((state) => state === "settled")).toHaveLength(99);
     await writer.reconcileTerminalOwners();
     expect((await states()).filter((state) => state === "settled")).toHaveLength(101);
   });
 
-  it("keeps cumulative changes attributed to the push that admitted each one", async () => {
+  it("keeps replacement-set changes attributed to the push that admitted each one", async () => {
     const [autoPush, manualPush] = await db
       .insert(schema.pushLineage)
       .values([
@@ -127,7 +127,7 @@ describe("change trail aggregate projections (postgres)", () => {
 
     await writer.record({ trails: [trail([autoChange])], documentTitles: titles });
     const second = await writer.record({
-      trails: [trail([manualChange])],
+      trails: [trail([autoChange, manualChange])],
       documentTitles: titles,
     });
 

@@ -16,6 +16,7 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import type { Database } from "@meridian/database";
 import {
   agentEditWidCounters,
+  documentEditParts,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
@@ -92,24 +93,10 @@ export type CollabJournal = CheckpointJournal &
     headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
   };
 
-export type LiveTrailProjectionInput = {
-  documentId: string;
-  beforeState: Uint8Array;
-  afterState: Uint8Array;
-  mutation: Extract<
-    NonNullable<import("@meridian/agent-edit/integration").JournalBatchAppendEntry["mutation"]>,
-    { mode: "live" }
-  >;
-  receiptId: string;
-};
-
-export type LiveTrailProjector = (input: LiveTrailProjectionInput) => Promise<void>;
-
 export type DrizzleCollabPersistence = {
   journal: CollabJournal;
   seeds: InitialDocumentSeeds;
   store: CollabFacadeStore;
-  setLiveTrailProjector(projector: LiveTrailProjector): void;
 };
 
 const asDocumentId = (value: string) => value as DocumentId;
@@ -563,10 +550,7 @@ async function materializeCurrentCheckpoint(
   }
 }
 
-export function createDrizzleJournal(
-  db: JournalDb,
-  options: { liveTrailProjector?: LiveTrailProjector } = {},
-): CollabJournal {
+export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
     headSchemaVersion: (documentId) => findHeadSchemaVersion(db, documentId),
 
@@ -686,7 +670,6 @@ export function createDrizzleJournal(
               : {}),
           })),
           updateRows,
-          options.liveTrailProjector,
         );
 
         return updateRows.map((row, index) => ({
@@ -823,11 +806,6 @@ export function createDrizzleJournal(
         const existing = await latestCheckpoint(txDb, docId, captured);
         if (existing && existing.upToSeq >= upToSeq) return;
         await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
-        if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
-          await txDb
-            .delete(documentYjsCheckpoints)
-            .where(eq(documentYjsCheckpoints.id, existing.id));
-        }
       });
     },
 
@@ -856,9 +834,8 @@ export function createDrizzleJournal(
           .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
           .limit(1);
         const checkpointSeq = checkpoint?.upToSeq ?? 0;
-        // Compaction folds a contiguous seq prefix, so every retained update sits strictly
-        // above the latest compacted checkpoint; reconstruction can safely start from the
-        // newest checkpoint below the earliest retained update.
+        // Current authority reads start at the checkpoint. Earlier rows remain only when
+        // immutable receipt bytes do not cover them for historical trail reconstruction.
         const candidateRows = await txDb
           .select()
           .from(documentYjsUpdates)
@@ -896,16 +873,18 @@ export function createDrizzleJournal(
           // already covers it and this compaction folds no new rows.
           await retireThrough(txDb, docId, compactedThroughSeq);
 
-          await txDb
-            .delete(documentYjsUpdates)
-            .where(
-              and(
-                eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-                eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
-                eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
-                lte(documentYjsUpdates.id, compactedThroughSeq),
-              ),
-            );
+          await txDb.delete(documentYjsUpdates).where(
+            and(
+              eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+              eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
+              eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
+              lte(documentYjsUpdates.id, compactedThroughSeq),
+              sql`EXISTS (SELECT 1 FROM ${documentEditParts} part
+                  WHERE part.origin->>'kind' = 'live'
+                    AND (part.origin->>'seq')::bigint = ${documentYjsUpdates.id}
+                    AND part.update = ${documentYjsUpdates.updateData})`,
+            ),
+          );
         }
 
         return { updatesFolded: foldRows.length };
@@ -1045,17 +1024,11 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
 }
 
 export function createDrizzleCollabPersistence(db: JournalDb): DrizzleCollabPersistence {
-  let liveTrailProjector: LiveTrailProjector | undefined;
-  const journal = createDrizzleJournal(db, {
-    liveTrailProjector: (input) => liveTrailProjector?.(input) ?? Promise.resolve(),
-  });
+  const journal = createDrizzleJournal(db);
   return {
     journal,
     seeds: createServerInitialDocumentSeeds(db),
     store: createDrizzleCollabFacadeStore(db),
-    setLiveTrailProjector(projector) {
-      liveTrailProjector = projector;
-    },
   };
 }
 
@@ -1072,7 +1045,6 @@ async function captureLiveEdits(
   states: Map<string, Uint8Array>,
   entries: readonly import("@meridian/agent-edit/integration").JournalBatchAppendEntry[],
   rows: readonly { id: number }[],
-  liveTrailProjector?: LiveTrailProjector,
 ): Promise<void> {
   for (const [docId, state] of states) {
     const doc = createCollabYDoc({ gc: false }),
@@ -1081,16 +1053,12 @@ async function captureLiveEdits(
         {
           mutation: NonNullable<(typeof entries)[number]["mutation"]>;
           receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
-          beforeState?: Uint8Array;
-          afterState?: Uint8Array;
         }
       >();
     try {
       Y.applyUpdate(doc, state);
       for (const [i, entry] of entries.entries()) {
         if (entry.docId !== docId) continue;
-        const projected = entry.mutation?.mode === "live" && entry.mutation.actorKind === "agent";
-        const beforeEntryState = projected ? Y.encodeStateAsUpdate(doc) : undefined;
         const receipts = captureReceiptRows(
           doc,
           (entry.mutation?.editParts ?? [entry.update]).map((update) => ({
@@ -1103,14 +1071,12 @@ async function captureLiveEdits(
           group = groups.get(key) ?? {
             mutation: entry.mutation,
             receipts: [],
-            beforeState: beforeEntryState,
           };
         group.receipts.push(...receipts);
-        if (projected) group.afterState = Y.encodeStateAsUpdate(doc);
         groups.set(key, group);
       }
-      for (const { mutation, receipts, beforeState, afterState } of groups.values()) {
-        const receiptId = await recordDocumentEdit(db, {
+      for (const { mutation, receipts } of groups.values()) {
+        await recordDocumentEdit(db, {
           documentId: asDocumentId(docId),
           threadId: asThreadId(mutation.threadId),
           turnId: asOptionalTurnId(mutation.turnId ?? undefined),
@@ -1125,15 +1091,6 @@ async function captureLiveEdits(
             origin: receipts[i].origin,
           })),
         });
-        if (mutation.mode === "live" && beforeState && afterState && liveTrailProjector) {
-          await liveTrailProjector({
-            documentId: docId,
-            beforeState,
-            afterState,
-            mutation,
-            receiptId,
-          });
-        }
       }
     } finally {
       doc.destroy();

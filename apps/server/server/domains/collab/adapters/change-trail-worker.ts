@@ -2,6 +2,7 @@
 import type { Database } from "@meridian/database";
 import type { EventJournalWriter } from "../../threads/ports/index.js";
 import type { ThreadEventHub } from "../../threads/thread-event-hub.js";
+import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./drizzle-change-trail-aggregate.js";
 import { createDrizzleChangeTrailDispatcher } from "./drizzle-change-trail-dispatcher.js";
 
@@ -9,10 +10,11 @@ export type ChangeTrailWorker = { drain(): Promise<number> };
 
 export function createChangeTrailWorker(input: {
   db: Database;
+  links: DocumentLinkScopes;
   journalWriter: EventJournalWriter;
   eventHub: Pick<ThreadEventHub, "invalidateCommittedJournal">;
 }): ChangeTrailWorker {
-  const aggregate = createDrizzleChangeTrailAggregateWriter(input.db);
+  const aggregate = createDrizzleChangeTrailAggregateWriter(input.db, input.links);
   const dispatcher = createDrizzleChangeTrailDispatcher(input);
   return {
     async drain() {

@@ -782,12 +782,14 @@ describe("durable document derivations", () => {
     expect
       .soft(await admission)
       .toEqual({ ok: false, error: { code: "stale_generation", documentId } });
+    const checkpoints = await db
+      .select()
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.documentId, documentId));
+    expect(checkpoints).toHaveLength(3);
     expect(
-      await db
-        .select()
-        .from(documentYjsCheckpoints)
-        .where(eq(documentYjsCheckpoints.documentId, documentId)),
-    ).toHaveLength(2);
+      checkpoints.some((checkpoint) => checkpoint.reason === "queued explicit checkpoint"),
+    ).toBe(false);
     await service.derive(documentId);
     expect(await projection()).toBe("Before");
     room.destroy();

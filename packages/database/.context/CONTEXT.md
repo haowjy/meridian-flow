@@ -151,7 +151,7 @@ The change-trail signal triggers on `draft_write_journal`, `document_edits`
 and `document_edit_parts` fire inside a writer keystroke's draft row lock,
 one signal-trigger path per inserted row in those tables, so their cost is that writer's save latency and every other
 writer's wait on the draft. `change_trail_owners` is defined only in migrations
-(the current body is `0076_atomic_apply_trail.sql`, not `src/functions/`):
+(the current body is `0085_tree_change_history.sql`, not `src/functions/`):
 a replacement keeps `SET jit = off` (its recursive CTE's unbounded estimate
 otherwise makes PostgreSQL compile LLVM code on every call, 15 ms empty and
 hundreds once the tables grow), its primary-key journal lookup and its early
@@ -170,8 +170,10 @@ preference.
 
 `document_yjs_heads.latest_checkpoint_id` is a Drizzle FK with `ON DELETE SET
 NULL`. Compaction retires update prefixes through the generation-local
-`retired_through_seq`; checkpoints survive until document cascade except for
-the initial seed. Lazy checkpoint cuts validate their captured suffix floor
+`retired_through_seq`; checkpoints survive until document cascade, including the empty genesis a live
+receipt can name. A live receipt origin pins its source checkpoint. Compaction
+retains transport rows without immutable receipt bytes so historical cuts remain
+reconstructable. Lazy checkpoint cuts validate their captured suffix floor
 against `retired_through_seq` after fetching inputs and again under the
 persistence lock; generation replacement resets it. Schema versions are packed
 only inside Drizzle adapters and must use the shared packer (no second literal);

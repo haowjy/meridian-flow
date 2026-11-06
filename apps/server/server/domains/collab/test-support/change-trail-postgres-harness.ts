@@ -398,6 +398,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const deliveredEvents: unknown[] = [];
   const trailDelivery = createChangeTrailWorker({
     db,
+    links,
     journalWriter: {
       async appendEvent(_threadId: string, event: unknown) {
         deliveredEvents.push(event);

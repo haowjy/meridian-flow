@@ -19,16 +19,14 @@ import type {
   ChangeTrailPersistence,
   CommittedChangeTrailProjection,
 } from "../domain/ports/change-trail-persistence.js";
+import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
+import { canonicalTrailOwners, createDrizzleTrailProjection } from "./drizzle-trail-projection.js";
 
 export type ChangeTrailAggregateWriter = ChangeTrailPersistence & {
   reconcileTerminalOwners(): Promise<void>;
 };
 
-import {
-  canonicalChangeKey,
-  type NormalizedTrail,
-  type TrailChangeV1,
-} from "../domain/trail-read-kernel.js";
+import type { NormalizedTrail, TrailChangeV1 } from "../domain/trail-read-kernel.js";
 import { wordDeltaBetweenHashlines } from "../domain/word-count.js";
 
 function trailWordDelta(changes: readonly TrailChangeV1[]) {
@@ -60,41 +58,11 @@ export function trailIdForOwner(owner: NormalizedTrail["owner"]): string {
   );
 }
 
-export function mergeTrailChanges(
-  existing: readonly TrailChangeV1[],
-  incoming: readonly TrailChangeV1[],
-): TrailChangeV1[] {
-  const folded = new Map<string, TrailChangeV1>();
-  const ordered = [
-    ...[...existing].sort((a, b) => a.ordinal - b.ordinal),
-    ...[...incoming].sort((a, b) => a.ordinal - b.ordinal),
-  ];
-  for (const change of ordered) {
-    const key = canonicalChangeKey(change);
-    const prior = folded.get(key);
-    if (!prior) {
-      folded.set(key, change);
-      continue;
-    }
-    const combined: TrailChangeV1 = {
-      ...change,
-      changeId: prior.changeId,
-      beforeBlockIdentity: prior.beforeBlockIdentity,
-      beforeText: prior.beforeText,
-      kind:
-        prior.beforeText === null
-          ? "insert"
-          : change.afterTextAtReceipt === null
-            ? "delete"
-            : "modify",
-    };
-    if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(key);
-    else folded.set(key, combined);
-  }
-  return [...folded.values()].map((change, ordinal) => ({ ...change, ordinal }));
-}
-
-export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
+export function createDrizzleChangeTrailAggregateWriter(
+  db: Database,
+  links?: DocumentLinkScopes,
+): ChangeTrailAggregateWriter {
+  const project = createDrizzleTrailProjection(db, links);
   let cursor: { thread_id: string; turn_key: string } | undefined;
   const writer: ChangeTrailAggregateWriter = {
     async record(input) {
@@ -139,10 +107,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             })
             .from(changeTrailDocumentDetails)
             .where(eq(changeTrailDocumentDetails.trailId, trailId));
-          const persistedChanges = existingDetails.flatMap(
-            (detail) => detail.changes as TrailChangeV1[],
-          );
-          const changes = mergeTrailChanges(persistedChanges, trail.changes);
+          const changes = trail.changes;
 
           const pushIds = [
             ...new Set(
@@ -284,173 +249,184 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       });
     },
     async reconcileTerminalOwners() {
-      cursor = await reconcileTerminalOwners(db, cursor);
+      const result = await reconcileTerminalOwners(db, writer, project, cursor);
+      cursor = result.cursor;
+      if (result.failures.length)
+        throw new AggregateError(result.failures, "Change trail projection failed");
     },
   };
   return writer;
 }
 
-/** Reconciles one durable owner cut, retaining an observable settling version. */
 async function reconcileTerminalOwners(
   db: Database,
+  writer: ChangeTrailAggregateWriter,
+  project: ReturnType<typeof createDrizzleTrailProjection>,
   cursor?: { thread_id: string; turn_key: string },
 ) {
-  return runInRootDrizzleTransaction(db, async () => {
-    const tx = currentDrizzleDb(db);
-    const page = (after: typeof cursor) =>
-      tx.execute(sql`
-      SELECT * FROM (
-        SELECT shell.id, owner.thread_id, owner.id AS turn_key, owner.id AS turn_id
-        FROM turns owner LEFT JOIN change_trail_shells shell ON shell.turn_id = owner.id
-          AND shell.thread_id = owner.thread_id AND shell.owner_kind = 'turn'
-        WHERE (shell.state <> 'settled' OR EXISTS (
-          SELECT 1 FROM change_trail_dirty_log signal
-          WHERE signal.thread_id = owner.thread_id AND signal.turn_id = owner.id
-        )) AND (shell.id IS NOT NULL OR owner.status IN ('complete', 'cancelled', 'error'))
-        UNION
-        SELECT shell.id, candidates.thread_id, '00000000-0000-0000-0000-000000000000'::uuid AS turn_key, NULL::uuid AS turn_id
-        FROM (
-          SELECT thread_id FROM change_trail_dirty_log WHERE turn_id IS NULL
-          UNION SELECT thread_id FROM change_trail_shells WHERE owner_kind = 'shared' AND state <> 'settled'
-        ) candidates LEFT JOIN change_trail_shells shell
-          ON shell.thread_id = candidates.thread_id AND shell.owner_kind = 'shared'
-      ) candidates
-      ${after ? sql`WHERE (thread_id, turn_key) > (${after.thread_id}::uuid, ${after.turn_key}::uuid)` : sql``}
-      ORDER BY thread_id, turn_key LIMIT 100
-    `);
-    let result = await page(cursor);
-    if (result.length === 0 && cursor) result = await page(undefined);
-    const owners = (
-      result as unknown as Array<{
-        id: string | null;
-        thread_id: string;
-        turn_id: string | null;
-        turn_key: string;
-      }>
-    ).map((row) => ({
-      ...row,
-      id:
-        row.id ??
-        trailIdForOwner(
-          row.turn_id
-            ? {
-                kind: "turn",
-                threadId: row.thread_id,
-                turnId: row.turn_id,
-              }
-            : { kind: "shared", threadId: row.thread_id, turnId: null },
+  const page = (after: typeof cursor) =>
+    db.execute<{ thread_id: string; turn_id: string | null; turn_key: string }>(sql`
+    SELECT thread_id, turn_id, coalesce(turn_id, '00000000-0000-0000-0000-000000000000'::uuid) AS turn_key FROM (
+      SELECT thread_id, turn_id FROM change_trail_dirty_log
+      UNION SELECT thread_id, turn_id FROM change_trail_shells WHERE state <> 'settled'
+      UNION SELECT thread_id, id FROM turns WHERE status IN ('complete','cancelled','error') AND NOT EXISTS (
+        SELECT 1 FROM change_trail_shells shell WHERE shell.turn_id = turns.id AND shell.thread_id = turns.thread_id
+      ) AND EXISTS (SELECT 1 FROM threads WHERE threads.id = turns.thread_id AND threads.kind = 'primary')
+    ) candidates
+    ${after ? sql`WHERE (thread_id, coalesce(turn_id, '00000000-0000-0000-0000-000000000000'::uuid)) > (${after.thread_id}::uuid, ${after.turn_key}::uuid)` : sql``}
+    ORDER BY thread_id, turn_key LIMIT 100
+  `);
+  let rows = await page(cursor);
+  if (!rows.length && cursor) rows = await page(undefined);
+  const canonical = await canonicalTrailOwners(
+    db,
+    rows.map((row) => ({ threadId: row.thread_id, turnId: row.turn_id })),
+  );
+  const grouped = new Map<
+    string,
+    { owner: NormalizedTrail["owner"]; signals: Array<(typeof rows)[number]> }
+  >();
+  for (const [index, row] of rows.entries()) {
+    const owner = canonical[index];
+    const [existing] = await db
+      .select({ id: changeTrailShells.id })
+      .from(changeTrailShells)
+      .where(
+        and(
+          eq(changeTrailShells.threadId, owner.threadId as ThreadId),
+          owner.kind === "turn"
+            ? eq(changeTrailShells.turnId, owner.turnId as TurnId)
+            : eq(changeTrailShells.ownerKind, "shared"),
         ),
-    }));
-    if (owners.length === 0) return undefined;
-    const ids = owners.map((owner) => owner.id).sort();
-    for (const id of ids) await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`);
-    const newTurns = owners.filter((owner) => owner.turn_id);
-    if (newTurns.length)
-      await tx
-        .insert(changeTrailShells)
-        .values(
-          newTurns.map((owner) => ({
-            id: owner.id,
-            threadId: owner.thread_id as ThreadId,
-            turnId: owner.turn_id as TurnId,
-            ownerKind: "turn" as const,
-            changeCount: 0,
-            documentCount: 0,
-          })),
-        )
-        .onConflictDoNothing();
-    // DELETE and readiness share a snapshot. Later commits, even lower sequences,
-    // remain signals; rollback restores consumption along with shell/outbox writes.
-    const cuts = await tx.execute(sql`
-      WITH consumed AS (
-        DELETE FROM change_trail_dirty_log signal WHERE ${sql.join(
-          owners.map(
-            (owner) =>
-              sql`(signal.thread_id = ${owner.thread_id}::uuid AND signal.turn_id IS NOT DISTINCT FROM ${owner.turn_id}::uuid)`,
-          ),
-          sql` OR `,
-        )}
-        RETURNING thread_id, turn_id, seq
-      )
-      SELECT shell.*,
-        EXISTS (SELECT 1 FROM consumed WHERE consumed.thread_id = shell.thread_id
-          AND consumed.turn_id IS NOT DISTINCT FROM shell.turn_id) AS dirty,
-        CASE WHEN shell.owner_kind = 'turn' THEN owner.status IN ('complete', 'cancelled', 'error')
-          ELSE NOT EXISTS (SELECT 1 FROM turns WHERE turns.thread_id = shell.thread_id
-            AND turns.status NOT IN ('complete', 'cancelled', 'error')) END AS terminal,
-        NOT EXISTS (
-          SELECT 1 FROM draft_write_journal journal
-          CROSS JOIN LATERAL change_trail_owners('{}', ARRAY[journal.id]) affected
-          WHERE journal.status = 'rollback_pending' AND affected.thread_id = shell.thread_id
-            AND affected.turn_id IS NOT DISTINCT FROM shell.turn_id
-        ) AS ready
-      FROM change_trail_shells shell JOIN threads thread ON thread.id = shell.thread_id
-      LEFT JOIN turns owner ON owner.id = shell.turn_id
-      WHERE shell.id IN (${sql.join(
-        ids.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
-      ORDER BY shell.id
-    `);
-    for (const cut of cuts as unknown as Array<{
-      id: string;
-      thread_id: ThreadId;
-      state: "building" | "settling" | "settled";
-      version: number;
-      dirty: boolean;
-      terminal: boolean;
-      ready: boolean;
-      change_count: number;
-      document_count: number;
-      documents: Array<{ documentId: string; title: string }>;
-      words_added: number | null;
-      words_removed: number | null;
-    }>) {
-      let state = cut.state;
-      let version = cut.version;
-      const transition = async (next: typeof state) => {
-        state = next;
-        version += 1;
-        const settled = next === "settled";
-        await tx
-          .update(changeTrailShells)
-          .set({
-            state,
-            version,
-            settledAt: settled ? new Date() : null,
-            updatedAt: new Date(),
-          })
-          .where(eq(changeTrailShells.id, cut.id));
-        const eventKind = settled ? ("settled" as const) : ("updated" as const);
-        await tx
-          .insert(changeTrailDeliveryOutbox)
-          .values({
-            eventId: deterministicUuid(`change-trail-event:${cut.id}:${version}:${eventKind}`),
-            threadId: cut.thread_id,
-            trailId: cut.id,
-            version,
-            eventKind,
-            changeCount: cut.change_count,
-            documentCount: cut.document_count,
-            ...(settled
-              ? {
-                  documents: cut.documents,
-                  wordsAdded: cut.words_added,
-                  wordsRemoved: cut.words_removed,
-                }
-              : {}),
-          })
-          .onConflictDoNothing();
-      };
-      if (state === "settled" && cut.dirty) {
-        await transition("building");
-      }
-      if (!cut.terminal) continue;
-      // Never collapse building -> settling -> settled into one polling pass.
-      if (state === "building") await transition("settling");
-      else if (state === "settling" && cut.ready) await transition("settled");
+      );
+    const id = existing?.id ?? trailIdForOwner(owner);
+    const group = grouped.get(id) ?? { owner, signals: [] };
+    group.signals.push(row);
+    grouped.set(id, group);
+  }
+  const failures: unknown[] = [];
+  for (const [id, group] of [...grouped].sort(([left], [right]) => left.localeCompare(right))) {
+    try {
+      await runInRootDrizzleTransaction(
+        db,
+        async () => {
+          const tx = currentDrizzleDb(db);
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`);
+          const consumed = await tx.execute(sql`
+          DELETE FROM change_trail_dirty_log signal WHERE ${sql.join(
+            group.signals.map(
+              (row) =>
+                sql`(signal.thread_id = ${row.thread_id}::uuid AND signal.turn_id IS NOT DISTINCT FROM ${row.turn_id}::uuid)`,
+            ),
+            sql` OR `,
+          )} RETURNING seq
+        `);
+          let [shell] = await tx
+            .select()
+            .from(changeTrailShells)
+            .where(eq(changeTrailShells.id, id));
+          if (consumed.length) {
+            const projection = await project(group.owner);
+            const incoming = projection.trails[0];
+            const details = shell
+              ? await tx
+                  .select()
+                  .from(changeTrailDocumentDetails)
+                  .where(eq(changeTrailDocumentDetails.trailId, id))
+              : [];
+            const existingChanges = details.flatMap((detail) => detail.changes as TrailChangeV1[]);
+            if (incoming.changes.length || existingChanges.length) {
+              await writer.record(projection);
+              [shell] = await tx
+                .select()
+                .from(changeTrailShells)
+                .where(eq(changeTrailShells.id, id));
+            }
+          }
+          if (!shell && group.owner.kind === "turn") {
+            [shell] = await tx
+              .insert(changeTrailShells)
+              .values({
+                id,
+                threadId: group.owner.threadId as ThreadId,
+                turnId: group.owner.turnId as TurnId,
+                ownerKind: "turn",
+                changeCount: 0,
+                documentCount: 0,
+              })
+              .returning();
+          }
+          if (!shell) return;
+          const readiness = await tx.execute<{ terminal: boolean }>(sql`
+            SELECT CASE WHEN ${group.owner.turnId}::uuid IS NOT NULL THEN EXISTS (
+              SELECT 1 FROM turns WHERE id = ${group.owner.turnId}::uuid AND status IN ('complete','cancelled','error')
+            ) ELSE NOT EXISTS (
+              SELECT 1 FROM turns WHERE thread_id = ${group.owner.threadId}::uuid AND status NOT IN ('complete','cancelled','error')
+            ) END AS terminal
+          `);
+          const pending = await tx.execute<{ thread_id: string; turn_id: string | null }>(sql`
+            SELECT DISTINCT affected.thread_id,affected.turn_id FROM draft_write_journal journal
+            CROSS JOIN LATERAL change_trail_owners('{}', ARRAY[journal.id]) affected
+            WHERE journal.status = 'rollback_pending'
+          `);
+          const pendingOwners = await canonicalTrailOwners(
+            db,
+            pending.map((row) => ({ threadId: row.thread_id, turnId: row.turn_id })),
+          );
+          const ready = !pendingOwners.some(
+            (owner) => trailIdForOwner(owner) === trailIdForOwner(group.owner),
+          );
+          let state = shell.state;
+          let version = shell.version;
+          const transition = async (next: typeof state) => {
+            state = next;
+            version += 1;
+            const settled = next === "settled";
+            await tx
+              .update(changeTrailShells)
+              .set({
+                state,
+                version,
+                settledAt: settled ? new Date() : null,
+                updatedAt: new Date(),
+              })
+              .where(eq(changeTrailShells.id, id));
+            const eventKind = settled ? ("settled" as const) : ("updated" as const);
+            await tx
+              .insert(changeTrailDeliveryOutbox)
+              .values({
+                eventId: deterministicUuid(`change-trail-event:${id}:${version}:${eventKind}`),
+                threadId: shell.threadId,
+                trailId: id,
+                version,
+                eventKind,
+                changeCount: shell.changeCount,
+                documentCount: shell.documentCount,
+                ...(settled
+                  ? {
+                      documents: shell.documents,
+                      wordsAdded: shell.wordsAdded,
+                      wordsRemoved: shell.wordsRemoved,
+                    }
+                  : {}),
+              })
+              .onConflictDoNothing();
+          };
+          if (state === "settled" && consumed.length) await transition("building");
+          if (!readiness[0].terminal) return;
+          if (state === "building") await transition("settling");
+          else if (state === "settling" && ready) await transition("settled");
+        },
+        { isolationLevel: "repeatable read" },
+      );
+    } catch (error) {
+      failures.push(error);
     }
-    const last = owners.at(-1);
-    return last ? { thread_id: last.thread_id, turn_key: last.turn_key } : undefined;
-  });
+  }
+  // Each owner has already been attempted; a corrupt history cannot starve its neighbors.
+  const last = rows.at(-1);
+  return {
+    cursor: last ? { thread_id: last.thread_id, turn_key: last.turn_key } : undefined,
+    failures,
+  };
 }

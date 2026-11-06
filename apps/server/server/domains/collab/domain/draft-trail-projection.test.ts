@@ -86,11 +86,6 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
       },
     ],
     receiptId: "receipt-multi-shift",
-    ownersByBlock: new Map([
-      [alphaId, [null]],
-      [bravoId, [null]],
-      [charlieId, [null]],
-    ]),
     before: [
       { hash: alphaId, serialized: "Alpha.", ...getBlockItemId(alpha) },
       { hash: bravoId, serialized: "Bravo.", ...getBlockItemId(bravo) },
@@ -189,11 +184,6 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
       },
     ],
     receiptId: "receipt-relocation-fan-in",
-    ownersByBlock: new Map([
-      [alphaId, [null]],
-      [bravoId, [null]],
-      [charlieId, [null]],
-    ]),
     before: [
       { hash: alphaId, serialized: "Alpha.", ...getBlockItemId(alpha) },
       { hash: bravoId, serialized: "Bravo.", ...getBlockItemId(bravo) },
@@ -267,7 +257,6 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
       },
     ],
     receiptId: "receipt-hash-collision",
-    ownersByBlock: new Map([[collidingHash, [null]]]),
     before: [
       {
         hash: collidingHash,
