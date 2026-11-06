@@ -1,5 +1,3 @@
-import { t } from "@lingui/core/macro";
-
 /** How a host presents one editable document; everything else about the host is shared. */
 
 export type DocumentPresentation = {
@@ -8,10 +6,10 @@ export type DocumentPresentation = {
    * different question (the Work's scope is frozen) and is checked against the room's access.
    */
   editable: boolean;
+  /** A review body that takes no typing: a tap on the phone's selects a change. */
+  reviewReadOnly: boolean;
   /** Remote carets and selections inside the editor. */
   collaborationDecorations: boolean;
-  /** Overrides the editor's accessible name; read at render so it follows the active locale. */
-  ariaLabel?: () => string;
   /**
    * When the live editor stands down its presence: from the click that requests a review
    * (the intent), or only once the review's room has resolved.
@@ -23,16 +21,16 @@ export type DocumentPresentation = {
 
 export const DESKTOP_DOCUMENT_PRESENTATION: DocumentPresentation = {
   editable: true,
+  reviewReadOnly: false,
   collaborationDecorations: true,
   presenceSuspendsOn: "resolved-review",
   bindingOwner: "desktop-document-host",
 };
 
-/** The phone's live document is read-only: a tap selects a change and never raises the keyboard. */
 export const PHONE_DOCUMENT_PRESENTATION: DocumentPresentation = {
-  editable: false,
+  editable: true,
+  reviewReadOnly: true,
   collaborationDecorations: false,
-  ariaLabel: () => t`Read-only live document`,
   presenceSuspendsOn: "requested-review",
   bindingOwner: "mobile-project-document-host",
 };

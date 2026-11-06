@@ -270,7 +270,7 @@ function TabChipFrame({
       className={cn(
         // No h-full: items-stretch sizes the chip so the active tab's mt-1
         // subtracts from its height instead of overflowing the strip.
-        "group relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3",
+        "group relative flex w-40 shrink-0 items-center gap-1.5 px-3",
         active
           ? "tab-chip-active text-foreground"
           : "tab-chip-inactive text-muted-foreground hover:text-foreground",

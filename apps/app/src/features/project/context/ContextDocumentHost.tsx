@@ -206,10 +206,10 @@ export function ContextDocumentHost({
                 active={active && shown}
                 editable={editable}
                 showToolbar={editable}
+                reviewReadOnly={presentation.reviewReadOnly}
                 detached={tab.kind === "new"}
                 localContentReady={localContentReady}
                 schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
-                ariaLabel={presentation.ariaLabel?.()}
                 showCollaborationDecorations={presentation.collaborationDecorations}
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.

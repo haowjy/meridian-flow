@@ -1,8 +1,7 @@
 /**
  * MobileDocumentHost — phone document/viewer host with route-owned binding.
  *
- * The live document is read-only on a phone, but its TipTap/Yjs binding stays
- * alive so AI edits stream into it. While the document is under inline review
+ * The writer types in the live document on a phone as on desktop. While the document is under inline review
  * `MobileDocumentReview` wraps the editor with the review's header, bar and
  * change list. This
  * host is the mobile binding owner: entering a document opens and binds exactly
