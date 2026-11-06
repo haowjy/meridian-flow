@@ -17,7 +17,7 @@ complete the port; the orchestrator persists a cancelled call's result when
 `shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable usage.
 Where the routed model is known, `attempt-stream.ts` calls `resolveCall()`
 (`domain/resolve-call.ts`) once and hands the adapter a `ResolvedCall`:
-`{ cacheTtlMinutes, longCacheWrites, reasoning: "default" | "off" | { effort } }`. Adapters
+`{ cacheTtlSeconds, longCacheWrites, reasoning: "default" | "off" | { effort } }`. Adapters
 only map it to wire fields and reject at construction (`assertCacheTtlsOnWire`) a model
 whose cache lifetimes they cannot send. A registry maps
 model IDs to provider adapters and is the single source for model context,
@@ -90,11 +90,11 @@ provider advertisement is not argument authority.
 A provider lists offerings: `{ model, pricing, promptCache? }`. What an endpoint caches
 and charges belongs to the provider serving the model, not to the model (DeepSeek uses
 the Anthropic adapter and caches differently). `ModelInfo` stays flat and carries the
-offering's `promptCache: { kind, shortTtlMinutes, longTtlMinutes }`. `null` means the provider
+offering's `promptCache: { kind, shortTtlSeconds, longTtlSeconds }`. `null` means the provider
 documents no lifetime. An offering's `promptCache` is a partial descriptor merged field by
-field over the defaults (explicit, `DEFAULT_SUBAGENT_PROMPT_CACHE_TTL` 5,
-`DEFAULT_PRIMARY_PROMPT_CACHE_TTL` 60), so an offering restates only what differs and an
-explicit `null` survives the merge. Lifetimes are the provider's real values in minutes; code
+field over the defaults (explicit, `DEFAULT_SUBAGENT_PROMPT_CACHE_TTL` 5m,
+`DEFAULT_PRIMARY_PROMPT_CACHE_TTL` 1h), so an offering restates only what differs and an
+explicit `null` survives the merge. Lifetimes are the provider's real values in seconds; code
 that must beat one computes its buffer from them, as `asks/ask-deadline.ts` does. `validateModelRegistry` and
 `ModelInfo` share one resolver. There is no provider-level default.
 

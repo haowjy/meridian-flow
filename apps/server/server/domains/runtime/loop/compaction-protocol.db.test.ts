@@ -1948,7 +1948,7 @@ else
         displayName: "Fixture",
         contextWindow: 6_000,
         maxOutputTokens: 100,
-        promptCache: { kind: "automatic" as const, shortTtlMinutes: 1, longTtlMinutes: 1 },
+        promptCache: { kind: "automatic" as const, shortTtlSeconds: 60, longTtlSeconds: 60 },
         reasoning: { efforts: ["low", "medium", "high", "max"] as const },
         capabilities: new Set<import("../gateway/index.js").Capability>(),
       };

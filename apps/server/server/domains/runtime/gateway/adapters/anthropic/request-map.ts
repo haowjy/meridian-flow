@@ -54,17 +54,17 @@ import { anthropicToolSchema } from "./tool-schema.js";
 
 type CacheControl = Anthropic.Messages.CacheControlEphemeral;
 
-/** The `cache_control` each supported lifetime, in minutes, is sent as. */
+/** The `cache_control` each supported lifetime, in seconds, is sent as. */
 const CACHE_CONTROL_BY_TTL = new Map<number, CacheControl>([
-  [5, { type: "ephemeral", ttl: "5m" }],
-  [60, { type: "ephemeral", ttl: "1h" }],
+  [5 * 60, { type: "ephemeral", ttl: "5m" }],
+  [60 * 60, { type: "ephemeral", ttl: "1h" }],
 ]);
 
 /** Reject, at gateway creation, a model whose explicit cache lifetimes this API cannot be sent. */
 export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
-  const { kind, shortTtlMinutes, longTtlMinutes } = model.promptCache;
+  const { kind, shortTtlSeconds, longTtlSeconds } = model.promptCache;
   if (kind !== "explicit") return;
-  for (const ttl of [shortTtlMinutes, longTtlMinutes]) {
+  for (const ttl of [shortTtlSeconds, longTtlSeconds]) {
     if (ttl === null || !CACHE_CONTROL_BY_TTL.has(ttl)) {
       throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
     }
@@ -380,8 +380,8 @@ export function toAnthropicMessageParams(
 ): Anthropic.Messages.MessageCreateParamsStreaming {
   // Only an explicit-cache model gets cache_control: DeepSeek, on this adapter, caches on its own.
   const cacheControl =
-    model.promptCache.kind === "explicit" && call.cacheTtlMinutes !== null
-      ? CACHE_CONTROL_BY_TTL.get(call.cacheTtlMinutes)
+    model.promptCache.kind === "explicit" && call.cacheTtlSeconds !== null
+      ? CACHE_CONTROL_BY_TTL.get(call.cacheTtlSeconds)
       : undefined;
   const tools = mapTools(request.tools, model.projectToolSchema === true);
   const messages = mergeConsecutiveSameRole(

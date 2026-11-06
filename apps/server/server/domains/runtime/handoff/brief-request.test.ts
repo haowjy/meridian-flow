@@ -22,7 +22,7 @@ const model: ModelInfo = {
   displayName: "Writer",
   contextWindow: 100_000,
   maxOutputTokens: 4_096,
-  promptCache: { kind: "explicit", shortTtlMinutes: 1, longTtlMinutes: 1 },
+  promptCache: { kind: "explicit", shortTtlSeconds: 60, longTtlSeconds: 60 },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };

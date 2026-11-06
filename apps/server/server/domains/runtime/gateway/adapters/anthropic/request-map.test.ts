@@ -18,7 +18,7 @@ function toParams(
   request: GenerateRequest,
   model: { id: string; maxOutputTokens: number },
   providerId: string,
-  cacheTtlMinutes: number | null = null,
+  cacheTtlSeconds: number | null = null,
 ) {
   const reasoning =
     providerId === "deepseek"
@@ -37,12 +37,12 @@ function toParams(
       reasoning,
       promptCache: {
         kind: providerId === "deepseek" ? ("automatic" as const) : ("explicit" as const),
-        shortTtlMinutes: cacheTtlMinutes,
-        longTtlMinutes: cacheTtlMinutes,
+        shortTtlSeconds: cacheTtlSeconds,
+        longTtlSeconds: cacheTtlSeconds,
       },
     },
     {
-      cacheTtlMinutes,
+      cacheTtlSeconds,
       longCacheWrites: false,
       reasoning: resolveReasoning(request.reasoning, reasoning),
     },
@@ -190,7 +190,7 @@ describe("Anthropic message alternation", () => {
       },
       { id: "claude-sonnet-4-5", maxOutputTokens: 256 },
       "anthropic",
-      60,
+      60 * 60,
     );
     expect(params.messages.map((message) => message.role)).toEqual(["assistant", "user"]);
     expect(params.messages[1]).toMatchObject({
@@ -226,7 +226,7 @@ describe("Anthropic prompt-cache marks", () => {
       },
       sonnet,
       "anthropic",
-      60,
+      60 * 60,
     );
     expect(params.system).toEqual([
       { type: "text", text: "You are Writer.", cache_control: EPHEMERAL_1H },
@@ -265,7 +265,7 @@ describe("Anthropic prompt-cache marks", () => {
       },
       sonnet,
       "anthropic",
-      60,
+      60 * 60,
     );
     expect(blocksOf(params.messages[0].content).map((b: { type: string }) => b.type)).toEqual([
       "text",

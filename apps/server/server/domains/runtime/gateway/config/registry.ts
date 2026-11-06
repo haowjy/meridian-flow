@@ -99,22 +99,22 @@ const GEMINI_PRICING_SOURCE = "https://ai.google.dev/gemini-api/docs/pricing (pi
 // request takes the shortest option of at least 1 hour, which is 12h.
 const OPENAI_PROMPT_CACHE: PromptCacheDescriptor = {
   kind: "automatic",
-  shortTtlMinutes: 30,
-  longTtlMinutes: 12 * 60,
+  shortTtlSeconds: 30 * 60,
+  longTtlSeconds: 12 * 60 * 60,
 };
 // DeepSeek documents the cache as cleared "usually within a few hours to a few days". One hour
 // is the lower bound of that and an estimate; Flow sends no cache_control and has no lifetime
 // choice, so both chat kinds get it.
 const DEEPSEEK_PROMPT_CACHE: PromptCacheDescriptor = {
   kind: "automatic",
-  shortTtlMinutes: 60,
-  longTtlMinutes: 60,
+  shortTtlSeconds: 60 * 60,
+  longTtlSeconds: 60 * 60,
 };
 // The Gemini API documents no lifetime for implicit caching, so prediction reads it as cold.
 const GEMINI_PROMPT_CACHE: PromptCacheDescriptor = {
   kind: "automatic",
-  shortTtlMinutes: null,
-  longTtlMinutes: null,
+  shortTtlSeconds: null,
+  longTtlSeconds: null,
 };
 
 // OpenAI bills cache writes by TTL too: 30m at 1.25x input, 12h at 2.5x. Above 272K input
@@ -357,8 +357,8 @@ export const MODEL_REGISTRY: ModelRegistry = {
 function resolvePromptCache({ promptCache }: RegisteredOffering): PromptCacheDescriptor {
   return {
     kind: "explicit",
-    shortTtlMinutes: DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
-    longTtlMinutes: DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
+    shortTtlSeconds: DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
+    longTtlSeconds: DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
     ...promptCache,
   };
 }
@@ -376,18 +376,18 @@ export function validateModelRegistry(registry: ModelRegistry): void {
         `Input pricing tier for ${model.id} must be positive and below its context window`,
       );
     }
-    const { shortTtlMinutes, longTtlMinutes } = resolvePromptCache(offering);
-    if ((shortTtlMinutes === null) !== (longTtlMinutes === null)) {
+    const { shortTtlSeconds, longTtlSeconds } = resolvePromptCache(offering);
+    if ((shortTtlSeconds === null) !== (longTtlSeconds === null)) {
       throw new Error(`Prompt cache lifetimes for ${model.id} must both be set or both be null`);
     }
-    if (shortTtlMinutes !== null && longTtlMinutes !== null) {
-      if (longTtlMinutes < shortTtlMinutes) {
+    if (shortTtlSeconds !== null && longTtlSeconds !== null) {
+      if (longTtlSeconds < shortTtlSeconds) {
         throw new Error(
           `Long prompt cache TTL for ${model.id} must not be shorter than its short TTL`,
         );
       }
       if (
-        longTtlMinutes !== shortTtlMinutes &&
+        longTtlSeconds !== shortTtlSeconds &&
         pricing.cacheWriteUsdPerMillionTokens !== undefined &&
         pricing.cacheWriteLongUsdPerMillionTokens === undefined
       ) {
