@@ -63,18 +63,6 @@ function createCappedReader(
     async readModelProjectionWatermark() {
       return 0n;
     },
-    async listByThread() {
-      return entries;
-    },
-    async listByType() {
-      return [];
-    },
-    async listSince() {
-      return [];
-    },
-    async listByTimeRange() {
-      return [];
-    },
   };
 }
 
@@ -468,6 +456,148 @@ it("projects the spawn source hint live and on journal replay", async () => {
 });
 
 describe("thread event hub complete replay", () => {
+  it("prunes only older finished-reply transport rows", async () => {
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
+    const firstTurn = goldenAssistantTurn("turn-first", THREAD_ID);
+    const secondTurn = goldenAssistantTurn("turn-second", THREAD_ID);
+
+    await journal.appendEvent(THREAD_ID, { type: "turn.created", turn: firstTurn });
+    await journal.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "first" });
+    await journal.appendEvent(THREAD_ID, {
+      type: "subagent.activity",
+      childThreadId: "child-first",
+      activity: { children: [] },
+    });
+    await journal.appendEvent(THREAD_ID, {
+      type: "turn.completed",
+      turn: { ...firstTurn, status: "complete" },
+    });
+    await journal.appendEvent(THREAD_ID, { type: "turn.created", turn: secondTurn });
+    await journal.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "second" });
+    await journal.appendEvent(THREAD_ID, {
+      type: "subagent.activity",
+      childThreadId: "child-second",
+      activity: { children: [] },
+    });
+    await journal.appendEvent(THREAD_ID, {
+      type: "turn.completed",
+      turn: { ...secondTurn, status: "complete" },
+    });
+
+    expect(journal.getEvents(THREAD_ID).map((entry) => [entry.seq, entry.event.type])).toEqual([
+      [1n, "turn.created"],
+      [3n, "subagent.activity"],
+      [4n, "turn.completed"],
+      [5n, "turn.created"],
+      [6n, "stream.delta"],
+      [7n, "subagent.activity"],
+      [8n, "turn.completed"],
+    ]);
+  });
+
+  it("reports a replay gap for a cursor below the retained transport boundary", async () => {
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
+    const firstTurn = goldenAssistantTurn("turn-first-gap", THREAD_ID);
+    const secondTurn = goldenAssistantTurn("turn-second-gap", THREAD_ID);
+    await journal.appendEvent(THREAD_ID, { type: "turn.created", turn: firstTurn });
+    await journal.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "first" });
+    await journal.appendEvent(THREAD_ID, {
+      type: "turn.completed",
+      turn: { ...firstTurn, status: "complete" },
+    });
+    await journal.appendEvent(THREAD_ID, { type: "turn.created", turn: secondTurn });
+    await journal.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "second" });
+    await journal.appendEvent(THREAD_ID, {
+      type: "turn.completed",
+      turn: { ...secondTurn, status: "complete" },
+    });
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: createInMemoryEventJournalReader(journal),
+      eventSink: createNoopEventSink(),
+    });
+
+    await expect(hub.catchup(THREAD_ID, 2_000n)).rejects.toMatchObject({
+      name: "ThreadEventReplayGapError",
+      fromSeq: 2_000n,
+      toSeq: 6_999n,
+    });
+    await expect(hub.catchup(THREAD_ID, 3_000n)).rejects.toMatchObject({
+      name: "ThreadEventReplayGapError",
+      fromSeq: 3_000n,
+    });
+  });
+
+  it("tells a live subscriber when retention deleted rows it never received", async () => {
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
+    const callbacks: Array<() => void | Promise<void>> = [];
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: createInMemoryEventJournalReader(journal),
+      eventSink: createNoopEventSink(),
+      scheduleAfterCommit: (callback) => callbacks.push(callback),
+    });
+    const received: bigint[] = [];
+    let framesLost = 0;
+    await hub.catchupAndSubscribe(
+      THREAD_ID,
+      0n,
+      (entry) => received.push(entry.seq),
+      () => {
+        framesLost += 1;
+      },
+    );
+    const firstTurn = goldenAssistantTurn("turn-lagged-first", THREAD_ID);
+    const secondTurn = goldenAssistantTurn("turn-lagged-second", THREAD_ID);
+    await hub.appendEvent(THREAD_ID, { type: "turn.created", turn: firstTurn });
+    await hub.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "first" });
+    await hub.appendEvent(THREAD_ID, {
+      type: "turn.completed",
+      turn: { ...firstTurn, status: "complete" },
+    });
+    await hub.appendEvent(THREAD_ID, { type: "turn.created", turn: secondTurn });
+    await hub.appendEvent(THREAD_ID, {
+      type: "turn.completed",
+      turn: { ...secondTurn, status: "complete" },
+    });
+
+    await callbacks[0]?.();
+    await hub.catchup(THREAD_ID, await hub.headSeq(THREAD_ID));
+
+    expect(framesLost).toBe(1);
+  });
+
+  it("serves a cursor at the end of the retained boundary row from the hot cache", async () => {
+    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: createInMemoryEventJournalReader(journal),
+      eventSink: createNoopEventSink(),
+    });
+    const received: bigint[] = [];
+    await hub.catchupAndSubscribe(THREAD_ID, 0n, (entry) => received.push(entry.seq));
+    const firstTurn = goldenAssistantTurn("turn-hot-first", THREAD_ID);
+    const secondTurn = goldenAssistantTurn("turn-hot-second", THREAD_ID);
+    await hub.appendEvent(THREAD_ID, { type: "turn.created", turn: firstTurn });
+    await hub.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "first" });
+    await hub.appendEvent(THREAD_ID, {
+      type: "turn.completed",
+      turn: { ...firstTurn, status: "complete" },
+    });
+    const endOfFirstReply = received.at(-1) as bigint;
+    await hub.appendEvent(THREAD_ID, { type: "turn.created", turn: secondTurn });
+    await hub.appendEvent(THREAD_ID, {
+      type: "turn.completed",
+      turn: { ...secondTurn, status: "complete" },
+    });
+
+    const replayed = await hub.catchup(THREAD_ID, endOfFirstReply);
+
+    expect(replayed.map((entry) => entry.seq)).toEqual(
+      received.filter((seq) => seq > endOfFirstReply),
+    );
+  });
+
   it("replays all rows beyond 10k through the captured head", async () => {
     const headJournalSeq = 23_081n;
     const headCursor = headJournalSeq * 1_000n + 999n;

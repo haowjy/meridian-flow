@@ -482,7 +482,7 @@ the live head check, and each draft destination's exact checkpoint rewrite at
 its captured revision. Those captured fences, not a lock of the inverse's own,
 order two inverses of the same edit: the second misses, recaptures and finds
 the edit already reversed (probe `d22-concurrent-undo` in
-[the lock-free probe index](../../../../../../docs/qa/drafts-lock-free-probes.md)). Any moved revision or head unwinds the attempt and
+[the lock-free probe index](qa/drafts-lock-free-probes.md)). Any moved revision or head unwinds the attempt and
 recaptures; after four attempts one more capture is classified without
 writing, so a plan that still applies is a `ReversalConflictError`, never a
 semantic refusal. Historical disposition reads include closed drafts; the

@@ -98,7 +98,11 @@ Development uses a WorkOS staging environment, currently shared with the
 sibling voluma project. Startup guards (`server/lib/startup-guards.ts`) accept a
 `sk_test_` API key only when `APP_ENV=staging`, and production rejects
 placeholder credentials. `pnpm bootstrap` applies schema only; the dev user is
-provisioned on first dev login.
+provisioned on first sign-in. With `DEV_AUTH_BYPASS=1` (local dev only) `resolveUser`
+returns the dev user and startup skips WorkOS validation. The startup plugin's boot
+failure ends a built server's process, because Nitro does not await plugins. Under
+`nitro dev` it does not exit: the plugin runs in a worker thread that Nitro restarts
+without limit, so the worker stays up and the per-request auth rules still refuse.
 
 ## ThreadEventHub
 

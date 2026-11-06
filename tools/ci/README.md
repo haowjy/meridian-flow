@@ -229,3 +229,57 @@ the SQL text. Unmarked findings and missed markers both fail the self-test.
 No-findings examples belong in `allowed.ts`; they protect against false
 positives. Fixtures need not execute or typecheck; the guard parses them as
 source. Run the check and lint after changing fixtures.
+
+## Slop lint
+
+`pnpm check:slop-lint` keeps five common agent mistakes out of new TypeScript:
+
+- an empty `catch` block or a `.catch(() => null | undefined | [] | {} | false)`;
+- a new `biome-ignore` or TypeScript suppression comment;
+- a `D<number>` or `W<number>` decision ID in a comment.
+- a middle dot (`·`) used to separate facts in a string, template text or JSX
+  text. Use layout, weight or muted color in UI, and a sentence or parentheses
+  in text.
+- in a `*.test.ts(x)` file, a fixed real-time wait (`setTimeout(resolve, 50)`,
+  `await sleep(50)`) or an assertion on the wall clock (`expect(elapsed)
+  .toBeLessThan(50)`). These pass or fail with the machine's load. Wait for the
+  event itself or use fake timers; a file that calls `useFakeTimers` is skipped.
+  `setTimeout(resolve, 0)` only yields a tick and isn't a finding, and a timer
+  whose delay is a named constant isn't detected.
+
+The checker uses the TypeScript AST for catch expressions, timing and middle
+dots, and the TypeScript comment scanner for suppressions and decision IDs. The
+first four rules exclude test files and test support/fixture/conformance
+directories, plus generated `.gen.ts`, `.generated.ts`, `dist` and `build`
+paths; the timing rule reads only `*.test.ts(x)` files. Decision IDs inside
+inline code and `@W<number>` handles are not findings.
+
+The committed `tools/ci/slop-lint-baseline.json` records the existing findings
+by source path and trimmed source line. A finding already in the baseline is
+allowed; a new or changed finding fails with the repair to make. A deleted
+finding also makes the check fail until the baseline records the reduction.
+This keeps the check focused on new code without hiding the old debt, and
+prevents the baseline from growing. After removing findings, run:
+
+```sh
+pnpm check:slop-lint -- --update-baseline
+```
+
+The refresh refuses to write when it sees a new finding, so a baseline can
+only shrink. The one exception is a category missing from the file: its first
+refresh records its current findings, so adding a rule doesn't mean fixing all
+of its old cases at once. If an intentional case cannot be rewritten, put a reasoned,
+colocated exception in the source instead of adding it to the baseline:
+
+```ts
+// slop-lint: allow swallowed-error detached cleanup owns its own reporting
+void close().catch(() => undefined);
+```
+
+The category must be `swallowed-error`, `suppression`, `decision-id`,
+`middle-dot`, or `test-timing`; the reason is required, and the checker fails on
+an exception that no longer matches a finding. Every failure says what to do:
+handle or surface the error, fix the type or lint error, delete the decision ID,
+separate facts with spacing, weight or muted color in UI and with a sentence or
+parentheses in text, or wait for the event instead of the clock. A middle-dot
+exception's reason must include `file-detail row`.

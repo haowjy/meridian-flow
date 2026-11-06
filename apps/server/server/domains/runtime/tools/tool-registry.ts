@@ -1,5 +1,5 @@
 /** Name-keyed tool registrations; duplicate names are rejected and only advertised server tools are published. */
-import type { FunctionTool } from "../gateway/index.js";
+import type { Tool } from "../gateway/index.js";
 
 import type { ToolRegistration, ToolRegistry } from "./types.js";
 
@@ -33,7 +33,7 @@ export function createToolRegistry(options: CreateToolRegistryOptions = {}): Too
       addRegistration(registration);
     },
 
-    getDefinitions(): FunctionTool[] {
+    getDefinitions(): Tool[] {
       return [...registrations.values()]
         .filter(
           (registration) =>

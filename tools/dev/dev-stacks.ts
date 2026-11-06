@@ -108,7 +108,7 @@ function main(): void {
 
   const stacks = collectStacks();
   if (stacks.length === 0) {
-    console.log("dev:stacks · no dev stacks running");
+    console.log("dev:stacks: no dev stacks running");
     return;
   }
 

@@ -57,16 +57,18 @@ Prefix warmth is predicted from durable facts: the resolved registry model,
 previous successful assistant response, prompt-epoch bake, complete compaction
 boundaries, image decisions, and cutoff lineage. Summary rows and handoff seeds
 never supply warmth or a token baseline. Cache age uses the previous response's
-request-start time; missing time is cold/unknown. A thread's first request
+request-start time against the TTL the thread kind requests (primary long,
+subagent short); missing time is cold/unknown, and so is a provider that documents
+no lifetime (Gemini). A thread's first request
 predicts cold even when the provider serves shared leading bytes from cache, and
 the first request after a compaction is cold because only an assistant turn's
 response counts as a reusable prefix. A fork routes its cache key to the thread
 that owns its cutoff turn. Prediction columns are non-null so the audited
 summarizer decision always stores one.
 
-`ContentPart.cacheBreakpoint` is provider-neutral intent. The loop marks only
-models with explicit cache descriptors, while adapter TTLs and wire shape live
-in the [gateway context](../gateway/.context/CONTEXT.md).
+The loop places no cache breakpoints. The Anthropic adapter marks the wire
+request itself (system, and the two latest user turns) for explicit-cache
+offerings; see the [gateway context](../gateway/.context/CONTEXT.md).
 
 No Work context explains bare Scratch as the chat lineage's notes, shared by
 forks/subagents at the first-chat handle. Named-Work Scratch remains the

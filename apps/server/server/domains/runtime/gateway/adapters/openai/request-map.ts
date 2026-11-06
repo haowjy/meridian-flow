@@ -21,22 +21,35 @@
  *   explicit breakpoints, so this mapper only forwards `GenerateRequest.
  *   promptCacheKey` as `prompt_cache_key` (a stable per-thread routing hint
  *   that improves cache-affinity — OpenAI's own docs recommend one per
- *   thread/session). The installed `openai` SDK (6.45.0) has no
- *   `prompt_cache_options`/ttl field for the Responses API — only the
- *   documented `prompt_cache_retention: "in_memory" | "24h"`, neither of
- *   which is the owner-chosen 1h default, so retention is left unset
- *   (defers to the account's own default) rather than guessing.
+ *   thread/session). A long retention request adds
+ *   `prompt_cache_options: { ttl: "12h" }`; the short one relies on the 30m
+ *   default.
  */
 import type OpenAI from "openai";
-
 import type {
   ContentPart,
-  FunctionTool,
   GenerateRequest,
   Message,
+  ModelInfo,
+  ResolvedCall,
   Tool,
 } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
+
+/** The `prompt_cache_options.ttl` each supported lifetime, in seconds, is sent as; the 30m default is sent as no parameter. */
+const TTL_WIRE = new Map<number, "12h" | undefined>([
+  [30 * 60, undefined],
+  [12 * 60 * 60, "12h"],
+]);
+
+/** Reject, at gateway creation, a model whose cache lifetimes this API cannot be sent. A null lifetime (unknown) sends nothing. */
+export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
+  for (const ttl of [model.promptCache.shortTtlSeconds, model.promptCache.longTtlSeconds]) {
+    if (ttl !== null && !TTL_WIRE.has(ttl)) {
+      throw new Error(`OpenAI prompt cache TTLs for ${model.id} must be 30m or 12h`);
+    }
+  }
+}
 
 // ── Content parts mapping ─────────────────────────────────────────
 //
@@ -232,8 +245,7 @@ function extractInstructions(messages: Message[]): string | undefined {
 // ── Tool mapping ──────────────────────────────────────────────────
 //
 // Canonical Tool[] → OpenAI Responses Tool[]. Function tools become `function`
-// tools; hosted tools map to web_search_preview, code_interpreter, or
-// file_search with vector_store_ids from providerOptions.
+// tools.
 //
 
 type ResponsesTool = OpenAI.Responses.Tool;
@@ -241,109 +253,30 @@ type ResponsesTool = OpenAI.Responses.Tool;
 function mapTools(tools: Tool[] | undefined): ResponsesTool[] | undefined {
   if (!tools?.length) return undefined;
 
-  const mapped: ResponsesTool[] = [];
-  for (const tool of tools) {
-    if (tool.type === "function") {
-      const ft = tool as FunctionTool;
-      mapped.push({
+  return tools.map(
+    (tool) =>
+      ({
         type: "function",
-        name: ft.name,
-        description: ft.description,
-        parameters: ft.inputSchema,
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
         strict: false,
-      } as any);
-    } else if (tool.type === "hosted") {
-      if (tool.kind === "web_search") {
-        mapped.push({ type: "web_search_preview" } as any);
-      } else if (tool.kind === "code_execution") {
-        mapped.push({ type: "code_interpreter" } as any);
-      } else if (tool.kind === "file_search") {
-        const vectorStoreIds = (tool.providerOptions?.openai?.vectorStoreIds ?? []) as string[];
-        mapped.push({
-          type: "file_search",
-          vector_store_ids: vectorStoreIds,
-        } as any);
-      }
-    }
-  }
-  return mapped.length > 0 ? mapped : undefined;
-}
-
-// ── Tool choice mapping ───────────────────────────────────────────
-//
-// Canonical toolChoice → OpenAI Responses tool_choice. `required` maps to
-// `required` (Responses supports it natively); `auto`/`none`/named tool
-// map directly.
-//
-
-function mapToolChoice(
-  toolChoice: GenerateRequest["toolChoice"],
-): OpenAI.Responses.ToolChoiceOptions | OpenAI.Responses.ToolChoiceFunction | undefined {
-  if (!toolChoice) return undefined;
-  if (toolChoice === "auto") return "auto";
-  if (toolChoice === "none") return "none";
-  if (toolChoice === "required") return "required";
-  if (typeof toolChoice === "object" && "tool" in toolChoice) {
-    return { type: "function", name: toolChoice.tool };
-  }
-  return undefined;
+      }) as ResponsesTool,
+  );
 }
 
 // ── Reasoning config ──────────────────────────────────────────────
 //
 // Canonical reasoning → OpenAI Responses reasoning config.
-// `adaptive` maps to effort=medium + summary=auto. `max` effort is clamped
-// to `high` because the Responses API only supports low/medium/high.
-// The summary field requests auto-summarization of reasoning.
+// `default` sends only summary=auto (auto-summarization of reasoning) and leaves
+// the effort to the model; `off` is the `none` effort, which the models that
+// can disable reasoning accept.
 //
 
-function mapReasoning(
-  reasoning: GenerateRequest["reasoning"],
-):
-  | { effort?: "low" | "medium" | "high" | null; summary?: "auto" | "concise" | "detailed" | null }
-  | undefined {
-  if (!reasoning || reasoning === "disabled") return undefined;
-
-  if (reasoning === "adaptive") {
-    return { effort: "medium", summary: "auto" };
-  }
-
-  const effort = typeof reasoning === "object" ? reasoning.effort : "medium";
-  // OpenAI only supports low/medium/high, not "max"
-  const mappedEffort = effort === "max" ? "high" : effort;
-  return { effort: mappedEffort as "low" | "medium" | "high", summary: "auto" };
-}
-
-// ── Response format mapping ───────────────────────────────────────
-//
-// Canonical responseFormat → OpenAI Responses text config.
-// json → json_object format; json_schema → json_schema format with
-// name/schema/strict. `text` type means no format constraint (undefined).
-//
-
-function mapResponseFormat(
-  format: GenerateRequest["responseFormat"],
-): OpenAI.Responses.ResponseTextConfig | undefined {
-  if (!format || format.type === "text") return undefined;
-
-  if (format.type === "json") {
-    return {
-      format: { type: "json_object" },
-    } as any;
-  }
-
-  if (format.type === "json_schema") {
-    return {
-      format: {
-        type: "json_schema",
-        name: format.name ?? "response",
-        schema: format.schema,
-        strict: format.strict ?? true,
-      },
-    } as any;
-  }
-
-  return undefined;
+function mapReasoning(reasoning: ResolvedCall["reasoning"]): object {
+  if (reasoning === "off") return { effort: "none" };
+  if (reasoning === "default") return { summary: "auto" };
+  return { effort: reasoning.effort, summary: "auto" };
 }
 
 // ── Public: build Responses API params ────────────────────────────
@@ -356,11 +289,13 @@ function mapResponseFormat(
 
 export function toOpenAIResponsesParams(
   request: GenerateRequest,
-  modelId: string,
-  providerId = "openai",
+  model: ModelInfo,
+  call: ResolvedCall,
 ): OpenAI.Responses.ResponseCreateParamsStreaming {
+  const { id: modelId, provider: providerId } = model;
   const instructions = extractInstructions(request.messages);
   const input = flattenAssistantToolCalls(request.messages, providerId, modelId);
+  const cacheTtl = call.cacheTtlSeconds === null ? undefined : TTL_WIRE.get(call.cacheTtlSeconds);
 
   return {
     model: modelId,
@@ -369,16 +304,9 @@ export function toOpenAIResponsesParams(
     include: ["reasoning.encrypted_content" as const],
     ...(instructions ? { instructions } : {}),
     ...(mapTools(request.tools) ? { tools: mapTools(request.tools) } : {}),
-    ...(mapToolChoice(request.toolChoice)
-      ? { tool_choice: mapToolChoice(request.toolChoice) }
-      : {}),
-    ...(request.maxTokens ? { max_output_tokens: request.maxTokens } : {}),
-    ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-    ...(request.topP !== undefined ? { top_p: request.topP } : {}),
-    ...(mapReasoning(request.reasoning) ? { reasoning: mapReasoning(request.reasoning) } : {}),
-    ...(mapResponseFormat(request.responseFormat)
-      ? { text: mapResponseFormat(request.responseFormat) }
-      : {}),
+    reasoning: mapReasoning(call.reasoning),
     ...(request.promptCacheKey ? { prompt_cache_key: request.promptCacheKey } : {}),
-  };
+    // The 30m default needs no parameter. The SDK (6.45.0) predates `prompt_cache_options`.
+    ...(cacheTtl ? { prompt_cache_options: { ttl: cacheTtl } } : {}),
+  } as OpenAI.Responses.ResponseCreateParamsStreaming;
 }

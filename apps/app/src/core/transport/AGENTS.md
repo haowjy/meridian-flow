@@ -1,45 +1,22 @@
 # core/transport — Client transport seams
 
-This directory owns browser transport primitives for collaborative documents and
-thread socket adapters. The thread socket client and its contract live in
-`@meridian/thread-client`; `TransportProvider` owns the app composition. This
-directory does not own document-session policy or debug-event interpretation.
+Browser transport primitives for collaborative documents and thread socket adapters.
+The thread socket client lives in `@meridian/thread-client`; `TransportProvider` owns
+the app composition.
 
-## Mental model
+- The outbox listener registers on the `Y.Doc` before `HocuspocusProvider` is
+  constructed, and only its empty-to-pending edge publishes. Moving the registration
+  after the provider lets a command act on the outbox's absence before local bytes
+  reach it; publishing per update re-renders every subscribed editor on each keystroke.
+- `subscribeStatus` publishes the current status synchronously, then every later
+  transition. `DocumentSession` derives its first status from that callback, and a
+  deferred emission opens a timing gap between transport and session snapshots.
+- New network connections subscribe to the injected `ConnectivityHintsPort`; don't
+  add private window connectivity or wake listeners.
+- A draft room's socket holds Updates until its SyncStep2 is written; live rooms keep
+  the provider's order byte for byte. Don't inject a frame around `send` or release on
+  a timer.
+- Transport observers receive final frames and don't parse, retain or broaden them.
 
-Document and thread sockets expose narrow transport contracts. Optional debug
-observers attach through those contracts without becoming part of product
-transport behavior.
-
-Document transports keep a merged outbox of local Yjs updates until the current
-connection acknowledges them. Reconnect keeps it; a terminal transition freezes
-it. Provider-origin updates never enter it. Named close and denial reasons map
-through one reset-disposition table, including in-band closes with code 1000.
-
-**Local bytes reach the outbox before the provider sends them.** The outbox
-listener registers on the `Y.Doc` before `HocuspocusProvider` is constructed,
-and only its empty-to-pending edge publishes. Every observer therefore sees
-pending writing by the first acknowledgement edge, before any server read
-caused by that send can end a draft review. Never move the registration after
-the provider, and never publish per update: sessions emit on edges only.
-Depth: [`.context/CONTEXT.md`](.context/CONTEXT.md).
-
-## Key rules
-
-- New network connections subscribe to injected `ConnectivityHintsPort`; never
-  add private window connectivity or wake listeners. The authenticated shell
-  owns one source for document, thread, replica, and working-set recovery.
-
-- A `DocumentSessionTransportProvider` must synchronously publish its current
-  connection status when `subscribeStatus` is called, then publish every later
-  transition.
-- A draft room's socket holds its Updates until that socket's SyncStep2 is
-  written, then releases them in order; live rooms keep the provider's order
-  byte for byte. Never inject a frame around `send` or release on a timer.
-- Keep document and thread wire contracts separate. Transport observers receive
-  final frames but never parse, retain, or broaden their contents.
-- Register optional wire taps before a socket can be created; debug features own
-  inspection and event construction, not this core directory.
-
-Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for message, status, and
-debug-observation contracts.
+Message, status and debug-observation contracts:
+[`.context/CONTEXT.md`](.context/CONTEXT.md).

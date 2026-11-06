@@ -41,7 +41,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
   ```
 
   This builds the app, serves its hashed production assets at the checkout's
-  usual Portless app URL, and keeps the dev login, same-origin `/api`, and
+  usual Portless app URL, and keeps the dev auth bypass, same-origin `/api`, and
   WebSocket routes connected to that checkout's dev server. Portless supplies
   its CA through `NODE_EXTRA_CA_CERTS`; the launcher refuses to run without it
   rather than disabling TLS verification. A running stack records which client
@@ -83,8 +83,9 @@ transcript as truth. Repeatable recipes live in the
 [runtime probe catalog](qa/README.md).
 
 `./mf` (repo root) drives this worktree's own API: every command maps to an
-existing HTTP route or thread-socket message, authenticated exactly like the
-browser through dev login. Run `./mf` for the command tree with the route each
+existing HTTP route or thread-socket message, authenticated like the
+browser: as the dev user when the stack runs with `DEV_AUTH_BYPASS=1`, or with
+`MF_COOKIE`. Run `./mf` for the command tree with the route each
 command wraps, and `./mf <noun> <verb> --help` for flags and examples.
 
 What a `./mf` run proves depends on the code behind the command. Its thread
@@ -157,7 +158,7 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   and background report bodies and change trails not fetched. Card wording and failure
   copy are drawn by React, so compare cards as raw props only. The app draws
   the same function's output, so compare a chat in the browser by row identity, row
-  kind, item kinds and visible text with [the chat-session recipe](qa/chat-session.md). `send` and `tail --until-idle` run the app's
+  kind, item kinds and visible text with [the chat-session recipe](../apps/app/src/features/chat/.context/qa/chat-session.md). `send` and `tail --until-idle` run the app's
   `ThreadSync`: the same read-first join, read application, frame ordering and missing-row recovery.
   Each result is proved by one applied snapshot, not by the mixed-version client value.
   `liveView` is a separate end-of-turn diagnostic: when stream frames end a turn, its next applied
@@ -166,7 +167,7 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   it first permanently prevents a stream claim for that turn; a tail joining mid-reply commonly
   reports `rewritten`. An empty claimed assistant set reports `no_turn`.
   - These checks do not certify browser rendering, tools, reasoning, interrupts, optimistic UI,
-    row placement, queued rows or dividers. Verify the screen with [the browser recipes](qa/chat-session.md).
+    row placement, queued rows or dividers. Verify the screen with [the browser recipes](../apps/app/src/features/chat/.context/qa/chat-session.md).
   - Neither `matches` nor `differs` changes the proven outcome or exit code. A disagreement is
     a debugging lead, not an automatic exit 6. The guarantee and its limits are in
     [`./mf` claims are proofs][mf-claims].
@@ -306,8 +307,9 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   a unique id prefix. Refs are per project: they resolve through
   `GET /api/projects/:projectId/threads/by-ref/:ref` in the default project,
   or in `--project <id>`.
-- `MF_SERVER_URL` plus `MF_COOKIE` (or `MF_APP_URL` for dev login) target a
-  stack other than this worktree's Portless routes.
+- `MF_SERVER_URL` targets a stack other than this worktree's Portless routes;
+  add `MF_COOKIE` when that stack needs a session cookie. A 401 from a local
+  stack means `DEV_AUTH_BYPASS=1` is not set in `.env`.
 
 Terminal record example (command-specific fields follow the reserved keys):
 
@@ -315,6 +317,15 @@ Terminal record example (command-specific fields follow the reserved keys):
 {"type":"result","command":"thread.send","threadId":"…","outcome":"timeout","reason":"running","stillRunning":{"turnId":"B","status":"streaming"},"owed":[],"next":["./mf thread stop …","./mf thread tail … --until-idle"]}
 ```
 
+
+### Real model for a live run
+
+`LIVE_TEST_MODEL=<registry model id>` (for example `deepseek-flash`, with its
+`FLOW_DEEPSEEK_API_KEY` set), given on the command line, in `.env.local`, or in the main checkout's `.env`, sends every model call to that one model, whatever a
+chat, Agent or binding names (if it is a registry id), including models whose provider has no key. `LIVE_TEST_MODEL=` in `.env.local` turns off a main-`.env` setting.
+A chat bound to another model predicts a cold cache under the override. Stored
+state keeps the names it has. Restart your stack to change it. Production refuses
+to start with it set; staging allows it.
 
 ### Mock provider responses
 
@@ -428,7 +439,7 @@ from the real runtime, not fabricated model output.
 - [Provider failure](../tools/mf/fixtures/mock-provider-error.json): a sticky failure. Inspect the failed reply, not only the send exit code.
 
 The `ask_user` tool is available in primary chats. Queue a tool call with the shape
-shown in [the ask QA recipe](qa/ask.md); answer it with `./mf thread answer`.
+shown in [the ask QA recipe](../apps/server/server/domains/runtime/.context/qa/ask.md); answer it with `./mf thread answer`.
 It remains unavailable in child chats until question forwarding lands. A mock
 script does not bypass tool availability or permissions.
 
@@ -488,9 +499,9 @@ queue. The rule is:
   `pnpm dev` sets it unless `.env` sets `APP_DEBUG` itself. A staging deploy
   opts in by setting `APP_DEBUG=1` in its environment.
 
-Dev login is separate and stays non-production only, so `./mf` against a
-deployed staging server authenticates with `MF_SERVER_URL` plus `MF_COOKIE`
-(a real session cookie).
+`DEV_AUTH_BYPASS=1` is local only: the server refuses it unless `NODE_ENV=development`
+and `APP_ENV` is unset or `dev`, so `./mf` against a deployed staging server
+authenticates with `MF_SERVER_URL` plus `MF_COOKIE` (a real session cookie).
 
 ## Temporary Probes
 
@@ -599,7 +610,7 @@ part to 32 KiB of UTF-8; Raw remains exact up to the request capture ceiling.
 ## Consume Server Events
 
 For an LLM or script, prefer `./mf log`. It resolves the current worktree's
-live Portless routes, performs dev login in memory, and never writes a cookie
+live Portless routes, sends `MF_COOKIE` when set, and never writes a cookie
 jar:
 
 ```bash
@@ -629,15 +640,10 @@ transaction commits, so a rolled-back settlement leaves none.
 Servers with the debug gate open and the `local` event provider retain up to
 5,000 sanitized records or 16 MiB in memory. Otherwise these routes return 404.
 
-For direct `curl` access, bootstrap through the app and retarget the host-only
-development session cookie to the paired server origin:
+For direct `curl` access, a stack with `DEV_AUTH_BYPASS=1` needs no cookie:
 
 ```bash
-APP_URL=https://<lane>.app.meridian.localhost
 SERVER_URL=https://<lane>.server.meridian.localhost
-COOKIE_JAR=auth.cookies
-curl -sS -c "$COOKIE_JAR" "$APP_URL/api/auth/dev-login" >/dev/null
-sed -i 's/app\.meridian\.localhost/server.meridian.localhost/' "$COOKIE_JAR"
 ```
 
 `GET /api/debug/events` returns newest first. Filters are `eventId` (exact),
@@ -646,7 +652,7 @@ sed -i 's/app\.meridian\.localhost/server.meridian.localhost/' "$COOKIE_JAR"
 `EventCorrelation` key as an equality parameter.
 
 ```bash
-curl -sS -b "$COOKIE_JAR" \
+curl -sS \
   "$SERVER_URL/api/debug/events?source=wire.yjs&documentId=X&limit=50" | jq .
 ```
 
@@ -655,7 +661,7 @@ Each message carries one `EventRecord` as JSON in its `data` field; history stay
 on the query endpoint.
 
 ```bash
-curl -N -b "$COOKIE_JAR" "$SERVER_URL/api/debug/events/stream?source=wire.yjs&documentId=X"
+curl -N "$SERVER_URL/api/debug/events/stream?source=wire.yjs&documentId=X"
 ```
 
 After a restart, use the JSONL mirror for best-effort forensics:

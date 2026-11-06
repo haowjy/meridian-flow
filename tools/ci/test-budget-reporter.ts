@@ -8,7 +8,7 @@
  * CI shards the unit suite across jobs and no job sees the whole suite.
  *
  * Growth is not forbidden, it is made deliberate: refresh the baseline with
- * `TEST_BUDGET_UPDATE=1 pnpm test` so the increase is a reviewable line in the
+ * `TEST_BUDGET_UPDATE=1 pnpm test:all` so the increase is a reviewable line in the
  * diff rather than silent drift.
  *
  * Wall time is reported on every run and NEVER blocks. It is a property of the
@@ -169,7 +169,7 @@ export default class TestBudgetReporter implements Reporter {
         [
           "Test budget guard failed:",
           ...failures.map((failure) => `  - ${failure}`),
-          "If the growth is intended, refresh the baseline with `TEST_BUDGET_UPDATE=1 pnpm test` in the same change.",
+          "If the growth is intended, refresh the baseline with `TEST_BUDGET_UPDATE=1 pnpm test:all` in the same change (`pnpm test` skips DB files).",
         ].join("\n"),
       );
     }

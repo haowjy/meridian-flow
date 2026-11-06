@@ -29,4 +29,4 @@ export type {
   CompactionTriggerSource,
   ResolveCompactionTriggerInput,
 } from "./trigger.js";
-export { FLOW_ABSOLUTE_CEILING, resolveCompactionTrigger } from "./trigger.js";
+export { FLOW_ABSOLUTE_CEILING, outputReserveTokens, resolveCompactionTrigger } from "./trigger.js";

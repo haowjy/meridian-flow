@@ -14,20 +14,14 @@ export type ModelRequestDebugMessage = {
   providerOptions?: JsonObject;
 };
 
-/** Provider-neutral GenerateRequest with signals and diagnostic correlation removed. */
+/** Provider-neutral GenerateRequest as sent, with signals and diagnostic correlation removed. Records are in-memory only, so old shapes never need parsing. */
 export type ModelRequestDebugRequest = {
   model?: string;
-  provider?: string;
   messages: ModelRequestDebugMessage[];
   tools?: JsonObject[];
-  toolChoice?: JsonValue;
-  maxTokens?: number;
-  temperature?: number;
-  topP?: number;
-  stopSequences?: string[];
-  responseFormat?: JsonObject;
   reasoning?: JsonValue;
-  providerOptions?: JsonObject;
+  promptCacheKey?: string;
+  promptCacheRetention: "none" | "short" | "long";
 };
 
 export type ModelRequestDebugCapture =

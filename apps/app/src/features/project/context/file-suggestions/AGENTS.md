@@ -1,17 +1,7 @@
 # context/file-suggestions — client-side file finding
 
-Reusable file suggestions over the normalized context catalog. This module
-ranks locally; the account resource replica owns catalog acquisition and durable
-checkpoints. React Query triggers acquisition and delivers results. Do not introduce
-a server-search path or suggestion-specific cache.
+Ranks locally over the normalized context catalog; the account resource replica owns acquisition and
+durable checkpoints. Don't add a server-search path or suggestion-specific cache. Hosts compose this
+contract rather than forking matching or query orchestration.
 
-## Mental model
-
-- `file-suggestions.ts` is the pure core: project normalized entries, filter by
-  scheme/kind, then rank by leaf prefix, leaf word boundary, and full path.
-- `use-file-suggestions.ts` composes the three warm scope queries and exposes
-  suggestions plus aggregate fetch/error state.
-- `FileSuggestionList.tsx` is keyboard-accessible presentation. Hosts own the
-  input, popover, selection effect, and allowed schemes/kinds.
-
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md) for the contract and hosts.
+Keyboard model and contract: [`.context/CONTEXT.md`](.context/CONTEXT.md).

@@ -155,7 +155,7 @@ function createStreamObservation(input: {
   observe(source: AsyncIterable<StreamEvent>): AsyncIterable<StreamEvent>;
   fail(error: unknown): void;
 } {
-  let route = { provider: input.request.provider, model: input.request.model };
+  let route = { provider: undefined as string | undefined, model: input.request.model };
   let startCount = 0;
   let chunkCount = 0;
   const chunkCounts = new Map<StreamEvent["type"], number>();
@@ -284,10 +284,7 @@ export function createInstrumentedGateway(
       const startedAt = performance.now();
       const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
-      let route = {
-        provider: request.provider,
-        model: request.model,
-      };
+      let route: { provider?: string; model?: string } = { model: request.model };
       emitter.emit("debug", "stream.open", routePayload(route), route);
 
       try {
@@ -325,19 +322,14 @@ export function createInstrumentedGateway(
       }
     },
 
+    listModels() {
+      return gateway.listModels();
+    },
+
     getDefaultModel() {
       return gateway.getDefaultModel();
     },
   };
-
-  const settleCancelledResult = gateway.settleCancelledResult;
-  if (settleCancelledResult) {
-    instrumented.settleCancelledResult = (input) => settleCancelledResult.call(gateway, input);
-  }
-  const listModels = gateway.listModels;
-  if (listModels) {
-    instrumented.listModels = () => listModels.call(gateway);
-  }
 
   return instrumented;
 }

@@ -34,7 +34,6 @@ function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelR
     sequence: response.sequence,
     provider: response.provider,
     model: response.model,
-    providerRequestId: response.providerRequestId ?? null,
     inputTokens: response.inputTokens ?? 0,
     outputTokens: response.outputTokens ?? 0,
     reasoningTokens: response.reasoningTokens ?? null,

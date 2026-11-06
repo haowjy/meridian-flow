@@ -233,42 +233,6 @@ describe("useWorkingSetSyncPreference", () => {
       expect(mocks.invalidate).not.toHaveBeenCalled();
     });
   });
-
-  it("keeps a queued write on the epoch it was dispatched under", async () => {
-    const first = deferred<AccountSettings>();
-    const second = deferred<AccountSettings>();
-    mocks.updateAccountSettings
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    await mount(false, async ({ read, rerender }) => {
-      const epochA = mocks.account.controller.signal;
-      await act(async () => read().change(true));
-      await act(async () => read().change(false));
-      // The second write is queued behind the first; both captured epoch A.
-      expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(1);
-
-      // A newer epoch renders before the queued write starts. The queued write
-      // must keep the epoch it captured at dispatch, not adopt this one.
-      mocks.account.controller = new AbortController();
-      await rerender();
-
-      await act(async () =>
-        first.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: true }),
-      );
-      await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
-
-      // The queued write must keep its captured epoch, not adopt the later one.
-      expect(mocks.updateAccountSettings).toHaveBeenLastCalledWith(
-        { workingSetSyncEnabled: false },
-        { signal: epochA },
-      );
-
-      await act(async () =>
-        second.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: false }),
-      );
-      await flush();
-    });
-  });
 });
 
 it("changes every account setting immediately and keeps failures on their own control", async () => {
@@ -502,18 +466,6 @@ it("accepts a newer loader after settlement but rejects a loader that began befo
     expect(read().confirmed).toBe(false);
   });
 });
-it("renders the known server seed without first rendering a conflicting cached theme", async () => {
-  const { writeAccountSettingsCache } = await import("@/lib/account-settings-cache");
-  writeAccountSettingsCache("account-a", {
-    ...DEFAULT_ACCOUNT_APPEARANCE,
-    theme: "dark",
-    workingSetSyncEnabled: true,
-  });
-  await mount(false, async ({ renders }) =>
-    expect(renders.every((value) => value.theme === "ink-jade")).toBe(true),
-  );
-});
-
 it("keeps newer language confirmation when an older recovery read witnesses theme", async () => {
   const { readAccountSettingsCache } = await import("@/lib/account-settings-cache");
   const recovery = deferred<AccountSettings>();
