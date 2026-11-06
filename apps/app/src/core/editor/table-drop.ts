@@ -13,7 +13,7 @@
  * cell, or refuses honestly when no cell can host it. The same
  * resolution answers the dropcursor during the drag, so the caret the writer
  * sees is the landing they get (the display is the promise). Follows the
- * pointer-boundary pattern: an impure reading gathers geometry, a pure
+ * landing-walk pattern: an impure reading gathers geometry, a pure
  * function decides.
  */
 

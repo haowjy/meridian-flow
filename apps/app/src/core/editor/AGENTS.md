@@ -30,7 +30,7 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
   Only a new mount restores, without taking focus; an explicit destination
   always beats mount-time memory, so every new jump path claims through
   `reading-position-navigation.ts`.
-- `pointer-boundary.ts` is the one answer for presses outside prose. It keeps
+- `landing/` is the one answer for presses with no text under them. It keeps
   caret placement, opaque-object refusal, seam precedence, and keyboard parity
   out of layout components; see the editor context for the geometry policy.
 - Peer marks are projections: never persisted, draft-projected, or locally

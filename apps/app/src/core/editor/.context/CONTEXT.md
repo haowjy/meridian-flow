@@ -189,12 +189,18 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 ### Pointer, keyboard, and drop policy
 
-- A press outside the prose is answered once by `pointer-boundary.ts`, not by
-  the layout component that caught it. Gutters, the page below the last block,
-  and the strip between blocks place a caret. An outside press never lands in
-  an opaque object's interior; at a seam prose beats source. Keyboard behavior
-  follows the same reading, so no input device places a caret in a body the
-  page is not showing.
+- A press with no text under it is answered once by `landing/`, not by the
+  layout component that caught it. The ProseMirror node spans the whole pane
+  and carries the margin as its own padding, so a margin, the page below the
+  last block, and the strip between blocks are all inside it.
+  `landing/point-landing.ts` walks the document over the boxes and answers
+  inline, seam or source for any point; `landing/press.ts` turns that into a
+  selection and owns the seam policy (the nearer neighbour's line, prose beats
+  source, a gap cursor beside a table, the fence's end below a final fence).
+  `handleClick` routes presses on a container's own element to it, and a press
+  beside a rendered diagram is claimed at `mousedown`. An outside press never
+  lands in an opaque object's interior. Keyboard behavior follows the same
+  reading, so no input device places a caret in a body the page is not showing.
 - A key the editor owns is consumed on a refusal as well as on success. Undo
   and Tab cannot fall through to the browser: Tab would move DOM focus out of
   the manuscript and discard later keystrokes. Tab uses one ladder: table

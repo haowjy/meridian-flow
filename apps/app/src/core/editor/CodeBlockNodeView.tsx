@@ -33,7 +33,7 @@
  * put it in — a keystroke, a command, a peer's write mapped through Yjs, a
  * pointer answered at a boundary. This file used to claim a pointer could not
  * produce that caret. It could. Where an outside press may land is
- * `pointer-boundary.ts`, and it is not what makes this file safe.
+ * `landing/press.ts`, and it is not what makes this file safe.
  */
 import type { Editor, NodeViewProps } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
