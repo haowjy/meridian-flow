@@ -7,6 +7,7 @@ import {
   canRedoEditorHistory,
   canUndoEditorHistory,
   editorHistory,
+  liveAbsolutePosition,
   mountEditorHistory,
   redoEditorHistory,
   undoEditorHistory,
@@ -116,4 +117,22 @@ it("preserves native history order across Apply boundaries when a remote write m
     manager.destroy();
     document.destroy();
   }
+});
+
+it("does not restore a range from a position inside a deleted paragraph", () => {
+  const document = new Y.Doc();
+  const fragment = document.getXmlFragment("prose");
+  const first = new Y.XmlElement("paragraph");
+  const firstText = new Y.XmlText("First paragraph");
+  const second = new Y.XmlElement("paragraph");
+  second.insert(0, [new Y.XmlText("Second")]);
+  first.insert(0, [firstText]);
+  fragment.insert(0, [first, second]);
+  const binding = { doc: document, type: fragment, mapping: new Map() };
+  const inside = Y.createRelativePositionFromTypeIndex(firstText, 3);
+
+  expect(liveAbsolutePosition(binding, inside)).toBe(4);
+  fragment.delete(0, 1);
+  expect(liveAbsolutePosition(binding, inside)).toBeNull();
+  document.destroy();
 });
