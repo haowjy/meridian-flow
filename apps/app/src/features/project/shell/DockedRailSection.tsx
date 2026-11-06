@@ -7,6 +7,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { type CSSProperties, type ReactNode, type RefObject, useRef } from "react";
+import { cn } from "@/lib/utils";
 import { schemeLabel } from "../context/context-schemes";
 import { ResizeHandle } from "../layout/ResizeHandle";
 import {
@@ -35,7 +36,12 @@ export function DockedRailSection({
   return (
     <section
       ref={sectionRef}
-      className="relative flex min-h-0 shrink flex-col border-t border-border-subtle py-1"
+      // A collapsed header is its content: letting it shrink would paint it over
+      // the rows below once the rail runs out of height.
+      className={cn(
+        "relative flex flex-col border-t border-border-subtle py-1",
+        expanded ? "min-h-0 shrink" : "shrink-0",
+      )}
       // The handle's variable (set live while dragging, and from the saved height)
       // replaces the content-sized default.
       style={
