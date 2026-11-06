@@ -116,6 +116,14 @@ export type ContextTreeDeleteCommand = {
 
 export interface ContextTreeMutationStore {
   inspect(sourceId: string, path: string): Promise<ContextLocationToken | null>;
+  /**
+   * The live node with this id, where it is now. The commits below recheck their source with
+   * it, so a file and a folder answering at one path can't stand in for each other.
+   */
+  inspectNode(node: {
+    kind: ContextLocationToken["kind"];
+    id: string;
+  }): Promise<ContextLocationToken | null>;
   /** Clear provisional naming under the same location CAS used by tree mutations. */
   commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,

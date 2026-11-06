@@ -29,6 +29,8 @@ import {
   containerOf,
   locatorUri,
   type ResolvedContextLocator,
+  resolveLocatorUri,
+  throwLocatorRefusal,
 } from "./context-locator.js";
 import {
   parseContextMutationName,
@@ -430,38 +432,10 @@ export async function handleContextMoveRequest(
   const containerFor = (locator: ResolvedContextMoveLocator) =>
     containerOf(locator, input.projectId);
   async function resolveDestinationLocator(uri: string): Promise<ResolvedContextMoveLocator> {
-    const parsed = parseUnifiedContextUri(uri);
-    if (!parsed.ok) contextErrorToHttp(parsed.error);
-    const { scheme, path, authority } = parsed.value;
-    if (scheme === "uploads") throw uploadsNotMovable();
-    if (authority.kind === "work") {
-      const resolved = await deps.workAuthorityResolver.byHandle(
-        input.projectId,
-        authority.workHandle,
-      );
-      if (!resolved) throwContextWorkUnavailableHttpError("work_missing");
-      return {
-        scope: "work",
-        scheme: scheme as WorkScopedContextFsScheme,
-        path,
-        authority: resolved,
-      };
-    }
-    if (authority.kind === "lineage") {
-      const lineage = await deps.contextPorts.lineages.byRef(
-        input.projectId,
-        authority.rootThreadRef,
-      );
-      if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
-      return {
-        scope: "lineage",
-        scheme: "scratch",
-        path,
-        rootThreadId: lineage.rootThreadId,
-        authority: { kind: "lineage", rootThreadRef: authority.rootThreadRef },
-      };
-    }
-    return { scope: "project", scheme: scheme as ProjectContextFsScheme, path };
+    const resolved = await resolveLocatorUri(deps, input.projectId, uri);
+    if (!resolved.ok) throwLocatorRefusal(resolved.error);
+    if (resolved.value.scope === "chat") throw uploadsNotMovable();
+    return resolved.value;
   }
   const moved =
     resolvedMove.expected.kind === "file"
