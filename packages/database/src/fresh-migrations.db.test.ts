@@ -216,10 +216,11 @@ if (!enabled || !databaseUrl) {
             VALUES ('00000000-0000-4000-8000-000000000705', '00000000-0000-4000-8000-000000000704', 1, 'user', 'writer', 'complete')`;
           await tx`INSERT INTO turn_blocks (id, turn_id, block_type, sequence, content, model_text)
             VALUES ('00000000-0000-4000-8000-000000000706', '00000000-0000-4000-8000-000000000705', 'text', 0, '{"text":"stored manuscript"}', 'stored manuscript')`;
-          // One response per retired value; the first also holds a provider generation ID.
+          // One response per retired value. App-written rows with an ID have null metadata, so the
+          // second row is the shape the backfill must not lose.
           const retired = [
             ["provider_reported", "uncached", "gen-1", { audit: true }],
-            ["configured_rate", "reusable_prefix", null, null],
+            ["configured_rate", "reusable_prefix", "gen-2", null],
             ["computed", "ttl_expired", null, null],
           ] as const;
           for (const [index, [source, reason, requestId, metadata]] of retired.entries()) {
@@ -272,7 +273,7 @@ if (!enabled || !databaseUrl) {
           {
             price_source: "computed",
             predicted_cache_reason: "reusable_prefix",
-            response_metadata: null,
+            response_metadata: { providerRequestId: "gen-2" },
           },
           {
             price_source: "computed",
