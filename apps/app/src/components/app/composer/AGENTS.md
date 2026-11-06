@@ -24,5 +24,5 @@ is the authoring boundary; admission and server authority live outside it.
   inserts the same `composerReference` atom. The shared editor drop extension
   owns word snapping, spacing, one-step Undo, and the drop caret.
 
-Reference spelling, commands, Stop and Send states and copy, draft restore:
+Reference spelling, commands, draft restore:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

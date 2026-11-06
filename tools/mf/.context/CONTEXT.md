@@ -62,7 +62,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   (a lost Retry, a failed Stop, an unadmitted send) are not in that snapshot and cannot
   appear here. `chat-view.ts` decides no row or card and words no visible text. Text mode summarizes (a card's kind only, tool names,
   one `delivery:` line per group) and omits tool inputs and results, card props,
-  Work receipts and occurrences; `--json` is the versioned `chatView: 2` envelope
+  Work receipts and occurrences; `--json` is the versioned `chatView: 3` envelope
   whose `inputs` states what the view was computed from (no local records,
   stand-ins, opening seed or live activity, inherited history omitted, background
   report bodies and change trails not fetched). `--full --json` is the inspectable

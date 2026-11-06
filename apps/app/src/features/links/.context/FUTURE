@@ -1,24 +1,11 @@
 # Deferred, link following
 
-- Bare `manuscript://…` and `scratch://@slug/…` strings in prose are not links
-  in either surface: the Editor's `shouldAutoLink`
-  (`core/editor/extensions/meridian-extensions.ts`) admits external URLs only,
-  and chat's transcript renderer has no remark step for them. Markdown links
-  and autolinks (`<manuscript://…>`) already work in both. Decide for both
-  surfaces at once, with one classifier validated by the contracts URI parser
-  and used by `shouldAutoLink` and a chat remark step; linkifying in one
-  surface only would make them disagree about what a link is.
-
-- A catalog wake invalidates every watched link answer in the project, so each
-  wake re-asks all visible links, including ones in scopes that did not change
-  (`project-link-resolver.ts`, `link-resolution-epoch.ts`). Not measured as a
-  problem yet. If it shows up in long chats or long documents, scope the
-  invalidation to the woken catalog's identities.
-- Folder chips open their menu only where a folder-menu host is mounted (the
-  chat view, the new-chat composer, the Editor). Other Markdown surfaces, such as
-  `TextViewer` and the model-request inspector, render a folder chip that does
-  nothing on click. Mount the host there, or render those chips as plain links.
-- A transcript folder chip's context menu (Shift+F10 or right-click) shows only
-  its title and the send-time address, with no action. A document chip's menu
-  has "Open link". Add "Open folder" to the folder chip's menu, so the keyboard
-  path matches clicking (`rich-content/TranscriptReference.tsx`).
+- A catalog wake re-asks all visible links in the project, including ones in scopes that
+  didn't change (`project-link-resolver.ts`, `link-resolution-epoch.ts`). Not measured as a
+  problem. If it shows up in long chats or documents, scope the invalidation to the woken
+  catalog's identities.
+- Folder chips open their menu only where a folder-menu host is mounted. In other Markdown
+  surfaces, such as `TextViewer` and the model-request inspector, a folder chip does nothing on
+  click. Mount the host there, or render those chips as plain links.
+- A transcript folder chip's context menu shows only its title and address, with no action. Add
+  "Open folder" so the keyboard path matches clicking (`rich-content/TranscriptReference.tsx`).
