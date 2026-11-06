@@ -62,4 +62,67 @@ describe("streamProvider abort", () => {
     controller.abort();
     expect((await pending).value).toMatchObject({ type: "end", result: { content: [] } });
   });
+
+  it("closes the SDK iterator on every exit: abort, error frame, consumer drop", async () => {
+    const scripted = (frames: string[], hang: boolean) => {
+      const state = { returned: 0 };
+      const iterable: AsyncIterable<string> = {
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            const value = frames.shift();
+            if (value !== undefined) return { done: false, value };
+            return hang ? new Promise<never>(() => {}) : { done: true, value: undefined };
+          },
+          return: async () => {
+            state.returned++;
+            return { done: true, value: undefined };
+          },
+        }),
+      };
+      return { state, iterable };
+    };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    const hung = scripted(["a"], true);
+    const controller = new AbortController();
+    const abortStream = run(async () => hung.iterable, controller.signal);
+    await abortStream.next();
+    await abortStream.next();
+    const pending = abortStream.next();
+    controller.abort();
+    await pending;
+    await settle();
+    expect(hung.state.returned).toBe(1);
+
+    const dropped = scripted(["a", "b"], false);
+    const dropStream = run(async () => dropped.iterable, new AbortController().signal);
+    await dropStream.next();
+    await dropStream.next();
+    await dropStream.return?.();
+    await settle();
+    expect(dropped.state.returned).toBe(1);
+
+    const failing = scripted(["a"], false);
+    let text = "";
+    const errStream = streamProvider<string>({
+      start: START,
+      signal: new AbortController().signal,
+      open: async () => failing.iterable,
+      events: function* (frame) {
+        text += frame;
+        yield {
+          type: "error",
+          message: "boom",
+          code: "provider_error",
+          retryable: false,
+        } as StreamEvent;
+      },
+      result: () => ({ content: [{ type: "text", text }] }) as unknown as GenerateResult,
+    })[Symbol.asyncIterator]();
+    await errStream.next();
+    expect((await errStream.next()).value).toMatchObject({ type: "error" });
+    expect((await errStream.next()).done).toBe(true);
+    await settle();
+    expect(failing.state.returned).toBe(1);
+  });
 });

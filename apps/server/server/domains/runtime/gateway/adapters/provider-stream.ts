@@ -12,7 +12,7 @@ import { mapProviderHttpError, type ProviderErrorPatterns } from "./provider-htt
 
 const ABORTED = Symbol("aborted");
 
-/** Releases an iterator without waiting on it: the abort already cancelled the request. */
+/** Closes an iterator without waiting on it: a hung SDK iterator must not block the exit. */
 async function release(iterator: Promise<AsyncIterator<unknown> | undefined>): Promise<void> {
   // allSettled observes a failed open or close; nothing is waiting on either.
   await Promise.allSettled([iterator.then((it) => it?.return?.())]);
@@ -61,7 +61,8 @@ export async function* streamProvider<Frame>(spec: {
     }
   } finally {
     if (onAbort) signal?.removeEventListener("abort", onAbort);
-    if (signal?.aborted) void release(Promise.resolve(frames));
+    // Every exit closes the SDK stream, as `for await` did: error frame, consumer drop, abort.
+    void release(Promise.resolve(frames));
   }
   yield { type: "end", result: spec.result() };
 }
