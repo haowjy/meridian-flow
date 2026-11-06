@@ -26,7 +26,7 @@ directory never imports application packages. The `./mf` CLI lives in
   the image tag in `docker-compose.yml` with the pg_bigm pin, then run
   `pnpm dev:infra:upgrade` from a checkout that has merged `main`; compose
   recreates the container onto the tag and the named volume keeps the data. `pnpm db:check-extensions` proves the extensions work.
-- Change schemas with `generate` plus `migrate`, never `push`. Migration lint
+- Change schemas with `pnpm db:generate` plus `pnpm db:migrate`, never `push`. Migration lint
   has one `RULES` list; a skip must be safe on populated tables.
 - No secret value appears in the tmux command, stdout or
   `.meridian/dev-session.json`: services get secrets from `with-dev-env.ts`,
