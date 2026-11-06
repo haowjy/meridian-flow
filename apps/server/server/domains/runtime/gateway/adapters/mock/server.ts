@@ -176,7 +176,7 @@ function writeSlowAfterFirstChunk(
   timer.unref();
 }
 
-/** Streams partial output then ignores abort — gateway drain must time out. */
+/** Streams partial output then ignores abort — a stop must still end the stream at once. */
 function writeHangCancelDrainStream(
   res: import("node:http").ServerResponse,
   id: string,

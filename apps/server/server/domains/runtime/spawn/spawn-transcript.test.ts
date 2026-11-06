@@ -157,8 +157,6 @@ async function appendPublicResponse(
   const response = await setupResult.repos.modelResponses.create({
     turnId: setupResult.turn.id,
     sequence: responseSequence,
-    // The provider metered the call, so an empty one is a response, not a stopped call's record.
-    inputTokens: 1,
     provider: "test",
     model: "test-model",
     priceSource: "unknown",
