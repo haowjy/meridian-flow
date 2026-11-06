@@ -46,10 +46,10 @@ function openaiCacheTtlWire(ttlMs: number | null): "12h" | undefined {
 
 /** Reject, at construction, a model whose long cache lifetime this API cannot be sent. */
 export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
-  const { ttlMs, longTtlMs } = model.promptCache;
+  const { shortTtlMs, longTtlMs } = model.promptCache;
   if (
-    longTtlMs !== undefined &&
-    (ttlMs !== THIRTY_MINUTES_MS || openaiCacheTtlWire(longTtlMs) !== "12h")
+    longTtlMs !== shortTtlMs &&
+    (shortTtlMs !== THIRTY_MINUTES_MS || openaiCacheTtlWire(longTtlMs) !== "12h")
   ) {
     throw new Error(
       `OpenAI prompt cache TTLs for ${model.id} must be 30m, with 12h as the long one`,

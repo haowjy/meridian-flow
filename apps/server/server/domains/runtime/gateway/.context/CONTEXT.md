@@ -21,7 +21,7 @@ Where the routed model is known, `attempt-stream.ts` calls `resolveCall()`
 only map it to wire fields and reject at construction (`assertCacheTtlsOnWire`) a model
 whose cache lifetimes they cannot send. A registry maps
 model IDs to provider adapters and is the single source for model context,
-pricing, cache descriptor, and required tokenizer family. Duplicate model IDs
+and, per provider offering, pricing and cache descriptor, plus the required tokenizer family. Duplicate model IDs
 warn during construction rather than silently replacing an entry. Registry model
 facts (limits, prices, modalities, effort ranges) come from
 [models.dev](https://models.dev/api.json); a provider's API docs are only for what
@@ -87,23 +87,35 @@ provider advertisement is not argument authority.
 
 ## Cache, limits, and persisted selections
 
-Each model declares `promptCache: { kind, ttlMs, longTtlMs? }`: `ttlMs` is the
-short lifetime, `longTtlMs` the longer one the model offers (Claude 1h; GPT-5.6+ 12h,
-the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl` by the
-OpenAI adapter; the 30m default is never sent). When a provider omits the
-cache-write split by lifetime, the adapters attribute all writes to the lifetime the
-request asked for (`ResolvedCall.longCacheWrites`). DeepSeek and Gemini cache
-automatically with an assumed 5-minute `ttlMs`.
+A provider lists offerings: `{ model, pricing, promptCache? }`. What an endpoint caches
+and charges belongs to the provider serving the model, not to the model (DeepSeek uses
+the Anthropic adapter and caches differently). `ModelInfo` stays flat and carries the
+offering's resolved descriptor `promptCache: { kind, shortTtlMs, longTtlMs }`. Both
+lifetimes are required; `null` means the provider documents none. An offering with no
+`promptCache` takes `DEFAULT_PROMPT_CACHE` (explicit, 5 minutes short, 1 hour long);
+there is no provider-level default.
+
+| Provider | kind | short | long |
+| --- | --- | --- | --- |
+| Anthropic (Claude) | explicit | 5m | 1h |
+| OpenAI (GPT-5.6+) | automatic | 30m | 12h (the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl`; the 30m default is never sent) |
+| DeepSeek | automatic | 1h | 1h (lower bound of its documented "a few hours to a few days"; an estimate) |
+| Gemini | automatic | null | null (no documented lifetime) |
+
 `GenerateRequest.promptCacheRetention` is required and picks one
 (`resolvePromptCacheTtlMs`): the loop asks `long` for primary threads and `short`
 for subagents, fixed by thread kind so the cached prefix never varies mid-thread;
-the rolling summarizer passes `short` explicitly. `validateModelRegistry` (adapter-neutral)
-requires `longTtlMs > ttlMs`; the OpenAI adapter requires 30m/12h when a model has a
-`longTtlMs`, and the Anthropic adapter 5m/1h for explicit models, both when a gateway is created.
-Explicit descriptors produce provider cache marks; automatic models receive no
-marks and `none` models predict cold. DeepSeek is automatic with no TTL choice: its
-descriptor holds one assumed 5-minute `ttlMs` for both chat kinds. A nullable TTL
-means unknown, not infinite.
+the rolling summarizer passes `short` explicitly. `longCacheWrites` is true when the
+request is long and the two lifetimes differ; when a provider omits the cache-write
+split by lifetime, the adapters attribute all writes to the lifetime the request asked for.
+`validateModelRegistry` (adapter-neutral) rejects a long lifetime shorter than the short
+one, one null with the other set, and two lifetimes with a `cacheWriteUsdPerMillionTokens`
+but no `cacheWriteLongUsdPerMillionTokens`. At gateway creation the OpenAI adapter requires
+30m/12h whenever the lifetimes differ, and the Anthropic adapter 5m/1h for explicit models.
+Only `explicit` offerings get `cache_control` on the wire (the Anthropic adapter checks
+`kind`, so DeepSeek gets none); automatic offerings receive no marks and `none` predict
+cold. A null lifetime means unknown, not infinite: prediction reads it as cold
+(`ttl_unknown`), so Gemini always reads cold.
 
 Claude and GPT-5.6+ bill cache writes by the TTL written. `Usage.cacheWriteLongTokens`
 (Anthropic's `cache_creation.ephemeral_1h_input_tokens`; OpenAI's

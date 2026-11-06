@@ -58,7 +58,8 @@ previous successful assistant response, prompt-epoch bake, complete compaction
 boundaries, image decisions, and cutoff lineage. Summary rows and handoff seeds
 never supply warmth or a token baseline. Cache age uses the previous response's
 request-start time against the TTL the thread kind requests (primary long,
-subagent short); missing time is cold/unknown. A thread's first request
+subagent short); missing time is cold/unknown, and so is a provider that documents
+no lifetime (Gemini). A thread's first request
 predicts cold even when the provider serves shared leading bytes from cache, and
 the first request after a compaction is cold because only an assistant turn's
 response counts as a reusable prefix. A fork routes its cache key to the thread

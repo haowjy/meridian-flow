@@ -42,10 +42,10 @@ export type Capability = "image_input";
 /** Registry-declared provider cache behavior and its best-known retention window. */
 export interface PromptCacheDescriptor {
   kind: "explicit" | "automatic" | "none";
-  /** Best-known TTL in milliseconds of the default (short) retention; null means the provider does not publish one. */
-  ttlMs: number | null;
-  /** TTL when a request asks for long retention; absent when the model offers no longer option. */
-  longTtlMs?: number;
+  /** Lifetime in milliseconds of a short-retention request (subagents); null means the provider documents none. */
+  shortTtlMs: number | null;
+  /** Lifetime of a long-retention request (primary chats); equals `shortTtlMs` when the provider offers one lifetime. */
+  longTtlMs: number | null;
 }
 
 /** Which cache lifetime a request wants: primary chats ask for long, subagents for short. */
@@ -56,7 +56,7 @@ export function resolvePromptCacheTtlMs(
   cache: PromptCacheDescriptor,
   retention: PromptCacheRetention,
 ): number | null {
-  return retention === "long" ? (cache.longTtlMs ?? cache.ttlMs) : cache.ttlMs;
+  return retention === "long" ? cache.longTtlMs : cache.shortTtlMs;
 }
 
 export const REASONING_EFFORTS = ["low", "medium", "high", "max"] as const;

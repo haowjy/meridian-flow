@@ -129,7 +129,7 @@ export async function createGatewayFromEnv(
   }
   if (liveTestModel && !providers.some((p) => p.models.some((m) => m.id === liveTestModel))) {
     const inRegistry = MODEL_REGISTRY.providers.some((p) =>
-      p.models.some((m) => m.id === liveTestModel),
+      p.offerings.some((o) => o.model.id === liveTestModel),
     );
     await cleanup?.();
     throw new Error(
