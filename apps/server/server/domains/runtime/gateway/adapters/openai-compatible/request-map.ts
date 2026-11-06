@@ -156,43 +156,6 @@ function mapTools(
   }));
 }
 
-/**
- * Map canonical toolChoice to Chat Completions tool_choice.
- * `auto`/`none`/`required` map directly; named tools become
- * `{ type: "function", function: { name } }`.
- */
-function mapToolChoice(
-  toolChoice: GenerateRequest["toolChoice"],
-): OpenAI.Chat.Completions.ChatCompletionToolChoiceOption | undefined {
-  if (!toolChoice) return undefined;
-  if (toolChoice === "auto") return "auto";
-  if (toolChoice === "none") return "none";
-  if (toolChoice === "required") return "required";
-  return { type: "function", function: { name: toolChoice.tool } };
-}
-
-/**
- * Map canonical responseFormat to Chat Completions response_format.
- * json → json_object; json_schema → json_schema with name/schema/strict;
- * `text` type means no format constraint (undefined).
- */
-function mapResponseFormat(
-  format: GenerateRequest["responseFormat"],
-): OpenAI.Chat.Completions.ChatCompletionCreateParams["response_format"] | undefined {
-  if (!format || format.type === "text") return undefined;
-  if (format.type === "json") {
-    return { type: "json_object" };
-  }
-  return {
-    type: "json_schema",
-    json_schema: {
-      name: format.name ?? "response",
-      schema: format.schema,
-      strict: format.strict,
-    },
-  };
-}
-
 /** The SDK type predates `max`; models whose row allows it accept it. */
 function mapReasoningEffort(
   reasoning: ResolvedCall["reasoning"],
@@ -217,13 +180,7 @@ export function toOpenAIChatCompletionParams(
       .map(mapMessage)
       .filter((m): m is OpenAI.Chat.Completions.ChatCompletionMessageParam => m !== null),
     tools: mapTools(request.tools),
-    tool_choice: mapToolChoice(request.toolChoice),
-    max_tokens: request.maxTokens,
-    temperature: request.temperature,
-    top_p: request.topP,
-    stop: request.stopSequences,
     reasoning_effort: mapReasoningEffort(call.reasoning),
-    response_format: mapResponseFormat(request.responseFormat),
     stream: true,
     stream_options: { include_usage: true },
   };

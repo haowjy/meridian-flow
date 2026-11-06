@@ -375,32 +375,10 @@ function mapTools(
   }));
 }
 
-// ── Tool choice mapping ───────────────────────────────────────────
-//
-// Canonical toolChoice → Anthropic tool_choice.
-// `auto` → { type: "auto" }, `required` → { type: "any" } (Anthropic's
-// equivalent), `none` → omit tools entirely (Anthropic has no explicit
-// "none" tool_choice).
-//
-
-function mapToolChoice(
-  toolChoice: GenerateRequest["toolChoice"],
-): Anthropic.Messages.ToolChoice | undefined {
-  if (!toolChoice) return undefined;
-  if (toolChoice === "auto") return { type: "auto" };
-  if (toolChoice === "required") return { type: "any" };
-  if (toolChoice === "none") return undefined; // Anthropic: omit tools instead
-  if (typeof toolChoice === "object" && "tool" in toolChoice) {
-    return { type: "tool", name: toolChoice.tool };
-  }
-  return undefined;
-}
-
 // ── Public: build Anthropic params ────────────────────────────────
 //
 // Assembles the full MessageCreateParamsStreaming from a canonical
-// GenerateRequest. Always sets stream:true. Passes through any extra
-// providerOptions.anthropic keys verbatim.
+// GenerateRequest. Always sets stream:true.
 //
 
 export function toAnthropicMessageParams(
@@ -414,7 +392,6 @@ export function toAnthropicMessageParams(
     model.promptCache.kind === "explicit" && call.cacheTtlMs !== null
       ? CACHE_CONTROL_BY_TTL.get(call.cacheTtlMs)
       : undefined;
-  const maxTokens = request.maxTokens ?? model.maxOutputTokens;
   const tools = mapTools(request.tools, providerId);
   const messages = mergeConsecutiveSameRole(
     request.messages
@@ -434,19 +411,12 @@ export function toAnthropicMessageParams(
 
   return {
     model: model.id,
-    max_tokens: maxTokens,
+    max_tokens: model.maxOutputTokens,
     messages: wireMessages,
     stream: true,
     ...(system !== undefined ? { system } : {}),
     ...(tools ? { tools } : {}),
-    ...(mapToolChoice(request.toolChoice)
-      ? { tool_choice: mapToolChoice(request.toolChoice) }
-      : {}),
-    ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-    ...(request.topP !== undefined ? { top_p: request.topP } : {}),
-    ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
     ...(typeof reasoning === "object" ? { output_config: { effort: reasoning.effort } } : {}),
     ...(reasoning === "off" ? { thinking: { type: "disabled" as const } } : {}),
-    ...(request.providerOptions?.anthropic ?? {}),
   };
 }

@@ -131,8 +131,6 @@ function estimatedEventBytes(event: StreamEvent): number {
       return 64 + event.text.length * 2;
     case "tool_call.delta":
       return 64 + (event.id.length + event.name.length + event.argumentsDelta.length) * 2;
-    case "custom.delta":
-      return 64 + event.kind.length * 2 + estimatedUnknownBytes(event.data);
     case "start":
       return 64 + (event.provider.length + event.model.length) * 2;
     case "usage":

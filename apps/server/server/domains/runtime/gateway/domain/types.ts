@@ -187,18 +187,6 @@ export interface Tool {
   inputSchema: Record<string, unknown>;
 }
 
-export type ResponseFormat =
-  | { type: "text" }
-  | { type: "json" }
-  | {
-      type: "json_schema";
-      schema: Record<string, unknown>;
-      name?: string;
-      strict?: boolean;
-    };
-
-export type ToolChoice = "auto" | "required" | "none" | { tool: string };
-
 /**
  * The unified request shape that every adapter translates into its provider SDK call.
  *
@@ -214,14 +202,7 @@ export interface GenerateRequest {
   model?: string;
   messages: Message[];
   tools?: Tool[];
-  toolChoice?: ToolChoice;
-  maxTokens?: number;
-  temperature?: number;
-  topP?: number;
-  stopSequences?: string[];
-  responseFormat?: ResponseFormat;
   reasoning?: "disabled" | "adaptive" | { effort: ReasoningEffort };
-  providerOptions?: ProviderOptions;
   signal?: AbortSignal;
   /**
    * Stable per-thread cache-routing key (opaque, not a secret): unlike
@@ -271,7 +252,7 @@ export type { ProviderErrorResponse } from "@meridian/contracts/threads";
  *
  * Ordering contract:
  * - "start" is always first (emitted once per provider call).
- * - Content deltas (text/reasoning/tool_call/custom) are emitted in provider
+ * - Content deltas (text/reasoning/tool_call) are emitted in provider
  *   arrival order. `partIndex` is the provider content-block position: the
  *   Anthropic block `index`, OpenAI Responses `output_index`, or
  *   OpenAI-Chat-Compatible `tool_calls[].index`. It is set ONLY when the
@@ -294,7 +275,6 @@ export type StreamEvent =
       argumentsDelta: string;
       partIndex?: number;
     }
-  | { type: "custom.delta"; kind: string; data: unknown; partIndex?: number }
   | { type: "usage"; usage: Usage }
   | { type: "end"; result: GenerateResult }
   | {
