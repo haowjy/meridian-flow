@@ -31,8 +31,9 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
   always beats mount-time memory, so every new jump path claims through
   `reading-position-navigation.ts`.
 - `landing/` is the one answer for where a press with no text under it, and
-  every drop, lands: one walk over the document's boxes, one plan per drag
-  event for the caret, hint and drop. It keeps caret placement, seam
+  every drop except a block move, lands: one walk over the document's boxes,
+  one plan per drag event for the caret, hint and drop. (A block moved by its
+  handle draws and lands its own top-level seam.) It keeps caret placement, seam
   precedence and keyboard parity out of layout components; layout code and
   lanes never place a drop themselves. A drop makes a paragraph at a seam
   where a press never does. See the editor context for the policy.
