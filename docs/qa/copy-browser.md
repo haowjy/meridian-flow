@@ -38,6 +38,8 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    again. Open a second tab: it shows there too. Close it in one tab: the other loses it,
    and a reload shows nothing. Two refusals at once show two toasts. A forced refusal (post
    `{}` to `/context/copy`) with the source still there offers Retry, which copies the rows.
+   Force that refusal, then delete the source: the toast stays and loses its Retry. Retry
+   pressed in the moment before that shows the toast again without Retry.
 5. **A gone destination.** Offline, copy a row into a new User folder, delete the folder
    with `./mf api POST …/context/user/delete`, go online. The toast has no Retry.
 6. **Unsynced edits.** Open a document, patch `WebSocket.prototype.send` to drop frames,
