@@ -20,3 +20,4 @@ Stubs are loud on purpose: a green deployment run must not imply that real infra
 - Apps are TypeScript deployables: `@meridian/app`, `@meridian/server`, and `@meridian/www`.
 - Migrations run through the Drizzle-backed `@meridian/database` package (provider-agnostic Postgres).
 - Provider credentials and staging URLs are configuration, not source-code constants.
+- `@meridian/app` sends signed-out `/` and log out to `MERIDIAN_WWW_ORIGIN` once it is set; set it only when `@meridian/www` is live, and register it as a WorkOS sign-out redirect. Staging's `@meridian/www` must set `MERIDIAN_APP_ORIGIN`.

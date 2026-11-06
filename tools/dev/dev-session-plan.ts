@@ -73,18 +73,32 @@ function portlessEnvPrefix(env: NodeJS.ProcessEnv): string {
   return assignments.length > 0 ? `env ${assignments.join(" ")} ` : "";
 }
 
-function appRuntimeEnv(env: NodeJS.ProcessEnv, internalApiOrigin: string): NodeJS.ProcessEnv {
+function appRuntimeEnv(
+  env: NodeJS.ProcessEnv,
+  internalApiOrigin: string,
+  mode: DevMode,
+  worktreePrefix: string | undefined,
+): NodeJS.ProcessEnv {
   return {
     ...env,
     MERIDIAN_API_ORIGIN: internalApiOrigin,
+    MERIDIAN_APP_ORIGIN: `https://${expectedServiceHost("app", worktreePrefix)}`,
+    // Local mode runs no www, so the app keeps sending signed-out people to sign-in.
+    MERIDIAN_WWW_ORIGIN:
+      mode === "local" ? undefined : `https://${expectedServiceHost("www", worktreePrefix)}`,
     // Local dev opts into debug paths (./mf, debug routes, model capture) unless .env says otherwise.
     APP_DEBUG: env.APP_DEBUG ?? "1",
   };
 }
 
 /** Exports for the stack's subshell: only keys the caller set or this plan computes. */
-function stackEnvExports(env: NodeJS.ProcessEnv, internalApiOrigin: string): string {
-  const runtimeEnv = appRuntimeEnv(env, internalApiOrigin);
+function stackEnvExports(
+  env: NodeJS.ProcessEnv,
+  internalApiOrigin: string,
+  mode: DevMode,
+  worktreePrefix: string | undefined,
+): string {
+  const runtimeEnv = appRuntimeEnv(env, internalApiOrigin, mode, worktreePrefix);
   return envAssignments(runtimeEnv, resolveAppEnvPassthroughKeys(runtimeEnv))
     .map((assignment) => `export ${assignment}; `)
     .join("");
@@ -141,7 +155,7 @@ export function createDevSessionCommand({
   // Everything below runs in the subshell, so nothing is exported into the pane's
   // interactive shell. A tmux server started from another checkout can leave that
   // checkout's DATABASE_URL in the pane: unset it so the loader derives this one.
-  const stack = `(unset DATABASE_URL PORTLESS_TAILSCALE PORTLESS_FUNNEL; ${stackEnvExports(env, internalApiOrigin)}${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
+  const stack = `(unset DATABASE_URL PORTLESS_TAILSCALE PORTLESS_FUNNEL; ${stackEnvExports(env, internalApiOrigin, mode, worktreePrefix)}${commands.map((command) => `${command} & sleep 2`).join("; ")}; wait)`;
   return {
     line: `mkdir -p logs logs/events && ${stack} 2>&1 | tee ${logPath}`,
     internalApiOrigin,
