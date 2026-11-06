@@ -16,7 +16,7 @@ function tmuxAttachCommand(sessionName: string): string {
 
 export function printSessionInfo(context: DevOutputContext): void {
   console.log(
-    `${context.headline} · ${context.mode} · ${context.clientBuild} client · ${context.sessionName}`,
+    `${context.headline}: ${context.mode}, ${context.clientBuild} client, ${context.sessionName}`,
   );
   console.log(tmuxAttachCommand(context.sessionName));
 
@@ -28,7 +28,7 @@ export function printSessionInfo(context: DevOutputContext): void {
     }
   }
 
-  console.log("pnpm portless:list · pnpm dev --restart");
+  console.log("pnpm portless:list, then pnpm dev --restart");
 }
 
 export function printFailure({
@@ -55,5 +55,5 @@ export function printFailure({
 
   console.error(tmuxAttachCommand(sessionName));
   console.error(`logs: ${logPath}`);
-  console.error(`${remediation} · pnpm portless:list · pnpm dev --restart`);
+  console.error(`${remediation}: pnpm portless:list, then pnpm dev --restart`);
 }

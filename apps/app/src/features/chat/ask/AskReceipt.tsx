@@ -1,6 +1,5 @@
 /** The one line a resolved ask leaves on its asking turn, or this device's answer while it sends. */
 import { t } from "@lingui/core/macro";
-import type { PermissionAskPayload } from "@meridian/contracts/threads";
 import type { AskReceipt as AskReceiptFacts } from "@meridian/thread-client";
 import { MessageCircleQuestion, ShieldCheck } from "lucide-react";
 import { useAskReceipt } from "@/client/stores";
@@ -12,7 +11,10 @@ export function AskReceipt({ threadId, turnId }: { threadId: string; turnId: str
   if (!receipt) return null;
   const { ask, pending } = receipt;
   const Icon = ask.kind === "question" ? MessageCircleQuestion : ShieldCheck;
-  const asked = ask.kind === "question" ? ask.payload.question : permissionAsked(ask.payload);
+  const asked =
+    ask.kind === "question"
+      ? { title: ask.payload.question, details: [] }
+      : permissionRequestText(ask.payload);
   return (
     <p
       className="flex min-w-0 items-start gap-[var(--chat-space-inline)] text-compact"
@@ -21,8 +23,13 @@ export function AskReceipt({ threadId, turnId }: { threadId: string; turnId: str
     >
       <Icon className="mt-1 size-3.5 shrink-0 text-ink-subtle" aria-hidden />
       {/* Inline, so a narrow column wraps the answer under the question instead of cutting both. */}
-      <span className="line-clamp-2 min-w-0">
-        <span className="text-muted-foreground">{asked}</span>{" "}
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-muted-foreground">{asked.title}</span>
+        {asked.details.map((line) => (
+          <span key={line} className="text-muted-foreground">
+            {line}
+          </span>
+        ))}
         <span className={cn("font-medium text-foreground", pending && "opacity-60")}>
           {answerText(receipt)}
         </span>
@@ -59,9 +66,4 @@ function answerText({ resolution }: AskReceiptFacts): string {
     case "deny":
       return t`Denied`;
   }
-}
-
-function permissionAsked(payload: PermissionAskPayload): string {
-  const { title, details } = permissionRequestText(payload);
-  return [title, ...details].join(" · ");
 }
