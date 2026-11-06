@@ -4,7 +4,6 @@ import {
   cleanupProjectFixture,
   type Db,
   findTestUserId,
-  login,
   openE2eDb,
   type ProjectFixture,
   seedProjectFixture,
@@ -18,7 +17,6 @@ const DATABASE_URL = process.env.CHAT_SMOKE_DATABASE_URL ?? process.env.DATABASE
 test("large chat keeps settled history virtualized", async ({ page }) => {
   test.skip(!DATABASE_URL, "CHAT_SMOKE_DATABASE_URL or DATABASE_URL is required");
 
-  await login(page);
   const db = openE2eDb(DATABASE_URL ?? "");
   let fixture: ProjectFixture | undefined;
 

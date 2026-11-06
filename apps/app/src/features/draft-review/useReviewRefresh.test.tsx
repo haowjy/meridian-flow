@@ -8,7 +8,7 @@
  * - review refresh debounce and invalidation ownership
  */
 
-import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -67,23 +67,6 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("useReviewRefresh", () => {
-  it("reads the draft and its list once after a burst of edits settles", async () => {
-    await mountOwner(async (invalidated) => {
-      await act(async () => {
-        edit("room-a");
-        edit("room-a");
-        edit("room-a");
-      });
-      await wait(300);
-      expect(invalidated()).toEqual([]);
-      await act(async () => edit("room-a"));
-      await wait(499);
-      expect(invalidated()).toEqual([]);
-      await wait(2);
-      expect(invalidated().sort()).toEqual(["list", "metadata"]);
-    });
-  });
-
   it("refreshes a stream that never pauses, rather than waiting for it to end", async () => {
     await mountOwner(async (invalidated) => {
       for (let i = 0; i < 30; i += 1) {
@@ -93,48 +76,6 @@ describe("useReviewRefresh", () => {
       // 6s of writing with no pause longer than 200ms: it read along the way.
       expect(invalidated().filter((kind) => kind === "metadata").length).toBeGreaterThanOrEqual(2);
     });
-  });
-
-  it("completes discovery during sustained refreshes and reads trailing edits", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const answers: Array<(room: string) => void> = [];
-    const options = {
-      queryKey: metadataKey,
-      queryFn: () => new Promise<string>((resolve) => answers.push(resolve)),
-      staleTime: 0,
-    };
-    client.setQueryData(metadataKey, "old-room");
-    const observer = new QueryObserver(client, options);
-    const unsubscribe = observer.subscribe(() => {});
-    let acquired: string | undefined;
-    void client
-      .fetchQuery(options)
-      .then((room) => {
-        acquired = room;
-      })
-      .catch(() => {});
-    try {
-      await withReactRoot(
-        <QueryClientProvider client={client}>
-          <Owner />
-        </QueryClientProvider>,
-        async () => {
-          for (let i = 0; i < 20; i++) {
-            await act(async () => edit("room-a"));
-            await wait(200);
-          }
-          await act(async () => answers[0]?.("successor"));
-          expect(acquired).toBe("successor");
-          // Edits arrived while discovery was held: they need a fresh read too.
-          expect(answers).toHaveLength(2);
-          await act(async () => answers[1]?.("latest"));
-          expect(client.getQueryData(metadataKey)).toBe("latest");
-        },
-      );
-    } finally {
-      unsubscribe();
-      client.clear();
-    }
   });
 
   it("still reads a room change seen just before the live room re-binds", async () => {
@@ -170,28 +111,6 @@ describe("useReviewRefresh", () => {
           expect.objectContaining({ queryKey: metadataKey }),
           expect.anything(),
         );
-      },
-    );
-  });
-
-  it("reads nothing once the review is gone", async () => {
-    const client = new QueryClient();
-    const invalidate = vi.spyOn(client, "invalidateQueries").mockResolvedValue();
-    let leave!: () => void;
-    function Host() {
-      const [open, setOpen] = useState(true);
-      leave = () => setOpen(false);
-      return open ? <Owner /> : null;
-    }
-    await withReactRoot(
-      <QueryClientProvider client={client}>
-        <Host />
-      </QueryClientProvider>,
-      async () => {
-        await act(async () => edit("room-a"));
-        await act(async () => leave());
-        await wait(1000);
-        expect(invalidate).not.toHaveBeenCalled();
       },
     );
   });

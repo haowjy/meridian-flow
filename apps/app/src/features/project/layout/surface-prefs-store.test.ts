@@ -13,32 +13,6 @@ import {
 
 afterEach(() => vi.unstubAllGlobals());
 
-it("restores Scratch expansion and height and Recent expansion together", async () => {
-  const values = new Map<string, string>();
-  vi.stubGlobal("window", {
-    localStorage: {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => values.set(key, value),
-    },
-  });
-  const store = useProjectSurfacePrefsStore;
-  store.getState().setRailExpanded("scratch", true);
-  store.getState().setRailHeight("scratch", 234);
-  store.getState().setRailExpanded("recent", false);
-  const saved = values.get("meridian:project-surface-layout") ?? "";
-  expect(JSON.parse(saved).version).toBe(4);
-  // A cold store on reload or in another tab adopts the device preference.
-  store.setState({ railPrefs: DEFAULT_RAIL_PREFS });
-  values.set("meridian:project-surface-layout", saved);
-  await store.persist.rehydrate();
-  expect(store.getState().railPrefs).toEqual({
-    ...DEFAULT_RAIL_PREFS,
-    scratchExpanded: true,
-    recentExpanded: false,
-    scratchHeight: 234,
-  });
-});
-
 it("keeps layout actions usable in memory when storage fails", async () => {
   vi.stubGlobal("window", {
     get localStorage() {

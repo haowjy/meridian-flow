@@ -29,9 +29,9 @@ never to get a task passing:
 - Writer text stays out of logs and diagnostics. The sanitizers are checked
   (`packages/yjs-inspect`'s canary, `safe-event.test.ts`); what emit sites pass them
   is not.
-- Marks and receipts say truthfully who did what. Partly checked.
-- One project's or account's content never reaches another. Checked feature by
-  feature.
+- Marks and receipts say truthfully who did what. Checked for live and draft
+  writes, response rollback, and subagent bylines. Not checked for undo, redo,
+  revert or Apply authorship, tree receipts, or what the browser shows.
 
 Everything else is the current implementation, open to rewriting once evidence or
 testing shows something better. The owner's words are direction, not rulings:
@@ -42,6 +42,11 @@ reason, not who said it.
 
 **Act on confident inferences.** Refactor, delete dead code and simplify without
 asking. Fix structural debt in the same PR, whatever the PR's size.
+
+**Fix what you find as you work,** including problems that were already there. A small
+fix goes in the current PR, and a larger one gets its own PR now. Call out every found
+fix in the PR body, so a reader can tell it apart from the change the PR is for. File an
+issue only when the fix needs a product decision or is a project of its own.
 
 **Optimistic UI.** The writer sees the result of their action at once, and failure
 shows on the thing they did. **Navigate first:** every destination change goes to
@@ -100,20 +105,27 @@ decision, change the test.
 ## Git
 
 Commit often. Worktrees, commits, pushes, PRs and issues need no permission.
-Documentation-only changes need no PR: push them straight to `main`.
+Documentation-only and comment-only changes need no PR: push them straight to `main`.
+A wrong comment or doc gets fixed as soon as you see it, without asking.
 
 A human merges features into `main` or `staging`. A big feature gets one integration
 branch: each finished piece bases on it and merges into it, instead of PRs stacked on
 each other, and the piece's worktree, stack and processes go as soon as it's in. One PR
 carries the integration branch into `main`.
 
-An agent may merge a fix or an approved refactor into `main` without asking, at any
-size. A fix restores intended behavior; changing what writers are meant to see is a
-feature. A refactor, reorganization or architecture change needs the owner's approval
-first, quoted in its issue or PR; another agent's report of that approval doesn't count.
+An agent may merge a fix or a refactor into `main` without asking, at any size. A fix
+restores intended behavior; changing what writers are meant to see is a feature. A big
+refactor, reorganization or architecture change needs the owner's approval first, quoted
+in its issue or PR; another agent's report of that approval doesn't count.
 Small fixes need no approval to start. Before merging, CI is green, the regressions the
 change could cause are tested, and the PR body is reread against the final diff, with
 evidence from the commit being merged. A big fix also needs an independent review.
+
+Big means impact, not size: a change is big when it crosses a boundary others depend on.
+That is `packages/contracts` or a package's public exports, the database schema or a
+migration, the wire protocol or a stored format, or more than one server domain or app.
+A change that looks narrow but alters behavior others rely on is big too; when unsure, call
+it big.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with

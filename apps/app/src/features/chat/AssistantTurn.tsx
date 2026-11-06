@@ -84,6 +84,7 @@ function AssistantTurnComponent({
   // A failed reply the chat moved past, kept for a card alone: nothing to copy or fork.
   const showsOnlyCards =
     turn.status === "error" && movedPast && items.length === 0 && deliveries.length === 0;
+  const stoppedEmpty = turn.status === "cancelled" && items.length === 0 && deliveries.length === 0;
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
@@ -120,7 +121,7 @@ function AssistantTurnComponent({
 
         <AnchoredCards anchor={{ turn: turn.id }} />
       </div>
-      {isSettled && !continuesResponse && !standIn && !showsOnlyCards ? (
+      {isSettled && !continuesResponse && !standIn && !showsOnlyCards && !stoppedEmpty ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}

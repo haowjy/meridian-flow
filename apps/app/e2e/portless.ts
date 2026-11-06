@@ -17,6 +17,12 @@ export function resolveServerUrl(): string {
 }
 
 function discoverPortlessUrl(route: PortlessRoute): string {
-  const output = execFileSync("pnpm", ["portless:list"], { cwd: REPO_ROOT, encoding: "utf8" });
+  const output = execFileSync("pnpm", ["portless:list"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    // Playwright sets FORCE_COLOR while loading a config; ANSI codes in the
+    // list break the route parser.
+    env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+  });
   return resolveCheckoutRouteUrls(REPO_ROOT, output)[route];
 }

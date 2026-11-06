@@ -11,6 +11,14 @@ distinguish a legacy raw row from a not-yet-recorded draft create without
 using caller ordering as domain semantics. `domain/ports/work-branch-pending-store.ts`
 remains the independent pending-review authority.
 
+## Restoring an earlier version
+
+Writers will be able to restore an old version of a document from its
+checkpoints. `checkpoints.ts` has `restore`, `listCheckpoints` and
+`createCheckpoint` for this, with no production caller yet: don't delete them as
+dead code. Older `document_yjs_checkpoints` rows are that feature's history, so
+reducing them needs a retention rule, not a single checkpoint per generation.
+
 ## Large-history recovery
 
 Measure idle recovery query plans with settled history before adding a partial

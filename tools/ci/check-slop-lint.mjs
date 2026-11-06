@@ -2,8 +2,9 @@
 
 /**
  * Finds agent-generated error swallowing, suppressions, and decision IDs in
- * TypeScript source. The baseline lets old findings remain visible while
- * making new findings fail and requiring deliberate baseline reductions.
+ * TypeScript source, and real-time waits and clock assertions in test files.
+ * The baseline lets old findings remain visible while making new findings fail
+ * and requiring deliberate baseline reductions.
  */
 
 import { execFileSync } from "node:child_process";
@@ -13,8 +14,10 @@ import ts from "typescript";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const BASELINE_PATH = resolve(ROOT, "tools/ci/slop-lint-baseline.json");
-const CATEGORIES = ["swallowed-error", "suppression", "decision-id", "middle-dot"];
+const CATEGORIES = ["swallowed-error", "suppression", "decision-id", "middle-dot", "test-timing"];
 const CATEGORY_MESSAGES = {
+  "test-timing":
+    "Wait for the event itself or drive time with fake timers; real time varies by machine.",
   "swallowed-error": "Handle or surface the error instead of silently discarding it.",
   suppression: "Fix the type or lint error instead of adding a suppression.",
   "decision-id": "Delete the decision ID; explain the invariant in the comment instead.",
@@ -22,11 +25,20 @@ const CATEGORY_MESSAGES = {
     "Separate UI facts with spacing, weight or muted color; use a sentence or parentheses in text.",
 };
 const ALLOW_PATTERN =
-  /slop-lint:\s*allow\s+(swallowed-error|suppression|decision-id|middle-dot)\s+(.+?)\s*$/i;
+  /slop-lint:\s*allow\s+(swallowed-error|suppression|decision-id|middle-dot|test-timing)\s+(.+?)\s*$/i;
 const ALLOW_MARKER = /slop-lint:\s*allow\b/i;
 const SUPPRESSION_PATTERN = /\bbiome-ignore(?:-all)?\b|@ts-(?:ignore|expect-error|nocheck)\b/g;
 const DECISION_PATTERN = /\b[DW]\d+\b/g;
 const MIDDLE_DOT_EXCEPTION_REASON = /file-detail row/i;
+const TEST_FILE_PATTERN = /\.test\.(ts|tsx)$/;
+const SLEEP_HELPERS = new Set(["sleep", "delay", "wait"]);
+const CLOCK_MATCHERS = new Set([
+  "toBeLessThan",
+  "toBeLessThanOrEqual",
+  "toBeGreaterThan",
+  "toBeGreaterThanOrEqual",
+]);
+const CLOCK_VALUE_NAME = /^(elapsed|duration|took)/i;
 
 const args = new Set(process.argv.slice(2));
 const updateBaseline = args.has("--update-baseline");
@@ -55,7 +67,7 @@ function isExcluded(filePath) {
   );
 }
 
-function sourcePaths() {
+function trackedPaths() {
   const output = execFileSync(
     "git",
     ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*.ts", "*.tsx"],
@@ -64,8 +76,14 @@ function sourcePaths() {
   return output
     .split("\0")
     .filter(Boolean)
-    .map((path) => resolve(ROOT, path))
-    .filter((path) => !isExcluded(path));
+    .map((path) => resolve(ROOT, path));
+}
+
+function parseSource(filePath) {
+  const text = readFileSync(filePath, "utf8");
+  const scriptKind = filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sourceFile = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true, scriptKind);
+  return { lines: text.split("\n"), sourceFile, text };
 }
 
 function lineAt(lines, position) {
@@ -265,23 +283,100 @@ function collectMiddleDotFindings(sourceFile, lines, findings) {
   visit(sourceFile);
 }
 
+function isPositiveLiteral(node) {
+  return node !== undefined && ts.isNumericLiteral(node) && Number(node.text) > 0;
+}
+
+function resolvesPromise(callback) {
+  if (ts.isIdentifier(callback) && /^(r|res)$/.test(callback.text)) return true;
+  return /\bresolve\b/.test(callback.getText());
+}
+
+function readsClock(node) {
+  if (ts.isIdentifier(node) && CLOCK_VALUE_NAME.test(node.text)) return true;
+  const text = ts.isCallExpression(node) ? node.expression.getText() : "";
+  if (text === "performance.now" || text === "Date.now") return true;
+  return ts.forEachChild(node, readsClock) ?? false;
+}
+
+function clockAssertionValue(call) {
+  const matcher = call.expression;
+  if (!ts.isPropertyAccessExpression(matcher) || !CLOCK_MATCHERS.has(matcher.name.text)) {
+    return undefined;
+  }
+  const expectation = matcher.expression;
+  if (!ts.isCallExpression(expectation) || expectation.expression.getText() !== "expect") {
+    return undefined;
+  }
+  return expectation.arguments[0];
+}
+
+// Under fake timers a sleep costs no real time, so the whole file is out of scope.
+function collectTestTimingFindings(sourceFile, text, lines, findings) {
+  if (text.includes("useFakeTimers")) return;
+
+  function visit(node) {
+    if (ts.isCallExpression(node)) {
+      const callee = ts.isIdentifier(node.expression) ? node.expression.text : "";
+      const [first, second] = node.arguments;
+      const sleeps =
+        (callee === "setTimeout" && isPositiveLiteral(second) && resolvesPromise(first)) ||
+        (SLEEP_HELPERS.has(callee) && isPositiveLiteral(first));
+      const clockValue = clockAssertionValue(node);
+      if (sleeps) {
+        addFinding(
+          findings,
+          sourceFile,
+          lines,
+          "test-timing",
+          node.getStart(sourceFile),
+          "test waits a fixed real time",
+        );
+      } else if (clockValue && readsClock(clockValue)) {
+        addFinding(
+          findings,
+          sourceFile,
+          lines,
+          "test-timing",
+          node.getStart(sourceFile),
+          "test asserts on the wall clock",
+        );
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+}
+
+function collectTestTimingDirectives(sourceFile, lines, directives) {
+  lines.forEach((line, index) => {
+    const allow = line.match(ALLOW_PATTERN);
+    if (allow?.[1].toLowerCase() !== "test-timing") return;
+    directives.push({
+      category: "test-timing",
+      lineNumber: index + 1,
+      path: relativePath(sourceFile.fileName),
+      reason: allow[2].trim(),
+      used: false,
+    });
+  });
+}
+
 function collectFindings() {
   const findings = new Map(CATEGORIES.map((category) => [category, new Map()]));
   const directives = [];
-  for (const filePath of sourcePaths()) {
-    const text = readFileSync(filePath, "utf8");
-    const scriptKind = filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-    const sourceFile = ts.createSourceFile(
-      filePath,
-      text,
-      ts.ScriptTarget.Latest,
-      true,
-      scriptKind,
-    );
-    const lines = text.split("\n");
+  const paths = trackedPaths();
+  for (const filePath of paths.filter((path) => !isExcluded(path))) {
+    const { lines, sourceFile, text } = parseSource(filePath);
     collectSwallowedErrors(sourceFile, lines, findings.get("swallowed-error"));
     collectCommentFindings(sourceFile, text, lines, findings, directives);
     collectMiddleDotFindings(sourceFile, lines, findings.get("middle-dot"));
+  }
+  for (const filePath of paths.filter((path) => TEST_FILE_PATTERN.test(path))) {
+    const { lines, sourceFile, text } = parseSource(filePath);
+    collectTestTimingFindings(sourceFile, text, lines, findings.get("test-timing"));
+    collectTestTimingDirectives(sourceFile, lines, directives);
   }
 
   for (const category of CATEGORIES) {
@@ -377,6 +472,13 @@ function main() {
       return;
     }
     throw error;
+  }
+  // A new category has no history to protect, so its first refresh records today's findings.
+  // Its key then exists, and from there it can only shrink like the others.
+  if (updateBaseline) {
+    for (const category of CATEGORIES) {
+      baseline.categories[category] ??= sortedEntries(findings.get(category));
+    }
   }
   const allowed = baselineMaps(baseline);
   const newFindings = [];

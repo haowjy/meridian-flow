@@ -1,3 +1,5 @@
+import { isLocalHost } from "@meridian/contracts/dev-auth";
+
 import { getAppServerConfig } from "./config";
 
 const CALLBACK_PATH = "/api/auth/callback";
@@ -39,11 +41,10 @@ function canUseDynamicRedirect(
   effectiveProtocol: string,
 ): boolean {
   if (effectiveProtocol !== fallbackUrl.protocol) return false;
+  if (!isLocalHost(requestUrl.host)) return false;
   const hostname = requestUrl.hostname;
   if (hostname === "localhost" || hostname === "127.0.0.1") {
     return fallbackUrl.hostname === "localhost" || fallbackUrl.hostname === "127.0.0.1";
   }
-  if (hostname.endsWith(".localhost")) return true;
-  if (hostname.endsWith(".ts.net")) return true;
-  return false;
+  return true;
 }

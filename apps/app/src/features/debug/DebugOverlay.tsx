@@ -252,8 +252,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
                 </p>
               ) : null}
               <p className="text-meta text-muted-foreground">
-                Alt+click any turn/block to inspect its record. Query cache → TanStack Query
-                Devtools (button, bottom-left). Stores → Redux DevTools.
+                Alt+click any turn/block to inspect its record. Stores → Redux DevTools.
               </p>
             </div>
           </section>

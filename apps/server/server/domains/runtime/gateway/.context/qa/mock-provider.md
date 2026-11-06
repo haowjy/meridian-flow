@@ -1,7 +1,7 @@
 # Rich mock provider
 
 Use an owned stack with `MODEL_PROVIDER=mock pnpm dev`; discover its URLs with
-`pnpm portless:list` and sign in through `/dev-login`. These checks exercise the
+`pnpm portless:list` (the stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in). These checks exercise the
 mock through real chat persistence and tools, not UI-injected fake rows.
 [Controls and fixtures](../../../../../../../../docs/debugging.md#mock-provider-responses).
 `pnpm dev:stacks` lists running stacks and their checkout names. Create a fresh
