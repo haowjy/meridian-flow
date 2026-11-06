@@ -20,7 +20,6 @@ import type {
   ResolvedCall,
   StreamEvent,
 } from "../../domain/index.js";
-import { hasBillableTokenUsage, withMissingUsageMetering } from "../../domain/metering.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapProviderHttpError, providerFetch } from "../provider-http-error.js";
 import { toOpenAIResponsesParams } from "./request-map.js";
@@ -83,13 +82,7 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
             return;
           }
           if (accumulatorHasPartialResult(acc)) {
-            const result = buildGenerateResult(acc);
-            yield {
-              type: "end",
-              result: hasBillableTokenUsage(result.usage)
-                ? result
-                : withMissingUsageMetering(result),
-            };
+            yield { type: "end", result: buildGenerateResult(acc) };
             return;
           }
           yield {

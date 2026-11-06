@@ -27,6 +27,7 @@ import {
   resolveCall,
   type StreamEvent,
 } from "./domain/index.js";
+import { hasBillableTokenUsage, withMissingUsageMetering } from "./domain/metering.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
 import {
   isCommittedOutputEvent,
@@ -295,8 +296,16 @@ export async function* streamWithRetry(
     };
     const timeTerminalEvent = (arrival: ArrivingEvent): StreamEvent => {
       if (arrival.event.type !== "end" && arrival.event.type !== "error") return arrival.event;
-      const result = arrival.event.result;
-      if (!result) return arrival.event;
+      const terminal = arrival.event.result;
+      if (!terminal) return arrival.event;
+      // A cancel can land before the provider's usage arrives (OpenAI-compatible sends it in the
+      // final chunk). Mark it here so every adapter's partial result is settled and persisted.
+      const result =
+        arrival.event.type === "end" &&
+        request.signal?.aborted &&
+        !hasBillableTokenUsage(terminal.usage)
+          ? withMissingUsageMetering(terminal)
+          : terminal;
       return {
         ...arrival.event,
         result: {
