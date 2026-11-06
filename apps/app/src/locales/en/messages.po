@@ -2165,8 +2165,8 @@ msgid "Couldn't read report from {line}"
 msgstr "Couldn't read report from {line}"
 
 #: src/features/import/reason-copy.ts
-msgid "Couldn't read this Word document. Kept as a file."
-msgstr "Couldn't read this Word document. Kept as a file."
+#~ msgid "Couldn't read this Word document. Kept as a file."
+#~ msgstr "Couldn't read this Word document. Kept as a file."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
@@ -2347,6 +2347,10 @@ msgstr "Couldn't switch to draft mode."
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
 msgstr "Couldn't switch Work"
+
+#: src/features/import/reason-copy.ts
+msgid "Couldn't turn this into a document. Kept as a file."
+msgstr "Couldn't turn this into a document. Kept as a file."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"

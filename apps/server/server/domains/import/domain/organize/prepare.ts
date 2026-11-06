@@ -142,7 +142,7 @@ export async function prepareImportEntries(
     for (const image of document.images) {
       const path = [...directory, folder, image.name].join("/");
       taken.add(path);
-      const facts = await classify(image.name, image.bytes);
+      const { facts } = await classify(image.name, image.bytes);
       const id = entryId++;
       const key = stagingKey(input.importId, id);
       const put = await deps.objects.put(key, image.bytes, facts.mimeType);

@@ -191,7 +191,14 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    folder's order survives. Drag a desktop file onto a row's edge and onto a folder: both
    light the whole folder, the hint says "Import into <folder>", no insertion line draws,
    and the file lands by the folder's rule, not at the edge.
-12. Reconcile a re-picked folder. To stop mid-upload at a known point, wrap
+12. Files that aren't documents. Import (Files…) a truncated `.docx` (its first 6 bytes
+   `PK\x03\x04\x14\x00`), a real `.docx` cut to 500 bytes, 3 KB of random bytes named
+   `binary.md`, `page.html`, a `.txt` of invalid UTF-8 (`\xff\xfe\xfa\xfb…`), a good `.md`,
+   a good `.docx` and a Chinese `.txt`. Done says 5 need a look; each of the first five
+   opens as a card with Download (never "PK" or tags as text) and its See files line reads
+   "Couldn't turn this into a document. Kept as a file."; the names keep `.md`, `.txt`,
+   `.html`. The good `.md`, `.docx` and Chinese `.txt` open as prose.
+13. Reconcile a re-picked folder. To stop mid-upload at a known point, wrap
    `XMLHttpRequest.prototype.send` in the page so `POST …/imports/<id>/files` fails
    after N requests, then reload. Check each case with the done card's See files list
    and the entry rows (`reason`):
@@ -232,7 +239,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
      `beforeunload` event is not prevented.
    - During a Continue that has received files to hash, the card reads Uploading, never
      Upload paused.
-13. Two tabs. Start an upload in tab A with slow sends, then open the project in tab B:
+14. Two tabs. Start an upload in tab A with slow sends, then open the project in tab B:
    B's first render reads Uploading in another window, with no Continue (check with a
    MutationObserver registered at document start; the card must never read Upload paused
    first). `navigator.locks.query()` lists `import-upload:<id>` while A works. Close A:
