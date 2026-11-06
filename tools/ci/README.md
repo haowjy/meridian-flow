@@ -232,12 +232,15 @@ source. Run the check and lint after changing fixtures.
 
 ## Slop lint
 
-`pnpm check:slop-lint` keeps three common agent mistakes out of new TypeScript
+`pnpm check:slop-lint` keeps four common agent mistakes out of new TypeScript
 source:
 
 - an empty `catch` block or a `.catch(() => null | undefined | [] | {} | false)`;
 - a new `biome-ignore` or TypeScript suppression comment;
 - a `D<number>` or `W<number>` decision ID in a comment.
+- a middle dot (`·`) used to separate facts in a string, template text or JSX
+  text. Use layout, weight or muted color in UI, and a sentence or parentheses
+  in text.
 
 The checker uses the TypeScript AST for catch expressions and the TypeScript
 comment scanner for the other two rules. It excludes test files and test
@@ -265,7 +268,10 @@ colocated exception in the source instead of adding it to the baseline:
 void close().catch(() => undefined);
 ```
 
-The category must be `swallowed-error`, `suppression`, or `decision-id`; the
+The category must be `swallowed-error`, `suppression`, `decision-id`, or
+`middle-dot`; the
 reason is required, and the checker fails on an exception that no longer
 matches a finding. Every failure says what to do: handle or surface the error,
-fix the type or lint error, or delete the decision ID.
+fix the type or lint error, delete the decision ID, or separate facts with
+spacing, weight or muted color in UI and with a sentence or parentheses in
+text. A middle-dot exception's reason must include `file-detail row`.

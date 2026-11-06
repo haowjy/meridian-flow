@@ -4,11 +4,7 @@
  * opens to each question with its answer.
  */
 import { plural, t } from "@lingui/core/macro";
-import type {
-  PermissionAskPayload,
-  QuestionAskPayload,
-  ResolvedQuestionAnswer,
-} from "@meridian/contracts/threads";
+import type { QuestionAskPayload, ResolvedQuestionAnswer } from "@meridian/contracts/threads";
 import type { AskReceipt as AskReceiptFacts } from "@meridian/thread-client";
 import { ChevronRight, MessageCircleQuestion, ShieldCheck } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
@@ -23,14 +19,23 @@ export function AskReceipt({ threadId, turnId }: { threadId: string; turnId: str
   if (ask.kind === "question" && ask.payload.questions.length > 1)
     return <QuestionsReceipt receipt={receipt} questions={ask.payload.questions} />;
   const asked =
-    ask.kind === "question" ? ask.payload.questions[0].question : permissionAsked(ask.payload);
+    ask.kind === "question"
+      ? { title: ask.payload.questions[0].question, details: [] }
+      : permissionRequestText(ask.payload);
   return (
     <ReceiptLine receipt={receipt}>
-      {/* Inline, so a narrow column wraps the answer under the question instead of cutting both. */}
-      <span className="line-clamp-2 min-w-0">
-        <span className="text-muted-foreground">{asked}</span>{" "}
-        <Answer pending={receipt.pending}>{answerText(receipt)}</Answer>
-        <Sending pending={receipt.pending} />
+      {/* Separate rows keep a narrow column from cutting the request facts and answer together. */}
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-muted-foreground">{asked.title}</span>
+        {asked.details.map((line) => (
+          <span key={line} className="text-muted-foreground">
+            {line}
+          </span>
+        ))}
+        <span>
+          <Answer pending={receipt.pending}>{answerText(receipt)}</Answer>
+          <Sending pending={receipt.pending} />
+        </span>
       </span>
     </ReceiptLine>
   );
@@ -179,9 +184,4 @@ function questionAnswerText(answer: ResolvedQuestionAnswer): string {
     case "timeout":
       return answer.label ? t`No answer, went with ${answer.label}` : t`No answer`;
   }
-}
-
-function permissionAsked(payload: PermissionAskPayload): string {
-  const { title, details } = permissionRequestText(payload);
-  return [title, ...details].join(t`, `);
 }

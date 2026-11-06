@@ -22,7 +22,9 @@ client contracts, stores and server-owned runtime behavior.
 ## Writer-facing screens
 
 - Separate adjacent facts with layout, typography, sentences, or parentheses, not
-  metadata-style `·`, `•`, `—`, or `|` ([copy separation][copy-separation]).
+  metadata-style `·`, `•`, `—`, or `|`. A file-detail row may keep `·` with a
+  colocated `slop-lint: allow middle-dot file-detail row` comment
+  ([copy separation][copy-separation]).
 - A row or menu shows only the actions that can succeed now; a fixed toolbar
   greys one instead, with the reason on hover. Feedback doesn't push content down
   ([offer only what applies][offer-only]).
