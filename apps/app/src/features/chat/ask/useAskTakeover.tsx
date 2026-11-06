@@ -6,7 +6,8 @@
  * message with no Retry until the writer changes something.
  *
  * Nothing typed is lost: when the ask ends, words that aren't in how it ended (left in a field
- * beside a picked option, or sent but beaten by another resolution) are added to the composer
+ * beside a picked option, typed when the ask timed out and so not sent, or sent but beaten by
+ * another resolution) are added to the composer
  * draft once. Closure follows the ask's lifecycle, not the takeover. The writer's draft is kept
  * in this tab's session storage, one per chat, so leaving the chat or reloading keeps the words;
  * an ask that ended meanwhile closes when the chat opens again.
@@ -15,14 +16,14 @@
  * the answers the server holds for the ask (`draftAnswers`), the ones a timeout would use, and
  * follows them as newer ones arrive: a chat left open re-reads them on return. The draft becomes
  * the writer's own at their first change, and no later `ask.updated` replaces it. With two tabs
- * open the last one to report wins. A send the server refuses as `invalid_answer` moves the draft to
+ * open, the tab whose writer changed an answer last wins; a tab that only sees activity never
+ * sends its draft. A send the server refuses as `invalid_answer` moves the draft to
  * the question it names.
  *
- * While a question ask is open, any activity on the page (pointer, keys, wheel, scroll, touch)
- * and every change to the draft report it to the server as `ask.presence` (`presence-reporter.ts`),
- * which keeps the idle clock from running while the writer reads. A report always names the open
- * ask: before the writer changes anything it carries the answers the server already holds, so it
- * moves the clock without replacing them. An answer holds its draft without reporting it: the
+ * While a question ask is open, any activity on the page (pointer, keys, wheel, touch) and every
+ * change to the draft report it to the server as `ask.presence` (`presence-reporter.ts`), which
+ * keeps the idle clock from running while the writer reads. Only a draft change carries the
+ * answers, so activity moves the clock without replacing the answers the server holds. An answer holds its draft without reporting it: the
  * answer carries it, and the ask is no longer open here, so later activity reports nothing.
  */
 import { questionAnswerSchema, type ThreadAsk } from "@meridian/contracts/threads";
@@ -36,13 +37,12 @@ import { useAnswerAsk } from "./useAnswerAsk";
 
 type HeldDraft = QuestionDraft & { askId: string | null };
 
-/** Page activity that shows the writer is there; scroll doesn't bubble, hence capture on window. */
+/** Page activity that shows the writer is there. Not `scroll`: the page scrolls itself too. */
 const ACTIVITY_EVENTS = [
   "pointermove",
   "pointerdown",
   "keydown",
   "wheel",
-  "scroll",
   "touchstart",
   "touchmove",
 ] as const;
@@ -81,13 +81,7 @@ export function useAskTakeover(
   const askRef = useRef<ThreadAsk | null>(null);
   askRef.current = open?.ask.kind === "question" ? open.ask : null;
   const presence = useMemo(
-    () =>
-      createPresenceReporter(commands.presence, () => {
-        const ask = askRef.current;
-        if (!ask) return null;
-        const draft = heldRef.current.askId === ask.id ? heldRef.current : seedDraft(ask);
-        return { askId: ask.id, answers: draft.entries.map((entry) => entry.choice) };
-      }),
+    () => createPresenceReporter(commands.presence, () => askRef.current?.id ?? null),
     [commands],
   );
   const questionOpen = askRef.current !== null;
@@ -136,7 +130,7 @@ export function useAskTakeover(
       onDraftChange={(next) => {
         setRefusedAsk(null);
         write({ askId: open.ask.id, ...next });
-        presence.report();
+        presence.report(next.entries.map((entry) => entry.choice));
       }}
       onSettle={() => commands.settle(open.ask.id)}
       onAnswer={(answer, sent) => {

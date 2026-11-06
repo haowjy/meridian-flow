@@ -89,13 +89,13 @@ export interface AskRepository {
     opening: { openedAt: Date; deadline: Date | null },
   ): Promise<StoredAsk | null>;
   /**
-   * Stores the writer's draft answers on an open ask and moves its deadline out to `deadline`
-   * (never earlier). Null when the ask is no longer open.
+   * Moves an open ask's deadline out to `deadline` (never earlier) and, when `draftAnswers`
+   * is given, stores them as the writer's draft. Null when the ask is no longer open.
    */
   recordPresence(input: {
     id: string;
     deadline: Date;
-    draftAnswers: DraftAnswers;
+    draftAnswers?: DraftAnswers;
   }): Promise<StoredAsk | null>;
   cancelPendingByTurn(turnId: TurnId): Promise<StoredAsk[]>;
   resolveOpen(input: {

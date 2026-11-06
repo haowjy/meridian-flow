@@ -19,8 +19,8 @@ export type AskCommands = {
   answer(askId: string, answer: AskAnswer): Promise<AnswerAskResult>;
   /** Read the chat again after an answer could not learn how the ask ended. */
   settle(askId: string): void;
-  /** The writer is still answering, holding these answers so far; false when the frame couldn't leave. */
-  presence(askId: string, answers: DraftAnswers): boolean;
+  /** The writer is still there; `answers` are a draft change. False when the frame couldn't leave. */
+  presence(askId: string, answers?: DraftAnswers): boolean;
   /** Run `listener` each time the socket connects; returns the unsubscribe. */
   onConnected(listener: () => void): () => void;
 };

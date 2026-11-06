@@ -96,7 +96,7 @@ export interface ThreadTransport {
    * Tell the server the writer is interacting with an open question, holding `answers` so far:
    * it moves the ask's deadline out. Fire and forget; false when the frame couldn't leave.
    */
-  sendAskPresence(input: { threadId: string; askId: string; answers: DraftAnswers }): boolean;
+  sendAskPresence(input: { threadId: string; askId: string; answers?: DraftAnswers }): boolean;
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;

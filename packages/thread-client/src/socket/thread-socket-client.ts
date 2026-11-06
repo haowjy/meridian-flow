@@ -163,7 +163,7 @@ export class ThreadSocketClient implements ThreadTransport {
     );
   }
 
-  sendAskPresence(input: { threadId: string; askId: string; answers: DraftAnswers }): boolean {
+  sendAskPresence(input: { threadId: string; askId: string; answers?: DraftAnswers }): boolean {
     return this.socket.isServerConnected() && this.send({ type: "ask.presence", ...input });
   }
 

@@ -144,7 +144,7 @@ export const resolvedQuestionAnswerSchema = z.discriminatedUnion("kind", [
 
 /**
  * Answers the writer had chosen so far, by question index (null: not answered yet). The
- * server keeps them with the ask so a timeout resolves from them.
+ * server keeps them with the ask so a timeout resolves from them (typed words become `unsent`).
  */
 export const draftAnswersSchema = z.array(questionAnswerSchema.nullable()).max(MAX_ASK_QUESTIONS);
 
@@ -199,7 +199,7 @@ const threadAskIdentitySchema = z.object({
   turnId: z.string().min(1),
   toolCallId: z.string().min(1),
   deadlineAt: z.string().datetime().nullable(),
-  /** The answers the owner's client last reported holding; a timeout keeps them. Owner-only data. */
+  /** The answers the owner's client last reported holding; a timeout keeps options and skips, not typed words. Owner-only data. */
   draftAnswers: draftAnswersSchema.nullable().optional(),
   createdAt: z.string().datetime(),
 });

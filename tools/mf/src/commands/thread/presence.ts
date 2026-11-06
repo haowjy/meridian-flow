@@ -1,11 +1,11 @@
 /**
  * `thread presence`: tell the server the writer is interacting with the chat's open question,
  * as the takeover does while it is used. The server moves the ask's deadline out (to 4 minutes
- * from now, never past 55 minutes after it opened) and keeps the answers sent as the draft a
- * timeout resolves from.
+ * from now, never past 55 minutes after it opened). With `--answer`/`--answers` it also keeps
+ * them as the draft a timeout resolves from; without, the draft it holds stays.
  */
 import { EXIT, usageError } from "../../core/cli-error";
-import type { CommandSpec } from "../../core/command";
+import { type CommandSpec, listOption, stringOption } from "../../core/command";
 import { ANSWER_OPTIONS, answerArgs, resolveOpenAsk } from "./answer";
 import { THREAD_TARGET_OPTIONS } from "./resolve";
 import { connectThreadClient } from "./transport";
@@ -24,11 +24,15 @@ export const threadPresenceCommand: CommandSpec = {
     ...ANSWER_OPTIONS,
   },
   examples: [
+    "./mf thread presence <id>",
     "./mf thread presence <id> --answer 'option:Left' --answer none",
     "./mf thread presence <id> --answers '[null,null]'",
   ],
   async run(ctx) {
-    const answers = answerArgs(ctx);
+    const answers =
+      listOption(ctx, "answer").length > 0 || stringOption(ctx, "answers") !== undefined
+        ? answerArgs(ctx)
+        : undefined;
     const target = await resolveOpenAsk(ctx, "thread.presence");
     if (!target) return EXIT.notFound;
     const { session, threadId, askId } = target;

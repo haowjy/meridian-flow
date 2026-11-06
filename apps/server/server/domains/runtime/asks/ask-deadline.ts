@@ -4,7 +4,7 @@
  *
  * The idle clock restarts on every report of activity on the page; the hard limit runs from the
  * moment the ask opened and never moves. The limit was set from the main chat's 1-hour cache
- * target; a longer wait may miss the cache on a model that has none.
+ * target; a chat whose cache is shorter can miss it during the wait.
  */
 
 export const ASK_IDLE_MS = 4 * 60_000;

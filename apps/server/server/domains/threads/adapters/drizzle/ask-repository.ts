@@ -187,7 +187,7 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
         .update(asks)
         .set({
           deadlineAt: sql`GREATEST(${asks.deadlineAt}, ${input.deadline.toISOString()}::timestamptz)`,
-          draftAnswers: input.draftAnswers,
+          ...(input.draftAnswers && { draftAnswers: input.draftAnswers }),
         })
         .where(and(eq(asks.id, input.id), eq(asks.status, "open")))
         .returning();

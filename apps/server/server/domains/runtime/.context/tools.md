@@ -58,8 +58,10 @@ the writer with its own `ask_user` (the spawn description says so).
 
 A question ask times out on a clock the server owns (`asks/ask-deadline.ts`): 4 minutes
 idle, restarted by each `ask.presence` message the takeover sends while the writer is active
-on the page (any pointer, key, wheel, scroll or touch, at most one per 30 s), and never past 55 minutes after the ask opened (`asks.opened_at`). A presence
-message also stores the writer's held answers (`asks.draft_answers`); it publishes
+on the page (any pointer, key, wheel or touch, at most one per 30 s; not `scroll`, which the page causes itself), and never past 55 minutes after the ask opened (`asks.opened_at`). A presence
+message that carries `answers` (sent only when the writer changed one) also stores them
+(`asks.draft_answers`); one without leaves the stored answers alone, so a tab that only sees
+activity can't overwrite newer answers from another tab or device. It publishes
 `ask.updated` only when the answers changed or the deadline moved 30 s or more (the
 deadline is whole seconds). The stored answers go to the owner's clients as
 `ThreadAsk.draftAnswers`. A refused presence is logged (`ask.presence.refused`, with its reason); no frame goes
