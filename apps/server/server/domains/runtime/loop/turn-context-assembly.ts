@@ -29,7 +29,7 @@ import type {
   PromptBakeRepository,
   ThreadImageInclusionRepository,
 } from "../../threads/ports/repositories.js";
-import type { FunctionTool, Gateway, GenerateRequest, ModelInfo, Tool } from "../gateway/index.js";
+import type { Gateway, GenerateRequest, ModelInfo, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
@@ -67,7 +67,7 @@ function toolsFromBakedJson(value: PromptBake["bakedTools"]): Tool[] | null {
  * invocations are never removed, so the list changes once and stays stable.
  */
 function withInvokedSkillTool(baked: Tool[], live: Tool[]): Tool[] {
-  const isSkill = (tool: Tool) => tool.type === "function" && tool.name === "skill";
+  const isSkill = (tool: Tool) => tool.name === "skill";
   if (baked.some(isSkill)) return baked;
   const skill = live.find(isSkill);
   return skill ? [...baked, skill] : baked;
@@ -108,7 +108,7 @@ export interface AssembledNextTurnContext {
   thread: Thread;
   agentSlug: string | null;
   systemPrompt: string;
-  tools: FunctionTool[];
+  tools: Tool[];
   policy: ToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   resolvedModel: ModelInfo | null;
@@ -125,10 +125,6 @@ export interface AssembledNextTurnContext {
   /** The block ids whose observation frontiers may credit the model on this request (C10). */
   creditedBlockIds: ReadonlySet<string>;
   preparationUpdates: { turns: Turn[]; blocks: Block[] };
-}
-
-function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] {
-  return (tools ?? []).filter((tool): tool is FunctionTool => tool.type === "function");
 }
 
 export async function composeLivePromptBake(
@@ -325,7 +321,7 @@ export function renderPreparedTurnContext(
   });
   return {
     ...context,
-    tools: functionToolsFromAdvertised(built.tools),
+    tools: built.tools ?? [],
     generateRequest: {
       messages: built.messages,
       tools: built.tools,
@@ -353,7 +349,7 @@ export async function persistPreparedPromptBake(
   const tools = toolsFromBakedJson(result.bake.bakedTools) ?? assembled.generateRequest.tools ?? [];
   // Match buildContext: an empty advertised tool set is omitted from request bytes.
   assembled.generateRequest.tools = tools.length ? tools : undefined;
-  assembled.tools = functionToolsFromAdvertised(tools);
+  assembled.tools = tools;
 
   const systemIndex = assembled.generateRequest.messages.findIndex(
     (message) => message.role === "system",
