@@ -15,7 +15,6 @@ import {
   contextCatalogEntries,
   contextCatalogScopeHeads,
   contextSources,
-  documentMarkdownProjections,
   documentPreviousLocations,
   documents,
   documentYjsUpdates,
@@ -95,7 +94,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
         fileType: "markdown",
       });
-      await db.insert(documentMarkdownProjections).values({ documentId: id, markdown: name });
     }
 
     it("keeps file and folder namespace claims exclusive in either order", async () => {
@@ -105,7 +103,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "file",
         extension: "",
         filetype: "markdown",
-        markdown: "original",
       });
       await expect(store.ensureFolderPath(["file"])).rejects.toMatchObject({
         name: "ContextEntryConflictError",
@@ -118,7 +115,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "folder",
           extension: "",
           filetype: "markdown",
-          markdown: "replacement",
         }),
       ).rejects.toMatchObject({ name: "ContextEntryConflictError", occupantKind: "folder" });
       await expect(
@@ -127,7 +123,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "folder",
           extension: "",
           filetype: "markdown",
-          markdown: "replacement",
         }),
       ).rejects.toThrow("Context entry already exists");
     });
@@ -191,7 +186,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "alpha",
         extension: "",
         filetype: "markdown",
-        markdown: "",
       });
       expect(replacement).not.toBeNull();
       await db
@@ -225,7 +219,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "chapter",
         extension: "",
         filetype: "markdown",
-        markdown: "",
       });
       const tree = new DrizzleContextTreeMutationStore(db, {
         removal: createTestDocumentRemoval(db),
@@ -253,7 +246,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             name: "chapter",
             extension: "",
             filetype: "markdown",
-            markdown: "",
           });
           expect(await db.select().from(documentPreviousLocations)).toEqual([]);
           throw new Error("rollback claim");
@@ -687,7 +679,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             name,
             extension: "",
             filetype: "markdown",
-            markdown: "",
           });
         const folderName = index < 2 ? name : `${name}.md`;
         const folder = () => right.ensureFolderPath([folderName]);

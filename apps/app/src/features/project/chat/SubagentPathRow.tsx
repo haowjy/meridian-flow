@@ -15,7 +15,7 @@ export function SubagentPathRow({
 }: {
   subagent: Thread;
   ancestors: ThreadSnapshotAncestor[];
-  runStatus: "running" | "succeeded" | "failed" | "cancelled" | null;
+  runStatus: Thread["spawnStatus"];
   startedAt?: string | null;
   endedAt?: string | null;
   onOpenParent: (threadId: string) => void;

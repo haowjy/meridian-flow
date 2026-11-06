@@ -55,10 +55,8 @@ export async function createInBranch(
     node: TrackedNode | BinaryNode;
     /** The chat that made the create, recorded for the review row (§3.3). */
     createdBy?: { threadId: ThreadId; turnId?: TurnId };
-    /** A new text row's authority, empty, in this transaction (never seeded). */
-    initializeEmptyContent(documentId: DocumentId): Promise<void>;
-    /** A joined text row whose authority is missing, repaired from its stored projection. */
-    repairContent(documentId: DocumentId): Promise<void>;
+    /** A text row's authority, seeded empty if missing: a new row's, or a joined row's repair. */
+    ensureContent(documentId: DocumentId): Promise<void>;
     /** The branch's draft of a text document, seeded from its empty live document. */
     ensureDocumentDraft(documentId: DocumentId): Promise<void>;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
@@ -122,9 +120,9 @@ export async function createInBranch(
       ...(id ? { id } : {}),
     });
     if (!documentId) throw new Error(`Hidden document ${slot.name} was not inserted`);
-    if (input.node.kind === "tracked") await input.initializeEmptyContent(documentId);
+    if (input.node.kind === "tracked") await input.ensureContent(documentId);
   } else if (joined) {
-    await input.repairContent(documentId);
+    await input.ensureContent(documentId);
   }
 
   await recordCreated(db, {
@@ -201,7 +199,6 @@ export type LiveCreateFault =
 export type LiveInsert = {
   node: TrackedNode;
   id?: DocumentId;
-  markdown: string;
   provisionalName?: boolean;
 };
 
@@ -238,10 +235,9 @@ export async function createLive(
     if (!confirmed) return Err({ code: "candidate_changed" });
   }
   if (!chosen) {
-    const { node, markdown, id, provisionalName } = input.insert;
+    const { node, id, provisionalName } = input.insert;
     const documentId = await insertDocumentRow(db, input.slot, node, {
       hidden: false,
-      markdown,
       ...(id ? { id } : {}),
       ...(provisionalName ? { provisionalName } : {}),
     });

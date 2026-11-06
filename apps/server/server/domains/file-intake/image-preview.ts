@@ -3,7 +3,7 @@
  * stores it. Every save path calls `saveImagePreview` after putting the original; a file that
  * gets no preview is drawn as a file card, so a failure here never fails the save.
  *
- * Conversion runs in `image-preview-worker.mjs` on a small worker pool (`sharp` for TIFF,
+ * Conversion runs in `image-preview-worker.ts` on a small worker pool (`sharp` for TIFF,
  * `heic-decode` (libheif WASM) for HEIC/HEIF, `bmp-ts` for BMP): the WASM and BMP decoders are
  * synchronous and would freeze every request for seconds. A worker that crashes, runs out of
  * memory or hangs is replaced and its file gets the card.
@@ -63,17 +63,6 @@ const slots: Slot[] = [];
 const queue: Job[] = [];
 let nextJobId = 0;
 
-/**
- * `nitro.config.ts` emits the worker at the output root, beside the entry chunk that sets
- * `__nitro_main__`: both `nitro dev` and a production build bundle this file into a different
- * chunk, so a path relative to `import.meta.url` is wrong in one of them. Outside Nitro (unit
- * tests) the source file sits beside this one.
- */
-function workerUrl(): URL {
-  const main = (globalThis as { __nitro_main__?: string }).__nitro_main__;
-  return new URL("./image-preview-worker.mjs", main ?? import.meta.url);
-}
-
 /** Ends the slot's job with `outcome` and, if the worker is gone, replaces it. */
 function settle(slot: Slot, outcome: { preview: Uint8Array } | { error: ImagePreviewError }): void {
   const job = slot.job;
@@ -91,7 +80,9 @@ function retire(slot: Slot): void {
 }
 
 function spawnSlot(): Slot {
-  const worker = new Worker(workerUrl(), { resourceLimits: WORKER_LIMITS });
+  const worker = new Worker(new URL("./image-preview-worker.ts", import.meta.url), {
+    resourceLimits: WORKER_LIMITS,
+  });
   const slot: Slot = { worker };
   worker.on(
     "message",

@@ -106,7 +106,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
       </button>
       {actionRequiredId ? (
         <span id={actionRequiredId} className="sr-only">
-          {t`The AI asked you a question`}
+          {t`The AI is waiting for you`}
         </span>
       ) : null}
       <div

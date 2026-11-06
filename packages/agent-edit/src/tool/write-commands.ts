@@ -3,15 +3,16 @@ import { type HolderLinkScope, settledAheads } from "@meridian/markup/links";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
-import { snapshotBlocks } from "../apply/echo.js";
+import { snapshotBlocks, snapshotProjected } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { createPlanningView, planningSnapshot } from "../frontier.js";
-import { type BlockRef, toDocHandle } from "../handles.js";
+import { toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
@@ -139,18 +140,24 @@ export function createWriteCommands(deps: {
             address.filePath,
             selection.documentBlocks,
           );
-        return withEvidence(links, room, address.documentId, context, {
-          ...readSuccess(
-            renderer.renderRead(
-              toDocHandle(room.doc),
-              links.codec,
-              selection.blocks,
-              command.format === "outline" ? "outline" : "full",
+        return withEvidence(
+          links,
+          room,
+          address.documentId,
+          context,
+          {
+            ...readSuccess(
+              renderer.renderRead(
+                selection,
+                links.codec,
+                command.format === "outline" ? "outline" : "full",
+              ),
             ),
-          ),
-          revision: options.links.revision(room.doc, links.scope),
-          ...(context.includeNodes ? selectedCut(room.doc, selection.blocks, links.scope) : {}),
-        });
+            revision: options.links.revision(room.doc, links.scope),
+            ...(context.includeNodes ? selectedCut(selection.selected, links.scope) : {}),
+          },
+          { projected: selection.projected },
+        );
       },
     );
   }
@@ -195,26 +202,12 @@ export function createWriteCommands(deps: {
   }
 
   /**
-   * What a copy takes from this read: the selected blocks and where their settled ahead refs
-   * point, both from the scope that spelled the read, so they describe one cut.
+   * What a copy takes from this read: the selected blocks as nodes and where their settled ahead
+   * refs point, both from the scope that spelled the read, so they describe one cut.
    */
-  function selectedCut(doc: Y.Doc, selected: readonly BlockRef[], scope: HolderLinkScope) {
-    const nodes = selectedNodes(doc, selected);
+  function selectedCut(selected: readonly ProjectedBlock[], scope: HolderLinkScope) {
+    const nodes = selected.map((block) => block.node);
     return { nodes, aheadSettlements: settledAheads(nodes, scope) };
-  }
-
-  /** The selected blocks as nodes, in document order; a copy gets fresh identity when inserted. */
-  function selectedNodes(doc: Y.Doc, selected: readonly BlockRef[]): Block[] {
-    const handle = toDocHandle(doc);
-    const nodes = options.model.projectBlocks(handle);
-    const indexByBlock = new Map(
-      options.model.getBlocks(handle).map((block, index) => [block, index]),
-    );
-    return selected.flatMap((block) => {
-      const index = indexByBlock.get(block);
-      const node = index === undefined ? undefined : nodes[index];
-      return node ? [node] : [];
-    });
   }
 
   /**
@@ -523,8 +516,10 @@ export function createWriteCommands(deps: {
     if (planDoc !== room.doc && "edits" in plan && hasMissingTarget(plan.edits, room.doc)) {
       return status("not_found", "The selected block no longer exists.");
     }
-    await registerMinted(edit.assigner, docId, context);
-    const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
+    const [, identity] = await Promise.all([
+      registerMinted(edit.assigner, docId, context),
+      nextWriteIdentity(docId, session, context, command.tool_use_id),
+    ]);
     const editScopeId = context.responseIdentity?.editScopeId;
     const staged = Boolean(editScopeId) && actor.kind === "agent";
     // A save's first entry keeps the room's cut: reconcile reads what retired since.
@@ -670,6 +665,7 @@ export function createWriteCommands(deps: {
     const recorded = phase === "staged" ? { ...context, frontiers: undefined } : context;
     const ownRemoved = new Set(deletedBlocks.map((block) => `${block.clientID}:${block.clock}`));
     try {
+      const echoProjected = options.model.projectBlocks(toDocHandle(room.doc));
       return await withEvidence(
         links,
         room,
@@ -685,10 +681,10 @@ export function createWriteCommands(deps: {
             copied,
           },
           planned,
-          snapshotBlocks(toDocHandle(room.doc), options.model, links.codec),
+          snapshotProjected(echoProjected, links.codec),
           outcome,
         ),
-        { ownRemoved, written: [update] },
+        { ownRemoved, written: [update], projected: echoProjected },
       );
     } catch {
       return withEvidence(
@@ -713,7 +709,7 @@ export function createWriteCommands(deps: {
     documentId: string,
     context: WriteContext,
     result: InternalWriteResult,
-    own?: Pick<ListingSource, "ownRemoved" | "written">,
+    own?: Pick<ListingSource, "ownRemoved" | "written" | "projected">,
   ): Promise<InternalWriteResult> {
     const written = [
       ...(context.frontiers?.reply?.updates(documentId) ?? []),
@@ -729,6 +725,7 @@ export function createWriteCommands(deps: {
         ...(room.position === undefined ? {} : { position: room.position }),
         ...(own?.ownRemoved ? { ownRemoved: own.ownRemoved } : {}),
         ...(written.length ? { written } : {}),
+        ...(own?.projected ? { projected: own.projected } : {}),
         ...(context.turnId ? { ownActorTurnIds: new Set([context.turnId]) } : {}),
         ...(options.coordinator.concurrentUpdatesForReport
           ? {

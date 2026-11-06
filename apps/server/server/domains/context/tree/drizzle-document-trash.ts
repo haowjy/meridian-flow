@@ -3,14 +3,7 @@ import { type DocumentId, type ProjectId, serializeRemovalIdentity } from "@meri
 import type { DocumentTrashEntry, GetDocumentTrashResponse } from "@meridian/contracts/protocol";
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import {
-  branches,
-  contextSources,
-  documentMarkdownProjections,
-  documents,
-  projects,
-  works,
-} from "@meridian/database/schema";
+import { branches, contextSources, documents, projects, works } from "@meridian/database/schema";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -49,6 +42,8 @@ export function createDrizzleDocumentTrash(deps: {
   objectStore: ObjectStorePort;
   eventSink: EventSink;
   drafts: DocumentPurgeDraftDisposal;
+  /** The document's stored Yjs as markdown; the trash keeps no text of its own. */
+  readMarkdown(documentId: DocumentId): Promise<string>;
 }): DocumentTrash {
   const objects = createObjectRelease({
     objectStore: deps.objectStore,
@@ -236,12 +231,7 @@ export function createDrizzleDocumentTrash(deps: {
     async read(projectId, documentId): Promise<GetDocumentTrashResponse | null> {
       const entry = (await entries(await rows(projectId, documentId)))[0];
       if (!entry) return null;
-      const [projection] = await currentDrizzleDb(deps.db)
-        .select({ markdown: documentMarkdownProjections.markdown })
-        .from(documentMarkdownProjections)
-        .where(eq(documentMarkdownProjections.documentId, documentId))
-        .limit(1);
-      return { ...entry, markdown: projection?.markdown ?? "" };
+      return { ...entry, markdown: await deps.readMarkdown(documentId) };
     },
     async wasPurged(projectId, documentId): Promise<boolean> {
       const [row] = await currentDrizzleDb(deps.db)

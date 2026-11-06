@@ -107,7 +107,8 @@ A switch never wakes the chat and enqueue never applies one. Switching back,
 or Stop, cancels the queued switch with nothing recorded. The Work's
 `default_ai_write_mode` follows the writer's latest choice, not the apply: it
 is set when the writer switches, switches back or stops the pending switch (last
-writer action wins). A model-queued switch never changes that default. A chat
+writer action wins). A model-queued switch never changes that default, including one
+the writer allowed from a permission request: the ask's receipt records the Allow. A chat
 created in between therefore starts in the mode the writer last chose. A fork or
 handoff starts in the mode the writer sees
 (`effectiveWriteMode`: the pending switch's, else the applied one); a subagent

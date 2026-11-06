@@ -87,7 +87,7 @@ import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persis
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
-import { storedDocument } from "./document-loader.js";
+import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, liveLocation } from "./drizzle-apply-tree.js";
 import { claimCommandWithinTx, lookupCommand } from "./drizzle-branch-commands.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
@@ -727,7 +727,7 @@ export function createDrizzleApplyClick(
                               view: { kind: "live" },
                             }),
                           );
-                          const before = describeTrailBlocks(live, deps.model, codec, schema);
+                          const before = describeTrailBlocks(live, deps.model, codec);
                           const liveEffects: { groupId: string; seq: number | null }[] = [];
                           for (const group of click.groups) {
                             const groupMerge = rebase(
@@ -758,7 +758,7 @@ export function createDrizzleApplyClick(
                           }
                           return {
                             before,
-                            after: describeTrailBlocks(live, deps.model, codec, schema),
+                            after: describeTrailBlocks(live, deps.model, codec),
                             liveEffects,
                           };
                         },

@@ -1,21 +1,31 @@
 /**
- * Durable ask resolution, split into claim, tool-result, and continuation owners.
- * Permission asks extend the typed tool-result plan with savepoint execution;
- * child answers extend the continuation plan with direct admission. Neither
- * path changes the ask-first claim and thread-lock ordering.
+ * Durable ask creation and resolution, split into claim, tool-result, and continuation owners.
+ * A resolution that continues sets the ask's continuation `pending` and writes one
+ * `ask_resolved` inbox row, the wake hint that admission follows. A permission ask's tool
+ * result is the approved action's result, or `{allowed: false}` on Deny; the executor owns its
+ * savepoint and refusal translation. Every path locks its ask row before the thread lock.
  */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AskAnswer,
   AskResolution,
+  JsonObject,
   JsonValue,
+  PermissionAskPayload,
+  PermissionWorkCommand,
   QuestionAskPayload,
   ThreadAsk,
 } from "@meridian/contracts/threads";
+import { permissionWorkCommandSchema } from "@meridian/contracts/threads";
 import { testHook } from "../../../shared/test-hooks.js";
 import { askToolResult, threadAsk } from "../../threads/domain/ask.js";
-import type { LiveEventWriter, StoredAsk, ThreadRepositories } from "../../threads/index.js";
+import type {
+  ClaimedAsk,
+  LiveEventWriter,
+  StoredAsk,
+  ThreadRepositories,
+} from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
@@ -24,31 +34,37 @@ export type AskAnswerResult =
   | { ok: true; ask: ThreadAsk }
   | { ok: false; code: "ask_not_open" | "invalid_answer"; ask?: ThreadAsk };
 
-export type AskToolResultPlan = { kind: "from_resolution" };
+/** What a tool call asks the writer for: an answer to a question, or permission to run an action. */
+export type AskRequest =
+  | { kind: "question"; payload: QuestionAskPayload }
+  | { kind: "permission"; payload: PermissionAskPayload; command: PermissionWorkCommand };
+
+/** `deferred`: the call's execution settles on the ask, and its answer writes the result. */
+export type AskRequestOutcome =
+  | { kind: "deferred"; askId: string }
+  | { kind: "refused"; refusal: JsonValue };
 
 export type AskToolResult = {
   output: JsonValue;
   result: JsonValue;
   isError: boolean;
+  metadata?: JsonObject;
 };
 
-export type AskContinuationPlan = { kind: "queue" } | { kind: "none" };
-
-export type AskResolutionPlan =
-  | {
-      kind: "resume";
-      toolResult: AskToolResultPlan;
-      continuation: { kind: "queue" };
-    }
-  | {
-      kind: "cancel";
-      toolResult: AskToolResultPlan;
-      continuation: { kind: "none" };
-    };
+/** `resume` continues the asking run with the answer's tool result; `cancel` ends its turn. */
+export type AskResolutionPlan = { kind: "resume" } | { kind: "cancel" };
 
 type AskClaim = { kind: "claimed"; ask: StoredAsk } | { kind: "finished"; result: AskAnswerResult };
 
 export interface AskService {
+  /** The one way a tool call opens an ask. */
+  request(input: {
+    threadId: ThreadId;
+    askingTurnId: TurnId;
+    executionId: string;
+    toolCallId: string;
+    request: AskRequest;
+  }): Promise<AskRequestOutcome>;
   answer(input: {
     userId: string;
     threadId: ThreadId;
@@ -57,15 +73,20 @@ export interface AskService {
     answer: AskAnswer;
   }): Promise<AskAnswerResult>;
   expireDue(now?: Date, limit?: number): Promise<number>;
-  cancelOpen(threadId: ThreadId, askId: string): Promise<AskAnswerResult>;
-  /** Joins a thread lifecycle transaction; claims the ask before its thread lock. */
-  cancelForThreadLifecycle(threadId: ThreadId): Promise<void>;
+  /**
+   * Records an ask a lineage cancellation claimed: a live one's cancelled tool result, or
+   * an `ask.updated` for an owed continuation it withdrew. Call under the ask's thread lock.
+   */
+  recordCancelled(claimed: ClaimedAsk): Promise<void>;
 }
 
-function questionResolution(
-  payload: Extract<ThreadAsk, { kind: "question" }>["payload"],
-  answer: AskAnswer,
-): AskResolution | null {
+/** The resolution a writer's answer gives this ask, or null when it doesn't fit the ask. */
+function answerResolution(ask: StoredAsk, answer: AskAnswer): AskResolution | null {
+  if (ask.kind === "permission")
+    return answer.kind === "allow" || answer.kind === "allow_always" || answer.kind === "deny"
+      ? { kind: answer.kind }
+      : null;
+  const payload = ask.payload as QuestionAskPayload;
   if (answer.kind === "option")
     return payload.options.some((option) => option.label === answer.label)
       ? { kind: "option", label: answer.label }
@@ -77,31 +98,54 @@ function questionResolution(
 }
 
 function resolutionPlan(resolution: AskResolution): AskResolutionPlan {
-  return resolution.kind === "cancelled"
-    ? {
-        kind: "cancel",
-        toolResult: { kind: "from_resolution" },
-        continuation: { kind: "none" },
-      }
-    : {
-        kind: "resume",
-        toolResult: { kind: "from_resolution" },
-        continuation: { kind: "queue" },
-      };
+  return { kind: resolution.kind === "cancelled" ? "cancel" : "resume" };
 }
+
+/** Runs what the writer allowed. */
+export interface PermissionExecutor {
+  /**
+   * Runs the stored command inside the answer's transaction; a domain refusal rolls back the
+   * command's own writes and becomes an error result. `always` also stores the project's
+   * grant for the action, even when the action was refused: the writer's standing choice.
+   */
+  execute(input: {
+    threadId: ThreadId;
+    command: PermissionWorkCommand;
+    always: boolean;
+  }): Promise<AskToolResult>;
+}
+
+/** For compositions that run no model tools, so no permission request can open. */
+export const refusingPermissionExecutor: PermissionExecutor = {
+  async execute() {
+    throw new Error("This composition runs no permission requests");
+  },
+};
+
+const DENIED: AskToolResult = {
+  output: { allowed: false },
+  result: { allowed: false },
+  isError: false,
+};
+
+const UNREADABLE_COMMAND: AskToolResult = {
+  output: { allowed: false, error: "This request was stored by another version and cannot run." },
+  result: { allowed: false, error: "This request was stored by another version and cannot run." },
+  isError: true,
+};
 
 export function createAskService(deps: {
   repos: ThreadRepositories;
   eventWriter: LiveEventWriter;
   delivery: Pick<DeliveryProducer, "withThreadLock">;
+  permission: PermissionExecutor;
 }): AskService {
   async function claim(input: {
     askId: string;
     threadId: ThreadId;
-    status: "answered" | "expired" | "cancelled";
+    status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
-    claimLive?: boolean;
   }): Promise<AskClaim> {
     const existing = await deps.repos.asks.findById(input.askId);
     if (!existing || existing.threadId !== input.threadId)
@@ -113,21 +157,31 @@ export function createAskService(deps: {
     )
       return { kind: "finished", result: { ok: true, ask: threadAsk(existing) } };
 
-    const claimed = input.claimLive
-      ? await deps.repos.asks.resolveLive({
-          id: input.askId,
-          status: "cancelled",
-          resolution: input.resolution,
-          resolvedAt: new Date(),
-        })
-      : await deps.repos.asks.resolveOpen({
-          id: input.askId,
-          status: input.status,
-          resolution: input.resolution,
-          submissionId: input.submissionId,
-          resolvedAt: new Date(),
+    if (await deps.repos.threads.findById(input.threadId)) {
+      const claimed = await deps.repos.asks.resolveOpen({
+        id: input.askId,
+        status: input.status,
+        resolution: input.resolution,
+        submissionId: input.submissionId,
+        resolvedAt: new Date(),
+      });
+      if (claimed) return { kind: "claimed", ask: claimed };
+    } else {
+      // The chat's delete skipped this row because this answer held it: finish that cancellation.
+      const cancelled = await deps.repos.asks.resolveLive({
+        id: input.askId,
+        status: "cancelled",
+        resolution: { kind: "cancelled" },
+        resolvedAt: new Date(),
+      });
+      if (cancelled)
+        await writeToolResult({
+          ask: cancelled,
+          threadId: input.threadId,
+          plan: { kind: "cancel" },
+          claimLive: true,
         });
-    if (claimed) return { kind: "claimed", ask: claimed };
+    }
 
     const current = await deps.repos.asks.findById(input.askId);
     if (
@@ -160,7 +214,7 @@ export function createAskService(deps: {
     )
       throw new Error("Live ask is not attached to its active asking turn");
     const blocks = await deps.repos.blocks.listByTurn(turn.id);
-    const result = await resolveToolResult(input.ask, input.plan.toolResult);
+    const result = await resolveToolResult(input.ask);
     const block = contentForBlockInput({
       turnId: turn.id,
       blockType: "tool_result",
@@ -193,67 +247,76 @@ export function createAskService(deps: {
     }));
   }
 
-  async function resolveToolResult(
-    ask: StoredAsk,
-    plan: AskToolResultPlan,
-  ): Promise<AskToolResult> {
-    switch (plan.kind) {
-      case "from_resolution": {
-        const result = askToolResult(ask);
-        return { output: result, result, isError: false };
-      }
+  /** A question's answer, or a cancelled ask, as the tool result; an answered permission ask runs. */
+  async function resolveToolResult(ask: StoredAsk): Promise<AskToolResult> {
+    const decision = ask.resolution?.kind;
+    if (ask.kind === "question" || decision === "cancelled") {
+      const result = askToolResult(ask);
+      return { output: result, result, isError: false };
     }
+    if (decision === "deny") return DENIED;
+    if (decision !== "allow" && decision !== "allow_always")
+      throw new Error(`Permission ask ${ask.id} resolved as ${decision}`);
+    if (!ask.permissionCommand) throw new Error(`Permission ask ${ask.id} has no command`);
+    // Tolerant on read, strict here: a command stored by another release may not parse, and that
+    // ask resolves as a recorded refusal instead of breaking the thread's reads.
+    const parsed = permissionWorkCommandSchema.safeParse(ask.permissionCommand);
+    if (!parsed.success) return UNREADABLE_COMMAND;
+    return deps.permission.execute({
+      threadId: ask.threadId,
+      command: parsed.data,
+      always: decision === "allow_always",
+    });
   }
 
-  async function continueResolution(
-    producer: DeliveryTransaction,
-    ask: StoredAsk,
-    plan: AskContinuationPlan,
-  ) {
-    switch (plan.kind) {
-      case "none":
-        return;
-      case "queue":
-        await producer.enqueue({
-          threadId: ask.threadId,
-          intent: "control",
-          provenance: { kind: "system", source: "ask" },
-          body: { kind: "ask_resolved", askId: ask.id },
-          idempotencyKey: `ask-resolved:${ask.id}`,
-        });
-        return;
-      default:
-        plan satisfies never;
-    }
+  async function continueResolution(producer: DeliveryTransaction, ask: StoredAsk) {
+    await producer.enqueue({
+      threadId: ask.threadId,
+      intent: "control",
+      provenance: { kind: "system", source: "ask" },
+      body: { kind: "ask_resolved", askId: ask.id },
+      idempotencyKey: `ask-resolved:${ask.id}`,
+    });
   }
 
   async function resolve(input: {
     askId: string;
     threadId: ThreadId;
-    status: "answered" | "expired" | "cancelled";
+    status: "answered" | "expired";
     resolution: AskResolution;
     submissionId?: string;
-    claimLive?: boolean;
   }): Promise<AskAnswerResult> {
-    return deps.repos.transaction(async () => {
-      const claimed = await claim(input);
-      if (claimed.kind === "finished") return claimed.result;
-      const plan = resolutionPlan(input.resolution);
-      // The conditional ask claim precedes the thread lock for every resolver.
-      return deps.delivery.withThreadLock(input.threadId, async (producer) => {
-        await writeToolResult({
-          ask: claimed.ask,
-          threadId: input.threadId,
-          plan,
-          claimLive: input.claimLive,
-        });
-        await continueResolution(producer, claimed.ask, plan.continuation);
+    return deps.repos.transaction(() =>
+      // The thread lock takes its held ask rows, this one included, before its own lock.
+      deps.delivery.withThreadLock(input.threadId, async (producer) => {
+        const claimed = await claim(input);
+        if (claimed.kind === "finished") return claimed.result;
+        const plan = resolutionPlan(input.resolution);
+        await writeToolResult({ ask: claimed.ask, threadId: input.threadId, plan });
+        if (plan.kind === "resume") await continueResolution(producer, claimed.ask);
         return { ok: true, ask: threadAsk(claimed.ask) };
-      });
-    });
+      }),
+    );
   }
 
   return {
+    async request(input) {
+      const ask = await deps.repos.asks.create({
+        threadId: input.threadId,
+        askingTurnId: input.askingTurnId,
+        executionId: input.executionId,
+        toolCallId: input.toolCallId,
+        kind: input.request.kind,
+        payload: input.request.payload,
+        permissionCommand: input.request.kind === "permission" ? input.request.command : null,
+        deadlineAt: null,
+        status: "pending",
+        resolution: null,
+        submissionId: null,
+      });
+      await testHook("ask.pending");
+      return { kind: "deferred", askId: ask.id };
+    },
     async answer(input) {
       const thread = await deps.repos.threads.findById(input.threadId);
       if (!thread || thread.userId !== input.userId) return { ok: false, code: "ask_not_open" };
@@ -261,9 +324,7 @@ export function createAskService(deps: {
       if (!stored || stored.threadId !== input.threadId) return { ok: false, code: "ask_not_open" };
       if (stored.submissionId === input.submissionId && stored.status !== "open")
         return { ok: true, ask: threadAsk(stored) };
-      if (stored.kind !== "question")
-        return { ok: false, code: "invalid_answer", ask: threadAsk(stored) };
-      const resolution = questionResolution(stored.payload as QuestionAskPayload, input.answer);
+      const resolution = answerResolution(stored, input.answer);
       if (!resolution) return { ok: false, code: "invalid_answer", ask: threadAsk(stored) };
       const result = await resolve({
         askId: input.askId,
@@ -294,26 +355,20 @@ export function createAskService(deps: {
       }
       return expired;
     },
-    cancelOpen(threadId, askId) {
-      return resolve({
-        askId,
-        threadId,
-        status: "cancelled",
-        resolution: { kind: "cancelled" },
-      });
-    },
-    async cancelForThreadLifecycle(threadId) {
-      const ask = await deps.repos.asks.findLiveByThread(threadId);
-      if (!ask) return;
-      const result = await resolve({
-        askId: ask.id,
-        threadId,
-        status: "cancelled",
-        resolution: { kind: "cancelled" },
-        claimLive: true,
-      });
-      if (!result.ok && result.code !== "ask_not_open")
-        throw new Error(`Could not cancel live ask ${ask.id}`);
+    async recordCancelled({ ask, wasLive }) {
+      if (wasLive) {
+        await writeToolResult({
+          ask,
+          threadId: ask.threadId,
+          plan: { kind: "cancel" },
+          claimLive: true,
+        });
+        return;
+      }
+      await persistAndAppendEvents(deps, ask.threadId, async () => ({
+        result: undefined,
+        events: [{ type: "ask.updated" as const, ask: threadAsk(ask) }],
+      }));
     },
   };
 }

@@ -88,25 +88,42 @@ export async function buildThreadSnapshot(
         : null;
     }
 
-    const headSeq = await hub.headSeq(threadId);
-
-    // The graph keeps every turn (the leaf, `prevTurnId`). The snapshot drops handed-back messages and keeps
-    // forgotten turns, stamped `forgottenBy`: the client hides them, and diagnostics can still read them.
-    const graph = await turnGraph(repos.turns).listByThread(threadId);
-    const handedBack = await repos.turns.listHandedBackIds(threadId);
+    const [
+      headSeq,
+      graph,
+      handedBack,
+      deliveries,
+      blocks,
+      responses,
+      projectionWatermark,
+      activity,
+      runState,
+      threadUsage,
+      status,
+    ] = await Promise.all([
+      hub.headSeq(threadId),
+      // The graph keeps every turn (the leaf, `prevTurnId`). The snapshot drops handed-back messages and keeps
+      // forgotten turns, stamped `forgottenBy`: the client hides them, and diagnostics can still read them.
+      turnGraph(repos.turns).listByThread(threadId),
+      repos.turns.listHandedBackIds(threadId),
+      repos.turns.listMessageDeliveries(threadId),
+      repos.blocks.listByThread(threadId),
+      repos.modelResponses.listByThread(threadId),
+      hub.readModelProjectionWatermark(threadId),
+      readThreadActivity(
+        { threads: repos.threads, statusReader, executionReports: repos.executionReports },
+        threadId,
+      ),
+      statusReader.readRunState(threadId),
+      repos.modelResponses.sumUsageByThread(threadId),
+      statusReader.read(threadId),
+    ]);
     // Contract: `messageFate` (@meridian/thread-client) reads a user turn's absence from this
     // snapshot as a hand-back. A snapshot that pages or hides turns any other way must expose
     // `handedBackIds` instead, or `./mf thread send` would claim a hand-back that did not happen.
     const turns = graph.filter((turn) => !handedBack.has(turn.id));
-    const deliveries = await repos.turns.listMessageDeliveries(threadId);
-    const blocksByTurn = groupBy(
-      (await repos.blocks.listByThread(threadId)).map(toClientSafeBlock),
-      (block) => block.turnId,
-    );
-    const responsesByTurn = groupBy(
-      await repos.modelResponses.listByThread(threadId),
-      (response) => response.turnId,
-    );
+    const blocksByTurn = groupBy(blocks.map(toClientSafeBlock), (block) => block.turnId);
+    const responsesByTurn = groupBy(responses, (response) => response.turnId);
     const siblings = groupBy(turns, (turn) => turn.prevTurnId);
     const siblingIds = new Map(
       [...siblings].map(([parent, children]) => [parent, children.map((turn) => turn.id)]),
@@ -122,25 +139,19 @@ export async function buildThreadSnapshot(
     );
 
     const nextSeq = (headSeq + 1n).toString();
-    const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
-    const activity = await readThreadActivity(
-      { threads: repos.threads, statusReader, executionReports: repos.executionReports },
-      threadId,
-    );
-    const runState = await statusReader.readRunState(threadId);
+    const resumeAfterSeq = projectionWatermark.toString();
+    const threadAsks = await repos.asks.listByTurnIds(threadTurns.map((turn) => turn.id));
 
     return {
       threadId,
       thread,
-      threadUsage: await repos.modelResponses.sumUsageByThread(threadId),
+      threadUsage,
       ancestors,
       turns: threadTurns,
-      asks: (await repos.asks.listByTurnIds(threadTurns.map((turn) => turn.id)))
-        .filter((ask) => ask.status !== "pending")
-        .map(threadAsk),
+      asks: threadAsks.filter((ask) => ask.status !== "pending").map(threadAsk),
       liveState: {
         threadId,
-        status: await statusReader.read(threadId),
+        status,
         activity,
         runState,
         // During an active run,

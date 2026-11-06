@@ -33,10 +33,10 @@
           }
         },
         {
-          "name": "search",
+          "name": "grep",
           "args": {
             "pattern": "copper coin",
-            "scope": "scratch://"
+            "path": "scratch://"
           }
         }
       ],

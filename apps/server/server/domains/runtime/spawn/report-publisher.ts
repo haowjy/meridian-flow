@@ -1,4 +1,8 @@
-/** Parent-first publication B for immutable child execution reports. */
+/**
+ * Parent-first publication B for immutable child execution reports. A run a lineage
+ * cancellation ended still projects its card, but its notice is withdrawn, so nothing it
+ * publishes wakes a parent.
+ */
 
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import { buildInvocationCardContent, parseInvocationCard } from "@meridian/contracts/components";
@@ -6,11 +10,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type {
-  EventJournalWriter,
-  LiveEventWriter,
-  ThreadRepositories,
-} from "../../threads/index.js";
+import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
@@ -126,7 +126,7 @@ export function createReportPublisher(deps: {
           result: null,
           events,
         }));
-        if (report.deliveryMode === "background_notification") {
+        if (report.deliveryMode === "background_notification" && !report.noticeWithdrawn) {
           await producer.enqueue({
             threadId: callerThreadId,
             intent: "message",

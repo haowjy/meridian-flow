@@ -7,6 +7,7 @@ export type {
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
 export { createDrizzleObservationFrontiers } from "./adapters/drizzle/observation-frontiers.js";
+export { createDrizzlePermissionGrantStore } from "./adapters/drizzle/permission-grants.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
 export { createDrizzleShownLinkStore } from "./adapters/drizzle/shown-links.js";
 export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";
@@ -185,6 +186,7 @@ export {
   type ChildRunDriverDeps,
   createChildRunDriver,
 } from "./spawn/child-run-driver.js";
+export { createLineageCancellation } from "./spawn/lineage-cancellation.js";
 export { createOrphanReportRepair } from "./spawn/orphan-report-repair.js";
 export { createReportPublisher, type ReportPublisher } from "./spawn/report-publisher.js";
 export { createConversationSummarizer } from "./summary/conversation-summarizer.js";

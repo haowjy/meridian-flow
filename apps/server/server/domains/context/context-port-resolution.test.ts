@@ -28,7 +28,17 @@ function resolver(handles: Record<string, string>): ProjectWorkAuthorityResolver
     const handle = handles[workId];
     return handle ? resolvedWorkAuthority({ workId, workHandle: testWorkHandle(handle) }) : null;
   };
-  return { byId, noWork: async () => null, lockById: byId, byHandle: async () => null };
+  const listForProject = async () =>
+    Object.entries(handles).map(([workId, handle]) =>
+      resolvedWorkAuthority({ workId, workHandle: testWorkHandle(handle) }),
+    );
+  return {
+    byId,
+    noWork: async () => null,
+    lockById: byId,
+    byHandle: async () => null,
+    listForProject,
+  };
 }
 
 function thread(): Thread {
@@ -66,10 +76,7 @@ describe("thread context-port resolution", () => {
       {
         threads: { findById: async () => thread() },
         threadWorks: { findPrimary: async () => ({ workId: WORK_ID }) },
-        works: {
-          findById: async () => null,
-          listByProject: async () => [{ id: WORK_ID, handle: "w1" }] as never,
-        },
+        works: { findById: async () => null },
         workAuthorityResolver: resolver({ [WORK_ID]: "w1" }),
       },
       THREAD_ID,
@@ -135,16 +142,6 @@ describe("project recovery context-port resolution", () => {
     await contextPortForProjectRecovery({
       deps: {
         contextPorts,
-        works: {
-          findById: async () => null,
-          listByProject: async () =>
-            ["work-1", "work-2"].map((id, index) => ({
-              id,
-              handle: `w${index + 1}`,
-            })) as Awaited<
-              ReturnType<import("../projects/index.js").WorkRepository["listByProject"]>
-            >,
-        },
         workAuthorityResolver: resolver({ "work-1": "w1", "work-2": "w2" }),
       },
       projectId: CUSTOM_PROJECT_ID,

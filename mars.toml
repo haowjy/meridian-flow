@@ -17,7 +17,7 @@ include_fanout = false
 [settings.meridian.fanout]
 agents = [
     "reviewer",
-    "prober",
+#     "prober",
     "coder",
     "subagent",
 ]

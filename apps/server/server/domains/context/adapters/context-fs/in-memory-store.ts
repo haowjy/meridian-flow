@@ -46,7 +46,6 @@ export interface InMemoryContextDocumentStoreBacking {
   forwards: Map<string, string>;
   folders: Map<string, FolderRow>;
   documents: Map<string, DocumentRow>;
-  projections: Map<string, string>;
   clock: { value: number };
   availabilityGeneration: { value: bigint };
 }
@@ -62,7 +61,6 @@ export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocu
     forwards: new Map(),
     folders: new Map(),
     documents: new Map(),
-    projections: new Map(),
     clock: { value: 0 },
     availabilityGeneration: { value: 0n },
   };
@@ -220,7 +218,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       [...this.backing.documents].map(([id, row]) => [id, { ...row }] as const),
     );
     const previousLocationsSnapshot = new Map(this.backing.previousLocations);
-    const projectionsSnapshot = new Map(this.backing.projections);
     const clockSnapshot = this.backing.clock.value;
     try {
       return await operation();
@@ -230,7 +227,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       this.backing.documents.clear();
       for (const entry of documentsSnapshot) this.backing.documents.set(...entry);
       this.backing.previousLocations = previousLocationsSnapshot;
-      this.backing.projections = projectionsSnapshot;
       this.backing.clock.value = clockSnapshot;
       throw error;
     }
@@ -363,7 +359,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
             folderId: parentId,
             name: node.name,
             extension: node.extension,
-            markdown: "",
             filetype: node.node.filetype,
             ...(node.node.metadata ? { metadata: node.node.metadata } : {}),
           });
@@ -459,7 +454,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
         return null;
       }
     }
-    const sizeBytes = Buffer.byteLength(input.markdown, "utf8");
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
@@ -470,7 +464,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       filetype: input.filetype,
       storageUrl: null,
       mimeType: null,
-      sizeBytes,
+      sizeBytes: 0,
       hasPreview: false,
       updatedAt: this.nextTimestamp(),
       provisionalName: input.provisionalName ?? false,
@@ -478,7 +472,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
-    this.backing.projections.set(doc.id, input.markdown);
     claimLocation(
       this.backing,
       doc.contextSourceId,
@@ -575,13 +568,20 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.publicDocument(doc);
   }
 
-  async readProjections(ids: string[]): Promise<Map<string, string>> {
-    return new Map(
-      ids.flatMap((id) => {
-        const markdown = this.backing.projections.get(id);
-        return markdown === undefined ? [] : [[id, markdown] as const];
-      }),
-    );
+  async listTree(
+    view: TreeView,
+  ): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }> {
+    const folders: ContextFolder[] = [];
+    const documents: ContextDocument[] = [];
+    const walk = async (parentId: string | null) => {
+      documents.push(...(await this.listDocuments(view, parentId)));
+      for (const folder of await this.listFolders(view, parentId)) {
+        folders.push(folder);
+        await walk(folder.id);
+      }
+    };
+    await walk(null);
+    return { folders, documents };
   }
 
   async parentOrderPolicy(_view: TreeView, _parentId: string | null) {

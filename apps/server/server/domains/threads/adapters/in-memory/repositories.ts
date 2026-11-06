@@ -21,6 +21,7 @@ import {
   isPendingPlaceholder,
 } from "@meridian/contracts/threads";
 import { workLifecycleState } from "@meridian/contracts/works";
+import { isContinuationOwed } from "../../../../shared/ask-continuation-owed.js";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
@@ -398,6 +399,35 @@ export function createInMemoryRepositories(
           ...thread,
           siblingCount: nodes.filter((node) => node.upThreadId === thread.upThreadId).length,
         }));
+    },
+    async listSubtreeIds(threadId, spawnedByTurnId) {
+      const cancelled = spawnedByTurnId ? turns.get(spawnedByTurnId) : null;
+      const spawnedBy = (turnId: string | null | undefined) => {
+        if (!spawnedByTurnId) return true;
+        if (turnId === spawnedByTurnId) return true;
+        const turn = turnId ? turns.get(turnId) : null;
+        return !!cancelled?.executionId && turn?.executionId === cancelled.executionId;
+      };
+      const result: ThreadId[] = [];
+      let level = [...threads.values()].filter(
+        (thread) => thread.parentThreadId === threadId && spawnedBy(thread.originTurnId),
+      );
+      while (level.length > 0) {
+        level.sort((a, b) => a.id.localeCompare(b.id));
+        result.push(...level.map((thread) => thread.id as ThreadId));
+        const parents = new Set(level.map((thread) => thread.id));
+        level = [...threads.values()].filter(
+          (thread) => thread.parentThreadId && parents.has(thread.parentThreadId),
+        );
+      }
+      return result;
+    },
+    async cancelRunningSpawns(threadIds) {
+      for (const id of threadIds) {
+        const thread = threads.get(id);
+        if (thread?.originType === "spawn" && thread.spawnStatus === "running")
+          threads.set(id, { ...thread, spawnStatus: "cancelled" });
+      }
     },
     async listChildren(threadId) {
       return [...threads.values()]
@@ -1417,6 +1447,8 @@ export function createInMemoryRepositories(
           ...input,
           id: input.id ?? crypto.randomUUID(),
           submissionId: input.submissionId ?? null,
+          continuation: null,
+          continuationTurnId: null,
           createdAt: new Date(),
           resolvedAt: input.resolvedAt ?? null,
         };
@@ -1449,6 +1481,50 @@ export function createInMemoryRepositories(
           ) ?? null
         );
       },
+      async claimLineage(input) {
+        const targets = new Set<string>(input.threadIds);
+        const live = (ask: StoredAsk) => ask.status === "pending" || ask.status === "open";
+        const { owner } = input;
+        const claimed = [...asks.values()]
+          .filter((ask) => {
+            if (targets.has(ask.threadId)) return live(ask) || isContinuationOwed(ask);
+            if (ask.threadId !== owner?.threadId) return false;
+            if (live(ask))
+              return (
+                (ask.status === "open" || ask.executionId === owner.execution) &&
+                (!owner.turnId || ask.askingTurnId === owner.turnId)
+              );
+            return isContinuationOwed(ask);
+          })
+          .sort((a, b) => a.id.localeCompare(b.id));
+        return claimed.map((ask) => {
+          const wasLive = live(ask);
+          const row: StoredAsk = {
+            ...ask,
+            ...(wasLive
+              ? {
+                  status: "cancelled" as const,
+                  resolution: { kind: "cancelled" as const },
+                  resolvedAt: new Date(),
+                }
+              : {}),
+            continuation: "cancelled",
+          };
+          asks.set(row.id, row);
+          return { ask: { ...row }, wasLive };
+        });
+      },
+      async admitContinuation(input) {
+        const ask = asks.get(input.id);
+        if (!ask || !isContinuationOwed(ask)) return null;
+        const row: StoredAsk = {
+          ...ask,
+          continuation: "done",
+          continuationTurnId: input.turnId,
+        };
+        asks.set(row.id, row);
+        return { ...row };
+      },
       async listByThread(threadId) {
         return [...asks.values()].filter((ask) => ask.threadId === threadId);
       },
@@ -1477,6 +1553,7 @@ export function createInMemoryRepositories(
             status: "cancelled",
             resolution: { kind: "cancelled" },
             resolvedAt: new Date(),
+            continuation: "cancelled",
           };
           asks.set(row.id, row);
           cancelled.push(row);
@@ -1492,6 +1569,7 @@ export function createInMemoryRepositories(
           resolution: input.resolution as AskResolution,
           submissionId: input.submissionId ?? null,
           resolvedAt: input.resolvedAt,
+          continuation: input.status === "cancelled" ? "cancelled" : "pending",
         };
         asks.set(row.id, row);
         return row;
@@ -1504,6 +1582,7 @@ export function createInMemoryRepositories(
           status: input.status,
           resolution: input.resolution as AskResolution,
           resolvedAt: input.resolvedAt,
+          continuation: "cancelled",
         };
         asks.set(row.id, row);
         return row;

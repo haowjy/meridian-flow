@@ -249,7 +249,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await works.softDelete(work.id);
       });
       await deleteHasLock;
-      const commandDelete = deleteWorkTransition({ works, stopThreadRun: async () => {} }, work.id);
+      const commandDelete = deleteWorkTransition({ works, stopThreads: async () => {} }, work.id);
       await waitForLock("transactionid");
       releaseDelete();
       await concurrentDelete;
@@ -760,8 +760,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         document.id,
       );
 
-      const deletion = await works.softDelete(work.id);
-      expect(new Set(deletion.threadIds)).toEqual(new Set([THREAD_ID, childThreadId]));
+      await works.softDelete(work.id);
       await expect(
         resultRepository.createOrConverge({
           id: "00000000-0000-4000-8000-000000000850",
@@ -813,7 +812,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         workAuthorityResolver: authorities,
         works,
-        async cancelAsks() {},
+        async stopThreads() {},
       };
       for (const threadId of [THREAD_ID, childThreadId, separatelyDeletedThreadId]) {
         await expect(
@@ -955,7 +954,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             workAuthorityResolver: authorities,
             works,
-            async cancelAsks() {},
+            async stopThreads() {},
           },
           childThreadId as never,
           USER_ID as never,

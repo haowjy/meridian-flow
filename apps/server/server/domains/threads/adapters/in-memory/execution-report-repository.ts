@@ -73,6 +73,7 @@ export function createInMemoryExecutionReportRepository(
         terminalAt: null,
         publication: "none",
         publishedAt: null,
+        noticeWithdrawn: false,
       };
       rows.set(input.executionTurnId, row);
       return row;
@@ -112,6 +113,12 @@ export function createInMemoryExecutionReportRepository(
     },
     async findByExecution(child, execution) {
       return find(child, execution);
+    },
+    async withdrawNotices(childThreadIds) {
+      const children = new Set<string>(childThreadIds);
+      for (const row of rows.values())
+        if (children.has(row.childThreadId) && row.publication !== "published")
+          rows.set(row.executionTurnId, { ...row, noticeWithdrawn: true });
     },
     async listLatestByChildren(childThreadIds) {
       const childIds = new Set(childThreadIds);

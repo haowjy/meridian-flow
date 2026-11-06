@@ -29,7 +29,7 @@ type CascadeContext = WorkCascadeInput & {
 
 type WorkCascadeEntry = {
   name: string;
-  cascadeDelete(context: CascadeContext): Promise<readonly ThreadId[] | undefined>;
+  cascadeDelete(context: CascadeContext): Promise<void>;
   cascadeRestore(context: CascadeContext): Promise<void>;
 };
 
@@ -37,13 +37,11 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
   {
     name: "threads",
     async cascadeDelete({ db, workId, liveThreadIds, at }) {
-      if (liveThreadIds.length === 0) return [];
-      const rows = await currentDrizzleDb(db)
+      if (liveThreadIds.length === 0) return;
+      await currentDrizzleDb(db)
         .update(threads)
         .set({ deletedAt: at, deletedByWorkId: workId, updatedAt: at })
-        .where(and(inArray(threads.id, [...liveThreadIds]), isNull(threads.deletedAt)))
-        .returning({ id: threads.id });
-      return rows.map(({ id }) => id);
+        .where(and(inArray(threads.id, [...liveThreadIds]), isNull(threads.deletedAt)));
     },
     async cascadeRestore({ db, workId, at }) {
       await currentDrizzleDb(db)
@@ -144,17 +142,12 @@ async function cascadeContext(
 export async function cascadeDelete(
   db: Database,
   input: Omit<CascadeContext, "db" | "sourceIds">,
-): Promise<ThreadId[]> {
+): Promise<void> {
   const context = await cascadeContext(db, input);
   await lockContextNamespaces(db, { projectId: input.projectId, userId: "" }, [], {
     sourceIds: context.sourceIds,
   });
-  const cascadedThreads: ThreadId[] = [];
-  for (const entry of WORK_CASCADE) {
-    const ids = await entry.cascadeDelete(context);
-    if (ids) cascadedThreads.push(...ids);
-  }
-  return cascadedThreads;
+  for (const entry of WORK_CASCADE) await entry.cascadeDelete(context);
 }
 
 export async function cascadeRestore(

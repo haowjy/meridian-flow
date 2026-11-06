@@ -8,7 +8,8 @@ import {
   type ToolRegistration,
 } from "../../domains/runtime/index.js";
 import { createReadHandler, createWriteHandler } from "./document-tools.js";
-import { createLsHandler, createSearchHandler } from "./listing-tools.js";
+import { createGrepHandler } from "./grep-handler.js";
+import { createLsHandler } from "./listing-tools.js";
 import type { ToolWiringDeps } from "./tool-context.js";
 import { createWorkHandler } from "./work-tool.js";
 
@@ -19,10 +20,6 @@ export {
 } from "./response-write-lifecycle.js";
 export type { ToolWiringDeps } from "./tool-context.js";
 
-async function askHandler(input: unknown) {
-  return input;
-}
-
 export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
   return [
     ...createCoreToolRegistrations({
@@ -30,8 +27,7 @@ export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistra
       write: createWriteHandler(deps),
       work: createWorkHandler(deps),
       ls: createLsHandler(deps),
-      search: createSearchHandler(deps),
-      ask_user: askHandler,
+      grep: createGrepHandler(deps),
     }),
     ...createSkillToolRegistrations(deps),
   ];

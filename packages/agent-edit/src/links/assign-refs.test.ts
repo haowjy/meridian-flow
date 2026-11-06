@@ -9,7 +9,7 @@ import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
-import { prosemirrorBlocksForDoc } from "../model/y-prosemirror.js";
+import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import {
   createStaticDocumentLinks,
   type StaticCatalogDocument,
@@ -792,7 +792,9 @@ const doors: DoorCase[] = [
       expect.soft(retarget.status, this.name).toBe("success");
       const image = await ctx.write({ command: "replace", find: "old.png", content: "new.png" });
       expect.soft(image.status, this.name).toBe("success");
-      const blocks = prosemirrorBlocksForDoc(ctx.live(), schema);
+      const blocks = yProsemirrorModel(schema)
+        .projectBlocks(ctx.live())
+        .map((block) => block.node);
       expect.soft(storedLinks(ctx.live())[0]?.ref, this.name).toBe(documentRef(E));
       expect.soft(blocks[1]?.firstChild?.attrs.src, this.name).toBe(`asset:${N}`);
       expect.soft(ctx.links.minted, this.name).toEqual([]);
@@ -939,9 +941,11 @@ const doors: DoorCase[] = [
       const yjs = extractStoredLinks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map(
         ({ kind, ref, href }) => [kind, ref, href],
       );
-      const nodes = walkLinkOccurrences(prosemirrorBlocksForDoc(live, schema)).map(
-        ({ kind, attrs }) => [kind, attrs.ref, attrs.href],
-      );
+      const nodes = walkLinkOccurrences(
+        yProsemirrorModel(schema)
+          .projectBlocks(live)
+          .map((block) => block.node),
+      ).map(({ kind, attrs }) => [kind, attrs.ref, attrs.href]);
       expect.soft(nodes.length, this.name).toBe(11);
       expect.soft(yjs, this.name).toEqual(nodes);
     },

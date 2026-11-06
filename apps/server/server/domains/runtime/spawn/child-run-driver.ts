@@ -1,4 +1,4 @@
-/** Child-run coordination: admit, drive, release, then publish saved terminal truth. */
+/** Child-run coordination: admit, drive, and read saved terminal truth; the run session publishes every report. */
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
@@ -8,20 +8,17 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { BlockUpsertedRow, Thread, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type {
-  EventJournalWriter,
-  LiveEventWriter,
-  ThreadRepositories,
-} from "../../threads/index.js";
+import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { PreparedRun, RunTurnPort } from "../loop/run-turn-port.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
-import type { ReportPublisher } from "./report-publisher.js";
 import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 
 export interface ChildDriveInput {
   parentThread: Thread;
   parentTurnId: TurnId;
+  /** The parent's sending execution: a machine wake the fence checks. */
+  parentExecutionId: string;
   prompt: string;
   budget: TreeBudget;
   /** Original parent invocation, including the retained running card. */
@@ -40,13 +37,18 @@ export type PreparedChild = {
   origin: "spawn" | "message";
 };
 
+export type AdmittedChildRun = {
+  prepared: PreparedChild;
+  handle: PreparedRun;
+  admittedAt: string;
+};
+
 export interface ChildRunDriverDeps {
   backgroundTasks: DetachedWorkTracker;
   orchestrator: RunTurnPort;
   repos: Pick<ThreadRepositories, "executionReports">;
   eventWriter: LiveEventWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
-  publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
 }
 
@@ -56,17 +58,9 @@ export interface ChildRunDriver {
     resolvedSlug: string,
     options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild>;
-  drive(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    onAdmitted?: (execution: TurnId, admittedAt: string) => Promise<void>,
-  ): Promise<SpawnResult>;
-  /** Resolves only after assistant-turn/report admission commits, not after terminal. */
-  driveBackground(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    onAdmitted?: (execution: TurnId, admittedAt: string) => Promise<void>,
-  ): Promise<TurnId>;
+  admit(prepared: PreparedChild, input: ChildDriveInput): Promise<AdmittedChildRun>;
+  execute(admitted: AdmittedChildRun): Promise<SpawnResult>;
+  executeBackground(admitted: AdmittedChildRun): void;
 }
 
 export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
@@ -87,11 +81,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     };
   }
 
-  async function start(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    onAdmitted?: (execution: TurnId, admittedAt: string) => Promise<void>,
-  ): Promise<PreparedRun> {
+  async function admit(prepared: PreparedChild, input: ChildDriveInput): Promise<AdmittedChildRun> {
     if (!input.reportCorrelation) {
       throw new Error("Child invocation has no parent report correlation");
     }
@@ -102,6 +92,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       signal: prepared.signal,
       child: {
         parentThreadId: input.parentThread.id as ThreadId,
+        parentExecutionId: input.parentExecutionId,
         background: prepared.background,
         origin: prepared.origin,
         sender: { ref: input.parentThread.ref, title: input.parentThread.title },
@@ -113,19 +104,12 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
         name: prepared.name ?? null,
       },
     });
-    try {
-      if (onAdmitted) {
-        const report = await deps.repos.executionReports.findByExecution(
-          prepared.child.id as ThreadId,
-          handle.executionTurnId,
-        );
-        if (!report) throw new Error("Admitted child run has no execution report");
-        await onAdmitted(handle.executionTurnId, report.admittedAt);
-      }
-    } catch (error) {
-      observeCleanupFailure(prepared, "child.admission_callback_failed", error);
-    }
-    return handle;
+    const report = await deps.repos.executionReports.findByExecution(
+      prepared.child.id as ThreadId,
+      handle.executionTurnId,
+    );
+    if (!report) throw new Error("Admitted child run has no execution report");
+    return { prepared, handle, admittedAt: report.admittedAt };
   }
 
   function observeCleanupFailure(prepared: PreparedChild, name: string, error: unknown): void {
@@ -146,13 +130,6 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       childThreadId,
       handle.executionTurnId,
     );
-    if (saved?.outcome) {
-      try {
-        await deps.publisher.publish(childThreadId, handle.executionTurnId);
-      } catch (error) {
-        observeCleanupFailure(prepared, "child.publication_failed", error);
-      }
-    }
     await appendSubagentActivityBestEffort({
       eventWriter: deps.eventWriter,
       readActivity: deps.readActivity,
@@ -173,29 +150,18 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     };
   }
 
-  async function drive(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    onAdmitted?: (execution: TurnId, admittedAt: string) => Promise<void>,
-  ): Promise<SpawnResult> {
-    const handle = await start(prepared, input, onAdmitted);
-    return finish(prepared, handle);
+  async function execute(admitted: AdmittedChildRun): Promise<SpawnResult> {
+    return finish(admitted.prepared, admitted.handle);
   }
 
-  async function driveBackground(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    onAdmitted?: (execution: TurnId, admittedAt: string) => Promise<void>,
-  ): Promise<TurnId> {
-    const handle = await start(prepared, input, onAdmitted);
+  function executeBackground(admitted: AdmittedChildRun): void {
     backgroundTasks.track(
-      finish(prepared, handle).catch((error) => {
-        observeCleanupFailure(prepared, "child.background_driver_failed", error);
+      execute(admitted).catch((error) => {
+        observeCleanupFailure(admitted.prepared, "child.background_driver_failed", error);
       }),
       "background child completion",
     );
-    return handle.executionTurnId;
   }
 
-  return { register, drive, driveBackground };
+  return { register, admit, execute, executeBackground };
 }

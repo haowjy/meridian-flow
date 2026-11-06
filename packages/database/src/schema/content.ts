@@ -405,29 +405,6 @@ export const documentForwards = pgTable(
   (table) => [index("document_forwards_to").on(table.toDocumentId)],
 );
 
-/** Markdown projection kept separate so location writes never rebuild its GIN indexes. */
-export const documentMarkdownProjections = pgTable(
-  "document_markdown_projections",
-  {
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .primaryKey()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    markdown: text("markdown").notNull().default(""),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    // Postgres refuses a tsvector over 1 MB, and the refusal aborts the writing transaction.
-    // 150,000 characters stays under it even for distinct two-character CJK words (4.7 bytes
-    // per character); text past that is not in the full-text index. Nothing queries this index yet.
-    index("document_markdown_projections_fts_head").using(
-      "gin",
-      sql`to_tsvector('simple', left(${t.markdown}, 150000))`,
-    ),
-    index("document_markdown_projections_trgm").using("gin", sql`${t.markdown} gin_trgm_ops`),
-  ],
-);
-
 export const uploadIntakes = pgTable(
   "upload_intakes",
   {

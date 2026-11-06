@@ -13,11 +13,11 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
-import { Doc, type XmlElement } from "yjs";
+import { Doc, XmlElement } from "yjs";
 import { editSegments } from "../apply/segments.js";
 import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
 import { type AgentEditCodec, createAgentEditCodecFactory } from "../codec-adapter.js";
-import type { BlockRef, DocHandle } from "../handles.js";
+import type { BlockRef } from "../handles.js";
 import {
   blockHashesForDoc,
   fullHashForItemId,
@@ -26,9 +26,10 @@ import {
   lookupBlockHash,
 } from "../model/block-hash.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { ProjectedBlock } from "../ports/model.js";
 import { alignBlocks, type CanPair } from "./block-alignment.js";
 import { findTextMatches } from "./find.js";
+import { hashLocateContext } from "./hash-locator.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
 import { type BlockScope, resolveScope } from "./scope.js";
 import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
@@ -162,7 +163,6 @@ describe("resolveWrite", () => {
   it("does not resolve stale hex-shaped write fragments through section slugs", () => {
     const doc = createDoc("# cafe\n\nScene text");
 
-    expect(model.lookupBlock(doc, "cafe")).toMatchObject({ ok: false, reason: "not_found" });
     for (const params of [
       { command: "replace" as const, content: "Replacement", in: "#cafe" },
       { command: "remove" as const, in: "#cafe" },
@@ -221,7 +221,10 @@ describe("resolveWrite", () => {
     const doc = createDoc(collisionMarkdown());
     const fixture = prefixCollisionFixture(model, model.getBlocks(doc));
 
-    const scope = resolveScope({ doc, model }, fixture.sharedPrefix);
+    const scope = resolveScope(
+      hashLocateContext(model, model.projectBlocks(doc)),
+      fixture.sharedPrefix,
+    );
     expect(scope).toMatchObject({ ok: false, code: "ambiguous" });
     if (scope.ok) throw new Error("expected ambiguous scope");
     if (scope.code !== "ambiguous") throw new Error(`expected ambiguous scope, got ${scope.code}`);
@@ -260,6 +263,26 @@ describe("resolveWrite", () => {
         expect(result.error.message).toContain(candidate.displayHash);
       }
     }
+  });
+
+  it("indexes scopes against the repaired block list when the document holds an unbuildable block", () => {
+    const doc = createDoc("alpha\n\nbeta needle\n\ngamma needle");
+    doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(1, [new XmlElement("not_a_node")]);
+    const [, , beta, gamma] = blockHashesForDoc(doc);
+
+    const edits = expectOk(
+      resolve(doc, {
+        command: "replace",
+        content: "X",
+        find: "needle",
+        in: `${beta}..${gamma}`,
+        all: true,
+      }),
+    );
+    expect(edits).toHaveLength(2);
+
+    // A whole-document write targets the repaired document, not a count taken before it.
+    expect(expectOk(resolve(doc, { command: "remove", wholeDocument: true }))).toHaveLength(3);
   });
 });
 
@@ -436,19 +459,17 @@ it("falls back to one block segment for changed marks and hard breaks", () => {
   });
 
   function findInBodies(bodies: string[], find: string, all = false) {
-    const blocks = bodies.map((_, index) => ({ index }) as unknown as BlockRef);
+    const blocks = bodies.map((body) => ({ ref: { body } as unknown as BlockRef, node: { body } }));
     const ctx = {
-      doc: {} as DocHandle,
-      codec: {} as AgentEditCodec,
-      model: {
-        getBlocks: () => blocks,
-        serializeBlockBodies: (_doc, _codec, selected) =>
-          selected.map((block) => bodies[blocks.indexOf(block)] ?? ""),
-      } satisfies Partial<AgentEditModel> as unknown as AgentEditModel,
+      codec: {
+        serializeBlockBodies: (nodes: readonly { body: string }[]) => nodes.map((n) => n.body),
+      } as unknown as AgentEditCodec,
+      projected: blocks as unknown as readonly ProjectedBlock[],
     };
+    const refs = blocks.map((block) => block.ref);
     const scope: BlockScope = {
       kind: "document",
-      blocks,
+      blocks: refs,
       startIndex: 0,
       endIndex: blocks.length - 1,
     };

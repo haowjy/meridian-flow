@@ -20,12 +20,12 @@ describe("response staging", () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-echo-summary-failure";
     await ctx.core.read({ file: "chapter.md" }, context);
-    const originalSerialize = model.serializeBlockLines.bind(model);
-    const serialize = vi.spyOn(model, "serializeBlockLines").mockImplementation((doc, ...args) => {
+    const originalProject = model.projectBlocks.bind(model);
+    const serialize = vi.spyOn(model, "projectBlocks").mockImplementation((doc) => {
       if (model.getBlocks(doc).some((block) => model.getText(block) === "Must persist.")) {
         throw new Error("echo summary failed");
       }
-      return originalSerialize(doc, ...args);
+      return originalProject(doc);
     });
 
     const result = await ctx.core.write(

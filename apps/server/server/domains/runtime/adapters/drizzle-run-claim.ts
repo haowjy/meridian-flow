@@ -111,7 +111,6 @@ export function createDrizzleRunClaim(
     async startExecution(threadId, executionId, settle) {
       const claim = await hold(threadId);
       if (!claim) return null;
-      const acquiredAt = new Date();
       try {
         // The claim proves the previous holder is gone: settle its row before
         // a new execution is visible beside its turns.
@@ -126,8 +125,9 @@ export function createDrizzleRunClaim(
           phase: "generating",
           cancelRequested: false,
           currentTool: null,
-          acquiredAt,
-          renewedAt: acquiredAt,
+          // The database's clock, as the wake fence uses: admission and fence order on one clock.
+          acquiredAt: sql`clock_timestamp()`,
+          renewedAt: new Date(),
           expiresAt: nextExpiry(),
         });
       } catch (cause) {
@@ -242,6 +242,49 @@ export function createDrizzleRunClaim(
         .where(liveLeaseWhere(threadId))
         .limit(1);
       return row?.turnId ?? null;
+    },
+
+    async requestCancel(threadIds) {
+      if (threadIds.length === 0) return;
+      await db_()
+        .update(schema.threadRunLeases)
+        .set({ cancelRequested: true })
+        .where(
+          and(
+            inArray(schema.threadRunLeases.threadId, threadIds as string[]),
+            gt(schema.threadRunLeases.expiresAt, new Date()),
+          ),
+        );
+    },
+
+    async fenceWakes(threadIds) {
+      if (threadIds.length === 0) return;
+      // The database's wall clock, as lease admission uses, not the transaction's start: a lease
+      // acquired while this command waited on locks must not read as admitted before the fence.
+      await db_()
+        .update(schema.threads)
+        .set({ wakeFenceAt: sql`clock_timestamp()` })
+        .where(inArray(schema.threads.id, threadIds as string[]));
+    },
+
+    async wakeRefusal({ sender, receiver }) {
+      const leases = schema.threadRunLeases;
+      const [lease] = await db_()
+        .select({
+          cancelRequested: leases.cancelRequested,
+          fenced: receiver
+            ? sql<boolean>`EXISTS (SELECT 1 FROM ${schema.threads}
+                WHERE ${schema.threads.id} = ${receiver}
+                  AND ${schema.threads.wakeFenceAt} > ${leases.acquiredAt})`
+            : sql<boolean>`FALSE`,
+        })
+        .from(leases)
+        .where(
+          and(eq(leases.threadId, sender.threadId), eq(leases.executionId, sender.executionId)),
+        )
+        .limit(1);
+      if (!lease || lease.cancelRequested) return "sender_stopped";
+      return lease.fenced ? "receiver_stopped" : null;
     },
 
     async cancelExecution(threadId, turnId) {

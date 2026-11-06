@@ -1,10 +1,10 @@
 // Shared assertions and document inspection helpers for write-tool tests.
 import { expect } from "vitest";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 
 import { renderAgentEditResult } from "../result-text.js";
 import type { WriteOutcome, WriteStatus } from "../types.js";
-import { codec, model } from "./write-tool-harness.js";
+import { model } from "./write-tool-harness.js";
 
 export function hashAt(doc: Y.Doc, index: number): string {
   const block = model.getBlocks(doc)[index];
@@ -56,12 +56,4 @@ export function humanDeleteBlock(doc: Y.Doc, blockIndex: number): void {
     },
     { type: "human" },
   );
-}
-
-export function serializeDoc(doc: Y.Doc): string {
-  return codec.serialize(model.projectBlocks(doc));
-}
-
-export function documentBytes(doc: Y.Doc): number[] {
-  return Array.from(Y.encodeStateAsUpdate(doc));
 }

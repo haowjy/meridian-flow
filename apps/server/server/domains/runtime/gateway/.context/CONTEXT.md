@@ -4,6 +4,12 @@ The gateway normalizes Anthropic, OpenAI, and OpenAI-compatible providers behind
 one streaming `Gateway` port. It owns routing, retry/deadline policy, usage
 normalization, cancellation settlement, and provider-error mapping.
 
+Provider keys are read only from `FLOW_`-prefixed variables
+(`FLOW_ANTHROPIC_API_KEY`, `FLOW_DEEPSEEK_API_KEY`, …), never the vendors'
+unprefixed names. The owner's machine sets the unprefixed keys for local
+subscriptions, and Flow must not bill those. `check:negative-space` enforces the
+prefix.
+
 ## Port and attempt policy
 
 `Gateway.stream()` yields canonical `StreamEvent`s; `generate()`, optional
