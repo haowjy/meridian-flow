@@ -29,8 +29,8 @@ assistant turn, the next turn is a writer turn the server stamped
 run. Read the steer stamp rather than comparing timestamps.
 
 A reply stopped before it produced anything also has no action row: there is nothing to
-copy, Fork would only copy an empty turn, and Hand off is already on the writer's message
-above it. It carries no "Stopped" label and no Retry: a stop is deliberate, and Retry would
+copy, and Hand off is already on the writer's message above it. Fork is not available at
+that spot, an accepted cost. It carries no "Stopped" label and no Retry: a stop is deliberate, and Retry would
 resend the same words.
 
 ## The action row
