@@ -88,23 +88,31 @@ export const LandingExtension = Extension.create<LandingOptions>({
 
     function leave(view: EditorView, event: DragEvent): void {
       const related = event.relatedTarget as Node | null;
-      if (!related || !view.dom.contains(related)) clear();
+      if (related) {
+        if (!view.dom.contains(related)) clear();
+        return;
+      }
+      // Chrome leaves `relatedTarget` null when the pointer crosses into SVG,
+      // which is still inside the editor. Believe the point, not the null.
+      const at = view.dom.ownerDocument.elementFromPoint(event.clientX, event.clientY);
+      if (!at || !view.dom.contains(at)) clear();
     }
 
     return [
       new Plugin({
         view: (view) => {
           caret = new DropCaretView(view);
-          // Direct listeners: a node view (a rendered diagram, a figure) stops
-          // `dragover` before it reaches `handleDOMEvents`.
+          // Capture on `view.dom`: a node view (a rendered diagram, a figure)
+          // stops `dragover` before `handleDOMEvents`, and SVG children can
+          // stop it before bubble listeners too.
           const onOver = (event: DragEvent) => over(view, event);
           const onLeave = (event: DragEvent) => leave(view, event);
-          view.dom.addEventListener("dragover", onOver);
+          view.dom.addEventListener("dragover", onOver, true);
           view.dom.addEventListener("dragleave", onLeave);
           return {
             update: (current, previous) => caret?.update(current, previous),
             destroy() {
-              view.dom.removeEventListener("dragover", onOver);
+              view.dom.removeEventListener("dragover", onOver, true);
               view.dom.removeEventListener("dragleave", onLeave);
               clear();
               caret?.destroy();
@@ -143,10 +151,12 @@ export const LandingExtension = Extension.create<LandingOptions>({
 
           // Text and nodes: an editor selection moved or copied, or text from
           // outside. Consumed whether or not it lands, so ProseMirror's own
-          // resolution never runs against a different answer. ProseMirror also
-          // calls this with an empty slice for rows and files no door took.
+          // resolution never runs against a different answer. A Files type with
+          // a nonempty slice (Firefox listing files plus text) still goes
+          // through the landing; empty slices are rows and files no door took.
           handleDrop(view, event, slice) {
-            if (!view.editable || doorOf(view, event) !== sliceDoor) return false;
+            if (!view.editable || (doorOf(view, event) !== sliceDoor && slice.size === 0))
+              return false;
             const dropped = droppedSlicePlan(view, event, slice, landingOf(view, event));
             if (dropped.kind === "accept") dropped.commit?.(view);
             return true;
