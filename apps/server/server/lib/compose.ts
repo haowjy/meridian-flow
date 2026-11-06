@@ -789,8 +789,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     ports.eventSink,
   );
   const publishThreadStatus = async (threadId: ThreadId) => {
-    const status = await ports.statusReader.read(threadId);
-    const runningTurnId = await ports.statusReader.readRunningTurnId(threadId);
+    const [status, runningTurnId] = await Promise.all([
+      ports.statusReader.read(threadId),
+      ports.statusReader.readRunningTurnId(threadId),
+    ]);
     await threadEventHub.appendEvent(threadId, {
       type: "thread.status",
       threadId,
@@ -1088,6 +1090,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
+    documentTouches: ports.threadRepos.documentTouches,
     observationFrontiers: ports.observationFrontiers,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
@@ -1370,6 +1373,9 @@ export function createInMemoryAppServices(): AppServices {
     },
     async noWork() {
       return null;
+    },
+    async listForProject() {
+      return [];
     },
     async lockById() {
       return null;

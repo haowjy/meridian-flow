@@ -364,6 +364,7 @@
     "apps/server/server/lib/ws-thread-handler.handoff.test.ts": 13,
     "apps/server/server/lib/ws-thread-handler.test.ts": 9,
     "apps/server/server/routes/api/threads/[threadId]/messages.post.test.ts": 1,
+    "apps/server/server/shared/drizzle-transaction.db.test.ts": 1,
     "apps/server/server/shared/keyed-mutex.test.ts": 7,
     "apps/server/server/test-support/branch-tree-commands.test.ts": 2,
     "apps/server/server/test-support/drizzle-reset.db.test.ts": 9,
