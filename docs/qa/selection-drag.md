@@ -21,8 +21,8 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
 
 1. **Letters and gaps.** Sweep a range across two lines. Press on its letters, then on the space
    between its lines, and move 10px: both lift (the highlight stays, a caret follows the pointer,
-   no drag image). A press right of the last highlighted word on a partly selected line, or on
-   unselected text, does not. (A block the range covers whole may lift from its margin; a press
+   no drag image). A press right of the last highlighted word on a partly selected line of a single
+   block, or on unselected text, does not (in a multi-block range it does: step 18). (A block the range covers whole may lift from its margin; a press
    there that doesn't travel still places a caret.)
 2. **Move.** Release in another paragraph: the text moved and is still selected. Ctrl+Z puts it
    back in one step.
