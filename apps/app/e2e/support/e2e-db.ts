@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { APIRequestContext, Page } from "@playwright/test";
+import { devAuthIdentity } from "@meridian/contracts/dev-auth";
+import type { APIRequestContext } from "@playwright/test";
 import postgres from "postgres";
 import { applyDevEnvToProcess } from "../../../../tools/dev/lib/dev-env";
 
@@ -13,29 +14,9 @@ export function openE2eDb(databaseUrl: string): Db {
   return postgres(databaseUrl, { max: 1 });
 }
 
-export async function login(page: Page): Promise<void> {
-  await page.goto("/api/auth/dev-login", { waitUntil: "domcontentloaded" });
-  await page.waitForURL((url) => !url.pathname.startsWith("/api/auth/"), { timeout: 30_000 });
-}
-
-export async function findInternalUserId(db: Db, externalUserId: string): Promise<string> {
-  const rows = await db<{ id: string }[]>`
-    SELECT id::text AS id FROM users WHERE external_id = ${externalUserId} LIMIT 1
-  `;
-  const row = rows[0];
-  if (!row?.id) {
-    throw new Error(`No provisioned user row found for WORKOS_DEV_LOGIN_USER_ID=${externalUserId}`);
-  }
-  return row.id;
-}
-
-/** Idempotent e2e fixture user — does not depend on bootstrap or auth.setup ordering. */
+/** Idempotent e2e fixture user: the dev auth bypass user, without depending on a prior sign-in. */
 export async function ensureTestUserId(db: Db): Promise<string> {
-  const externalUserId = process.env.WORKOS_DEV_LOGIN_USER_ID?.trim();
-  if (!externalUserId) {
-    throw new Error("WORKOS_DEV_LOGIN_USER_ID is required for e2e user lookup");
-  }
-  const email = process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() || "test@meridian.dev";
+  const { externalId: externalUserId, email } = devAuthIdentity(process.env);
   const rows = await db<{ id: string }[]>`
     INSERT INTO public.users (external_id, email, created_at, updated_at)
     VALUES (${externalUserId}, ${email}, now(), now())
@@ -45,7 +26,7 @@ export async function ensureTestUserId(db: Db): Promise<string> {
   `;
   const id = rows[0]?.id;
   if (!id) {
-    throw new Error(`Failed to ensure user row for WORKOS_DEV_LOGIN_USER_ID=${externalUserId}`);
+    throw new Error(`Failed to ensure user row for external_id=${externalUserId}`);
   }
   return id;
 }
@@ -241,7 +222,7 @@ export async function resetUserProjects(db: Db, userId: string): Promise<void> {
 }
 
 /**
- * Clear the dev-login user's projects so the next authenticated request provisions
+ * Clear the dev user's projects so the next authenticated request provisions
  * a fresh personal project via ensureDefaultBootstrap.
  */
 export async function prepareAuthenticatedProjectAccess(db: Db): Promise<void> {

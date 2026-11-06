@@ -41,7 +41,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
   ```
 
   This builds the app, serves its hashed production assets at the checkout's
-  usual Portless app URL, and keeps the dev login, same-origin `/api`, and
+  usual Portless app URL, and keeps the dev auth bypass, same-origin `/api`, and
   WebSocket routes connected to that checkout's dev server. Portless supplies
   its CA through `NODE_EXTRA_CA_CERTS`; the launcher refuses to run without it
   rather than disabling TLS verification. A running stack records which client
@@ -83,8 +83,9 @@ transcript as truth. Repeatable recipes live in the
 [runtime probe catalog](qa/README.md).
 
 `./mf` (repo root) drives this worktree's own API: every command maps to an
-existing HTTP route or thread-socket message, authenticated exactly like the
-browser through dev login. Run `./mf` for the command tree with the route each
+existing HTTP route or thread-socket message, authenticated like the
+browser: as the dev user when the stack runs with `DEV_AUTH_BYPASS=1`, or with
+`MF_COOKIE`. Run `./mf` for the command tree with the route each
 command wraps, and `./mf <noun> <verb> --help` for flags and examples.
 
 What a `./mf` run proves depends on the code behind the command. Its thread
@@ -306,8 +307,9 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   a unique id prefix. Refs are per project: they resolve through
   `GET /api/projects/:projectId/threads/by-ref/:ref` in the default project,
   or in `--project <id>`.
-- `MF_SERVER_URL` plus `MF_COOKIE` (or `MF_APP_URL` for dev login) target a
-  stack other than this worktree's Portless routes.
+- `MF_SERVER_URL` targets a stack other than this worktree's Portless routes;
+  add `MF_COOKIE` when that stack needs a session cookie. A 401 from a local
+  stack means `DEV_AUTH_BYPASS=1` is not set in `.env`.
 
 Terminal record example (command-specific fields follow the reserved keys):
 
@@ -497,9 +499,9 @@ queue. The rule is:
   `pnpm dev` sets it unless `.env` sets `APP_DEBUG` itself. A staging deploy
   opts in by setting `APP_DEBUG=1` in its environment.
 
-Dev login is separate and stays non-production only, so `./mf` against a
-deployed staging server authenticates with `MF_SERVER_URL` plus `MF_COOKIE`
-(a real session cookie).
+`DEV_AUTH_BYPASS=1` is local only: the server refuses it unless `NODE_ENV=development`
+and `APP_ENV` is unset or `dev`, so `./mf` against a deployed staging server
+authenticates with `MF_SERVER_URL` plus `MF_COOKIE` (a real session cookie).
 
 ## Temporary Probes
 
@@ -608,7 +610,7 @@ part to 32 KiB of UTF-8; Raw remains exact up to the request capture ceiling.
 ## Consume Server Events
 
 For an LLM or script, prefer `./mf log`. It resolves the current worktree's
-live Portless routes, performs dev login in memory, and never writes a cookie
+live Portless routes, sends `MF_COOKIE` when set, and never writes a cookie
 jar:
 
 ```bash
@@ -638,15 +640,10 @@ transaction commits, so a rolled-back settlement leaves none.
 Servers with the debug gate open and the `local` event provider retain up to
 5,000 sanitized records or 16 MiB in memory. Otherwise these routes return 404.
 
-For direct `curl` access, bootstrap through the app and retarget the host-only
-development session cookie to the paired server origin:
+For direct `curl` access, a stack with `DEV_AUTH_BYPASS=1` needs no cookie:
 
 ```bash
-APP_URL=https://<lane>.app.meridian.localhost
 SERVER_URL=https://<lane>.server.meridian.localhost
-COOKIE_JAR=auth.cookies
-curl -sS -c "$COOKIE_JAR" "$APP_URL/api/auth/dev-login" >/dev/null
-sed -i 's/app\.meridian\.localhost/server.meridian.localhost/' "$COOKIE_JAR"
 ```
 
 `GET /api/debug/events` returns newest first. Filters are `eventId` (exact),
@@ -655,7 +652,7 @@ sed -i 's/app\.meridian\.localhost/server.meridian.localhost/' "$COOKIE_JAR"
 `EventCorrelation` key as an equality parameter.
 
 ```bash
-curl -sS -b "$COOKIE_JAR" \
+curl -sS \
   "$SERVER_URL/api/debug/events?source=wire.yjs&documentId=X&limit=50" | jq .
 ```
 
@@ -664,7 +661,7 @@ Each message carries one `EventRecord` as JSON in its `data` field; history stay
 on the query endpoint.
 
 ```bash
-curl -N -b "$COOKIE_JAR" "$SERVER_URL/api/debug/events/stream?source=wire.yjs&documentId=X"
+curl -N "$SERVER_URL/api/debug/events/stream?source=wire.yjs&documentId=X"
 ```
 
 After a restart, use the JSONL mirror for best-effort forensics:

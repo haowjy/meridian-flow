@@ -14,6 +14,3 @@ yarn.lock
 /api/
 /server/build
 /public/build
-
-# Playwright auth storageState (sealed session — never commit)
-/.auth/

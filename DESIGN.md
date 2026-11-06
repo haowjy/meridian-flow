@@ -85,7 +85,7 @@ deliberate, isolated branding exception.
 
 ## Login
 
-Branded split hero (deep ink ground, needle mark, Inter wordmark, corner seal chop). Credentials and account creation are **WorkOS AuthKit hosted sign-in** — the right card hands off to WorkOS; Meridian owns visual identity, not the auth form. Dev login remains available in development.
+Branded split hero (deep ink ground, needle mark, Inter wordmark, corner seal chop). Credentials and account creation are **WorkOS AuthKit hosted sign-in** — the right card hands off to WorkOS; Meridian owns visual identity, not the auth form. With `DEV_AUTH_BYPASS=1` local development skips this screen.
 
 ## Layout
 

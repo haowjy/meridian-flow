@@ -13,7 +13,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 
 - **Layout.** `src/core/` is the domain-free framework (`CommandSpec`/`CommandGroup`
   parsing, `output.ts`, the `EXIT` contract in `cli-error.ts`, `session.ts` for
-  Portless discovery, the in-memory dev-login cookie and bounded requests) and
+  Portless discovery, the optional `MF_COOKIE` and bounded requests) and
   imports no group. `src/commands/<group>/` holds one group each; a new group is
   listed in `GROUPS` in `src/main.ts`. A group may import another group's helper,
   never `main.ts`. Command tests run the real CLI against `src/test-support/wire.ts`,
