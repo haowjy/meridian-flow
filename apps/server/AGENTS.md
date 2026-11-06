@@ -21,5 +21,9 @@ where the seam earns it. Composition, transport and cross-domain contracts:
 - A new write seam starts its transaction with `lockSeamWorks` before any
   advisory or document lock. A new entry point for agent writes binds a grant;
   only the journal catches one that doesn't.
+- Run independent reads with `Promise.all`, inside a transaction too. Database
+  work still running after its transaction ends throws
+  (`shared/drizzle-transaction.ts`). Work meant to outlive the transaction
+  leaves it with `runAfterDrizzleCommit` or `runOutsideWrite`.
 - DB tests follow the shared [isolation policy](server/test-support/AGENTS.md).
   Run them with `pnpm test:db`.

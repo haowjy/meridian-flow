@@ -236,6 +236,7 @@ export function createRuntimeHarness(
       threads: repos.threads,
       turns: repos.turns,
     }),
+    documentTouches: repos.documentTouches,
     observationFrontiers: createInMemoryObservationFrontiers({
       transactionOwner:
         transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,
