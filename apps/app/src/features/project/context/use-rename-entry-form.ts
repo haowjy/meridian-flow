@@ -25,7 +25,6 @@ import {
   nameOccupancy,
   validateContextEntryName,
 } from "./context-entry-name";
-import { describeRenames } from "./entry-drag/drop-choice";
 import { destinationOwner } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
@@ -129,8 +128,7 @@ export function useRenameEntryForm({
       if (invalid || !draft.trim()) return invalid;
       const as = allocateContextEntryArrivalName(draft, occupancy, kind, currentName);
       const name = allocateContextEntryArrivalName(draft, nameOccupancy([]), kind, currentName);
-      const message = as === name ? null : describeRenames([{ name, as }]);
-      return message ? { level: "warning", message } : null;
+      return as === name ? null : { level: "warning", message: t`${name} will be renamed ${as}` };
     },
     onCommit: async (typed) => {
       // Typing the name it already has, another way (`Chapter 13.md`), is no change.
