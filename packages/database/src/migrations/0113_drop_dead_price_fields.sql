@@ -1,6 +1,6 @@
 -- Retire values and a column that nothing writes any more: price_source 'provider_reported' and
 -- 'configured_rate' (folded into 'computed'), predicted_cache_reason 'uncached' (folded into the
--- cold 'ttl_unknown'), and the provider_request_id column. Old OpenRouter rows hold generation IDs
+-- cold 'ttl_unknown'), and the provider_request_id column. Old OpenRouter rows can hold generation IDs
 -- there, so each non-null value is copied into response_metadata under 'providerRequestId' before
 -- the drop. The narrowed checks are added NOT
 -- VALID and validated in 0114, so the scan of model_responses holds no ACCESS EXCLUSIVE lock.
