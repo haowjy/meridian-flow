@@ -52,8 +52,9 @@ async function main(): Promise<void> {
   const repoRoot = resolveCurrentRepoRoot();
   applyDevEnvToProcess(repoRoot);
   // The boot contract asserts the signed-out routes (`/` redirects, `/login` renders),
-  // which the dev auth bypass in a developer's `.env` would change.
-  delete process.env.DEV_AUTH_BYPASS;
+  // which the dev auth bypass in a developer's `.env` would change. Set rather than deleted:
+  // Vite's `loadEnv` fills any key still unset from the repo's env files.
+  process.env.DEV_AUTH_BYPASS = "0";
   for (const [key, value] of Object.entries(DEV_BOOT_ENV_DEFAULTS)) {
     if (!process.env[key]) process.env[key] = value;
   }
