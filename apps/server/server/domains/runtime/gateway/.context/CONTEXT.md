@@ -91,8 +91,10 @@ A provider lists offerings: `{ model, pricing, promptCache? }`. What an endpoint
 and charges belongs to the provider serving the model, not to the model (DeepSeek uses
 the Anthropic adapter and caches differently). `ModelInfo` stays flat and carries the
 offering's `promptCache: { kind, shortTtlMs, longTtlMs }`. `null` means the provider
-documents no lifetime. Offerings spell out their own descriptor or take
-`DEFAULT_PROMPT_CACHE`; there is no provider-level default.
+documents no lifetime. An offering's `promptCache` is a partial descriptor merged field by
+field over `DEFAULT_PROMPT_CACHE` (explicit, 5m short, 1h long), so an offering restates only
+what differs and an explicit `null` survives the merge. `validateModelRegistry` and
+`ModelInfo` share one resolver. There is no provider-level default.
 
 | Provider | kind | short | long |
 | --- | --- | --- | --- |
