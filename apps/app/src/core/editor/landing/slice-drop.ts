@@ -99,7 +99,7 @@ function slicePlan(
 ): DropPlan {
   const { state } = view;
   if (!slice) return { kind: "accept", pos: landing.pos };
-  if (source.moved && overlapsMovedBlock(state, landing, source)) return { kind: "refuse" };
+  if (source.moved && landsInMovedRange(state, landing, source)) return { kind: "refuse" };
 
   if (landing.kind === "source") {
     // A code block holds characters: a slice reads as its text and its hard
@@ -151,21 +151,14 @@ function deleteSource(transaction: Transaction, source: SliceSource): void {
 }
 
 /**
- * True when this move lands inside the dragged range, or in a textblock the
- * range reaches into from outside: deleting the range would cut that block and
- * flatten what it held into the rest of it. A range wholly inside the block is
- * an ordinary move within a line.
+ * True when this move lands inside the dragged range itself (its ends
+ * included; for a `CellSelection`, inside any of its cells). The unselected
+ * part of a block the range reaches into is an ordinary landing.
  */
-function overlapsMovedBlock(state: EditorState, landing: Landing, source: SliceSource): boolean {
-  const $pos = state.doc.resolve(landing.pos);
-  return (source.node ?? state.selection).ranges.some((range) => {
-    const [from, to] = [range.$from.pos, range.$to.pos];
-    if (landing.pos >= from && landing.pos <= to) return true;
-    if (!$pos.parent.isTextblock) return false;
-    const overlaps = from < $pos.end() && to > $pos.start();
-    const inside = from >= $pos.start() && to <= $pos.end();
-    return overlaps && !inside;
-  });
+function landsInMovedRange(state: EditorState, landing: Landing, source: SliceSource): boolean {
+  return (source.node ?? state.selection).ranges.some(
+    (range) => landing.pos >= range.$from.pos && landing.pos <= range.$to.pos,
+  );
 }
 
 type BuiltDrop = { transaction: Transaction; from: number; to: number };
