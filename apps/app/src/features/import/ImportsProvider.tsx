@@ -1,4 +1,5 @@
 /** One import owner for the authenticated account, independent of the current project. */
+import { t } from "@lingui/core/macro";
 import {
   createContext,
   type ReactNode,
@@ -7,13 +8,23 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ImportToasts } from "./ImportToasts";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { importApi } from "./import-api-port";
-import { ImportCoordinator, type ImportsSnapshot } from "./import-coordinator";
+import { ImportCoordinator, type ImportsSnapshot, type TrackedImport } from "./import-coordinator";
+import { importPresentation } from "./import-presentation";
+import { useImportMilestone } from "./milestones";
 
 const Context = createContext<ImportCoordinator | null>(null);
 export function ImportsProvider({ children }: { children: ReactNode }) {
-  const [coordinator] = useState(() => new ImportCoordinator(importApi));
+  const [coordinator] = useState(
+    () =>
+      new ImportCoordinator(importApi, (sentence) =>
+        notifyFailure({
+          key: `import-refused:${crypto.randomUUID()}`,
+          title: t`Import didn't start. ${sentence}`,
+        }),
+      ),
+  );
   useEffect(() => coordinator.start(), [coordinator]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -28,9 +39,31 @@ export function ImportsProvider({ children }: { children: ReactNode }) {
   return (
     <Context.Provider value={coordinator}>
       {children}
-      <ImportToasts coordinator={coordinator} />
+      <ImportWatches coordinator={coordinator} />
     </Context.Provider>
   );
+}
+/** What every import does wherever the writer is: says its milestones and reads its result. */
+function ImportWatches({ coordinator }: { coordinator: ImportCoordinator }) {
+  const { imports } = useImportsSnapshot(coordinator);
+  return imports
+    .filter((item) => !item.dismissed)
+    .map((item) => <ImportWatch key={item.importId} item={item} coordinator={coordinator} />);
+}
+function ImportWatch({
+  item: { importId, summary, local, detail },
+  coordinator,
+}: {
+  item: TrackedImport;
+  coordinator: ImportCoordinator;
+}) {
+  const { state, title } = importPresentation(summary, local);
+  useImportMilestone(state, title);
+  useEffect(() => {
+    if (summary.state === "finished" && detail?.state !== "finished" && !local.error && !local.busy)
+      void coordinator.loadDetail(importId);
+  }, [summary.state, detail, coordinator, importId, local.error, local.busy]);
+  return null;
 }
 export const useImportCoordinator = () => useContext(Context);
 const EMPTY: ImportsSnapshot = { imports: [] };

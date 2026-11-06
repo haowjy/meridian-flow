@@ -58,8 +58,7 @@ request kinds), store `intents` holds documents'. A server read that needs no br
 
 ## Steps
 
-Use a `__delay` of `8000` to `14000` where a step says "hold". The Undo toast after a move
-stays until dismissed and covers the lowest tree rows; dismiss it before the next drag.
+Use a `__delay` of `8000` to `14000` where a step says "hold".
 
 1. Hold, press New folder, type a name, Enter. The folder is listed within a second while
    `__cf` shows one POST still unanswered; its `folders` record has `canonical: null` and
@@ -84,16 +83,13 @@ stays until dismissed and covers the lowest tree rows; dismiss it before the nex
    their marks until placed. Nothing is resent.
 6. Set `__refuse`, create a folder. One POST (still one after 35s and after a reload);
    the folder is `needs-repair` with a `refusal` outcome, listed in Unfiled with the mark.
-   Clear `__refuse` and Delete the row: no POST, the delete is `settled-locally`, the
-   create `superseded`, and the notice reads "Deleted <name>" with Undo. Undo brings the
-   folder back in Unfiled with its mark and sends one more create; while `__refuse` is
-   still set it is refused again.
+   Clear `__refuse` and Delete the row: no POST, the delete is `settled-locally` and the
+   create `superseded`.
 7. Hold, create `Outer`, then a folder `Inner` inside it, and Delete `Inner` before `Outer`
    lands. `Inner` was never sent: no POST for it, its create `cancelled`, and the delete
-   settles locally with Undo and no POST. Undo restores `Inner` under `Outer`; its create
-   waits for `Outer` and goes out after it. Only `Outer` and then `Inner` reach the server.
+   settles locally with no POST. Only `Outer` reaches the server.
 8. Hold, create a folder and Delete it at once. The create was already sent, so it lands
-   and the delete follows (`settled`, with an Undo toast); the server ends with no folder.
+   and the delete follows (`settled`); the server ends with no folder.
 9. Hold, create a folder and rename it. One create POST, then the move; the server shows
    the new name only.
 10. Two tabs on the project, the harness in both. Hold, create a folder in one. The other
@@ -126,7 +122,7 @@ stays until dismissed and covers the lowest tree rows; dismiss it before the nex
 12. Phone: a refused folder row in Files → Unfiled says "Couldn't create this folder. Try
     another place." with Move… and Rename under it (drive the phone over CDP as in
     [refused-create](refused-create.md) step 14). Move… opens at the refused destination;
-    Move to Manuscript lands the folder and the notice "Moved … to Manuscript." appears.
+    Move to Manuscript lands the folder and its mark goes.
 
 ## Server refusals a folder create can get
 
@@ -168,18 +164,13 @@ authority is not consulted for a held id. A fresh create into a deleted Work is 
 
 ## Deleting a folder only this device holds
 
-A never-accepted folder's delete settles on this device, and it keeps the same ten-minute
-Undo window a document's local delete has (`localDeletion.notBefore`,
-`LOCAL_DELETION_UNDO_MS`). One operation settles every local folder and document under it,
-so a pending child's create stops with the parent and one Undo restores the subtree:
+A never-accepted folder's delete settles on this device. One operation settles every local
+folder and document under it, so a pending child's create stops with the parent:
 
-- Refuse a folder create (`__refuse`), delete the row, then Undo: the folder returns in
-  Unfiled with its mark and sends one create; refused again while `__refuse` is set.
 - Hold a folder's create, create a child folder inside it, then delete the child: no POST
-  for the child, the delete settles locally and offers Undo; Undo restores the child, whose
-  create waits for the parent and goes out only after the parent lands.
-- A child document that was already refused restores with the parent and keeps its mark; it
-  is not re-sent by the Undo.
+  for the child, and the delete settles locally.
+- The replica clears these deletions after ten minutes (`localDeletion.notBefore`,
+  `LOCAL_DELETION_UNDO_MS`).
 
 ## A folder create carries position
 

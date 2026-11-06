@@ -117,7 +117,6 @@ export function planCopy(input: {
   scheme: string;
   roots: readonly (CopyRoot & { classification: CatalogFileClassification | null })[];
   destination: CopyDesired["destination"];
-  origin?: string;
 }): OperationWrite {
   const { projectId, operationId } = input;
   const records = input.roots.map((root) =>
@@ -142,7 +141,6 @@ export function planCopy(input: {
             kind: "copy",
             roots: input.roots.map(({ classification: _, ...root }) => root),
             destination: input.destination,
-            ...(input.origin ? { origin: input.origin } : {}),
           },
           attempts: [],
           state: "pending",

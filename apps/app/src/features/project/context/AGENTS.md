@@ -21,7 +21,7 @@ chat resources rather than ordinary Editor tabs.
   evidence. File targets retain `documentId`; folder targets retain catalog
   `entryId`.
 - A row changes folders only through `moveRows` (`entry-drag/execute-move.ts`):
-  Move…, a drop and a drop's Undo resolve one `ParentRef` by folder ID (or an
+  Move… and a drop resolve one `ParentRef` by folder ID (or an
   area root with its authority) before the move is ready, share one
   identity-based refusal (`moveRefusal` in `move-plan.ts`: inside itself;
   already there is a quiet no-op), and arrive at the next free name that
@@ -32,7 +32,7 @@ chat resources rather than ordinary Editor tabs.
 - Selection and dragging (`entry-drag/`): one desktop list is one selection,
   one drop route and one drop scope (`useEntryList`/`EntryList`). They carry
   identities, never placement or grants; plans read placement from the replica at hover,
-  drop and Undo. A list row dropped within one system moves at once; one across systems, and
+  drop. A list row dropped within one system moves at once; one across systems, and
   every other source naming a document or folder (chips, tabs, crumbs, Recent rows, receipts,
   Uploads entries, selected links) asks first, at the pointer (`entry-drag/drop-choice.ts`).
   Those sources start their drag through `entry-drag/reference-source.ts` and nothing else; what a drag may do (Move is refused out

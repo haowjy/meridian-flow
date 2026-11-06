@@ -22,8 +22,7 @@ import {
   ThreadStoreProvider,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
-import { ToastRegion } from "@/components/app/ToastRegion";
-import { ToastRegistryProvider, useToastClearance } from "@/components/app/toast-registry";
+import { FailureToaster } from "@/components/app/failure-toast";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
@@ -57,9 +56,8 @@ const DebugOverlay =
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
     : null;
 
-// The query devtools launcher sits in the bottom-right corner, and the Activity region rises above
-// it (`useToastClearance`): the bottom-left holds the rail's account footer, the top-right the
-// dock's header, and a narrow window's top bar keeps its context toggle and its bottom the
+// The query devtools launcher sits in the bottom-right corner: the bottom-left holds the rail's
+// account footer, the top-right the dock's header, and a narrow window's top bar keeps its context toggle and its bottom the
 // composer. Narrow by width, not pointer: a desktop browser resized to phone width gets the same
 // layout as a phone, so the launcher is dropped there.
 const NARROW_QUERY = "(max-width: 767px)";
@@ -87,7 +85,7 @@ function QueryDevtoolsLauncher({
   devtools: NonNullable<typeof ReactQueryDevtools>;
 }) {
   return (
-    <div ref={useToastClearance()} className="fixed right-3 bottom-3 z-[55]">
+    <div className="fixed right-3 bottom-3 z-[55]">
       <Devtools buttonPosition="relative" initialIsOpen={false} />
     </div>
   );
@@ -248,29 +246,27 @@ function AuthenticatedProviderTree({
           <TransportProvider>
             <MeridianCopilotProvider>
               <DensityPopoverCollisionProvider>
-                <ToastRegistryProvider>
-                  <ImportsProvider key={user.userId}>
-                    <div className="app-frame flex flex-col">
-                      <ConnectionBanner />
-                      <div className="min-h-0 flex-1 overflow-hidden">
-                        {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                        <Outlet />
-                      </div>
+                <ImportsProvider key={user.userId}>
+                  <div className="app-frame flex flex-col">
+                    <ConnectionBanner />
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                      <Outlet />
                     </div>
-                    <SettingsDialog />
-                    <ToastRegion />
-                    {DebugOverlay ? (
-                      <Suspense fallback={null}>
-                        <DebugOverlay />
-                      </Suspense>
-                    ) : null}
-                    {ReactQueryDevtools && !narrow ? (
-                      <Suspense fallback={null}>
-                        <QueryDevtoolsLauncher devtools={ReactQueryDevtools} />
-                      </Suspense>
-                    ) : null}
-                  </ImportsProvider>
-                </ToastRegistryProvider>
+                  </div>
+                  <SettingsDialog />
+                  <FailureToaster />
+                  {DebugOverlay ? (
+                    <Suspense fallback={null}>
+                      <DebugOverlay />
+                    </Suspense>
+                  ) : null}
+                  {ReactQueryDevtools && !narrow ? (
+                    <Suspense fallback={null}>
+                      <QueryDevtoolsLauncher devtools={ReactQueryDevtools} />
+                    </Suspense>
+                  ) : null}
+                </ImportsProvider>
               </DensityPopoverCollisionProvider>
             </MeridianCopilotProvider>
           </TransportProvider>

@@ -1,7 +1,7 @@
 # Row selection and drag
 
 Named risks: a drop moves rows into the wrong catalog or folder, a folder lands
-inside its own subtree, Undo leaves rows stranded, a drop target stays lit
+inside its own subtree, a drop target stays lit
 after the drag ends, or a refused move or delete retries every 30s with the row
 stuck at the destination and no error. This recipe is not a current pass claim.
 
@@ -39,16 +39,10 @@ browser reports no fine pointer, so rows render at touch height.
    inside it: the folder and its rows light, the hint reads "Move to
    characters". Drop. The three chapters appear under `characters`, stay
    selected, and the open document's path reads Knowledge Base › characters.
-   A card at the window's bottom-right reads "Moved 3 items to
-   characters." with Undo and Dismiss, below any import toast; it stays until
-   the next move, copy or delete (which replaces it) or Dismiss. On a phone it
-   sits inline in the drawer between the Files tree and User instead.
-4. Press Undo: the chapters return to `Act 2`. Repeat with the keyboard (F8
-   moves focus into the bottom-right region, then Tab to Undo, Enter) and with
-   Dismiss: focus lands on a moved row, not the page body. Drop a row, then rename it: Undo leaves the notice and the message
-   stays with Dismiss.
-4a. Open a row's `…` menu, Move… it into a collapsed folder: the same notice
-   names the destination; Undo returns it.
+   No toast and no card: the tree is the whole report. Repeat on a phone from a
+   row's Move…: same result, nothing else appears.
+4a. Open a row's `…` menu, Move… it into a collapsed folder: the row leaves its
+   place and no toast shows.
 5. Drag `Part Two` onto `Act 2`: nothing lights, the hint reads "Can't go
    inside itself", and releasing changes nothing.
 6. Drag a row over its own folder: no light, no hint, no change. Drag a
@@ -58,9 +52,7 @@ browser reports no fine pointer, so rows render at touch height.
    reads "Move to <folder>" with a warning line under it, "chapter-1 will be
    renamed chapter-1 (2)" (two clashing rows: "2 items will be renamed"). Move…
    shows the same line under that folder's Move action. Drop: the row arrives
-   as `chapter-1 (2)`; the notice
-   reads "Moved chapter-1 to <folder> as chapter-1 (2)." Undo puts it back as
-   `chapter-1` (or the next free name if one took its place meanwhile).
+   as `chapter-1 (2)`; no toast shows.
 8. Run [Mention drops](mention-drop.md). A writing drop copies references and
    never enters this recipe's move route.
 9. After every drag, check that no region stays lit
@@ -81,19 +73,17 @@ top or bottom quarter.
 1. Drag `Chapter 10` to the top band of `Chapter 2`: a line at `Chapter 2`'s
    indentation, no fill on `Act 1`, the hint reads "Move before Chapter 2".
    Move to its centre: nothing lights (it is already in `Act 1`). Move to the
-   bottom band of `Chapter 3`: "Move after Chapter 3". Drop: it lands there and
-   the notice reads "Reordered Chapter 10." with Undo.
+   bottom band of `Chapter 3`: "Move after Chapter 3". Drop: it lands there.
 2. Drag `Prologue` over open `Act 1`: its top band reads "Move before Act 1"
    with the line at root indentation; its centre lights the whole folder,
    "Move to Act 1". The top band of `Act 2` reads "Move before Act 2", the line
    below `Act 1`'s subtree; a collapsed folder's bottom band reads "Move after
-   Act 2". Drop on "before Act 1", then Undo: `Prologue` returns to the bottom.
+   Act 2". Drop on "before Act 1": `Prologue` lands there.
 3. Ctrl-select `Chapter 2` and `Chapter 4` and drop them on the bottom band of
-   `Chapter 1`: they land after it in screen order, the notice reads "Reordered
-   2 items."; Undo restores both places. Dragging a selection onto an edge of
+   `Chapter 1`: they land after it in screen order. Dragging a selection onto an edge of
    one of its own rows does nothing.
 4. Hover `Act 2` until it springs open, then the bottom band of `Chapter 11`
-   and drop: "Moved Chapter 4 to Act 2." and it sits between 11 and 12.
+   and drop: it sits between 11 and 12.
 5. Drag `Act 1` onto an edge of a row inside it: "Can't go inside itself", no
    line, no change.
 6. In a Work's Files, search `o` so `Bell timing` hides between `Bell rope` and
@@ -107,17 +97,17 @@ top or bottom quarter.
 9. Escape: the headless drag ignores the key, so dispatch
    `window.dispatchEvent(new Event('dragend'))` mid-drag; the line and hint go.
 10. Move… on a chapter (desktop keyboard: focus its `…`, Enter, type `m`,
-    Enter, End, Enter): its own folder offers "Change position in Act 1", which
+    Enter, End, Enter): its own folder offers "Change position", which
     lists "Move to the top of Act 1", "Move after <sibling>" and "Move to the
-    bottom of Act 1", minus the place it holds. Choose one: the row moves, the
-    notice reads "Reordered …", focus returns to the row. Repeat on the phone
+    bottom of Act 1", minus the place it holds. Choose one: the row moves and
+    focus returns to the row. Repeat on the phone
     (393×852, coarse pointer per [Chat Files](chat-files.md)); its rows are
     not draggable.
 
 ## Refused moves and deletes
 
 Named risk: a deterministic 400 from move or delete used to stay `submitted` and
-POST again every 30s. The row sat at the destination with "Moved …" and no mark.
+POST again every 30s. The row sat at the destination with no mark.
 
 The app no longer sends a payload the server refuses, so rewrite the first
 matching request in the page (`window.fetch`). Leave later POSTs unrewritten so
@@ -157,45 +147,38 @@ One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
 
 1. Drag a Manuscript row into another folder with the move rewrite on. The row
    first shows at the destination, then returns to its source with the warning
-   mark ("Couldn't move this entry. Try again."). The rail reads "Couldn't
-   move <name>." with Dismiss and no Undo. Exactly one POST. After 35s and
-   after a reload, still one POST. In IndexedDB
+   mark ("Couldn't move this entry. Try again."). A toast at the top right reads
+   "Couldn't move <name> to <folder>." with Retry and a close button, and stays
+   until closed. It covers no tree row. Exactly one POST. After 35s and after a
+   reload, still one POST; the reload shows the mark and no toast. In IndexedDB
    (`meridian:resource-metadata:v4:<accountId>`, store `intents`) that intent is
    `needs-repair` with a refusal outcome, not `submitted`.
-2. The same from the row's `…` menu, Move….
-3. Multi-row drag with only the first request rewritten: the rail reads
-   "Moved a to X. Couldn't move b." with Undo. Undo puts the moved row back.
-   The refused row stays at its source with the mark.
+2. The same from the row's `…` menu, Move…. Retry with no rewrite: the row moves,
+   the mark and the toast go.
+3. Multi-row drag with only the first request rewritten: the other row lands and
+   the refused row stays at its source with the mark. With every request rewritten
+   the toast reads "Couldn't move 3 items to <folder>." and Retry moves all three.
 4. Refused delete: the row comes back with "Couldn't delete this document.
-   Try again." (folder: "Couldn't delete this folder. Try again."). Exactly one
-   POST; no resend.
-5. Control: an un-rewritten move and delete still succeed. Move shows
-   "Moved …" with Undo; Undo works. Delete shows "Deleted …" with Undo and no
-   mark.
-6. Hover or focus the mark: `title` and `aria-label` are the mark copy above.
+   Try again." (folder: "Couldn't delete this folder. Try again.") and the toast
+   "Couldn't delete <name>." with Retry. Exactly one POST; no resend. Retry deletes it.
+5. Each refusal has its own toast: refuse a move, a delete, a Copy and a second move.
+   Three show, and closing one brings up the fourth. Refuse a move, rename the row, and
+   the toast closes. Refuse a move,
+   press Retry after renaming from another client: nothing happens to the row.
+6. Control: an un-rewritten move and delete succeed with no toast and no mark.
+7. Hover or focus the mark: `title` and `aria-label` are the mark copy above.
    No console errors beyond the expected 400s.
-7. Successful move, then install the rewrite so it catches the reverse POST,
-   then Undo: the notice hides at once. The row returns to the destination with
-   the mark. The rail reads "Couldn't move <name> back." with Dismiss and no
-   Undo. Exactly one POST; after 35s still one.
-8. Undo without a rewrite: the notice stays gone after 40s.
-9. After Undo, another move or delete on that surface before the reverse
-   settles (hold the reverse response, then refuse it): the newer notice stays;
-   "Couldn't move <name> back." does not replace it.
-10. Two-row move, Undo with only the first reverse rewritten: "Couldn't move
-    <name> back." The accepted reverse goes home; the refused row stays at the
-    destination with the mark.
+8. On a phone the toast sits under the top bar, full width.
 
 ## Scratch and Work Files
 
 1. Open the bound chat and expand Scratch in the sidebar. Drag `Bell timing`
-   onto `research`: it opens, lights, and the note moves in with Undo.
+   onto `research`: it opens, lights, and the note moves in.
 2. Drag a Scratch note over a project folder: nothing lights and no hint shows
    (crossing between Scratch and the project is Move or Copy, not built yet).
 3. Open the Work, then its Files tab, and collapse the sidebar. Select two
    notes inside `research` and drag them onto the Scratch heading: they move
-   out, stay selected, and "Moved 2 items to Scratch." with Undo shows under
-   the list. Undo puts them back. The sidebar's Scratch shows the same changes.
+   out and stay selected. The sidebar's Scratch shows the same changes.
 
 ## Evidence
 

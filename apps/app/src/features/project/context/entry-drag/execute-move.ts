@@ -1,11 +1,10 @@
 /**
- * Doing and undoing a planned move through the replica's one placement path.
- * Placement is optimistic: a move resolves once the replica admits it, and a
- * later server refusal lands on the row as its failure mark with Move… to
- * repair. Each placement's operation is remembered so the row's link-update
- * note follows its receipt. Arrival names are predicted from the replica's
- * placement, so a move or its Undo needs no list on screen. Results are data;
- * wording, selection and the notice belong to the caller.
+ * Doing a planned move through the replica's one placement path. Placement is
+ * optimistic: a move resolves once the replica admits it, and a later server
+ * refusal lands on the row as its failure mark with Move… to repair. Each
+ * placement's operation is remembered so the row's link-update note follows
+ * its receipt. Arrival names are predicted from the replica's placement, so a
+ * move needs no list on screen. Results are data; selection belongs to the caller.
  */
 
 import {
@@ -24,15 +23,9 @@ import {
 } from "../context-entry-name";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
-import {
-  type MoveEffect,
-  type MoveRow,
-  planUndo,
-  sameParent,
-  siblingPositionWitness,
-} from "./move-plan";
+import { type MoveRow, sameParent } from "./move-plan";
 
-/** The replica and project a Move, a Copy and their Undo act through. */
+/** The replica and project a Move and a Copy act through. */
 export type ReplicaContext = {
   resources: AccountResourceReplica;
   projectId: string;
@@ -46,9 +39,10 @@ export type NamingView = {
 };
 
 export type MoveResult = {
-  moved: readonly MoveEffect[];
+  /** Rows the replica admitted. */
+  moved: readonly EntryRef[];
   /** Rows the replica would not admit. */
-  failed: readonly { entry: EntryRef; name: string; action: "move" | "reorder" }[];
+  failed: readonly { entry: EntryRef; name: string }[];
 };
 
 export type Arrival = {
@@ -156,7 +150,7 @@ export async function currentView(context: ReplicaContext) {
   };
 }
 
-/** Move…, a drop and Undo all move rows here, each under its predicted free name. */
+/** Move… and a drop both move rows here, each under its predicted free name. */
 export async function moveRows(
   rows: readonly MoveRow[],
   context: ReplicaContext,
@@ -165,12 +159,10 @@ export async function moveRows(
   const { resources, projectId } = context;
   const current = view ?? (await currentView(context));
   const names = arrivals(current, rows);
-  const moved: MoveEffect[] = [];
-  const failed: { entry: EntryRef; name: string; action: "move" | "reorder" }[] = [];
+  const moved: EntryRef[] = [];
+  const failed: { entry: EntryRef; name: string }[] = [];
   for (const row of rows) {
     const name = names.name(row);
-    const action = sameParent(row.before, row.after) && row.position ? "reorder" : "move";
-    const previousPosition = siblingPositionWitness(current, row.before, row.entry.id);
     try {
       const operationId = await placeEntry(
         resources,
@@ -182,31 +174,10 @@ export async function moveRows(
       names.reserve(row, name);
       if (operationId)
         void renameOperationLifecycle(resources).remember(projectId, row.entry, operationId);
-      moved.push({
-        entry: row.entry,
-        name,
-        previousName: row.name,
-        before: row.before,
-        after: row.after,
-        previousPosition,
-        action,
-        ...(operationId ? { operationId } : {}),
-      });
+      moved.push(row.entry);
     } catch {
-      failed.push({ entry: row.entry, name: row.name, action });
+      failed.push({ entry: row.entry, name: row.name });
     }
   }
   return { moved, failed };
-}
-
-/**
- * Puts moved rows back, reading the replica as it is now rather than as it was
- * at the drop (see `planUndo`).
- */
-export async function undoMove(
-  effects: readonly MoveEffect[],
-  context: ReplicaContext,
-): Promise<MoveResult> {
-  const view = await currentView(context);
-  return moveRows(planUndo(view, effects), context, view);
 }

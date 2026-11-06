@@ -17,7 +17,7 @@ import { UploadQueue } from "./uploader";
 
 export type SelectionRead = (options: { signal: AbortSignal }) => Promise<Selection>;
 export type LocalUpload = {
-  phase?: "reading" | "creating" | "uploading" | "stalled" | "missing" | "wrong-root" | "refused";
+  phase?: "reading" | "creating" | "uploading" | "stalled" | "missing" | "wrong-root";
   missing?: number[];
   sendingBytes?: number;
   error?: string;
@@ -75,7 +75,11 @@ export class ImportCoordinator {
     this.rootMemory.set(summary.importId, result.memory);
     return result.draw;
   }
-  constructor(private readonly api: ImportApi) {}
+  constructor(
+    private readonly api: ImportApi,
+    /** An import that never started: it is gone, and this sentence says why. */
+    private readonly onRefused: (sentence: string) => void,
+  ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -139,8 +143,6 @@ export class ImportCoordinator {
     if (summary.root?.created && memory?.drawn && memory.deadline === undefined)
       this.rootMemory.set(summary.importId, { ...memory, deadline: Date.now() + 30000 });
     const doneUpload = summary.state !== "uploading";
-    if (record.view.local.phase === "refused")
-      record.view = { ...record.view, local: { ...record.view.local, phase: "stalled" } };
     if (doneUpload) {
       record.held.clear();
       record.picked = [];
@@ -229,8 +231,7 @@ export class ImportCoordinator {
           record.creation !== "created" ||
           record.revision !== revisions.get(id) ||
           record.view.local.phase === "reading" ||
-          record.view.local.phase === "creating" ||
-          record.view.local.phase === "refused"
+          record.view.local.phase === "creating"
         )
           continue;
         if (record.view.summary.root?.created) {
@@ -352,11 +353,16 @@ export class ImportCoordinator {
       await this.create(record, attempt);
     } catch (error) {
       if (this.live(record, attempt))
-        this.local(record, {
-          phase: "refused",
-          error: error instanceof Error ? error.message : refusalSentence(null),
-        });
+        this.refuse(record, error instanceof Error ? error.message : refusalSentence(null));
     }
+  }
+  /** Nothing of this import reached the server, so nothing is left to come back to. */
+  private refuse(record: RecordState, sentence: string) {
+    this.retire(record);
+    this.records.delete(record.view.importId);
+    this.publish();
+    this.nudge();
+    this.onRefused(sentence);
   }
   private async create(record: RecordState, attempt: UploadAttempt) {
     const command = record.command;
@@ -381,10 +387,9 @@ export class ImportCoordinator {
           error.status < 500
         )
           record.creation = "local";
-        this.local(record, {
-          phase: record.creation === "local" ? "refused" : "stalled",
-          error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
-        });
+        const sentence = refusalSentence(error instanceof ImportRequestError ? error.code : null);
+        if (record.creation === "local") this.refuse(record, sentence);
+        else this.local(record, { phase: "stalled", error: sentence });
       }
       return;
     }
@@ -630,8 +635,7 @@ export class ImportCoordinator {
     if (!record) return;
     await this.command(record, async () => {
       record.attempt?.end();
-      const refused = record.creation === "local" && record.view.local.phase === "refused";
-      if (record.command && !refused) {
+      if (record.command) {
         // A lost create answer may already have created the import. Replay before stopping it.
         if (record.creation !== "created")
           await this.api.create(
@@ -640,7 +644,7 @@ export class ImportCoordinator {
             record.controller.signal,
           );
       }
-      if (!refused && (record.command || !record.read)) {
+      if (record.command || !record.read) {
         try {
           await this.api.stop(record.view.summary.projectId, id, record.controller.signal);
         } catch (error) {
@@ -669,9 +673,7 @@ export class ImportCoordinator {
       else
         await this.run(record, (attempt) =>
           record.creation !== "created"
-            ? record.command
-              ? this.create(record, attempt)
-              : this.prepare(record, attempt)
+            ? this.create(record, attempt)
             : this.sendAwaiting(record, attempt),
         );
       this.nudge();

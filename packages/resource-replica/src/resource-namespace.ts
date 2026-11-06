@@ -169,7 +169,7 @@ function requestFor(
 /**
  * What the server makes of a document it holds no row for. The placement says where it goes; the
  * resource says what it is (an untitled document the server names), so a new kind of
- * single-document materialization adds a branch here and no placement, projection, repair or Undo
+ * single-document materialization adds a branch here and no placement, projection or repair
  * branch anywhere else. A root an operation made (`copiedBy`) is never `local`, so it never reaches
  * a create here.
  */

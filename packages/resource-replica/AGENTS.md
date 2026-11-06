@@ -57,7 +57,7 @@ is not one: it is one operation over several roots, journaled once as an `Operat
   `canonical`, `lifecycle` or an outcome's shape. It decides create vs move, whether
   a delete needs the server, and whether the id is replaced (`awaitsRemint`).
   Deleting a document or folder the server may not hold (`!deleteNeedsServer`) keeps
-  its content and place until an Undo window closes (`cleanup.notBefore`,
+  its content and place until a cleanup window closes (`cleanup.notBefore`,
   `localDeletion.notBefore`). A folder the server never accepted has
   `canonical: null`; read its place through `folderBaseLocation`, never `canonical`
   directly.
