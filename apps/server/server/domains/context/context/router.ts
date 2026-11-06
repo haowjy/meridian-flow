@@ -16,6 +16,7 @@ import {
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
+import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { ContextCopyCommandDeps } from "../copy/copy-command.js";
 import { createContextCopyPort } from "../copy/copy-port.js";
 import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";
@@ -45,6 +46,7 @@ import type {
   WriteProvenance,
 } from "../ports/context-port.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
+import { invalidEntryError } from "./invalid-entry-error.js";
 import { callAdapter, toFileEntry, toFileRef, toGrepFile } from "./router-adapter-results.js";
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
@@ -65,6 +67,7 @@ export interface ContextPortRouterDeps {
   owners?: ProjectOwners;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   moveLinks?: ConstructorParameters<typeof ContextTreeMover>[2];
+  eventSink?: EventSink;
   operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
   /** Copy's collab cut and bind, and the object store its binaries duplicate into. */
   copy?: ContextCopyCommandDeps;
@@ -489,14 +492,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     if (!resolved.ok) return resolved;
     const validation = validateContextEntryPath(resolved.value.path, { allowRoot: true });
     if (validation.ok) return Ok(mutationDispatch(resolved.value, origin));
-    return Err({
-      code: "invalid_uri",
-      uri: resolved.value.canonical,
-      reason:
-        validation.reason === "name/reserved-authority-qualifier"
-          ? `File and folder names cannot begin with "@" or "~" (${validation.segment ?? "unknown"})`
-          : `Invalid context path (${validation.reason})`,
-    });
+    return Err(invalidEntryError(resolved.value.canonical, validation));
   }
 
   /**
@@ -920,13 +916,22 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         onlyAt: r.value.path,
         removal: { reason: "discarded", cause: options.cause },
       });
+      if (!deleted.ok && deleted.error.code === "stale_target" && deps.eventSink)
+        // The writer moved or renamed the create; it survives. A miss that is not that (a
+        // caller passing a different address than the create landed at) would look the same.
+        emitEvent(deps.eventSink, {
+          level: "debug",
+          source: "context.router",
+          name: "retract_create.moved_on",
+          correlation: { documentId: options.documentId },
+          payload: { uri: canonical },
+        });
       if (
         !deleted.ok &&
         deleted.error.code !== "not_found" &&
         deleted.error.code !== "stale_target"
-      ) {
+      )
         return deleted;
-      }
       return Ok(undefined);
     },
 

@@ -94,7 +94,7 @@ then a folder with one document and an empty subfolder:
    operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
    ./mf api POST "/api/projects/$project_id/context/entries/$folder_id/move" --data "$(jq -nc \
      --arg operationId "$operation_id" \
-     '{operationId: $operationId, expected: {kind: "folder"}, name: "Folder Probe Renamed"}')"
+     '{operationId: $operationId, kind: "folder", name: "Folder Probe Renamed"}')"
    ./mf doc read "manuscript://Folder Probe Holder.md"
    ```
 
@@ -138,7 +138,7 @@ then a folder with one document and an empty subfolder:
    operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
    ./mf api POST "/api/projects/$project_id/context/entries/$folder_id/delete" --data "$(jq -nc \
      --arg operationId "$operation_id" \
-     '{operationId: $operationId, expected: {kind: "folder"}}')"
+     '{operationId: $operationId, kind: "folder"}')"
    ```
 
 Record the commit, date, stack, outcome and screenshot paths in the active work

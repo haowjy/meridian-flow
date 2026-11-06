@@ -156,7 +156,6 @@ async function commitLive(
   });
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
-  const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
   const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
   if (position && "output" in position) return position;
   if (!before?.living)
@@ -204,7 +203,7 @@ async function commitLive(
     return { handle: recorded, uri: source.uri };
   }
   // The port takes the folder and the leaf apart; the leaf is what the model typed.
-  const typed = wantedAt ?? input.path;
+  const typed = await canonicalPath(call, input.path);
   const slash = typed.lastIndexOf("/");
   const moved = await port.commitWriterLocation(source.uri, typed.slice(0, slash + 1), {
     expected: { kind: "file", nodeId: source.documentId },

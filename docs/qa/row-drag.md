@@ -120,7 +120,7 @@ a resend would show as a second request.
 - **Delete:** on the first `POST …/context/entries/<id>/delete`, drop `kind`.
   The server answers 400 "Entry kind is required" with the same envelope.
 
-One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
+One-shot move rewrite (swap the `if` for delete and `delete body.kind`):
 
 ```js
 (() => {
