@@ -15,7 +15,10 @@ import type {
   JournalEventEnvelope,
   LiveEventWriter,
 } from "../../ports/event-journal.js";
-import { JOURNAL_ONLY_EVENT_TYPES as journalOnlyEventTypes } from "../../ports/event-journal.js";
+import {
+  JOURNAL_ONLY_EVENT_TYPES as journalOnlyEventTypes,
+  REPLY_FINISHED_EVENT_TYPES,
+} from "../../ports/event-journal.js";
 
 export interface RecordedEvent {
   id: string;
@@ -83,6 +86,36 @@ export function createInMemoryEventJournalWriter(
       }
       const lastSeq = prev + BigInt(appended.length);
       seqByThread.set(key, lastSeq);
+      const firstFinishedIndex = appended.findIndex((event) =>
+        REPLY_FINISHED_EVENT_TYPES.includes(
+          event.type as (typeof REPLY_FINISHED_EVENT_TYPES)[number],
+        ),
+      );
+      if (firstFinishedIndex !== -1) {
+        const firstFinishedSeq = prev + BigInt(firstFinishedIndex) + 1n;
+        const previousFinished = events
+          .filter(
+            (event) =>
+              event.threadId === threadId &&
+              event.seq < firstFinishedSeq &&
+              REPLY_FINISHED_EVENT_TYPES.includes(
+                event.event.type as (typeof REPLY_FINISHED_EVENT_TYPES)[number],
+              ),
+          )
+          .at(-1);
+        if (previousFinished) {
+          for (let index = events.length - 1; index >= 0; index -= 1) {
+            const event = events[index];
+            if (
+              event &&
+              event.threadId === threadId &&
+              event.seq < previousFinished.seq &&
+              journalOnlyEventTypeSet.has(event.event.type)
+            )
+              events.splice(index, 1);
+          }
+        }
+      }
       return lastSeq;
     },
     async appendEvent(threadId, event) {
@@ -117,30 +150,6 @@ export function createInMemoryEventJournalWriter(
         if (!journalOnlyEventTypeSet.has(event.event.type)) return event.seq;
       }
       return 0n;
-    },
-    async listByThread(threadId, opts = {}) {
-      return events
-        .filter((e) => e.threadId === threadId)
-        .slice(0, opts.limit ?? Number.POSITIVE_INFINITY)
-        .map(toEntry);
-    },
-    async listByType(threadId, eventType) {
-      return events
-        .filter((e) => e.threadId === threadId && e.event.type === eventType)
-        .map(toEntry);
-    },
-    async listSince(threadId, afterId) {
-      const cursorIndex = events.findIndex((e) => e.threadId === threadId && e.id === afterId);
-      if (cursorIndex === -1) return [];
-      return events
-        .slice(cursorIndex + 1)
-        .filter((e) => e.threadId === threadId)
-        .map(toEntry);
-    },
-    async listByTimeRange(threadId, from, to) {
-      return events
-        .filter((e) => e.threadId === threadId && e.createdAt >= from && e.createdAt <= to)
-        .map(toEntry);
     },
     getEvents(threadId) {
       return events.filter((e) => e.threadId === threadId);

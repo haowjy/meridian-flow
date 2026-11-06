@@ -12,7 +12,10 @@ import {
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
-import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
+import {
+  type SequencedEventInternal,
+  ThreadEventReplayGapError,
+} from "../domains/threads/thread-event-hub.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { EMPTY_RUN_STATE } from "../test-support/run-state.js";
 import type { AppServices } from "./app.js";
@@ -32,10 +35,12 @@ const LIVE_STATE: ThreadLiveState = {
 function createDelayedDeliveryHarness(
   catchup: SequencedEventInternal[] = [],
   liveState = LIVE_STATE,
+  catchupError?: Error,
 ) {
   let deliverLive!: (entry: SequencedEventInternal) => void;
   const hub = {
     async catchupAndSubscribe(_threadId: ThreadId, _lastSeq: bigint, listener: typeof deliverLive) {
+      if (catchupError) throw catchupError;
       deliverLive = listener;
       return { catchup, unsubscribe() {} };
     },
@@ -71,6 +76,27 @@ function createDelayedDeliveryHarness(
 }
 
 describe("thread WS handler subscribe handoff", () => {
+  it("answers a replay gap when retained transport rows cannot rebuild the cursor", async () => {
+    const { session, frames } = createDelayedDeliveryHarness(
+      [],
+      LIVE_STATE,
+      new ThreadEventReplayGapError(2_000n, 6_999n),
+    );
+    session.open();
+    await session.onMessage(
+      JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID, lastSeq: "2000" }),
+    );
+
+    expect(frames.at(-1)).toMatchObject({
+      type: "gap",
+      requestId: "r1",
+      threadId: THREAD_ID,
+      cause: "replay_limit_exceeded",
+      fromSeq: "2000",
+      toSeq: "6999",
+    });
+  });
+
   it("does not turn an undelivered advertised head into a client cursor", async () => {
     const { session, frames, deliverLive } = createDelayedDeliveryHarness();
     session.open();

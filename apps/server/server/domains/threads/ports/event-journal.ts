@@ -26,6 +26,12 @@ export const JOURNAL_ONLY_EVENT_TYPES = [
   "tool.output_delta",
 ] as const;
 
+export const REPLY_FINISHED_EVENT_TYPES = [
+  "turn.completed",
+  "turn.cancelled",
+  "turn.error",
+] as const;
+
 export interface EventJournalWriter {
   appendEvents(threadId: ThreadId, events: readonly JournalEventEnvelope[]): Promise<bigint>;
   appendEvent(threadId: ThreadId, event: JournalEventEnvelope): Promise<bigint>;
@@ -52,10 +58,6 @@ export interface JournalEntry {
   createdAt: string;
 }
 
-export interface ListJournalEventsOptions {
-  limit?: number;
-}
-
 export interface EventJournalReader {
   readAfter(threadId: ThreadId, afterSeq: bigint, limit?: number): Promise<JournalEntry[]>;
   /** Latest matching row strictly before the journal-row cursor, or zero when none exists. */
@@ -71,10 +73,6 @@ export interface EventJournalReader {
    * AG-UI streams must convert it to the corresponding event cursor.
    */
   readModelProjectionWatermark(threadId: ThreadId): Promise<bigint>;
-  listByThread(threadId: ThreadId, opts?: ListJournalEventsOptions): Promise<JournalEntry[]>;
-  listByType(threadId: ThreadId, eventType: string): Promise<JournalEntry[]>;
-  listSince(threadId: ThreadId, afterId: string): Promise<JournalEntry[]>;
-  listByTimeRange(threadId: ThreadId, from: string, to: string): Promise<JournalEntry[]>;
 }
 
 /** What live persistence and delivery take: the append-only journal plus the failure recorder. */

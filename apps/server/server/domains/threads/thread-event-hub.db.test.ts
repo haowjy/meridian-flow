@@ -1,5 +1,6 @@
 /** Real-Postgres transaction boundary for local journal publication and pg_notify. */
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import { goldenAssistantTurn } from "@meridian/contracts/test-support";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -22,6 +23,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "./adapters/drizzle/index.js"
     );
     const { createNoopEventSink } = await import("../observability/index.js");
+    const { asc, eq } = await import("drizzle-orm");
     const { runAfterDrizzleCommit, runInDrizzleSavepoint, runInDrizzleTransaction } = await import(
       "../../shared/drizzle-transaction.js"
     );
@@ -122,6 +124,66 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         unsubscribe();
         await unlisten.unlisten();
       }
+    });
+
+    it("prunes older transport rows in the append transaction", async () => {
+      const firstTurnId = "00000000-0000-4000-8000-000000000b04";
+      const secondTurnId = "00000000-0000-4000-8000-000000000b05";
+      await db.insert(schema.turns).values([
+        {
+          id: firstTurnId,
+          threadId: THREAD_ID,
+          position: 1,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        },
+        {
+          id: secondTurnId,
+          threadId: THREAD_ID,
+          parentTurnId: firstTurnId,
+          position: 2,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        },
+      ]);
+      const firstTurn = goldenAssistantTurn(firstTurnId, THREAD_ID);
+      const secondTurn = goldenAssistantTurn(secondTurnId, THREAD_ID);
+      const events = [
+        { type: "turn.created" as const, turn: firstTurn },
+        { type: "stream.delta" as const, kind: "text" as const, text: "first" },
+        {
+          type: "subagent.activity" as const,
+          childThreadId: "child-first",
+          activity: { children: [] },
+        },
+        { type: "turn.completed" as const, turn: { ...firstTurn, status: "complete" as const } },
+        { type: "turn.created" as const, turn: secondTurn },
+        { type: "stream.delta" as const, kind: "text" as const, text: "second" },
+        {
+          type: "subagent.activity" as const,
+          childThreadId: "child-second",
+          activity: { children: [] },
+        },
+        { type: "turn.completed" as const, turn: { ...secondTurn, status: "complete" as const } },
+      ];
+      for (const event of events) await journalWriter.appendEvent(THREAD_ID, event);
+
+      const rows = await db
+        .select({ seq: schema.eventJournal.seq, eventType: schema.eventJournal.eventType })
+        .from(schema.eventJournal)
+        .where(eq(schema.eventJournal.threadId, THREAD_ID))
+        .orderBy(asc(schema.eventJournal.seq));
+      expect(rows).toEqual([
+        { seq: 1n, eventType: "turn.created" },
+        { seq: 3n, eventType: "subagent.activity" },
+        { seq: 4n, eventType: "turn.completed" },
+        { seq: 5n, eventType: "turn.created" },
+        { seq: 6n, eventType: "stream.delta" },
+        { seq: 7n, eventType: "subagent.activity" },
+        { seq: 8n, eventType: "turn.completed" },
+      ]);
     });
   });
 }

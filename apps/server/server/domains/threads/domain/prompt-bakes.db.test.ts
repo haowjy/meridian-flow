@@ -27,13 +27,11 @@ else {
     const { createDrizzleRepositoriesForTest } = await import(
       "../adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalReader } = await import("../adapters/drizzle/event-reader.js");
     const { beginPromptEpoch } = await import("../../runtime/loop/begin-prompt-epoch.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);
     const writer = createQuietDrizzleJournalWriter(db);
-    const reader = createDrizzleEventJournalReader(db);
 
     beforeEach(async () => resetThreadWorkRaceFixture(db));
     afterAll(() => db.close());
@@ -176,7 +174,11 @@ else {
           promptEpoch: { cause: "compaction" },
         },
       });
-      expect(await reader.listByType(ids.threadId as never, "context.compacted")).toHaveLength(1);
+      expect(
+        (await db.select().from(schema.eventJournal)).filter(
+          (entry) => entry.threadId === ids.threadId && entry.eventType === "context.compacted",
+        ),
+      ).toHaveLength(1);
       const ownedRows = await db
         .select({ id: schema.promptBakes.id })
         .from(schema.promptBakes)

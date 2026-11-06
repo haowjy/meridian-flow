@@ -147,7 +147,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const repos = createDrizzleRepositoriesForTest(db);
       const runtime = createThreadRuntimeService({
-        db,
         statusReader: authority,
         threads: repo,
         executionReports: repos.executionReports,

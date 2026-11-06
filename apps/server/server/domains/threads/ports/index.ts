@@ -7,7 +7,6 @@ export type {
   FailureRecorder,
   JournalEntry,
   JournalEventEnvelope,
-  ListJournalEventsOptions,
   LiveEventWriter,
 } from "./event-journal.js";
 export type {

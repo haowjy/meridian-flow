@@ -64,6 +64,16 @@ export type ThreadEventHubOptions = {
 
 export type ThreadEventHub = ReturnType<typeof createThreadEventHub>;
 
+export class ThreadEventReplayGapError extends Error {
+  constructor(
+    readonly fromSeq: bigint,
+    readonly toSeq: bigint,
+  ) {
+    super("The requested journal replay includes pruned transport rows");
+    this.name = "ThreadEventReplayGapError";
+  }
+}
+
 /** The socket seq of a journal row's `projectedIndex`-th frame. */
 export function eventSeqForJournalEvent(journalSeq: bigint, projectedIndex: number): bigint {
   return journalSeq * EVENT_SEQ_FACTOR + BigInt(projectedIndex);
@@ -200,6 +210,23 @@ export function createThreadEventHub(
     }
   }
 
+  async function retainedTransportFloor(
+    threadId: ThreadId,
+    throughJournalSeq: bigint,
+  ): Promise<bigint> {
+    const latestFinishedSeq = await deps.journalReader.lastSeqBefore(
+      threadId,
+      throughJournalSeq + 1n,
+      PROJECTOR_RESET_EVENT_TYPES,
+    );
+    if (latestFinishedSeq === 0n) return 0n;
+    return deps.journalReader.lastSeqBefore(
+      threadId,
+      latestFinishedSeq,
+      PROJECTOR_RESET_EVENT_TYPES,
+    );
+  }
+
   async function replayFromJournal(
     threadId: ThreadId,
     afterEventSeq: bigint,
@@ -207,11 +234,12 @@ export function createThreadEventHub(
   ): Promise<SequencedEventInternal[]> {
     const projector = createOrchestratorEventProjector();
     const replayed: SequencedEventInternal[] = [];
+    const afterJournalSeq = journalSeqForEventSeq(afterEventSeq);
     // A cursor can split a multi-frame row. Reconstruct that row from the last reset
     // strictly before it, so both the remaining frames and their sub-indexes stay identical.
     const cursor = await deps.journalReader.lastSeqBefore(
       threadId,
-      journalSeqForEventSeq(afterEventSeq),
+      afterJournalSeq,
       PROJECTOR_RESET_EVENT_TYPES,
     );
     for await (const entry of readThrough(threadId, cursor, throughJournalSeq)) {
@@ -291,12 +319,19 @@ export function createThreadEventHub(
   ): Promise<SequencedEventInternal[]> {
     const state = threads.get(threadId);
     if (state && afterSeq >= cursorSeqForJournalHead(state.journalCursor)) return [];
+    const throughJournalSeq = state?.journalCursor ?? 0n;
+    if (
+      state &&
+      journalSeqForEventSeq(afterSeq) < (await retainedTransportFloor(threadId, throughJournalSeq))
+    ) {
+      throw new ThreadEventReplayGapError(afterSeq, cursorSeqForJournalHead(throughJournalSeq));
+    }
     const hotEvents = state?.events ?? [];
     if (hotEvents.length > 0 && afterSeq >= hotEvents[0].seq - 1n) {
       return hotEvents.filter((entry) => entry.seq > afterSeq);
     }
 
-    return replayFromJournal(threadId, afterSeq, state?.journalCursor ?? 0n);
+    return replayFromJournal(threadId, afterSeq, throughJournalSeq);
   }
 
   return {
