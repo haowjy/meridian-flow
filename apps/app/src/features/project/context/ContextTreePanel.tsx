@@ -9,6 +9,8 @@ import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { dragPayloadKind } from "@/core/editor/landing/drag-payload";
+import { dragEdgeScroll } from "@/core/editor/landing/edge-scroll";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
 import {
   type PickKind,
@@ -32,7 +34,7 @@ import { ImportHeaderAction } from "./ImportHeaderAction";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
-import { dragEdgeScroll, type FilesRoute } from "./tree-drop/tree-drop";
+import type { FilesRoute } from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
 import { subscribeFolderReveal } from "./tree-reveal";
 import { useDeleteContextEntry } from "./use-delete-context-entry";
@@ -96,7 +98,10 @@ export function ContextTreePanel(props: ContextTreePanelProps) {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). */}
       <div
         ref={scroller}
-        onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
+        onDragOver={(event) => {
+          if (dragPayloadKind(Array.from(event.dataTransfer.types)) !== "none")
+            dragEdgeScroll(scroller.current, event.clientY);
+        }}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
       >
         <EntryList list={list} files={files}>
