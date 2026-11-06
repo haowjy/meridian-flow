@@ -116,6 +116,7 @@ const extToFiletype: Record<string, Filetype> = {
   xml: "text",
   ipynb: "notebook",
   pdf: "pdf",
+  docx: "docx",
   png: "png",
   jpg: "jpg",
   jpeg: "jpg",

@@ -347,6 +347,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           overwrite: false,
           graduateProvisionalName: true,
           destinationFiletype: "markdown",
+          destinationFilename: { name: "new", extension: "" },
         }),
       ).toMatchObject({ ok: true });
       const r = resolver();

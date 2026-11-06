@@ -436,9 +436,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           targetRow.updatedAt = now;
           this.markMutatorWrite();
         }
-        const parsed = parseDocumentFilename(targetBasename);
-        if (!parsed.ok) return Err({ code: "invalid_operation" });
-        const { name, extension } = parsed.value;
+        const { name, extension } =
+          "destinationFilename" in input
+            ? input.destinationFilename
+            : { name: targetBasename, extension: "" };
         const basenameChanged = targetBasename !== treeBasename(input.source.path);
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;

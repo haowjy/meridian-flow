@@ -140,6 +140,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             source,
             destinationSourceId: SOURCE_ID,
             destinationPath: to,
+            destinationFilename: { name: to, extension: "" },
             destinationFiletype: "markdown",
             graduateProvisionalName: false,
             expectedTarget: { state: "absent" },
@@ -299,6 +300,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           source,
           destinationSourceId: SOURCE_ID,
           destinationPath: "short",
+          destinationFilename: { name: "short", extension: "" },
           destinationFiletype: "markdown",
           graduateProvisionalName: false,
           expectedTarget: { state: "absent" },
@@ -732,6 +734,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expectedTarget: { state: "absent" },
         overwrite: false,
         destinationFiletype: "markdown",
+        destinationFilename: { name: "moved-holder", extension: "" },
         graduateProvisionalName: false,
       });
       const doc = new Y.Doc();
