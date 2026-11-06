@@ -151,7 +151,7 @@ if (!enabled || !databaseUrl) {
       }
     });
 
-    it("preserves representative rows while applying the newest migration", async () => {
+    it("preserves representative rows and backfills dead price fields through 0113 and 0114", async () => {
       assertThrowawayDatabaseForRunDbTests(databaseUrl ?? "");
       const journal = JSON.parse(
         await readFile(new URL("./migrations/meta/_journal.json", import.meta.url), "utf8"),
@@ -166,8 +166,10 @@ if (!enabled || !databaseUrl) {
           breakpoints: boolean;
         }>;
       };
-      const latest = journal.entries.at(-1);
-      if (!latest) throw new Error("Migration journal is empty");
+      const firstApplied = journal.entries.findIndex(
+        (entry) => entry.tag === "0113_drop_dead_price_fields",
+      );
+      if (firstApplied < 0) throw new Error("Migration 0113 is missing from the journal");
 
       const scratchTarget = disposableTestDatabaseTarget(
         databaseUrl ?? "",
@@ -184,7 +186,7 @@ if (!enabled || !databaseUrl) {
       try {
         await admin.unsafe(`CREATE DATABASE "${scratchTarget.databaseName}"`);
         await mkdir(path.join(partialDirectory, "meta"), { recursive: true });
-        const appliedEntries = journal.entries.slice(0, -1);
+        const appliedEntries = journal.entries.slice(0, firstApplied);
         const appliedTags = new Set(appliedEntries.map((entry) => `${entry.tag}.sql`));
         for (const file of await readdir(sourceDirectory)) {
           if (file.endsWith(".sql") && appliedTags.has(file))
@@ -214,6 +216,18 @@ if (!enabled || !databaseUrl) {
             VALUES ('00000000-0000-4000-8000-000000000705', '00000000-0000-4000-8000-000000000704', 1, 'user', 'writer', 'complete')`;
           await tx`INSERT INTO turn_blocks (id, turn_id, block_type, sequence, content, model_text)
             VALUES ('00000000-0000-4000-8000-000000000706', '00000000-0000-4000-8000-000000000705', 'text', 0, '{"text":"stored manuscript"}', 'stored manuscript')`;
+          // One response per retired value; the first also holds a provider generation ID.
+          const retired = [
+            ["provider_reported", "uncached", "gen-1", { audit: true }],
+            ["configured_rate", "reusable_prefix", null, null],
+            ["computed", "ttl_expired", null, null],
+          ] as const;
+          for (const [index, [source, reason, requestId, metadata]] of retired.entries()) {
+            await tx`INSERT INTO model_responses (id, turn_id, sequence, provider, model, provider_request_id,
+                price_source, predicted_cache_state, predicted_cache_reason, request_message_count, response_metadata)
+              VALUES (${`00000000-0000-4000-8000-00000000072${index}`}, '00000000-0000-4000-8000-000000000705', ${index},
+                'p', 'm', ${requestId}, ${source}, 'cold', ${reason}, 0, ${metadata ? tx.json(metadata) : null})`;
+          }
         });
         await runMigrations({
           databaseUrl: scratchTarget.databaseUrl,
@@ -246,6 +260,30 @@ if (!enabled || !databaseUrl) {
         expect(await target`SELECT id, model_text FROM turn_blocks`).toEqual([
           { id: "00000000-0000-4000-8000-000000000706", model_text: "stored manuscript" },
         ]);
+        expect(
+          await target`SELECT price_source, predicted_cache_reason, response_metadata
+            FROM model_responses ORDER BY sequence`,
+        ).toEqual([
+          {
+            price_source: "computed",
+            predicted_cache_reason: "ttl_unknown",
+            response_metadata: { audit: true, providerRequestId: "gen-1" },
+          },
+          {
+            price_source: "computed",
+            predicted_cache_reason: "reusable_prefix",
+            response_metadata: null,
+          },
+          {
+            price_source: "computed",
+            predicted_cache_reason: "ttl_expired",
+            response_metadata: null,
+          },
+        ]);
+        expect(
+          await target`SELECT count(*)::int AS n FROM information_schema.columns
+            WHERE table_name = 'model_responses' AND column_name = 'provider_request_id'`,
+        ).toEqual([{ n: 0 }]);
       } finally {
         await target.end();
         await admin.end();

@@ -25,7 +25,6 @@ export async function writeModelResponse(
       sequence: input.sequence,
       provider: input.provider,
       model: input.model,
-      providerRequestId: input.providerRequestId ?? null,
       priceSource: input.priceSource,
       pricingSnapshot: input.pricingSnapshot ?? null,
       inputTokens: input.inputTokens ?? 0,

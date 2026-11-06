@@ -361,8 +361,6 @@ export interface GenerateResult {
   usage: Usage;
   model: string;
   provider: string;
-  /** Provider request/generation identifier when an adapter can expose one generically. */
-  providerRequestId?: string;
   /** Set on a cancelled stream that reported no usage: the call is unmetered, not free. */
   meteringStatus?: "missing_usage";
   /** Populated by the per-attempt gateway loop on a successful terminal event. */
