@@ -188,7 +188,7 @@ parent the row is already in), and it calls `copyRows` where Move… calls `move
 the current parent for a new move or copy (at the project's root when no area is given). A retry opens at the refused destination
 when it still resolves (matching owner and full path), otherwise at the
 current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
-commit at the area list. In the current parent the action is "Change position in <folder>", which
+commit at the area list. In the current parent the action is "Change position", which
 opens the places among its siblings in place of the tree (`DrillAction.choices`): the top, after each
 sibling, the bottom, read from the replica's complete sibling order (`childrenAt`, not what a search
 shows), without the place it already holds. It reads "Already in <folder>" only when the entry has no
