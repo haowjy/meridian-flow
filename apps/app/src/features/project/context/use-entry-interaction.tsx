@@ -117,8 +117,8 @@ export function useEntryInteraction({
           : { name: node.name, path: node.path, kind: "dir", entryId: node.entryId, owner, scheme },
       );
   };
-  const row: NamedRow | undefined =
-    node.kind === "file" ? { extension: node.extension, stored: !node.editable } : undefined;
+  const row: NamedRow | null =
+    node.kind === "file" ? { extension: node.extension, stored: !node.editable } : null;
   const rename: UseRenameEntryFormOptions = {
     projectId,
     owner: resolvedOwner,
@@ -146,7 +146,7 @@ export function useEntryInteraction({
       // Closed, it still names the action it would open for.
       action: picking ?? "move",
       from: { scheme, owner: resolvedOwner },
-      entry: { id, name: node.name, path: node.path, kind, ...(row ? { row } : {}) },
+      entry: { id, name: node.name, path: node.path, kind, row },
       repairMove: node.namespaceRepairMove,
       open: picking !== null && actions.includes(picking),
       onOpenChange: (open: boolean) => {

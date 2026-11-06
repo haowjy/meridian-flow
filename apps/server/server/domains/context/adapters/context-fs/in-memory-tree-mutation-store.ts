@@ -217,8 +217,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     if (!filename) return null;
     const folderId = await this.findFolderId(sourceId, dir);
     if (folderId === MISSING_FOLDER) return null;
-    for (const { leaf, extensionOmitted } of addressCandidates(filename)) {
-      if (extensionOmitted) continue;
+    for (const leaf of addressCandidates(filename)) {
       for (const doc of this.backing.documents.values()) {
         if (
           doc.contextSourceId === sourceId &&

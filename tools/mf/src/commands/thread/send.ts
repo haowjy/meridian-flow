@@ -99,7 +99,7 @@ async function resolveReferences(session: Session, threadId: string, refs: strin
     const document = await resolveDocument(session, projectId, target);
     references.push({
       kind: "document" as const,
-      uri: target.uri,
+      uri: document.entry.uri,
       documentId: document.documentId,
       label: document.entry.name,
       imageCapable: !document.entry.editable && imageCapable(document.entry.fileType),

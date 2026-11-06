@@ -11,7 +11,6 @@ import {
   documentAddressSchema,
   type ProjectContextTreeScheme,
   parseDocumentFilename,
-  renderFilename,
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
@@ -100,14 +99,14 @@ export async function resolveUri(
       rootRef === null ? null : await resolveThreadId(session, rootRef, projectId);
     return { scheme, path: "", uri, workId, chatRef, chatId, rootThreadId };
   }
+  // The path goes to the server as typed: it tries the exact name before the alias, so a kept
+  // `binary.md` is reachable beside a document `binary`.
   const parsedName = parseDocumentFilename(path.slice(slash + 1));
   if (!parsedName.ok) throw usageError(parsedName.error.message);
-  const canonicalPath =
-    path.slice(0, slash + 1) + renderFilename(parsedName.value.name, parsedName.value.extension);
-  const uri = formatParsedContextUri(scheme, canonicalPath, ownerAuthority);
+  const uri = formatParsedContextUri(scheme, path, ownerAuthority);
   const chatId = chatRef === null ? null : await resolveThreadId(session, chatRef, projectId);
   const rootThreadId = rootRef === null ? null : await resolveThreadId(session, rootRef, projectId);
-  return { scheme, path: canonicalPath, uri, workId, chatRef, chatId, rootThreadId };
+  return { scheme, path, uri, workId, chatRef, chatId, rootThreadId };
 }
 
 /** Live documentId for a URI, or a not_found CliError. */

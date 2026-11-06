@@ -5,6 +5,7 @@ import { remintJournal } from "./namespace-journal-policy";
 import {
   awaitsRemint,
   owningLocationIntent,
+  shownExtension,
   supersedeRepairableNamespaceWork,
 } from "./resource-intent-policy";
 import type {
@@ -124,11 +125,10 @@ export function planResourceLocation(input: {
     Boolean(record.resource.obligations.canonicalRefresh),
   );
   // Compute the optimistic name once, retaining the input for server dispatch.
-  const { classification } = record.resource;
-  const stored = storedFilename(
-    input.destination.name,
-    classification && { extension: classification.extension, stored: !classification.editable },
-  );
+  const stored = storedFilename(input.destination.name, {
+    extension: shownExtension(input.projectId, record),
+    stored: !record.resource.classification.editable,
+  });
   const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);
   // A position reads the list as the placements before it left it, so the same words after other

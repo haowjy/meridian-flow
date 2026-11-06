@@ -50,7 +50,7 @@ export type Arrival = {
   entry: EntryRef;
   name: string;
   /** The file's own naming facts; a folder has none. */
-  row?: NamedRow;
+  row: NamedRow | null;
   /** The name the writer asked for (a Move… retry keeps a refused rename); the row's own otherwise. */
   typed?: string;
   before?: ParentRef;
@@ -118,7 +118,7 @@ export function arrivals(view: NamingView, rows: readonly Arrival[]) {
         row.typed ?? row.name,
         occupancy(row.after),
         row.entry.kind,
-        row.row,
+        row.row ?? undefined,
       ),
     reserve: (row: Arrival, name: string) =>
       occupancy(row.after).claim({

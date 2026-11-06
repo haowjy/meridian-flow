@@ -947,13 +947,11 @@ export function createTreeReader(
 
   async function resolveAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>> {
     const slash = at.path.lastIndexOf("/");
-    const aliases = addressCandidates(at.path.slice(slash + 1))
-      .filter((candidate) => !candidate.extensionOmitted)
-      .slice(1);
+    const aliases = addressCandidates(at.path.slice(slash + 1)).slice(1);
     const first = await resolvePath(view, at);
     if (first.kind === "ambiguous" || (first.kind === "found" && first.node.kind === "document"))
       return first;
-    for (const { leaf } of aliases) {
+    for (const leaf of aliases) {
       const found = await resolvePath(view, { ...at, path: at.path.slice(0, slash + 1) + leaf });
       if (found.kind === "ambiguous" || (found.kind === "found" && found.node.kind === "document"))
         return found;

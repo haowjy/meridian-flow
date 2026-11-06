@@ -100,7 +100,7 @@ export function documentPathKey(path: string): string {
     : path;
 }
 
-/** Stored basename keys needed by exact and extension-omitted path matching. */
+/** Stored basename keys a link's path can match, with or without its registered extension. */
 export function documentPathCandidateNames(path: string): string[] {
   const key = documentPathKey(path);
   const basename = key.slice(key.lastIndexOf("/") + 1);
@@ -108,36 +108,45 @@ export function documentPathCandidateNames(path: string): string[] {
   return parsed.ok ? [...new Set([parsed.value.name, basename])] : [basename];
 }
 
-/**
- * The one candidate at a resolved path: the first of `addressCandidates` that names one
- * (the exact path, its alias, then the unique path that differs only by an omitted extension).
- */
-export function matchDocumentPath<T>(
+/** The candidate a tree lookup finds at a path: its exact spelling, else its alias (`ch1.md` is `ch1`). */
+export function matchDocumentAddress<T>(
   candidates: readonly T[],
   path: string,
   pathOf: (candidate: T) => string,
 ): T | null {
   const slash = path.lastIndexOf("/");
   const dir = path.slice(0, slash + 1);
-  for (const { leaf, extensionOmitted } of addressCandidates(path.slice(slash + 1))) {
-    const wanted = dir + leaf;
-    if (!extensionOmitted) {
-      const found = candidates.find((candidate) => pathOf(candidate) === wanted);
-      if (found) return found;
-      continue;
-    }
-    const loose = candidates.filter((candidate) => {
-      const value = pathOf(candidate);
-      const dot = value.lastIndexOf(".");
-      return (
-        dot > value.lastIndexOf("/") + 1 &&
-        filetypeForExtension(value.slice(dot + 1)) !== null &&
-        value.slice(0, dot) === wanted
-      );
-    });
-    if (loose.length === 1) return loose[0] ?? null;
+  for (const leaf of addressCandidates(path.slice(slash + 1))) {
+    const found = candidates.find((candidate) => pathOf(candidate) === dir + leaf);
+    if (found) return found;
   }
   return null;
+}
+
+/**
+ * The one candidate a link names: `matchDocumentAddress`, else the unique candidate whose path
+ * differs only by a registered extension the link left off. Only links may omit it.
+ */
+export function matchDocumentPath<T>(
+  candidates: readonly T[],
+  path: string,
+  pathOf: (candidate: T) => string,
+): T | null {
+  const found = matchDocumentAddress(candidates, path, pathOf);
+  if (found) return found;
+  const slash = path.lastIndexOf("/");
+  const alias = addressCandidates(path.slice(slash + 1)).at(-1) ?? "";
+  const wanted = path.slice(0, slash + 1) + alias;
+  const loose = candidates.filter((candidate) => {
+    const value = pathOf(candidate);
+    const dot = value.lastIndexOf(".");
+    return (
+      dot > value.lastIndexOf("/") + 1 &&
+      filetypeForExtension(value.slice(dot + 1)) !== null &&
+      value.slice(0, dot) === wanted
+    );
+  });
+  return loose.length === 1 ? (loose[0] ?? null) : null;
 }
 
 function decodePath(path: string): string | null {

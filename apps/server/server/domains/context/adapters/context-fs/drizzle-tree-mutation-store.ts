@@ -1,17 +1,13 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
 
 import type { ContextSourceId, FolderId, ThreadId, UserId } from "@meridian/contracts";
-import {
-  parseDocumentFilename,
-  renderFilename as renderDocumentFilename,
-} from "@meridian/contracts/protocol";
+import { renderFilename as renderDocumentFilename } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import { splitPath } from "../../context/paths.js";
 import { countIncomingLinks } from "../../links/move-link-count.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {

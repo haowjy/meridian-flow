@@ -32,8 +32,7 @@ export function parseDocumentFilename(
   const dot = input.lastIndexOf(".");
   const suffix = dot >= 0 ? input.slice(dot + 1).toLowerCase() : "";
   const sourceExtension = options.sourceExtension?.toLowerCase() ?? "";
-  // The source's own suffix is explicit even unregistered: `page.html` kept as a file stays one `.html`.
-  if (filetypeForExtension(suffix) || (suffix && suffix === sourceExtension)) {
+  if (filetypeForExtension(suffix)) {
     name = input.slice(0, dot).trim();
     extension = suffix;
   } else extension = sourceExtension;
@@ -165,27 +164,26 @@ export type StoredFilenameResult =
     }
   | { ok: false; message: string; error: { code: "invalid_name"; message: string } };
 
+function invalidName(message: string): StoredFilenameResult {
+  return { ok: false, message, error: { code: "invalid_name", message } };
+}
+
 /**
  * Destination naming shared by optimistic clients and server commands, chosen by the row's
  * kind and never by its suffix: a stored file keeps its name literally (`fileName`), a tracked
  * document follows the document rules. No row is a create. `filetype` null keeps the file's type.
  */
 export function storedFilename(typed: string, row?: NamedRow): StoredFilenameResult {
-  const parsed = row?.stored
-    ? fileName(typed, row)
-    : parseDocumentFilename(typed, { sourceExtension: row?.extension });
+  if (row?.stored) return fileName(typed, row);
+  const parsed = parseDocumentFilename(typed, { sourceExtension: row?.extension });
   return parsed.ok
     ? {
         ok: true,
         name: renderFilename(parsed.value.name, parsed.value.extension),
         filename: parsed.value,
       }
-    : { ok: false, message: parsed.error.message, error: parsed.error };
+    : invalidName(parsed.error.message);
 }
-
-export type StoredFileNameResult =
-  | { ok: true; value: { name: string; extension: string; filetype: Filetype | null } }
-  | { ok: false; error: { code: "invalid_name"; message: string } };
 
 /**
  * A stored file's name (bytes in object storage, or a file kept under a prose suffix such as
@@ -193,49 +191,42 @@ export type StoredFileNameResult =
  * file's own suffix counts even unregistered, and any other name inherits the row's extension.
  * `filetype` is null while the extension is the row's, so the file keeps its type; any other
  * registered suffix names the type it would convert to, which the mover then refuses or accepts.
+ * A kept prose file refuses a different prose suffix here, so the writer sees it at once.
+ * The row's extension is compared lowercase and kept as stored; a cached row may lack it.
  */
-export function fileName(typed: string, row: { extension: string }): StoredFileNameResult {
+function fileName(typed: string, row: { extension?: string }): StoredFilenameResult {
   const input = typed.trim();
   const dot = input.lastIndexOf(".");
   const suffix = dot >= 0 ? input.slice(dot + 1).toLowerCase() : "";
-  const explicit = Boolean(filetypeForExtension(suffix) || (suffix && suffix === row.extension));
+  const stored = row.extension ?? "";
+  const own = stored.toLowerCase();
+  const ownSuffix = Boolean(suffix) && suffix === own;
+  if (PROSE_EXTENSIONS.has(own) && PROSE_EXTENSIONS.has(suffix) && !ownSuffix)
+    return invalidName(
+      `a kept file keeps its \`.${own}\` suffix; \`.${suffix}\` would not convert it`,
+    );
+  const explicit = ownSuffix || Boolean(filetypeForExtension(suffix));
   const name = explicit ? input.slice(0, dot).trim() : input;
-  const extension = explicit ? suffix : row.extension;
   if (!name || name === "." || name === "..")
-    return {
-      ok: false,
-      error: {
-        code: "invalid_name",
-        message: "A document name must have a nonempty stem other than . or ..",
-      },
-    };
+    return invalidName("A document name must have a nonempty stem other than . or ..");
+  const extension = ownSuffix ? stored : explicit ? suffix : stored;
   return {
     ok: true,
-    value: {
+    name: renderFilename(name, extension),
+    filename: {
       name,
       extension,
-      filetype: extension === row.extension ? null : (filetypeForExtension(extension) ?? null),
+      filetype: extension.toLowerCase() === own ? null : (filetypeForExtension(extension) ?? null),
     },
   };
 }
 
-/** One spelling a lookup tries; `extensionOmitted` matches a row whose own extension is dropped. */
-export interface AddressCandidate {
-  leaf: string;
-  extensionOmitted: boolean;
-}
-
 /**
- * The spellings a lookup tries for a path's leaf, in order: as written (a file kept as
- * `binary.md` has that exact name), the codec's alias (`ch1.md` is `ch1`), then the alias
- * against rows that carry an extension the writer left off.
+ * The spellings a tree lookup tries for a path's leaf, in order: as written (a file kept as
+ * `binary.md` has that exact name), then the codec's alias (`ch1.md` is `ch1`).
  */
-export function addressCandidates(leaf: string): AddressCandidate[] {
+export function addressCandidates(leaf: string): string[] {
   const parsed = parseDocumentFilename(leaf);
   const alias = parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : leaf;
-  return [
-    { leaf, extensionOmitted: false },
-    ...(alias === leaf ? [] : [{ leaf: alias, extensionOmitted: false }]),
-    { leaf: alias, extensionOmitted: true },
-  ];
+  return alias === leaf ? [leaf] : [leaf, alias];
 }
