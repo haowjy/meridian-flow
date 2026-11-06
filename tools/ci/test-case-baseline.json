@@ -199,6 +199,7 @@
     "apps/server/server/domains/collab/response-rollback.db.test.ts": 7,
     "apps/server/server/domains/collab/response-save-destinations.db.test.ts": 8,
     "apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts": 7,
+    "apps/server/server/domains/collab/text-convergence.test.ts": 1,
     "apps/server/server/domains/collab/turn-inverse.db.test.ts": 2,
     "apps/server/server/domains/context/adapters/context-catalog.db.test.ts": 12,
     "apps/server/server/domains/context/adapters/context-fs/context-fs-command-owner.test.ts": 1,
