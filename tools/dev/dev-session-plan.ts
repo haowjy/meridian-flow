@@ -115,6 +115,11 @@ export function createDevSessionCommand({
   worktreePrefix?: string;
   force?: boolean;
 }): DevSessionCommand {
+  if (mode === "funnel" && env.DEV_AUTH_BYPASS === "1") {
+    throw new Error(
+      "DEV_AUTH_BYPASS=1 signs every request in as the dev user; --funnel publishes the stack to the internet. Unset DEV_AUTH_BYPASS or drop --funnel.",
+    );
+  }
   const internalApiOrigin = resolveInternalApiOrigin(worktreePrefix);
   const portsByService = sharedPortsByService(sharedPorts);
   const commands = DEV_SERVICES.filter(

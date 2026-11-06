@@ -43,6 +43,10 @@ export function validateStartEnv(env = process.env) {
 
   const issues = [];
 
+  if (env.DEV_AUTH_BYPASS === "1") {
+    issues.push({ name: "DEV_AUTH_BYPASS", issue: "must not be set in a deployed environment" });
+  }
+
   function readRequiredEnv(name) {
     const value = env[name];
     if (typeof value !== "string" || value.trim().length === 0) {
