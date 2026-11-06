@@ -191,7 +191,6 @@ export function MobileProject(props: MobileProjectProps) {
         activeContextScheme={props.activeContextScheme}
         activeContextPath={props.activeContextPath}
         onSelectScreen={props.onSelectScreen}
-        onSelectContextPath={props.onSelectContextPath}
         chatThreadId={displayedChatThreadId(props.chatDisplay)}
       />
     </div>

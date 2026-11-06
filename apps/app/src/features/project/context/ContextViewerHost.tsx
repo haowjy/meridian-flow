@@ -38,7 +38,10 @@ export function ContextViewerHost({
   className,
 }: ContextViewerHostProps) {
   const owner = isOwnedContextScheme(tab.scheme) ? tabContextOwner(tab) : { workId: editorWorkId };
-  const read = useProjectContextRead(projectId, tab.scheme, tab.path, owner);
+  const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
+    ...owner,
+    documentId: tab.documentId,
+  });
   if (read.status === "loading") {
     return (
       <ReadOnlyViewerFrame className={className}>
