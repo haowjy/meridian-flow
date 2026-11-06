@@ -2199,8 +2199,8 @@ msgid "Couldn't read report from {line}"
 msgstr "无法读取来自 {line} 的报告"
 
 #: src/features/import/reason-copy.ts
-msgid "Couldn't read this Word document. Kept as a file."
-msgstr ""
+#~ msgid "Couldn't read this Word document. Kept as a file."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
@@ -2380,6 +2380,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "Couldn't turn this into a document. Kept as a file."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts

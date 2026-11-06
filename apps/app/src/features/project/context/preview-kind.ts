@@ -14,7 +14,13 @@ export function previewKind(
   if (tab.fileType === "image") return "image";
   if (read.mimeType === "text/markdown") return "markdown";
   if (tab.fileType === "pdf") return "pdf";
-  if (read.mimeType.startsWith("text/") || /(?:json|xml|yaml)/i.test(read.mimeType)) {
+  // `[/+-]` anchors the suffix: a bare /xml/ also matches the Word MIME type
+  // (`…openxmlformats-officedocument…`), which would show a DOCX's zip bytes as text.
+  // An HTML page is a file, not prose: its tags would read as the text.
+  if (
+    read.mimeType !== "text/html" &&
+    (read.mimeType.startsWith("text/") || /[/+-](?:json|xml|yaml)$/i.test(read.mimeType))
+  ) {
     return "text";
   }
   return "binary";

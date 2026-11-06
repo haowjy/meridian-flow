@@ -391,7 +391,6 @@ function FileRow({
     owner: env.owner,
     scheme: env.scheme,
     capabilities: env.capabilities,
-    create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
     siblings,
   });
