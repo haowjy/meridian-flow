@@ -387,15 +387,3 @@ export function useWindowDropGuard() {
     };
   }, []);
 }
-
-const EDGE_PX = 32;
-const SCROLL_STEP_PX = 14;
-
-/** Scrolls a container while a drag is within 32 px of its top or bottom. */
-export function dragEdgeScroll(container: HTMLElement | null, event: DragEvent) {
-  if (!container) return;
-  if (dragPayloadKind(Array.from(event.dataTransfer?.types ?? [])) === "none") return;
-  const rect = container.getBoundingClientRect();
-  if (event.clientY < rect.top + EDGE_PX) container.scrollTop -= SCROLL_STEP_PX;
-  else if (event.clientY > rect.bottom - EDGE_PX) container.scrollTop += SCROLL_STEP_PX;
-}
