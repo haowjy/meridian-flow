@@ -195,10 +195,11 @@ first splits hidden contents into hidden twins at their old paths, so a
 writer's live folder operations never disturb a branch's hidden rows. Identity moves resolve a folder
 in the live view, then resolve it again under namespace locks. The mover finds the
 moved row by id under the locks and builds the destination there: the leaf is
-`options.name` or the row's own, the folder is the one `destinationUri` names (a
-folder URI; `null` keeps the row's own folder). No path computed before the locks
-reaches the store, so a rename or move by another writer in the gap is neither
-undone nor refused. A row that left the locked Work or area answers a non-final
+`change.name` or the row's own, the folder is the row's own (`keep`), a folder read by
+id (`folder`), or an address (`at`, a root or the model's typed folder, which
+`createFolders` may extend). No path of the node reaches the mover from outside, so a rename or move
+by another writer in the gap is neither undone nor refused; the only paths it checks
+are facts about the target (the occupant, `onlyAt`). A row that left the locked Work or area answers a non-final
 `io_error` (`namespace_changed`) and the caller looks it up again; `stale_target`
 from a move now comes from the destination-leaf CAS or a stale sibling anchor. An
 occupied destination leaf sends the arrival to the next alias-aware free name and
@@ -208,9 +209,10 @@ terminal, or denied identity destination returns `destination_missing`.
 Location-only CAS tokens fence moves and deletes. A `createFolders` suffix is
 validated beneath the identity anchor in the same transaction; a missing
 anchor creates nothing. Folder deletes validate the supplied folder identity
-before recursive mutation. Every `ContextPort.delete` names the expected entry
-kind and, for a file, its initiating document id; a mismatch or replacement is
-`stale_target` and acknowledges nothing. There is no path-only file delete.
+before recursive mutation. Every `ContextPort.delete` names its node and an area root
+URI (adapter and locks only); a row that is gone is `not_found`, and with `onlyAt` one
+that has left the place is `stale_target` and acknowledges nothing. There is no
+path-addressed delete. A refusal's `uri` names the area, not the entry.
 Work deletion soft-deletes its owned sources, documents, and folders marked
 `deletedByWorkId`; restore clears only those, so separately deleted content
 stays deleted.
@@ -349,13 +351,14 @@ retryable. A reused operation ID cannot replan a different command. Receipt
 lookup needs current project access, not the old path or Work.
 
 Move and delete are addressed by entry id. `ContextTreeMover` takes the node
-(`expected: {kind, nodeId}`) and finds its row under the namespace locks
-(`inspectNode`); the source URI the caller passes only decides which locks to take. A row found in
+(`{kind, nodeId}`, at the id it has now) and an area, and finds its row under the namespace
+locks (`inspectNode`); the area only decides which adapter and locks to take. A row found in
 another Work or area than the one locked, or a destination folder that now resolves to another
 scope, answers a non-final `io_error` with `reason: "namespace_changed"`: no receipt is recorded and
 the resend relocates the entry and authorizes again. The receipt command is a function of the
-request alone (`expected`, `destinationParent`, `position`, and `name` only when the writer typed
-one), so a resend is recognised without locating anything; the address lives in the result
+request alone (`expected` with the id the request carried, `destinationParent`, `position`, and
+`name` only when the writer typed one). The route builds it once (`moveCommand`, `deleteCommand`)
+and passes it as `operation` beside the node, so a resend is recognised without locating anything; the address lives in the result
 (`destinationUri`, and `uri` on a delete), and the observation version reads its generation from it
 (`user://` uses the user's counter). A move with no `name` keeps the row's name and one with no
 `destinationParent` keeps its folder.
