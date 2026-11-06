@@ -57,15 +57,17 @@ from the report: it does the work itself, sends the child what it needs, or asks
 the writer with its own `ask_user` (the spawn description says so).
 
 A question ask times out on a clock the server owns (`asks/ask-deadline.ts`): 4 minutes
-idle, restarted by each `ask.presence` message the takeover sends while the writer
-interacts, and never past 55 minutes after the ask opened (`asks.opened_at`). A presence
+idle, restarted by each `ask.presence` message the takeover sends while the writer is active
+on the page (any pointer, key, wheel, scroll or touch, at most one per 30 s), and never past 55 minutes after the ask opened (`asks.opened_at`). A presence
 message also stores the writer's held answers (`asks.draft_answers`); it publishes
 `ask.updated` only when the answers changed or the deadline moved 30 s or more (the
 deadline is whole seconds). The stored answers go to the owner's clients as
 `ThreadAsk.draftAnswers`. A refused presence is logged (`ask.presence.refused`, with its reason); no frame goes
 back. When the deadline passes, `expireDue` resolves
-from the stored answers: what the writer had answered stands, and every other question
-takes its Recommended option (`timeout{label|null}`). A presence that races the sweep
+from the stored answers: a held option or skip stands as the writer's answer; held typed words
+become `unsent{text}` (the model gets them with `free_text` and `timed_out`, the receipt says
+they weren't sent, and they return to the composer); every other question takes its
+Recommended option (`timeout{label|null}`). A presence that races the sweep
 settles under the thread lock; the sweep resolves only an ask whose deadline is still due.
 Permission asks have no deadline and take no presence.
 The tool has one input shape (`questions`, 1-4), in every thread's stored definition too.

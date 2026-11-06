@@ -2,8 +2,9 @@
  * When a question ask times out. The server owns both clocks; the client only reports that
  * the writer is interacting (`ask.presence`).
  *
- * The idle clock restarts on every interaction; the hard limit runs from the moment the ask
- * opened and never moves. The limit stays under the main chat's 1-hour prompt cache.
+ * The idle clock restarts on every report of activity on the page; the hard limit runs from the
+ * moment the ask opened and never moves. The limit was set from the main chat's 1-hour cache
+ * target; a longer wait may miss the cache on a model that has none.
  */
 
 export const ASK_IDLE_MS = 4 * 60_000;

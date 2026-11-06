@@ -1,6 +1,7 @@
 /**
- * Reports the writer's held draft to the server as `ask.presence`, at most once per
- * `PRESENCE_INTERVAL_MS`, so the idle deadline stays off and a walk-away keeps what they chose.
+ * Reports the writer's draft to the server as `ask.presence`, at most once per
+ * `PRESENCE_INTERVAL_MS`, so the idle deadline stays off while they are on the page and a
+ * walk-away keeps the options they picked (typed words are kept as unsent).
  * A report waiting on that interval is sent by `flush` (the writer leaves, or the page hides), and
  * one the socket couldn't carry is sent when it connects again. Plain state, no React.
  */
