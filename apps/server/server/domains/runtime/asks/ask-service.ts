@@ -427,11 +427,15 @@ export function createAskService(deps: {
             draftAnswers: input.answers,
           });
           if (!updated) return "not_open_question";
-          const moved = (updated.deadlineAt?.getTime() ?? 0) - (stored.deadlineAt?.getTime() ?? 0);
+          // Publish when the deadline crosses a 30 s bucket, not when it moves by 30 s from the
+          // last stored value: every presence writes the deadline, so alternating tabs would
+          // otherwise never accumulate a step.
+          const bucket = (at: Date | null) =>
+            Math.floor((at?.getTime() ?? 0) / PRESENCE_PUBLISH_MS);
           const draftChanged =
-            input.answers !== undefined &&
             JSON.stringify(updated.draftAnswers) !== JSON.stringify(stored.draftAnswers);
-          if (!draftChanged && moved < PRESENCE_PUBLISH_MS) return null;
+          if (!draftChanged && bucket(updated.deadlineAt) === bucket(stored.deadlineAt))
+            return null;
           await persistAndAppendEvents(deps, input.threadId, async () => ({
             result: undefined,
             events: [{ type: "ask.updated" as const, ask: threadAsk(updated) }],

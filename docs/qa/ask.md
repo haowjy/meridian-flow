@@ -89,7 +89,7 @@ and revert before committing.
    `Third person` (no `timed_out`), the second takes its Recommended option with
    `timed_out:true`, and the third, which has none, is `{"answer":null,"timed_out":true}`.
    `./mf thread view` shows the same. Repeat with `--answer 'text:Make the fight more'`
-   for the first entry. PASS: it is `{"answer":"Make the fight more","free_text":true,
+   for the first entry. PASS: it is `{"answer":null,"unsent_text":"Make the fight more",
    "timed_out":true}`, and `./mf thread view` shows `unsent text: …`: typed words the
    writer never sent are not an answer.
 3. **Presence bumps the deadline.** On an open ask, note `continues at` in

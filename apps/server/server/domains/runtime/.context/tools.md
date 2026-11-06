@@ -47,8 +47,8 @@ executor calls do not silently reapply it; callers must choose the policy seam.
 One call carries 1–4 questions (`questionAskPayloadSchema`, the one schema for the tool's
 input and the stored payload), each with 2–4 options and an optional `recommended`. They
 are one ask row: the writer answers the set with one submission, and the tool result is
-`{answers: [{question, answer, free_text?, skipped?, timed_out?}]}`, one entry per question
-in order, each echoing its question text. The answer's tool result is written onto the asking turn before an internal
+`{answers: [{question, answer, free_text?, skipped?, timed_out?, unsent_text?}]}`, one entry per question
+in order (flags and extra keys appear only when true), each echoing its question text. The answer's tool result is written onto the asking turn before an internal
 continuation starts through ordinary request assembly. The tool and the Mars
 capability share one name. Subagents never get `ask_user`
 (`projectToolPolicy`): a child does its task with reasonable calls, or stops and
@@ -67,7 +67,7 @@ deadline is whole seconds). The stored answers go to the owner's clients as
 `ThreadAsk.draftAnswers`. A refused presence is logged (`ask.presence.refused`, with its reason); no frame goes
 back. When the deadline passes, `expireDue` resolves
 from the stored answers: a held option or skip stands as the writer's answer; held typed words
-become `unsent{text}` (the model gets them with `free_text` and `timed_out`, the receipt says
+become `unsent{text}` (the model gets `answer: null` with the words in `unsent_text` and `timed_out`, the receipt says
 they weren't sent, and they return to the composer); every other question takes its
 Recommended option (`timeout{label|null}`). A presence that races the sweep
 settles under the thread lock; the sweep resolves only an ask whose deadline is still due.
