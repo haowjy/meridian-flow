@@ -140,10 +140,13 @@ function LlmCallsContent({
     [derivedCalls, filter],
   );
   const responseThreadKey = responseThreadIds.join(",");
-  const responseCallKey = derivedCalls.map((call) => call.gatewayCallId).join(",");
+  // A call settling (or a stop landing) is when the turn's status and the response row's
+  // usage metering change, so the snapshot refetches on outcome changes, not only new calls.
+  const responseCallKey = derivedCalls
+    .map((call) => `${call.gatewayCallId}:${call.outcome}`)
+    .join(",");
   useEffect(() => {
     let active = true;
-    setTurnsById({});
     const threadIds = responseThreadKey ? responseThreadKey.split(",") : [];
     if (threadIds.length === 0) {
       return () => {
