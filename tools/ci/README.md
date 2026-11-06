@@ -229,3 +229,43 @@ the SQL text. Unmarked findings and missed markers both fail the self-test.
 No-findings examples belong in `allowed.ts`; they protect against false
 positives. Fixtures need not execute or typecheck; the guard parses them as
 source. Run the check and lint after changing fixtures.
+
+## Slop lint
+
+`pnpm check:slop-lint` keeps three common agent mistakes out of new TypeScript
+source:
+
+- an empty `catch` block or a `.catch(() => null | undefined | [] | {} | false)`;
+- a new `biome-ignore` or TypeScript suppression comment;
+- a `D<number>` or `W<number>` decision ID in a comment.
+
+The checker uses the TypeScript AST for catch expressions and the TypeScript
+comment scanner for the other two rules. It excludes test files and test
+support/fixture/conformance directories, plus generated `.gen.ts`,
+`.generated.ts`, `dist` and `build` paths. Decision IDs inside inline code and
+`@W<number>` handles are not findings.
+
+The committed `tools/ci/slop-lint-baseline.json` records the existing findings
+by source path and trimmed source line. A finding already in the baseline is
+allowed; a new or changed finding fails with the repair to make. A deleted
+finding also makes the check fail until the baseline records the reduction.
+This keeps the check focused on new code without hiding the old debt, and
+prevents the baseline from growing. After removing findings, run:
+
+```sh
+pnpm check:slop-lint -- --update-baseline
+```
+
+The refresh refuses to write when it sees a new finding, so a baseline can
+only shrink. If an intentional case cannot be rewritten, put a reasoned,
+colocated exception in the source instead of adding it to the baseline:
+
+```ts
+// slop-lint: allow swallowed-error detached cleanup owns its own reporting
+void close().catch(() => undefined);
+```
+
+The category must be `swallowed-error`, `suppression`, or `decision-id`; the
+reason is required, and the checker fails on an exception that no longer
+matches a finding. Every failure says what to do: handle or surface the error,
+fix the type or lint error, or delete the decision ID.
