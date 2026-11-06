@@ -393,7 +393,6 @@ function predictionReasonLabel(
 ): string {
   const labels: Record<typeof reason, string> = {
     reusable_prefix: "Reusable prefix",
-    uncached: "Uncached model",
     no_response: "No prior response",
     model_changed: "Model changed",
     prompt_epoch: "Prompt changed",

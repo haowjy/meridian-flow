@@ -279,7 +279,6 @@ export function createConversationSummarizer(
               model: result.model,
               provider: result.provider,
               finishReason: result.finishReason,
-              providerRequestId: result.providerRequestId ?? null,
               meteringStatus: result.meteringStatus,
               ...modelResponseTimingFields(result),
             });

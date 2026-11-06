@@ -7,7 +7,6 @@ export type PrefixCachePredictionState = z.infer<typeof prefixCachePredictionSta
 
 export const prefixCachePredictionReasonSchema = z.enum([
   "reusable_prefix",
-  "uncached",
   "no_response",
   "model_changed",
   "prompt_epoch",
