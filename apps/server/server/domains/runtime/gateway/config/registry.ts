@@ -7,6 +7,7 @@
  * and bill differently per provider. Adapter-specific wire checks (cache lifetimes) live in
  * the adapters (`assertModelsOnWire`) and run over every row when a gateway is created from env.
  */
+
 import type {
   BuiltinAdapter,
   Capability,
@@ -16,6 +17,10 @@ import type {
   ProviderConfig,
   ReasoningSupport,
   TokenizerFamily,
+} from "../domain/index.js";
+import {
+  DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
+  DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
 } from "../domain/index.js";
 
 export interface ModelPricing {
@@ -56,8 +61,8 @@ export interface RegisteredOffering {
   model: RegisteredModel;
   pricing: ModelPricing;
   /**
-   * Fields this offering changes from `DEFAULT_PROMPT_CACHE`; a field left out keeps the
-   * default and `null` stays `null` (the provider documents no lifetime).
+   * Fields this offering changes from the defaults in `resolvePromptCache`; a field left out
+   * keeps the default and `null` stays `null` (the provider documents no lifetime).
    */
   promptCache?: Partial<PromptCacheDescriptor>;
 }
@@ -90,38 +95,26 @@ const DEEPSEEK_PRICING_SOURCE =
 // and billing before then slightly over-charges.
 const GEMINI_PRICING_SOURCE = "https://ai.google.dev/gemini-api/docs/pricing (pinned 2026-11-05)";
 
-const FIVE_MINUTES_MS = 5 * 60 * 1_000;
-const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
-const ONE_HOUR_MS = 60 * 60 * 1_000;
-const TWELVE_HOURS_MS = 12 * ONE_HOUR_MS;
-
-// Every offering starts from this and overrides fields in `promptCache`: explicit breakpoints,
-// 5 minutes for subagents and 1 hour for primary chats (Anthropic's two lifetimes).
-const DEFAULT_PROMPT_CACHE: PromptCacheDescriptor = {
-  kind: "explicit",
-  shortTtlMs: FIVE_MINUTES_MS,
-  longTtlMs: ONE_HOUR_MS,
-};
 // GPT-5.6+ caches automatically: `prompt_cache_options.ttl` is "30m" (default) or "12h". A long
 // request takes the shortest option of at least 1 hour, which is 12h.
 const OPENAI_PROMPT_CACHE: PromptCacheDescriptor = {
   kind: "automatic",
-  shortTtlMs: THIRTY_MINUTES_MS,
-  longTtlMs: TWELVE_HOURS_MS,
+  shortTtlSeconds: 30 * 60,
+  longTtlSeconds: 12 * 60 * 60,
 };
 // DeepSeek documents the cache as cleared "usually within a few hours to a few days". One hour
 // is the lower bound of that and an estimate; Flow sends no cache_control and has no lifetime
 // choice, so both chat kinds get it.
 const DEEPSEEK_PROMPT_CACHE: PromptCacheDescriptor = {
   kind: "automatic",
-  shortTtlMs: ONE_HOUR_MS,
-  longTtlMs: ONE_HOUR_MS,
+  shortTtlSeconds: 60 * 60,
+  longTtlSeconds: 60 * 60,
 };
 // The Gemini API documents no lifetime for implicit caching, so prediction reads it as cold.
 const GEMINI_PROMPT_CACHE: PromptCacheDescriptor = {
   kind: "automatic",
-  shortTtlMs: null,
-  longTtlMs: null,
+  shortTtlSeconds: null,
+  longTtlSeconds: null,
 };
 
 // OpenAI bills cache writes by TTL too: 30m at 1.25x input, 12h at 2.5x. Above 272K input
@@ -360,8 +353,14 @@ export const MODEL_REGISTRY: ModelRegistry = {
 };
 
 /** The descriptor `ModelInfo` carries; the validator checks this same value. */
+// Every offering starts from explicit breakpoints and the two default lifetimes (Anthropic's).
 function resolvePromptCache({ promptCache }: RegisteredOffering): PromptCacheDescriptor {
-  return { ...DEFAULT_PROMPT_CACHE, ...promptCache };
+  return {
+    kind: "explicit",
+    shortTtlSeconds: DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
+    longTtlSeconds: DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
+    ...promptCache,
+  };
 }
 
 /** Adapter-neutral registry checks, run as soon as a registry is loaded. */
@@ -377,18 +376,18 @@ export function validateModelRegistry(registry: ModelRegistry): void {
         `Input pricing tier for ${model.id} must be positive and below its context window`,
       );
     }
-    const { shortTtlMs, longTtlMs } = resolvePromptCache(offering);
-    if ((shortTtlMs === null) !== (longTtlMs === null)) {
+    const { shortTtlSeconds, longTtlSeconds } = resolvePromptCache(offering);
+    if ((shortTtlSeconds === null) !== (longTtlSeconds === null)) {
       throw new Error(`Prompt cache lifetimes for ${model.id} must both be set or both be null`);
     }
-    if (shortTtlMs !== null && longTtlMs !== null) {
-      if (longTtlMs < shortTtlMs) {
+    if (shortTtlSeconds !== null && longTtlSeconds !== null) {
+      if (longTtlSeconds < shortTtlSeconds) {
         throw new Error(
           `Long prompt cache TTL for ${model.id} must not be shorter than its short TTL`,
         );
       }
       if (
-        longTtlMs !== shortTtlMs &&
+        longTtlSeconds !== shortTtlSeconds &&
         pricing.cacheWriteUsdPerMillionTokens !== undefined &&
         pricing.cacheWriteLongUsdPerMillionTokens === undefined
       ) {

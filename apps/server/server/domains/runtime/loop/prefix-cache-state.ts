@@ -22,7 +22,7 @@ import {
   type ModelInfo,
   type PromptCacheDescriptor,
   type PromptCacheRetention,
-  resolvePromptCacheTtlMs,
+  resolvePromptCacheTtlSeconds,
 } from "../gateway/index.js";
 
 type CacheHistoryThread = Pick<
@@ -201,18 +201,18 @@ export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): Pref
   const selected = selectReusablePrefixResponse(input);
   if (!selected.response) return cold(selected.reason);
   const response = selected.response;
-  const ttlMs = resolvePromptCacheTtlMs(
+  const ttlSeconds = resolvePromptCacheTtlSeconds(
     input.promptCache,
     promptCacheRetentionFor(input.history.thread.kind),
   );
-  if (ttlMs === null) return cold("ttl_unknown");
+  if (ttlSeconds === null) return cold("ttl_unknown");
   if (response.requestStartedAt === null) return cold("facts_unavailable");
   const responseTimeMs = Date.parse(response.requestStartedAt);
   if (!Number.isFinite(responseTimeMs) || !Number.isFinite(input.nowMs)) {
     return cold("facts_unavailable");
   }
   const ageMs = Math.max(0, input.nowMs - responseTimeMs);
-  if (ageMs >= ttlMs) return cold("ttl_expired");
+  if (ageMs >= ttlSeconds * 1_000) return cold("ttl_expired");
 
   return { state: "warm", reason: "reusable_prefix" };
 }

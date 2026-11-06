@@ -26,7 +26,7 @@ const threadModel: ModelInfo = {
   displayName: "Writer",
   contextWindow: 10000,
   maxOutputTokens: 1000,
-  promptCache: { kind: "explicit", shortTtlMs: 3600000, longTtlMs: 3600000 },
+  promptCache: { kind: "explicit", shortTtlSeconds: 60 * 60, longTtlSeconds: 60 * 60 },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };
