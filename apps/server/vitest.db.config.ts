@@ -113,6 +113,7 @@ const expectedSuites = [
   "apps/server/server/domains/threads/adapters/drizzle/transcript-reader-transaction.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-ls-requester-plan.db.test.ts",
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
+  "apps/server/server/domains/threads/domain/thread-trash-lifecycle.db.test.ts",
   "apps/server/server/domains/threads/domain/transcript-page.db.test.ts",
   "apps/server/server/domains/threads/domain/derive-conversation.db.test.ts",
   "apps/server/server/domains/threads/domain/prompt-bakes.db.test.ts",
