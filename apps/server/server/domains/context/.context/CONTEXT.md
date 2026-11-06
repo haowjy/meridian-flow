@@ -28,10 +28,13 @@ out of a lineage, but may not create notes or move files into one.
 
 URI paths reject `..`, normalize slash segments, and reserve a leading `@` in
 writer-created names for authority qualifiers. Canonical filename parsing is
-owned by `@meridian/contracts/protocol`. Every lookup of a typed name asks
-`addressCandidates` (literal, then the codec's alias, then the extension omitted);
-`TreeReader.resolveAddress` is the one tree walk over them, and `matchDocumentPath` and the
-client catalog's `findPath` the same order over a list. Naming asks the row's kind
+owned by `@meridian/contracts/protocol`. Every tree lookup of a typed name asks
+`addressCandidates` (literal, then the codec's alias); `TreeReader.resolveAddress` is the one
+tree walk over them, `matchDocumentAddress` and the client catalog's `findPath` the same order
+over a list. Only a link may also leave a registered extension off (`outline` for
+`outline.json`): `matchDocumentPath` adds that unique-match step after the address, and no
+`stat`, route or other tree lookup does. A binary write carries its decided name parts
+(`ContextWriteBinaryOptions.filename`), so a copy's name is parsed once. Naming asks the row's kind
 (`storedFilename` with `{ extension, stored }`): a stored file keeps its literal name, a tracked
 document follows the alias rules, and a move with no typed name keeps the token's `name` and
 `extension` without parsing. Documents and folders share one namespace: a folder's

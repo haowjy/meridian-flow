@@ -80,6 +80,7 @@ describe("thread send", () => {
             uri: "kb://notes",
             provisionalName: false,
             name: "Notes",
+            extension: "",
             editable: true,
             filetype: "markdown",
             schemaType: "document",
@@ -107,6 +108,7 @@ describe("thread send", () => {
             uri: "kb://cover.png",
             provisionalName: false,
             name: "Cover",
+            extension: "png",
             editable: false,
             disposition: "binary",
             fileType: "image",
@@ -129,7 +131,7 @@ describe("thread send", () => {
     expect(result.code).toBe(EXIT.ok);
     expect(wire.requestsOf("other").map((request) => request.path)).toEqual([
       `/api/threads/${THREAD_ID}/skills`,
-      "/api/projects/22222222-2222-4222-8222-222222222222/context/kb/address?path=notes",
+      "/api/projects/22222222-2222-4222-8222-222222222222/context/kb/address?path=notes.md",
       "/api/projects/22222222-2222-4222-8222-222222222222/context/kb/address?path=cover.png",
     ]);
     expect(wire.bodiesOf("admit")).toEqual([

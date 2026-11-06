@@ -1,4 +1,5 @@
 /** Latest writer commands supersede repair blockers and safe queued namespace work. */
+import { storedFilename } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
 import type {
   NamespaceIntent,
@@ -150,6 +151,20 @@ export function placementDestination(
     Boolean(record.resource.obligations.canonicalRefresh),
   )?.desired;
   return owner?.kind === "set-location" ? owner.destination : undefined;
+}
+
+/** The extension the row shows: its classification's, unless a pending rename already changed it. */
+export function shownExtension(projectId: string | null, record: ResourceRecord): string {
+  const { classification } = record.resource;
+  const name = placementDestination(projectId, record)?.name;
+  const named =
+    name === undefined
+      ? null
+      : storedFilename(name, {
+          extension: classification.extension,
+          stored: !classification.editable,
+        });
+  return named?.ok ? named.filename.extension : classification.extension;
 }
 
 /**

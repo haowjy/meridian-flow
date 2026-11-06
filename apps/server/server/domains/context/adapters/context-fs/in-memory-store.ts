@@ -249,8 +249,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const folder = await this.resolveFolderAt(view, dir.join("/"));
     if (folder.kind !== "found") return { kind: "not_found" };
     const folderId = folder.node?.id ?? null;
-    for (const { leaf, extensionOmitted } of addressCandidates(filename)) {
-      if (extensionOmitted) continue;
+    for (const leaf of addressCandidates(filename)) {
       for (const doc of this.backing.documents.values()) {
         if (
           doc.contextSourceId === this.sourceId &&

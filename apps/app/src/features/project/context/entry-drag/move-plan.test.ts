@@ -42,11 +42,14 @@ const record = (id: string, aliases: string[] = []) =>
       handle: `handle-${id}`,
       identity: { documentId: id },
       classification: { extension: "", editable: true },
+      obligations: {},
       aliases: Object.fromEntries(
         aliases.map((alias) => [alias, { introducedAtIdentityRevision: 1 }]),
       ),
     },
-  }) as ResourceRecord;
+    projectId: "p",
+    intents: [],
+  }) as unknown as ResourceRecord;
 
 function catalog(rootId: string, folders: Record<string, string>): CatalogContextView {
   const dir = (id: string) => ({

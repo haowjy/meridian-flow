@@ -1,5 +1,5 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import { matchDocumentPath } from "@meridian/contracts";
+import { matchDocumentAddress } from "@meridian/contracts";
 import {
   type CatalogScope,
   type CatalogWakeHint,
@@ -356,7 +356,7 @@ export function projectCatalogView(
             : [],
         )[0];
       // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
-      return literal ?? matchDocumentPath(all, path, (file) => file.path);
+      return literal ?? matchDocumentAddress(all, path, (file) => file.path);
     },
     findDocument: (documentId) => {
       const found = node(documentId);

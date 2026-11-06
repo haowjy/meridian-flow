@@ -525,7 +525,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
     const segments = dispatch.path.split("/");
     const filename = segments.pop() ?? "";
-    const parsed = parseDocumentFilename(filename, { sourceExtension });
+    const parsed = binary?.filename
+      ? Ok(binary.filename)
+      : parseDocumentFilename(filename, { sourceExtension });
     if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
     const parts = binary
       ? filenameForBinary(parsed.value, binary.fileType, binary.mimeType)
@@ -793,7 +795,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           message: UPLOAD_FOLDER_CREATION_DENIED_MESSAGE,
         });
       }
-      const result = await callAdapter(canonical, () => adapter.writeBinary(path, options));
+      const result = await callAdapter(canonical, () =>
+        adapter.writeBinary(path, { ...options, filename: r.value.filename }),
+      );
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
 

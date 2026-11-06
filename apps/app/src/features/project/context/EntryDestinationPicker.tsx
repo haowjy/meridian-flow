@@ -44,7 +44,7 @@ export type PickedEntry = {
   id: string;
   name: string;
   path: string;
-  row?: NamedRow;
+  row: NamedRow | null;
 };
 
 type EntryDestinationPickerProps = {
@@ -191,7 +191,7 @@ function OpenPicker({
           {
             entry: ref,
             name: entry.name,
-            ...(entry.row ? { row: entry.row } : {}),
+            row: entry.row,
             typed: name,
             before,
             after,

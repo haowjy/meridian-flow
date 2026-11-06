@@ -56,9 +56,9 @@ export function resolveCreateTarget(
 /** A binary's target: a prose-shaped name takes its storage type's registered suffix. */
 export function resolveBinaryTarget(
   path: string,
-  storage: { fileType: string; mimeType?: string },
+  storage: { fileType: string; mimeType?: string; filename?: ParsedDocumentFilename },
 ): Result<{ dir: string[]; name: string; extension: string }, AdapterFault> {
-  const target = parseTarget(path, {});
+  const target = parseTarget(path, { parsedFilename: storage.filename });
   if (!target.ok) return target;
   const { name, extension } = filenameForBinary(
     target.value.parsed,

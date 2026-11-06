@@ -22,6 +22,7 @@ import {
   type ResourcePlacement,
   type ResourceRecord,
   resourceIdentityIndex,
+  shownExtension,
 } from "@meridian/resource-replica";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { schemeLabel } from "../context-schemes";
@@ -62,7 +63,7 @@ export type MoveView = PlacementView & {
 export type PlacedEntry = {
   ref: EntryRef;
   name: string;
-  row?: NamedRow;
+  row: NamedRow | null;
   location: ResourceLocation;
   parent: ParentRef;
 };
@@ -71,7 +72,7 @@ export type PlacedEntry = {
 export type MoveRow = {
   entry: EntryRef;
   name: string;
-  row?: NamedRow;
+  row: NamedRow | null;
   /** A Move… retry keeps the writer's refused name; a drag uses the row's current name. */
   typed?: string;
   before: ParentRef;
@@ -112,15 +113,22 @@ function placeEntryRef({ records, placement }: PlacementView, ref: EntryRef): Pl
   if (ref.kind === "folder") {
     const location = placement.folderLocation(ref.id);
     const parent = placement.parentForFolder(ref.id);
-    return location && parent ? { ref, name: location.name, location, parent } : null;
+    return location && parent ? { ref, name: location.name, row: null, location, parent } : null;
   }
   const record = recordFor(records, ref.id);
   const location = record ? placement.resourceLocation(record) : null;
   if (!record || !location) return null;
   const parent = placement.parentForResource(record);
-  const { classification } = record.resource;
-  const row = { extension: classification.extension, stored: !classification.editable };
+  const row = {
+    extension: shownExtension(null, record),
+    stored: !record.resource.classification.editable,
+  };
   return parent ? { ref, name: location.name, row, location, parent } : null;
+}
+
+/** The naming facts `ref` carries now: a file's row, null for a folder or a row that is gone. */
+export function entryRowNow(view: PlacementView, ref: EntryRef): NamedRow | null {
+  return placeEntryRef(view, ref)?.row ?? null;
 }
 
 /** The name `ref` carries now; null once the row is gone. */
@@ -355,7 +363,7 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
 export type CopyRow = {
   entry: EntryRef;
   name: string;
-  row?: NamedRow;
+  row: NamedRow | null;
   view: CopyContextEntryView;
 };
 

@@ -5,7 +5,11 @@ import { catalogEntryParent } from "./catalog-installation";
 import { folderBaseLocation, folderListedLocally } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
 import { projectOptimisticSiblingOrder } from "./optimistic-sibling-order";
-import { owningLocationIntent, placementDestination } from "./resource-intent-policy";
+import {
+  owningLocationIntent,
+  placementDestination,
+  shownExtension,
+} from "./resource-intent-policy";
 import { projectResourceLocation } from "./resource-projection";
 import type {
   FolderNamespaceRecord,
@@ -280,6 +284,7 @@ export function createResourcePlacement(
         provisionalName: location.provisional,
         rank: record.resource.canonicalRank,
         ...record.resource.classification,
+        extension: shownExtension(projectId, record),
       } satisfies CatalogFileEntry);
     }
     projected = [...projectedById.values()];

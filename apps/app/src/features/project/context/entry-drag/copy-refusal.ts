@@ -7,7 +7,7 @@ import { plural, t } from "@lingui/core/macro";
 import type { ContextError } from "@meridian/contracts/protocol";
 import type { NamespaceIntent, OperationRecord } from "@meridian/resource-replica";
 import { entryToast, type RefusedFailure } from "./entry-failure";
-import { entryNameNow, type PlacementView, parentName } from "./move-plan";
+import { entryNameNow, entryRowNow, type PlacementView, parentName } from "./move-plan";
 
 /** The refused Copies of a project, oldest first. */
 export function copyFailures(
@@ -50,6 +50,7 @@ export function copyFailures(
                   copies: copy.roots.map((root, index) => ({
                     entry: { kind: root.kind, id: root.sourceId },
                     name: sources[index] ?? root.predictedName,
+                    row: entryRowNow(view, { kind: root.kind, id: root.sourceId }),
                     view: root.view,
                   })),
                 },
