@@ -18,7 +18,11 @@ boot-script preferences are separate from this envelope.
 WorkOS settings, and `MERIDIAN_API_ORIGIN`; isomorphic helpers keep guarded
 environment reads local instead of importing server config. Auth is WorkOS
 AuthKit: hosted callback and dev login mint the sealed `wos-session` cookie,
-and logout clears it. Dev autologin is production-disabled and requires its
+and logout clears it. Reach `/logout` with a full-document `<a href>`, never
+`<Link>`: `signOut()` redirects to api.workos.com, which a client-side
+navigation would `fetch` and fail on CORS. Logout passes `returnTo` =
+`/login` on the request origin (same rules as the sign-in callback); that URL
+must be registered in WorkOS as a sign-out redirect. Dev autologin is production-disabled and requires its
 explicit credentials.
 
 The generated repository `logs/` tree is ignored by Vite's watcher, including
