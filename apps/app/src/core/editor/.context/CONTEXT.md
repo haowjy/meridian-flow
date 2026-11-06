@@ -226,10 +226,12 @@ keyboard, pointer, drop, or draft-recovery answer.
   runs first (it counts clicks), then a listener on `view.dom` prevents the
   default when the press is on the highlight of a nonempty `TextSelection` or
   `AllSelection` (the test ProseMirror's own `dragstart` applies: `posAtCoords`
-  at the pointer lies in the selection's range, so the space between lines and
-  the blank past a covered line's last word count and unselected text after the
-  range does not), with focus, no modifier, an editable view
-  and a chrome kernel. `handleDoubleClick` and `handleTripleClick` claim a
+  at the pointer lies in the selection's range; at either end, its x-coordinate
+  must also be on the selected side of the caret, so half of the adjacent glyph
+  does not count). The space between lines and the blank past a covered line's
+  last word count, but not unselected text after the range, count. The view must
+  also be focused and editable, with no modifier and a chrome kernel.
+  `handleDoubleClick` and `handleTripleClick` claim a
   second or third press there so neither the browser nor ProseMirror widens
   the selection; the claim also records a third press for the no-travel case. The file has two halves:
   `startGesture` follows the mouse (click or lift; ignores a `mouseup` from any
@@ -307,15 +309,17 @@ keyboard, pointer, drop, or draft-recovery answer.
   never joins them (`landing/range-removal.ts`): a block the range reaches into
   keeps its unselected text and type, a block it covers whole goes, and so do the
   containers that would be left empty. A block its parent can't lose (a list
-  item's first paragraph, the last block) stays, emptied. A move inside one
-  textblock, a node move and a `CellSelection` still use `deleteSelection`. A
-  slice of several lines landing inside a textblock breaks it there: the first
-  line starts its own line and the last joins what follows, both as blocks of
-  the landing's type (a block the slice carries whole keeps its own type); at a
-  block's start there is no empty line before, at its end no tail after. This
-  applies to copies too. A single-line slice and a landing in code are unchanged.
-  Lists: the break inside a list item makes a paragraph in that item, not a new
-  bullet.
+  item's first paragraph, the last block, or the last paragraph in a table cell)
+  stays, emptied; a fully covered table leaves as one block. A move inside one
+  textblock, a node move and a `CellSelection` still use `deleteSelection`.
+  Several carried lines land at a gap: before the landing textblock at its start,
+  after it at its end, or at a split inside it. The slice closes into blocks and
+  ProseMirror fits those blocks where the schema requires it. Lists keep their
+  container and order. A whole top-level textblock keeps its type; a top-level
+  textblock cut by the source selection takes the landing's type, and a cut last
+  block joins the landing's tail. This applies to copies because the door reads
+  their source selection too. A slice from outside has no source selection and
+  keeps its types. A single-line slice and a landing in code are unchanged.
 - StarterKit's dropcursor stays disabled; two landings answering one drag is
   the bug this prevents. `landing/drop-caret.ts` draws the one caret.
   Keyboard behavior follows the same reading, so no input device places a
