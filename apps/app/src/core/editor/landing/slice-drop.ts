@@ -99,8 +99,6 @@ function slicePlan(
 ): DropPlan {
   const { state } = view;
   if (!slice) return { kind: "accept", pos: landing.pos };
-  // A move into a block the selection already reaches into would delete across
-  // that block and write into what was left of it.
   if (source.moved && overlapsMovedBlock(state, landing, source)) return { kind: "refuse" };
 
   if (landing.kind === "source") {
@@ -151,16 +149,19 @@ function deleteSource(transaction: Transaction, source: SliceSource): void {
 }
 
 /**
- * True when this move would land in a textblock the dragged range already
- * reaches into, or on a seam inside that range. Deleting the range and writing
- * into what remains of the same block would flatten structure into that block.
+ * True when this move lands inside the dragged range, or in a textblock the
+ * range reaches into from outside: deleting the range would cut that block and
+ * flatten what it held into the rest of it. A range wholly inside the block is
+ * an ordinary move within a line.
  */
 function overlapsMovedBlock(state: EditorState, landing: Landing, source: SliceSource): boolean {
   const range = source.node ?? state.selection;
   if (landing.pos >= range.from && landing.pos <= range.to) return true;
   const $pos = state.doc.resolve(landing.pos);
   if (!$pos.parent.isTextblock) return false;
-  return range.from < $pos.end() && range.to > $pos.start();
+  const overlaps = range.from < $pos.end() && range.to > $pos.start();
+  const inside = range.from >= $pos.start() && range.to <= $pos.end();
+  return overlaps && !inside;
 }
 
 type BuiltDrop = { transaction: Transaction; from: number; to: number };
