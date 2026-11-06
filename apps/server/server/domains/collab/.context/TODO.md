@@ -11,16 +11,11 @@
 - `adapters/drizzle-journal.ts` and draft provenance readers: profile retained
   history decoding, materialization and encoding before choosing incremental
   reads ([#932]). Preserve delete-only changes, committed-prefix append,
-  exact-inverse revision checks and live authority fencing. Draft generations
-  and peer content catch-up are not available optimization boundaries.
-- `domain/ports/works-mutation.ts`: determine what remains of [#931]. Keystrokes
-  already take no Work lock and count nothing; operations still take the Work
-  boundary for lifecycle ordering. Local text Discard uses ordinary append,
-  not a server Discard operation.
+  exact-inverse revision checks and live authority fencing.
+- Works mutation boundary (`projects/adapters/work-projection-mutation.ts`):
+  determine what remains of [#931].
 - Live document persistence and mutation adapters: move the remaining live
   in-process/advisory lock model to checkpoint, tail and revision under [#934].
-  Atomic Apply already installs its prepared room effects after root commit;
-  do not reintroduce settlement or mutate a warm room inside its transaction.
 - Response-transaction integration: replace the duplicated `deferUntilCommit`
   declarations and participant layer with one unit-of-work port ([#935]).
 
