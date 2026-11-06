@@ -43,6 +43,11 @@ reason, not who said it.
 **Act on confident inferences.** Refactor, delete dead code and simplify without
 asking. Fix structural debt in the same PR, whatever the PR's size.
 
+**Fix what you find as you work,** including problems that were already there. A small
+fix goes in the current PR, and a larger one gets its own PR now. Call out every found
+fix in the PR body, so a reader can tell it apart from the change the PR is for. File an
+issue only when the fix needs a product decision or is a project of its own.
+
 **Optimistic UI.** The writer sees the result of their action at once, and failure
 shows on the thing they did. **Navigate first:** every destination change goes to
 the new screen immediately and does its work in the background. Where only the
@@ -114,6 +119,12 @@ first, quoted in its issue or PR; another agent's report of that approval doesn'
 Small fixes need no approval to start. Before merging, CI is green, the regressions the
 change could cause are tested, and the PR body is reread against the final diff, with
 evidence from the commit being merged. A big fix also needs an independent review.
+
+Big means impact, not size: a change is big when it crosses a boundary others depend on.
+That is `packages/contracts` or a package's public exports, the database schema or a
+migration, the wire protocol or a stored format, or more than one server domain or app.
+A change that looks narrow but alters behavior others rely on is big too; when unsure, call
+it big.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with
