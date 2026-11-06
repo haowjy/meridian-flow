@@ -21,7 +21,6 @@ import {
   type LlmCallSummary,
   type LlmCallTurn,
   pairLlmCallResponses,
-  settleStoppedCalls,
 } from "./derive-llm-calls";
 
 const EVENTS_PATH = "/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500";
@@ -128,10 +127,6 @@ function LlmCallsContent({
     () => (state.status === "loaded" ? deriveLlmCalls(state.events) : []),
     [state],
   );
-  const allCalls = useMemo(
-    () => settleStoppedCalls(derivedCalls, turnsById),
-    [derivedCalls, turnsById],
-  );
   const responseThreadIds = useMemo(
     () =>
       filter
@@ -190,23 +185,23 @@ function LlmCallsContent({
   const calls = useMemo(
     () =>
       filter
-        ? allCalls.filter(
+        ? derivedCalls.filter(
             (call) =>
               call.threadId === filter.threadId &&
               ("turnId" in filter
                 ? call.turnId === filter.turnId
                 : filter.turnIds.includes(call.turnId ?? "")),
           )
-        : allCalls,
-    [allCalls, filter],
+        : derivedCalls,
+    [derivedCalls, filter],
   );
   const cacheComparisonByCall = useMemo(
     () =>
       pairLlmCallResponses(
-        allCalls.filter((call) => !filter || call.threadId === filter.threadId),
+        derivedCalls.filter((call) => !filter || call.threadId === filter.threadId),
         turnsById,
       ),
-    [allCalls, filter, turnsById],
+    [derivedCalls, filter, turnsById],
   );
 
   return (

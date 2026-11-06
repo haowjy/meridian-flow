@@ -23,6 +23,7 @@ import {
 import {
   type GatewayConfig,
   type GenerateRequest,
+  type GenerateResult,
   type ModelInfo,
   resolveCall,
   type StreamEvent,
@@ -178,6 +179,18 @@ export function resolveAttemptTimeouts(
   };
 }
 
+/** What a call stopped before any output left behind: nothing generated, usage unknown. */
+function emptyResult(model: ModelInfo): GenerateResult {
+  return {
+    content: [],
+    toolCalls: [],
+    finishReason: "end_turn",
+    usage: { inputTokens: 0, outputTokens: 0 },
+    model: model.id,
+    provider: model.provider,
+  };
+}
+
 function abortReason(signal: AbortSignal): unknown {
   return signal.reason !== undefined
     ? signal.reason
@@ -218,6 +231,11 @@ export async function* streamWithRetry(
   const call = resolveCall(request, model);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // A stop that landed before this attempt started made no call, so it leaves no response.
+    if (request.signal?.aborted) {
+      yield { type: "end", result: emptyResult(model) };
+      return;
+    }
     let sawError: StreamEvent | undefined;
     let emittedOutput = false;
     let emittedCommittedOutput = false;
@@ -270,15 +288,19 @@ export async function* streamWithRetry(
     // One subscription and one absolute cancel deadline for the entire attempt,
     // including any usage drain after an adapter rejection.
     let cancelTimer: ReturnType<typeof setTimeout> | undefined;
-    type Stop = { kind: "stop"; error?: unknown };
+    type Stop = { kind: "stop"; error?: unknown; endEmpty?: true };
     let stop!: (result: Stop) => void;
     const stopped = new Promise<Stop>((resolve) => {
       stop = resolve;
     });
     const onAbort = () => {
       const timeout = getModelAttemptTimeout(attemptSignal.signal);
-      if (timeout || !emittedOutput) {
-        stop({ kind: "stop", error: timeout ?? abortReason(attemptSignal.signal) });
+      if (timeout) {
+        stop({ kind: "stop", error: timeout });
+      } else if (!emittedOutput) {
+        // End at once rather than wait on an SDK that may hang: the call was made, so the
+        // empty result is stamped missing_usage and settled like any cancelled call.
+        stop({ kind: "stop", endEmpty: true });
       } else {
         cancelTimer = setTimeout(() => stop({ kind: "stop" }), CANCEL_DRAIN_TIMEOUT_MS);
       }
@@ -291,6 +313,17 @@ export async function* streamWithRetry(
         buffer.next().then((result) => ({ kind: "next" as const, result })),
       ]);
       if (next.kind === "next") return next.result;
+      if (next.endEmpty) {
+        return {
+          done: false,
+          value: {
+            event: { type: "end", result: emptyResult(model) },
+            arrivedAt: now(),
+            estimatedBytes: 0,
+            arrivedBeforeBackpressure: !backpressured,
+          },
+        };
+      }
       if (next.error !== undefined) throw next.error;
       return { done: true, value: undefined };
     };
