@@ -41,4 +41,4 @@ introduce upstream `taskList` or `taskItem` nodes.
   from two views can overwrite each other's token list; combine contributions at
   the session boundary if the product requires concurrent view uploads.
 - Undo stacks are per editor but share the collaborative origin, so one view can
-  undo the other. Change this only with an explicit product ruling.
+  undo the other.

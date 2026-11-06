@@ -100,7 +100,7 @@ composition root (`apps/server/server/lib/app.ts`).
 ## Documentation tier model
 
 ```
-AGENTS.md            ← prescriptive rules and boundaries
+AGENTS.md            ← what to know before working here
 .context/CONTEXT.md  ← architecture, contracts, invariants, conventions
 KB                   ← cross-cutting decisions, vocabulary, durable product docs
 ```
