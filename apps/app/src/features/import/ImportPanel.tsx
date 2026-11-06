@@ -69,13 +69,10 @@ function ImportCard({
         : parent?.kind === "folder"
           ? parent.path.join("/")
           : "";
-    // Loose files have no folder of their own: go to one of them, one that needs a look first.
-    const file =
-      root?.kind === "folder"
-        ? null
-        : [...problems, ...(detail?.entries ?? [])]
-            .map((entry) => catalog?.findDocument(entry.documentId))
-            .find(Boolean);
+    // An import shows one of its files, one that needs a look first; a browse address opens none.
+    const file = [...problems, ...(detail?.entries ?? [])]
+      .map((entry) => catalog?.findDocument(entry.documentId))
+      .find(Boolean);
     void navigate({
       to: projectAddressHref({
         projectId: summary.projectId,
