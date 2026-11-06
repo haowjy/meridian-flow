@@ -182,9 +182,10 @@ export class AccountResourceReconciler {
 
   /** Drops the operations nothing reads any more. Another tab may win the race; its drop is the same. */
   private retireOperations(snapshot: Parameters<typeof retiredOperations>[0]): void {
-    // slop-lint: allow swallowed-error a dropped retire leaves a record the next reconcile retires again
-    for (const { operationId, revision } of retiredOperations(snapshot, Date.now()))
+    for (const { operationId, revision } of retiredOperations(snapshot, Date.now())) {
+      // slop-lint: allow swallowed-error a dropped retire leaves a record the next reconcile retires again
       void this.ports.metadata.retireOperation(operationId, revision).catch(() => undefined);
+    }
   }
 
   schedule(key: ResourceKey): void {
