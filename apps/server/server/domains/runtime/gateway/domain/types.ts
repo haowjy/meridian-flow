@@ -176,19 +176,16 @@ export interface Message {
 }
 
 /**
- * A user-defined tool with a JSON Schema input signature. The orchestrator
+ * A tool Flow executes, with a JSON Schema input signature. The orchestrator
  * sends these to the provider as part of the tool definitions, and the
  * adapter translates them into the provider's tool schema format.
  */
-export interface FunctionTool {
+export interface Tool {
   type: "function";
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
 }
-
-/** Every tool the model sees is a function tool Flow executes. */
-export type Tool = FunctionTool;
 
 export type ResponseFormat =
   | { type: "text" }

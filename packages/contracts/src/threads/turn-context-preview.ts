@@ -1,7 +1,7 @@
 /**
  * Purpose: JSON-natural preview of the next turn's model context — system prompt,
  * advertised function tools, and gateway params. Dev-only; no side effects.
- * Key decisions: mirrors gateway FunctionTool shape; `baked` reflects persisted
+ * Key decisions: mirrors gateway Tool shape; `baked` reflects persisted
  * first-attempt bake pointer, not a would-be bake preview.
  */
 import type { JsonValue } from "./index.js";
