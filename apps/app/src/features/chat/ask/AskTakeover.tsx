@@ -113,7 +113,9 @@ function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children:
 }
 
 /**
- * Focus the answer the writer holds, else the first control, unless they are working elsewhere on
+ * Focus the answer the writer holds, else the question's option group (`data-ask-place`, so Tab
+ * reaches the first option next and a screen reader names the question, with no ring on an option
+ * nobody chose), else the first control, unless they are working elsewhere on
  * the page (another tab's answer moves a takeover nobody is using). Never the field: on a phone
  * that would raise the keyboard each time the controls change.
  */
@@ -123,6 +125,7 @@ function focusControls(root: HTMLElement | null) {
     return;
   const target =
     root?.querySelector<HTMLElement>("[aria-pressed=true]") ??
+    root?.querySelector<HTMLElement>("[data-ask-place]") ??
     root?.querySelector<HTMLElement>("button");
   target?.focus({ preventScroll: true });
 }
@@ -220,7 +223,7 @@ function QuestionTakeover({
   useEffect(() => {
     if (shownStep.current === step) return;
     shownStep.current = step;
-    focusControls(optionList.current);
+    focusControls(optionList.current?.closest<HTMLElement>("[data-ask-takeover]") ?? null);
   }, [step]);
   return (
     <TakeoverFrame labelledBy={titleId}>
@@ -235,9 +238,11 @@ function QuestionTakeover({
       <TakeoverTitle id={titleId}>{question}</TakeoverTitle>
       <fieldset
         ref={optionList}
+        data-ask-place=""
+        tabIndex={-1}
         aria-labelledby={titleId}
         aria-describedby={several ? positionId : undefined}
-        className="flex min-w-0 flex-col gap-[var(--chat-space-inline)]"
+        className="flex min-w-0 flex-col gap-[var(--chat-space-inline)] outline-none"
       >
         {options.map((option) => (
           <button
