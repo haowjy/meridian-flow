@@ -4,7 +4,7 @@
  * a report carries. A clock-only report goes at most once per `PRESENCE_INTERVAL_MS`; one
  * carrying answers (the draft has changes the server hasn't echoed) goes at most once per
  * `ANSWERS_INTERVAL_MS`, and a clock-only send never uses that interval up, so a click right
- * after a pointer move still reaches the server within a second. A report waiting on its interval
+ * after a pointer move still reaches the server within seconds. A report waiting on its interval
  * is sent by `flush` (the writer leaves, the page hides, or the socket connects), which also
  * sends owed answers at once. Plain state, no React.
  */
@@ -12,8 +12,8 @@ import type { DraftAnswers } from "@meridian/contracts/threads";
 
 /** The server's idle clock is minutes long; this keeps it moving without a frame per keystroke. */
 const PRESENCE_INTERVAL_MS = 30_000;
-/** Bounds a burst of draft changes and retries of unechoed answers to a frame a second. */
-const ANSWERS_INTERVAL_MS = 1_000;
+/** Each changed draft writes a journal row, so typing can't send on every keystroke. */
+const ANSWERS_INTERVAL_MS = 5_000;
 
 /** What a report carries: the open ask, and the answers the server hasn't echoed yet, if any. */
 export type PresenceDraft = { askId: string; answers?: DraftAnswers };
