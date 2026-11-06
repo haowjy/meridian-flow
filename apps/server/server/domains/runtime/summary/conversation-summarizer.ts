@@ -7,7 +7,7 @@ import type { AgentRevisionStore } from "../../packages/index.js";
 import type { Gateway, GenerateRequest, GenerateResult, ModelInfo } from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { KEEP_OPEN_INSTRUCTION_LINES } from "../loop/compaction/important-files.js";
-import { estimateRequestTokens } from "../loop/compaction/index.js";
+import { estimateRequestTokens, outputReserveTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
@@ -378,10 +378,10 @@ export function createConversationSummarizer(
           baseline: null,
           tokenizer: model.tokenizer,
         });
-        // The model's output cap is already in provider token units, regardless of language.
+        // The reserve is in provider token units, regardless of language.
         const runningReserve =
           estimateModelJsonTokens("Prior context (running summary):", model.tokenizer) +
-          model.maxOutputTokens;
+          outputReserveTokens(model);
         const segmentBudget = usableWindow - overhead - runningReserve;
         const turns = transcriptSegments(input.projection, segmentBudget, model.tokenizer);
         const turnTokens = turns.map((turn) =>
