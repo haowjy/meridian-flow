@@ -125,7 +125,9 @@ export async function createGatewayFromEnv(
   const liveTestModel = env.LIVE_TEST_MODEL;
   if (liveTestModel && isProductionEnv(env)) {
     await cleanup?.();
-    throw new Error("LIVE_TEST_MODEL: dev only; unset it in production.");
+    throw new Error(
+      "LIVE_TEST_MODEL: not allowed in production; unset it. On staging, set APP_ENV=staging.",
+    );
   }
   if (liveTestModel && !providers.some((p) => p.models.some((m) => m.id === liveTestModel))) {
     const inRegistry = MODEL_REGISTRY.providers.some((p) =>

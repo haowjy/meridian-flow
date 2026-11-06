@@ -1,6 +1,6 @@
 # Model gateway smoke guide
 
-End-to-end checks for `@meridian/model-gateway` via the smoke mini-server (`tests/smoke/server.ts`).
+End-to-end checks for the gateway domain (`apps/server/server/domains/runtime/gateway`) via the smoke mini-server (`tests/smoke/server.ts`).
 
 ## Prerequisites
 
@@ -9,8 +9,8 @@ End-to-end checks for `@meridian/model-gateway` via the smoke mini-server (`test
 | Variable | Required | Notes |
 |----------|----------|-------|
 | `FLOW_DEEPSEEK_API_KEY` | Optional | Enables live DeepSeek scenarios |
-| `FLOW_ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (adapter not in v1 spine yet) |
-| `FLOW_OPENAI_API_KEY` | Optional | Live OpenAI scenarios (adapter not in v1 spine yet) |
+| `FLOW_ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (§8) |
+| `FLOW_OPENAI_API_KEY` | Optional | Live OpenAI scenarios (§9) |
 | `FLOW_GEMINI_API_KEY` | Optional | Enables live Gemini scenarios |
 | `MODEL_PROVIDER` | Optional | Set to `mock` to force in-process mock even if keys exist |
 | `PORT` | Optional | Fixed listen port; default is OS-assigned ephemeral |
@@ -258,11 +258,16 @@ curl -sS -X POST "${BASE}/generate" \
 
 ## 8. Anthropic live (optional)
 
-**Requires:** `FLOW_ANTHROPIC_API_KEY` in `.env`.
+**Requires:** `FLOW_ANTHROPIC_API_KEY` in `.env`, and `LIVE_TEST_MODEL` off. The main
+checkout's `.env` often sets `LIVE_TEST_MODEL=deepseek-flash`, which sends every call to
+DeepSeek and makes this section's Anthropic checks fail. Turn it off with `LIVE_TEST_MODEL=`
+(empty) in this checkout's `.env.local`, or comment the line out of the main `.env`, then
+restart the stack.
 
 Anthropic is enabled by a real key, but the registry default is `deepseek-flash`.
-General uses `claude-sonnet-5-5` only when the chat selects it, or when
-`FLOW_DEEPSEEK_API_KEY` is unset and Anthropic is the first enabled provider.
+General uses Anthropic only when the chat selects a Claude model, or when
+`FLOW_DEEPSEEK_API_KEY` is unset and Anthropic is the first enabled provider, in which case
+the default is `claude-opus-5-5`.
 
 ```bash
 pnpm dev
@@ -276,7 +281,8 @@ pnpm dev --stop
 
 **Pass:** text deltas and a completed reply; the durable transcript includes
 that reply. Gateway `stream.open` / successful `stream.close` correlation names
-`anthropic` and `claude-sonnet-5-5`. Command-union tools (write and work) must
+`anthropic` and the chat's model (`claude-opus-5-5` when Anthropic is the only key,
+`claude-sonnet-5-5` when the chat selects it). Command-union tools (write and work) must
 not cause Anthropic's root `oneOf` / `anyOf` schema rejection.
 
 Also exercise valid command selection, not just a text reply:
@@ -308,8 +314,9 @@ allowed fields; shared field descriptions identify their commands.
 **Requires:** `FLOW_OPENAI_API_KEY` (models `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-5.6-luna`, Responses
 adapter) or `FLOW_GEMINI_API_KEY` (`gemini-4-argon`, OpenAI-compatible adapter) in `.env`.
 
-Repeat scenarios 3–5 with one of those model ids. For OpenAI, a primary-chat request sends
-`prompt_cache_options.ttl: "12h"`; check that the second turn reports `cacheReadTokens` and that
+Repeat scenarios 3–5 with one of those model ids. For OpenAI, add `"promptCacheRetention": "long"`
+to the request body (the smoke server passes the body through, and a request without it reads
+short: 30 minutes); a primary-chat request then sends `prompt_cache_options.ttl: "12h"`; check that the second turn reports `cacheReadTokens` and that
 a write splits `cacheWriteTokens` / `cacheWriteLongTokens`.
 
 **Skip** if neither key is set.

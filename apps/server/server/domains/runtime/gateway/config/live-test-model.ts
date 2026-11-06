@@ -1,14 +1,18 @@
 /**
- * LIVE_TEST_MODEL: dev-only override that sends every gateway call to one
+ * LIVE_TEST_MODEL: dev and staging override that sends every gateway call to one
  * registry model, whatever the request, chat binding or Agent names.
  *
  * Stored state is untouched: `getDefaultModel` stays the real default, so the
  * General Agent seed and child bindings never record the override. Only the call
  * and the model facts read for it change. Callers look models up with
  * `listModels().find(id === <named model>)` (availability checks, compaction
- * planning, image support, tokenizer, cache prediction), so the decorator lists
+ * planning, image support, tokenizer), so the decorator lists
  * every registry id, keyed or not, with the override's facts. Costing needs no
  * hook: it prices the provider and model the response reports.
+ *
+ * Cache prediction is not covered: it compares the chat's bound model to the model stored
+ * on its responses, which under the override is the routed one. A chat bound to another
+ * model always reads cold (`model_changed`), so its summaries take the rolling path.
  */
 import type { GenerateRequest, ModelInfo } from "../domain/index.js";
 import type { Gateway } from "../ports/gateway.js";

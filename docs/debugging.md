@@ -319,8 +319,9 @@ Terminal record example (command-specific fields follow the reserved keys):
 ### Real model for a live run
 
 `LIVE_TEST_MODEL=<registry model id>` (for example `deepseek-flash`, with its
-`FLOW_DEEPSEEK_API_KEY` set), given on the command line or in `.env.local`, sends every model call to that one model, whatever a
-chat, Agent or binding names, including models whose provider has no key. Stored
+`FLOW_DEEPSEEK_API_KEY` set), given on the command line, in `.env.local`, or in the main checkout's `.env`, sends every model call to that one model, whatever a
+chat, Agent or binding names (if it is a registry id), including models whose provider has no key. `LIVE_TEST_MODEL=` in `.env.local` turns off a main-`.env` setting.
+A chat bound to another model predicts a cold cache under the override. Stored
 state keeps the names it has. Restart your stack to change it. Production refuses
 to start with it set; staging allows it.
 
