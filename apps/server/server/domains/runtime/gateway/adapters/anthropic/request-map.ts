@@ -58,25 +58,20 @@ type CacheControl = Anthropic.Messages.CacheControlEphemeral;
 const FIVE_MINUTES_MS = 5 * 60 * 1_000;
 const ONE_HOUR_MS = 60 * 60 * 1_000;
 
-/** Reject, at construction, a model whose explicit cache lifetimes this API cannot be sent. */
+/** The `cache_control` each supported lifetime is sent as. */
+const CACHE_CONTROL_BY_TTL = new Map<number, CacheControl>([
+  [FIVE_MINUTES_MS, { type: "ephemeral", ttl: "5m" }],
+  [ONE_HOUR_MS, { type: "ephemeral", ttl: "1h" }],
+]);
+
+/** Reject, at gateway creation, a model whose explicit cache lifetimes this API cannot be sent. */
 export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
   const { kind, shortTtlMs, longTtlMs } = model.promptCache;
   if (kind !== "explicit") return;
   for (const ttl of [shortTtlMs, longTtlMs]) {
-    if (ttl !== FIVE_MINUTES_MS && ttl !== ONE_HOUR_MS) {
+    if (ttl === null || !CACHE_CONTROL_BY_TTL.has(ttl)) {
       throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
     }
-  }
-}
-
-function cacheControlForTtl(ttlMs: number | null | undefined): CacheControl | undefined {
-  switch (ttlMs) {
-    case FIVE_MINUTES_MS:
-      return { type: "ephemeral", ttl: "5m" };
-    case ONE_HOUR_MS:
-      return { type: "ephemeral", ttl: "1h" };
-    default:
-      return undefined;
   }
 }
 
@@ -416,7 +411,9 @@ export function toAnthropicMessageParams(
 ): Anthropic.Messages.MessageCreateParamsStreaming {
   // Only an explicit-cache model gets cache_control: DeepSeek, on this adapter, caches on its own.
   const cacheControl =
-    model.promptCache.kind === "explicit" ? cacheControlForTtl(call.cacheTtlMs) : undefined;
+    model.promptCache.kind === "explicit" && call.cacheTtlMs !== null
+      ? CACHE_CONTROL_BY_TTL.get(call.cacheTtlMs)
+      : undefined;
   const maxTokens = request.maxTokens ?? model.maxOutputTokens;
   const tools = mapTools(request.tools, providerId);
   const messages = mergeConsecutiveSameRole(
