@@ -18,8 +18,12 @@
  * open the last one to report wins. A send the server refuses as `invalid_answer` moves the draft to
  * the question it names.
  *
- * While the writer works on a question, the draft goes to the server as `ask.presence`
- * (`presence-reporter.ts`). An answer holds its draft without reporting it: the answer carries it.
+ * While a question ask is open, any activity on the page (pointer, keys, wheel, scroll, touch)
+ * and every change to the draft report it to the server as `ask.presence` (`presence-reporter.ts`),
+ * which keeps the idle clock from running while the writer reads. A report always names the open
+ * ask: before the writer changes anything it carries the answers the server already holds, so it
+ * moves the clock without replacing them. An answer holds its draft without reporting it: the
+ * answer carries it, and the ask is no longer open here, so later activity reports nothing.
  */
 import { questionAnswerSchema, type ThreadAsk } from "@meridian/contracts/threads";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -31,6 +35,17 @@ import { createPresenceReporter } from "./presence-reporter";
 import { useAnswerAsk } from "./useAnswerAsk";
 
 type HeldDraft = QuestionDraft & { askId: string | null };
+
+/** Page activity that shows the writer is there; scroll doesn't bubble, hence capture on window. */
+const ACTIVITY_EVENTS = [
+  "pointermove",
+  "pointerdown",
+  "keydown",
+  "wheel",
+  "scroll",
+  "touchstart",
+  "touchmove",
+] as const;
 
 const NONE: HeldDraft = { askId: null, step: 0, entries: [] };
 
@@ -61,14 +76,30 @@ export function useAskTakeover(
   const tracked = useThreadStore((state) =>
     held.askId === null ? undefined : state.syncedByThread[threadId]?.asks.byId.get(held.askId),
   );
+  // The question ask this takeover shows now; null while an answer sends, once it ends, and for
+  // a permission ask (the server refuses presence for those).
+  const askRef = useRef<ThreadAsk | null>(null);
+  askRef.current = open?.ask.kind === "question" ? open.ask : null;
   const presence = useMemo(
     () =>
       createPresenceReporter(commands.presence, () => {
-        const { askId, entries } = heldRef.current;
-        return askId === null ? null : { askId, answers: entries.map((entry) => entry.choice) };
+        const ask = askRef.current;
+        if (!ask) return null;
+        const draft = heldRef.current.askId === ask.id ? heldRef.current : seedDraft(ask);
+        return { askId: ask.id, answers: draft.entries.map((entry) => entry.choice) };
       }),
     [commands],
   );
+  const questionOpen = askRef.current !== null;
+  useEffect(() => {
+    if (!questionOpen) return;
+    const options = { capture: true, passive: true };
+    const report = () => presence.report();
+    for (const type of ACTIVITY_EVENTS) window.addEventListener(type, report, options);
+    return () => {
+      for (const type of ACTIVITY_EVENTS) window.removeEventListener(type, report, options);
+    };
+  }, [presence, questionOpen]);
   useEffect(() => {
     window.addEventListener("pagehide", presence.flush);
     const unsubscribe = commands.onConnected(presence.flush);
