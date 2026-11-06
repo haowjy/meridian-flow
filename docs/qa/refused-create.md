@@ -98,7 +98,7 @@ run: it names the first id.
    lands and the chip goes.
 8. A real server refusal: abort creates as in step 7, press New file on a Manuscript
    folder, name it, delete that folder with `./mf api POST .../context/entries/<folderId>/delete`
-   (`{operationId, expected: {kind: "folder"}}`), then `network unroute`. One POST answered 409
+   (`{operationId, kind: "folder"}`), then `network unroute`. One POST answered 409
    `destination_missing`; the row is listed in Unfiled at its name (not under a folder),
    with the mark and no further POST. Move… to a live folder lands it.
 9. Working set: with `__refuse` set and `__delay` at `14000`, press New document, type,
@@ -119,7 +119,7 @@ run: it names the first id.
     file in Manuscript and name it. The document row is listed and one POST has gone out
     (`__cu` logs every attempt after it too, but none leaves the client). In IndexedDB the
     resource has `serverHold: "uncertain"`. Delete that document on the server with
-    `./mf api POST .../context/entries/<id>/delete` (`expected: {kind: "file"}`; an
+    `./mf api POST .../context/entries/<id>/delete` (`kind: "file"`; an
     archived Work does the same), set `__refuse2`, clear `__hold`. The first replay answers 409
     `conflict`: the resource takes a new `identity.documentId` (revision 2, the old id in
     `aliases`), `serverHold` is `local`, and a retry under the new id is refused

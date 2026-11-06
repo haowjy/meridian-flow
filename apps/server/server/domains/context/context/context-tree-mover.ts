@@ -43,6 +43,7 @@ import {
   deleteCommand,
   moveCommand,
 } from "./context-operation-receipts.js";
+import { invalidEntryError } from "./invalid-entry-error.js";
 import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
@@ -204,7 +205,12 @@ export class ContextTreeMover {
           const sourceToken = await this.inspectSource(source, nodeOf(policy));
           if (!sourceToken.ok) return sourceToken;
           // The node's own folder and name, as the locks see them, fill what the caller left out.
-          const leaf = policy.name ?? basename(sourceToken.value.path);
+          let leaf = basename(sourceToken.value.path);
+          if (policy.name !== undefined) {
+            const named = validateContextEntryName(policy.name);
+            if (!named.ok) return Err(invalidEntryError(into.canonical, named));
+            leaf = named.value;
+          }
           if (!leaf) return Err({ code: "invalid_operation", uri: into.canonical });
           const path = joinPath(folder ? into.path : dirname(sourceToken.value.path), leaf);
           const destination = { ...into, path, canonical: uriAt(into, path) };

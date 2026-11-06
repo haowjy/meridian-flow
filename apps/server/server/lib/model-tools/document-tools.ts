@@ -580,7 +580,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         try {
           await retractCreatedTrackedDocument({
             port: context.port,
-            path: parsed.path,
+            uri: address.uri,
             documentId: address.documentId,
             cause: "create_failed",
           });
@@ -604,7 +604,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       deps.responseWrites.trackStagedCreate({
         responseId,
         port: context.port,
-        path: parsed.path,
+        uri: address.uri,
         documentId: address.documentId,
       });
     }
