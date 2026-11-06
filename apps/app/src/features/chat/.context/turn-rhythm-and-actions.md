@@ -28,6 +28,11 @@ assistant turn, the next turn is a writer turn the server stamped
 `metadata.delivery: "steer"`, or this is the latest turn while background subagents still
 run. Read the steer stamp rather than comparing timestamps.
 
+A reply stopped before it produced anything also has no action row: there is nothing to
+copy, Fork would only copy an empty turn, and Hand off is already on the writer's message
+above it. It carries no "Stopped" label and no Retry: a stop is deliberate, and Retry would
+resend the same words.
+
 ## The action row
 
 Copy takes `finalMessageItems` plus images. Markdown is the plain-text flavor and is
