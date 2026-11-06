@@ -63,8 +63,11 @@ export function buildExportLayout(
     const root = rootFor(source);
     if (root) roots.set(source.uri, root);
   }
-  // `documents` arrive in tree order (sibling order, depth first): the first sibling to claim a
-  // name keeps it, and `paths` iterates in the order the archive streams.
+  // Folders are reserved before documents, so a document is the one renamed when a folder
+  // `Lore.md` and a document `Lore` meet. `documents` arrive in tree order (sibling order, depth
+  // first): the first sibling to claim a name keeps it, and `paths` iterates in the order the
+  // archive streams.
+  const placed: { doc: ExportDocument; parent: string }[] = [];
   for (const doc of documents) {
     let parent = rootFor(doc);
     if (!parent) continue;
@@ -74,10 +77,12 @@ export function buildExportLayout(
       key += `/${segment}`;
       parent = folder(key, parent, segment);
     }
+    placed.push({ doc, parent });
+  }
+  for (const { doc, parent } of placed)
     paths.set(
       doc.id,
       reserve(parent, doc.name, doc.fileType === "markdown" ? "md" : doc.extension),
     );
-  }
   return { paths, roots };
 }

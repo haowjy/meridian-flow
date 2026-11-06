@@ -267,7 +267,7 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           project: input.scheme === "user" ? { personalOf: input.userId } : { id: input.projectId },
         });
         if (!sourceId) return null;
-        const current = await inspectTreeLocation(db, sourceId, input.path, input.view);
+        const current = await inspectTreeLocation(db, sourceId, input.path, input.view, "file");
         if (current)
           return current.kind === "file"
             ? { kind: "current", documentId: current.nodeId as DocumentId }

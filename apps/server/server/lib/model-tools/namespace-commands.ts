@@ -57,22 +57,19 @@ async function siblingPosition(
   if (!input.position) return undefined;
   if (input.position.kind === "start" || input.position.kind === "end")
     return { kind: input.position.kind };
+  const trimmed = input.position.sibling.replace(/\/+$/, "");
+  const folder = await folderAt(call.context.port, trimmed);
+  if (!folder.ok)
+    return namespaceContextRefusal("move", folder.error, { path: input.position.sibling });
+  if (folder.value?.folderId)
+    return { kind: input.position.kind, siblingId: folder.value.folderId };
   const sibling = await call.context.port.stat(input.position.sibling);
   if (!sibling.ok && sibling.error.code !== "not_found")
     return namespaceContextRefusal("move", sibling.error, { path: input.position.sibling });
   const documentId = sibling.ok ? sibling.value.documentId : undefined;
-  if (documentId) return { kind: input.position.kind, siblingId: documentId };
-  const trimmed = input.position.sibling.replace(/\/+$/, "");
-  const name = trimmed.slice(trimmed.lastIndexOf("/") + 1);
-  const listed = await call.context.port.list(trimmed.slice(0, trimmed.length - name.length));
-  if (!listed.ok)
-    return namespaceContextRefusal("move", listed.error, { path: input.position.sibling });
-  const folder = listed.value.entries.find(
-    (entry) => entry.kind === "directory" && entry.uri.replace(/\/+$/, "") === trimmed,
-  );
-  if (!folder?.folderId)
+  if (!documentId)
     return namespaceRefusal("move", "document_unresolved", { path: input.position.sibling });
-  return { kind: input.position.kind, siblingId: folder.folderId };
+  return { kind: input.position.kind, siblingId: documentId };
 }
 
 /** The document a move or delete acts on, as the model named it. */
@@ -85,18 +82,20 @@ function committedLanding(landedAt: string | undefined, operation: string): stri
   return landedAt;
 }
 
-/** Whether `uri` names a folder: its parent lists a folder by that name. */
-async function isFolder(port: ContextPort, uri: string): Promise<boolean> {
+/** The folder literally named `uri`, if its parent lists one; the written leaf wins over a document alias. */
+async function folderAt(port: ContextPort, uri: string) {
   const trimmed = uri.replace(/\/+$/, "");
   const name = trimmed.slice(trimmed.lastIndexOf("/") + 1);
-  if (!name || trimmed.endsWith(":/")) return false;
+  if (!name || trimmed.endsWith(":/")) return { ok: true as const, value: null };
   const listing = await port.list(trimmed.slice(0, trimmed.length - name.length));
-  return (
-    listing.ok &&
-    listing.value.entries.some(
-      (entry) => entry.kind === "directory" && entry.uri.replace(/\/+$/, "").endsWith(`/${name}`),
-    )
-  );
+  if (!listing.ok) return listing;
+  return {
+    ok: true as const,
+    value:
+      listing.value.entries.find(
+        (entry) => entry.kind === "directory" && entry.uri.replace(/\/+$/, "") === trimmed,
+      ) ?? null,
+  };
 }
 
 /** The document at the source path, in the version this chat's writes change. */
@@ -106,10 +105,11 @@ async function resolveSource(
 ): Promise<(FileRef & { documentId: DocumentId }) | WriteToolErrorOutput> {
   const path = sourcePath(input);
   const filePath = splitDocumentFile(path).filePath;
+  const folder = await folderAt(call.context.port, filePath);
+  if (folder.ok && folder.value)
+    return namespaceRefusal(input.command, "source_is_folder", { path: filePath });
   const ref = await call.context.port.stat(filePath);
   if (!ref.ok) {
-    if (ref.error.code === "not_found" && (await isFolder(call.context.port, filePath)))
-      return namespaceRefusal(input.command, "source_is_folder", { path: filePath });
     if (ref.error.code === "not_found")
       return writeToolError(
         input.command,

@@ -26,7 +26,7 @@ export interface ContextFsCopyDeps extends CopyTreeDeps {
 }
 
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
-  const { store, holderUri } = deps;
+  const { store, holderUri, folderUri } = deps;
 
   /** The source subtree at one path: the folder with every descendant, or one file. */
   async function snapshotSource(path: string): Promise<Result<CopySourceEntry, AdapterFault>> {
@@ -85,7 +85,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
     return {
       kind: "folder",
       path,
-      uri: holderUri(path),
+      uri: folderUri(path),
       folderId: folder.id,
       name: folder.name,
       orderPolicy,

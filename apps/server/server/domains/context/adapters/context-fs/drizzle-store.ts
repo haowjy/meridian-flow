@@ -147,7 +147,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>> {
-    const found = await createTreeReader(this.deps.db).resolveAddress(view, {
+    const found = await createTreeReader(this.deps.db).resolveDocumentAddress(view, {
       contextSourceId: this.sourceId,
       path,
     });
@@ -156,8 +156,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       const rows = await loadDocumentIdentityRows(currentDrizzleDb(this.deps.db), documents);
       return rows.some((row) => row.deleted) ? { ...found, outlived: true } : found;
     }
-    if (found.kind !== "found") return found;
-    return found.node.kind === "document"
+    return found.kind === "found" && found.node.kind === "document"
       ? { kind: "found", node: mapDocument(found.node.document) }
       : { kind: "not_found" };
   }

@@ -52,8 +52,10 @@ export interface CopyTreeDeps {
   store: ContextDocumentStore;
   documentCreation: DocumentCreationAggregate;
   documentSync: Pick<MarkdownDocumentStore, "installSeeds">;
-  /** The canonical address of a scheme-relative path in this source. */
+  /** The canonical address of a document at a scheme-relative path in this source. */
   holderUri(path: string): string;
+  /** A folder's address: its name as stored, never the document alias (folder `Lore.md` is not `Lore`). */
+  folderUri(path: string): string;
 }
 
 /** Plan `roots` under `dir`: read the destination parent, write nothing, hold no lock. */
@@ -345,7 +347,7 @@ async function planLevel(
         id: source.copyId ?? crypto.randomUUID(),
         name: filename,
         path,
-        uri: deps.holderUri(path),
+        uri: deps.folderUri(path),
         children: await planLevel(deps, [...dir, filename], new Set(), source.children),
       });
       continue;

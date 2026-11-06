@@ -210,11 +210,16 @@ export type DocumentLineage = {
 export interface TreeReader {
   resolvePath(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
   /**
-   * `resolvePath` for a spelling a writer or model typed: the document under its literal name
-   * (a file kept as `binary.md`), else under the codec's alias (`ch1.md` is `ch1`), else the
-   * literal answer (a folder answers only to its own name).
+   * `resolvePath` for a spelling a writer or model typed: whatever holds the literal name
+   * (a folder `ch1.md`, a file kept as `binary.md`), else whatever holds the codec's alias
+   * (`ch1.md` is `ch1`).
    */
   resolveAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
+  /**
+   * `resolveAddress` for a caller that wants a document (a link, a read): `Lore.md` reaches
+   * document `Lore` even beside a folder `Lore.md`. A folder never answers.
+   */
+  resolveDocumentAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
   /**
    * One step of a walk: what this view shows named `filename` directly under `parentId`
    * (null: the source root). The same answer as `resolvePath` at that folder's path plus
@@ -828,16 +833,27 @@ export function createTreeReader(
 
   async function resolveAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>> {
     const slash = at.path.lastIndexOf("/");
-    const aliases = addressCandidates(at.path.slice(slash + 1)).slice(1);
-    const first = await resolvePath(view, at);
-    if (first.kind === "ambiguous" || (first.kind === "found" && first.node.kind === "document"))
-      return first;
-    for (const leaf of aliases) {
+    const leaves = addressCandidates(at.path.slice(slash + 1));
+    let first: PathResolution<TreeNode> = { kind: "not_found" };
+    for (const [i, leaf] of leaves.entries()) {
+      const found = await resolvePath(view, { ...at, path: at.path.slice(0, slash + 1) + leaf });
+      if (found.kind !== "not_found") return found;
+      if (i === 0) first = found;
+    }
+    return first;
+  }
+
+  async function resolveDocumentAddress(
+    view: TreeView,
+    at: PathQuery,
+  ): Promise<PathResolution<TreeNode>> {
+    const slash = at.path.lastIndexOf("/");
+    for (const leaf of addressCandidates(at.path.slice(slash + 1))) {
       const found = await resolvePath(view, { ...at, path: at.path.slice(0, slash + 1) + leaf });
       if (found.kind === "ambiguous" || (found.kind === "found" && found.node.kind === "document"))
         return found;
     }
-    return first;
+    return { kind: "not_found" };
   }
 
   async function occupancy(view: TreeView, at: readonly PathQuery[]) {
@@ -851,6 +867,7 @@ export function createTreeReader(
   return {
     resolvePath,
     resolveAddress,
+    resolveDocumentAddress,
     childAt,
     occupancy,
     findById,
