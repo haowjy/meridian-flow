@@ -1,24 +1,18 @@
 # notices — durable model-context delivery
 
-Notices are typed, thread-scoped rows in the durable `pending_notices` queue.
-A queue row is not conversation history until runtime materializes it into the
-thread's durable turn history.
+A row in the durable `pending_notices` queue is not conversation history until
+runtime materializes it into the thread's durable turn history.
 
-## Port and delivery contract
+## Delivery contract
 
-`NoticePort` records `NoticeInput`, peeks a thread's pending rows, and consumes
-selected IDs during commit. Results are ordered by creation time and notice ID.
 Runtime peeks at each model-call boundary and mid-run inbox adoption; commit
 consumes exactly the selected IDs and appends one trailing `system` turn with
 `{ kind: "system_update", section: "notices" }` metadata at that boundary.
 Notice bytes must be identical on later requests so the frozen prompt prefix
-remains stable.
+remains stable. Preparation failure or cancellation leaves rows pending.
 
-Preparation failure or cancellation leaves rows pending. A Work-switch notice
-is one-shot causal context and never replaces persistent hidden Work context;
-the writer route and model tool both record it through the canonical rebind
-transition. Current notice kinds are `undo`, `awareness_degraded`, and
-`work_switched`.
+A Work-switch notice is one-shot causal context and never replaces persistent
+hidden Work context.
 
 ## Failure boundary
 
@@ -28,6 +22,6 @@ failures and may enqueue `awareness_degraded`. A Work rebind records
 `work_switched` in the same transaction as the binding transition, so notice
 failure rolls the transition back rather than committing a silent switch.
 
-Notices never become mutation authority or a write fence. Another ordinary
-switch can return a chat to its previous Work; no switch-specific Undo/Redo path
-exists.
+Notices never become mutation authority, a write fence, or an implicit tool
+permission. Another ordinary switch can return a chat to its previous Work; no
+switch-specific Undo/Redo path exists.

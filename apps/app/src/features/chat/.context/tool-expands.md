@@ -1,206 +1,103 @@
-# features/chat — Tool rendering tiers and what expands show
+# features/chat — What tool expands show
 
-How a tool call becomes a row, and what opens behind that row's chevron. The
-row's own anatomy (doors, glyph, verb, tone) lives in
-[activity-row-anatomy.md](activity-row-anatomy.md); this page owns the
-rendering tiers and the expand contents.
+What opens behind a row's chevron. The row itself is
+[activity-row-anatomy.md](activity-row-anatomy.md).
 
-## Three tiers of tool rendering
+Raw JSON stays out of chat: renderers produce titles, listing rows, quoted previews and
+terminal tails, and raw payloads belong behind a dev-only setting. Generative
+(model-authored) rendering is not implemented.
 
-| Tier | What it is | What it renders |
-|---|---|---|
-| 1 · default | An unregistered tool | The humanised tool name, one line. No expand, no destination. |
-| 2 · registered | The entries in `tool-renderers.tsx` | A per-command title plus curated expand contents. |
-| 3 · generative | Model-authored React | Not implemented. |
+Renderers are keyed by tool name, and a renderer doesn't switch on the command:
+`tool-command.ts` classifies it and `command-descriptor.ts` says what to do.
 
-**Never expose raw JSON in default UX.** Renderers produce curated content:
-titles, listing rows, quoted previews, terminal tails. Raw payloads are a
-debugging concern and belong behind a dev-only setting, never in chat.
+Work mutation rows are records built from the server's `metadata.workReceipt`. Their
+reversal lives on the turn edits receipt, because the reversal seam is turn-scoped and
+turn lineage owns Undo authority.
 
-Tier 2 is keyed by **tool name**. The two document tools share one renderer:
-`read` carries reading and skimming, and `write` carries creating, copying,
-editing, removing and reverting. Which of those a row is comes from
-`tool-command.ts` (in `@meridian/thread-client`), and what to do about it comes from
-`command-descriptor.ts`, including the expand's shape. A renderer never
-switches on a command itself.
+A grep hit and a listing entry are both `{uri, …}`, so a payload can't be asked what it
+is: guessing from the first recognizable entry discards every later row that disagrees.
+The caller knows the tool, so it calls that tool's normalizer.
 
-**Work rows are receipts.** A `work` mutation's row title comes from the
-server's structured receipt facts (`metadata.workReceipt`, carried on the tool
-result): operation, Work name, before and after. `work-receipt-copy.ts`
-localizes them into the sentence, in Work names. Reads keep one minimal
-generic row; failures title with the failure verb and open onto the
-structured message. A mutation receipt's
-`inverse` (`workReceipt` in `@meridian/thread-client`) makes create/update/delete
-reversible, and that action lives on the turn edits receipt, not on this row:
-the reversal seam (`/api/threads/:id/context/reverse`) is turn-scoped and turn
-lineage owns Undo authority. This row stays a record.
-
-**The tool picks the parser.** A grep hit and a listing entry are both
-`{uri, …}`, so a payload cannot be asked what it is: guessing from the first
-recognizable entry discards every later row that disagrees. The caller knows
-the tool, so it calls that tool's normalizer; the parsed row's own discriminant
-then decides how it renders.
-
-## The three channels
-
-The timeline separates what the agent *did*, what it *meant*, and what
-*changed*. Expands are the middle one, and keeping them there is what stops the
-transcript from claiming things it cannot stand behind.
+## Three channels
 
 | Channel | Question | Surface | Source of truth |
 |---|---|---|---|
 | Process | What did the agent do? | Tool rows in the fold | Turn blocks |
-| Intent | What did it look at, or mean to write? | Row expands | Tool **input** and the typed read result |
+| Intent | What did it look at, or mean to write? | Row expands | Tool input and the typed read result |
 | Outcome | What changed in my manuscript? | Turn edits receipt | Change trail |
 
-**A write expand reads `tool.input.content`, never the output.** The output is
-the model's text (a status line and hashlines) and the typed `tool.result` is a
-receipt; only the input holds exactly what was sent. A copy (`copy`, or
-`insert`/`replace` with `from`) submits no content, so it has no expand.
-A write can succeed as a tool call and still be superseded downstream, so
-rendering its output as a change would assert something that never landed.
+A write expand reads `tool.input.content`, never the output: the output is the model's
+text, the typed result is a receipt, and a write can succeed as a tool call and still be
+superseded downstream. Rendering its output as a change would assert something that may
+not have landed.
 
-**Never the diff palette here.** Those tokens mean a real, persisted change,
-which is the receipt's claim. Intent and outcome are told apart by material
-(recessed quoted surface versus bordered receipt chrome), never by a label:
-the UI says neither "intent" nor "outcome".
+The diff palette doesn't appear here, because those tokens mean a real, persisted change.
+Intent and outcome are told apart by material, not a label.
 
-## What each expand shows
+## Contents
 
-| Command | Expand | Cut by | Doors inside |
-|---|---|---|---|
-| `read` | The passage that came back (the typed result's `document` blocks), as quoted prose | Height, with a fade | The document, at the fade |
-| `read` with `format: outline` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
-| `create` / `insert` / `replace` with `content` | The submitted content, on the recessed surface | Height, with a fade | The document, at the fade |
-| `copy`, or `insert` / `replace` with `from` | Nothing; the verb names the source ("Copied a.md to", "Copied from a.md into") | — | — |
-| `move` | Nothing; the verb names the source and the parameter where it went ("Moved ch4 to ch4-old"), folder or section kept only when it tells the destination apart | — | — |
-| `delete` | Nothing; the title has no door, since the old address may hold another document | — | — |
-| `remove` / `undo` / `redo` | Nothing | — | — |
-| `grep` | A result card: totals, then a section per document (passages in `content` mode; a count in `count`; the name alone in `files_with_matches`) | The document cap, with the server's total | Each matched passage |
-| `ls` | Listing rows: name plus glyph | The listing cap, with a count | Each document; folders are inert |
-| unknown | Nothing | — | — |
+A copy, `move`, `delete`, `remove`, `undo` and `redo` have no expand; the title carries
+the source. `delete`'s title has no door, since the old address may hold another document.
+`read` shows the passage that came back, `create`/`insert`/`replace` the submitted
+content, and `ls` a record of what the model received: the tree panel already browses, so
+folders carry no affordance.
 
-A **failed document tool** shows why it failed, in place of whatever the
-command would otherwise have opened onto. A refused `move` or `delete` is
-worded from its typed
-`refusal` (`namespace-refusal-copy.ts`) and names the move's source, not its
-destination. A failed `work` call opens onto its structured message. A failed
-`grep` or `ls` opens onto nothing at all. Whether every
-failure deserves an expand is an open design question; do not invent an answer
-in a renderer.
+A failed document tool shows why it failed in place of its usual expand. A refused `move`
+or `delete` is worded from its typed `refusal`. A failed `grep` or `ls` opens onto
+nothing. Whether every failure deserves an expand is an open design question.
 
-An outline is a **discrete list, not prose**: it takes the listing cap and
-states a count when cut. It gets no fade and no second door, because those
-belong to continuous prose, where the need to see the rest arrives only after
-reading. A clipped outline is already answered by the door in the row title.
+`read-payload.ts` reads the typed `meridian.agent-edit.v1` result and never parses the
+model's text, so a `|` in the writer's prose is left alone. Targeting is resolved
+server-side, so the rule is "show the top of what came back" for every read.
 
-`read-payload.ts` reads a `read` call's typed `meridian.agent-edit.v1`
-result (`ToolView.result`) and never parses the model's text. Its block items
-already separate `hash` from `body`, so bodies are taken verbatim and a `|` in
-the writer's prose is left alone. A row without that result renders no
-preview. Targeting is resolved server-side, so a scoped read's payload
-already *is* the region asked for: the preview rule is "show the top of what
-came back" for every read.
+An outline is a discrete list, not prose: it takes the listing cap and a count, with no
+fade or second door.
 
-A grep expand is **a card, not a run of rows.** The transcript is a column of
-the agent's actions; eight passages loose in it read as eight more actions. The
-result set gets one recessed contained surface, its border a step firmer than
-the rules inside it so the container always outranks its own divisions.
-Separation between documents is the point of the shape, and it is carried by a
-rule, never by spacing alone.
+## The grep card
 
-### What the card says
+Eight passages loose in the transcript would read as eight more actions, so the result
+set gets one contained surface, with a rule between documents.
 
-- **The header carries the totals and nothing else.** `12 results in 3
-  documents`, VS Code's grammar. It never repeats the query: the `Searched
-  ‹query›` row title sits directly above it, and saying it twice makes the card
-  read as a different question. When results and documents are equal every
-  document matched once, so the header drops to `3 documents` rather than
-  saying the same thing twice.
-- **The bound line keeps one job**: how many documents were *shown* of how many
-  matched (`4 of 42`). That is a different fact from the totals and it only
-  appears when the list was actually cut.
-- **The count badge is per document, right-aligned, and always present** —
-  including at one. The contract guarantees it: a hit without a positive count,
-  or without a passage to show, is refused at normalization rather than
-  rendered around. Downstream code takes the shape as given. It sits in a column, and a blank cell in a column is worse
-  than a `1`. It counts the whole document, not the passages fetched, so it
-  stays honest when the server's cap clipped the list. The words live in
-  screen-reader-only text; the badge itself is the bare number, because a
-  column reads by shape.
-
-### What the card does
-
-- **Each document shows its best passage, and grows in place.** `N more`
-  discloses the passages the server sent but the section kept folded. It grows
-  inline: no nested scrollport, because the transcript is the single scroll
-  owner. If the server's cap clipped more than it sent, the disclosure shows
-  what it has and the badge still names the total.
-- **The disclosure sits after the passage it extends**, not beside the document
-  name. In the header it would take focus before the passage the writer is
-  reading, and a focus order that disagrees with reading order is what keyboard
-  users cannot recover from. Reading, DOM, and focus order are the same order:
-  document name, its passage, `N more`, the rest.
-- **The matched term is the door's handle.** Underlining a whole excerpt turns
-  the writer's prose into a link and buries the word they searched for, so the
-  term carries the underline and the jade hover while the whole row stays the
-  click target. One button per passage, never a control inside a control: the
-  visible affordance is smaller than the target, which is the point.
-- **A passage with no anchor is not a door.** Non-manuscript schemes carry no
-  block hash, so those excerpts render as prose and the document's own name
-  stays the way in. The passage door also does not pre-check that its passage
-  survived; it degrades at the destination, through the resolution ladder in
-  `core/editor/passage-navigation.ts`, which lands on the block, or on a single
-  re-found occurrence, or says the passage changed. It never guesses among
-  duplicates.
-- **Every door retires the last one.** Ordinary doors included: a resolution
-  the writer has clicked past must not land a highlight or a notice behind
-  them, so ownership advances at the door boundary
+- The header carries the totals and doesn't repeat the query: the `Searched ‹query›` row
+  title sits directly above it. When results and documents are equal it drops to
+  `3 documents`.
+- The bound line (`4 of 42`) is documents shown of documents matched, and appears only
+  when the list was cut.
+- The count badge is per document and always present, because a blank cell in a column
+  reads worse than a `1`. It counts the whole document, so it stays honest when the
+  server's cap clipped the list. A hit without a positive count or a passage is refused
+  at normalization, so downstream code takes the shape as given.
+- `N more` sits after the passage it extends, so reading, DOM and focus order agree. It
+  grows inline, with no nested scrollport.
+- The matched term carries the door's underline and hover, and the whole row is the click
+  target: one button per passage, never a control inside a control.
+- A passage with no anchor isn't a door: non-manuscript schemes carry no block hash. The
+  door doesn't pre-check that its passage survived; `core/editor/passage-navigation.ts`
+  lands on the block or a single re-found occurrence, or says it changed. It never guesses
+  among duplicates.
+- Every door retires the last one, so a resolution the writer clicked past can't land
+  behind them. Ownership advances at the door boundary
   (`features/project/chat/usePassageDoors.ts`), not per passage row.
 
-Passages come from the payload's `matches` array, capped server-side; the
-client never invents one, and a closed row never parses one (see
-[activity-row-anatomy.md](activity-row-anatomy.md) for how the chevron stays
-honest without that parse). The hash travels in its own field and the excerpt
-arrives as prose, so no renderer parses the hashline format to show a sentence
-to a writer — that parsing lives once, on the server, where the format is
-already known.
+Hashes travel in their own field and excerpts arrive as prose, so no renderer parses the
+hashline format.
 
-An `ls` expand is **a record of what the model received, not a file browser.**
-The tree panel already browses, and nothing consumes a folder route, so folders
-carry no affordance.
+## Bounds
 
-## Bounds and the clipped-expand primitive
+`ClippedExpand.tsx` owns both ways an expand is cut.
 
-`ClippedExpand.tsx` owns both ways an expand is cut, and both ways it says so.
+- Continuous prose clamps by height and fades its bottom edge, with no count.
+- Discrete lists cap by item count and state the rest as a fact. Listings and outlines
+  cap at 8; search hits cap at 4, because each is three lines.
 
-- **Continuous prose** clamps by height and fades its bottom edge. No count:
-  a clipped passage never looks complete, and "first 240 words" is not a unit
-  writers think in.
-- **Discrete lists** cap by item count and state the rest as a fact — `4 of 42`,
-  never "Showing…", which is systems voice. Listings and outlines cap at 8, one
-  line each; search hits cap at 4, because each is three lines.
+A stream tail is bottom-pinned with a top fade, because for a running command the newest
+output wins. A preview is the opposite. Reusing a tail here shows the end of the chapter.
 
-**The anchor is the trap.** A stream tail is bottom-pinned with a *top* fade,
-because for a running command the newest output wins. A preview is the
-opposite: **top-anchored with a bottom fade**, because the opening of the
-passage wins. Reusing a tail here shows the end of the chapter.
+Clipped prose gets a second door at the fade, `Open ‹Document›`. "Show more" would promise
+more of a finite payload, and the document is a larger and different thing.
 
-**A second door sits at the fade** of clipped *prose*, labelled `Open
-‹Document›`. The row title carries the first door, at the top; this one sits
-where the writer has read to the bound. Never "Show more": more promises more
-of a payload that is finite, and the document is a larger and different thing.
-Prose that fits gets neither fade nor door, and a discrete list never gets
-either: its count already says what was left out.
+Every clamp is `overflow: hidden`, because the transcript is the single scroll owner.
 
-**No nested scrollports.** The transcript is the single scroll owner, so every
-clamp is `overflow: hidden`. What a writer cannot see in an expand they reach
-by opening the document.
-
-## Typography is the wall-of-text defence
-
-Length is not the risk; salience is. Rendered document prose at reading scale
-competes with the assistant's own voice for "this is the content". Previews
-render at the compact stop in muted ink through the `text-tier-quoted` wrapper,
-which demotes headings to bold body text and drops the editor's block margins,
-so a chapter title inside a preview cannot outrank the prose quoting it.
+Previews render through `text-tier-quoted`, which demotes headings and drops the editor's
+block margins, so a chapter title inside a preview can't outrank the assistant's own
+voice.
