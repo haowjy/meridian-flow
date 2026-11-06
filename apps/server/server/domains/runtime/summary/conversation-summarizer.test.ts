@@ -26,7 +26,8 @@ const threadModel: ModelInfo = {
   displayName: "Writer",
   contextWindow: 10000,
   maxOutputTokens: 1000,
-  promptCache: { kind: "explicit", ttlMs: 3600000 },
+  promptCache: { kind: "explicit", shortTtlSeconds: 60 * 60, longTtlSeconds: 60 * 60 },
+  reasoning: { efforts: ["low", "medium", "high", "max"] },
   capabilities: new Set(),
 };
 const cheapModel = {
@@ -102,6 +103,7 @@ function setup(
     instruction: "compaction",
     requestInHand: {
       model: threadModel.id,
+      promptCacheRetention: "short",
       messages: [{ role: "user", content: [{ type: "text", text: "Task" }] }],
     },
     projection: projection(["Facts"]),
@@ -132,24 +134,19 @@ describe("conversation summarizer", () => {
     const rig = setup({ warm: true });
     rig.input.requestInHand = {
       model: threadModel.id,
+      promptCacheRetention: "short",
       messages: [
-        { role: "system", content: [{ type: "text", text: "Frozen", cacheBreakpoint: true }] },
-        { role: "user", content: [{ type: "text", text: "Task", cacheBreakpoint: true }] },
+        { role: "system", content: [{ type: "text", text: "Frozen" }] },
+        { role: "user", content: [{ type: "text", text: "Task" }] },
       ],
       tools: [{ type: "function", name: "read", description: "Read", inputSchema: {} }],
-      toolChoice: "required",
       reasoning: "disabled",
       promptCacheKey: "owner",
-      maxTokens: 500,
-      providerOptions: { anthropic: { thinking: { type: "disabled" } } },
     };
-    rig.input.retainedMessages = [
-      { role: "user", content: [{ type: "text", text: "Task", cacheBreakpoint: true }] },
-    ];
+    rig.input.retainedMessages = [{ role: "user", content: [{ type: "text", text: "Task" }] }];
     const before = JSON.stringify(rig.input.requestInHand);
     const result = await rig.service.summarize(rig.input);
     const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
-    expect(sent.maxTokens).toBe(500);
     expect(sent.messages.at(-1)?.content).toMatchObject([
       { type: "text", text: expect.stringContaining('user: "Task"') },
     ]);
@@ -162,9 +159,7 @@ describe("conversation summarizer", () => {
       "immediately before this system update",
     );
 
-    expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
-      before,
-    );
+    expect(JSON.stringify({ ...sent, messages: sent.messages.slice(0, -1) })).toBe(before);
     expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
     expect(sent.messages.at(-1)?.content).toMatchObject([
       { type: "text", text: expect.stringContaining("Style directions") },
@@ -184,9 +179,9 @@ describe("conversation summarizer", () => {
   });
 
   it("compacts a Sonnet 4.6 assistant turn with four 100 KB document results on a 128k summarizer", async () => {
-    const sonnet = { ...threadModel, id: "claude-sonnet-4-6", contextWindow: 1_000_000 };
+    const sonnet = { ...threadModel, id: "claude-sonnet-5-5", contextWindow: 1_000_000 };
     const rig = setup({ models: [sonnet, { ...cheapModel, contextWindow: 128_000 }] });
-    rig.input.requestInHand = { model: sonnet.id, messages: [] };
+    rig.input.requestInHand = { model: sonnet.id, messages: [], promptCacheRetention: "short" };
     rig.input.projection = projection(["Check continuity", ""]);
     rig.input.projection.turns[1].role = "assistant";
     rig.input.projection.blocks = [

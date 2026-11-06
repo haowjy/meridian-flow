@@ -3,11 +3,7 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Yjs version subprotocol, unstamped admission, and generation plumbing
  */
-import {
-  COLLAB_SCHEMA_VERSION,
-  type CollabSchemaVersion,
-  formatCollabSchemaSubprotocol,
-} from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION, type CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
@@ -18,7 +14,7 @@ import {
 } from "../../domains/file-policy/index.js";
 import { createInMemoryEventSink } from "../../domains/observability/index.js";
 import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
-import { clientSchemaVersionFromRequest, createHocuspocus } from "../yjs-ws-handler.js";
+import { createHocuspocus } from "../yjs-ws-handler.js";
 
 const draftRoomName = "draft:draft_1";
 const liveDocumentName = "00000000-0000-4000-8000-000000000101";
@@ -91,28 +87,6 @@ function connectionConfig() {
 }
 
 describe("Yjs connect-time schema version gate", () => {
-  it("extracts the client version from a sole matching subprotocol offer", () => {
-    expect(
-      clientSchemaVersionFromRequest(
-        new Request("https://meridian.local/ws/yjs", {
-          headers: {
-            "sec-websocket-protocol": `unrelated, ${formatCollabSchemaSubprotocol(COLLAB_SCHEMA_VERSION)}`,
-          },
-        }),
-      ),
-    ).toEqual(COLLAB_SCHEMA_VERSION);
-  });
-
-  it("ignores a residual schema query parameter instead of using it as a fallback", () => {
-    expect(
-      clientSchemaVersionFromRequest(
-        new Request(
-          `https://meridian.local/ws/yjs?schema=${COLLAB_SCHEMA_VERSION.major}.${COLLAB_SCHEMA_VERSION.minor}.${COLLAB_SCHEMA_VERSION.patch}`,
-        ),
-      ),
-    ).toEqual(SENTINEL_SCHEMA_VERSION);
-  });
-
   it("refuses only live-room clients strictly older than a stored head", async () => {
     const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
     const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());

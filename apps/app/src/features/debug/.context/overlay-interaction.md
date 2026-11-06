@@ -1,28 +1,14 @@
 # Debug overlay interaction
 
-This page defines activation and inline inspection. Keep the first render
-disabled for SSR parity and bind lazy responses to the selected target.
+The first render stays disabled for SSR parity: resolve the query parameter and stored
+preference after mount, not in the `useState` initializer. `?debug=1` is the reliable
+escape hatch when the keyboard toggle isn't available.
 
-## Activation
+Virtualized off-screen turns need the virtual list's index API, not DOM anchors.
 
-`use-debug-enabled.ts` gates the surface by build flag, then `?debug=1`
-persists the preference in `localStorage`. Command-Control-D on macOS or
-Control-Shift-D elsewhere toggles it; the query parameter remains the reliable
-escape hatch. Resolve query and stored preference after mount, not in the
-`useState` initializer.
-
-## Inline inspection
-
-`InlineInspector` installs one capture-phase click listener while enabled.
-Alt+click resolves the nearest `[data-block-id]`, then
-`[data-turn-id]`, then `[data-debug-composer]`, and prevents the app click.
-Store records are read from the thread store; absent records still show DOM IDs.
-Virtualized off-screen turns require the virtual list's index API, not DOM anchors.
-
-Composer inspection lazily fetches an owner-gated next-turn preview without
-persisting or freezing an unbaked prompt. Turn/block inspection lazily fetches
-the selected model request and uses shared Markdown, Raw, and Debug views.
-Generation counters fence rapid reselection; 404 means capture unavailable.
+Composer inspection fetches a next-turn preview without persisting or freezing an
+unbaked prompt. Generation counters fence rapid reselection, and a 404 means capture is
+unavailable.
 
 The active thread is the thread-store streaming ID, then the chat in the project
-address, then null. Do not derive it from the Query cache.
+address, then null. Don't derive it from the Query cache.

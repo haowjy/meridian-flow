@@ -76,7 +76,7 @@ function inferDefaultModel(gateway: Gateway): string | undefined {
 }
 
 function providerIdsFromGateway(gateway: Gateway): string[] {
-  const models = gateway.listModels?.() ?? [];
+  const models = gateway.listModels();
   return [...new Set(models.map((m) => m.provider))];
 }
 
@@ -204,7 +204,7 @@ export async function startSmokeServer(options?: { port?: number }): Promise<Smo
     FLOW_ANTHROPIC_API_KEY: process.env.FLOW_ANTHROPIC_API_KEY,
     FLOW_OPENAI_API_KEY: process.env.FLOW_OPENAI_API_KEY,
     FLOW_DEEPSEEK_API_KEY: process.env.FLOW_DEEPSEEK_API_KEY,
-    FLOW_OPENROUTER_API_KEY: process.env.FLOW_OPENROUTER_API_KEY,
+    FLOW_GEMINI_API_KEY: process.env.FLOW_GEMINI_API_KEY,
   });
 
   const providerIds = providerIdsFromGateway(gateway);

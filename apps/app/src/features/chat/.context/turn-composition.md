@@ -67,8 +67,23 @@ While an ask blocks delivery, it keeps `awaiting_run` messages queued even when
 this device is sending an answer.
 
 An open ask takes over the composer (`ask/useAskTakeover.tsx`): the editor stays
-mounted and hidden, and text left in the own-answer field when the ask closes is
-appended to the draft. The asking turn draws its receipt after its items and
+mounted and hidden, and text left in an own-answer field when the ask closes is
+appended to the draft. The hook, not the takeover, holds the writer's draft of the
+answers (the step, and each question's choice and typed words), because the
+takeover unmounts while an answer sends and must reopen with every answer after a
+failed send. Every answer, a single question's included, passes through that draft
+before it sends. The hook keeps the draft in the tab's session storage, one per chat, so typed
+words survive leaving the chat; an ask that ended meanwhile closes, and adds the words, when the
+chat opens again. Page activity and each draft change report `ask.presence`, so the server's idle deadline follows
+the writer. The draft carries an `owed` flag, set when a choice changes (not on Back or Next) and
+cleared when the server echoes those choices in `draftAnswers`; a report carries the answers only
+while it is set, at most every 5 s, and a clock-only report at most every 30 s. Because the
+flag lives with the draft in session storage, a dropped frame, a failed send, leaving the chat or a
+reload re-sends on the next connect, mount or activity; pagehide and unmount send what waits. The server keeps those
+answers and sends them back as `ThreadAsk.draftAnswers`. A takeover the writer hasn't touched (a
+reload, another tab) follows them as they change, until the writer's first change makes the
+draft theirs. With two tabs on one ask the last report to reach the server wins, so a delayed re-send can replace a newer answer from another device. A send refused as
+`invalid_answer` moves the draft to the question the refusal names. The asking turn draws its receipt after its items and
 before its deliveries (`ask/AskReceipt.tsx`): a delivery placed under the asking
 turn arrived after the question. The `ask_user` tool row itself is hidden. Ask
 state and the answer command are `@meridian/thread-client`'s (`asks/`).
@@ -95,7 +110,7 @@ Unknown tools show a humanized name only, never arguments or paths. Inline
 expansions show curated result rows, stream tails, or plain output, never raw
 JSON (that goes behind a dev-only setting).
 
-## Invariants
+## Contracts
 
 - Thinking is collapsed by default in live and settled turns. Never branch
   partitioning on `isLive`, partial shape, or stream buffers.

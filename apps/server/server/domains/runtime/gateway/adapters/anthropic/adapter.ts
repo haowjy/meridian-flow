@@ -2,42 +2,19 @@
  * Anthropic provider adapter: implements the provider-adapter port by streaming
  * the Anthropic Messages SDK and translating to/from canonical gateway types.
  * Owns the Anthropic-specific wiring; the only place the @anthropic-ai SDK is
- * driven for streaming. Depends on request-map/stream-collect/errors siblings.
- *
- * Streaming lifecycle:
- * 1. Create accumulator → yield `start` event
- * 2. Map canonical request to Message params (request-map)
- * 3. Call `client.messages.create()` with `stream: true`
- * 4. For each SSE event, yield canonical StreamEvents (stream-collect)
- * 5. Build final GenerateResult from accumulator → yield `end` event
- * 6. On error, map to canonical error event (errors module)
+ * driven for streaming. The shared stream envelope is `../provider-stream.ts`.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { modelAttemptTimeoutEvent } from "../../deadline.js";
-import type {
-  GenerateRequest,
-  ModelInfo,
-  ProviderConfig,
-  StreamEvent,
-} from "../../domain/index.js";
+import type { ProviderConfig } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import {
-  mapProviderHttpError,
-  type ProviderErrorPatterns,
-  providerFetch,
-} from "../provider-http-error.js";
+import { type ProviderErrorPatterns, providerClientOptions } from "../provider-http-error.js";
+import { streamProvider } from "../provider-stream.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 import {
-  accumulatorHasPartialResult,
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromAnthropicStreamEvent,
 } from "./stream-collect.js";
-
-function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
-  if (!auth?.apiKey) return undefined;
-  return typeof auth.apiKey === "function" ? auth.apiKey() : auth.apiKey;
-}
 
 /**
  * Anthropic also reports a filtered request as "blocked". The word must be "blocked",
@@ -48,69 +25,23 @@ export const ANTHROPIC_ERROR_PATTERNS: Partial<ProviderErrorPatterns> = {
 };
 
 export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter {
-  const apiKey = resolveApiKey(config.auth);
-  const client = new Anthropic({
-    apiKey: apiKey ?? "not-needed",
-    ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
-    defaultHeaders: config.auth?.headers,
-    // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
-    maxRetries: 0,
-    fetch: providerFetch,
-  });
-
+  const client = new Anthropic(providerClientOptions(config));
   const providerId = config.id;
 
   return {
-    providerId,
-    async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
-      // Create a fresh accumulator per stream call — each generate request
-      // gets its own streaming state.
-      const acc = createStreamAccumulator(model.id, providerId);
-      yield { type: "start", model: model.id, provider: providerId };
-
-      try {
-        const params = toAnthropicMessageParams(
-          request,
-          model.id,
-          model.maxOutputTokens,
-          providerId,
-          model.promptCache.ttlMs,
-        );
-        const stream = await client.messages.create(params, { signal: request.signal });
-
-        for await (const event of stream) {
-          for (const mapped of eventsFromAnthropicStreamEvent(event, acc)) {
-            yield mapped;
-            if (mapped.type === "error") return;
-          }
-        }
-
-        const result = buildGenerateResult(acc);
-        yield { type: "end", result };
-      } catch (err) {
-        // Check for abort before mapping to provider errors — aborted requests
-        // may produce a timeout event (from deadline.ts) or a generic abort error.
-        if (request.signal?.aborted) {
-          const timeout = modelAttemptTimeoutEvent(request.signal);
-          if (timeout) {
-            yield timeout;
-            return;
-          }
-          if (accumulatorHasPartialResult(acc)) {
-            yield { type: "end", result: buildGenerateResult(acc) };
-            return;
-          }
-          yield {
-            type: "error",
-            code: "invalid_request",
-            message: "Request aborted",
-            retryable: false,
-          };
-          return;
-        }
-        const mapped = mapProviderHttpError(err, ANTHROPIC_ERROR_PATTERNS);
-        yield { type: "error", ...mapped };
-      }
+    stream(request, model, call) {
+      const acc = createStreamAccumulator(model.id, providerId, call.longCacheWrites);
+      return streamProvider({
+        start: { type: "start", model: model.id, provider: providerId },
+        signal: request.signal,
+        errorPatterns: ANTHROPIC_ERROR_PATTERNS,
+        open: () =>
+          client.messages.create(toAnthropicMessageParams(request, model, call), {
+            signal: request.signal,
+          }),
+        events: (event) => eventsFromAnthropicStreamEvent(event, acc),
+        result: () => buildGenerateResult(acc),
+      });
     },
   };
 }

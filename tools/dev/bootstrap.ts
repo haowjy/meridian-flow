@@ -7,7 +7,7 @@ import { ensureDevInfraUp } from "./lib/dev-infra.ts";
 const repoRoot = resolve(import.meta.dirname, "../..");
 applyDevEnvToProcess(repoRoot);
 
-const NEXT_STEP = "Next: log in via dev-login; identity is provisioned on first sign-in";
+const NEXT_STEP = "Next: open the app; the dev user is provisioned on first sign-in";
 
 async function ensureDevDatabaseReady(): Promise<void> {
   for (const db of DEV_DATABASES) {

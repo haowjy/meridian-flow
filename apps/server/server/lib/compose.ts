@@ -694,7 +694,7 @@ export async function createProductionAppPorts(input: {
   const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-flash";
   if (
     !MODEL_REGISTRY.providers.some((provider) =>
-      provider.models.some((model) => model.id === summarizerModel),
+      provider.offerings.some((offering) => offering.model.id === summarizerModel),
     )
   ) {
     throw new Error(`Unknown compaction summarizer model: ${summarizerModel}`);
@@ -933,7 +933,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async tokenizer(caller) {
       const binding = await ports.agentRevisions.readThreadBinding(caller.id);
       const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
-      const model = ports.gateway.listModels?.().find((model) => model.id === modelId);
+      const model = ports.gateway.listModels().find((model) => model.id === modelId);
       if (!model)
         return {
           ok: false,
@@ -1218,7 +1218,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     threadEventHub,
     threadRuntime: createThreadRuntimeService({
-      db: ports.db,
       statusReader: ports.statusReader,
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
@@ -1495,9 +1494,10 @@ export function createInMemoryAppServices(): AppServices {
           finishReason: "end_turn" as const,
           usage: { inputTokens: 0, outputTokens: 0 },
           model: request.model ?? "in-memory",
-          provider: request.provider ?? "in-memory",
+          provider: "in-memory",
         };
       },
+      listModels: () => [],
       getDefaultModel() {
         return undefined;
       },
@@ -1515,18 +1515,6 @@ export function createInMemoryAppServices(): AppServices {
       },
       async readModelProjectionWatermark() {
         return 0n;
-      },
-      async listByThread() {
-        return [];
-      },
-      async listByType() {
-        return [];
-      },
-      async listSince() {
-        return [];
-      },
-      async listByTimeRange() {
-        return [];
       },
     },
     journalWriter: {
@@ -1558,9 +1546,6 @@ export function createInMemoryAppServices(): AppServices {
       },
       async readRunState() {
         throw new Error("in-memory thread runtime has no run state");
-      },
-      async journalEvents() {
-        return [];
       },
     },
     documentSync,
@@ -1804,7 +1789,7 @@ export function createInMemoryAppServices(): AppServices {
       store: agentRevisions,
       defaultModel: () => "mock-model",
       unavailableReasons: (definition, model) =>
-        agentExecutionUnavailableReasons(definition, {}, model),
+        agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
     }),
     eventSink: createNoopEventSink(),
     accountSettings,

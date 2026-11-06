@@ -134,7 +134,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(firstDispatcher.drain()).rejects.toThrow("injected crash before journal append");
       expect(crashingWriter.appendEvent).toHaveBeenCalledOnce();
-      await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBeNull();
+      await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBe(true);
       await expect(journalEvents(UPDATED_EVENT_ID)).resolves.toEqual([]);
 
       const invalidateCommittedJournal = vi.fn();
@@ -145,7 +145,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(retryDispatcher.drain()).resolves.toBe(1);
 
-      await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBeInstanceOf(Date);
+      await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBe(false);
       const events = await journalEvents(UPDATED_EVENT_ID);
       expect(events).toHaveLength(1);
       expect(events[0]?.payload).toMatchObject({ eventId: UPDATED_EVENT_ID, version: 1 });
@@ -168,7 +168,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(dispatcher.drain()).rejects.toThrow(
         "injected crash before process-local publish",
       );
-      await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBeInstanceOf(Date);
+      await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBe(false);
       await expect(journalEvents(UPDATED_EVENT_ID)).resolves.toHaveLength(1);
 
       const reconnectHub = createThreadEventHub({
@@ -314,12 +314,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     }
 
-    async function outboxDelivery(eventId: string): Promise<Date | null> {
+    async function outboxDelivery(eventId: string): Promise<boolean> {
       const [row] = await db
-        .select({ deliveredAt: schema.changeTrailDeliveryOutbox.deliveredAt })
+        .select({ eventId: schema.changeTrailDeliveryOutbox.eventId })
         .from(schema.changeTrailDeliveryOutbox)
         .where(eq(schema.changeTrailDeliveryOutbox.eventId, eventId));
-      return row?.deliveredAt ?? null;
+      return row !== undefined;
     }
 
     async function journalEvents(eventId: string) {

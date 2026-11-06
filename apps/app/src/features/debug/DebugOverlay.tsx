@@ -4,10 +4,9 @@
  * Renders `null` unless `useDebugEnabled()` reports the overlay is on. When
  * enabled, renders a small floating PILL (bottom-right) that expands to a
  * compact panel and opens the trace viewer in a separate window. The pill stays
- * deliberately thin: only state with no better home lives here. Query-cache
- * inspection is delegated to TanStack Query Devtools and store inspection to
- * Redux DevTools (via the `devtools` middleware), so we don't reinvent mature
- * tools. Per-turn/block inspection moves inline onto the real transcript via
+ * deliberately thin: only state with no better home lives here. Store inspection
+ * is delegated to Redux DevTools (via the `devtools` middleware), so we don't
+ * reinvent a mature tool. Per-turn/block inspection moves inline onto the real transcript via
  * `data-turn-id` anchors (see dom-anchors-contract).
  *
  * Key decisions:
@@ -253,8 +252,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
                 </p>
               ) : null}
               <p className="text-meta text-muted-foreground">
-                Alt+click any turn/block to inspect its record. Query cache → TanStack Query
-                Devtools (button, bottom-right). Stores → Redux DevTools.
+                Alt+click any turn/block to inspect its record. Stores → Redux DevTools.
               </p>
             </div>
           </section>

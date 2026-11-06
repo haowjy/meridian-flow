@@ -15,42 +15,59 @@
  * - Consecutive same-role messages are merged to satisfy Anthropic's
  *   alternating user/assistant requirement. Thinking blocks within assistant
  *   content are ordered first (Anthropic requires thinking before tool_use/text).
- * - Last-step repair: thinking-mode requests (and DeepSeek, which is always in
- *   thinking mode) prepend empty `{ type: "thinking", thinking: "" }` when an
+ * - Last-step repair: models that think by default (`reasoning.thinksByDefault`) and
+ *   are not switched off prepend empty `{ type: "thinking", thinking: "" }` when an
  *   assistant message has tool_use and no thinking block. Missing tool_result
  *   is repaired earlier in context-builder `completeToolResultGroups`.
- * - Thinking budget is computed as a percentage of max_tokens, scaled by the
- *   effort level (low=25%, medium=50%, high=75%, max=100%).
- * - Prompt caching: a canonical `ContentPart.cacheBreakpoint` (set by
- *   `loop/prompt-cache-marks.ts`, at most three per request) becomes an
- *   explicit `cache_control` on that part. Its TTL comes from the registry
- *   descriptor; a 1h write costs 2x input tokens (vs 1.25x for 5m) — see the
- *   registry's `cacheWriteUsdPerMillionTokens` pinned rates. Tools are
- *   never marked directly: Anthropic renders tools before system before
- *   messages, so the system-message breakpoint already covers them.
+ * - Reasoning: a resolved effort goes out as `output_config.effort`; `off` (only
+ *   resolved for models with a toggle, such as DeepSeek) goes out as
+ *   `thinking: {type: "disabled"}`; `default` sends nothing. Opus 5.5, Sonnet 5.5
+ *   and Fable 5.1 think adaptively, and `thinking: disabled` or `budget_tokens`
+ *   is a 400 on them, which is why they never resolve to `off`.
+ * - Prompt caching: when the call resolves to an explicit `cache_control`
+ *   (`markCachePrefix`), the mapper marks the last system block and the last
+ *   block of the two most recent wire `user` messages — three breakpoints, under
+ *   Anthropic's limit of 4. Tools are never marked: Anthropic renders tools before
+ *   system before messages, so the system breakpoint covers them. The newest user
+ *   mark writes this request's cache entry; the older one is the read point, where
+ *   the previous request wrote its own tail, so the prefix is served from cache
+ *   (Anthropic's "moving breakpoint" guidance). Anthropic folds tool results into
+ *   user turns, so a long assistant/tool loop still leaves the previous tail as
+ *   the second-latest user message; its ~20-block lookback tolerates a steer
+ *   landing beside a tool result. Marks go on wire user messages, whose last block
+ *   always accepts `cache_control`. Marks move as the tail
+ *   advances; providers hash content, not the marker, so that never invalidates
+ *   a cached prefix. A 1h write costs 2x input tokens (5m: 1.25x) — see the
+ *   registry's `cacheWriteUsdPerMillionTokens` pinned rates.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
   ContentPart,
-  FunctionTool,
   GenerateRequest,
   Message,
+  ModelInfo,
+  ResolvedCall,
   Tool,
 } from "../../domain/index.js";
-import { thinkingBudgetTokens } from "../../domain/thinking-budget.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 import { anthropicToolSchema } from "./tool-schema.js";
 
 type CacheControl = Anthropic.Messages.CacheControlEphemeral;
 
-function cacheControlForTtl(ttlMs: number | null | undefined): CacheControl | undefined {
-  switch (ttlMs) {
-    case 5 * 60 * 1_000:
-      return { type: "ephemeral", ttl: "5m" };
-    case 60 * 60 * 1_000:
-      return { type: "ephemeral", ttl: "1h" };
-    default:
-      return undefined;
+/** The `cache_control` each supported lifetime, in seconds, is sent as. */
+const CACHE_CONTROL_BY_TTL = new Map<number, CacheControl>([
+  [5 * 60, { type: "ephemeral", ttl: "5m" }],
+  [60 * 60, { type: "ephemeral", ttl: "1h" }],
+]);
+
+/** Reject, at gateway creation, a model whose explicit cache lifetimes this API cannot be sent. */
+export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
+  const { kind, shortTtlSeconds, longTtlSeconds } = model.promptCache;
+  if (kind !== "explicit") return;
+  for (const ttl of [shortTtlSeconds, longTtlSeconds]) {
+    if (ttl === null || !CACHE_CONTROL_BY_TTL.has(ttl)) {
+      throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
+    }
   }
 }
 
@@ -84,18 +101,13 @@ function mapContentPartToAnthropicBlock(
   part: ContentPart,
   targetProviderId: string,
   targetModelId: string,
-  cacheControl: CacheControl | undefined,
 ): AnthropicContentBlock | null {
-  if (part.cacheBreakpoint && !cacheControl) {
-    throw new Error("Prompt cache breakpoint requires a supported registry TTL");
-  }
   switch (part.type) {
     case "text":
       if (part.text.length === 0) return null;
       return {
         type: "text" as const,
         text: part.text,
-        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "image": {
       const data = part.data instanceof URL ? part.data.href : part.data;
@@ -120,7 +132,6 @@ function mapContentPartToAnthropicBlock(
         id: part.toolCallId,
         name: part.toolName,
         input: part.input,
-        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "tool_result":
       return {
@@ -128,7 +139,6 @@ function mapContentPartToAnthropicBlock(
         tool_use_id: part.toolCallId,
         content: safeToolOutput(part.output),
         is_error: part.isError ?? false,
-        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "reasoning": {
       if (!matchesReasoningOrigin(part, targetProviderId, targetModelId)) return null;
@@ -171,9 +181,9 @@ function textFromParts(parts: ContentPart[]): string {
 //
 // Canonical Message → Anthropic MessageParam.
 // System messages are extracted separately. Tool messages become user messages
-// with tool_result blocks. Simple text-only messages use the string shorthand
-// unless cache_control is present. Consecutive same-role messages are merged
-// to satisfy Anthropic's alternating-role constraint.
+// with tool_result blocks. Simple text-only messages use the string shorthand.
+// Consecutive same-role messages are merged to satisfy Anthropic's
+// alternating-role constraint.
 //
 
 /**
@@ -191,7 +201,6 @@ function mapMessage(
   message: Message,
   targetProviderId: string,
   targetModelId: string,
-  cacheControl: CacheControl | undefined,
 ): Anthropic.Messages.MessageParam | null {
   // system messages are extracted separately
   if (message.role === "system") return null;
@@ -202,7 +211,7 @@ function mapMessage(
   if (message.role === "tool") {
     const blocks = message.content
       .filter((p) => p.type === "tool_result")
-      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId, cacheControl))
+      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId))
       .filter((p): p is AnthropicContentBlock => p !== null);
     return blocks.length > 0 ? { role: "user", content: blocks as any } : null;
   }
@@ -212,16 +221,11 @@ function mapMessage(
   if (hasOnlyText && message.content.length > 0) {
     const text = textFromParts(message.content);
     if (text.length === 0) return null;
-    const hasCacheBreakpoint = message.content.some((p) => p.cacheBreakpoint);
-    if (!hasCacheBreakpoint) {
-      return { role, content: text };
-    }
+    return { role, content: text };
   }
 
   const blocks = message.content
-    .map((part) =>
-      mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId, cacheControl),
-    )
+    .map((part) => mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId))
     .filter((p): p is AnthropicContentBlock => p !== null);
   return blocks.length > 0 ? { role, content: orderedAnthropicBlocks(blocks) as any } : null;
 }
@@ -288,146 +292,122 @@ function mergeConsecutiveSameRole(
 
 // ── System prompt extraction ──────────────────────────────────────
 //
-// Extract system messages from the canonical request.
-// Without cache_control, system prompts are joined into a single string.
-// With cache_control on any system text part, system is emitted as an array
-// of text blocks with individual cache_control markers.
+// System messages are joined into the top-level `system` string; cache marking
+// turns it into a single marked text block (see `markCachePrefix`).
 //
 
-function extractSystem(
-  messages: Message[],
-  cacheControl: CacheControl | undefined,
-): string | Anthropic.Messages.TextBlockParam[] | undefined {
-  const systemMessages = messages.filter((m) => m.role === "system");
-  if (systemMessages.length === 0) return undefined;
+function extractSystem(messages: Message[]): string | undefined {
+  const system = textFromParts(
+    messages.filter((m) => m.role === "system").flatMap((m) => m.content),
+  );
+  return system.length > 0 ? system : undefined;
+}
 
-  const systemParts = systemMessages.flatMap((m) => m.content);
-  const hasCacheBreakpoint = systemParts.some((p) => p.cacheBreakpoint);
+// ── Cache marking ─────────────────────────────────────────────────
 
-  if (!hasCacheBreakpoint) {
-    const system = textFromParts(systemParts);
-    return system.length > 0 ? system : undefined;
+/** Put `cacheControl` on the last block. Wire user messages are never empty and hold no thinking or empty-text block (both are dropped when mapped), so the last block can always carry it. */
+function markLastBlock(
+  content: Anthropic.Messages.MessageParam["content"],
+  cacheControl: CacheControl,
+): Anthropic.Messages.ContentBlockParam[] {
+  const blocks = messageContentBlocks(content);
+  const last = blocks.length - 1;
+  blocks[last] = { ...blocks[last], cache_control: cacheControl } as any;
+  return blocks;
+}
+
+/** Mark the system prompt and the two most recent wire user messages. */
+function markCachePrefix(
+  system: string | undefined,
+  messages: Anthropic.Messages.MessageParam[],
+  cacheControl: CacheControl,
+): {
+  system: string | Anthropic.Messages.TextBlockParam[] | undefined;
+  messages: Anthropic.Messages.MessageParam[];
+} {
+  const marked = [...messages];
+  let remaining = 2;
+  for (let index = marked.length - 1; index >= 0 && remaining > 0; index--) {
+    if (marked[index].role !== "user") continue;
+    remaining--;
+    marked[index] = {
+      ...marked[index],
+      content: markLastBlock(marked[index].content, cacheControl),
+    };
   }
-  if (!cacheControl) throw new Error("Prompt cache breakpoint requires a supported registry TTL");
-
-  const systemBlocks = systemParts
-    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
-    .filter((p) => p.text.length > 0)
-    .map((p) => ({
-      type: "text" as const,
-      text: p.text,
-      ...(p.cacheBreakpoint ? { cache_control: cacheControl } : {}),
-    }));
-
-  return systemBlocks.length > 0 ? systemBlocks : undefined;
+  return {
+    system: system && [{ type: "text", text: system, cache_control: cacheControl }],
+    messages: marked,
+  };
 }
 
 // ── Tool mapping ──────────────────────────────────────────────────
 //
 // Canonical Tool[] → Anthropic ToolUnion[]. Function tools map to Anthropic
-// tools with input_schema; hosted tools map to web_search_20250305 or
-// code_execution_20250522. Tools are never cache-marked directly: Anthropic
+// tools with input_schema. Tools are never cache-marked directly: Anthropic
 // renders tools before system before messages, so the system message's own
 // breakpoint already covers them (see the file header).
 //
 
 function mapTools(
   tools: Tool[] | undefined,
-  providerId: string,
+  projectSchema: boolean,
 ): Anthropic.Messages.ToolUnion[] | undefined {
   if (!tools?.length) return undefined;
 
-  const mapped: Anthropic.Messages.ToolUnion[] = [];
-  for (const tool of tools) {
-    if (tool.type === "function") {
-      const ft = tool as FunctionTool;
-      mapped.push({
-        name: ft.name,
-        description: ft.description,
-        input_schema: (providerId === "anthropic"
-          ? anthropicToolSchema(ft.inputSchema)
-          : ft.inputSchema) as Anthropic.Messages.Tool.InputSchema,
-      });
-    } else if (tool.type === "hosted") {
-      if (tool.kind === "web_search" || tool.kind.startsWith("anthropic.web_search")) {
-        mapped.push({ type: "web_search_20250305" as any, name: "web_search" } as any);
-      }
-      if (tool.kind === "code_execution" || tool.kind.startsWith("anthropic.code_execution")) {
-        mapped.push({ type: "code_execution_20250522" as any, name: "code_execution" } as any);
-      }
-      // Other hosted tools: pass through providerOptions
-    }
-  }
-  return mapped.length > 0 ? mapped : undefined;
-}
-
-// ── Tool choice mapping ───────────────────────────────────────────
-//
-// Canonical toolChoice → Anthropic tool_choice.
-// `auto` → { type: "auto" }, `required` → { type: "any" } (Anthropic's
-// equivalent), `none` → omit tools entirely (Anthropic has no explicit
-// "none" tool_choice).
-//
-
-function mapToolChoice(
-  toolChoice: GenerateRequest["toolChoice"],
-): Anthropic.Messages.ToolChoice | undefined {
-  if (!toolChoice) return undefined;
-  if (toolChoice === "auto") return { type: "auto" };
-  if (toolChoice === "required") return { type: "any" };
-  if (toolChoice === "none") return undefined; // Anthropic: omit tools instead
-  if (typeof toolChoice === "object" && "tool" in toolChoice) {
-    return { type: "tool", name: toolChoice.tool };
-  }
-  return undefined;
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: (projectSchema
+      ? anthropicToolSchema(tool.inputSchema)
+      : tool.inputSchema) as Anthropic.Messages.Tool.InputSchema,
+  }));
 }
 
 // ── Public: build Anthropic params ────────────────────────────────
 //
 // Assembles the full MessageCreateParamsStreaming from a canonical
-// GenerateRequest. Always sets stream:true. Passes through any extra
-// providerOptions.anthropic keys verbatim; prompt-cache marks are canonical
-// `ContentPart.cacheBreakpoint`, not a providerOptions key, so nothing needs
-// excluding here.
+// GenerateRequest. Always sets stream:true.
 //
 
 export function toAnthropicMessageParams(
   request: GenerateRequest,
-  modelId: string,
-  maxOutputTokens: number,
-  providerId = "anthropic",
-  promptCacheTtlMs?: number | null,
+  model: Pick<
+    ModelInfo,
+    "id" | "provider" | "maxOutputTokens" | "reasoning" | "promptCache" | "projectToolSchema"
+  >,
+  call: ResolvedCall,
 ): Anthropic.Messages.MessageCreateParamsStreaming {
-  const cacheControl = cacheControlForTtl(promptCacheTtlMs);
-  const maxTokens = request.maxTokens ?? maxOutputTokens;
-  const system = extractSystem(request.messages, cacheControl);
-  const tools = mapTools(request.tools, providerId);
+  // Only an explicit-cache model gets cache_control: DeepSeek, on this adapter, caches on its own.
+  const cacheControl =
+    model.promptCache.kind === "explicit" && call.cacheTtlSeconds !== null
+      ? CACHE_CONTROL_BY_TTL.get(call.cacheTtlSeconds)
+      : undefined;
+  const tools = mapTools(request.tools, model.projectToolSchema === true);
   const messages = mergeConsecutiveSameRole(
     request.messages
-      .map((message) => mapMessage(message, providerId, modelId, cacheControl))
+      .map((message) => mapMessage(message, model.provider, model.id))
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 
-  // Effort is model-relative: capping output must not change the cached thinking prefix.
-  const budget = thinkingBudgetTokens(request, maxOutputTokens);
-  const thinking = budget ? { type: "enabled" as const, budget_tokens: budget } : undefined;
+  const { reasoning } = call;
   const repaired =
-    thinking || providerId === "deepseek" ? ensureThinkingBeforeToolUse(messages) : messages;
+    model.reasoning.thinksByDefault && reasoning !== "off"
+      ? ensureThinkingBeforeToolUse(messages)
+      : messages;
+  const plainSystem = extractSystem(request.messages);
+  const { system, messages: wireMessages } = cacheControl
+    ? markCachePrefix(plainSystem, repaired, cacheControl)
+    : { system: plainSystem, messages: repaired };
 
   return {
-    model: modelId,
-    max_tokens: maxTokens,
-    messages: repaired,
+    model: model.id,
+    max_tokens: model.maxOutputTokens,
+    messages: wireMessages,
     stream: true,
     ...(system !== undefined ? { system } : {}),
     ...(tools ? { tools } : {}),
-    ...(mapToolChoice(request.toolChoice)
-      ? { tool_choice: mapToolChoice(request.toolChoice) }
-      : {}),
-    ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-    ...(request.topP !== undefined ? { top_p: request.topP } : {}),
-    ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
-    ...(thinking ? { thinking } : {}),
-    ...(request.providerOptions?.anthropic ?? {}),
+    ...(typeof reasoning === "object" ? { output_config: { effort: reasoning.effort } } : {}),
+    ...(reasoning === "off" ? { thinking: { type: "disabled" as const } } : {}),
   };
 }

@@ -1,13 +1,13 @@
 /**
- * Shared provider SDK error mapping: one HTTP-status retry policy for every adapter,
- * the provider's retry headers, and the provider's own status and message as debug
- * evidence.
+ * Shared provider SDK setup and error mapping: the client options every adapter uses, one
+ * HTTP-status retry policy, the provider's retry headers, and the provider's own status and
+ * message as debug evidence.
  *
  * Retry policy: network errors, status-less SDK failures, 408, 429 and 5xx retry. Every
  * other 4xx is the provider refusing this request (402 out of balance, 404 unknown
  * model, 413/422 rejected payload); sending it again gets the same answer.
  */
-import type { ErrorCode, ProviderErrorResponse } from "../domain/index.js";
+import type { ErrorCode, ProviderConfig, ProviderErrorResponse } from "../domain/index.js";
 
 type MappedProviderError = {
   code: ErrorCode;
@@ -98,6 +98,21 @@ export const providerFetch: typeof fetch = async (input, init) => {
   }
   return response;
 };
+
+/**
+ * Constructor options every adapter's SDK client shares. `maxRetries: 0` because the
+ * gateway owns retries (`streamWithRetry`); SDK retries would multiply them.
+ */
+export function providerClientOptions(config: ProviderConfig) {
+  return {
+    // Self-hosted and mock endpoints need no key, but the SDKs require one.
+    apiKey: config.auth?.apiKey || "not-needed",
+    baseURL: config.baseUrl,
+    defaultHeaders: config.auth?.headers,
+    maxRetries: 0,
+    fetch: providerFetch,
+  };
+}
 
 function exactFailureBody(err: unknown): string | undefined {
   const headers = record(err)?.headers;

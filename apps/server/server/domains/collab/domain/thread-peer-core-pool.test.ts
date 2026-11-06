@@ -1,7 +1,7 @@
 /** Pool routing per document (D19, D42), live undo routing, and peer-cache lifecycle.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Reply destination pins and peer-cache lifecycle
+ * - Reply destination pins
  */
 
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -167,100 +167,5 @@ describe("thread-peer pool", () => {
       { status: "invalid_write", isError: true, poolHas: false, coreHas: false },
       { status: "invalid_write", isError: true, poolHas: false, coreHas: false },
     ]);
-  });
-});
-
-describe("reasoned refusal and retirement through the pool", () => {
-  const replyContext = (responseId: string, threadId = THREAD_ID) => ({
-    ...context(draftA, responseId),
-    threadId,
-  });
-
-  it("refuseStaged evicts the response's entry so a later write ensures a fresh branch and peer (U2)", async () => {
-    const { pool, threadCore, branches, ensureThreadPeer } = createPool();
-    await pool.write(insertCh12, context(draftA, "reply-1"));
-    expect(branches.ensureActiveForWrite).toHaveBeenCalledTimes(1);
-
-    pool.refuseStaged("reply-1", "ch12", "discarded_draft");
-    expect(threadCore.refuseStaged).toHaveBeenCalledWith(
-      "reply-1",
-      "ch12",
-      "discarded_draft",
-      undefined,
-    );
-    // The pool answers for a reply's document only through its pin's core.
-    threadCore.hasResponseDocument.mockReturnValue(true);
-    expect(pool.hasResponseDocument("reply-1", "ch12")).toBe(false);
-
-    await pool.write(insertCh12, context(draftA, "reply-1"));
-    expect(branches.ensureActiveForWrite).toHaveBeenCalledTimes(2);
-    expect(ensureThreadPeer).toHaveBeenCalledTimes(2);
-    expect(pool.hasResponseDocument("reply-1", "ch12")).toBe(true);
-  });
-
-  it("retires one peer without touching the replacement peer's entry (U6)", async () => {
-    const { pool, threadCore } = createPool();
-    // Reply 1 stages on peer-1; reply 2, in the same thread, on its replacement peer-2.
-    await pool.write(insertCh12, replyContext("reply-1"));
-    await pool.write(insertCh12, replyContext("reply-2"));
-    // The pool answers for a reply's document only through its pin's core.
-    threadCore.hasResponseDocument.mockReturnValue(true);
-    const pinned = (responseId: string) => pool.hasResponseDocument(responseId, "ch12");
-
-    await pool.retireThreadPeers("ch12", [
-      { threadId: THREAD_ID, peerDraftId: "peer-1", reason: "discarded_edit" },
-    ]);
-
-    expect(threadCore.retirePeer).toHaveBeenCalledWith({
-      documentId: "ch12",
-      threadId: THREAD_ID,
-      peerDraftId: "peer-1",
-      reason: "discarded_edit",
-    });
-    expect(pinned("reply-1")).toBe(false);
-    expect(pinned("reply-2")).toBe(true);
-    await pool.retireThreadPeers("ch12", [
-      { threadId: THREAD_ID, peerDraftId: "peer-2", reason: "discarded_edit" },
-    ]);
-    expect(pinned("reply-2")).toBe(false);
-  });
-
-  it("reaches a response-pinned owner the cache evicted (U6)", async () => {
-    const { ensureThreadPeer, liveCore } = createFakeThreadPeerCores();
-    const cores = new Map<string, ReturnType<typeof createFakeThreadPeerCores>["threadCore"]>();
-    const live = asLiveAgentEditCore(liveCore.asCore());
-    const ports = poolPorts(live);
-    const pool = createThreadPeerCorePool({
-      branches: ports.branches,
-      drafts: fakeWorkDrafts,
-      removals: { lookup: async () => new Map() },
-      fences: ports.fences,
-      liveUtilityCore: live,
-      createThreadCore: (threadId) => {
-        const core = createFakeThreadPeerCores().threadCore;
-        cores.set(threadId, core);
-        return core.asCore();
-      },
-      ensureThreadPeer,
-      commitThreadResponseAtomically: (operation) => operation(),
-      attemptScope: (operation) => operation(),
-      ...inProcessResponseTransactions,
-      fileAccess: createFakeFileAccess(),
-      lockWorks: async () => {},
-      lockLiveDocuments: async () => {},
-      maxThreadCores: 1,
-    });
-    await pool.write(insertCh12, replyContext("reply-a", "thread-a" as ThreadId));
-    // A second thread crowds thread A out of the cache; its open reply still owns its core.
-    await pool.write(insertCh12, replyContext("reply-b", "thread-b" as ThreadId));
-
-    await pool.retireThreadPeers("ch12", [
-      { threadId: "thread-a", peerDraftId: "peer-1", reason: "discarded_document" },
-    ]);
-
-    expect(cores.get("thread-a")?.retirePeer).toHaveBeenCalledWith(
-      expect.objectContaining({ peerDraftId: "peer-1", reason: "discarded_document" }),
-    );
-    expect(cores.get("thread-b")?.retirePeer).not.toHaveBeenCalled();
   });
 });

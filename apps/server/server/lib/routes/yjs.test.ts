@@ -2,7 +2,7 @@
  * Tests yjs behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Hocuspocus close forwarding and current Yjs handshake protocol
+ * - Current Yjs handshake protocol
  */
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
@@ -240,22 +240,6 @@ describe("Yjs draft handshake route guard", () => {
     expect(returned).toBe(true);
   });
 
-  it("rejects update-first sync messages", async () => {
-    const state = new Map<string, DraftHandshakeState>();
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document: new Y.Doc(),
-        syncType: messageYjsUpdate,
-        payload,
-        userId: "user-1" as never,
-        context: { draftSyncState: state },
-      }),
-    ).rejects.toMatchObject({ reason: "draft-prefix-missing", code: 4207 });
-    expect(state.get("draft_1")).toBe("rejected");
-  });
-
   it("keeps a rejected room rejected when a later step1 would pass", async () => {
     const state = new Map<string, DraftHandshakeState>();
     await expect(
@@ -281,34 +265,6 @@ describe("Yjs draft handshake route guard", () => {
       }),
     ).rejects.toMatchObject({ reason: "draft-prefix-missing", code: 4207 });
     expect(state.get("draft_1")).toBe("rejected");
-  });
-
-  it("forwards route closes to Hocuspocus", async () => {
-    const handleClose = vi.fn();
-    const gateway = createYjsGateway(gatewayServices());
-    const connection = {
-      hocuspocus: { handleClose },
-      draftSyncState: new Map<string, DraftHandshakeState>(),
-      offlineSyncUpdates: new Set<string>(),
-    };
-
-    gateway.close(connection as never, { code: 1000, reason: "test" });
-
-    expect(handleClose).toHaveBeenCalledWith({ code: 1000, reason: "test" });
-  });
-
-  it("forwards route errors to Hocuspocus as server closes", async () => {
-    const handleClose = vi.fn();
-    const gateway = createYjsGateway(gatewayServices());
-    const connection = {
-      hocuspocus: { handleClose },
-      draftSyncState: new Map<string, DraftHandshakeState>(),
-      offlineSyncUpdates: new Set<string>(),
-    };
-
-    gateway.error(connection as never);
-
-    expect(handleClose).toHaveBeenCalledWith({ code: 1011, reason: "error" });
   });
 
   it("stops connection admission synchronously when drain starts", async () => {

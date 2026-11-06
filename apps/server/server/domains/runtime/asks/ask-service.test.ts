@@ -26,9 +26,13 @@ async function openQuestion() {
     toolCallId: "ask-call",
     kind: "question",
     payload: {
-      question: "Choose a path",
-      options: [{ label: "Left" }, { label: "Right" }],
-      recommended: "Left",
+      questions: [
+        {
+          question: "Choose a path",
+          options: [{ label: "Left" }, { label: "Right" }],
+          recommended: "Left",
+        },
+      ],
     },
     permissionCommand: null,
     deadlineAt: new Date(0),
@@ -48,7 +52,7 @@ describe("durable ask claims", () => {
         threadId: thread.id,
         askId: ask.id,
         submissionId: "same-submission",
-        answer: { kind: "option", label: "Right" },
+        answer: { kind: "answers", answers: [{ kind: "option", label: "Right" }] },
       });
 
     const [first, replay] = await Promise.all([submit(), submit()]);
@@ -56,7 +60,10 @@ describe("durable ask claims", () => {
     expect(first).toEqual(replay);
     expect(first).toMatchObject({
       ok: true,
-      ask: { status: "answered", resolution: { kind: "option", label: "Right" } },
+      ask: {
+        status: "answered",
+        resolution: { kind: "answers", answers: [{ kind: "option", label: "Right" }] },
+      },
     });
     expect((await app.threadRepos.blocks.listByTurn(turn.id)).filter(isAskResult)).toHaveLength(1);
   });

@@ -72,7 +72,7 @@
 
 <!-- The decisions that shaped the change, each aimed at an underlying problem
      rather than its symptom. For each: what was wrong, what this PR decides,
-     and what it rules out. Quote the owner where a ruling set the decision.
+     and what it rules out. Give the reason, not who said it.
      Write "None." when the change involves no design choice. -->
 
 1. **<decision>.** <the problem>. <what this PR decides>. Ruled out: <alternative and why>.

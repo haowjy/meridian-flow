@@ -14,8 +14,7 @@ stuck at the destination and no error. This recipe is not a current pass claim.
    folder `characters` holding `keeper` and `mara`; a named Work with a chat
    bound to it; that Work's Scratch holding `research/Gate history`,
    `Bell timing` and `Scene notes` (`./mf doc put 'scratch://@<work>/...'`).
-3. Open the owned app origin in `agent-browser --session row-drag`, sign in at
-   `/dev-login`, and open `chapter-2` in the Editor.
+3. Open the owned app origin in `agent-browser --session row-drag`, and open `chapter-2` in the Editor.
 
 Tool notes: agent-browser clicks don't carry held modifier keys, so send
 selection gestures from the page:
@@ -101,7 +100,7 @@ top or bottom quarter.
     lists "Move to the top of Act 1", "Move after <sibling>" and "Move to the
     bottom of Act 1", minus the place it holds. Choose one: the row moves and
     focus returns to the row. Repeat on the phone
-    (393×852, coarse pointer per [Chat Files](chat-files.md)); its rows are
+    (393×852, coarse pointer per [Chat Files](../../apps/app/src/features/chat/.context/qa/chat-files.md)); its rows are
     not draggable.
 
 ## Refused moves and deletes

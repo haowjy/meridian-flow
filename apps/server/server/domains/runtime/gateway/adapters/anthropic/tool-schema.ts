@@ -1,5 +1,5 @@
 /** Anthropic-only advertisement of canonical command unions; execution keeps its Zod contract. */
-import type { FunctionTool } from "../../domain/index.js";
+import type { Tool } from "../../domain/index.js";
 
 type Field = Record<string, unknown>;
 type CommandBranch = {
@@ -15,7 +15,7 @@ type CommandBranch = {
  * relationships become generated guidance, not a replacement validation schema.
  * Other root intersections/constraints must not be silently discarded.
  */
-export function anthropicToolSchema(schema: FunctionTool["inputSchema"]): Record<string, unknown> {
+export function anthropicToolSchema(schema: Tool["inputSchema"]): Record<string, unknown> {
   if ("allOf" in schema) throw new Error("Anthropic tool schemas do not support root allOf");
   const { oneOf, anyOf, ...root } = schema;
   const alternatives = oneOf ?? anyOf;

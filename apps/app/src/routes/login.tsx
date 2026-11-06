@@ -1,20 +1,8 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Button } from "@/components/ui/button";
-import { isDevAutologinEnabled } from "@/server/dev-auth";
-
-const resolveLoginTarget = createServerFn({ method: "GET" })
-  .inputValidator((data: { returnPathname: string }) => data)
-  .handler(async ({ data }): Promise<{ mode: "dev" } | { mode: "workos"; href: string }> => {
-    if (isDevAutologinEnabled()) {
-      return { mode: "dev" };
-    }
-    const href = await getSignInUrl({ data: { returnPathname: data.returnPathname } });
-    return { mode: "workos", href };
-  });
 
 export const Route = createFileRoute("/login")({
   loader: async ({ location }) => {
@@ -26,14 +14,14 @@ export const Route = createFileRoute("/login")({
     }
 
     const returnPathname = redirectParam ?? "/";
-    const target = await resolveLoginTarget({ data: { returnPathname } });
-    return { target, returnPathname };
+    const href = await getSignInUrl({ data: { returnPathname } });
+    return { href, returnPathname };
   },
   component: LoginPage,
 });
 
 function LoginPage() {
-  const { target } = Route.useLoaderData();
+  const { href } = Route.useLoaderData();
 
   return (
     <main className="flex min-h-svh bg-background">
@@ -41,25 +29,12 @@ function LoginPage() {
       <section className="flex flex-1 items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm rounded-lg border border-border bg-card p-9 shadow-card">
           <h1 className="mb-2 text-4xl font-semibold text-foreground">Welcome back</h1>
-          {target.mode === "dev" ? (
-            <>
-              <p className="mb-7 text-sm text-muted-foreground">
-                Local development signs in as the WorkOS test user from your environment.
-              </p>
-              <Button asChild className="w-full">
-                <a href="/dev-login">Continue with dev login</a>
-              </Button>
-            </>
-          ) : (
-            <>
-              <p className="mb-7 text-sm text-muted-foreground">
-                Sign in to keep writing where you left off.
-              </p>
-              <Button asChild className="w-full">
-                <a href={target.href}>Continue to sign in</a>
-              </Button>
-            </>
-          )}
+          <p className="mb-7 text-sm text-muted-foreground">
+            Sign in to keep writing where you left off.
+          </p>
+          <Button asChild className="w-full">
+            <a href={href}>Continue to sign in</a>
+          </Button>
           <p className="mt-6 text-center text-sm text-muted-foreground">
             <Link to="/" className="text-jade-text underline-offset-2 hover:underline">
               Back home

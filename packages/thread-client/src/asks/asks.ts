@@ -109,6 +109,14 @@ export function failAskAnswer(asks: ChatAsks, askId: string, submissionId: strin
   return { ...asks, attempts };
 }
 
+/** The server refused the answer outright: drop that attempt, so nothing offers to resend it. */
+export function clearAskAnswer(asks: ChatAsks, askId: string, submissionId: string): ChatAsks {
+  if (asks.attempts.get(askId)?.submissionId !== submissionId) return asks;
+  const attempts = new Map(asks.attempts);
+  attempts.delete(askId);
+  return { ...asks, attempts };
+}
+
 /** Move the ask's attempt to `state`; an ask with no attempt is left alone. */
 export function markAskAnswer(
   asks: ChatAsks,
@@ -185,17 +193,11 @@ export type AskReceipt = {
   pending: boolean;
 };
 
-function resolutionOfAnswer(answer: AskAnswer): AskResolution {
-  return answer.kind === "skip" ? { kind: "skipped" } : answer;
-}
-
 /** The receipt line for an asking turn, or null while its ask is unresolved and unanswered here. */
 export function askReceipt(asks: ChatAsks, turnId: string): AskReceipt | null {
   const ask = askOfTurn(asks, turnId);
   if (!ask) return null;
   if (ask.resolution) return { ask, resolution: ask.resolution, pending: false };
   const attempt = asks.attempts.get(ask.id);
-  return attempt?.state === "sending"
-    ? { ask, resolution: resolutionOfAnswer(attempt.answer), pending: true }
-    : null;
+  return attempt?.state === "sending" ? { ask, resolution: attempt.answer, pending: true } : null;
 }

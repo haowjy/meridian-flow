@@ -127,7 +127,7 @@ drain and recovery-lane limits come from the process shutdown deadline. Nitro
 dev's worker termination may leave repair to restart; production signals use
 the same shutdown hook sequence.
 
-## Invariants
+## Contracts
 
 - A turn permits at most 32 model/tool iterations.
 - Cancellation is authorized only by the run signal or durable cancel request,

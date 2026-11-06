@@ -6,7 +6,7 @@
  * Without `--db` it creates `lfd_probe_*` on the local dev Postgres, runs the committed migration
  * chain, and drops it afterwards (`--keep` leaves it for inspection). Each probe prints its
  * observations and `PASS` or `FAIL`; the exit code is the number of failed probes. The index of
- * probes, decisions and expected output is `docs/qa/drafts-lock-free-probes.md`.
+ * probes, decisions and expected output is `apps/server/server/domains/collab/.context/qa/drafts-lock-free-probes.md`.
  */
 
 import { appendBetweenRows } from "./append-between-rows.mts";

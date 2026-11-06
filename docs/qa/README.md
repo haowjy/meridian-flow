@@ -1,5 +1,8 @@
 # Runtime probes
 
+Recipes live beside the code they check, in `.context/qa/<name>.md`. List them with
+`git ls-files '*/.context/qa/*.md'`: ripgrep and most globs skip hidden folders.
+
 Use these recipes to check the running product, in addition to `pnpm check`.
 While working, `./mf` is the verification tool for the code it shares with the
 app (the socket client, message serializer and chat event processing), and a
@@ -19,54 +22,50 @@ probe the integration worktree's: a checkout that moves under a watching dev
 server, or a reused database, produces regressions that vanish on a clean
 stack.
 
-- [Rich mock provider](mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
-- [The model's move and delete](model-move-delete.md): tool rows, the turn card's lines and Undo at a free name, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.
-- [Model-owned chat actions](model-agent-actions.md): Work switch during a reply, next-reply write mode, out-of-lineage background messaging, and read-Agent refusals.
-- [Atomic frozen Apply](atomic-apply.md): production API-core command, merge, rollback, lifecycle and trail probes over a scratch database.
+- [Rich mock provider](../../apps/server/server/domains/runtime/gateway/.context/qa/mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
+- [The model's move and delete](../../apps/server/server/domains/collab/.context/qa/model-move-delete.md): tool rows, the turn card's lines and Undo at a free name, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.
+- [Model-owned chat actions](../../apps/server/server/domains/runtime/.context/qa/model-agent-actions.md): Work switch during a reply, next-reply write mode, out-of-lineage background messaging, and read-Agent refusals.
+- [Atomic frozen Apply](../../apps/server/server/domains/collab/.context/qa/atomic-apply.md): production API-core command, merge, rollback, lifecycle and trail probes over a scratch database.
 - [Document removal records](document-removal-records.md): populated upgrade, actor readback, Trash list/read/restore, pending-Work retention, permanent purge, closure/admission races, storage release and after-commit room retirement.
-- [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
-- [Runtime protocols](runtime-probes.md): RP-1 through RP-20, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
-- [Project chrome and shell](project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`. Their durable halves are RP-13 and RP-14.
-- [Stop and hand-back](stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
-- [Failure cards](failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
-- [Queue controls](queue-controls.md): QC-01 to QC-08, the queued look, the x, Cancel queue, Send now and every failure card, driven in the browser with injected faults.
-- [Durable questions](ask.md): answer, own words, Skip, timeout, restart and crash recovery, claim races, the queue barrier, and fork refusal.
-- [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
-- [Settled chat Markdown](chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
-- [Chat session](chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text, the `cN` ref steps, and SY-01 to SY-07, the live-sync recipes (join, reload, navigate, another client's message, Stop, a held write-mode switch, a network gap).
-- [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
-- [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
-- [Folder mentions](folder-mentions.md): the `@` Mention row, composer and Editor folder chips, the drill-in menu a folder chip opens, and rename or delete then click.
-- [Chat Files menu](chat-files.md): shared nested Scratch plus chat uploads; search, rename, move, delete, fork source and phone parity.
-- [Crash and two processes](crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `draft-readback.ts`.
-- [Draft content rebase](draft-review-rebase.md): fresh client-1 seeds, the server append rebase, late typing recovery, badge convergence and inverse cutover through PostgreSQL.
-- [Stable draft identity and terminal closes](draft-generations.md): draft rooms through Discard all, a fresh server instance and live restore; `4205`, `4207` and removal `4208`.
-- [Lock-free drafts seam probes](drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, sampled Discard, Undo ordering, room delivery, sequenced appends, the effect projection and its sweep, the reconnect order), run with one command against a scratch database.
-- [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
-- [#871 cells](871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is lost to ancestor delete, and how the result names the user.
-- [Model text reversal](model-revert.md): model Undo, Redo and Revert by Yjs identity, including partial changes, destination routing, repeated text and a revert of a revert, in auto-apply and draft mode.
-- [Selected keep-open reads](selected-keep-open.md): compaction uses ordinary read arguments, with ordinary observation credit and whole-only duplicate elision.
-- [Scratch before compaction](scratch-compaction.md): zero to three calls, honest held results, summary, bypasses, cancellation and unchanged ownership.
+- [Document existence admission](../../apps/server/server/domains/collab/.context/qa/document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
+- [Runtime protocols](../../apps/server/server/domains/runtime/.context/qa/runtime-probes.md): RP-1 through RP-21, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
+- [Project chrome and shell](../../apps/app/src/features/project/.context/qa/project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`.
+- [Stop and hand-back](../../apps/server/server/domains/runtime/.context/qa/stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
+- [Failure cards](../../apps/app/src/features/chat/.context/qa/failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
+- [Queue controls](../../apps/app/src/features/chat/.context/qa/queue-controls.md): QC-01 to QC-08, the queued look, the x, Cancel queue, Send now and every failure card, driven in the browser with injected faults.
+- [Durable questions](../../apps/server/server/domains/runtime/.context/qa/ask.md): answer, own words, Skip, timeout, restart and crash recovery, claim races, the queue barrier, and fork refusal.
+- [Browser state envelopes](../../apps/app/.context/qa/browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
+- [Settled chat Markdown](../../apps/app/src/features/chat/.context/qa/chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
+- [Chat session](../../apps/app/src/features/chat/.context/qa/chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text, the `cN` ref steps, and SY-01 to SY-07, the live-sync recipes (join, reload, navigate, another client's message, Stop, a held write-mode switch, a network gap).
+- [Chat submissions](../../apps/app/src/features/chat/.context/qa/chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
+- [Folder mentions](../../apps/app/src/features/links/.context/qa/folder-mentions.md): the `@` Mention row, composer and Editor folder chips, the drill-in menu a folder chip opens, and rename or delete then click.
+- [Chat Files menu](../../apps/app/src/features/chat/.context/qa/chat-files.md): shared nested Scratch plus chat uploads; search, rename, move, delete, fork source and phone parity.
+- [Crash and two processes](../../apps/server/server/domains/collab/.context/qa/crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `draft-readback.ts`.
+- [Stable draft identity and terminal closes](../../apps/app/src/features/draft-review/.context/qa/draft-generations.md): draft rooms through Discard all, a fresh server instance and live restore; `4205`, `4207` and removal `4208`.
+- [Lock-free drafts seam probes](../../apps/server/server/domains/collab/.context/qa/drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, Undo ordering, room delivery, sequenced appends, the effect projection and its sweep, the reconnect order), run with one command against a scratch database.
+- [#871 cells](../../apps/app/src/features/draft-review/.context/qa/871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is lost to ancestor delete, and how the result names the user.
+- [Model text reversal](../../apps/server/server/domains/collab/.context/qa/model-revert.md): model Undo, Redo and Revert by Yjs identity, including partial changes, destination routing, repeated text and a revert of a revert, in auto-apply and draft mode.
+- [Scratch before compaction](../../apps/server/server/domains/runtime/.context/qa/scratch-compaction.md): zero to three calls, honest held results, summary, bypasses, cancellation and unchanged ownership.
 - [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the branch store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
-- [Editor schema notices](editor-notices.md): one-line repair and fence bars, the Details popover, copy refusals and Dismiss focus.
+- [Editor schema notices](../../apps/app/src/features/editor/.context/qa/editor-notices.md): one-line repair and fence bars, the Details popover, copy refusals and Dismiss focus.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
-- [Document adoption across a reload](document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
-- [Document open: commit first](document-open.md): immediate Editor, dock, and phone placement; one content open; transfer ownership; failures, removal, fencing, passages, projection readiness, streaming, and keystrokes.
-- [Draft review](draft-review.md): visual editor and review workflows.
-- [Text-derived draft disposition](draft-disposition.md): inverse policy, historical Apply evidence and whole-Work close, with an isolated PostgreSQL runner.
+- [Document adoption across a reload](../../apps/app/src/features/project/.context/qa/document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
+- [Document open: commit first](../../apps/app/src/features/project/.context/qa/document-open.md): immediate Editor, dock, and phone placement; one content open; transfer ownership; failures, removal, fencing, passages, projection readiness, streaming, and keystrokes.
+- [Draft review](../../apps/app/src/features/draft-review/.context/qa/draft-review.md): visual editor and review workflows.
+- [Text-derived draft disposition](../../apps/server/server/domains/collab/.context/qa/draft-disposition.md): inverse policy, historical Apply evidence and whole-Work close, with an isolated PostgreSQL runner.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Row selection and drag](row-drag.md): multi-select, dragging rows into folders and areas, reordering on row edges and through Move…, refusal toasts, Scratch and Work Files.
-- [Refused document creates](refused-create.md): a create the server refuses settles once, keeps the document and its text in Unfiled with a mark, and files again from the row or the identity bar; network drops still retry.
-- [New folder](folder-create.md): a folder listed at once and settled in the background: offline and reload, documents and reorders put in a pending folder, a refused create with contents, deleting before it lands, rename, and two tabs.
-- [Copy in the tree](copy-browser.md): a drop across systems and Copy to… in the browser: the menu, predicted names, a refusal toast, a source with unsynced edits, a queued rename, a hidden draft at the target name, a selection another peer nested before the send and the phone, with `agent-browser`.
-- [The server Copy command](copy-server.md): rich folder, hidden occupants, draft sources, fifty documents, a failure on the last child, replay, a source not yet caught up, positions, refusals, other owners and the model's copy, driven with `./mf`.
-- [Desktop files dropped on a chat](chat-file-drop.md): files onto the composer and the transcript attach through the paperclip's intake; folders, a bad name, offline, the tree's own drops and the phone.
-- [Dragging from places that aren't tree rows](drag-sources.md): tabs, path crumbs, Recent rows, mention chips (composer and transcript), selected Editor links, receipt and Work change rows and Uploads entries dragging out, always asking Move / Copy / Cancel, a draft tab copying its draft, Uploads refusing drops, same-system row drags still moving at once and the phone with no drag, with `agent-browser`.
-- [Dragging a text selection](selection-drag.md): pressing a highlight and dragging it at once (letters, the space between lines, a double-click then press), no-travel clicks, move, copy, Escape, a selected link, the composer copying, a 5s pause, autoscroll and cells, with a real mouse.
-- [Saved file display](file-display.md): a TIFF, HEIC or BMP draws from a server-made preview in the viewer, a DOCX's inline image and chat; any file the browser can't draw is a card with Download, never Retry.
+- [Refused document creates](../../apps/app/src/features/project/context/.context/qa/refused-create.md): a create the server refuses settles once, keeps the document and its text in Unfiled with a mark, and files again from the row or the identity bar; network drops still retry.
+- [New folder](../../apps/app/src/features/project/context/.context/qa/folder-create.md): a folder listed at once and settled in the background: offline and reload, documents and reorders put in a pending folder, a refused create with contents, deleting before it lands, rename, and two tabs.
+- [Copy in the tree](../../apps/app/src/features/project/context/.context/qa/copy-browser.md): a drop across systems and Copy to… in the browser: the menu, predicted names, a refusal toast, a source with unsynced edits, a queued rename, a hidden draft at the target name, a selection another peer nested before the send and the phone, with `agent-browser`.
+- [The server Copy command](../../apps/server/server/domains/context/.context/qa/copy-server.md): rich folder, hidden occupants, draft sources, fifty documents, a failure on the last child, replay, a source not yet caught up, positions, refusals, other owners and the model's copy, driven with `./mf`.
+- [Desktop files dropped on a chat](../../apps/app/src/features/chat/.context/qa/chat-file-drop.md): files onto the composer and the transcript attach through the paperclip's intake; folders, a bad name, offline, the tree's own drops and the phone.
+- [Dragging from places that aren't tree rows](../../apps/app/src/features/project/context/.context/qa/drag-sources.md): tabs, path crumbs, Recent rows, mention chips (composer and transcript), selected Editor links, receipt and Work change rows and Uploads entries dragging out, always asking Move / Copy / Cancel, a draft tab copying its draft, Uploads refusing drops, same-system row drags still moving at once and the phone with no drag, with `agent-browser`.
+- [Dragging a text selection](../../apps/app/src/core/editor/.context/qa/selection-drag.md): pressing a highlight and dragging it at once (letters, the space between lines, a double-click then press), no-travel clicks, move, copy, Escape, a selected link, the composer copying, a 5s pause, autoscroll and cells, with a real mouse.
+- [Saved file display](../../apps/app/src/features/project/.context/qa/file-display.md): a TIFF, HEIC or BMP draws from a server-made preview in the viewer, a DOCX's inline image and chat; any file the browser can't draw is a card with Download, never Retry.
 - [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as `@` references that land where the caret showed (word, gap, margin, past the end, bullets, inline code, diagram, empty document), with refusals and drop-regression checks.
-- [Presses](presses.md): clicks with no text under them (margin, gap, wrapped line, cell padding, below each kind of ending) put the caret where pointed and never make a paragraph.
-- [Model `grep`](grep.md): regex search over a 450-document project, each output mode, scoping, refusals, staged and draft text, each case with its predicted and measured time.
+- [Presses](../../apps/app/src/core/editor/.context/qa/presses.md): clicks with no text under them (margin, gap, wrapped line, cell padding, below each kind of ending) put the caret where pointed and never make a paragraph.
+- [Model `grep`](../../apps/server/server/domains/context/.context/qa/grep.md): regex search over a 450-document project, each output mode, scoping, refusals, staged and draft text, each case with its predicted and measured time.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 - [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.
 - [Staged typechecking](../../tools/ci/README.md#staged-hook-probe-recipe): index selection, dependent projects, shared configuration, cache invalidation and hook failures.
@@ -79,7 +78,7 @@ browser scenarios in the configured-case inventory and list standalone
 workloads separately. A missing prerequisite or skipped check is not a pass.
 
 - `pnpm smoke:app-dev-transform`: [dev startup and public routes](../../tools/dev/smoke-app-dev-transform.ts).
-- [Dev route ownership](dev-route-ownership.md): detached-checkout names, conflict refusal and explicit takeover without disturbing sibling stacks.
+- [Dev route ownership](../../tools/dev/.context/qa/dev-route-ownership.md): detached-checkout names, conflict refusal and explicit takeover without disturbing sibling stacks.
 - `pnpm smoke:prod-boot`: [production build, startup and public routes](../../tools/dev/smoke-app-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
 - `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
 - `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
@@ -93,7 +92,7 @@ Script automation and catalog repairs are tracked in [#726](https://github.com/h
 
 Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list` and confirm they carry your worktree's prefix before any
-`./mf seed` or send, then pass `MF_APP_URL` and `MF_SERVER_URL` explicitly. A
+`./mf seed` or send, then pass `MF_SERVER_URL` explicitly (recipes use `MF_APP_URL` as the browser URL). A
 detached-HEAD checkout has no prefix: when another checkout holds the unprefixed
 routes, `pnpm dev` still reports `started` with that checkout's URLs, and `./mf`
 writes into its database ([#615](https://github.com/haowjy/meridian-flow/issues/615)).
@@ -128,7 +127,6 @@ Without the stack running, this cannot be checked.
 
 ## Document intake
 
-[Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
 DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
 
 ## Import
@@ -306,7 +304,6 @@ Three harness artifacts have produced false defects. Rule them out first.
 
 ## Device reading memory
 
-[Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.
 
 ## Project export
 
@@ -343,6 +340,6 @@ Three harness artifacts have produced false defects. Rule them out first.
    this stack with `pnpm dev --stop`.
 ## Messages waiting for usage
 
-[Saved messages waiting for usage](usage-waiting.md) covers durable credit blocks,
+[Saved messages waiting for usage](../../apps/app/src/features/chat/.context/qa/usage-waiting.md) covers durable credit blocks,
 existing and New chat, reload, Settings navigation, CLI outcomes and automatic
 recovery after a ledger grant.

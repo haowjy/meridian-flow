@@ -6,7 +6,7 @@ See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cur
 
 ## Environment
 
-Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` or `vite dev` gets no repo env, like a direct `apps/app` run.
+Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. A key in `.env.local` wins even when its value is empty, so `LIVE_TEST_MODEL=` there turns off a main-`.env` setting. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` or `vite dev` gets no repo env, like a direct `apps/app` run.
 
 Set `DATABASE_URL` only in the main `.env`: the main checkout uses that database and each linked worktree gets `<name>_<slug>` on the same server (`:54422`). Setting it in `.env.local`, or leaving another checkout's URL in your shell, is an error.
 
@@ -56,7 +56,7 @@ Then, in the checkout:
 mise install                  # pinned Node and Python from .tool-versions
 eval "$(mise activate bash)"  # or add this line to ~/.bashrc
 pnpm install
-cp .env.example .env          # fill in WorkOS keys, etc.
+cp .env.example .env          # DEV_AUTH_BYPASS=1 needs no WorkOS keys; fill them in for real login
 pnpm dev:infra                # start the Postgres + pg_bigm Docker container (:54422) if not running
 pnpm exec lefthook install --reset-hooks-path
 pnpm bootstrap                # create the DB, migrate, apply-functions
@@ -97,7 +97,7 @@ not an app bug.
 
 ## Local database
 
-Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `postgres:16` plus `pg_bigm` (btree_gin and pg_trgm are contrib), with `pg_bigm` preloaded. Writer search needs all three. Compose is `tools/dev/docker-compose.yml`. App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.
+Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `postgres:16` plus `pg_bigm` (btree_gin and pg_trgm are contrib), with `pg_bigm` preloaded. Writer search needs all three. Compose is `tools/dev/docker-compose.yml`. App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`. Local dev can skip it: `DEV_AUTH_BYPASS=1` makes every request the dev user (`DEV_AUTH_USER_ID`, default `test`, email `<id>@example.com`), refused outside `NODE_ENV=development` and by `pnpm dev --funnel`. Set it to `0` to test real login.
 
 | Command | Purpose |
 |---------|---------|

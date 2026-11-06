@@ -7,7 +7,7 @@ import type { AgentRevisionStore } from "../../packages/index.js";
 import type { Gateway, GenerateRequest, GenerateResult, ModelInfo } from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { KEEP_OPEN_INSTRUCTION_LINES } from "../loop/compaction/important-files.js";
-import { estimateRequestTokens } from "../loop/compaction/index.js";
+import { estimateRequestTokens, outputReserveTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
@@ -145,7 +145,7 @@ export function createConversationSummarizer(
       // The one catch spans every path/segment so a later failure cannot lose a paid row.
       try {
         input.signal.throwIfAborted();
-        const models = gateway.listModels?.() ?? [];
+        const models = gateway.listModels();
         const cheapModel = models.find((model) => model.id === config.model);
         const threadModelId =
           input.requestInHand?.model ??
@@ -207,6 +207,7 @@ export function createConversationSummarizer(
             predictedCacheReason: prediction.reason,
             requestStartedAt: new Date().toISOString(),
             finishReason: "error",
+            usage,
           };
           // Reserve the row before entering the gateway. Even a throwing/aborted stream is an attempt.
           modelResponses.push(row);
@@ -264,18 +265,8 @@ export function createConversationSummarizer(
               error instanceof Error ? error.message : String(error),
             );
           }
-          if (input.signal.aborted && gateway.settleCancelledResult) {
-            try {
-              const settled = await gateway.settleCancelledResult({ result, model: row.model });
-              if (settled?.persist) {
-                result = settled.result;
-                usage = result.usage;
-              }
-            } catch (error) {
-              failure = error;
-            }
-          }
           Object.assign(row, {
+            usage,
             inputTokens: usage.inputTokens,
             outputTokens: usage.outputTokens,
             reasoningTokens: usage.reasoningTokens ?? null,
@@ -288,8 +279,7 @@ export function createConversationSummarizer(
               model: result.model,
               provider: result.provider,
               finishReason: result.finishReason,
-              providerRequestId: result.providerRequestId ?? null,
-              providerData: result.providerData,
+              meteringStatus: result.meteringStatus,
               ...modelResponseTimingFields(result),
             });
           input.signal.throwIfAborted();
@@ -361,6 +351,8 @@ export function createConversationSummarizer(
         const requestFor = (segment: string[]): GenerateRequest => ({
           model: model.id,
           reasoning: "disabled",
+          // A rolling summary is a one-shot call: a cache write would never be read.
+          promptCacheRetention: "none",
           messages: [
             { role: "system", content: [{ type: "text", text: prompt }] },
             {
@@ -385,10 +377,10 @@ export function createConversationSummarizer(
           baseline: null,
           tokenizer: model.tokenizer,
         });
-        // The model's output cap is already in provider token units, regardless of language.
+        // The reserve is in provider token units, regardless of language.
         const runningReserve =
           estimateModelJsonTokens("Prior context (running summary):", model.tokenizer) +
-          model.maxOutputTokens;
+          outputReserveTokens(model);
         const segmentBudget = usableWindow - overhead - runningReserve;
         const turns = transcriptSegments(input.projection, segmentBudget, model.tokenizer);
         const turnTokens = turns.map((turn) =>

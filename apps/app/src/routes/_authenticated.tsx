@@ -1,9 +1,8 @@
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useCallback, useEffect, useSyncExternalStore } from "react";
+import { lazy, Suspense, useCallback, useEffect } from "react";
 import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
@@ -38,7 +37,6 @@ import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { parseProjectAddress } from "@/features/project/routing/project-address";
 import { originalBrowserSearch } from "@/router-search";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
-import { isDevAutologinEnabled } from "@/server/dev-auth";
 import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
 
 // Composition-root prerequisite: product descendants create both client
@@ -56,57 +54,6 @@ const DebugOverlay =
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
     : null;
 
-// The query devtools launcher sits in the bottom-right corner: the bottom-left holds the rail's
-// account footer, the top-right the dock's header, and a narrow window's top bar keeps its context toggle and its bottom the
-// composer. Narrow by width, not pointer: a desktop browser resized to phone width gets the same
-// layout as a phone, so the launcher is dropped there.
-const NARROW_QUERY = "(max-width: 767px)";
-function useNarrowViewport(): boolean {
-  return useSyncExternalStore(
-    (notify) => {
-      const query = window.matchMedia(NARROW_QUERY);
-      query.addEventListener("change", notify);
-      return () => query.removeEventListener("change", notify);
-    },
-    () => window.matchMedia(NARROW_QUERY).matches,
-    () => true,
-  );
-}
-
-const ReactQueryDevtools = import.meta.env.DEV
-  ? lazy(() =>
-      import("@tanstack/react-query-devtools").then((m) => ({ default: m.ReactQueryDevtools })),
-    )
-  : null;
-
-function QueryDevtoolsLauncher({
-  devtools: Devtools,
-}: {
-  devtools: NonNullable<typeof ReactQueryDevtools>;
-}) {
-  return (
-    <div className="fixed right-3 bottom-3 z-[55]">
-      <Devtools buttonPosition="relative" initialIsOpen={false} />
-    </div>
-  );
-}
-
-/**
- * Decide where to send an UNAUTHENTICATED request, server-side.
- * Returns the `/dev-login` intermediary screen when dev-autologin is enabled (it
- * runs the dev-login script on a known, addressable path); otherwise WorkOS sign-in.
- */
-const resolveUnauthRedirect = createServerFn({ method: "GET" })
-  .inputValidator((data: { returnPathname: string }) => data)
-  .handler(async ({ data }): Promise<{ to: string } | { href: string }> => {
-    if (isDevAutologinEnabled()) {
-      return { to: "/dev-login" };
-    }
-
-    const href = await getSignInUrl({ data: { returnPathname: data.returnPathname } });
-    return { href };
-  });
-
 export const Route = createFileRoute("/_authenticated")({
   ...PERSISTENT_SHELL_OPTIONS,
   // `?settings=` is layout-owned so the settings overlay is URL-addressable from
@@ -119,8 +66,8 @@ export const Route = createFileRoute("/_authenticated")({
     const { user: workosUser } = await getAuth();
     if (!workosUser) {
       const path = `${location.pathname}${originalBrowserSearch(location.search)}`;
-      const target = await resolveUnauthRedirect({ data: { returnPathname: path } });
-      throw redirect(target);
+      const href = await getSignInUrl({ data: { returnPathname: path } });
+      throw redirect({ href });
     }
 
     const now = Date.now();
@@ -228,7 +175,6 @@ function AuthenticatedProviderTree({
   };
 }) {
   const resources = useOptionalAccountResourceReplica();
-  const narrow = useNarrowViewport();
 
   // Browser persistence is initialized only after the Query composition root
   // exists. Constructing these services during SSR crashes the authenticated shell.
@@ -259,11 +205,6 @@ function AuthenticatedProviderTree({
                   {DebugOverlay ? (
                     <Suspense fallback={null}>
                       <DebugOverlay />
-                    </Suspense>
-                  ) : null}
-                  {ReactQueryDevtools && !narrow ? (
-                    <Suspense fallback={null}>
-                      <QueryDevtoolsLauncher devtools={ReactQueryDevtools} />
                     </Suspense>
                   ) : null}
                 </ImportsProvider>

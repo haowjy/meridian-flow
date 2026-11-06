@@ -1,101 +1,41 @@
 /**
  * OpenAI-compatible (Chat Completions) provider adapter: implements the
  * provider-adapter port over any OpenAI-Chat-Completions-shaped endpoint
- * (deepseek, mock, self-hosted). Owns the chat-completions streaming wiring;
- * depends on its request-map/stream-collect/errors siblings.
+ * (gemini, mock, self-hosted). Owns the chat-completions streaming wiring. The
+ * shared stream envelope is `../provider-stream.ts`.
  *
- * Streaming lifecycle:
- * 1. Create accumulator → yield `start` event
- * 2. Map canonical request to Chat Completions params (request-map)
- * 3. Call `client.chat.completions.create()` with `stream: true`
- * 4. For each chunk, yield canonical StreamEvents (stream-collect)
- * 5. Build final GenerateResult from accumulator → yield `end` event
- * 6. On error, map to canonical error event (errors module)
- *
- * Note: uses `apiKey ?? "not-needed"` as fallback because some self-hosted
- * or mock endpoints do not require authentication.
+ * Its accumulator takes no `longCacheWrites`: this wire reports no cache writes.
  */
 import OpenAI from "openai";
-import { modelAttemptTimeoutEvent } from "../../deadline.js";
-import type {
-  GenerateRequest,
-  ModelInfo,
-  ProviderConfig,
-  StreamEvent,
-} from "../../domain/index.js";
+import type { ProviderConfig } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import { mapProviderHttpError, providerFetch } from "../provider-http-error.js";
+import { providerClientOptions } from "../provider-http-error.js";
+import { streamProvider } from "../provider-stream.js";
 import { toOpenAIChatCompletionParams } from "./request-map.js";
 import {
-  accumulatorHasPartialResult,
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromOpenAIChunk,
 } from "./stream-collect.js";
 
-function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
-  if (!auth?.apiKey) return undefined;
-  return typeof auth.apiKey === "function" ? auth.apiKey() : auth.apiKey;
-}
-
 export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderAdapter {
-  const apiKey = resolveApiKey(config.auth) ?? "not-needed";
-  const client = new OpenAI({
-    apiKey,
-    baseURL: config.baseUrl,
-    defaultHeaders: config.auth?.headers,
-    // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
-    maxRetries: 0,
-    fetch: providerFetch,
-  });
-
+  const client = new OpenAI(providerClientOptions(config));
   const providerId = config.id;
 
   return {
-    providerId,
-    async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
-      // Create a fresh accumulator per stream call — each generate request
-      // gets its own streaming state.
+    stream(request, model, call) {
       const acc = createStreamAccumulator(model.id, providerId);
-      yield { type: "start", model: model.id, provider: providerId };
-
-      try {
-        const params = toOpenAIChatCompletionParams(request, model.id, model.promptCache.ttlMs);
-        const stream = await client.chat.completions.create(
-          { ...params, stream: true },
-          { signal: request.signal },
-        );
-
-        for await (const chunk of stream) {
-          yield* eventsFromOpenAIChunk(chunk, acc);
-        }
-
-        const result = buildGenerateResult(acc);
-        yield { type: "end", result };
-      } catch (err) {
-        // Check for abort before mapping to provider errors — aborted requests
-        // may produce a timeout event (from deadline.ts) or a generic abort error.
-        if (request.signal?.aborted) {
-          const timeout = modelAttemptTimeoutEvent(request.signal);
-          if (timeout) {
-            yield timeout;
-            return;
-          }
-          if (accumulatorHasPartialResult(acc)) {
-            yield { type: "end", result: buildGenerateResult(acc) };
-            return;
-          }
-          yield {
-            type: "error",
-            code: "invalid_request",
-            message: "Request aborted",
-            retryable: false,
-          };
-          return;
-        }
-        const mapped = mapProviderHttpError(err);
-        yield { type: "error", ...mapped };
-      }
+      return streamProvider({
+        start: { type: "start", model: model.id, provider: providerId },
+        signal: request.signal,
+        open: () =>
+          client.chat.completions.create(
+            { ...toOpenAIChatCompletionParams(request, model, call), stream: true },
+            { signal: request.signal },
+          ),
+        events: (chunk) => eventsFromOpenAIChunk(chunk, acc),
+        result: () => buildGenerateResult(acc),
+      });
     },
   };
 }

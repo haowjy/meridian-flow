@@ -1,42 +1,26 @@
 # LLM Calls
 
-The **LLM Calls** pop-out joins metadata-only gateway lifecycle events with an
-explicit, content-bearing read of the canonical request sent to the model.
-Lifecycle polling must remain independent from prompt capture.
-
-## Data paths
-
-The viewer polls
-`/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500` every three
-seconds while its window is open. `llm-calls/derive-llm-calls.ts` groups events
-by `gatewayCallId`, orders calls newest-first, applies terminal-outcome
-precedence, and derives message-class counts from terminal `chunkCounts`.
-Individual chunk events never enter the timeline or raw-record view.
+The pop-out joins metadata-only gateway lifecycle events with an explicit read of the
+canonical request sent to the model. Lifecycle polling stays independent from prompt
+capture: model-request content never enters lifecycle events, the trace store,
+`EventSink` or JSONL logs.
 
 Prompt content loads only when the user opens a call with both `threadId` and
-`turnId`. The owner-gated model-request endpoint returns the selected request
-and its immediate predecessor so the inspector can compare adjacent tool-loop
-prefixes. Model-request content never enters lifecycle events, the trace store,
-`EventSink`, or JSONL logs.
+`turnId`. The endpoint returns the selected request and its immediate predecessor so
+the inspector can compare adjacent tool-loop prefixes.
 
-Cache diagnostics pair successful gateway calls with the persisted response
-rows in the thread snapshot. The card shows the recorded predicted cache state
-and a readable reason beside observed cache hit percentage and reset status.
-Prediction mismatch is flagged for a predicted-warm call with an observed
-reset, or a predicted-cold call with at least 50% cache reads. Missing cache
-read data is not treated as a mismatch.
+A stop before any output reaches the gateway as `error` with `invalid_request`, the
+same as a real bad request, and no gateway record tells them apart. The view joins the
+thread snapshot: an `invalid_request` on the last call of a `cancelled` turn shows as
+`cancelled`, with the error code still printed beside the badge. `missing_usage` comes
+from the paired response's `pricingSnapshot`, so a stop before output (no response row)
+can't show it. First output and duration read the close record's
+`providerFirstOutputMs` and `gatewayObservationDurationMs`.
 
-## Request views
+A prediction mismatch is a predicted-warm call with an observed reset, or a
+predicted-cold call with at least 50% cache reads. Missing cache read data isn't a
+mismatch.
 
-`ModelRequestInspector` presents the provider-neutral `GenerateRequest` in this
-order:
-
-1. **Markdown** shows ordered messages and advertised tools. It quotes message
-   boundaries and shortens any single extreme part beyond 32 KiB.
-2. **Raw** shows the exact captured request JSON.
-3. **Debug** shows digests, correlation IDs, prefix evidence, capture status,
-   resolved skills, and tool provenance.
-
-The contracts package owns the Markdown projection and prefix summary used by
-both this UI and `./mf thread context`. Keep presentation logic
-there when the UI and CLI need the same answer.
+The contracts package owns the Markdown projection and prefix summary used by both
+this UI and `./mf thread context`. Keep presentation logic there when the UI and CLI
+need the same answer.
