@@ -115,17 +115,21 @@ function slicePlan(
     });
     const text = slice.content.textBetween(0, slice.content.size, "\n", "\n");
     if (!leaves || !text) return { kind: "refuse", hint: t`Can’t put that inside code` };
+    const transaction = state.tr;
+    deleteSource(transaction, source);
+    const at = transaction.mapping.map(landing.pos);
+    transaction.insertText(text, at);
+    transaction.setSelection(TextSelection.create(transaction.doc, at, at + text.length));
+    const broken = tableRefusal(state, landing.pos, {
+      transaction,
+      from: at,
+      to: at + text.length,
+    });
+    if (broken) return { kind: "refuse", hint: broken };
     return {
       kind: "accept",
       pos: landing.pos,
-      commit(target) {
-        const transaction = target.state.tr;
-        deleteSource(transaction, source);
-        const at = transaction.mapping.map(landing.pos);
-        transaction.insertText(text, at);
-        transaction.setSelection(TextSelection.create(transaction.doc, at, at + text.length));
-        finish(target, transaction);
-      },
+      commit: (target) => finish(target, transaction),
     };
   }
 
