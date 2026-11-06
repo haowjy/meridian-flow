@@ -256,8 +256,8 @@ function OpenPicker({
       }}
       caption={action === "copy" ? t`Copy ${rowName}` : t`Move ${rowName}`}
       status={error ?? refusal}
+      foldersOnly
       isDisabled={(node) => {
-        if (!node.folder) return true;
         const folder = source.folderFor(node.id);
         return !folder || refusalAt(folder) === "inside-itself";
       }}

@@ -41,7 +41,14 @@ export type ImportPart =
   | { kind: "oversize"; entryId: number };
 
 export type ReceiptCandidate =
-  | { kind: "receipt"; entryId: number; receipt: FileReceipt; changedAfterPick: boolean }
+  | {
+      kind: "receipt";
+      entryId: number;
+      receipt: FileReceipt;
+      changedAfterPick: boolean;
+      /** A document that could not become one (see `classify`); it is stored as a file. */
+      keptAsFile: boolean;
+    }
   | { kind: "oversize"; entryId: number }
   | { kind: "unchanged"; entryId: number };
 
@@ -106,7 +113,7 @@ export async function prepareReceipts(
     }
     const root = record.roots.find((root) => root.rootId === entry.selection.rootId);
     const filename = entry.selection.path.split("/").at(-1) || root?.name || "";
-    const facts = await classify(filename, part.bytes);
+    const { facts, keptAsFile } = await classify(filename, part.bytes);
     const key = stagingKey(record.id, part.entryId);
     const put = await objects.put(key, part.bytes, facts.mimeType);
     if (!put.ok) throw new Error(put.error.message);
@@ -114,6 +121,7 @@ export async function prepareReceipts(
       kind: "receipt",
       entryId: part.entryId,
       changedAfterPick: part.changedAfterPick ?? false,
+      keptAsFile,
       receipt: {
         objectKey: key,
         storageUrl: put.value.storageUrl,
@@ -170,7 +178,11 @@ export function receiptPatches(
         id: entry.id,
         patch: {
           state: "received",
-          reason: candidate.changedAfterPick ? "changed_after_pick" : null,
+          reason: candidate.changedAfterPick
+            ? "changed_after_pick"
+            : candidate.keptAsFile
+              ? "kept_as_file"
+              : null,
           receipt: candidate.receipt,
         },
       });
