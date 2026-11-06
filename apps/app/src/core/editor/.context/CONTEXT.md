@@ -204,7 +204,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   the pointer's column; a table gets a gap cursor; prose beats source and
   objects, so a seam between a fence and a paragraph puts the caret in the
   paragraph. A fence with no prose beside it takes the caret at its facing
-  edge. A press never makes a paragraph, even past the end. A press that lands
+  edge. A press never makes a paragraph, with one exception: past the end of the
+  document, when the last block can't take a caret and no gap cursor fits (a
+  closed diagram), it appends an empty paragraph and puts the caret in it, the
+  only way to reach that spot. `pressSelection` stays pure; the write is in
+  `pressOnInertTarget`, so one undo removes the line. A document already ending
+  on an empty paragraph gets the caret there, and a press in a cell never makes
+  one. A press that lands
   where the caret already stands is left to the browser, which knows the line
   the caret is on. A press in a cell stays in that cell.
 - **A drop** (`landing/LandingExtension.ts`) picks the door for the drag once:
@@ -250,8 +256,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   caret. Inline code is not a fence: a tree row or picture there snaps to the
   span's edge; a text slice stays in the span. A file that is not a picture
   shows `Only pictures can be dropped here` while dragging. A drop never changes
-  the rows or columns of any table, spills out of its cell or nests a table
-  (Markdown can't hold one). One that would is refused: `Can’t put that in a
+  the rows or columns of any table (nested ones too) or spills out of its cell.
+  One that would is refused: `Can’t put that in a
   table cell` when it lands in a cell, `Can’t move part of a table` when a
   move's deletion would cut a table elsewhere. A slice that changes nothing is
   refused with no hint. A picture or chip in an ordinary slice lands in a cell.

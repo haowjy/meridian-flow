@@ -81,12 +81,10 @@ it trails the last move by one `dragover`.
 ## Text dropped in a table cell
 
 16. Tables keep their grid. Drag a selection that runs from a paragraph into a
-    second table onto a cell of the first table: the hint reads **Can’t put
-    that in a table cell** and nothing changes. Drag the same selection onto
-    a paragraph (a move, not a copy): the hint reads **Can’t move part of a
-    table**, because deleting it would cut the table. Hold Ctrl (Option on
-    Mac) to copy: the paragraph takes it. Drag the second table by its block
-    handle onto a cell: refused, no table nests. Drag a paragraph, a picture
+    second table onto a cell of the first table (a move, not a copy): the hint reads **Can’t move
+    part of a table** and nothing changes, because deleting the selection would
+    cut the second table. Drag the same selection onto a paragraph: the same
+    hint. Hold Ctrl (Option on Mac) to copy onto a paragraph: it takes it. Drag a paragraph, a picture
     or a chip, with other text, onto a cell: it lands in the cell and both
     grids keep their row and column counts. Drag a selection onto its own
     range: nothing changes and no hint shows. A highlighted row of cells drags
