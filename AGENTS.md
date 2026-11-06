@@ -90,9 +90,22 @@ architecture.
 Update the relevant `AGENTS.md`, `.context/`, or KB material when a change
 shifts the mental model, contracts, or decisions.
 
-**Keep principles apart from implementation.** Very little here is an invariant.
-Everything else is the current implementation, open to rewriting once evidence or
-testing shows something better. The owner's words are direction, not rulings:
+**Invariants.** These hold however the work is done. Each changes only as its own
+visible step, never to get a task passing:
+
+- Migrations lose no data ([`migration-lint`](tools/dev/migration-lint.ts)).
+- Every copy of a document's text converges, and no accepted edit is lost in the
+  merge. No check yet.
+- Writer text stays out of logs and diagnostics. Only `packages/yjs-inspect` checks
+  this, with its canary test.
+- Marks and receipts say truthfully who did what. Partly checked.
+- One project's or account's content never reaches another. Checked feature by
+  feature.
+- A usage event debits once
+  ([ledger tests](apps/server/server/domains/billing/adapters/__conformance__/drizzle-credit-ledger.db.test.ts)).
+
+**Keep principles apart from implementation.** Everything else is the current
+implementation, open to rewriting once evidence or testing shows something better. The owner's words are direction, not rulings:
 reason against them and work around them when the evidence says to. Write down the
 behavior and its reason, not who said it. Measurements and incident history go
 beside the code or tool they concern, not into rules.
