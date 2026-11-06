@@ -7,6 +7,7 @@
  */
 
 import { resolve } from "node:path";
+import { devAuthIdentity } from "@meridian/contracts/dev-auth";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createDb, projects } from "@meridian/database";
 import { eq } from "drizzle-orm";
@@ -41,8 +42,7 @@ function requireEnv(name: string): string {
 }
 
 async function ensureSmokeUserId(databaseUrl: string): Promise<UserId> {
-  const externalId = requireEnv("WORKOS_DEV_LOGIN_USER_ID");
-  const email = process.env.WORKOS_DEV_LOGIN_EMAIL?.trim() || "test@meridian.dev";
+  const { externalId, email } = devAuthIdentity(process.env);
   const { default: postgres } = await import("postgres");
   const sql = postgres(databaseUrl, { max: 1 });
   try {

@@ -40,7 +40,7 @@ const EXIT_CODE_LINES = [
   "1 run failed, waiting for usage, or server error",
   "2 usage",
   "3 not found",
-  "4 stack not running or dev login failed",
+  "4 stack not running or not authenticated",
   "5 cancelled",
   "124 timeout",
 ];
@@ -65,7 +65,7 @@ export function renderOverview(groups: readonly CommandGroup[]): string {
   );
   return [
     "mf: drive and inspect this worktree's running Meridian Flow stack through its own API.",
-    "Needs `pnpm dev` running (or MF_SERVER_URL + MF_COOKIE/MF_APP_URL).",
+    "Needs `pnpm dev` running (or MF_SERVER_URL, plus MF_COOKIE for a stack that needs one).",
     "",
     ...groups.flatMap((group) => [...renderGroup(group, width), ""]),
     "Global: --json (one object; NDJSON for streams, last line is the result), --fields a,b, -h/--help",
