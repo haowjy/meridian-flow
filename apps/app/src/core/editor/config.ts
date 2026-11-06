@@ -22,7 +22,6 @@ import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
-import { DropLandingExtension } from "./extensions/DropLandingExtension";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
@@ -50,12 +49,13 @@ import {
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
-import { ReferenceDropExtension, type ReferenceDropOptions } from "./extensions/reference-drop";
+import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
-import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
+import { ImageIngressExtension, ImageUploadPresenceExtension, imageDropDoor } from "./images";
+import { DropLandingExtension } from "./landing/DropLandingExtension";
 import { LinkSurfaceExtension, WikilinkPasteExtension, type WikilinkPasteOptions } from "./links";
 import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
 import { ObjectPhysicsExtension } from "./objects";
@@ -174,10 +174,8 @@ function pickCursorColor(peers: PeerAwareness): string {
 
 const STARTER_KIT_YJS_SAFETY_OPTIONS = {
   // Off for a different reason than the rest of this list: the stock
-  // dropcursor computes its own landing, which near a cell border promises a
-  // position that would manufacture a table column. `DropLandingExtension`
-  // carries the same cursor (jade, matching the block drag's drop line) with
-  // the landing and the display resolved by one function (`table-drop.ts`).
+  // dropcursor computes its own landing. `DropLandingExtension` draws the one
+  // caret (jade, matching the block drag's drop line) from the plan it lands.
   dropcursor: false,
   // Gapcursor is deliberately ABSENT from this list (absent = enabled): it is
   // display-only (no schema or wire impact) and it is the caret's only way
@@ -352,8 +350,7 @@ export function createStandaloneEditorExtensions({
       // A code file is one fence, so the fence's bracket/quote set is the
       // whole document's.
       AutoPairExtension,
-      // No tables here, so this is just the dropcursor for dragged text —
-      // the same one the document schema shows.
+      // Text drags only: the same caret and landing the document shows.
       DropLandingExtension,
     ];
   }
@@ -413,12 +410,13 @@ export function createStandaloneEditorExtensions({
     // which is why the markdown text parser is its prop rather than a
     // view-level default here (a view prop would shadow the plugin's).
     ImageIngressExtension,
-    // Where dragged content lands, and the dropcursor that promises it:
-    // inside a table both resolve into a cell, never a new column.
-    DropLandingExtension,
-    // Later extensions receive DOM events first: entry drops own their caret
-    // and insertion before the generic ProseMirror slice door sees them.
-    ...(referenceDrop ? [ReferenceDropExtension.configure(referenceDrop)] : []),
+    // Where dragged content lands, and the caret that promises it. The lanes
+    // that know a payload (rows, files) hand it their doors here, so the
+    // landing imports neither.
+    DropLandingExtension.configure({
+      ...(referenceDrop && referenceDropDoor(referenceDrop)),
+      files: imageDropDoor,
+    }),
     // Chrome mounts only on the document schema: a code file is one code
     // block with no objects and no surfaces to own.
     ...EDITOR_CHROME_EXTENSIONS,
