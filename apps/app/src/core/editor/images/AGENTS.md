@@ -33,8 +33,8 @@ slot aborts it.
   Measured upload frames reserve intrinsic size; failed or abandoned slots
   return to the fallback frame.
 - Selected state comes from object-selection decoration, not a node-view
-  lifecycle prop. The table drop resolver is shared by dropcursor, node drag,
-  and file drop, so a structural drop never manufactures a table column.
+  lifecycle prop. A picture drop lands where `landing/` says, and a structural drop never
+  manufactures a table column.
 - A picture is one object at one size wherever it stands, as in Docs or Word.
   A big picture mid-sentence makes a tall line; that is the answer, not a bug
   to cap. Never reintroduce a mid-sentence-only

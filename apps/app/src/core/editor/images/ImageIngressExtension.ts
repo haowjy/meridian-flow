@@ -4,7 +4,7 @@
  * Four doors (the toolbar and slash picker, a drop, a pasted file, a pasted
  * address), one lifecycle, and this file is only the wiring: the storage the
  * app registers its ports into, the plugin that holds what is in flight, the
- * clipboard and drop props, and the decorations the manuscript draws from.
+ * clipboard prop (a drop lands through `image-drop-door.ts`), and the decorations the manuscript draws from.
  *
  * The lifecycle itself is next door — [`image-uploads.ts`](image-uploads.ts) for
  * a picture from this machine, [`image-imports.ts`](image-imports.ts) for one the
@@ -16,7 +16,6 @@
  * and undo it like any other node, and completion never reflows the manuscript.
  */
 
-import { t } from "@lingui/core/macro";
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
@@ -24,7 +23,6 @@ import type { DecorationSet } from "@tiptap/pm/view";
 import { resolveAnchorIn } from "../anchors";
 import { wikilinkPasteParsePlugins } from "../links";
 import { markdownClipboardParser, markdownClipboardSerializer } from "../markdown-paste";
-import { tableDropDecision } from "../table-drop";
 import { startImageImport } from "./image-imports";
 import {
   applyIngressMessage,
@@ -39,10 +37,8 @@ import {
   sendIngressMessage,
 } from "./image-ingress-runtime";
 import { createImageIngressStore } from "./image-ingress-store";
-import { insertImageFile, pasteImageFile } from "./image-uploads";
+import { pasteImageFile } from "./image-uploads";
 import {
-  draggingFiles,
-  fileDropIntent,
   imageFileFromClipboard,
   linkExternalPastedImages,
   type PastedImageImport,
@@ -105,7 +101,6 @@ export const ImageIngressExtension = Extension.create({
 
   addProseMirrorPlugins() {
     const editor = this.editor;
-    const { status } = this.storage;
     /** Imports a paste asked for, between the transform and its transaction. */
     let pasted: readonly PastedImageImport[] | null = null;
     let settleScheduled = false;
@@ -171,37 +166,6 @@ export const ImageIngressExtension = Extension.create({
             return true;
           },
 
-          handleDrop(view, event) {
-            const intent = fileDropIntent(Array.from(event.dataTransfer?.files ?? []));
-            if (!intent) return false;
-            // Claimed before anything else is decided, including whether the
-            // editor can take it: the browser's own answer to a file nobody
-            // claimed is to navigate to it, and the manuscript would be gone.
-            event.preventDefault();
-            status.setDropActive(false);
-            if (!view.editable) return true;
-            if (intent.kind === "refuse") {
-              status.refuse(
-                t`${intent.filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG.`,
-              );
-              return true;
-            }
-            // The same resolution the dropcursor promised during the drag
-            // (`../table-drop.ts`): near a cell border the file lands inside
-            // the nearest cell's paragraph, never as a manufactured column.
-            const decision = tableDropDecision(view, { x: event.clientX, y: event.clientY });
-            if (decision.kind === "refuse") {
-              status.refuse(t`A picture cannot go there.`);
-              return true;
-            }
-            const pos =
-              decision.kind === "snap"
-                ? decision.pos
-                : view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-            insertImageFile(editor, intent.file, pos);
-            return true;
-          },
-
           clipboardTextParser: markdownClipboardParser(undefined, () =>
             wikilinkPasteParsePlugins(editor),
           ),
@@ -215,28 +179,6 @@ export const ImageIngressExtension = Extension.create({
             const linked = linkExternalPastedImages(slice, view.state.schema);
             pasted = linked.imports.length > 0 ? linked.imports : null;
             return linked.slice;
-          },
-
-          handleDOMEvents: {
-            dragenter(view, event) {
-              if (view.editable && draggingFiles(event)) status.setDropActive(true);
-              return false;
-            },
-            dragover(view, event) {
-              if (!draggingFiles(event)) return false;
-              // The drop is claimed here, before the file's name is knowable:
-              // a dragover nobody claims is a drop the browser navigates to.
-              // Handed on rather than consumed, so the drop cursor still gets
-              // to show where the picture will land.
-              event.preventDefault();
-              if (view.editable) status.setDropActive(true);
-              return false;
-            },
-            dragleave(_view, event) {
-              const leaving = event.currentTarget as HTMLElement | null;
-              if (!leaving?.contains(event.relatedTarget as Node)) status.setDropActive(false);
-              return false;
-            },
           },
         },
 

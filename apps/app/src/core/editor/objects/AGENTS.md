@@ -30,11 +30,11 @@ tables use the full-cell `CellSelection` spelling consumed by
   `selectNode`/`deselectNode` cannot survive a remote whole-document rebuild.
 - The arrow walk lands on an object or prose, never inside an opaque rendered
   body. Esc and printable input step over an opaque object to the next writable
-  position; a dead end is a refusal rather than a backward jump.
+  position; a dead end is a refusal rather than a backward jump. A press or drop beside a fence is not a dead end: its facing edge takes the caret when no prose is on the other side.
 - `typeBesideObjectTransaction` inserts beside a selected object. Destructive
   commands remove the registered node, not a table's cell selection. A block
   drag uses the block surface and `NodeHold`; inline drag uses ProseMirror.
-- Keep table landing and pointer-boundary decisions in their shared helpers.
+- Keep table landing and press landing decisions in their shared helpers.
   A structural drop must resolve inside a cell rather than manufacture a
   column.
 

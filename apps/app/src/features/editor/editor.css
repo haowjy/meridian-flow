@@ -29,10 +29,10 @@
 
 .meridian-editor .ProseMirror {
   outline: none;
-  max-width: 68ch;
   /* Height, insets, and the scroll-past-end reserve are the prose column's,
      applied as utilities from `editor-column.ts` — one owner for the geometry
-     that decides where a click below the last line lands.
+     that decides where a click below the last line lands, and the reading
+     measure is in those insets too.
 
      Font family, reading scale, AND color inherit from `prose-tokens` — the
      editor must read identically to chat prose (one reading surface). A

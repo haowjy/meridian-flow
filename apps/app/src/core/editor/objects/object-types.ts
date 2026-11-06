@@ -121,3 +121,8 @@ export function objectSurfaceKind(node: PMNode): ObjectSurfaceKind | null {
 export function isSourceBlock(node: PMNode): boolean {
   return node.type.spec.code === true;
 }
+
+/** A block that stands in for prose rather than being it: a leaf, an object, or a source block. */
+export function isObjectLike(node: PMNode): boolean {
+  return node.isLeaf || isOpaqueObject(node) || isSourceBlock(node);
+}

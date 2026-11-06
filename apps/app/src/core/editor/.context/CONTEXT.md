@@ -189,26 +189,78 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 ### Pointer, keyboard, and drop policy
 
-- A press outside the prose is answered once by `pointer-boundary.ts`, not by
-  the layout component that caught it. Gutters, the page below the last block,
-  and the strip between blocks place a caret. An outside press never lands in
-  an opaque object's interior; at a seam prose beats source. Keyboard behavior
-  follows the same reading, so no input device places a caret in a body the
-  page is not showing.
+- **One walk answers every point.** `landing/point-landing.ts` walks the
+  document over its boxes and returns a landing for any point, including a
+  margin and the space below the last block: `inline` (a caret in writer
+  text), `seam` (between blocks, where a paragraph fits) or `source` (inside a
+  code block's text). Nothing is outside `view.dom`: the ProseMirror node spans
+  the whole pane and carries the margin as its own padding, so a press or a
+  drop anywhere on the pane reaches the walk. A press and a drop read the same
+  landing; they differ in what they do with it.
+- **A press** (`landing/press.ts`) is answered only when no text is under it:
+  `handleClick` takes a click on the pane or a container's own element, and
+  never one on text or an object. At a seam the nearer neighbour's line keeps
+  the pointer's column; a table gets a gap cursor; prose beats source and
+  objects, so a seam between a fence and a paragraph puts the caret in the
+  paragraph. A fence with no prose beside it takes the caret at its facing
+  edge. A press never makes a paragraph, even past the end. A press that lands
+  where the caret already stands is left to the browser, which knows the line
+  the caret is on. A press in a cell stays in that cell.
+- **A drop** (`landing/LandingExtension.ts`) picks the door for the drag once:
+  `view.dragging ? sliceDoor : doors[kind]`, where the kind comes from its
+  types (`landing/drag-payload.ts`: tree rows, files, or text). It asks the walk
+  for the landing, and the door returns one plan (`landing/drop-plan.ts`): the
+  caret, the hint and the drop all read it. This is the one caret for every
+  drag except a block move, which draws and lands its own top-level seam
+  (`block-geometry.ts`). A seam that no blank paragraph covers gets its own new
+  paragraph, including past the last block. Three doors take a payload: slices
+  (`landing/slice-drop.ts`: text and nodes moved or copied inside the editor,
+  or text from outside, read again by the host's text parser where it lands),
+  project-tree rows (`extensions/reference-drop/reference-drop-door.ts`, handed
+  in from `config.ts`) and files (`images/image-drop-door.ts`, also handed in).
+  `landing/` imports neither lane. A host mounts only the doors it has; a
+  payload with no door is unclaimed at `dragover`, `drop` and `handleDrop`
+  alike, and the click route rides with the plugin, so a code file and the
+  Composer have it too. A nonempty slice still goes through the landing when
+  the types also list Files. A drag with a plan is claimed at `dragover`, and a
+  refusal sets `dropEffect = "none"`: an unclaimed file is opened by the
+  browser. `dragover` is a capture listener on `view.dom`, because a node view
+  stops it before `handleDOMEvents` and SVG children can stop the bubble.
+  `dragleave` with a null `relatedTarget` (Chrome crossing into SVG) still
+  checks the point, so the caret is not cleared while the pointer is in the
+  editor. A drag whose files the browser hides until the drop (Safari lists
+  none, Firefox `application/x-moz-file`) is taken, and the drop looks again.
+  The hint beside the pointer is `landing/drag-hint-store.ts`, drawn by
+  `DragHint` in the project feature.
+- **Snapping.** The walk takes the nearer side of a chip under the pointer.
+  Each door then snaps further on its own (`landing/inline-snap.ts`): a tree
+  row moves out of a code span, a chip (an atom or a link naming a file), then
+  a word; a picture moves out of a code span only; a slice stays where the walk
+  put it, so text dropped in inline code stays in the span. A diagram that is
+  not open is one object: a drop beside it lands at the seam before or after
+  it. A diagram is open when the editor is focused (`editor.isFocused`, the
+  answer the walk and the diagram's node view both read), the selection is not
+  a `NodeSelection`, and the caret is inside it.
+- **What refuses.** Text dropped into a fence becomes plain characters (a hard
+  break is a newline); a slice holding a picture or chip is refused (`Can’t put
+  that inside code`), and a move that lands in a block the selection reaches
+  into changes nothing. A picture over a fence is refused (`Can’t put a picture
+  inside code`) and a tree row too (`Can’t mention inside code`), each with no
+  caret. Inline code is not a fence: a tree row or picture there snaps to the
+  span's edge; a text slice stays in the span. A file that is not a picture
+  shows `Only pictures can be dropped here` while dragging. A table's shape is
+  held: a structural drop never makes a table column, and a drop in a table
+  lands in a cell.
+- StarterKit's dropcursor stays disabled; two landings answering one drag is
+  the bug this prevents. `landing/drop-caret.ts` draws the one caret.
+  Keyboard behavior follows the same reading, so no input device places a
+  caret in a body the page is not showing.
 - A key the editor owns is consumed on a refusal as well as on success. Undo
   and Tab cannot fall through to the browser: Tab would move DOM focus out of
   the manuscript and discard later keystrokes. Tab uses one ladder: table
   cells, indent in a fence, sink/lift in a list, then `\t` in prose. A leading
   prose tab is written `&#x9;`; the `packages/markup` codec test keeps it safe.
   Enter in cell prose splits the paragraph; Shift-Enter is the hard break.
-- A drop inside a table lands inside a cell, never between two. `table-drop.ts`
-  is the one landing for the dropcursor, node drag, OS-file drop, and tree-row
-  reference drop. StarterKit's dropcursor stays disabled; two landings answering
-  one drag is the bug this seam prevents. A reference drop treats an existing
-  identity link or inline atom as one unit, then snaps an inline landing to the
-  nearer word edge, refuses code, and inserts every reference in one
-  transaction. `drop-caret.ts` is the shared geometry for the generic drop
-  cursor and that reference caret.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
   the source face without changing selection, whether it arrived by key,

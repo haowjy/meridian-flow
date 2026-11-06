@@ -179,7 +179,7 @@
 
 /* The prose dims behind the hint. Keyed off the hint's own presence rather than
    a class the shell would have to set: the drag belongs to this lane, and the
-   canvas keeps one className. */
+   shell sets no class for it. */
 .meridian-editor:has(> .meridian-editor-drop-overlay) .ProseMirror {
   background: color-mix(in srgb, var(--color-card) 65%, transparent);
 }

@@ -63,7 +63,8 @@ stack.
 - [Desktop files dropped on a chat](chat-file-drop.md): files onto the composer and the transcript attach through the paperclip's intake; folders, a bad name, offline, the tree's own drops and the phone.
 - [Dragging from places that aren't tree rows](drag-sources.md): tabs, path crumbs, Recent rows, mention chips (composer and transcript), selected Editor links, receipt and Work change rows and Uploads entries dragging out, always asking Move / Copy / Cancel, a draft tab copying its draft, Uploads refusing drops, same-system row drags still moving at once and the phone with no drag, with `agent-browser`.
 - [Saved file display](file-display.md): a TIFF, HEIC or BMP draws from a server-made preview in the viewer, a DOCX's inline image and chat; any file the browser can't draw is a card with Download, never Retry.
-- [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as word-snapped `@` references, with refusals and drop-regression checks.
+- [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as `@` references that land where the caret showed (word, gap, margin, past the end, bullets, inline code, diagram, empty document), with refusals and drop-regression checks.
+- [Presses](presses.md): clicks with no text under them (margin, gap, wrapped line, cell padding, below each kind of ending) put the caret where pointed and never make a paragraph.
 - [Model `grep`](grep.md): regex search over a 450-document project, each output mode, scoping, refusals, staged and draft text, each case with its predicted and measured time.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 - [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.

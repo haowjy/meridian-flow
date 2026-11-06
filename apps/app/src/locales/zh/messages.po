@@ -258,8 +258,8 @@ msgstr ""
 msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
 
-#. placeholder {0}: intent.filename
-#: src/core/editor/images/ImageIngressExtension.ts
+#. placeholder {0}: listed[0].name
+#: src/core/editor/images/image-drop-door.ts
 msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
 
@@ -681,6 +681,10 @@ msgstr "{who} 在此回复保存其更改之前从草稿中放弃了这份文档
 msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr ""
 
+#: src/features/editor/WordCount.tsx
+msgid "{words, plural, one {# word} other {# words}}"
+msgstr "{words, plural, other {# 字}}"
+
 #: src/features/draft-review/tree-line.ts
 msgid "{work} is deleting this."
 msgstr ""
@@ -776,10 +780,14 @@ msgstr ""
 msgid "A folder named {name} already exists in this location."
 msgstr ""
 
+#: src/core/editor/images/image-drop-door.ts
+#~ msgid "A picture cannot go there"
+#~ msgstr "图片不能放在这里"
+
+#: src/core/editor/images/image-drop-door.ts
 #: src/core/editor/images/image-uploads.ts
-#: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
-msgstr ""
+msgstr "图片不能放在这里。"
 
 #: src/features/project/context/entry-drag/copy-refusal.ts
 msgid "A source is no longer there."
@@ -1306,6 +1314,14 @@ msgstr ""
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Can't move these from here"
 msgstr ""
+
+#: src/core/editor/images/image-drop-door.ts
+msgid "Can’t put a picture inside code"
+msgstr "无法将图片放入代码中"
+
+#: src/core/editor/landing/slice-drop.ts
+msgid "Can’t put that inside code"
+msgstr "无法将其放入代码中"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."
@@ -4182,6 +4198,10 @@ msgstr "一次只能有一个问题或请求等待回答，因此这一个没有
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Only part of this change could be reversed."
 msgstr ""
+
+#: src/core/editor/images/image-drop-door.ts
+msgid "Only pictures can be dropped here"
+msgstr "这里只能放入图片"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "Open"
