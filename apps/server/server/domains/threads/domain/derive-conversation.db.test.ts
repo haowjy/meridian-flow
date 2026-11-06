@@ -694,7 +694,7 @@ else
         displayName: "Handoff test model",
         contextWindow: 100_000,
         maxOutputTokens: 4_096,
-        promptCache: { kind: "explicit" as const, shortTtlMinutes: 1, longTtlMinutes: 1 },
+        promptCache: { kind: "explicit" as const, shortTtlSeconds: 60, longTtlSeconds: 60 },
         reasoning: { efforts: ["low", "medium", "high", "max"] },
         capabilities: new Set(),
       };

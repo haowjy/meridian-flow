@@ -79,7 +79,7 @@ export function createCompactionFixture(db: Database) {
             displayName: "Fixture",
             contextWindow: 128000,
             maxOutputTokens: 100,
-            promptCache: { kind: "automatic", shortTtlMinutes: 1, longTtlMinutes: 1 },
+            promptCache: { kind: "automatic", shortTtlSeconds: 60, longTtlSeconds: 60 },
             reasoning: { efforts: ["low", "medium", "high", "max"] },
             capabilities: new Set(["image_input"]),
           },
