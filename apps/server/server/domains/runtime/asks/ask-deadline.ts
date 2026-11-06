@@ -3,12 +3,23 @@
  * the writer is interacting (`ask.presence`).
  *
  * The idle clock restarts on every report of activity on the page; the hard limit runs from the
- * moment the ask opened and never moves. The limit was set from the main chat's 1-hour cache
- * target; a chat whose cache is shorter can miss it during the wait.
+ * moment the ask opened and never moves. Both clocks end a buffer before a default cache lifetime
+ * so the next model call can still reuse the cache; a chat whose model caches for less can miss
+ * it during the wait.
  */
 
-export const ASK_IDLE_MS = 4 * 60_000;
-export const ASK_HARD_LIMIT_MS = 55 * 60_000;
+import {
+  DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
+  DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
+} from "../gateway/index.js";
+
+const ASK_IDLE_CACHE_BUFFER_MINUTES = 1;
+const ASK_HARD_LIMIT_CACHE_BUFFER_MINUTES = 5;
+
+export const ASK_IDLE_MS =
+  (DEFAULT_SUBAGENT_PROMPT_CACHE_TTL - ASK_IDLE_CACHE_BUFFER_MINUTES) * 60_000;
+export const ASK_HARD_LIMIT_MS =
+  (DEFAULT_PRIMARY_PROMPT_CACHE_TTL - ASK_HARD_LIMIT_CACHE_BUFFER_MINUTES) * 60_000;
 
 /**
  * The deadline an idle clock started at `now` gives an ask that opened at `openedAt`, in whole

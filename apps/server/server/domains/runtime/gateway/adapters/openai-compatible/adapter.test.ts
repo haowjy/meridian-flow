@@ -33,7 +33,7 @@ describe("openai-compatible adapter retries", () => {
         messages: [user("go")],
       },
       model,
-      { cacheTtlMs: null, longCacheWrites: false, reasoning: "default" },
+      { cacheTtlMinutes: null, longCacheWrites: false, reasoning: "default" },
     )) {
       events.push(event);
     }

@@ -36,18 +36,15 @@ import type {
 } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 
-const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
-const TWELVE_HOURS_MS = 12 * 60 * 60 * 1_000;
-
-/** The `prompt_cache_options.ttl` each supported lifetime is sent as; the 30m default is sent as no parameter. */
+/** The `prompt_cache_options.ttl` each supported lifetime, in minutes, is sent as; the 30m default is sent as no parameter. */
 const TTL_WIRE = new Map<number, "12h" | undefined>([
-  [THIRTY_MINUTES_MS, undefined],
-  [TWELVE_HOURS_MS, "12h"],
+  [30, undefined],
+  [12 * 60, "12h"],
 ]);
 
 /** Reject, at gateway creation, a model whose cache lifetimes this API cannot be sent. A null lifetime (unknown) sends nothing. */
 export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
-  for (const ttl of [model.promptCache.shortTtlMs, model.promptCache.longTtlMs]) {
+  for (const ttl of [model.promptCache.shortTtlMinutes, model.promptCache.longTtlMinutes]) {
     if (ttl !== null && !TTL_WIRE.has(ttl)) {
       throw new Error(`OpenAI prompt cache TTLs for ${model.id} must be 30m or 12h`);
     }
@@ -298,7 +295,7 @@ export function toOpenAIResponsesParams(
   const { id: modelId, provider: providerId } = model;
   const instructions = extractInstructions(request.messages);
   const input = flattenAssistantToolCalls(request.messages, providerId, modelId);
-  const cacheTtl = call.cacheTtlMs === null ? undefined : TTL_WIRE.get(call.cacheTtlMs);
+  const cacheTtl = call.cacheTtlMinutes === null ? undefined : TTL_WIRE.get(call.cacheTtlMinutes);
 
   return {
     model: modelId,
