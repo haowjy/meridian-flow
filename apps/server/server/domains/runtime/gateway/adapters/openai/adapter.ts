@@ -17,9 +17,9 @@ import type {
   GenerateRequest,
   ModelInfo,
   ProviderConfig,
+  ResolvedCall,
   StreamEvent,
 } from "../../domain/index.js";
-import { hasBillableTokenUsage, withMissingUsageMetering } from "../../domain/metering.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapProviderHttpError, providerFetch } from "../provider-http-error.js";
 import { toOpenAIResponsesParams } from "./request-map.js";
@@ -49,15 +49,18 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
   const providerId = config.id;
 
   return {
-    providerId,
-    async *stream(request: GenerateRequest, model: ModelInfo): AsyncIterable<StreamEvent> {
+    async *stream(
+      request: GenerateRequest,
+      model: ModelInfo,
+      call: ResolvedCall,
+    ): AsyncIterable<StreamEvent> {
       // Create a fresh accumulator per stream call — each generate request
       // gets its own streaming state.
-      const acc = createStreamAccumulator(model.id, providerId);
+      const acc = createStreamAccumulator(model.id, providerId, call.longCacheWrites);
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
-        const params = toOpenAIResponsesParams(request, model.id, providerId);
+        const params = toOpenAIResponsesParams(request, model, call);
         const stream = await client.responses.create(params, { signal: request.signal });
 
         for await (const event of stream) {
@@ -79,13 +82,7 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
             return;
           }
           if (accumulatorHasPartialResult(acc)) {
-            const result = buildGenerateResult(acc);
-            yield {
-              type: "end",
-              result: hasBillableTokenUsage(result.usage)
-                ? result
-                : withMissingUsageMetering(result),
-            };
+            yield { type: "end", result: buildGenerateResult(acc) };
             return;
           }
           yield {

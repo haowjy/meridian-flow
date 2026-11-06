@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generates the target-scale project the grep recipe seeds (docs/qa/grep.md):
+ * Generates the target-scale project the grep recipe seeds (apps/server/server/domains/context/.context/qa/grep.md):
  * 150 chapters of 7,000 words and 300 KB entries of 800 words, 450 documents and about
  * 8.2M characters of synthetic xianxia prose. Deterministic. The output is large, so it is
  * generated, not committed:

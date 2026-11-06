@@ -27,7 +27,14 @@ describe("openai-compatible adapter retries", () => {
     if (!model) throw new Error("mock config has no model");
 
     const events = [];
-    for await (const event of adapter.stream({ messages: [user("go")] }, model)) {
+    for await (const event of adapter.stream(
+      {
+        promptCacheRetention: "short",
+        messages: [user("go")],
+      },
+      model,
+      { cacheTtlMs: null, longCacheWrites: false, reasoning: "default" },
+    )) {
       events.push(event);
     }
 

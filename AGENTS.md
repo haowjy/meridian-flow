@@ -26,8 +26,9 @@ never to get a task passing:
 - Every copy of a document's text converges, and no accepted edit is lost in the
   merge. [`text-convergence.test.ts`](apps/server/server/domains/collab/text-convergence.test.ts)
   checks this through the production room, persistence, and stored-state path.
-- Writer text stays out of logs and diagnostics. Only `packages/yjs-inspect` checks
-  this, with its canary test.
+- Writer text stays out of logs and diagnostics. The sanitizers are checked
+  (`packages/yjs-inspect`'s canary, `safe-event.test.ts`); what emit sites pass them
+  is not.
 - Marks and receipts say truthfully who did what. Partly checked.
 - One project's or account's content never reaches another. Checked feature by
   feature.
@@ -80,8 +81,9 @@ changes included, ends with a prober's `agent-browser` run of the final code, wi
 screenshots in the PR. `./mf` output never stands in for it.
 
 **Live model calls go to `deepseek-flash`,** or the mock provider when the model's
-output doesn't matter. Don't call other providers to confirm a model exists. Model
-facts come from [models.dev](https://models.dev).
+output doesn't matter. For a live run set `LIVE_TEST_MODEL=deepseek-flash`: every
+model call goes there, whatever an Agent or chat names. Don't call other providers
+to confirm a model exists. Model facts come from [models.dev](https://models.dev).
 
 ## Build and test
 
@@ -91,7 +93,7 @@ budgets:
 
 Write few unit tests. A new test protects a named risk that no probe or other test
 already exercises, and asserts what the code produces, not mocks or call counts. Prefer probes
-in the [runtime probe catalog](docs/qa/README.md). A test pinned to a redesignable
+in `.context/qa/` beside their code, indexed in [docs/qa](docs/qa/README.md). A test pinned to a redesignable
 decision lists it under `Pins implementation decisions` in its header; change the
 decision, change the test.
 

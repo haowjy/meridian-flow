@@ -73,7 +73,10 @@ export function pairLlmCallResponses(
           : cacheHitPercent(response.cacheReadTokens, response.inputTokens);
       const mismatch =
         (response.predictedCacheState === "warm" && response.cacheReset) ||
-        (response.predictedCacheState === "cold" && hitPercent !== null && hitPercent >= 50);
+        (response.predictedCacheState === "cold" &&
+          response.predictedCacheReason !== "ttl_unknown" &&
+          hitPercent !== null &&
+          hitPercent >= 50);
       result.set(call.gatewayCallId, {
         response,
         predictedState: response.predictedCacheState,

@@ -26,4 +26,4 @@ partitions the text.
   ([TODO](.context/TODO.md)).
 
 Read [the runtime reference](.context/draft-review.md) before changing ownership.
-Browser recipes: [draft review QA](../../../../../docs/qa/draft-review.md).
+Browser recipes: [draft review QA](.context/qa/draft-review.md).

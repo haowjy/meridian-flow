@@ -16,8 +16,7 @@
  * - If the provider SDK ignores the signal, nextStreamEvent in attempt-stream
  *   races the iterator against the abort anyway.
  * - The timeout error is surfaced as a retryable `provider_error` StreamEvent,
- *   so the retry/fallback machinery can try the same provider again or fail
- *   over to the next fallback.
+ *   so the retry machinery can try the same provider again.
  */
 const ATTEMPT_TIMEOUT_NAME = "ModelAttemptTimeoutError";
 

@@ -29,7 +29,7 @@ import type {
   PromptBakeRepository,
   ThreadImageInclusionRepository,
 } from "../../threads/ports/repositories.js";
-import type { FunctionTool, Gateway, GenerateRequest, ModelInfo, Tool } from "../gateway/index.js";
+import type { Gateway, GenerateRequest, ModelInfo, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
@@ -53,7 +53,7 @@ import {
   projectImageBlocksForModel,
 } from "./image-context.js";
 import type { ToolPolicy } from "./permissions/tool-policy.js";
-import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
+import { promptCacheRetentionFor } from "./prefix-cache-state.js";
 import type { WorkContextReader } from "./work-context.js";
 
 /** Baked `Tool[]` is opaque JSON at the contract boundary; the runtime owns its shape. */
@@ -67,7 +67,7 @@ function toolsFromBakedJson(value: PromptBake["bakedTools"]): Tool[] | null {
  * invocations are never removed, so the list changes once and stays stable.
  */
 function withInvokedSkillTool(baked: Tool[], live: Tool[]): Tool[] {
-  const isSkill = (tool: Tool) => tool.type === "function" && tool.name === "skill";
+  const isSkill = (tool: Tool) => tool.name === "skill";
   if (baked.some(isSkill)) return baked;
   const skill = live.find(isSkill);
   return skill ? [...baked, skill] : baked;
@@ -108,7 +108,7 @@ export interface AssembledNextTurnContext {
   thread: Thread;
   agentSlug: string | null;
   systemPrompt: string;
-  tools: FunctionTool[];
+  tools: Tool[];
   policy: ToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   resolvedModel: ModelInfo | null;
@@ -119,16 +119,12 @@ export interface AssembledNextTurnContext {
   pendingBake?: PromptBakeContent;
   generateRequest: Pick<
     GenerateRequest,
-    "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
+    "messages" | "tools" | "model" | "reasoning" | "promptCacheKey" | "promptCacheRetention"
   >;
   activeHistory: ProjectedActiveHistory;
   /** The block ids whose observation frontiers may credit the model on this request (C10). */
   creditedBlockIds: ReadonlySet<string>;
   preparationUpdates: { turns: Turn[]; blocks: Block[] };
-}
-
-function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] {
-  return (tools ?? []).filter((tool): tool is FunctionTool => tool.type === "function");
 }
 
 export async function composeLivePromptBake(
@@ -237,7 +233,7 @@ export async function prepareNextTurnContext(
 
   const gatewayParams = agentContext.gatewayParams;
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
-  const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
+  const resolvedModel = input.gateway?.listModels().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
@@ -325,15 +321,13 @@ export function renderPreparedTurnContext(
   });
   return {
     ...context,
-    tools: functionToolsFromAdvertised(built.tools),
+    tools: built.tools ?? [],
     generateRequest: {
-      messages:
-        context.resolvedModel?.promptCache.kind === "explicit"
-          ? applyPromptCacheMarks(built.messages)
-          : built.messages,
+      messages: built.messages,
       tools: built.tools,
       // Forks route to the owner of their cutoff; each adapter decides whether to forward it.
       promptCacheKey,
+      promptCacheRetention: promptCacheRetentionFor(context.thread.kind),
       ...context.gatewayParams,
     },
   };
@@ -355,7 +349,7 @@ export async function persistPreparedPromptBake(
   const tools = toolsFromBakedJson(result.bake.bakedTools) ?? assembled.generateRequest.tools ?? [];
   // Match buildContext: an empty advertised tool set is omitted from request bytes.
   assembled.generateRequest.tools = tools.length ? tools : undefined;
-  assembled.tools = functionToolsFromAdvertised(tools);
+  assembled.tools = tools;
 
   const systemIndex = assembled.generateRequest.messages.findIndex(
     (message) => message.role === "system",

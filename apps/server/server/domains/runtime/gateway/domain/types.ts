@@ -15,14 +15,12 @@
  * - `partIndex` on stream deltas is the provider's content-block/output-item position
  *   index (Anthropic block `index`, OpenAI Responses `output_index`, OpenAI-Chat
  *   `tool_calls[].index`), used by adapters to reconstruct source order.
- * - `ContentPart.cacheBreakpoint` and `GenerateRequest.promptCacheKey` are
- *   canonical prompt-cache *intent*, not provider syntax, so they stay
- *   top-level (never nested in `providerOptions`): the loop that assembles a
- *   request knows where a cache boundary belongs and what the thread's stable
- *   key is, but has no opinion on TTL or wire shape. Each adapter decides
- *   whether and how to translate that intent for its own API (explicit
- *   `cache_control` breakpoints, an automatic top-level marker, a
- *   `prompt_cache_key` routing hint, or nothing at all).
+ * - `GenerateRequest.promptCacheKey` is canonical prompt-cache *intent*, not
+ *   provider syntax, so it stays top-level (never nested in `providerOptions`):
+ *   the loop knows the thread's stable key but has no opinion on TTL or wire
+ *   shape. Each adapter decides whether to forward it (a `prompt_cache_key`
+ *   routing hint, or nothing). Cache breakpoints are not part of the request:
+ *   the Anthropic adapter places them on the wire blocks itself.
  */
 import type { Usage } from "@meridian/contracts/runtime";
 import type { ProviderErrorResponse } from "@meridian/contracts/threads";
@@ -33,37 +31,67 @@ export type ProviderOptions = Record<string, Record<string, unknown>>;
 export type TokenizerFamily = "anthropic" | "o200k" | "gemini" | "deepseek";
 
 /**
- * Declared LLM capability flags. Used by the orchestrator and context builder
- * to decide whether to include images, enable tool calling, etc. Each adapter
- * reports capabilities from its static model catalog in config/providers.ts.
+ * Declared LLM capability flags, from the model's row in config/registry.ts.
+ * Only `image_input` is read today (the context builder keeps images for models
+ * that take them); add a value when something branches on it.
  */
-export type Capability =
-  | "streaming"
-  | "tool_calling"
-  | "parallel_tool_calls"
-  | "image_input"
-  | "image_output"
-  | "file_input"
-  | "structured_output"
-  | "reasoning";
+export type Capability = "image_input";
 
 /** Registry-declared provider cache behavior and its best-known retention window. */
 export interface PromptCacheDescriptor {
-  kind: "explicit" | "automatic" | "none";
-  /** Best-known TTL in milliseconds; null means the provider does not publish one. */
-  ttlMs: number | null;
+  kind: "explicit" | "automatic";
+  /** Lifetime in milliseconds of a short-retention request (subagents); null means the provider documents none. */
+  shortTtlMs: number | null;
+  /** Lifetime of a long-retention request (primary chats); equals `shortTtlMs` when the provider offers one lifetime. */
+  longTtlMs: number | null;
 }
 
 /**
- * Static model metadata registered per provider. `provider` is filled in by
- * buildProviderRegistry from the ProviderConfig.id, not from the model's own
- * definition. `hostedTools` lists server-side tools (web_search, code_execution,
- * etc.) that the provider executes without Meridian involvement.
+ * Which cache lifetime a request wants: primary chats ask for long, subagents for short,
+ * and a one-shot call nothing reads again (a rolling summary) for none: no cache mark is sent.
+ */
+export type PromptCacheRetention = "none" | "short" | "long";
+
+/** The TTL a request with this retention gets from a model, for adapters and warm/cold prediction. */
+export function resolvePromptCacheTtlMs(
+  cache: PromptCacheDescriptor,
+  retention: PromptCacheRetention,
+): number | null {
+  if (retention === "none") return null;
+  return retention === "long" ? cache.longTtlMs : cache.shortTtlMs;
+}
+
+export const REASONING_EFFORTS = ["low", "medium", "high", "max"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/**
+ * A model's reasoning controls, copied from its models.dev `reasoning_options`
+ * (`xhigh`, which Flow never requests, is omitted from `efforts`).
+ */
+export interface ReasoningSupport {
+  /** Effort levels the model accepts. */
+  efforts: readonly ReasoningEffort[];
+  /** Whether reasoning can be turned off: a `toggle` option or a `none` effort. */
+  canDisable?: true;
+  /**
+   * The model reasons unless switched off, so the Anthropic adapter must repair a replayed
+   * tool-use turn that lost its thinking block. Declared, not inferred from `canDisable`:
+   * a model can have a toggle and still not think by default.
+   */
+  thinksByDefault?: true;
+}
+
+/**
+ * Static model metadata registered per provider. `provider` is the id of the
+ * ProviderConfig that declares the model.
  */
 export interface ModelInfo {
+  reasoning: ReasoningSupport;
+  /** The serving provider wants Anthropic's tool-schema projection (`anthropicToolSchema`); others get the schema as given. */
+  projectToolSchema?: true;
   /** Whole-request input repricing threshold, if the model has one. */
   inputTierTokens?: number;
-  /** Underlying tokenizer family; OpenRouter models declare their upstream family. */
+  /** Underlying tokenizer family. */
   tokenizer: TokenizerFamily;
   id: string;
   provider: string;
@@ -72,11 +100,6 @@ export interface ModelInfo {
   maxOutputTokens: number;
   promptCache: PromptCacheDescriptor;
   capabilities: Set<Capability>;
-  hostedTools?: Set<string>;
-  /** Per-model inactivity window override. 0 disables the stall guard. */
-  stallTimeoutMs?: number;
-  /** Per-model absolute ceiling override. 0 disables the ceiling backstop. */
-  ceilingTimeoutMs?: number;
 }
 
 /**
@@ -93,34 +116,22 @@ export interface ModelInfo {
  *   `toolCallId` is the provider call identifier used by tool_result to correlate.
  * - ToolResultPart: the output of a tool execution. `isError` flags tool failures
  *   so the provider knows to retry or report the error.
- * - CustomPart: escape hatch for provider-specific content kinds
- *   (e.g., hosted-tool web_search results) that have no canonical representation.
  */
 
-/**
- * Marks this part as a recommended provider prompt-cache boundary. Set by
- * `loop/prompt-cache-marks.ts`; each adapter decides how many of its marked
- * parts it can honor and how to encode the boundary for its own API. Absent
- * (not `false`) means "no opinion" — there is no meaningful false state.
- */
-export interface CacheBreakpointMarker {
-  cacheBreakpoint?: true;
-}
-
-export interface TextPart extends CacheBreakpointMarker {
+export interface TextPart {
   type: "text";
   text: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface ImagePart extends CacheBreakpointMarker {
+export interface ImagePart {
   type: "image";
   data: string | URL;
   mediaType: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface FilePart extends CacheBreakpointMarker {
+export interface FilePart {
   type: "file";
   data: string | URL;
   mediaType: string;
@@ -128,13 +139,13 @@ export interface FilePart extends CacheBreakpointMarker {
   providerOptions?: ProviderOptions;
 }
 
-export interface ReasoningPart extends CacheBreakpointMarker {
+export interface ReasoningPart {
   type: "reasoning";
   text: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface ToolUsePart extends CacheBreakpointMarker {
+export interface ToolUsePart {
   type: "tool_use";
   toolCallId: string;
   toolName: string;
@@ -149,18 +160,11 @@ export interface ToolUsePart extends CacheBreakpointMarker {
   providerOptions?: ProviderOptions;
 }
 
-export interface ToolResultPart extends CacheBreakpointMarker {
+export interface ToolResultPart {
   type: "tool_result";
   toolCallId: string;
   output: unknown;
   isError?: boolean;
-  providerOptions?: ProviderOptions;
-}
-
-export interface CustomPart extends CacheBreakpointMarker {
-  type: "custom";
-  kind: `${string}.${string}`;
-  data?: unknown;
   providerOptions?: ProviderOptions;
 }
 
@@ -170,8 +174,7 @@ export type ContentPart =
   | FilePart
   | ReasoningPart
   | ToolUsePart
-  | ToolResultPart
-  | CustomPart;
+  | ToolResultPart;
 
 /**
  * A canonical chat message — maps directly to Anthropic Messages and OpenAI
@@ -181,55 +184,25 @@ export type ContentPart =
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
   content: ContentPart[];
-  providerOptions?: ProviderOptions;
 }
 
 /**
- * A user-defined tool with a JSON Schema input signature. The orchestrator
+ * A tool Flow executes, with a JSON Schema input signature. The orchestrator
  * sends these to the provider as part of the tool definitions, and the
  * adapter translates them into the provider's tool schema format.
  */
-export interface FunctionTool {
+export interface Tool {
   type: "function";
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  providerOptions?: ProviderOptions;
 }
-
-/**
- * Hosted (server-side) tools executed by the provider itself. Meridian does not
- * execute these — Anthropic's `web_search`, `code_execution`, `text_editor`,
- * `computer_use` and OpenAI's `web_search`, `code_interpreter`, `file_search`.
- */
-export type HostedToolKind = "web_search" | "code_execution" | "file_search";
-
-export interface HostedTool {
-  type: "hosted";
-  kind: HostedToolKind | string;
-  providerOptions?: ProviderOptions;
-}
-
-export type Tool = FunctionTool | HostedTool;
-
-export type ResponseFormat =
-  | { type: "text" }
-  | { type: "json" }
-  | {
-      type: "json_schema";
-      schema: Record<string, unknown>;
-      name?: string;
-      strict?: boolean;
-    };
-
-export type ToolChoice = "auto" | "required" | "none" | { tool: string };
 
 /**
  * The unified request shape that every adapter translates into its provider SDK call.
  *
- * Routing: the `provider` field is optional — if omitted, `resolveRoute` in
- * routing.ts picks the provider that declares the requested model in its config.
- * Only set this explicitly when you need to force a specific provider.
+ * Routing: `resolveRoute` in routing.ts picks the provider that declares the
+ * requested model in its config.
  *
  * Cancellation: the `signal` AbortSignal is propagated through the adapter chain
  * and into the provider SDK call. The deadline helper in deadline.ts derives a
@@ -238,17 +211,9 @@ export type ToolChoice = "auto" | "required" | "none" | { tool: string };
  */
 export interface GenerateRequest {
   model?: string;
-  provider?: string;
   messages: Message[];
   tools?: Tool[];
-  toolChoice?: ToolChoice;
-  maxTokens?: number;
-  temperature?: number;
-  topP?: number;
-  stopSequences?: string[];
-  responseFormat?: ResponseFormat;
-  reasoning?: "disabled" | "adaptive" | { effort: "low" | "medium" | "high" | "max" };
-  providerOptions?: ProviderOptions;
+  reasoning?: "disabled" | "adaptive" | { effort: ReasoningEffort };
   signal?: AbortSignal;
   /**
    * Stable per-thread cache-routing key (opaque, not a secret): unlike
@@ -258,6 +223,8 @@ export interface GenerateRequest {
    * ignores it.
    */
   promptCacheKey?: string;
+  /** Cache lifetime wanted; fixed per thread kind (`none` for one-shot calls nothing re-reads) so the cached prefix never changes mid-thread. */
+  promptCacheRetention: PromptCacheRetention;
   /** Observability-only context; adapters must never map it into provider requests. */
   correlation?: {
     /** Preallocated by callers that need to join request content to lifecycle evidence. */
@@ -281,7 +248,6 @@ export type ErrorCode =
   | "rate_limited"
   | "server_error"
   | "auth_error"
-  | "malformed_response"
   | "invalid_request"
   | "content_filtered"
   | "context_overflow"
@@ -297,7 +263,7 @@ export type { ProviderErrorResponse } from "@meridian/contracts/threads";
  *
  * Ordering contract:
  * - "start" is always first (emitted once per provider call).
- * - Content deltas (text/reasoning/tool_call/custom) are emitted in provider
+ * - Content deltas (text/reasoning/tool_call) are emitted in provider
  *   arrival order. `partIndex` is the provider content-block position: the
  *   Anthropic block `index`, OpenAI Responses `output_index`, or
  *   OpenAI-Chat-Compatible `tool_calls[].index`. It is set ONLY when the
@@ -320,7 +286,6 @@ export type StreamEvent =
       argumentsDelta: string;
       partIndex?: number;
     }
-  | { type: "custom.delta"; kind: string; data: unknown; partIndex?: number }
   | { type: "usage"; usage: Usage }
   | { type: "end"; result: GenerateResult }
   | {
@@ -384,10 +349,6 @@ export type FinishReason = "end_turn" | "tool_use" | "max_tokens" | "stop_sequen
  *
  * `toolCalls` is a flat list of every parsed ToolCall in the response; the
  * orchestrator uses this to dispatch tool execution.
- *
- * `providerData` is a raw fallback for provider-specific metadata that doesn't
- * fit any canonical field; adapters should prefer providerOptions on individual
- * ContentParts when the metadata is per-part.
  */
 export interface GenerateResult {
   content: ContentPart[];
@@ -398,7 +359,8 @@ export interface GenerateResult {
   provider: string;
   /** Provider request/generation identifier when an adapter can expose one generically. */
   providerRequestId?: string;
-  providerData?: unknown;
+  /** Set on a cancelled stream that reported no usage: the call is unmetered, not free. */
+  meteringStatus?: "missing_usage";
   /** Populated by the per-attempt gateway loop on a successful terminal event. */
   timing?: ModelCallTiming;
 }
@@ -415,34 +377,23 @@ export interface ModelCallTiming {
   generationMs: number | null;
 }
 
-/**
- * Known adapter identifiers. String literals for the built-in adapters plus
- * a catch-all for custom adapter strings. `openrouter` reuses the openai-compatible
- * wire format against OpenRouter's API with provider-reported cost enrichment.
- */
-export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible" | "openrouter";
+/** The provider adapters createAdapter (create-gateway.ts) can build. */
+export type BuiltinAdapter = "anthropic" | "openai" | "openai-compatible";
 
 /**
  * A configured provider entry. `adapter` selects the provider adapter factory
  * in createAdapter (create-gateway.ts). `baseUrl` overrides the provider's
- * default API endpoint; `transport` picks SSE vs WebSocket when both are
- * available (future).
+ * default API endpoint.
  */
 export interface ProviderConfig {
   id: string;
-  adapter: BuiltinAdapter | string;
+  adapter: BuiltinAdapter;
   auth?: {
     apiKey?: string | (() => string);
     headers?: Record<string, string>;
   };
   baseUrl?: string;
   models: ModelInfo[];
-  compliance?: {
-    hipaaEligible?: boolean;
-    baaActive?: boolean;
-    regions?: string[];
-  };
-  transport?: "auto" | "sse" | "websocket";
 }
 
 /**
@@ -455,14 +406,10 @@ export interface ProviderConfig {
  *   event re-arms it, so a slow-but-streaming model is never killed. 0 disables.
  * - `attemptCeilingMs`: absolute backstop for one provider attempt (default
  *   10 min), fixed from attempt start. Not the normal terminator; 0 disables it
- *   for self-hosted models. Per-model `stallTimeoutMs`/`ceilingTimeoutMs`
- *   override these. Timeouts are retryable.
+ *   for self-hosted models. Timeouts are retryable.
  * - `retry`: controls per-provider retry with exponential backoff. Only
  *   retries before committed output (visible text or a tool call) has been
  *   emitted to the caller; reasoning-only attempts are retryable.
- * - `fallback`: when enabled, tries providers in order; fails over on
- *   retryable errors (including timeouts) before committed output.
- * - `onTrace`/`onError`: observability hooks; called per provider attempt.
  */
 export interface GatewayConfig {
   providers: ProviderConfig[];
@@ -472,30 +419,12 @@ export interface GatewayConfig {
   /** Absolute ceiling for one provider attempt. 0 disables. Retry/backoff is outside this window. */
   attemptCeilingMs?: number;
   retry?: { maxAttempts: number; initialDelayMs: number; maxDelayMs: number };
-  fallback?: { enabled: boolean; order?: string[] };
   /** Registry build warnings (e.g. duplicate model IDs skipped). */
   onWarning?: (span: TraceSpan) => void;
-  onTrace?: (span: TraceSpan) => void;
-  onError?: (error: GatewayError) => void;
 }
 
-/**
- * Minimal trace span stub — observability hooks deferred beyond v1 spine.
- * The GatewayConfig.onTrace callback receives one of these per provider call.
- */
+/** Minimal trace span passed to `GatewayConfig.onWarning`. */
 export interface TraceSpan {
   name: string;
   attributes?: Record<string, unknown>;
-}
-
-/**
- * Structured error surfaced through the Gateway error callbacks and the
- * `error` StreamEvent. `retryable` controls whether the retry/fallback logic
- * in create-gateway.ts will retry or try the next fallback provider.
- */
-export interface GatewayError {
-  code: ErrorCode;
-  message: string;
-  retryable: boolean;
-  provider?: string;
 }

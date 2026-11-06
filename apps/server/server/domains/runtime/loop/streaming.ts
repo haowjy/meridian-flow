@@ -8,7 +8,7 @@
  * - `mapStreamEvent`: projects the gateway's provider-neutral `StreamEvent`
  *   (text.delta, reasoning.delta, tool_call.delta) into
  *   `OrchestratorEvent.stream.delta`. Only text/reasoning/tool_call deltas
- *   are mapped; `start`, `usage`, `end`, `error`, and `custom.delta` are
+ *   are mapped; `start`, `usage`, `end`, and `error` are
  *   dropped here (the orchestrator handles end/error directly).
  *
  * - **partIndex is dropped**: `StreamEvent` carries an optional `partIndex`
@@ -63,8 +63,7 @@ export function mapStreamEvent(event: StreamEvent) {
         argumentsDelta: event.argumentsDelta,
       } as const;
     default:
-      // start, usage, end, error, custom.delta — handled by the orchestrator
-      // directly (or dropped for custom.delta which has no block mapping).
+      // start, usage, end, error — handled by the orchestrator directly.
       return null;
   }
 }

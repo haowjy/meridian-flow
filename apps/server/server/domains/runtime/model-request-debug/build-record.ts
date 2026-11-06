@@ -4,7 +4,7 @@ import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRequest,
 } from "@meridian/contracts/threads";
-import type { FunctionTool, GenerateRequest, Tool } from "../gateway/index.js";
+import type { GenerateRequest, Tool } from "../gateway/index.js";
 import type { ToolRegistry } from "../tools/index.js";
 
 function serializeCanonicalRequest(request: GenerateRequest): string {
@@ -19,16 +19,14 @@ function advertisedToolsMetadata(
   tools: Tool[] | undefined,
 ): ModelRequestDebugRecord["toolRegistrations"] {
   if (!tools) return [];
-  return tools
-    .filter((tool): tool is FunctionTool => tool.type === "function")
-    .map((tool) => {
-      const registration = registry.getRegistration(tool.name);
-      return {
-        name: tool.name,
-        source: registration?.source ?? "unknown",
-        capability: registration?.capability ?? null,
-      };
-    });
+  return tools.map((tool) => {
+    const registration = registry.getRegistration(tool.name);
+    return {
+      name: tool.name,
+      source: registration?.source ?? "unknown",
+      capability: registration?.capability ?? null,
+    };
+  });
 }
 
 export type ModelRequestDebugCaptureInput = {

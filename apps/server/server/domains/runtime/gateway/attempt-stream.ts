@@ -1,6 +1,6 @@
 /**
  * Per-attempt stream driver: runs one provider adapter with retry/backoff and
- * per-attempt timeouts. Isolated from gateway composition (routing, fallback,
+ * per-attempt timeouts. Isolated from gateway composition (routing,
  * settlement) so the retry/deadline contract has one testable home.
  *
  * Timeout policy:
@@ -20,7 +20,14 @@ import {
   type ModelAttemptTimeouts,
   modelAttemptTimeoutEvent,
 } from "./deadline.js";
-import type { GatewayConfig, GenerateRequest, ModelInfo, StreamEvent } from "./domain/index.js";
+import {
+  type GatewayConfig,
+  type GenerateRequest,
+  type ModelInfo,
+  resolveCall,
+  type StreamEvent,
+} from "./domain/index.js";
+import { hasBillableTokenUsage, withMissingUsageMetering } from "./domain/metering.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
 import {
   isCommittedOutputEvent,
@@ -125,8 +132,6 @@ function estimatedEventBytes(event: StreamEvent): number {
       return 64 + event.text.length * 2;
     case "tool_call.delta":
       return 64 + (event.id.length + event.name.length + event.argumentsDelta.length) * 2;
-    case "custom.delta":
-      return 64 + event.kind.length * 2 + estimatedUnknownBytes(event.data);
     case "start":
       return 64 + (event.provider.length + event.model.length) * 2;
     case "usage":
@@ -137,8 +142,7 @@ function estimatedEventBytes(event: StreamEvent): number {
       return (
         256 +
         estimatedUnknownBytes(event.result.content) +
-        estimatedUnknownBytes(event.result.toolCalls) +
-        estimatedUnknownBytes(event.result.providerData)
+        estimatedUnknownBytes(event.result.toolCalls)
       );
   }
 }
@@ -158,23 +162,19 @@ function elapsedMs(startedAt: number, endedAt: number): number {
   return Math.max(0, Math.round(endedAt - startedAt));
 }
 
-/** Gateway-level timeout policy; a model's own overrides win over these. */
+/** Gateway-level timeout policy. */
 export interface ModelAttemptTimeoutOverrides {
   attemptStallMs?: number;
   attemptCeilingMs?: number;
 }
 
-/**
- * Resolve the effective timeouts for one model attempt: per-model override,
- * then gateway policy, then the process default.
- */
-export function resolveModelAttemptTimeouts(
-  model: Pick<ModelInfo, "stallTimeoutMs" | "ceilingTimeoutMs">,
+/** The effective timeouts for an attempt: gateway policy, then the process default. */
+export function resolveAttemptTimeouts(
   gateway: ModelAttemptTimeoutOverrides,
 ): ModelAttemptTimeouts {
   return {
-    stallMs: model.stallTimeoutMs ?? gateway.attemptStallMs ?? DEFAULT_ATTEMPT_STALL_MS,
-    ceilingMs: model.ceilingTimeoutMs ?? gateway.attemptCeilingMs ?? DEFAULT_ATTEMPT_CEILING_MS,
+    stallMs: gateway.attemptStallMs ?? DEFAULT_ATTEMPT_STALL_MS,
+    ceilingMs: gateway.attemptCeilingMs ?? DEFAULT_ATTEMPT_CEILING_MS,
   };
 }
 
@@ -215,6 +215,7 @@ export async function* streamWithRetry(
   const maxAttempts = retry?.maxAttempts ?? 1;
   let delay = retry?.initialDelayMs ?? 500;
   const maxDelay = retry?.maxDelayMs ?? 10_000;
+  const call = resolveCall(request, model);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let sawError: StreamEvent | undefined;
@@ -224,7 +225,7 @@ export async function* streamWithRetry(
     const startedAt = now();
     const requestStartedAt = new Date().toISOString();
     const iterator = adapter
-      .stream({ ...request, signal: attemptSignal.signal }, model)
+      .stream({ ...request, signal: attemptSignal.signal }, model, call)
       [Symbol.asyncIterator]();
     const buffer = new EventBuffer();
     let backpressured = false;
@@ -295,8 +296,16 @@ export async function* streamWithRetry(
     };
     const timeTerminalEvent = (arrival: ArrivingEvent): StreamEvent => {
       if (arrival.event.type !== "end" && arrival.event.type !== "error") return arrival.event;
-      const result = arrival.event.result;
-      if (!result) return arrival.event;
+      const terminal = arrival.event.result;
+      if (!terminal) return arrival.event;
+      // A cancel can land before the provider's usage arrives (OpenAI-compatible sends it in the
+      // final chunk). Mark it here so every adapter's partial result is settled and persisted.
+      const result =
+        arrival.event.type === "end" &&
+        request.signal?.aborted &&
+        !hasBillableTokenUsage(terminal.usage)
+          ? withMissingUsageMetering(terminal)
+          : terminal;
       return {
         ...arrival.event,
         result: {

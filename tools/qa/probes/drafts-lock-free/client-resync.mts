@@ -26,7 +26,7 @@
  * The transport layer's own cases (four `4207` closes keep the outbox, wire order, a socket
  * closed before its SyncStep2) are lane 1c's tests in `hocuspocus-document-transport*.test.ts`.
  * (j), the live-room collision regression, needs live journal admission and offline
- * reconciliation wired; it stays with the browser recipe (docs/qa/drafts-lock-free-probes.md).
+ * reconciliation wired; it stays with the browser recipe (apps/server/server/domains/collab/.context/qa/drafts-lock-free-probes.md).
  *
  * Negative control on `586e58ae1e` (client without the hold, server without finalization):
  * every reconnect's queued updates reach the server before its SyncStep2.
