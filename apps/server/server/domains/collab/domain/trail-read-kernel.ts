@@ -147,7 +147,15 @@ export function foldTrailChanges(changes: readonly RawTrailChange[]): TrailChang
       beforeBlockIdentity: previous.beforeBlockIdentity,
       beforeText: previous.beforeText,
     };
-    if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(identity);
+    const beforeBody = bodyFromHashline(combined.beforeText);
+    const afterBody = bodyFromHashline(combined.afterTextAtReceipt);
+    if (
+      combined.beforeText === combined.afterTextAtReceipt ||
+      (beforeBody.status === "available" &&
+        afterBody.status === "available" &&
+        beforeBody.markdown === afterBody.markdown)
+    )
+      folded.delete(identity);
     else folded.set(identity, combined);
   }
   return [...folded.values()].map(({ sequence: _sequence, ...change }, ordinal) => ({

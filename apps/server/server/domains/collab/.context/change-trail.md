@@ -29,7 +29,8 @@ trail. An inverse inherits ownership from each exact targeted receipt part, rath
 than from every part in its edit. Restoration aliases retain canonical block
 lineage through Undo and Redo. Replaying the complete owner cut folds reversals into
 the net trail: a full Undo removes details and advances an empty occurrence
-replace-set to clear live marks.
+replace-set to clear live marks. Folding compares text bodies independently of
+display hashline prefixes, which can change when an unrelated sibling is inserted.
 
 ## Projection and delivery
 

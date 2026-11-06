@@ -76,5 +76,22 @@ describe("trail normalization", () => {
       beforeText: "before",
       afterTextAtReceipt: "final",
     });
+
+    const undone = foldTrailChanges([
+      change({
+        beforeBlockIdentity: identity,
+        afterBlockIdentity: identity,
+        beforeText: "fe62|Alpha base.",
+        afterTextAtReceipt: "fe62|Gamma base.",
+      }),
+      change({
+        beforeBlockIdentity: identity,
+        afterBlockIdentity: identity,
+        beforeText: "fe62d|Gamma base.",
+        afterTextAtReceipt: "fe62d|Alpha base.",
+        sequence: 2,
+      }),
+    ]);
+    expect(undone).toEqual([]);
   });
 });
