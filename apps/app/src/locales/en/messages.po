@@ -1324,6 +1324,10 @@ msgid "Can’t put a picture inside code"
 msgstr "Can’t put a picture inside code"
 
 #: src/core/editor/landing/slice-drop.ts
+msgid "Can’t put that in a table cell"
+msgstr "Can’t put that in a table cell"
+
+#: src/core/editor/landing/slice-drop.ts
 msgid "Can’t put that inside code"
 msgstr "Can’t put that inside code"
 
