@@ -65,8 +65,14 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
     a no-op. The lines stay lines: `# Chapter [1⏎Lorem ipsum.] Donec. | Vestibulum.` dropped at `|`
     gives `# Chapter`, `Donec.`, `1`, `Lorem ipsum. Vestibulum.` (four blocks; the blocks the range
     reached into keep their text and type, and nothing is left empty). Also try a range from a
-    block's very start and one to its very end, three or more blocks, and a copy: same lines, source
-    untouched. A range that cuts a table is still refused (`Can’t move part of a table`).
+    block's very start and one to its very end, a whole heading, and drops at a block's start and in
+    an empty paragraph: the dropped range stays selected exactly. Copy three bullets, then four,
+    including a nested list; every bullet and nested line stays in order and the source is
+    untouched. In both the first and second table row, sweep both paragraphs from one cell and move
+    them out: the cell remains in its column with one empty paragraph. A range may cross table
+    content when the move leaves every row and column in place; a move that would change the grid is
+    refused, while a whole table moves as one block. Reload after each case, then undo and confirm
+    the text, block types and highlight return.
 18. **Every painted highlight.** Ctrl+A, then drag a little: the document is lifted and a drop on
     itself changes nothing; dragging it into the composer copies and leaves the document as it was.
     Sweep a range across several paragraphs and press in the blank past a line's last word: it lifts
