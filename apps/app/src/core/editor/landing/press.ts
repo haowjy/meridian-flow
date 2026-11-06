@@ -5,6 +5,11 @@
  * under them: a margin, the gap between blocks, a cell's padding, the space
  * around a rendered diagram. It also owns the seam policy: where a caret goes
  * when the pointer is between blocks, and which neighbour wins.
+ *
+ * A press never makes a paragraph, with one exception: a press past the end of
+ * a document whose last block can't take a caret and no gap cursor fits (a
+ * closed diagram) asks for a new empty line, the only way to reach that spot.
+ * The walk stays pure; `pressOnInertTarget` does the write.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -13,7 +18,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, type Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { gapCursorFits } from "../objects/object-selection";
-import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
+import { isCodeBlock, isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
 import {
   type Child,
   childrenOf,
@@ -34,6 +39,19 @@ export function pressSelection(
   geometry: Geometry,
   start?: Child,
 ): Selection | null {
+  const press = pressOutcome(state, point, geometry, start);
+  return press === NEW_LINE ? null : press;
+}
+
+/** A press past a document's end that only a new empty line can answer. */
+const NEW_LINE = "new-line";
+
+function pressOutcome(
+  state: EditorState,
+  point: Point,
+  geometry: Geometry,
+  start?: Child,
+): Selection | typeof NEW_LINE | null {
   const landing = landingAt(state, point, geometry, start);
   if (landing.kind === "seam") return seamSelection(state, landing.pos, point, geometry, start);
   return state.doc.resolve(landing.pos).parent.inlineContent
@@ -47,7 +65,7 @@ function seamSelection(
   point: Point,
   geometry: Geometry,
   start?: Child,
-): Selection | null {
+): Selection | typeof NEW_LINE | null {
   const { doc } = state;
   const $seam = doc.resolve(seam);
   const above = $seam.nodeBefore && {
@@ -79,12 +97,12 @@ function seamSelection(
     [near, far],
     [far, near],
   ] as const) {
-    if (!fence?.node.isTextblock || !isSourceBlock(fence.node) || isOpaqueObject(fence.node))
-      continue;
+    if (!fence || !isCodeBlock(fence.node) || isOpaqueObject(fence.node)) continue;
     if (other && isProse(other.node)) continue;
     return TextSelection.create(doc, fence === above ? seam - 1 : seam + 1);
   }
   if (gapCursorFits($seam)) return new GapCursor($seam);
+  if (!start && seam === doc.content.size) return NEW_LINE;
 
   const scope = { node: $seam.parent, start: $seam.start() };
   const outward = nearestWriterText(scope, seam, 1) ?? nearestWriterText(scope, seam, -1);
@@ -119,11 +137,23 @@ function lineIn(
  */
 export function pressOnInertTarget(view: EditorView, editor: Editor, event: MouseEvent): boolean {
   if (event.button !== 0 || !view.editable || !isContainerElement(view, event.target)) return false;
-  const selection = pressSelection(
+  const press = pressOutcome(
     view.state,
     { x: event.clientX, y: event.clientY },
     viewGeometry(view, editor),
   );
+  if (press === NEW_LINE) {
+    const { state } = view;
+    const end = state.doc.content.size;
+    const line = state.schema.nodes.paragraph.createAndFill();
+    if (line) {
+      const tr = state.tr.insert(end, line);
+      view.dispatch(tr.setSelection(TextSelection.create(tr.doc, end + 1)));
+    }
+    view.focus();
+    return true;
+  }
+  const selection = press;
   const { selection: current } = view.state;
   const standing =
     selection instanceof TextSelection && current.empty && current.from === selection.from;

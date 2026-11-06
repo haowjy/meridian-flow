@@ -36,7 +36,8 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
   handle draws and lands its own top-level seam.) It keeps caret placement, seam
   precedence and keyboard parity out of layout components; layout code and
   lanes never place a drop themselves. A drop makes a paragraph at a seam
-  where a press never does. See the editor context for the policy.
+  where a press never does, except past a closing diagram, where a press makes
+  the one line that lets a writer type after it. See the editor context for the policy.
 - Peer marks are projections: never persisted, draft-projected, or locally
   authored. Awareness cursor colors are concrete RGB hex before publication;
   only `local-presence.ts` may call `setLocalState*`.

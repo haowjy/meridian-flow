@@ -43,6 +43,7 @@
     "apps/app/src/core/editor/extensions/TabKeymapExtension.test.ts": 1,
     "apps/app/src/core/editor/images/ImageIngressExtension.test.ts": 14,
     "apps/app/src/core/editor/landing/drag-payload.test.ts": 2,
+    "apps/app/src/core/editor/landing/point-landing.test.ts": 1,
     "apps/app/src/core/editor/links/link-assignment.test.ts": 1,
     "apps/app/src/core/editor/links/link-clipboard.test.ts": 5,
     "apps/app/src/core/editor/links/link-policy.test.ts": 8,
