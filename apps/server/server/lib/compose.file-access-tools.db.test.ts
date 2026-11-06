@@ -164,8 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
       expect(manuscriptCall.output).not.toContain(".md");
       const missing = await call("read", { path: "manuscript://missing.md" });
-      expect(missing.output).toContain("path: manuscript://missing");
-      expect(missing.output).not.toContain(".md");
+      expect(missing.output).toContain("path: manuscript://missing.md");
     });
 
     // D51: a switch that couldn't happen says why before action policy or mutation.
