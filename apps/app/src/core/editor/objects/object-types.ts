@@ -122,6 +122,11 @@ export function isSourceBlock(node: PMNode): boolean {
   return node.type.spec.code === true;
 }
 
+/** A real code fence: source text, not a component. */
+export function isCodeBlock(node: PMNode): boolean {
+  return node.type.name === "code_block";
+}
+
 /** A block that stands in for prose rather than being it: a leaf, an object, or a source block. */
 export function isObjectLike(node: PMNode): boolean {
   return node.isLeaf || isOpaqueObject(node) || isSourceBlock(node);

@@ -13,7 +13,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 
 import { caretInsideNodeAt } from "../objects/object-selection";
-import { isObjectLike, isOpaqueObject } from "../objects/object-types";
+import { isCodeBlock, isObjectLike, isOpaqueObject } from "../objects/object-types";
 import { snapOutOfAtom } from "./inline-snap";
 
 export type Point = { x: number; y: number };
@@ -42,10 +42,6 @@ export type Landing =
   | { kind: "source"; pos: number };
 
 export type Child = { node: PMNode; pos: number };
-
-function isCodeBlock(node: PMNode): boolean {
-  return node.type.name === "code_block";
-}
 
 export function isTable(node: PMNode): boolean {
   return node.type.spec.tableRole === "table";

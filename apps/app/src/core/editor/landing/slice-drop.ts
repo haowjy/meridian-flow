@@ -102,7 +102,27 @@ function slicePlan(
   if (source.moved && overlapsMovedBlock(state, landing, source)) return { kind: "refuse" };
 
   if (landing.kind === "source") {
-    return textPlan(state, landing.pos, slice, source, "\n", t`Can’t put that inside code`);
+    // A code block holds characters: a slice reads as its text and its hard
+    // breaks. Any other leaf (a picture, a chip) has none to give, and a move
+    // would delete it for nothing.
+    let leaves = true;
+    slice.content.descendants((node) => {
+      if (node.isLeaf && !node.isText && !node.type.spec.linebreakReplacement) leaves = false;
+    });
+    const text = slice.content.textBetween(0, slice.content.size, "\n", "\n");
+    if (!leaves || !text) return { kind: "refuse", hint: t`Can’t put that inside code` };
+    return {
+      kind: "accept",
+      pos: landing.pos,
+      commit(target) {
+        const transaction = target.state.tr;
+        deleteSource(transaction, source);
+        const at = transaction.mapping.map(landing.pos);
+        transaction.insertText(text, at);
+        transaction.setSelection(TextSelection.create(transaction.doc, at + text.length));
+        finish(target, transaction);
+      },
+    };
   }
 
   // A block slice settles where ProseMirror's own fit would put it, so the
@@ -112,49 +132,10 @@ function slicePlan(
       ? (dropPoint(state.doc, landing.pos, slice) ?? landing.pos)
       : landing.pos;
   const built = sliceDropTransaction(state, pos, slice, source);
-  if (built && keepsTableShape(state, pos, built)) {
-    return { kind: "accept", pos, commit: (target) => finish(target, built.transaction) };
-  }
-  // Nothing in a table cell may change the grid, spill out of the cell or nest
-  // a table: what can't be kept whole lands as its text.
-  if (!cellAround(state, pos)) return { kind: "refuse" };
-  const $landing = state.doc.resolve(landing.pos);
-  const at = $landing.parent.isTextblock ? landing.pos : TextSelection.near($landing, -1).from;
-  return textPlan(state, at, slice, source, " ", t`Can’t put that in a table cell`);
-}
-
-/**
- * A slice read as characters, landed at `pos` inside a textblock. `breaks` is
- * what a block boundary or hard break becomes. A leaf other than a hard break
- * (a picture, a chip) has no text to give, and a move would delete it for
- * nothing, so such a slice is refused with `refusal`, as is one whose text
- * would still break a table.
- */
-function textPlan(
-  state: EditorState,
-  pos: number,
-  slice: Slice,
-  source: SliceSource,
-  breaks: string,
-  refusal: string,
-): DropPlan {
-  let leaves = true;
-  slice.content.descendants((node) => {
-    if (node.isLeaf && !node.isText && !node.type.spec.linebreakReplacement) leaves = false;
-  });
-  const text = slice.content.textBetween(0, slice.content.size, breaks, breaks);
-  if (!leaves || !text) return { kind: "refuse", hint: refusal };
-
-  const transaction = state.tr;
-  deleteSource(transaction, source);
-  const at = transaction.mapping.map(pos);
-  transaction.insertText(text, at);
-  transaction.setSelection(TextSelection.create(transaction.doc, at + text.length));
-  const from = transaction.mapping.map(pos, -1);
-  if (!keepsTableShape(state, pos, { transaction, from, to: from + text.length })) {
-    return { kind: "refuse", hint: refusal };
-  }
-  return { kind: "accept", pos, commit: (target) => finish(target, transaction) };
+  if (!built) return { kind: "refuse" };
+  const broken = tableRefusal(state, pos, built);
+  if (broken) return { kind: "refuse", hint: broken };
+  return { kind: "accept", pos, commit: (target) => finish(target, built.transaction) };
 }
 
 function finish(view: EditorView, transaction: Transaction): void {
@@ -176,13 +157,15 @@ function deleteSource(transaction: Transaction, source: SliceSource): void {
  * an ordinary move within a line.
  */
 function overlapsMovedBlock(state: EditorState, landing: Landing, source: SliceSource): boolean {
-  const range = source.node ?? state.selection;
-  if (landing.pos >= range.from && landing.pos <= range.to) return true;
   const $pos = state.doc.resolve(landing.pos);
-  if (!$pos.parent.isTextblock) return false;
-  const overlaps = range.from < $pos.end() && range.to > $pos.start();
-  const inside = range.from >= $pos.start() && range.to <= $pos.end();
-  return overlaps && !inside;
+  return (source.node ?? state.selection).ranges.some((range) => {
+    const [from, to] = [range.$from.pos, range.$to.pos];
+    if (landing.pos >= from && landing.pos <= to) return true;
+    if (!$pos.parent.isTextblock) return false;
+    const overlaps = from < $pos.end() && to > $pos.start();
+    const inside = from >= $pos.start() && to <= $pos.end();
+    return overlaps && !inside;
+  });
 }
 
 type BuiltDrop = { transaction: Transaction; from: number; to: number };
@@ -246,40 +229,44 @@ function cellAround(state: EditorState, pos: number): { cell: number | null } | 
 }
 
 /**
- * True when a drop leaves every table with the grid it had (one the drop
- * deletes whole is gone, not changed), puts no table inside a cell (Markdown
- * can't hold one), and keeps the inserted range inside the cell it landed in.
- * The fitter is free to improvise a landing beyond the cell; a landing the
- * caret never promised is not kept. A drop outside any table always passes.
+ * Why this drop can't happen, or null when it can. A table's rows and columns
+ * are fixed, so every table that survives must keep its grid (one whose whole
+ * range the drop deletes is gone, not changed). In a cell, the drop also stays
+ * in that cell and nests no table: Markdown can't hold one, and the fitter is
+ * free to improvise a landing the caret never promised.
  */
-function keepsTableShape(
+function tableRefusal(
   before: EditorState,
   pos: number,
   { transaction, from, to }: BuiltDrop,
-): boolean {
+): string | null {
   const shape = cellAround(before, pos);
-  if (!shape) return true;
-  if (shape.cell === null) return false;
-
-  let grids = true;
+  const inCell = t`Can’t put that in a table cell`;
+  let broken: string | null = null;
   before.doc.descendants((node, at) => {
-    if (!grids || !isTable(node)) return grids;
-    const mapped = transaction.mapping.mapResult(at, 1);
-    if (!mapped.deletedAfter) {
-      const now = transaction.doc.nodeAt(mapped.pos);
-      grids = Boolean(now && isTable(now) && sameGrid(node, now));
+    if (broken || !isTable(node)) return !broken;
+    const start = transaction.mapping.mapResult(at, 1);
+    const end = transaction.mapping.mapResult(at + node.nodeSize, -1);
+    if (!(start.deletedAfter && end.deletedBefore)) {
+      const now = transaction.doc.nodeAt(start.pos);
+      if (!(now && isTable(now) && sameGrid(node, now))) {
+        // The landing's own table broke by the drop; any other, by the move's deletion.
+        broken = pos > at && pos < at + node.nodeSize ? inCell : t`Can’t move part of a table`;
+      }
     }
     return false;
   });
-  if (!grids) return false;
+  if (broken) return broken;
+  if (!shape) return null;
+  if (shape.cell === null) return inCell;
 
   const cellPos = transaction.mapping.map(shape.cell, -1);
   const cell = transaction.doc.nodeAt(cellPos);
-  if (!cell || !isTableCell(cell)) return false;
+  if (!cell || !isTableCell(cell)) return inCell;
   let nested = false;
   cell.descendants((node) => {
     if (isTable(node)) nested = true;
     return !nested;
   });
-  return !nested && from >= cellPos + 1 && to <= cellPos + 1 + cell.content.size;
+  return !nested && from >= cellPos + 1 && to <= cellPos + 1 + cell.content.size ? null : inCell;
 }
