@@ -55,8 +55,9 @@ export const agentPermissionSchema = z.enum(AGENT_PERMISSION_VALUES, {
 
 /**
  * Mars tool-name aliases, canonical here so authoring and overrides fold the
- * same way. No alias may be a Flow tool name (`search`, `find`): folding one
- * would rename a real tool.
+ * same way. No alias may be a Flow tool name (`grep`, `ls`): folding one
+ * would rename a real tool. `search` is Mars's own spelling of `grep`, and the name Flow's tool
+ * had before it was `grep`: an authored file that still says `search` loads as `grep`.
  */
 export const toolAliases: Record<string, string> = {
   bash: "bash",
@@ -78,6 +79,7 @@ export const toolAliases: Record<string, string> = {
   glob: "glob",
   grep: "grep",
   rg: "grep",
+  search: "grep",
   ripgrep: "grep",
   notebook: "notebook",
   jupyter: "notebook",

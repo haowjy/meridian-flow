@@ -4,7 +4,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 const ACTIVITY_FIELDS: Record<string, readonly string[]> = {
   write: ["command", "path"],
   read: ["path"],
-  search: ["pattern"],
+  grep: ["pattern"],
   spawn: ["agent"],
 };
 
@@ -125,7 +125,7 @@ export function hasPartialToolActivityTarget(
       return hasText("command") && hasText("path");
     case "read":
       return hasText("path");
-    case "search":
+    case "grep":
       return hasText("pattern");
     case "spawn":
       return hasText("agent");

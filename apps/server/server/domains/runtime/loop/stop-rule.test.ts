@@ -52,7 +52,12 @@ const sendNow = (pressed: SendNowPress) => (facts: StopFacts) => decideSendNow(f
 const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
   [
     "10 a steer before adoption: E1 cancelled, M2 handed back",
-    { execution: open("E1"), receipt: [M1], rows: [row(M1, 1), row(M2, 2)] },
+    {
+      execution: open("E1"),
+      continuesWriterAnswer: false,
+      receipt: [M1],
+      rows: [row(M1, 1), row(M2, 2)],
+    },
     stop(press(2, "E1")),
     decision("E1", [M2], [M1]),
   ],
@@ -60,6 +65,7 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
     "13 a later message already answered: E1 keeps running for the whole execution",
     {
       execution: open("E1"),
+      continuesWriterAnswer: false,
       receipt: [],
       rows: [
         row(M1, 1, { delivered: true, byExecution: true }),
@@ -73,6 +79,7 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
     "15 a compaction successor holds M2: E1 cancelled, M2 handed back, A's delivery of M1 stands",
     {
       execution: open("E1", "compaction"),
+      continuesWriterAnswer: false,
       receipt: [M2],
       rows: [row(M1, 1, { delivered: true, byExecution: true }), row(M2, 2)],
     },
@@ -83,6 +90,7 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
     "17 a second tab presses the same scope: the first tab's hand-back is gone, E1 still cancelled",
     {
       execution: open("E1"),
+      continuesWriterAnswer: false,
       receipt: [],
       rows: [row(M2, 2, { delivered: true, handedBackBy: "r1" })],
     },
@@ -93,6 +101,7 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
     "18 a delayed duplicate after a Retry: E2 took on nothing in the press set and is not the one seen",
     {
       execution: open("E2"),
+      continuesWriterAnswer: false,
       receipt: [],
       rows: [row(M1, 1, { delivered: true, byExecution: false })],
     },
@@ -103,6 +112,7 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
     "19 a delayed duplicate after a later send: E2 took on M3, which is above the old watermark",
     {
       execution: open("E2"),
+      continuesWriterAnswer: false,
       receipt: [M3],
       rows: [row(M1, 1, { delivered: true, handedBackBy: "r1" }), row(M3, 3)],
     },
@@ -111,25 +121,30 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
   ],
   [
     "21 a child report batched with M1: E3 cancelled, the assistant delivers both",
-    { execution: open("E3"), receipt: ["report", M1], rows: [row(M1, 1)] },
+    {
+      execution: open("E3"),
+      continuesWriterAnswer: false,
+      receipt: ["report", M1],
+      rows: [row(M1, 1)],
+    },
     stop(press(1, null)),
     decision("E3", [], [M1]),
   ],
   [
     "22 an interrupt wait is an open execution the writer saw: cancelled",
-    { execution: open("E1"), receipt: [], rows: [] },
+    { execution: open("E1"), continuesWriterAnswer: false, receipt: [], rows: [] },
     stop(press(0, "E1")),
     decision("E1", [], []),
   ],
   [
     "25a mine, unadopted: handed back though the record predates it",
-    { execution: null, receipt: [], rows: [row(M1, 5)] },
+    { execution: null, continuesWriterAnswer: false, receipt: [], rows: [row(M1, 5)] },
     stop(press(4, null, [M1])),
     decision(null, [M1], []),
   ],
   [
     "25b mine, adopted: E cancelled, the assistant delivers M1",
-    { execution: open("E1"), receipt: [M1], rows: [row(M1, 5)] },
+    { execution: open("E1"), continuesWriterAnswer: false, receipt: [M1], rows: [row(M1, 5)] },
     stop(press(4, null, [M1])),
     decision("E1", [], [M1]),
   ],
@@ -137,6 +152,7 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
     "25c mine, answered: E cancelled, nothing handed back",
     {
       execution: open("E1"),
+      continuesWriterAnswer: false,
       receipt: [],
       rows: [row(M1, 5, { delivered: true, byExecution: true })],
     },
@@ -145,7 +161,7 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
   ],
   [
     "29 a handoff seed holds no lease: only the writer messages in the press set are handed back",
-    { execution: null, receipt: [], rows: [row(M1, 1), row(M2, 2)] },
+    { execution: null, continuesWriterAnswer: false, receipt: [], rows: [row(M1, 1), row(M2, 2)] },
     stop(press(1, null)),
     decision(null, [M1], []),
   ],
@@ -153,6 +169,7 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
     "S1 Send now with the queue untouched: E1 cancelled, nothing handed back",
     {
       execution: open("E1"),
+      continuesWriterAnswer: false,
       receipt: [],
       rows: [row(M1, 1, { delivered: true, byExecution: true }), row(M2, 2), row(M3, 3)],
     },
@@ -161,7 +178,12 @@ const rows: [string, StopFacts, (facts: StopFacts) => unknown, unknown][] = [
   ],
   [
     "S2 Send now after a waiting row was taken on: too late, nothing cancelled",
-    { execution: open("E1"), receipt: [M2], rows: [row(M2, 2), row(M3, 3)] },
+    {
+      execution: open("E1"),
+      continuesWriterAnswer: false,
+      receipt: [M2],
+      rows: [row(M2, 2), row(M3, 3)],
+    },
     sendNow({ seenThrough: 3, seenExecutionId: "E1", waiting: [M2, M3] }),
     { cancelExecutionId: null },
   ],

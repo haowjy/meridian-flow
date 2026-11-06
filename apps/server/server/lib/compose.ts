@@ -161,7 +161,11 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
-import { type AskService, createAskService } from "../domains/runtime/asks/ask-service.js";
+import {
+  type AskService,
+  createAskService,
+  refusingPermissionExecutor,
+} from "../domains/runtime/asks/ask-service.js";
 import {
   createDetachedWorkTracker,
   type DetachedWorkTracker,
@@ -180,6 +184,7 @@ import {
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
   createDrizzleObservationFrontiers,
+  createDrizzlePermissionGrantStore,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleShownLinkStore,
@@ -192,6 +197,7 @@ import {
   createInMemoryThreadLock,
   createInspectionToolRegistrations,
   createInstrumentedGateway,
+  createLineageCancellation,
   createOrchestrator,
   createOrphanReportRepair,
   createPrefixCacheStateService,
@@ -283,6 +289,7 @@ import {
   createModelToolRegistrations,
   createReferenceReader,
 } from "./model-tools/index.js";
+import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -332,7 +339,8 @@ export type AppServices = {
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
-  stopThreadRun(threadId: ThreadId): Promise<void>;
+  /** Ends deleted threads' runs and subagent subtrees; `threadIds` must be parents first (`parentsFirst`). */
+  stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   asks: AskService;
@@ -731,6 +739,7 @@ export async function createProductionAppPorts(input: {
       objectStore,
       eventSink,
       drafts: documentSync.documentPurgeDraftDisposal,
+      readMarkdown: documentSync.readFrozenMarkdown,
     }),
     projectContextAvailability,
     documentAddresses: createDocumentAddressResolver({
@@ -835,8 +844,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     ports.eventSink,
   );
   const publishThreadStatus = async (threadId: ThreadId) => {
-    const status = await ports.statusReader.read(threadId);
-    const runningTurnId = await ports.statusReader.readRunningTurnId(threadId);
+    const [status, runningTurnId] = await Promise.all([
+      ports.statusReader.read(threadId),
+      ports.statusReader.readRunningTurnId(threadId),
+    ]);
     await threadEventHub.appendEvent(threadId, {
       type: "thread.status",
       threadId,
@@ -847,10 +858,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   let publishReport:
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
-  const stopThreadRun = async (threadId: ThreadId) => {
-    const turnId = await runClaim.readRunningTurnId(threadId);
-    if (turnId) await runner.cancel(threadId, turnId);
-  };
+  const stopThreads = (threadIds: readonly ThreadId[]) => runner.stopThreads(threadIds);
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
     backgroundTasks,
     toolRegistry,
@@ -872,16 +880,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         await publishReport(report.childThreadId, report.executionTurnId);
     },
   });
-  const asks = createAskService({
-    repos: ports.threadRepos,
-    eventWriter: threadEventHub,
-    delivery,
-  });
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
+  const permissionGrants = createDrizzlePermissionGrantStore(ports.db);
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -889,13 +893,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
+    permissionGrants,
     workAuthorityResolver: ports.workAuthorityResolver,
     branches: ports.documentSync,
     workContextNotices,
     notices: ports.notices,
     controls: delivery,
     transaction: ports.threadRepos.transaction,
-    stopThreadRun,
+    stopThreads,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     objectStore: ports.objectStore,
@@ -908,6 +913,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentRemovals: ports.documentRemovals,
     documentTrash: ports.documentTrash,
   };
+  const asks = createAskService({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    delivery,
+    permission: createAllowedWorkExecutor(
+      { ...coreToolDeps, savepoint: (operation) => runInDrizzleSavepoint(ports.db, operation) },
+      toolRegistry,
+    ),
+  });
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
@@ -1062,12 +1076,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
     readActivity,
-    publisher: reportPublisher,
     eventSink: ports.eventSink,
   });
   const childRunCoordinator = createChildRunCoordinator({
     driver: childRunDriver,
     delivery,
+    wakes: runClaim,
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
@@ -1115,9 +1129,24 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     onRunSettled(threadId: ThreadId) {
       refreshSubagentActivity(threadId);
     },
+    lineage: createLineageCancellation({
+      transaction: ports.threadRepos.transaction,
+      threads: ports.threadRepos.threads,
+      runClaim,
+      delivery,
+      asks,
+      askRows: ports.threadRepos.asks,
+      reports: ports.threadRepos.executionReports,
+      refreshActivity: refreshSubagentActivity,
+      afterCommit: runAfterDrizzleCommit,
+    }),
+    afterCommit: runAfterDrizzleCommit,
+    askRequests: asks,
+    reports: { publish: reportPublisher.publish },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
+    documentTouches: ports.threadRepos.documentTouches,
     observationFrontiers: ports.observationFrontiers,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
@@ -1245,7 +1274,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     recentDocuments: ports.recentDocuments,
     orchestrator,
     runner,
-    stopThreadRun,
+    stopThreads,
     runStarter,
     delivery,
     asks,
@@ -1348,7 +1377,12 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
-  const asks = createAskService({ repos: threadRepos, eventWriter: journal, delivery });
+  const asks = createAskService({
+    repos: threadRepos,
+    eventWriter: journal,
+    delivery,
+    permission: refusingPermissionExecutor,
+  });
   const handoffBriefs: HandoffBriefs = {
     async hold() {
       return null;
@@ -1425,6 +1459,9 @@ export function createInMemoryAppServices(): AppServices {
     },
     async noWork() {
       return null;
+    },
+    async listForProject() {
+      return [];
     },
     async lockById() {
       return null;
@@ -1810,8 +1847,9 @@ export function createInMemoryAppServices(): AppServices {
       async cancel() {
         return "not_found" as const;
       },
+      async stopThreads() {},
     },
-    async stopThreadRun() {},
+    async stopThreads() {},
     runStarter,
     delivery,
     recovery,

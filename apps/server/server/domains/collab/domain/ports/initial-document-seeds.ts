@@ -11,10 +11,9 @@ export interface PreparedSeed {
   state: Uint8Array;
   stateVector: Uint8Array;
   attributionManifest: unknown;
-  markdown: string;
 }
 
-export type SeedAnnouncement = Pick<PreparedSeed, "documentId" | "markdown">;
+export type SeedAnnouncement = Pick<PreparedSeed, "documentId">;
 
 export interface InitialDocumentSeeds {
   /** Caller holds the staging owner's lock and checks its generation. No live rows. */
@@ -43,9 +42,6 @@ export interface InitialDocumentSeeds {
   seedInitialDocuments(
     seeds: readonly { documentId: DocumentId; state: Uint8Array }[],
   ): Promise<void>;
-  /**
-   * The stored projection (empty when none) of a document with no checkpoint and no update,
-   * or null when its authority exists. One read; the repair's fast path.
-   */
-  missingAuthorityProjection(documentId: DocumentId): Promise<string | null>;
+  /** True for a document with no checkpoint and no update. One read; the repair's fast path. */
+  lacksAuthority(documentId: DocumentId): Promise<boolean>;
 }

@@ -51,6 +51,7 @@ import {
 } from "./adapters/declared-stubs.js";
 import { createDrizzleApplyClick, measureApplyAppend } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
+import { createDrizzleBlockText } from "./adapters/drizzle-block-text.js";
 import { createDrizzleBranchCommands } from "./adapters/drizzle-branch-commands.js";
 import {
   createDrizzleBranchDiscard,
@@ -94,7 +95,10 @@ import { createBranchReviewItems } from "./domain/branch-review-items.js";
 import { createBranches } from "./domain/branches.js";
 import { createDocumentAttribution } from "./domain/document-attribution.js";
 import { createDocumentCreationAggregate } from "./domain/document-creation.js";
-import { createDocumentDerivationService } from "./domain/document-derivations.js";
+import {
+  createBlockDeriver,
+  createDocumentDerivationService,
+} from "./domain/document-derivations.js";
 import {
   scopeAgentEdit,
   scopeDraftPeer,
@@ -259,9 +263,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const derivations = createDocumentDerivationService({
     store: derivationStore,
-    serializer: {
-      serializeDocument: (...args) => runtime.markdownDocuments.serializeDocument(...args),
-    },
+    deriveBlocks: createBlockDeriver({
+      runtime: () => runtime,
+      resolveFiletype: lookups.resolveDocumentFiletype,
+    }),
     outsideTransaction: runOutsideDrizzleTransaction,
     deferred: (documentId) => {
       if (!deps.eventSink) return;
@@ -536,6 +541,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     createEffectiveDocumentReader({
       drafts,
       draftCoordinator,
+      blockText: createDrizzleBlockText(deps.db),
       draftPulls,
       agentEdit,
       documents: runtime.markdownDocuments,
@@ -543,6 +549,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       codec: runtime.codec,
       links: deps.links,
       branches: workBranches,
+      resolveFiletype: lookups.resolveDocumentFiletype,
     }),
     deps.links,
   );
@@ -619,9 +626,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     reversal: turnReversal,
     documents: {
       readForExport: runtime.markdownDocuments.readForExport,
-      initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
-      repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
+      ensureDocumentAuthority: runtime.markdownDocuments.ensureDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      readFrozenMarkdown: runtime.markdownDocuments.readFrozenMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       prepareSeed: runtime.markdownDocuments.prepareSeed,

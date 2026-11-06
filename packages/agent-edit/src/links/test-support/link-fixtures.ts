@@ -5,7 +5,7 @@ import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { prosemirrorBlocksForDoc } from "../../model/y-prosemirror.js";
+import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   createStaticDocumentLinks,
   type StaticCatalogDocument,
@@ -91,7 +91,11 @@ export interface StoredLink {
 
 /** Every stored occurrence of a doc, in document order. */
 export function storedLinks(doc: Y.Doc): StoredLink[] {
-  return walkLinkOccurrences(prosemirrorBlocksForDoc(doc, schema)).map(({ label, attrs }) => ({
+  return walkLinkOccurrences(
+    yProsemirrorModel(schema)
+      .projectBlocks(doc)
+      .map((block) => block.node),
+  ).map(({ label, attrs }) => ({
     label,
     ...attrs,
   }));
@@ -153,7 +157,11 @@ export function linkHarness(input: {
       await links.prepare({ documentId: input.holder.id, docs: [of] });
       return codecFactory
         .forScope(links.scopeFor(input.holder.id, undefined))
-        .serialize(prosemirrorBlocksForDoc(of, schema))
+        .serialize(
+          yProsemirrorModel(schema)
+            .projectBlocks(of)
+            .map((block) => block.node),
+        )
         .trim();
     },
     /** Reads the holder as the model would. */

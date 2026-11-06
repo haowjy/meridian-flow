@@ -47,6 +47,7 @@ import type {
   WorkContextNotices,
   WorkRepository,
 } from "../../domains/projects/index.js";
+import type { PermissionGrantStore } from "../../domains/runtime/index.js";
 import {
   type ShownLinkStore,
   SKILLS_URI_ROOT,
@@ -61,6 +62,7 @@ import type {
   TurnDocumentTouchRepository,
 } from "../../domains/threads/index.js";
 import { threadExecutionContext } from "../../domains/threads/index.js";
+import { runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
 import { agentPrincipal } from "./file-access.js";
 import type { AgentEditResponseWriteLifecycle } from "./response-write-lifecycle.js";
 
@@ -71,12 +73,14 @@ export interface ToolWiringDeps {
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
+  permissionGrants: PermissionGrantStore;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
   notices: Pick<NoticePort, "record">;
   controls: Pick<ThreadControls, "enqueueControl">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
-  stopThreadRun(threadId: ThreadId): Promise<void>;
+  /** `threadIds` must be parents first (`parentsFirst`). */
+  stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
@@ -170,9 +174,8 @@ export async function resolveToolCall(
     version,
   );
   if (isToolError(context)) return context;
-  const { primaryWorkId } = context.resolution;
+  const { primaryWorkId, primaryWork } = context.resolution;
   if (!primaryWorkId) throw new Error(`Thread primary Work is missing: ${ctx.threadId}`);
-  const primaryWork = await deps.works.findById(primaryWorkId);
   if (!primaryWork || workLifecycleState(primaryWork) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
@@ -240,21 +243,27 @@ export function recordTouchInBackground(
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
 ): void {
   if (!deps.documentTouches || !documentId) return;
-  const eventSink = deps.eventSink;
-  void deps.documentTouches.recordTouch(ctx.turnId, documentId).catch((error) => {
-    emitEvent(eventSink, {
-      level: "warn",
-      source: "lib.model-tools",
-      name: "document_touch.failed",
-      correlation: { threadId: ctx.threadId, turnId: ctx.turnId, runId: ctx.turnId },
-      payload: {
-        threadId: ctx.threadId,
-        turnId: ctx.turnId,
-        documentId,
-        ...unknownToEventPayload(error),
+  const { documentTouches, eventSink } = deps;
+  // Not part of the caller's write: it runs once that commits, or now outside one.
+  runAfterDrizzleCommit(() =>
+    documentTouches.recordTouch(ctx.turnId, documentId).then(
+      () => undefined,
+      (error) => {
+        emitEvent(eventSink, {
+          level: "warn",
+          source: "lib.model-tools",
+          name: "document_touch.failed",
+          correlation: { threadId: ctx.threadId, turnId: ctx.turnId, runId: ctx.turnId },
+          payload: {
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+            documentId,
+            ...unknownToEventPayload(error),
+          },
+        });
       },
-    });
-  });
+    ),
+  );
 }
 
 /** Host evidence for the document a `read` or `write` call touched. */

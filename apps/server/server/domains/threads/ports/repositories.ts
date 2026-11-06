@@ -204,6 +204,8 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     executionTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
+  /** Fences these children's unpublished runs: their publication enqueues no parent notice. */
+  withdrawNotices(childThreadIds: readonly ThreadId[]): Promise<void>;
   /** Latest admitted execution per child, ordered from report admission truth. */
   listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
   listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;
@@ -297,6 +299,17 @@ export interface ThreadRepository {
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
   /** Direct live children of `threadId`, ordered by `(createdAt, id)`. */
   listChildren(threadId: ThreadId): Promise<ThreadChild[]>;
+  /**
+   * Subagent ids below `threadId`, parents before children, trashed ones included
+   * (a trashed child can still be running). With `spawnedByTurnId`, only the
+   * subtrees whose root the execution that reserved that turn spawned.
+   */
+  listSubtreeIds(threadId: ThreadId, spawnedByTurnId?: TurnId): Promise<ThreadId[]>;
+  /**
+   * A lineage cancellation's one write of `spawn_status`: every spawn among these threads whose
+   * run has not finished becomes `cancelled`.
+   */
+  cancelRunningSpawns(threadIds: readonly ThreadId[]): Promise<void>;
   /** Bounded newest-first spawn/derivation children; derivations attach to the cutoff owner. */
   listLineageChildren(input: {
     rootThreadId: ThreadId;

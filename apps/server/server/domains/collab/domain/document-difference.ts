@@ -1,37 +1,23 @@
 /** Identity-aware comparison of the committed live effect, for trail navigation only. */
 
 import { isDeepStrictEqual } from "node:util";
-import { readBlocks } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodec,
   type AgentEditModel,
-  getBlockItemId,
   toDocHandle,
   unwrapBlock,
 } from "@meridian/agent-edit/integration";
-import type { Schema } from "prosemirror-model";
 import type * as Y from "yjs";
 import { visibleContent } from "./document-content.js";
 
-export function describeTrailBlocks(
-  doc: Y.Doc,
-  model: AgentEditModel,
-  codec: AgentEditCodec,
-  schema: Schema,
-) {
-  const nodes = readBlocks(doc.getXmlFragment("prosemirror"), schema);
-  const ids = model.getDocumentBlockIds(toDocHandle(doc));
-  return model.getBlocks(toDocHandle(doc)).map((block, index) => {
-    const identity = getBlockItemId(unwrapBlock(block));
-    const id = ids[index];
-    return {
-      id,
-      identity,
-      content: visibleContent(unwrapBlock(block)),
-      serialized: codec.serializeBlock(nodes[index], id),
-      block: unwrapBlock(block),
-    };
-  });
+export function describeTrailBlocks(doc: Y.Doc, model: AgentEditModel, codec: AgentEditCodec) {
+  return model.projectBlocks(toDocHandle(doc)).map((block) => ({
+    id: block.hash,
+    identity: block.id,
+    content: visibleContent(unwrapBlock(block.ref)),
+    serialized: codec.serializeBlock(block.node, block.hash),
+    block: unwrapBlock(block.ref),
+  }));
 }
 
 export function trailBlockChanges(

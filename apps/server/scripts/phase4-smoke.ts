@@ -1,5 +1,4 @@
-import type { DocumentId } from "@meridian/contracts/runtime";
-import { createDb, documentMarkdownProjections, documentYjsUpdates } from "@meridian/database";
+import { createDb, documentYjsUpdates } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
 import { cookieAuthHeaders, mintWorkOsDevSession } from "./workos-dev-session.js";
@@ -94,17 +93,12 @@ const syncedMarkdown = await waitForHocuspocusMarkdown({
 });
 
 const db = createDb(databaseUrl);
-const [document] = await db
-  .select()
-  .from(documentMarkdownProjections)
-  .where(eq(documentMarkdownProjections.documentId, bootstrap.documentId as DocumentId));
 const [yjsUpdate] = await db
   .select()
   .from(documentYjsUpdates)
   .where(eq(documentYjsUpdates.id, writeBody.updateSeq));
 await db.close();
 
-if (document?.markdown !== expectedMarkdown) throw new Error("DB markdown projection mismatch");
 if (yjsUpdate?.originType !== "user") throw new Error("Yjs update origin_type mismatch");
 if (syncedMarkdown !== expectedMarkdown) throw new Error("Yjs synced markdown mismatch");
 

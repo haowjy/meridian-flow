@@ -57,6 +57,7 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
     costMillicredits: row.costMillicredits,
     publication: row.publication as SavedExecutionReport["publication"],
     publishedAt: row.publishedAt?.toISOString() ?? null,
+    noticeWithdrawn: row.noticeWithdrawn,
   };
 }
 
@@ -152,7 +153,11 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         card: card ?? null,
       });
       const values = reportIdentity(input);
-      await currentDrizzleDb(db).insert(table).values(values).onConflictDoNothing();
+      // A replayed admission of the same execution is a no-op; any other conflict is a bug.
+      await currentDrizzleDb(db)
+        .insert(table)
+        .values(values)
+        .onConflictDoNothing({ target: table.executionTurnId });
       const row = await find(input.childThreadId, input.executionTurnId);
       if (!row) throw new Error("Execution report admission did not persist");
       const report = map(row);
@@ -219,6 +224,18 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
     async findByExecution(childThreadId, executionTurnId) {
       const row = await find(childThreadId, executionTurnId);
       return row ? map(row) : null;
+    },
+    async withdrawNotices(childThreadIds) {
+      if (childThreadIds.length === 0) return;
+      await currentDrizzleDb(db)
+        .update(table)
+        .set({ noticeWithdrawn: true })
+        .where(
+          and(
+            inArray(table.childThreadId, [...childThreadIds]),
+            sql`${table.publication} <> 'published'`,
+          ),
+        );
     },
     async listLatestByChildren(childThreadIds) {
       if (childThreadIds.length === 0) return [];

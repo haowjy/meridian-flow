@@ -40,7 +40,7 @@ returns null for them without trying, so they stay cards and log nothing. Files
 saved before previews existed have none and show the card; nothing generates
 one later.
 
-Conversion runs in a two-worker `worker_threads` pool (`image-preview-worker.mjs`),
+Conversion runs in a two-worker `worker_threads` pool (`image-preview-worker.ts`),
 never on the event loop: libheif's WASM and `bmp-ts` are synchronous and froze the
 server for seconds per photo. The worker reads HEIC and BMP dimensions before
 decoding and refuses an image over 50 MP (a phone photo fits; at the cap a
@@ -50,12 +50,11 @@ HEIC decode is also replaced, since libheif's WASM may be left unusable. A
 failed preview logs `image_preview.failed` with a `reason` code
 (`worker_unavailable`, `timeout`, `decode_failed`, `too_large`), never a decoder
 message. An import request queues at most two previews at a time, so one import
-doesn't starve other writers' previews. The worker is a plain `.mjs` that nothing
-imports, so `nitro.config.ts` emits it as its own chunk at the output root
-(`image-preview-worker.mjs`, beside the entry chunk) and `image-preview.ts` finds
-it from `globalThis.__nitro_main__`, which Nitro sets in `nitro dev` and in a
-build alike; a path relative to the chunk holding `image-preview.ts` is wrong in
-one of them. Nitro traces
+doesn't starve other writers' previews. `image-preview.ts` starts the worker with
+`new URL("./image-preview-worker.ts", import.meta.url)`; `bundleWorkerEntries` in
+`nitro.config.ts` (the plugin every worker entry shares) emits it as
+`workers/image-preview-worker.mjs` and rewrites the URL, in `nitro dev` and in a build alike.
+Nitro traces
 `sharp`, `heic-decode`, `libheif-js` and `bmp-ts` as external packages.
 
 Every delete of a stored object that may have a preview, compensating deletes

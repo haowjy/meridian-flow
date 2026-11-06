@@ -15,26 +15,39 @@ import {
 export function createDrizzleProjectWorkAuthorityResolver(
   db: Database,
 ): ProjectWorkAuthorityResolver {
-  async function selectBy(
-    projectId: ProjectId,
-    predicate: ReturnType<typeof eq>,
-  ): Promise<ResolvedWorkAuthority | null> {
-    const [row] = await currentDrizzleDb(db)
+  function selectWhere(projectId: ProjectId, predicate: ReturnType<typeof eq>) {
+    return currentDrizzleDb(db)
       .select({ workId: works.id, workHandle: works.handle, isNoWork: works.isNoWork })
       .from(works)
-      .where(and(eq(works.projectId, projectId), predicate, isNull(works.deletedAt)))
-      .limit(1);
-    if (!row) return null;
+      .where(and(eq(works.projectId, projectId), predicate, isNull(works.deletedAt)));
+  }
+
+  function authorityOf(row: {
+    workId: string;
+    workHandle: string | null;
+    isNoWork: boolean;
+  }): ResolvedWorkAuthority {
     if (row.isNoWork) return resolvedWorkAuthority({ workId: row.workId, workHandle: null });
     const workHandle = decodeWorkHandle(row.workHandle);
     if (!workHandle) throw new Error(`Persisted Work ${row.workId} has an invalid handle`);
     return resolvedWorkAuthority({ workId: row.workId, workHandle });
   }
 
+  async function selectBy(
+    projectId: ProjectId,
+    predicate: ReturnType<typeof eq>,
+  ): Promise<ResolvedWorkAuthority | null> {
+    const [row] = await selectWhere(projectId, predicate).limit(1);
+    return row ? authorityOf(row) : null;
+  }
+
   return {
     byId: (projectId, workId) => selectBy(projectId, eq(works.id, workId)),
     byHandle: (projectId, workHandle) => selectBy(projectId, eq(works.handle, workHandle)),
     noWork: (projectId) => selectBy(projectId, eq(works.isNoWork, true)),
+    async listForProject(projectId) {
+      return (await selectWhere(projectId, eq(works.isNoWork, false))).map(authorityOf);
+    },
     async lockById(projectId, workId) {
       await lockWorkLifecycle(db, workId);
       return selectBy(projectId, eq(works.id, workId));

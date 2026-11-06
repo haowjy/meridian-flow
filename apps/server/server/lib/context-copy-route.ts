@@ -31,7 +31,6 @@ import {
   type ProjectRepository,
   type ProjectWorkAuthorityResolver,
   requireProjectOwner,
-  type WorkRepository,
 } from "../domains/projects/index.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import {
@@ -51,7 +50,6 @@ import { requireRequestId } from "./request-id.js";
 export interface ContextCopyRouteDeps {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   projectRepo: ProjectRepository;
-  workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
@@ -388,18 +386,15 @@ export async function handleContextCopyRequest(
     if (destinationLocator.scope === "work") workIds.add(destinationLocator.authority.workId);
   }
 
-  const works = await deps.workRepo.listByProject(input.projectId, { lifecycle: "all" });
   const port = await contextPortForProjectAuthorities({
     deps: {
       contextPorts: deps.contextPorts,
-      works: deps.workRepo,
       workAuthorityResolver: deps.workAuthorityResolver,
     },
     projectId: input.projectId,
     userId: input.userId,
     workIds,
     primaryWorkId: [...workIds][0] ?? null,
-    projectWorks: works,
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
 

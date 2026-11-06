@@ -28,6 +28,8 @@ export type StopFacts = {
   receipt: readonly string[];
   /** The chat's relevant writer messages: see `readFacts`. */
   rows: readonly WriterRow[];
+  /** The open execution admitted the continuation of a question the writer answered. */
+  continuesWriterAnswer: boolean;
 };
 
 export type HandBackScopeFacts =
@@ -95,10 +97,11 @@ export function decideHandBack(
 
 /**
  * Stop: P is the rows at or below `seenThrough` plus `mine`; L is the writer messages above the
- * watermark that are not `mine`. The execution is cancelled when the writer saw it or it took on a
- * message in P, unless it has taken on a message in L (cancelling would answer that message with a
- * cancelled reply). A message in L that the execution has not taken on is not protected: the cancel
- * flag refuses any further adoption, so it waits for the next execution.
+ * watermark that are not `mine`. The execution is cancelled when the writer saw it, it took on a
+ * message in P, or it continues the writer's answer to a question (an answer is the writer's own
+ * request, like `mine`), unless it has taken on a message in L (cancelling would answer that
+ * message with a cancelled reply). A message in L that the execution has not taken on is not
+ * protected: the cancel flag refuses any further adoption, so it waits for the next execution.
  */
 export function decideStop(facts: StopFacts, press: StopPress): StopDecision {
   const scope: HandBackScopeFacts = {
@@ -112,7 +115,9 @@ export function decideStop(facts: StopFacts, press: StopPress): StopDecision {
   const laterRows = facts.rows.filter((row) => !inP.has(row.id));
   const cancels =
     execution !== null &&
-    (execution.id === press.seenExecutionId || pressRows.some((row) => takesOn(facts, row))) &&
+    (execution.id === press.seenExecutionId ||
+      facts.continuesWriterAnswer ||
+      pressRows.some((row) => takesOn(facts, row))) &&
     !laterRows.some((row) => takesOn(facts, row));
   return {
     ...decideHandBack(facts, scope, cancels),

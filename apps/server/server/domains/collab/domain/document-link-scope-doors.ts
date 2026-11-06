@@ -5,7 +5,7 @@
  * is about to spell, because only it has loaded them.
  *
  * Text crosses these doors: the Markdown engine (reads, the read API and
- * download, writer and import writes, projections), the model's edit core, a
+ * download, writer and import writes), the model's edit core, a
  * reply's save and draft-aware reads (Markdown, hashlines and revision).
  * ContextFS.search scopes its source's chapters together. Links
  * spelled outside every scope are reported (`createLinkScopeObserver`).
@@ -26,6 +26,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
     serializeVersionedDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeVersionedDocument(documentId, doc, view)),
+    readFrozenMarkdown: (documentId) =>
+      scopes.within(by(documentId), () => engine.readFrozenMarkdown(documentId)),
     readVersionedMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readVersionedMarkdown(documentId)),
     restoreFromYDoc: (documentId, snapshot, origin) =>
@@ -42,12 +44,11 @@ export function scopeMarkdownEngine(
     announceSeeds: engine.announceSeeds,
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
-    // None spells a link: a seed is encoded from bound blocks, and the repair reads its
-    // projection with links unbound.
+    // None spells a link: a seed is encoded from bound blocks, and authority repair seeds an
+    // empty document.
     encodeSeed: engine.encodeSeed,
     installSeeds: engine.installSeeds,
-    initializeEmptyDocument: engine.initializeEmptyDocument,
-    repairDocumentAuthority: engine.repairDocumentAuthority,
+    ensureDocumentAuthority: engine.ensureDocumentAuthority,
     // The lease spells nothing; the held write spells as the document it admits.
     withLiveDocument: engine.withLiveDocument,
     writeDocumentHeld: (input) =>
@@ -126,6 +127,8 @@ export function scopeDraftPeer(
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
     flushDraftLivePull: access.flushDraftLivePull,
+    readStoredGrepTexts: access.readStoredGrepTexts,
+    readStoredWordCounts: access.readStoredWordCounts,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     readEffectiveBlocks: (command) =>

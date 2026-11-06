@@ -4,30 +4,36 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "nitro/config";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const previewWorker = path.join(
-  repoRoot,
-  "apps/server/server/domains/file-intake/image-preview-worker.mjs",
-);
-const previewWorkerName = path.basename(previewWorker);
 
 const repoLogsGlob = `${path.join(repoRoot, "logs").replaceAll(path.sep, "/")}/**`;
+
+/**
+ * Bundles worker entries the way Vite does for the app: `new URL("./x.ts", import.meta.url)` in a
+ * source file becomes an emitted chunk (with its imports bundled) and a URL to it. Nitro leaves the
+ * expression alone, so the built server would look for `x.ts` beside its chunks and not find it.
+ */
+const WORKER_URL = /new URL\("(\.\/[^"]+\.ts)", import\.meta\.url\)/g;
+const bundleWorkerEntries = {
+  name: "bundle-worker-entries",
+  transform(this: { emitFile(file: object): string }, code: string, id: string) {
+    if (!code.includes("import.meta.url")) return null;
+    return code.replace(WORKER_URL, (_match, relative: string) => {
+      const entry = path.resolve(path.dirname(id), relative);
+      const reference = this.emitFile({
+        type: "chunk",
+        id: entry,
+        fileName: `workers/${path.basename(entry, ".ts")}.mjs`,
+      });
+      return `new URL(import.meta.ROLLUP_FILE_URL_${reference})`;
+    });
+  },
+};
 
 export default defineConfig({
   scanDirs: ["server"],
   experimental: { asyncContext: true },
   rolldownConfig: {
-    plugins: [
-      {
-        // The preview worker is started by file path, so nothing imports it. Emitting it as
-        // its own chunk bundles it and lets Nitro trace its native packages (sharp).
-        name: "emit-image-preview-worker",
-        buildStart() {
-          // At the output root, where image-preview.ts finds it from `__nitro_main__`; a path
-          // beside the chunk holding that file differs between `nitro dev` and a build.
-          this.emitFile({ type: "chunk", id: previewWorker, fileName: previewWorkerName });
-        },
-      },
-    ],
+    plugins: [bundleWorkerEntries],
     watch: {
       // pnpm store files are hardlinked across worktrees, so an install in a
       // sibling worktree changes their ctime (inotify IN_ATTRIB) and would

@@ -78,7 +78,7 @@ export const ThreadHistoryInputSchema = z
     include: z
       .array(z.enum(INCLUDES))
       .describe(
-        "Detail hidden by default. routine_calls: show hidden inspection calls (`read`, `ls`, `search` and the like) as one-line entries. tool_results: add results to visible tool calls. thinking: show thinking. system_messages, system_prompt: show system messages, or the system prompt. timestamps: show when each turn happened.",
+        "Detail hidden by default. routine_calls: show hidden inspection calls (`read`, `ls`, `grep` and the like) as one-line entries. tool_results: add results to visible tool calls. thinking: show thinking. system_messages, system_prompt: show system messages, or the system prompt. timestamps: show when each turn happened.",
       )
       .optional(),
     expand: z

@@ -103,9 +103,21 @@ hosts cannot disagree; the package imports no server or infrastructure code.
 ### `AgentEditModel` (`src/ports/model.ts`)
 
 The model port makes document and block handles opaque to the kernel. It owns
-identity lookup, visible text, structural mutation, inline replacement,
-projection, and block serialization. v1's implementation is y-prosemirror;
-host composition supplies its schema explicitly.
+identity lookup, visible text, structural mutation, inline replacement, and
+`projectBlocks`: every top-level block as `{ ref, id, hash, fullHash, node }`, built
+in one walk so they always describe the same block. `id` is the local CRDT item, used for
+mutation and provenance; `hash` and `fullHash` come from the block's origin identity, which
+differs from `id` for a Work-draft block seeded from live, so hash lookup matches `fullHash`
+and never rebuilds a hash from `id`. Serialization is the codec's
+(`serializeBlocks` records shown links; `serializeBlockBodies` does not); each
+caller composes what it uses from one projection. Projecting runs y-prosemirror's
+repair on the document it is given (an unbuildable element is deleted and left out,
+and hashes cover the survivors), so hand it a private copy (a room copy, a planning view, a document decoded from a
+stored snapshot), never a shared document. The resolver projects once, first, and its
+scope contexts hold only that projection (no document, no hash lookup on the port), so its
+scopes, hashes and anchors index the repaired block list. A whole-document write
+(`wholeDocument`) takes its scope from that list, never from a count taken earlier.
+v1's implementation is y-prosemirror; host composition supplies its schema explicitly.
 
 ## Session and facade ports
 
@@ -127,8 +139,7 @@ history.
 
 ## Performance boundary
 
-Multi-block callers use batch model operations for IDs, projections, hashline
-serialization, and block bodies; per-block helpers rescan the document and can
+Multi-block callers project once and serialize from that projection; per-block helpers rescan the document and can
 be quadratic. A logical write reserves one ordinal before staging, and the
 journal's batch append owns row expansion. Tests should exercise the batch seam,
 not rebuild the same walk in each caller.

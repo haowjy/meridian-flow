@@ -9,6 +9,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ToolView } from "@meridian/thread-client";
 import { stringInput, threadMessageRow, toolInputObject } from "@meridian/thread-client";
 import { SubagentRefLine } from "./thread-report-renderer";
+import { errorMessageExpand } from "./tool-failure";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
 function ThreadMessageTitle({ tool }: { tool: ToolView }) {
@@ -27,12 +28,16 @@ function ThreadMessageTitle({ tool }: { tool: ToolView }) {
   return <Trans>Couldn't send a message to {line}</Trans>;
 }
 
-/** The message itself, as the model wrote it to the subagent. */
+/** The message itself, as the model wrote it to the subagent; a refused one says why first. */
 function threadMessageExpand(tool: ToolView): ToolExpand | null {
   const message = stringInput(toolInputObject(tool), "message");
-  if (!message) return null;
+  const failure = errorMessageExpand(tool);
+  if (!message) return failure;
   return () => (
-    <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{message}</p>
+    <>
+      {failure?.()}
+      <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{message}</p>
+    </>
   );
 }
 

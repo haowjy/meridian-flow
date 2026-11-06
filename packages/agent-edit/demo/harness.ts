@@ -288,7 +288,7 @@ async function rendered(env: DemoEnvironment, docId: string): Promise<string> {
 }
 
 function serializeWithoutHashes(doc: Y.Doc): string {
-  return codec.serialize(model.projectBlocks(doc));
+  return codec.serialize(model.projectBlocks(doc).map((block) => block.node));
 }
 
 function section(title: string) {

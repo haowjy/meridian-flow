@@ -13,8 +13,29 @@ import {
   readMigrationHistory,
 } from "./migration-history";
 
-/** Start the local postgres:16 container and wait until healthy. */
+const DEV_POSTGRES_CONTAINER = "meridian-dev-postgres-1";
+
+function devPostgresIsHealthy(): boolean {
+  try {
+    const out = execFileSync(
+      "docker",
+      ["inspect", "-f", "{{.State.Status}} {{.State.Health.Status}}", DEV_POSTGRES_CONTAINER],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    return out.trim() === "running healthy";
+  } catch {
+    return false; // no such container
+  }
+}
+
+/**
+ * Start the shared dev Postgres (postgres:16 + pg_bigm) if it is not already running and
+ * healthy. A running server is never reconciled: every worktree shares it, and a branch with
+ * an older compose file would otherwise flip it back to the image that branch knows.
+ * Moving onto a new image tag is the explicit `pnpm dev:infra:upgrade`.
+ */
 export function ensureDevInfraUp(repoRoot: string): void {
+  if (devPostgresIsHealthy()) return;
   const composeFile = path.join(repoRoot, "tools/dev/docker-compose.yml");
   execFileSync("docker", ["compose", "-f", composeFile, "up", "-d", "--wait"], {
     cwd: repoRoot,

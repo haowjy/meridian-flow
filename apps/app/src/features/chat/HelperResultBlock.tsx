@@ -25,26 +25,10 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
     props.execution
       ? { threadId, childThreadId: props.childThreadId, execution: props.execution }
       : null;
-  const status = run
-    ? run.status === "running"
-      ? "running"
-      : run.status === "done"
-        ? "completed"
-        : run.status === "stopped"
-          ? "failed"
-          : "completed"
-    : props.terminalAt === null
-      ? "running"
-      : props.outcome === "succeeded"
-        ? "completed"
-        : props.outcome
-          ? "failed"
-          : "completed";
   return (
     <SpawnReportCard
       agentName={props.agentName}
       title={props.title ?? null}
-      status={status}
       outcome={props.outcome}
       deliveryMode={props.deliveryMode}
       liveTool={liveTool}

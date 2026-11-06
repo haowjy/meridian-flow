@@ -226,7 +226,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
           const seed = await deps.documents.prepareSeed({
             documentId: node.id as DocumentId,
             projectId,
-            uri: uris.get(node.id) ?? "",
             content,
             origin: base.origin,
           });
@@ -256,7 +255,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
           const seed = await deps.documents.prepareSeed({
             documentId: node.id as DocumentId,
             projectId,
-            uri: uris.get(node.id) ?? "",
             content: bound.content,
             origin: base.origin,
           });
@@ -274,7 +272,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         document.content.kind === "tracked"
           ? document.content.seed.state.byteLength +
             document.content.seed.stateVector.byteLength +
-            Buffer.byteLength(document.content.seed.markdown, "utf8") +
             Buffer.byteLength(JSON.stringify(document.content.seed.attributionManifest), "utf8") +
             Buffer.byteLength(JSON.stringify(document.content.aheadMints), "utf8")
           : 0;

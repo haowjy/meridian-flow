@@ -116,6 +116,8 @@ export type SavedExecutionReport = {
   costMillicredits: number | null;
   publication: "none" | "pending" | "published";
   publishedAt: string | null;
+  /** A lineage cancellation ended this run: its card still settles, but no notice goes out. */
+  noticeWithdrawn: boolean;
 } & (
   | { outcome: null; source: null; summary: null; terminalAt: null }
   | { outcome: SavedOutcome; source: ExecutionReportSource; summary: string; terminalAt: string }

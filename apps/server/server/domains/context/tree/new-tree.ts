@@ -13,7 +13,7 @@
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections, documents, folders } from "@meridian/database/schema";
+import { documents, folders } from "@meridian/database/schema";
 import { generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { ContextEntryConflictError } from "../ports/context-document-store.js";
@@ -82,7 +82,6 @@ export async function insertNewTree(
   }
   const folderRows: (ReturnType<typeof folderRowValues> & { rank: string | null })[] = [];
   const documentRows: (ReturnType<typeof documentRowValues> & { rank: string | null })[] = [];
-  const projectionRows: { documentId: DocumentId }[] = [];
   const claimed: ClaimedLocation[] = [];
   const binaryIds: DocumentId[] = [];
 
@@ -132,8 +131,7 @@ export async function insertNewTree(
           ),
           rank,
         });
-        if (node.node.kind === "tracked") projectionRows.push({ documentId: node.id });
-        else binaryIds.push(node.id);
+        if (node.node.kind !== "tracked") binaryIds.push(node.id);
         claimed.push({ contextSourceId: sourceId, path: node.path });
       });
     }
@@ -146,11 +144,6 @@ export async function insertNewTree(
   }
   for (let offset = 0; offset < documentRows.length; offset += BATCH) {
     await tx.insert(documents).values(documentRows.slice(offset, offset + BATCH));
-  }
-  for (let offset = 0; offset < projectionRows.length; offset += BATCH) {
-    await tx
-      .insert(documentMarkdownProjections)
-      .values(projectionRows.slice(offset, offset + BATCH));
   }
   // A path an old document vacated is claimed by the live one that now sits there.
   await recordLocationHistory(db, { vacated: [], claimed });

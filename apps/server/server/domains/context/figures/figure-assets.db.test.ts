@@ -4,14 +4,7 @@ import { createTestDocumentLinkScopes } from "../../collab/test-support/document
 
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import {
-  contextSources,
-  documentMarkdownProjections,
-  documents,
-  folders,
-  projects,
-  users,
-} from "@meridian/database/schema";
+import { contextSources, documents, folders, projects, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
@@ -93,9 +86,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         mimeType: "text/markdown",
         sizeBytes: 23,
       });
-      await db
-        .insert(documentMarkdownProjections)
-        .values({ documentId: HOST_DOCUMENT_ID, markdown: "# Chapter One\n\nIt began." });
     });
 
     afterAll(async () => db.$client.end());
@@ -129,12 +119,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         storageUrl: before?.storageUrl,
         mimeType: before?.mimeType,
         sizeBytes: before?.sizeBytes,
-        markdownProjection: (
-          await db
-            .select()
-            .from(documentMarkdownProjections)
-            .where(eq(documentMarkdownProjections.documentId, HOST_DOCUMENT_ID))
-        )[0]?.markdown,
       };
 
       const uploaded = await service.uploadFigure({
@@ -159,12 +143,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         storageUrl: after?.storageUrl,
         mimeType: after?.mimeType,
         sizeBytes: after?.sizeBytes,
-        markdownProjection: (
-          await db
-            .select()
-            .from(documentMarkdownProjections)
-            .where(eq(documentMarkdownProjections.documentId, HOST_DOCUMENT_ID))
-        )[0]?.markdown,
       }).toEqual(hostBefore);
 
       const context = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());

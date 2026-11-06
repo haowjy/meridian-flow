@@ -168,11 +168,11 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "none",
   },
-  search: {
+  grep: {
     Icon: Search,
     phrases: (tool) => {
       const input = toolInputObject(tool);
-      const pattern = stringInput(input, "query") ?? stringInput(input, "pattern");
+      const pattern = stringInput(input, "pattern");
       if (!pattern) return tenses(t`Searching…`, t`Searched context`);
       const quoted = `“${truncatePattern(pattern)}”`;
       return {

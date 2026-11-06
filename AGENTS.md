@@ -106,7 +106,8 @@ probe `ws://127.0.0.1:<port>`. Start with `pnpm dev`; discover URLs with
 After installing, upgrading, or patching a package, run `pnpm dev:restart`: the
 dev server doesn't watch `node_modules`.
 
-Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
+Postgres is `postgres:16` plus pg_bigm (`tools/postgres/Dockerfile`; btree_gin and pg_trgm
+are contrib); `DATABASE_URL` is the app seam. Use
 noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 
 Dev stacks use more memory than the tests; when the host is short, run
@@ -123,6 +124,13 @@ Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 browser run, with `agent-browser`, of what the writer sees. Every PR that changes
 anything a writer sees or relies on ends with one, screenshots in the PR, server-only
 changes included. `./mf` output never stands in for that run.
+
+**Live model calls go to `deepseek-flash`.** These runs check Flow, not model
+behavior: use the mock provider when the model's output doesn't matter, and
+`deepseek-flash` when a run needs a real model. Don't call other providers to
+confirm a model exists or works. Model facts (limits, prices, modalities) come
+from [models.dev](https://models.dev); read a provider's API docs only for what
+models.dev lacks.
 
 ## Build and test
 

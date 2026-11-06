@@ -109,7 +109,7 @@ In progress
   notices, Work updates, seeds, compaction) have no number; with
   `system_messages` they show under their label and can't be expanded.
 - **Visibility** comes from each registration's `historyKind`. Routine calls
-  (`read`, `ls`, `search`, `work` list/show, `thread_ls`, `thread_history`,
+  (`read`, `ls`, `grep`, `work` list/show, `thread_ls`, `thread_history`,
   `thread_report`, `skill`, and a child's `return_result`) are hidden and
   counted behind a copyable `expand` call. Changes (`write`, `work` changes,
   `spawn`, `thread_message`) are one receipt line. Errors and calls a settled

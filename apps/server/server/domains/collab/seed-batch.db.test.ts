@@ -96,7 +96,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
         store.prepareSeed({
           documentId,
           projectId,
-          uri: `kb://doc-${documentId}`,
           content: { ...store.bindStatic(text), holder: { kind: "document", documentId } },
           origin,
         }),
@@ -150,7 +149,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
       });
       expect(edited.markdown).toBe("# Chapter\n\nEdited.\n");
     }
-    expect(seeds[0]?.markdown).toBe(text);
 
     await db.delete(documents).where(eq(documents.id, single));
   });
