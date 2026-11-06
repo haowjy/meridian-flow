@@ -7,6 +7,7 @@
 
 import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { recordFailureAfterCommit } from "../../../shared/failure-records.js";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
@@ -36,10 +37,10 @@ else
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
+    const { journalEventsByThread } = await import("../../../test-support/journal-events.js");
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalReader } = await import("../../threads/index.js");
     const { finalizeExecution } = await import("./execution-finalizer.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -219,8 +220,8 @@ else
         });
         selector = run.executionTurnId;
         const outcome = await run.execute();
-        const events = (await createDrizzleEventJournalReader(db).listByThread(ids.child)).map(
-          (entry) => entry.payload,
+        const events = (await journalEventsByThread(db, ids.child)).map(
+          (entry) => entry.payload as OrchestratorEvent,
         );
         expect(outcome.status).toBe(boundary === "rollback" ? "error" : "complete");
         const turns = await repos.turns.listByThread(ids.child);

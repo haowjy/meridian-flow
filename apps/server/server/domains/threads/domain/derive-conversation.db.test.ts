@@ -24,7 +24,6 @@ else
     const { createBoundAgentCatalog, createDrizzleAgentRevisionStore } = await import(
       "../../packages/index.js"
     );
-    const { createDrizzleEventJournalReader } = await import("../index.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const {
@@ -48,7 +47,6 @@ else
       await import("../adapters/drizzle/repositories.js")
     ).createDrizzleRepositoriesForTest(db);
     const revisions = createDrizzleAgentRevisionStore(db);
-    const eventReader = createDrizzleEventJournalReader(db);
     const eventWriter = createQuietDrizzleJournalWriter(db);
     const ids = THREAD_WORK_RACE;
     beforeEach(async () => resetThreadWorkRaceFixture(db));
@@ -499,7 +497,9 @@ else
         originTurnId: secondTurn.id,
       });
       expect(inheritedFork.thread.initialPromptBakeId).toBe(boundaryBake.id);
-      const forkEvents = await eventReader.listByType(firstFork.thread.id as never, "agent.fork");
+      const forkEvents = (await db.select().from(schema.eventJournal)).filter(
+        (entry) => entry.threadId === firstFork.thread.id && entry.eventType === "agent.fork",
+      );
       expect(forkEvents.map((entry) => entry.payload)).toContainEqual(
         expect.objectContaining({
           type: "agent.fork",
