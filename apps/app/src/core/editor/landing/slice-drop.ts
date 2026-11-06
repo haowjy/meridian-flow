@@ -119,7 +119,7 @@ function slicePlan(
         deleteSource(transaction, source);
         const at = transaction.mapping.map(landing.pos);
         transaction.insertText(text, at);
-        transaction.setSelection(TextSelection.create(transaction.doc, at + text.length));
+        transaction.setSelection(TextSelection.create(transaction.doc, at, at + text.length));
         finish(target, transaction);
       },
     };
