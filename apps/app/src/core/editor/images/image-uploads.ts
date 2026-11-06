@@ -13,6 +13,7 @@ import {
   resolveAnchorIn,
   resolveNodeHold,
 } from "../anchors";
+import type { Landing } from "../landing/point-landing";
 import { objectSurfaceKind } from "../objects";
 import { sweepReplaceLanding } from "../table-sweep-paste";
 import type { ImageIngressHost, UploadedImage } from "./image-ingress-ports";
@@ -108,7 +109,7 @@ function insertImageAtAnchor(editor: Editor, anchor: EditorAnchor, file: File): 
     storage.status.refuse(t`There is nowhere left to put that picture.`);
     return;
   }
-  insertImageFile(editor, file, at.from);
+  insertImageFile(editor, file, { kind: "inline", pos: at.from });
 }
 
 /** Another picture for a slot the writer already placed. */
@@ -149,9 +150,9 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
 }
 
 /** Put this picture in the document and start sending it. */
-export function insertImageFile(editor: Editor | null, file: File, pos?: number): void {
+export function insertImageFile(editor: Editor | null, file: File, at: Landing): void {
   openImageFileUpload(editor, file, (target, alt, token) =>
-    insertPendingImageNode(target, alt, token, pos),
+    insertPendingImageNode(target, alt, token, at),
   );
 }
 
@@ -162,7 +163,7 @@ export function pasteImageFile(editor: Editor | null, file: File): void {
     openImageFileUpload(editor, file, insertPendingImageInSweep);
     return;
   }
-  insertImageFile(editor, file, editor.state.selection.from);
+  insertImageFile(editor, file, { kind: "inline", pos: editor.state.selection.from });
 }
 
 /** One lifecycle for a picture file with somewhere to go: validate the file, open the upload, let `place` land the slot, and start the bytes. */
@@ -219,19 +220,24 @@ export function removePendingImage(editor: Editor | null, pos: number): void {
   editor.view.dispatch(transaction);
 }
 
-/** The picture's slot, opened where the writer asked for it. */
+/**
+ * The picture's slot, opened where the landing says: in the text at an inline
+ * landing, in a paragraph of its own at a seam. An inline position whose
+ * parent cannot hold a picture (a paste in code) puts the paragraph after that
+ * block.
+ */
 function insertPendingImageNode(
   editor: Editor,
   alt: string,
   token: string,
-  pos?: number,
+  at: Landing,
 ): number | null {
   const { state } = editor;
   const imageType = state.schema.nodes.image;
   const paragraphType = state.schema.nodes.paragraph;
   if (!imageType || !paragraphType) return null;
 
-  const target = Math.max(0, Math.min(pos ?? state.selection.from, state.doc.content.size));
+  const target = Math.max(0, Math.min(at.pos, state.doc.content.size));
   const image = imageType.create({
     src: PENDING_IMAGE_SRC,
     alt,
@@ -242,11 +248,15 @@ function insertPendingImageNode(
   const transaction = state.tr;
   let imagePos: number;
 
-  if ($target.parent.canReplaceWith($target.index(), $target.index(), imageType)) {
+  if (
+    at.kind === "inline" &&
+    $target.parent.canReplaceWith($target.index(), $target.index(), imageType)
+  ) {
     transaction.insert(target, image);
     imagePos = target;
   } else {
-    const seam = $target.depth === 0 ? target : $target.after($target.depth);
+    const seam =
+      at.kind === "seam" ? target : $target.depth === 0 ? target : $target.after($target.depth);
     const $seam = state.doc.resolve(seam);
     if (!$seam.parent.canReplaceWith($seam.index(), $seam.index(), paragraphType)) return null;
     transaction.insert(seam, paragraphType.create(null, image));
