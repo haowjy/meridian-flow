@@ -320,10 +320,10 @@ export function createThreadEventHub(
     const state = threads.get(threadId);
     if (state && afterSeq >= cursorSeqForJournalHead(state.journalCursor)) return [];
     const throughJournalSeq = state?.journalCursor ?? 0n;
-    if (
-      state &&
-      journalSeqForEventSeq(afterSeq) < (await retainedTransportFloor(threadId, throughJournalSeq))
-    ) {
+    const floor = state ? await retainedTransportFloor(threadId, throughJournalSeq) : 0n;
+    // The floor row's own frames close messages opened by rows pruned before it, so a cursor
+    // inside that row can't be rebuilt either.
+    if (floor > 0n && journalSeqForEventSeq(afterSeq) <= floor) {
       throw new ThreadEventReplayGapError(afterSeq, cursorSeqForJournalHead(throughJournalSeq));
     }
     const hotEvents = state?.events ?? [];

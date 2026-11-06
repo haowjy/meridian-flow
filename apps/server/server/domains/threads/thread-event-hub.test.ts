@@ -522,6 +522,10 @@ describe("thread event hub complete replay", () => {
       fromSeq: 2_000n,
       toSeq: 6_999n,
     });
+    await expect(hub.catchup(THREAD_ID, 3_000n)).rejects.toMatchObject({
+      name: "ThreadEventReplayGapError",
+      fromSeq: 3_000n,
+    });
   });
 
   it("replays all rows beyond 10k through the captured head", async () => {
