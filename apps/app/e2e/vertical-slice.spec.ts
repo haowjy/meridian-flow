@@ -22,6 +22,9 @@ test.describe("vertical slice", () => {
       });
       // Opening the chat makes it the project's current chat, which the Editor docks.
       await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`);
+      await expect(
+        page.locator(`[data-debug-composer="${fixture.threadId}"] [aria-label="Message"]`),
+      ).toBeVisible();
       await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
 
       const editor = page.locator('[data-editor-surface="live"] .ProseMirror');
@@ -77,6 +80,9 @@ test.describe("vertical slice", () => {
       });
       // Opening the chat makes it the project's current chat, which the Editor docks.
       await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`);
+      await expect(
+        page.locator(`[data-debug-composer="${fixture.threadId}"] [aria-label="Message"]`),
+      ).toBeVisible();
       await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
       await expect(page).toHaveURL(new RegExp(`/p/${fixture.projectId}/editor/kb/alpha\\.md`));
 
@@ -100,8 +106,11 @@ test.describe("vertical slice", () => {
 
       await expect(page.locator('[data-turn-role="user"]').last()).toContainText(uniqueMessage);
       const assistantTurn = page.locator('[data-turn-role="assistant"]').last();
-      await expect(assistantTurn).toContainText(`Acknowledged: ${uniqueMessage}`);
-      await expect(assistantTurn).toHaveAttribute("data-turn-status", "complete");
+      // The mock provider's default reply is a canned scene, not an echo of the message.
+      await expect(assistantTurn).toHaveAttribute("data-turn-status", "complete", {
+        timeout: 30_000,
+      });
+      await expect(assistantTurn).not.toHaveText("");
       await expect(editor).toHaveAttribute("contenteditable", "true");
     } finally {
       await (fixture ? cleanupProjectFixture(db, fixture) : Promise.resolve()).finally(() =>

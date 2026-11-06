@@ -131,9 +131,6 @@ test("unavailable document masks only its body and navigation opens another docu
       userId: await findTestUserId(db),
       titlePrefix: "Unavailable document shell",
     });
-    // This direct-SQL fixture predates No Work; the Editor requires its locked row.
-    await db`INSERT INTO works (project_id, created_by_user_id, name, handle, is_no_work)
-      VALUES (${fixture.projectId}, ${await findTestUserId(db)}, 'No Work', NULL, true)`;
     await page.goto(`/p/${fixture.projectId}/editor/kb/alpha`);
     await expect(page.getByText("Seed context.", { exact: true })).toBeVisible({ timeout: 30_000 });
     // Preserve the resize-produced collapsed preferences across a hard entry.
