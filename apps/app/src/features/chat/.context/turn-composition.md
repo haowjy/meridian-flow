@@ -74,10 +74,12 @@ takeover unmounts while an answer sends and must reopen with every answer after 
 failed send. Every answer, a single question's included, passes through that draft
 before it sends. The hook keeps the draft in the tab's session storage, one per chat, so typed
 words survive leaving the chat; an ask that ended meanwhile closes, and adds the words, when the
-chat opens again. Page activity and each draft change report `ask.presence`, at most every 30 s with a
-trailing send, so the server's idle deadline follows the writer; only a draft change carries
-the answers, and they stay owed until a send leaves; a report still owed is sent on
-pagehide and unmount, and one the socket dropped is sent on reconnect. The server keeps those
+chat opens again. Page activity and each draft change report `ask.presence`, so the server's idle deadline follows
+the writer. The draft carries an `owed` flag, set when a choice changes (not on Back or Next) and
+cleared when the server echoes those choices in `draftAnswers`; a report carries the answers only
+while it is set, at most once a second, and a clock-only report at most every 30 s. Because the
+flag lives with the draft in session storage, a dropped frame, a failed send, leaving the chat or a
+reload re-sends on the next connect, mount or activity; pagehide and unmount send what waits. The server keeps those
 answers and sends them back as `ThreadAsk.draftAnswers`. A takeover the writer hasn't touched (a
 reload, another tab) follows them as they change, until the writer's first change makes the
 draft theirs. With two tabs on one ask the tab whose writer changed an answer last wins. A send refused as

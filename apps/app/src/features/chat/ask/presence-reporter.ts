@@ -1,37 +1,41 @@
 /**
- * Reports the writer's presence to the server as `ask.presence`, at most once per
- * `PRESENCE_INTERVAL_MS`, so the idle deadline stays off while they are on the page. A report
- * carries the draft answers only when they changed since the last one that left: plain activity
- * moves the clock and leaves the draft the server holds (another tab or device may have newer
- * answers) alone. A report waiting on that interval is sent by `flush` (the writer leaves, or
- * the page hides), and one the socket couldn't carry is sent when it connects again, with its
- * draft. Plain state, no React.
+ * Reports the writer's presence to the server as `ask.presence`, so the idle deadline stays off
+ * while they are on the page. The reporter holds no state about the draft: `readDraft` says what
+ * a report carries. A clock-only report goes at most once per `PRESENCE_INTERVAL_MS`; one
+ * carrying answers (the draft has changes the server hasn't echoed) goes at most once per
+ * `ANSWERS_INTERVAL_MS`, and a clock-only send never uses that interval up, so a click right
+ * after a pointer move still reaches the server within a second. A report waiting on its interval
+ * is sent by `flush` (the writer leaves, the page hides, or the socket connects), which also
+ * sends owed answers at once. Plain state, no React.
  */
 import type { DraftAnswers } from "@meridian/contracts/threads";
 
 /** The server's idle clock is minutes long; this keeps it moving without a frame per keystroke. */
 const PRESENCE_INTERVAL_MS = 30_000;
+/** Bounds a burst of draft changes and retries of unechoed answers to a frame a second. */
+const ANSWERS_INTERVAL_MS = 1_000;
+
+/** What a report carries: the open ask, and the answers the server hasn't echoed yet, if any. */
+export type PresenceDraft = { askId: string; answers?: DraftAnswers };
 
 export type PresenceReporter = {
-  /** Report now, or once the interval since the last report has passed. `answers` is a draft change. */
-  report(answers?: DraftAnswers): void;
-  /** Send what is owed (a report waiting on the interval, or one the socket dropped). */
+  /** Report now, or once the interval for what it carries has passed. */
+  report(): void;
+  /** Send what is waiting on an interval, and any answers still owed. */
   flush(): void;
-  /** Drop what is owed and restart the interval: the ask ended or the answer carries the draft. */
+  /** Restart the intervals: the ask ended or its answer is on the way. What the draft still owes is not forgotten. */
   stop(): void;
 };
 
 export function createPresenceReporter(
   send: (askId: string, answers?: DraftAnswers) => boolean,
-  /** The id of the question ask open now; null when none. */
-  readAskId: () => string | null,
+  /** The report to send now; null when no question ask is open here. */
+  readDraft: () => PresenceDraft | null,
 ): PresenceReporter {
   let sentAt = Number.NEGATIVE_INFINITY;
+  let answersSentAt = Number.NEGATIVE_INFINITY;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  // The draft changed and no send has carried it yet; cleared only by a send that left.
-  let dirty: DraftAnswers | null = null;
-  // The last report couldn't leave (socket down), so it is owed on reconnect.
-  let unsent = false;
+  let timerDue = Number.POSITIVE_INFINITY;
 
   function clearTimer() {
     if (timer) clearTimeout(timer);
@@ -39,30 +43,34 @@ export function createPresenceReporter(
   }
   function sendNow() {
     clearTimer();
-    const askId = readAskId();
-    if (!askId) return;
-    const sent = send(askId, dirty ?? undefined);
-    if (sent) {
-      sentAt = Date.now();
-      dirty = null;
-    }
-    unsent = !sent;
+    const draft = readDraft();
+    if (!draft) return;
+    if (!send(draft.askId, draft.answers)) return;
+    sentAt = Date.now();
+    if (draft.answers) answersSentAt = sentAt;
   }
   return {
-    report(answers) {
-      if (answers) dirty = answers;
-      const wait = sentAt + PRESENCE_INTERVAL_MS - Date.now();
-      if (wait <= 0) sendNow();
-      else timer ??= setTimeout(sendNow, wait);
+    report() {
+      const draft = readDraft();
+      if (!draft) return;
+      const now = Date.now();
+      const due = draft.answers
+        ? answersSentAt + ANSWERS_INTERVAL_MS
+        : sentAt + PRESENCE_INTERVAL_MS;
+      if (due <= now) sendNow();
+      else if (!timer || due < timerDue) {
+        clearTimer();
+        timerDue = due;
+        timer = setTimeout(sendNow, due - now);
+      }
     },
     flush() {
-      if (timer || unsent) sendNow();
+      if (timer || readDraft()?.answers) sendNow();
     },
     stop() {
       clearTimer();
       sentAt = Number.NEGATIVE_INFINITY;
-      dirty = null;
-      unsent = false;
+      answersSentAt = Number.NEGATIVE_INFINITY;
     },
   };
 }

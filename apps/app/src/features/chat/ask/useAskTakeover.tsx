@@ -22,11 +22,18 @@
  *
  * While a question ask is open, any activity on the page (pointer, keys, wheel, touch) and every
  * change to the draft report it to the server as `ask.presence` (`presence-reporter.ts`), which
- * keeps the idle clock from running while the writer reads. Only a draft change carries the
- * answers, so activity moves the clock without replacing the answers the server holds. An answer holds its draft without reporting it: the
- * answer carries it, and the ask is no longer open here, so later activity reports nothing.
+ * keeps the idle clock from running while the writer reads. A report carries the answers only
+ * while the draft is `owed` (a choice changed and the server hasn't echoed it), so plain activity
+ * moves the clock without replacing the answers the server holds, and Back or Next, which change
+ * no choice, never do. An answer holds its draft without reporting it: the answer carries it, and
+ * the ask is no longer open here. If the send fails and the takeover reopens, answers still owed
+ * go out with the next activity.
  */
-import { questionAnswerSchema, type ThreadAsk } from "@meridian/contracts/threads";
+import {
+  type DraftAnswers,
+  questionAnswerSchema,
+  type ThreadAsk,
+} from "@meridian/contracts/threads";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { browserRecord, isRecord } from "@/client/storage/browser-record";
 import { useOpenAsk, useThreadStore } from "@/client/stores";
@@ -35,7 +42,13 @@ import { AskTakeover, type QuestionDraft } from "./AskTakeover";
 import { createPresenceReporter } from "./presence-reporter";
 import { useAnswerAsk } from "./useAnswerAsk";
 
-type HeldDraft = QuestionDraft & { askId: string | null };
+/**
+ * `owed`: the choices changed here and the server has not echoed them in `draftAnswers` yet.
+ * It lives with the draft (and in session storage), so a dropped frame, a failed send, leaving
+ * the chat or a reload cannot forget what the server is missing; the next connect, mount or
+ * activity sends it again.
+ */
+type HeldDraft = QuestionDraft & { askId: string | null; owed: boolean };
 
 /** Page activity that shows the writer is there. Not `scroll`: the page scrolls itself too. */
 const ACTIVITY_EVENTS = [
@@ -47,7 +60,7 @@ const ACTIVITY_EVENTS = [
   "touchmove",
 ] as const;
 
-const NONE: HeldDraft = { askId: null, step: 0, entries: [] };
+const NONE: HeldDraft = { askId: null, step: 0, entries: [], owed: false };
 
 export function useAskTakeover(
   accountId: string,
@@ -81,7 +94,14 @@ export function useAskTakeover(
   const askRef = useRef<ThreadAsk | null>(null);
   askRef.current = open?.ask.kind === "question" ? open.ask : null;
   const presence = useMemo(
-    () => createPresenceReporter(commands.presence, () => askRef.current?.id ?? null),
+    () =>
+      createPresenceReporter(commands.presence, () => {
+        const ask = askRef.current;
+        if (!ask) return null;
+        const draft = heldRef.current;
+        if (!draft.owed || draft.askId !== ask.id) return { askId: ask.id };
+        return { askId: ask.id, answers: draft.entries.map((entry) => entry.choice) };
+      }),
     [commands],
   );
   const questionOpen = askRef.current !== null;
@@ -94,6 +114,24 @@ export function useAskTakeover(
       for (const type of ACTIVITY_EVENTS) window.removeEventListener(type, report, options);
     };
   }, [presence, questionOpen]);
+  // A draft with answers the server lacks (a reload, a failed send that reopened the takeover)
+  // reports as soon as its ask is open here.
+  useEffect(() => {
+    if (questionOpen && held.owed) presence.report();
+  }, [presence, questionOpen, held.owed]);
+  // The server publishes on every draft change, so its echo of the choices is the ack.
+  useEffect(() => {
+    const current = heldRef.current;
+    if (
+      current.owed &&
+      tracked?.id === current.askId &&
+      sameChoices(
+        current.entries.map((entry) => entry.choice),
+        tracked.draftAnswers ?? [],
+      )
+    )
+      write({ ...current, owed: false });
+  }, [tracked, held.owed, write]);
   useEffect(() => {
     window.addEventListener("pagehide", presence.flush);
     const unsubscribe = commands.onConnected(presence.flush);
@@ -116,6 +154,13 @@ export function useAskTakeover(
   }, [composer, openId, presence, tracked, write]);
 
   if (!open) return null;
+  // Whether the server lacks answers once `next` is the draft: it already did, or a choice changed.
+  const owedAfter = (next: QuestionDraft) => {
+    const mine = held.askId === open.ask.id;
+    const base = mine ? held : seedDraft(open.ask);
+    const choices = (of: QuestionDraft) => of.entries.map((entry) => entry.choice);
+    return (mine && held.owed) || !sameChoices(choices(base), choices(next));
+  };
   const draft =
     open.ask.kind !== "question"
       ? undefined
@@ -129,17 +174,17 @@ export function useAskTakeover(
       refused={refusedAsk === open.ask.id}
       onDraftChange={(next) => {
         setRefusedAsk(null);
-        write({ askId: open.ask.id, ...next });
-        presence.report(next.entries.map((entry) => entry.choice));
+        write({ askId: open.ask.id, ...next, owed: owedAfter(next) });
+        presence.report();
       }}
       onSettle={() => commands.settle(open.ask.id)}
       onAnswer={(answer, sent) => {
-        // The answer carries the draft; a trailing report would only repeat it.
+        // The answer carries the draft; a report waiting on its interval would only repeat it.
         presence.stop();
         setRefusedAsk(null);
         const askId = open.ask.id;
         // Held before it sends, so a failed send reopens with every answer picked.
-        if (sent) write({ askId, ...sent });
+        if (sent) write({ askId, ...sent, owed: owedAfter(sent) });
         void commands.answer(askId, answer).then((result) => {
           const current = heldRef.current;
           if (result.kind !== "invalid_answer") return;
@@ -179,6 +224,7 @@ function heldRecord(accountId: string, threadId: string) {
         askId: value.askId,
         step: step as number,
         entries: parsed as QuestionDraft["entries"],
+        owed: value.owed === true,
       };
     },
   );
@@ -210,4 +256,18 @@ function unsettledWords(draft: QuestionDraft, ask: ThreadAsk | undefined): strin
       return words && !(kept?.kind === "text" && kept.text === words) ? [words] : [];
     })
     .join("\n");
+}
+
+/** Whether two lists of choices are the same answers; a missing choice is null (no trailing-null drift). */
+function sameChoices(a: DraftAnswers, b: DraftAnswers): boolean {
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const x = a[index] ?? null;
+    const y = b[index] ?? null;
+    if (x === null || y === null) {
+      if (x !== y) return false;
+    } else if (x.kind !== y.kind) return false;
+    else if (x.kind === "option" && x.label !== (y as typeof x).label) return false;
+    else if (x.kind === "text" && x.text !== (y as typeof x).text) return false;
+  }
+  return true;
 }
