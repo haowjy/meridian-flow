@@ -10,6 +10,7 @@ const file: CatalogFile = {
   parentId: "folder",
   documentId: "document-routed",
   name: "routed.md",
+  extension: "",
   path: "/notes/routed.md",
   uri: "scratch://project/work/notes/routed.md",
   provisionalName: false,

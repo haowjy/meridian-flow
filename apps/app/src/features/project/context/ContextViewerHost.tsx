@@ -10,11 +10,9 @@
  */
 
 import { Trans } from "@lingui/react/macro";
-import { isOwnedContextScheme } from "@meridian/contracts/context-uri";
 import { AlertCircle } from "lucide-react";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
-import { type ContextTab, tabContextOwner } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { cn } from "@/lib/utils";
 import { previewKind } from "./preview-kind";
@@ -26,33 +24,18 @@ import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
-  editorWorkId: string | null;
   tab: Extract<ContextTab, { kind: "viewer" }>;
   /** The surface's material; the dock paints its own and passes `bg-transparent`. */
   className?: string;
 };
 
-export function ContextViewerHost({
-  projectId,
-  editorWorkId,
-  tab,
-  className,
-}: ContextViewerHostProps) {
-  const owner = isOwnedContextScheme(tab.scheme) ? tabContextOwner(tab) : { workId: editorWorkId };
-  const { catalog } = useContextCatalogView(projectId, tab.scheme, owner);
-  const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
-    ...owner,
-    documentId: tab.documentId,
-    settling: catalog?.findDocument(tab.documentId)?.placementPending,
-  });
+export function ContextViewerHost({ projectId, tab, className }: ContextViewerHostProps) {
+  const read = useProjectContextRead(projectId, tab.documentId);
   if (read.status === "loading") {
     return (
       <ReadOnlyViewerFrame className={className}>
         <div className="relative h-full" aria-busy>
-          <DelayedContentSkeleton
-            key={JSON.stringify([projectId, tab.scheme, tab.path, owner])}
-            className="absolute inset-0"
-          />
+          <DelayedContentSkeleton key={tab.documentId} className="absolute inset-0" />
         </div>
       </ReadOnlyViewerFrame>
     );
@@ -65,7 +48,7 @@ export function ContextViewerHost({
       </ViewerError>
     );
   }
-  if (read.status === "disabled" || !read.data) {
+  if (!read.data) {
     return null;
   }
 

@@ -14,6 +14,7 @@ const holding = (names: string[]): NamingView => ({
   placement: {
     childrenAt: () =>
       names.map((name) => ({ kind: "folder", entryId: `held-${name}`, name }) as CatalogEntry),
+    namedRow: () => ({ extension: "", editable: true }),
   },
 });
 
@@ -28,6 +29,7 @@ it("reports a refused row and keeps the rows that moved", async () => {
   const result = await moveRows(
     ["a", "b"].map((id) => ({
       entry: { kind: "folder", id },
+      row: null,
       name: id,
       before: folder("book"),
       after: folder("act"),
@@ -51,6 +53,7 @@ it("gives rows arriving under one name in the same drop distinct free names", as
   await moveRows(
     ["a", "b"].map((id) => ({
       entry: { kind: "folder", id },
+      row: null,
       name: "Notes",
       before: folder(id),
       after: folder("act"),

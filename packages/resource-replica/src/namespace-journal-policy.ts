@@ -6,6 +6,7 @@ import {
 } from "./resource-intent-policy";
 import {
   type NamespaceIntent,
+  namespaceEntryIs,
   namespaceRequestId,
   type PlacementAdmission,
   type ResourceDestination,
@@ -260,21 +261,6 @@ export function validateNamespaceJournal(input: {
       if (attempts.has(attempt.attemptId)) throw new Error("Duplicate namespace attempt");
       attempts.add(attempt.attemptId);
       if (
-        (attempt.request.kind === "move" &&
-          ((attempt.request.body.sourceWorkId == null &&
-            attempt.request.sourceWorkHandle != null) ||
-            (attempt.request.body.destinationWorkId == null &&
-              attempt.request.destinationWorkHandle != null) ||
-            (attempt.request.body.sourceRootThreadId != null &&
-              !attempt.request.sourceRootThreadRef) ||
-            (attempt.request.body.destinationRootThreadId != null &&
-              !attempt.request.destinationRootThreadRef))) ||
-        (attempt.request.kind === "delete" &&
-          ((attempt.request.workId == null && attempt.request.workHandle != null) ||
-            (attempt.request.rootThreadId != null && !attempt.request.rootThreadRef)))
-      )
-        throw new Error("Namespace request Work authority is incomplete");
-      if (
         attempt.outcome?.kind === "refusal" &&
         (attempt.outcome.operationId !== namespaceRequestId(attempt.request) ||
           attempt.outcome.error.retryable)
@@ -293,8 +279,7 @@ export function validateNamespaceJournal(input: {
         const command = receipt.command;
         const matchesIdentity =
           request.kind === "move" && command.kind === "move"
-            ? request.body.expected.kind === command.expected.kind &&
-              request.body.expected.nodeId === command.expected.nodeId
+            ? namespaceEntryIs(command.expected, request)
             : request.kind === "copy" && command.kind === "copy"
               ? request.body.sources.length === command.sources.length &&
                 request.body.sources.every(
@@ -305,10 +290,7 @@ export function validateNamespaceJournal(input: {
                 )
               : request.kind === "delete" &&
                 command.kind === "delete" &&
-                request.body.expected.kind === command.expected.kind &&
-                (request.body.expected.kind !== "file" ||
-                  (command.expected.kind === "file" &&
-                    request.body.expected.documentId === command.expected.documentId));
+                namespaceEntryIs(command.expected, request);
         if (!matchesIdentity)
           throw new Error("Namespace outcome does not match submitted identity");
       } else if (attempt.outcome?.kind === "create") {

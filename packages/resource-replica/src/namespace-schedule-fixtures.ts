@@ -47,6 +47,7 @@ export function node(
         aliases: [],
         hasProperties: false,
         provisionalName: false,
+        extension: "",
         editable: true,
         filetype: "markdown",
         schemaType: "document",
@@ -162,7 +163,7 @@ export function evidence(
     };
   const error = {
     ok: false as const,
-    error: { code: "conflict" as const, uri: `manuscript://${request.body.path}` },
+    error: { code: "conflict" as const, uri: `manuscript://${request.entryId}` },
   };
   if (request.kind === "delete")
     return {
@@ -172,8 +173,7 @@ export function evidence(
         operationId: request.body.operationId,
         command: {
           kind: "delete",
-          uri: `manuscript://${request.body.path}`,
-          expected: request.body.expected,
+          expected: { kind: request.body.kind, nodeId: request.entryId },
         },
         result: refused
           ? error
@@ -181,11 +181,12 @@ export function evidence(
               ok: true,
               value: {
                 status: "deleted",
+                uri: `manuscript://${request.entryId}`,
                 removed:
-                  request.body.expected.kind === "file"
+                  request.body.kind === "file"
                     ? [
                         {
-                          documentId: request.body.expected.documentId,
+                          documentId: request.entryId,
                           removal: {
                             time: "2026-01-01T00:00:00.000Z",
                             locationVersion: "1",
@@ -198,12 +199,7 @@ export function evidence(
             },
       },
     };
-  const destinationPath = [
-    request.body.destinationFolderPath,
-    request.body.newName ?? request.body.path.split("/").at(-1)!,
-  ]
-    .filter(Boolean)
-    .join("/");
+  const destinationPath = request.body.name ?? request.entryId;
   return {
     kind: "operation",
     receipt: {
@@ -211,12 +207,17 @@ export function evidence(
       operationId: request.body.operationId,
       command: {
         kind: "move",
-        sourceUri: `manuscript://${request.body.path}`,
         destinationParent: request.body.destinationParent,
-        destinationUri: `manuscript://${destinationPath}`,
-        expected: request.body.expected,
+        expected: { kind: request.body.kind, nodeId: request.entryId },
+        ...(request.body.name ? { name: request.body.name } : {}),
+        ...(request.body.position ? { position: request.body.position } : {}),
       },
-      result: refused ? error : { ok: true, value: { destinationPath } },
+      result: refused
+        ? error
+        : {
+            ok: true,
+            value: { destinationUri: `manuscript://${destinationPath}` },
+          },
     },
   };
 }

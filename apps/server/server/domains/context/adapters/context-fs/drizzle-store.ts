@@ -28,6 +28,7 @@ import {
   type CreateDocumentInput,
   LiveCreateCandidateChangedError,
   type LiveDocumentCreation,
+  type LocatedContextDocument,
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { createLive, findLiveCreateCandidate } from "../../tree/creates.js";
@@ -78,7 +79,7 @@ type DocumentRow = Pick<
   | "rank"
 >;
 
-function mapDocument(row: DocumentRow): ContextDocument {
+export function mapDocument(row: DocumentRow): ContextDocument {
   const isBinary = isStorageBackedDocument(row);
   return {
     id: row.id,
@@ -95,6 +96,21 @@ function mapDocument(row: DocumentRow): ContextDocument {
     provisionalName: row.provisionalName,
     metadata: row.metadata,
     rank: row.rank,
+  };
+}
+
+/** A document visible in `view`, by id. The row may live in another source. */
+export async function locateDocumentById(
+  db: Database,
+  view: TreeView,
+  documentId: string,
+): Promise<LocatedContextDocument | null> {
+  const found = await createTreeReader(db).findById(view, documentId as DocumentId);
+  if (found.kind !== "found") return null;
+  return {
+    contextSourceId: found.document.contextSourceId,
+    document: mapDocument(found.document),
+    path: found.document.path,
   };
 }
 
@@ -131,7 +147,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>> {
-    const found = await createTreeReader(this.deps.db).resolvePath(view, {
+    const found = await createTreeReader(this.deps.db).resolveAddress(view, {
       contextSourceId: this.sourceId,
       path,
     });
@@ -180,13 +196,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async findDocumentById(view: TreeView, documentId: string) {
-    const found = await createTreeReader(this.deps.db).findById(view, documentId as DocumentId);
-    if (found.kind !== "found") return null;
-    return {
-      contextSourceId: found.document.contextSourceId,
-      document: mapDocument(found.document),
-      path: found.document.path,
-    };
+    return locateDocumentById(this.deps.db, view, documentId);
   }
 
   async findForward(fromId: string, projectId: ProjectId) {

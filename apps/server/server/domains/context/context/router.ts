@@ -7,15 +7,15 @@
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
 import {
-  type DeleteContextEntryResult,
   filenameForBinary,
   type ParsedDocumentFilename,
+  parseDocumentFilename,
   renderFilename,
-  storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
+import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { ContextCopyCommandDeps } from "../copy/copy-command.js";
 import { createContextCopyPort } from "../copy/copy-port.js";
 import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";
@@ -27,13 +27,10 @@ import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
   ContextCreateUntitledDocumentResult,
-  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextListing,
   ContextListOptions,
-  ContextMoveOptions,
-  ContextMoveResult,
   ContextPort,
   ContextReadResult,
   ContextScheme,
@@ -46,7 +43,12 @@ import type {
   GrepResult,
   WriteProvenance,
 } from "../ports/context-port.js";
-import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
+import {
+  type ContextTreeDispatch,
+  ContextTreeMover,
+  type ResolvedMoveDestination,
+} from "./context-tree-mover.js";
+import { invalidEntryError } from "./invalid-entry-error.js";
 import { callAdapter, toFileEntry, toFileRef, toGrepFile } from "./router-adapter-results.js";
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
@@ -67,6 +69,7 @@ export interface ContextPortRouterDeps {
   owners?: ProjectOwners;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   moveLinks?: ConstructorParameters<typeof ContextTreeMover>[2];
+  eventSink?: EventSink;
   operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
   /** Copy's collab cut and bind, and the object store its binaries duplicate into. */
   copy?: ContextCopyCommandDeps;
@@ -491,14 +494,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     if (!resolved.ok) return resolved;
     const validation = validateContextEntryPath(resolved.value.path, { allowRoot: true });
     if (validation.ok) return Ok(mutationDispatch(resolved.value, origin));
-    return Err({
-      code: "invalid_uri",
-      uri: resolved.value.canonical,
-      reason:
-        validation.reason === "name/reserved-authority-qualifier"
-          ? `File and folder names cannot begin with "@" or "~" (${validation.segment ?? "unknown"})`
-          : `Invalid context path (${validation.reason})`,
-    });
+    return Err(invalidEntryError(resolved.value.canonical, validation));
   }
 
   /**
@@ -522,25 +518,45 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return resolved;
   }
 
-  function fileDispatch<T extends Dispatch>(
+  /** The dispatch with its leaf rendered from the parts the name codec or the caller decided. */
+  function withFilename<T extends Dispatch, P extends { name: string; extension: string }>(
     dispatch: T,
-    binary?: ContextWriteBinaryOptions,
-    sourceExtension?: string,
-  ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
-    const segments = dispatch.path.split("/");
-    const filename = segments.pop() ?? "";
-    const parsed = storedFilename(filename, { extension: sourceExtension ?? "" });
-    if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
-    const parts = binary
-      ? filenameForBinary(parsed.filename, binary.fileType, binary.mimeType)
-      : parsed.filename;
-    const path = [...segments, renderFilename(parts.name, parts.extension)].join("/");
-    return Ok({
+    parts: P,
+  ): T & { filename: P } {
+    const path = [
+      ...dispatch.path.split("/").slice(0, -1),
+      renderFilename(parts.name, parts.extension),
+    ].join("/");
+    return {
       ...dispatch,
       filename: parts,
       path,
       canonical: uriFor(dispatch.scheme, path, dispatch.authority),
-    });
+    };
+  }
+
+  function fileDispatch<T extends Dispatch>(
+    dispatch: T,
+    sourceExtension?: string,
+  ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
+    const parsed = parseDocumentFilename(dispatch.path.split("/").pop() ?? "", { sourceExtension });
+    return parsed.ok
+      ? Ok(withFilename(dispatch, parsed.value))
+      : Err({ ...parsed.error, uri: dispatch.canonical });
+  }
+
+  /** A binary's dispatch: a prose-shaped name takes its storage type's registered suffix. */
+  function binaryDispatch<T extends Dispatch>(
+    dispatch: T,
+    binary: ContextWriteBinaryOptions,
+  ): Result<T & { filename: { name: string; extension: string } }, ContextError> {
+    let parts: { name: string; extension: string } | undefined = binary.filename;
+    if (!parts) {
+      const parsed = parseDocumentFilename(dispatch.path.split("/").pop() ?? "");
+      if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
+      parts = parsed.value;
+    }
+    return Ok(withFilename(dispatch, filenameForBinary(parts, binary.fileType, binary.mimeType)));
   }
 
   /** Claim a new tracked URI through its adapter: the checks both create entries share. */
@@ -632,7 +648,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
       const resolved = await resolveMutation(uri, options?.origin);
       if (!resolved.ok) return resolved;
-      const r = fileDispatch(resolved.value, undefined, options?.sourceExtension);
+      const r = fileDispatch(resolved.value, options?.sourceExtension);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("entry");
@@ -662,25 +678,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       createDocument(uri, options, (adapter, path) =>
         adapter.createTrackedDocument(path, markdown, options),
       ),
-
-    async createTrackedDocumentAtFreeName(uri, markdown, reserved, options) {
-      const resolved = await resolveMutation(uri, options?.origin);
-      if (!resolved.ok) return resolved;
-      const dispatched = fileDispatch(resolved.value);
-      if (!dispatched.ok) return dispatched;
-      const permission = dispatched.value.requireCreation(options?.documentId ? "intake" : "entry");
-      if (!permission.ok) return permission;
-      const { adapter, path, scheme, authority, canonical } = dispatched.value;
-      const created = await callAdapter(canonical, () =>
-        adapter.createTrackedDocumentAtFreeName(path, markdown, reserved, options),
-      );
-      return created.ok
-        ? Ok({
-            documentId: created.value.documentId,
-            uri: uriFor(scheme, created.value.path, authority),
-          })
-        : created;
-    },
 
     createBoundDocument: (uri, bound, options) =>
       createDocument(uri, options, (adapter, path) =>
@@ -804,7 +801,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     ): Promise<Result<ContextBinaryWriteResult, ContextError>> {
       const resolved = await resolveMutation(uri, options?.origin);
       if (!resolved.ok) return resolved;
-      const r = fileDispatch(resolved.value, options);
+      const r = binaryDispatch(resolved.value, options);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("intake");
@@ -816,93 +813,58 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           message: UPLOAD_FOLDER_CREATION_DENIED_MESSAGE,
         });
       }
-      const result = await callAdapter(canonical, () => adapter.writeBinary(path, options));
+      const result = await callAdapter(canonical, () =>
+        adapter.writeBinary(path, { ...options, filename: r.value.filename }),
+      );
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
 
-    async move(
-      sourceUri: string,
-      destinationUri: string,
-      options?: ContextMoveOptions,
-    ): Promise<Result<ContextMoveResult, ContextError>> {
-      const source = await resolve(sourceUri);
+    async commitWriterLocation(node, area, change) {
+      const source = await resolve(area);
       if (!source.ok) return source;
-      const destination = await resolveMutation(destinationUri, options?.origin);
-      if (!destination.ok) return destination;
-      if (
-        source.value.scheme === destination.value.scheme &&
-        sameOwner(source.value.authority, destination.value.authority)
-      ) {
-        if (!source.value.adapter.capabilities.writable) {
-          return Err({ code: "permission_denied", uri: source.value.canonical });
-        }
-      } else if (
-        !source.value.adapter.capabilities.writable ||
-        !destination.value.adapter.capabilities.writable
-      ) {
-        return Err({ code: "permission_denied", uri: destination.value.canonical });
-      }
-      const creationDenied = moveCreationDenied(source.value, destination.value);
-      if (creationDenied) return creationDenied;
-      return treeMover.move(source.value, destination.value, options);
-    },
-
-    async commitWriterLocation(sourceUri, destinationUri, options) {
-      const source = await resolve(sourceUri);
-      if (!source.ok) return source;
-      const destination = await resolveMutation(destinationUri);
-      if (!destination.ok) return destination;
-      const destinationParent = options?.destinationParent;
-      if (
-        destinationParent?.kind === "root" &&
-        (destinationParent.scheme !== destination.value.scheme ||
-          (destinationParent.owner.workId !== null &&
-            destinationParent.owner.workId !== destination.value.workScopeId))
-      )
-        return Err({ code: "destination_missing", uri: destinationUri });
-      const name = destination.value.path.split("/").at(-1) ?? "";
-      const identityParent = destinationParent?.kind === "folder" ? destinationParent : null;
-      const resolveDestination = identityParent
-        ? async (): Promise<Result<ContextTreeDispatch, ContextError>> => {
-            const parent = await resolveIdentityDestination(identityParent, {
-              ...(options?.authorizeDestination ? { authorize: options.authorizeDestination } : {}),
-              ...(options?.origin ? { origin: options.origin } : {}),
-            });
-            if (!parent.ok) return parent;
-            const target = await resolveMutation(
-              joinContextPath(parent.value.canonical, [name]),
-              options?.origin,
+      const { destination, ...rest } = change;
+      let resolved: ResolvedMoveDestination;
+      if (destination.kind === "keep") resolved = destination;
+      else if (destination.kind === "at") {
+        const folder = await resolveMutation(destination.folderUri);
+        if (!folder.ok) return folder;
+        const denied = moveCreationDenied(source.value, folder.value);
+        if (denied) return denied;
+        resolved = {
+          kind: "at",
+          folder: folder.value,
+          createFolders: destination.createFolders ?? [],
+        };
+      } else {
+        const { folderId, createFolders = [], authorize } = destination;
+        // A destination folder named by identity is read again under the locks.
+        resolved = {
+          kind: "folder",
+          folderId,
+          createFolders,
+          resolve: async () => {
+            const folder = await resolveIdentityDestination(
+              { folderId },
+              { authorize, ...(change.origin ? { origin: change.origin } : {}) },
             );
-            if (!target.ok) return Err({ code: "destination_missing", uri: destinationUri });
-            const denied = moveCreationDenied(source.value, target.value);
-            return denied ?? target;
-          }
-        : undefined;
-      if (!resolveDestination) {
-        const creationDenied = moveCreationDenied(source.value, destination.value);
-        if (creationDenied) return creationDenied;
+            if (!folder.ok) return folder;
+            return moveCreationDenied(source.value, folder.value) ?? folder;
+          },
+        };
       }
-      const { authorizeDestination, ...rest } = options ?? {};
-      return treeMover.commitWriterLocation(source.value, destination.value, {
-        ...rest,
-        ...(resolveDestination
-          ? { resolveDestination }
-          : authorizeDestination
-            ? { authorizeDestination }
-            : {}),
-      });
+      return treeMover.commitWriterLocation(node, source.value, { ...rest, destination: resolved });
     },
 
     async changeInBranch(command) {
       const { record, changedBy, documentId } = command;
-      const source = await resolve(command.op === "move" ? command.sourceUri : command.uri);
+      const source = await resolve(command.area);
       if (!source.ok) return source;
       const sourceTree = source.value.adapter.branchTree;
       if (!sourceTree || !source.value.adapter.capabilities.writable)
         return Err({ code: "permission_denied", uri: source.value.canonical });
       if (command.op === "delete") {
         const deleted = await callAdapter(source.value.canonical, () =>
-          sourceTree.delete(source.value.path, { documentId, changedBy, record }),
+          sourceTree.delete({ documentId, changedBy, record }),
         );
         return deleted.ok ? Ok({ uri: source.value.canonical, moved: false }) : deleted;
       }
@@ -913,22 +875,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({ code: "permission_denied", uri: destination.value.canonical });
       const creationDenied = moveCreationDenied(source.value, destination.value);
       if (creationDenied) return creationDenied;
-      // The source as the branch shows it, for the destination's filetype check.
-      const ref = await callAdapter(source.value.canonical, () =>
-        source.value.adapter.stat(source.value.path),
-      );
-      if (!ref.ok) return ref;
-      if (ref.value?.documentId !== documentId)
-        return Err({ code: "stale_source", uri: source.value.canonical });
-      const from = {
-        path: source.value.path,
-        filetype: ref.value.kind === "tracked" ? ref.value.filetype : null,
-        sourceId: await sourceTree.sourceId(),
-      };
       const moved = await callAdapter(destination.value.canonical, () =>
         destinationTree.move(destination.value.path, {
           documentId,
-          from,
           changedBy,
           record,
           ...(command.position ? { position: command.position } : {}),
@@ -949,30 +898,40 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!retracted.ok) return retracted;
       if (retracted.value.placement === "draft") return Ok(undefined);
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
-      const deleted = await treeMover.delete(r.value, {
-        expected: { kind: "file", documentId: options.documentId },
-        removal: { reason: "discarded", cause: options.cause },
-      });
+      const deleted = await treeMover.delete(
+        { kind: "file", nodeId: options.documentId },
+        r.value,
+        {
+          onlyAt: r.value.path,
+          removal: { reason: "discarded", cause: options.cause },
+        },
+      );
+      if (!deleted.ok && deleted.error.code === "stale_target" && deps.eventSink)
+        // The writer moved or renamed the create; it survives. A miss that is not that (a
+        // caller passing a different address than the create landed at) would look the same.
+        emitEvent(deps.eventSink, {
+          level: "debug",
+          source: "context.router",
+          name: "retract_create.moved_on",
+          correlation: { documentId: options.documentId },
+          payload: { uri: canonical },
+        });
       if (
         !deleted.ok &&
         deleted.error.code !== "not_found" &&
         deleted.error.code !== "stale_target"
-      ) {
+      )
         return deleted;
-      }
       return Ok(undefined);
     },
 
-    async delete(
-      uri: string,
-      options: ContextDeleteOptions,
-    ): Promise<Result<DeleteContextEntryResult, ContextError>> {
-      const r = await resolveMutation(uri, options?.origin);
+    async delete(node, area, options = {}) {
+      const r = await resolve(area);
       if (!r.ok) return r;
       if (!r.value.adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: r.value.canonical });
       }
-      return treeMover.delete(r.value, options);
+      return treeMover.delete(node, r.value, options);
     },
 
     async mkdir(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {

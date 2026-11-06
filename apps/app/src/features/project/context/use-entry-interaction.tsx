@@ -119,6 +119,7 @@ export function useEntryInteraction({
     scheme,
     entryId: id,
     currentName: node.name,
+    ...(node.kind === "file" ? { row: node } : {}),
     repairName: node.namespaceRepairMove ? undefined : node.namespaceRepairName,
     siblings,
     kind,

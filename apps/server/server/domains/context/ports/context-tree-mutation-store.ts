@@ -25,7 +25,8 @@ export type ContextLocationToken =
       path: string;
       /** Persisted Yjs classification; null identifies a storage-backed document. */
       filetype: string | null;
-      /** The stored extension: `md` on a file kept as `binary.md`, which `path` alone cannot tell. */
+      /** The stored name and extension: `binary` and `md` for a file kept as `binary.md`, which `path` alone cannot tell. */
+      name: string;
       extension: string;
     }
   | {
@@ -43,7 +44,6 @@ export type ContextTargetExpectation =
   | { state: "occupied"; token: ContextLocationToken };
 
 interface PreparedContextMoveBase {
-  actorUserId?: string;
   /** Source location inspected by ContextTreeMover; commit must prove it still resolves. */
   source: ContextLocationToken;
   /** Project whose holders the move note counts (contract §10); absent, the move counts nothing. */
@@ -53,23 +53,19 @@ interface PreparedContextMoveBase {
   destinationParentToken?: Extract<ContextLocationToken, { kind: "directory" }>;
   /** Validated suffix below destinationParentToken, ensured inside the commit transaction. */
   destinationCreateFolders?: string[];
-  /** Final normalized target path after Unix mv basename/directory resolution. */
+  /** The final target path: the destination folder joined with the leaf. */
   destinationPath: string;
   /** Destination state inspected during preparation; commit must prove it has not changed. */
   expectedTarget: ContextTargetExpectation;
-  /** Explicit opt-in to replace an occupied file target. Directories are never overwritten. */
-  overwrite: boolean;
   position?: ContextSiblingPosition;
 }
 
 type PreparedFileMove = PreparedContextMoveBase & {
-  /** Resolved by the destination codec; null keeps a storage-backed file's type. */
+  /** Resolved by the destination codec; null keeps the file's type. */
   destinationFiletype: Filetype | null;
   /** The destination leaf's stored parts, parsed once by the mover; storage never re-parses them. */
   destinationFilename: { name: string; extension: string };
   source: Extract<ContextLocationToken, { kind: "file" }>;
-  /** The exact writer-location command ends provisional naming on commit. */
-  graduateProvisionalName: boolean;
 };
 
 type PreparedDirectoryMove = PreparedContextMoveBase & {
@@ -119,6 +115,14 @@ export type ContextTreeDeleteCommand = {
 
 export interface ContextTreeMutationStore {
   inspect(sourceId: string, path: string): Promise<ContextLocationToken | null>;
+  /**
+   * The live node with this id, where it is now. The commits below recheck their source with
+   * it, so a file and a folder answering at one path can't stand in for each other.
+   */
+  inspectNode(node: {
+    kind: ContextLocationToken["kind"];
+    id: string;
+  }): Promise<ContextLocationToken | null>;
   /** Clear provisional naming under the same location CAS used by tree mutations. */
   commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,

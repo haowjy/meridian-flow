@@ -1,4 +1,5 @@
 /** Hierarchical, renderer-neutral reference browser composed with the suggestion lifecycle. */
+import { matchDocumentPath } from "@meridian/contracts";
 import {
   type ContextUriScheme,
   ownerSegment,
@@ -750,19 +751,11 @@ function linkAheadRow(
   const name = search.trim();
   if (!name) return null;
   const typed = parseDocumentFilename(name);
-  const needle = normalizeReferenceName(
-    typed.ok ? renderFilename(typed.value.name, typed.value.extension) : name,
+  const named = matchDocumentPath(
+    ranked.filter((row) => row.kind === "file"),
+    normalizeReferenceName(name),
+    (row) => normalizeReferenceName(row.label),
   );
-  const named = ranked.some((row) => {
-    if (row.kind !== "file") return false;
-    if (normalizeReferenceName(row.label) === needle) return true;
-    const stored = parseDocumentFilename(row.label);
-    return (
-      stored.ok &&
-      Boolean(stored.value.extension) &&
-      normalizeReferenceName(stored.value.name) === needle
-    );
-  });
   if (named) return null;
   const target = linkAhead(name);
   return target

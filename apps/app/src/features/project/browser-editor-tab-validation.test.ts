@@ -187,7 +187,12 @@ function localPlacement(): ResourceRecord {
       revision: 2,
       identity: { documentId: "local-id", revision: 1 },
       content: { kind: "exact", databaseName: "exact", schema: null },
-      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      classification: {
+        extension: "",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
       materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
       serverHold: "local",

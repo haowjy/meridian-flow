@@ -1,6 +1,5 @@
 /** Account-fenced document namespace transport; durable ownership and retry scheduling stay upstream. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { contextOwner } from "@meridian/contracts/protocol";
 import {
   catalogEntryOwner,
   type NamespaceIdentityAvailability,
@@ -18,7 +17,6 @@ import {
   getContextOperationReceipt,
   moveContextEntry,
 } from "@/client/api/projects-api";
-import { contextRequestOptionsForScheme } from "@/client/query/context-request-options";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 
 /** How long one namespace request may hold its runner before the wait gives up. */
@@ -164,18 +162,9 @@ export function createResourceNamespaceTransport(
       if (request.kind === "copy") {
         await copyContextEntries(projectId, request.body, { signal });
       } else if (request.kind === "move") {
-        await moveContextEntry(projectId, request.scheme, request.body, { signal });
+        await moveContextEntry(projectId, request.entryId, request.body, { signal });
       } else {
-        await deleteContextEntry(
-          projectId,
-          request.scheme,
-          request.body,
-          contextRequestOptionsForScheme(
-            request.scheme,
-            contextOwner(request.workId, request.rootThreadId),
-          ),
-          { signal },
-        );
+        await deleteContextEntry(projectId, request.entryId, request.body, { signal });
       }
     } catch (error) {
       // The source room has not received this device's edits: nothing was recorded, so there is no

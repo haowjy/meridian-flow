@@ -23,7 +23,7 @@ import {
 } from "../context-entry-name";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
-import { type MoveRow, sameParent } from "./move-plan";
+import { type MoveRow, recordFor, sameParent } from "./move-plan";
 
 /** The replica and project a Move and a Copy act through. */
 export type ReplicaContext = {
@@ -35,7 +35,7 @@ export type ReplicaContext = {
 export type NamingView = {
   records: readonly ResourceRecord[];
   folders?: Awaited<ReturnType<AccountResourceReplica["readProjection"]>>["folders"];
-  placement: Pick<ResourcePlacement, "childrenAt">;
+  placement: Pick<ResourcePlacement, "childrenAt" | "namedRow">;
 };
 
 export type MoveResult = {
@@ -70,6 +70,12 @@ async function placeEntry(
   if (!key) throw new Error("Document is not in the replica");
   const result = await resources.setLocation(projectId, key, location, typed);
   return result.operationId ?? null;
+}
+
+/** The file's naming facts as the replica shows them now; a folder, or a row that is gone, has none. */
+function namedRow(view: NamingView, entry: EntryRef) {
+  const record = entry.kind === "file" ? recordFor(view.records, entry.id) : undefined;
+  return record ? view.placement.namedRow(record) : undefined;
 }
 
 /**
@@ -115,7 +121,7 @@ export function arrivals(view: NamingView, rows: readonly Arrival[]) {
         row.typed ?? row.name,
         occupancy(row.after),
         row.entry.kind,
-        row.name,
+        namedRow(view, row.entry),
       ),
     reserve: (row: Arrival, name: string) =>
       occupancy(row.after).claim({
@@ -123,22 +129,6 @@ export function arrivals(view: NamingView, rows: readonly Arrival[]) {
         filename: name,
       }),
   };
-}
-
-/**
- * The rows a move would rename on arrival, for the warning shown before it
- * happens. It predicts exactly as `moveRows` places, as if every row arrives.
- */
-export function renamesOnArrival(
-  rows: readonly Arrival[],
-  view: NamingView,
-): { name: string; as: string }[] {
-  const names = arrivals(view, rows);
-  return rows.flatMap((row) => {
-    const as = names.name(row);
-    names.reserve(row, as);
-    return as !== (row.typed ?? row.name) ? [{ name: row.name, as }] : [];
-  });
 }
 
 export async function currentView(context: ReplicaContext) {

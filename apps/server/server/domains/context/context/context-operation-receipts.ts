@@ -1,9 +1,12 @@
 /** Immutable attempt settlement around the existing result-aware namespace owner. */
 import { isDeepStrictEqual } from "node:util";
 import type {
+  ContextDestinationParent,
+  ContextEntryRef,
   ContextOperationCommand,
   ContextOperationReceipt,
   ContextOperationResult,
+  ContextSiblingPosition,
 } from "@meridian/contracts/protocol";
 import type { ContextOperationReceiptStore } from "../ports/context-operation-receipts.js";
 
@@ -13,9 +16,46 @@ class RejectedOperation<K extends ContextOperationCommand["kind"]> extends Error
   }
 }
 
-/** The address a command mismatch names: the entry a delete names, else the destination. */
-function commandAddress(command: ContextOperationCommand): string {
-  return command.kind === "delete" ? command.uri : command.destinationUri;
+/**
+ * What a move was asked to do, as its receipt records it: a function of the request alone, so a
+ * resend matches however the row has moved since. The route builds it once, for both the resend
+ * lookup and the mover.
+ */
+export function moveCommand(request: {
+  expected: ContextEntryRef;
+  destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
+  name?: string;
+}): Extract<ContextOperationCommand, { kind: "move" }> {
+  const { expected, destinationParent, position, name } = request;
+  return {
+    kind: "move",
+    expected,
+    ...(destinationParent ? { destinationParent } : {}),
+    ...(position ? { position } : {}),
+    ...(name ? { name } : {}),
+  };
+}
+
+export function deleteCommand(request: {
+  expected: ContextEntryRef;
+}): Extract<ContextOperationCommand, { kind: "delete" }> {
+  return { kind: "delete", expected: request.expected };
+}
+
+/**
+ * Where a settled operation changed things: the address the observation version is read for. A
+ * refusal names it in its error; a Copy's command names its destination.
+ */
+function resultAddress(
+  command: ContextOperationCommand,
+  result: ContextOperationResult<ContextOperationCommand["kind"]>,
+): string {
+  if (!result.ok) return result.error.uri;
+  if (command.kind === "copy") return command.destinationUri;
+  return "destinationUri" in result.value
+    ? result.value.destinationUri
+    : (result.value as { uri: string }).uri;
 }
 
 export class ContextOperationReceipts {
@@ -25,9 +65,11 @@ export class ContextOperationReceipts {
     return this.store.lookup(operationId);
   }
 
+  /** `address` is where the command was aimed, which an `operation_mismatch` names. */
   execute<K extends ContextOperationCommand["kind"]>(
     operationId: string,
     command: Extract<ContextOperationCommand, { kind: K }>,
+    address: string,
     operation: () => Promise<ContextOperationResult<K>>,
   ): Promise<ContextOperationResult<K>> {
     return this.store.transaction(operationId, async () => {
@@ -38,7 +80,7 @@ export class ContextOperationReceipts {
             ok: false,
             error: {
               code: "operation_mismatch",
-              uri: commandAddress(command as ContextOperationCommand),
+              uri: address,
             },
           };
         return previous.result as ContextOperationResult<K>;
@@ -61,7 +103,7 @@ export class ContextOperationReceipts {
         operationId,
         command,
         result,
-        observationVersion: await this.store.observationVersion(command),
+        observationVersion: await this.store.observationVersion(resultAddress(command, result)),
       } as ContextOperationReceipt);
       return result;
     });

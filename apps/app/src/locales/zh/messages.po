@@ -113,8 +113,8 @@ msgstr ""
 
 #. placeholder {0}: renamed.length
 #: src/features/project/context/entry-drag/drop-choice.ts
-msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
-msgstr ""
+#~ msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+#~ msgstr ""
 
 #. placeholder {0}: result.outsideLinks.count
 #: src/features/export/ExportProjectDialog.tsx
@@ -308,8 +308,8 @@ msgstr "{0} 词元/秒"
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
 #: src/features/project/context/entry-drag/drop-choice.ts
-msgid "{0} will be renamed {1}"
-msgstr ""
+#~ msgid "{0} will be renamed {1}"
+#~ msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to archive {work}?"
@@ -557,6 +557,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
+msgstr ""
+
+#: src/features/project/context/use-rename-entry-form.ts
+msgid "{name} will be renamed {as}"
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
@@ -1863,8 +1867,8 @@ msgid "Copy {0} source"
 msgstr ""
 
 #: src/features/project/context/EntryDestinationPicker.tsx
-msgid "Copy {rowName}"
-msgstr ""
+#~ msgid "Copy {rowName}"
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Copy after {sibling}"
@@ -1880,6 +1884,10 @@ msgstr ""
 msgid "Copy code"
 msgstr ""
 
+#: src/features/project/context/EntryDestinationPicker.tsx
+msgid "Copy here"
+msgstr "复制到此处"
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Copy image"
 msgstr ""
@@ -1894,8 +1902,8 @@ msgstr ""
 
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryDestinationPicker.tsx
-msgid "Copy to {0}"
-msgstr ""
+#~ msgid "Copy to {0}"
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Copy to {destinationName}"
@@ -3745,8 +3753,8 @@ msgid "More composer controls"
 msgstr ""
 
 #: src/features/project/context/EntryDestinationPicker.tsx
-msgid "Move {rowName}"
-msgstr ""
+#~ msgid "Move {rowName}"
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 #: src/features/project/context/EntryDestinationPicker.tsx
@@ -3769,6 +3777,10 @@ msgstr ""
 msgid "Move down"
 msgstr ""
 
+#: src/features/project/context/EntryDestinationPicker.tsx
+msgid "Move here"
+msgstr "移动到此处"
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move or change this block"
 msgstr ""
@@ -3783,8 +3795,8 @@ msgstr ""
 
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryDestinationPicker.tsx
-msgid "Move to {0}"
-msgstr ""
+#~ msgid "Move to {0}"
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Move to {destinationName}"

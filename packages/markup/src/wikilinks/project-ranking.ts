@@ -1,6 +1,6 @@
 /** Project-wide wikilink ranking shared by paste and import over plain located candidates. */
 import { parseContextUri } from "@meridian/contracts";
-import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
+import { canonicalLeaf } from "@meridian/contracts/protocol";
 export type WikilinkTarget = { folders: readonly string[]; name: string };
 
 export type Located = {
@@ -93,8 +93,7 @@ export function wantedPath(target: WikilinkTarget): string[] {
 
 /** What a written name is stored as: `Chapter 13.md` is `Chapter 13`, `outline.json` stays. */
 export function storedName(name: string): string {
-  const parsed = parseDocumentFilename(name);
-  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : name;
+  return canonicalLeaf(name);
 }
 
 function endsWith(segments: readonly string[], tail: readonly string[]): boolean {

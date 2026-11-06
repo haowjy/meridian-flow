@@ -28,7 +28,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    Templates and Cancel.
 2. **Copy.** Choose Copy. The copy is listed in `Templates` at once and the source stays.
    No toast.
-3. **A folder tree.** Row menu on `Book` › Copy to… › Manuscript › Copy to Manuscript:
+3. **A folder tree.** Row menu on `Book` › Copy to… › Manuscript › Copy here:
    `Book (2)` appears with the whole tree under it. `Book` is disabled in that picker's
    list, as Move… disables it.
 4. **A refusal.** Go offline, copy `Prologue` to `Templates`, delete `Prologue` with
@@ -41,7 +41,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    Force that refusal, then delete the source: the toast stays and loses its Retry. Retry
    pressed in the moment before that shows the toast again without Retry.
 5. **A gone destination.** Offline, copy a row into a new User folder, delete the folder
-   with `./mf api POST …/context/user/delete`, go online. The toast has no Retry.
+   with `./mf api POST …/context/entries/<folderId>/delete`, go online. The toast has no Retry.
 6. **Unsynced edits.** Open a document, patch `WebSocket.prototype.send` to drop frames,
    type an edit, copy the document. The copy stays listed while
    the server answers `source_behind` and the replica resends. Restore the send and close the sockets: the
@@ -65,7 +65,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
     (`Loose`) in Manuscript, go offline, and drag the selection onto a User folder (`Targets`), then
     Copy to Targets. A drop onto Knowledge Base is a plain Move, so use User. Both rows are
     listed in `Targets`. Move `Loose` into `Part` with
-    `./mf api POST /api/projects/<id>/context/manuscript/move`, then go online. The pending
+    `./mf api POST /api/projects/<id>/context/entries/<LooseId>/move` (`destinationParent` the `Part` folder), then go online. The pending
     `Loose` row leaves `Targets` as the request goes out, and the copy of `Part` holds `Loose` while `Targets` has no `Loose` of its own.
     The server's copy receipt names one source.
 

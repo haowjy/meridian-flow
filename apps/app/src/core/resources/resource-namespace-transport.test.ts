@@ -31,22 +31,15 @@ const api = vi.hoisted(() => ({
 vi.mock("@/client/api/projects-api", () => api);
 const request: NamespaceRequest = {
   kind: "delete",
-  scheme: "scratch",
-  workId: "work",
-  workHandle: "w1",
-  body: {
-    operationId: "operation",
-    path: "note.md",
-    expected: { kind: "file", documentId: "document" },
-  },
+  entryId: "document",
+  body: { operationId: "operation", kind: "file" },
 };
 const receipt: ContextOperationReceipt = {
   observationVersion: "1",
   operationId: "operation",
   command: {
     kind: "delete",
-    uri: "scratch://@w1/note.md",
-    expected: { kind: "file", documentId: "document" },
+    expected: { kind: "file", nodeId: "document" },
   },
   result: { ok: false, error: { code: "conflict", uri: "scratch://@w1/note.md" } },
 };
@@ -163,7 +156,12 @@ function local(): ResourceRecord {
       revision: 1,
       identity: { documentId: "document", revision: 1 },
       content: { kind: "exact", databaseName: "content", schema: null },
-      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      classification: {
+        extension: "",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
       materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
       serverHold: "local",

@@ -413,6 +413,7 @@ function staticRoute(route: string, path: string): [number, unknown, boolean?] {
             parentId: "source" as never,
             name: "Cover",
             aliases: [],
+            extension: "",
             path: ["cover.png"],
             uri: "kb://cover.png" as never,
             provisionalName: false,

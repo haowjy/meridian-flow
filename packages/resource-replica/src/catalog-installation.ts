@@ -19,6 +19,7 @@ import {
   type ResourceLocation,
   type ResourceRecord,
   type ResourceWrite,
+  sameDestinationParent,
   sameOwner,
 } from "./resource-records";
 import { resourceChatOwner, resourceLineageOwner } from "./resource-work-authority";
@@ -140,10 +141,12 @@ export function sameResourceLocation(
 }
 
 function classificationFor(entry: CatalogFileEntry): CatalogFileClassification {
+  const { extension } = entry;
   if (entry.editable)
-    return { editable: true, filetype: entry.filetype, schemaType: entry.schemaType };
+    return { extension, editable: true, filetype: entry.filetype, schemaType: entry.schemaType };
   if (entry.disposition === "custom")
     return {
+      extension,
       editable: false,
       disposition: "custom",
       fileType: entry.fileType,
@@ -151,6 +154,7 @@ function classificationFor(entry: CatalogFileEntry): CatalogFileClassification {
       filetype: entry.filetype,
     };
   return {
+    extension,
     editable: false,
     disposition: "binary",
     fileType: entry.fileType,
@@ -202,7 +206,7 @@ function observedResourceWrite(input: {
   if (
     observed.revision !== current.revision &&
     (!sameResourceLocation(observed.canonical, current.canonical) ||
-      JSON.stringify(observed.canonicalParent) !== JSON.stringify(current.canonicalParent) ||
+      !sameDestinationParent(observed.canonicalParent, current.canonicalParent) ||
       observed.canonicalRank !== current.canonicalRank ||
       !sameClassification(observed.classification, current.classification))
   )

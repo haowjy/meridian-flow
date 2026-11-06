@@ -25,7 +25,8 @@ import { contextErrorMessage, type ToolWiringDeps } from "./tool-context.js";
 type StagedCreateCleanup = {
   responseId: string;
   port: ContextPort;
-  path: string;
+  /** Where the create landed, as the port spelled it, not what the model typed. */
+  uri: string;
   documentId: string;
 };
 
@@ -83,11 +84,11 @@ function refusedAtSave(
  */
 export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;
-  path: string;
+  uri: string;
   documentId: string;
   cause: RetractionCause;
 }): Promise<void> {
-  const retracted = await input.port.retractCreate(input.path, {
+  const retracted = await input.port.retractCreate(input.uri, {
     documentId: input.documentId,
     cause: input.cause,
   });
@@ -116,7 +117,7 @@ export function createAgentEditResponseWriteLifecycle(
       const records = stagedCreates.get(input.responseId) ?? [];
       if (
         !records.some(
-          (record) => record.path === input.path && record.documentId === input.documentId,
+          (record) => record.uri === input.uri && record.documentId === input.documentId,
         )
       ) {
         records.push(input);

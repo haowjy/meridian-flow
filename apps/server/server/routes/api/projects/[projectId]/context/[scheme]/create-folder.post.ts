@@ -19,10 +19,10 @@ import type {
   ContextPort,
   ProjectContextAvailabilityPort,
 } from "../../../../../../domains/context/index.js";
+import { canEditContextUri } from "../../../../../../lib/context-locator.js";
 import { withDurableIntentInterruptBoundary } from "../../../../../../shared/interrupt-boundary.js";
 import {
   answerHeldNode,
-  canEditContextUri,
   createDestinationAccess,
   heldNodeAddress,
   parseCreateDestination,
@@ -113,7 +113,7 @@ export default defineEventHandler((event) =>
         projectId: context.projectId,
         userId: context.userId,
         folderId: body.folderId,
-        canEdit: canEditContextUri(context),
+        canEdit: canEditContextUri(context.app, context),
       });
       if (held) {
         if (held.status === "conflict") setResponseStatus(event, 409);

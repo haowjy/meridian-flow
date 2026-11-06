@@ -209,22 +209,13 @@ export function apiProjectContextCreateFolderPath(
   return `${apiProjectPath(projectId)}/context/${scheme}/create-folder${projectContextQuery(scheme, opts)}`;
 }
 
-export function apiProjectContextReadPath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  opts?: ProjectContextRequestOptions,
-): string {
-  const search = new URLSearchParams({ path });
-  setOwnerQuery(search, scheme, opts);
-  return `${apiProjectPath(projectId)}/context/${scheme}/read?${search.toString()}`;
+export function apiProjectDocumentReadPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/read`;
 }
 
-export function apiProjectContextMovePath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/move`;
+/** Move or rename one entry (file or folder) by id. */
+export function apiProjectContextEntryMovePath(projectId: string, entryId: string): string {
+  return `${apiProjectPath(projectId)}/context/entries/${encodeURIComponent(entryId)}/move`;
 }
 
 /** One Copy command: many sources, one destination, one receipt. */
@@ -236,12 +227,9 @@ export function apiProjectContextOperationPath(projectId: string, operationId: s
   return `${apiProjectPath(projectId)}/context/operations/${encodeURIComponent(operationId)}`;
 }
 
-export function apiProjectContextDeletePath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
-): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/delete${projectContextQuery(scheme, opts)}`;
+/** Delete one entry (file or folder) by id. */
+export function apiProjectContextEntryDeletePath(projectId: string, entryId: string): string {
+  return `${apiProjectPath(projectId)}/context/entries/${encodeURIComponent(entryId)}/delete`;
 }
 
 /** Internal document-link resolution: three spellings in, one document or none. */

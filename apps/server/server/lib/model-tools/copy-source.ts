@@ -15,7 +15,6 @@ import {
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
-import { documentPathKey } from "@meridian/contracts";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
 import type {
   CopiedFrom,
@@ -186,8 +185,7 @@ export function binaryCopySelectionMessage(
 
 /** Errors about the source say so, since `path` names the destination. */
 export function fromMessage(source: CopySource, message: string): string {
-  const { filePath, fragment } = splitDocumentFile(source.path);
-  return `from ${formatDocumentFile({ filePath: documentPathKey(filePath), fragment })}: ${message}`;
+  return `from ${source.path}: ${message}`;
 }
 
 /**

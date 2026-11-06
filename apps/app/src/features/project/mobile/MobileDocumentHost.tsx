@@ -336,7 +336,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     return (
       <>
         {capture}
-        <ContextViewerHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
+        <ContextViewerHost projectId={projectId} tab={activeTab} />
       </>
     );
   }

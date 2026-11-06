@@ -2,6 +2,7 @@
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
+import { contextAreaOf } from "../context/uri.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type { UploadContentPort, UploadReservation } from "./upload-intake.js";
@@ -72,9 +73,10 @@ export function createContextUploadContentPort(
 
     async remove({ reservation, actorUserId }) {
       const port = portFor(reservation, actorUserId);
-      const removed = await port.delete(writeUri(reservation), {
-        expected: { kind: "file", documentId: reservation.documentId },
-      });
+      const removed = await port.delete(
+        { kind: "file", nodeId: reservation.documentId },
+        contextAreaOf(writeUri(reservation)),
+      );
       if (removed.ok) return { ok: true };
       if (STALE_DELETE.has(removed.error.code)) return { ok: false, stale: true };
       throw new Error(`Upload ${reservation.intakeId} deletion failed: ${removed.error.code}`);

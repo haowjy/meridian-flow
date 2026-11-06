@@ -4,6 +4,7 @@
  * list dragged, or a peer renamed or moved, is judged as it is now. Pure and
  * synchronous: hovering plans on every `dragover`.
  */
+
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextOwner,
@@ -43,7 +44,12 @@ export type PlacementView = {
   folders?: readonly FolderNamespaceRecord[];
   placement: Pick<
     ResourcePlacement,
-    "resourceLocation" | "parentForResource" | "folderLocation" | "parentForFolder" | "childrenAt"
+    | "resourceLocation"
+    | "parentForResource"
+    | "folderLocation"
+    | "parentForFolder"
+    | "childrenAt"
+    | "namedRow"
   >;
 };
 
@@ -94,7 +100,7 @@ const NONE: MovePlan = { kind: "none" };
 // Hovering plans on every `dragover`; one index per snapshot keeps each plan linear in the selection.
 const recordIndexes = new WeakMap<readonly ResourceRecord[], ResourceIdentityIndex>();
 
-function recordFor(records: readonly ResourceRecord[], documentId: string) {
+export function recordFor(records: readonly ResourceRecord[], documentId: string) {
   let index = recordIndexes.get(records);
   if (!index) {
     index = resourceIdentityIndex(records);
@@ -332,13 +338,24 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
   const moves = sources.flatMap((source) =>
     sameParent(source.parent, into)
       ? []
-      : [{ entry: source.ref, name: source.name, before: source.parent, after: into }],
+      : [
+          {
+            entry: source.ref,
+            name: source.name,
+            before: source.parent,
+            after: into,
+          },
+        ],
   );
   return moves.length === 0 ? NONE : { kind: "ready", destinationName, moves };
 }
 
 /** One row a Copy duplicates: the row as it is named now, and the view it reads. */
-export type CopyRow = { entry: EntryRef; name: string; view: CopyContextEntryView };
+export type CopyRow = {
+  entry: EntryRef;
+  name: string;
+  view: CopyContextEntryView;
+};
 
 export type CopyPlan =
   | { kind: "none" }

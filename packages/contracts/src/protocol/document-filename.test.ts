@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   allocateFilename,
   filenameForBinary,
+  type NamedRow,
   type NamespaceNameClaim,
   parseDocumentFilename,
   renderFilename,
@@ -141,7 +142,7 @@ describe("document filename codec", () => {
   });
 });
 
-const stored = (raw: string, current?: string) => {
+const stored = (raw: string, current?: NamedRow) => {
   const result = storedFilename(raw, current);
   return result.ok ? result.name : `refused: ${result.message}`;
 };
@@ -165,14 +166,16 @@ describe("storedFilename", () => {
   });
 
   it("keeps the renamed file's extension when none is typed", () => {
-    expect(stored("settings", "config.toml")).toBe("settings.toml");
-    expect(stored("pic", "map.png")).toBe("pic.png");
-    expect(stored("Chapter 14", "Chapter 13")).toBe("Chapter 14");
+    expect(stored("settings", { extension: "toml", editable: true })).toBe("settings.toml");
+    expect(stored("pic", { extension: "png", editable: false })).toBe("pic.png");
+    expect(stored("Chapter 14", { extension: "", editable: true })).toBe("Chapter 14");
   });
 
   it("lets a typed extension state the type", () => {
-    expect(stored("Chapter 13.md", "config.toml")).toBe("Chapter 13");
-    expect(stored("Notes.txt", "bytes.pdf")).toBe("Notes");
+    expect(stored("Chapter 13.md", { extension: "toml", editable: true })).toBe("Chapter 13");
+    expect(stored("Notes.txt", { extension: "pdf", editable: false })).toBe("Notes.txt");
+    expect(stored("page", { extension: "html", editable: false })).toBe("page.html");
+    expect(stored("x.md", { extension: "md", editable: false })).toBe("x.md");
   });
 
   it("passes the codec's refusal through", () => {

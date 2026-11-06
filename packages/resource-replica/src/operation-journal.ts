@@ -49,7 +49,6 @@ import {
   SourceBehindError,
   sameOwner,
 } from "./resource-records";
-import { moveOwnerFields } from "./resource-work-authority";
 
 /** Browser persistence implements this beside its file and folder journals, in the same account owner. */
 export interface OperationStore extends OperationReader {
@@ -258,13 +257,12 @@ export async function prepareCopyAttempt(
     body: {
       operationId: record.operationId,
       sources: sent.map(({ root, place: source }) => {
-        const { body: owners } = moveOwnerFields(source, parentLocation);
         return {
           scheme: source.scheme,
           path: pathParts(source.path),
           expected: { kind: root.kind, nodeId: root.sourceId },
-          workId: owners.sourceWorkId,
-          rootThreadId: owners.sourceRootThreadId,
+          workId: source.workId,
+          rootThreadId: source.rootThreadId ?? null,
           ...(source.chatRef ? { chatRef: source.chatRef } : {}),
           view: root.view,
           copyId: root.copyId,
