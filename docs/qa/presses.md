@@ -35,15 +35,18 @@ which line a caret is on).
    and below its middle. The caret goes to the neighbouring paragraph's line
    (prose beats the diagram), the diagram stays rendered, and no source opens.
    Do the same beside a component block: the caret lands in the paragraph
-   before or after it, or a gap cursor stands there when no paragraph does;
-   it is never inside the block. (No writer path makes a component block yet;
+   before or after it, and is never inside the block. (No writer path makes a component block yet;
    check this in a test document.)
 6. **Below each ending.** Click in the space below the last block of the first
    document: the caret goes to the end of the final paragraph. In the second,
    the caret goes to the fence's end. In the third, a gap cursor stands after
-   the table. In the fourth, a gap cursor or the nearest prose; the diagram
-   stays rendered. In every case the document is unchanged and its length
-   the same: a press never makes a paragraph.
+   the table. In the fourth (a closing diagram), an empty paragraph appears
+   after it with the caret in it, the diagram stays rendered, and typing goes
+   into the new line; one undo removes the line. Click below it again: no
+   second blank line. A figure or a horizontal rule at the end gets a gap
+   cursor and no paragraph. In the other cases the document is unchanged: a
+   press makes a paragraph only past a closing diagram. Do not expect the same
+   below a diagram that ends a cell.
 7. **Read-only.** Repeat 1 in a read-only view: no caret appears and nothing
    changes.
 
