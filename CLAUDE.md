@@ -9,3 +9,5 @@ for the owner, as `AGENTS.md` says.
 
 Use `explorer` for broad codebase exploration. Never use the generic `claude`
 agent type or a fork of yourself.
+
+Trust goes with checking yourself: run the change and see it behave before you merge it or call it done.
