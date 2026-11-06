@@ -21,9 +21,8 @@
 import type { DocumentId, FolderId } from "@meridian/contracts";
 import {
   type ContextSiblingPosition,
-  freeFilename,
+  firstFreeName,
   renderFilename,
-  splitRendered,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import {
@@ -67,7 +66,7 @@ export async function planCopyTree(
   const planned = await planLevel(
     deps,
     [...input.dir],
-    parent.found ? await occupiedNames(deps, parent.id) : new Set(),
+    parent.found ? await deps.store.namesAt(LIVE_TREE, parent.id) : new Set(),
     input.roots,
   );
   const nodes = flatten(planned);
@@ -271,9 +270,15 @@ async function planHolds(
   plan: CopyPlan,
 ): Promise<boolean> {
   if (plan.dir.join("/") !== dir.join("/")) return false;
-  const taken = await occupiedNames(deps, parentId);
+  const taken = await deps.store.namesAt(LIVE_TREE, parentId);
   for (const root of plan.roots) {
-    const filename = await allocateName(root.source, taken);
+    const { filename } = firstFreeName(
+      {
+        name: root.source.name,
+        extension: root.source.kind === "folder" ? "" : root.source.extension,
+      },
+      taken,
+    );
     if (
       filename !== (root.kind === "folder" ? root.name : renderFilename(root.name, root.extension))
     ) {
@@ -319,14 +324,6 @@ async function findDestinationParent(
     : { found: false };
 }
 
-/** The first free filename for a source among the names already taken. */
-function allocateName(source: CopySourceEntry, taken: ReadonlySet<string>) {
-  return freeFilename(
-    { name: source.name, extension: source.kind === "folder" ? "" : source.extension },
-    (candidate) => taken.has(candidate),
-  );
-}
-
 /** Allocate every name and mint every identity, parents before their children. */
 async function planLevel(
   deps: CopyTreeDeps,
@@ -336,7 +333,11 @@ async function planLevel(
 ): Promise<PlannedCopyNode[]> {
   const planned: PlannedCopyNode[] = [];
   for (const source of sources) {
-    const filename = await allocateName(source, taken);
+    const free = firstFreeName(
+      { name: source.name, extension: source.kind === "folder" ? "" : source.extension },
+      taken,
+    );
+    const { filename } = free;
     const path = [...dir, filename].join("/");
     taken.add(filename);
     if (source.kind === "folder") {
@@ -352,28 +353,15 @@ async function planLevel(
       });
       continue;
     }
-    const { name, extension } = splitRendered(filename, source.extension);
     planned.push({
       kind: "file",
       source,
       id: source.copyId ?? crypto.randomUUID(),
-      name,
-      extension,
+      name: free.name,
+      extension: free.extension,
       path,
       uri: deps.holderUri(path),
     });
   }
   return planned;
-}
-
-/** Every name this parent holds for a reader: live folders and live documents. */
-async function occupiedNames(deps: CopyTreeDeps, parentId: string | null): Promise<Set<string>> {
-  const [folders, documents] = await Promise.all([
-    deps.store.listFolders(LIVE_TREE, parentId),
-    deps.store.listDocuments(LIVE_TREE, parentId),
-  ]);
-  return new Set([
-    ...folders.map((folder) => folder.name),
-    ...documents.map((document) => renderFilename(document.name, document.extension)),
-  ]);
 }

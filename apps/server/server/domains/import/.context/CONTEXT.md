@@ -44,7 +44,7 @@ MIME type is `text/html`). The entry's reason is `kept_as_file`, so the result n
 look, and its name keeps its extension. A kept `binary.md` is stored as name `binary`,
 extension `md`: a stored name carries a prose suffix only for such a file, so every lookup
 tries `addressCandidates` (literal, then alias) in order (literal `binary.md` finds it; `binary` stays a document's),
-and naming asks the row's kind, never the suffix: `storedFilename(typed, { extension, stored })`
+and naming asks the row's kind, never the suffix: `storedFilename(typed, { extension, editable })`
 uses `fileName` for a stored row (literal, keeps its suffix through rename, move and Copy) and the
 document rules otherwise. The client reads `extension` from the catalog entry. Link matching tries the literal path before the extension-omitted key, so a
 document `binary` and a kept `binary.md` each get their own links. A name the codec refuses

@@ -99,28 +99,20 @@ export function canonicalLeaf(filename: string): string {
 }
 
 /**
- * The names an arrival tries in order: `name`, then `name (2)`, `name (3)`… from `startSuffix`.
- * Siblings of either kind clash when their rendered filenames are equal, so a name is just a string.
+ * The first free name for an arrival: `name`, then `name (2)`, `name (3)`…, against the rendered
+ * filenames its parent already holds. Siblings of either kind clash when their rendered
+ * filenames are equal, so `taken` is just a set of strings. Callers own the atomic claim.
  */
-export function* filenameCandidates(
+export function firstFreeName(
   desired: { name: string; extension?: string },
-  startSuffix = 1,
-): Generator<string, never> {
-  for (let suffix = startSuffix; ; suffix += 1) {
-    const base = suffix === 1 ? desired.name : `${desired.name} (${suffix})`;
-    yield renderFilename(base, desired.extension ?? "");
+  taken: ReadonlySet<string>,
+): { name: string; extension: string; filename: string } {
+  const extension = desired.extension ?? "";
+  for (let suffix = 1; ; suffix += 1) {
+    const name = suffix === 1 ? desired.name : `${desired.name} (${suffix})`;
+    const filename = renderFilename(name, extension);
+    if (!taken.has(filename)) return { name, extension, filename };
   }
-}
-
-/** Smallest free name at or after `startSuffix`. Callers own the atomic claim. */
-export async function freeFilename(
-  desired: { name: string; extension?: string },
-  isTaken: (filename: string) => boolean | Promise<boolean>,
-  startSuffix = 1,
-): Promise<string> {
-  for (const filename of filenameCandidates(desired, startSuffix))
-    if (!(await isTaken(filename))) return filename;
-  throw new Error("unreachable");
 }
 
 /** What a row says about its own name: its stored extension and whether it is a tracked document. */

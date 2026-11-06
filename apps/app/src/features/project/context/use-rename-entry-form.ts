@@ -26,7 +26,6 @@ import type { ContextEntrySibling } from "./context-entry-name";
 import {
   allocateContextEntryArrivalName,
   entryNameStemEnd,
-  nameOccupancy,
   validateContextEntryName,
 } from "./context-entry-name";
 import { destinationOwner } from "./identity-location";
@@ -112,7 +111,10 @@ export function useRenameEntryForm({
     [siblings, entryId],
   );
 
-  const occupancy = useMemo(() => nameOccupancy(filteredSiblings), [filteredSiblings]);
+  const occupancy = useMemo(
+    () => new Set(filteredSiblings.map((sibling) => sibling.name)),
+    [filteredSiblings],
+  );
 
   // Select the name sans a visible extension on focus ("outline" in
   // "outline.json"); a prose name has none, so all of it.
@@ -134,7 +136,7 @@ export function useRenameEntryForm({
       const invalid = validateContextEntryName(draft, [], kind, row);
       if (invalid || !draft.trim()) return invalid;
       const as = allocateContextEntryArrivalName(draft, occupancy, kind, row);
-      const name = allocateContextEntryArrivalName(draft, nameOccupancy([]), kind, row);
+      const name = allocateContextEntryArrivalName(draft, new Set<string>(), kind, row);
       return as === name ? null : { level: "warning", message: t`${name} will be renamed ${as}` };
     },
     onCommit: async (typed) => {

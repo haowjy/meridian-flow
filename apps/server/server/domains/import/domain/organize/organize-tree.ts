@@ -1,7 +1,7 @@
 /** Deterministic creation graph and placement derived only from durable import outcomes. */
 import { createHash } from "node:crypto";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { freeFilename, renderFilename } from "@meridian/contracts/protocol";
+import { firstFreeName, renderFilename } from "@meridian/contracts/protocol";
 import type { ImportEntry, ImportRecord } from "../../ports/import-repository.js";
 import type { ImportPlacement } from "../placement.js";
 import { type PlannedNode, planWithDerivedIds } from "../plan.js";
@@ -128,11 +128,11 @@ export async function buildOrganizedTree(input: {
     }
     const siblings = occupied.get(parentKey(node.area, node.parentId));
     if (!siblings) throw new Error(`Import tree has no sibling group for ${node.id}`);
-    const filename = await freeFilename(node, async (candidate) => siblings.has(candidate));
-    node.name = node.extension ? filename.slice(0, -(node.extension.length + 1)) : filename;
-    node.filename = filename;
+    const free = firstFreeName(node, siblings);
+    node.name = free.name;
+    node.filename = free.filename;
     if (topLevel) topLevelNames[node.id] = node.name;
-    siblings.add(filename);
+    siblings.add(free.filename);
   }
   if (nodes.some((node) => node.state === "planned" && !node.area))
     throw new Error("Import tree has a node without an area");

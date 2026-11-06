@@ -629,19 +629,18 @@ export async function loadWorkRestoreNamespaceRows(
     source: string;
     parent: string | null;
     name: string;
-    kind: "file" | "folder";
     arriving: boolean;
   }[]
 > {
   return currentDrizzleDb(db).execute(sql`
     SELECT d.context_source_id AS source, d.folder_id AS parent,
       d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS name,
-      'file' AS kind, coalesce(d.deleted_by_work_id = ${workId}::uuid, false) AS arriving
+      coalesce(d.deleted_by_work_id = ${workId}::uuid, false) AS arriving
     FROM documents d WHERE NOT d.hidden
       AND d.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
       AND (d.deleted_at IS NULL OR d.deleted_by_work_id = ${workId}::uuid)
     UNION ALL
-    SELECT f.context_source_id, f.parent_id, f.name, 'folder',
+    SELECT f.context_source_id, f.parent_id, f.name,
       coalesce(f.deleted_by_work_id = ${workId}::uuid, false)
     FROM folders f WHERE NOT f.hidden
       AND f.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)

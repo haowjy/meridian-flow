@@ -139,6 +139,8 @@ export interface ContextDocumentStore {
   parentOrderPolicy(view: TreeView, parentId: string | null): Promise<"default" | "manual">;
   /** Every folder and document the view shows in this source, in one pass. */
   listTree(view: TreeView): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }>;
+  /** The rendered filenames of every folder and document directly under `parentId`. */
+  namesAt(view: TreeView, parentId: string | null): Promise<Set<string>>;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]>;
   /**

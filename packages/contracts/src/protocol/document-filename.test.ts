@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   filenameForBinary,
-  freeFilename,
+  firstFreeName,
   type NamedRow,
   parseDocumentFilename,
   renderFilename,
@@ -185,12 +185,18 @@ describe("storedFilename", () => {
 });
 
 describe("free filenames", () => {
-  it("counts documents and folders by their literal rendered names", async () => {
+  it("counts documents and folders by their literal rendered names", () => {
     const taken = new Set(["Lore.md", "Map", "Map (2)"]);
-    await expect(freeFilename({ name: "Map" }, (name) => taken.has(name))).resolves.toBe("Map (3)");
-    await expect(freeFilename({ name: "Lore" }, (name) => taken.has(name))).resolves.toBe("Lore");
-    await expect(
-      freeFilename({ name: "Lore", extension: "md" }, (name) => taken.has(name)),
-    ).resolves.toBe("Lore (2).md");
+    expect(firstFreeName({ name: "Map" }, taken)).toEqual({
+      name: "Map (3)",
+      extension: "",
+      filename: "Map (3)",
+    });
+    expect(firstFreeName({ name: "Lore" }, taken).filename).toBe("Lore");
+    expect(firstFreeName({ name: "Lore", extension: "md" }, taken)).toEqual({
+      name: "Lore (2)",
+      extension: "md",
+      filename: "Lore (2).md",
+    });
   });
 });

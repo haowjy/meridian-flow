@@ -16,7 +16,7 @@ import {
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import { allocateContextEntryArrivalName, nameOccupancy } from "../context-entry-name";
+import { allocateContextEntryArrivalName } from "../context-entry-name";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
 import { type MoveRow, recordFor, sameParent } from "./move-plan";
@@ -94,18 +94,11 @@ export function arrivals(view: NamingView, rows: readonly Arrival[]) {
     const key = placementParentKey(parent);
     let occupied = byParent.get(key);
     if (!occupied) {
-      occupied = nameOccupancy(
-        view.placement.childrenAt(parent, view.records).flatMap((row) =>
-          staying.get(key)?.has(row.entryId)
-            ? []
-            : [
-                {
-                  entryId: row.entryId,
-                  name: row.name,
-                  kind: row.kind === "folder" ? ("dir" as const) : ("file" as const),
-                },
-              ],
-        ),
+      occupied = new Set(
+        view.placement
+          .childrenAt(parent, view.records)
+          .filter((row) => !staying.get(key)?.has(row.entryId))
+          .map((row) => row.name),
       );
       byParent.set(key, occupied);
     }

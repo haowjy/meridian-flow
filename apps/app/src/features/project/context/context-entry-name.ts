@@ -5,7 +5,7 @@ import {
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
 import {
-  filenameCandidates,
+  firstFreeName,
   type NamedRow,
   parseDocumentFilename,
   splitRendered,
@@ -117,11 +117,6 @@ export function moveEntryName(currentName: string, repair?: { name: string }): s
   return repair?.name ?? currentName;
 }
 
-/** The names a folder's rows hold, as the tree renders them. Siblings of either kind clash on equal names. */
-export function nameOccupancy(siblings: readonly ContextEntrySibling[]): Set<string> {
-  return new Set(siblings.map((sibling) => sibling.name));
-}
-
 /** Predict the first free name for a rename or move; the server remains authoritative. */
 export function allocateContextEntryArrivalName(
   typed: string,
@@ -134,7 +129,5 @@ export function allocateContextEntryArrivalName(
   const desired = stored
     ? { name: stored.filename.name, extension: stored.filename.extension }
     : { name: typed.trim() };
-  for (const candidate of filenameCandidates(desired))
-    if (!occupied.has(candidate)) return candidate;
-  throw new Error("unreachable");
+  return firstFreeName(desired, occupied).filename;
 }

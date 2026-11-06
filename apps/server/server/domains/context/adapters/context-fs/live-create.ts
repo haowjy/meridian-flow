@@ -14,7 +14,7 @@ import type { DocumentId, ProjectId } from "@meridian/contracts";
 import {
   type ContextSiblingPosition,
   type Filetype,
-  freeFilename,
+  firstFreeName,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { testHook } from "../../../../shared/test-hooks.js";
@@ -360,12 +360,7 @@ export class LiveCreate {
       return Err({ code: "stale_target" });
     }
     const extra = { options: input.options };
-    const live = new Set([
-      ...(await store.listDocuments(LIVE_TREE, folderId)).map((document) =>
-        renderFilename(document.name, document.extension),
-      ),
-      ...(await store.listFolders(LIVE_TREE, folderId)).map((folder) => folder.name),
-    ]);
+    const live = await store.namesAt(LIVE_TREE, folderId);
     let target: { name: string; extension: string; filetype: Filetype };
     let plan: LiveCreatePlan;
     let joinFrom: DocumentId | undefined;
@@ -380,12 +375,9 @@ export class LiveCreate {
       };
       plan = { kind: "mint", id: input.documentId };
     } else {
-      const free = await freeFilename(input.leaf, (candidate) => live.has(candidate));
-      const parsedFree = input.leaf.extension
-        ? free.slice(0, -(input.leaf.extension.length + 1))
-        : free;
-      target = { ...input.leaf, name: parsedFree };
-      const atTypedName = parsedFree === input.leaf.name;
+      const free = firstFreeName(input.leaf, live);
+      target = { ...input.leaf, name: free.name };
+      const atTypedName = free.name === input.leaf.name;
       if (atTypedName && found.kind === "candidate") {
         plan = {
           kind: "reveal",

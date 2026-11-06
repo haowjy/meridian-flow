@@ -1,11 +1,11 @@
 /** Atomic move/delete CAS operations over the shared in-memory context backing. */
 import { serializeRemovalIdentity } from "@meridian/contracts";
 import {
-  freeFilename,
+  firstFreeName,
   renderFilename as renderDocumentFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import { renderFilename, splitPath } from "../../context/paths.js";
+import { splitPath } from "../../context/paths.js";
 import { ContextEntryConflictError } from "../../ports/context-document-store.js";
 import {
   CONTEXT_ROOT_DIRECTORY_ID,
@@ -21,6 +21,7 @@ import {
 import {
   claimLocation,
   type DocumentRow,
+  entryNames,
   type FolderRow,
   findInMemoryContextDocumentAt,
   hasOppositeEntry,
@@ -157,30 +158,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       parentId = found.id;
     }
     return parentId;
-  }
-
-  /** The rendered filenames live in one folder, other than the moving node itself. */
-  private siblingNames(sourceId: string, parentId: string | null, movingId: string): Set<string> {
-    return new Set([
-      ...[...this.backing.documents.values()]
-        .filter(
-          (row) =>
-            row.id !== movingId &&
-            row.contextSourceId === sourceId &&
-            row.folderId === parentId &&
-            row.deletedAt === null,
-        )
-        .map((row) => renderFilename(row.name, row.extension)),
-      ...[...this.backing.folders.values()]
-        .filter(
-          (row) =>
-            row.id !== movingId &&
-            row.contextSourceId === sourceId &&
-            row.parentId === parentId &&
-            row.deletedAt === null,
-        )
-        .map((row) => row.name),
-    ]);
   }
 
   private ensureFolderPath(sourceId: string, dir: readonly string[]): string | null {
@@ -440,13 +417,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
               ? null
               : input.destinationParentToken.nodeId
             : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
-        targetBasename = await freeFilename(input.destinationFilename, (candidate) =>
-          this.siblingNames(input.destinationSourceId, destParentId, input.source.nodeId).has(
-            candidate,
-          ),
+        const free = firstFreeName(
+          input.destinationFilename,
+          entryNames(this.backing, input.destinationSourceId, destParentId, input.source.nodeId),
         );
-        destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
-        const { name, extension } = input.destinationFilename;
+        destinationPath = [targetParentPath, free.filename].filter(Boolean).join("/");
+        const { name, extension } = free;
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
@@ -492,11 +468,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
             ? null
             : input.destinationParentToken.nodeId
           : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
-      targetBasename = await freeFilename({ name: targetBasename }, (candidate) =>
-        this.siblingNames(input.destinationSourceId, destParentId, input.source.nodeId).has(
-          candidate,
-        ),
-      );
+      targetBasename = firstFreeName(
+        { name: targetBasename },
+        entryNames(this.backing, input.destinationSourceId, destParentId, input.source.nodeId),
+      ).filename;
       destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
       const subtree = this.collectSubtree(movedRoot.id, input.source.sourceId);
       const movedDocumentIds = this.documentIdsInSubtree(subtree, input.source.sourceId);

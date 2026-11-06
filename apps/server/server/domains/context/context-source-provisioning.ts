@@ -414,6 +414,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     });
   }
 
+  async namesAt(view: TreeView, parentId: string | null) {
+    return (await this.readableSourceStore())?.namesAt(view, parentId) ?? new Set<string>();
+  }
+
   async listFolders(view: TreeView, parentId: string | null) {
     return (await this.readableSourceStore())?.listFolders(view, parentId) ?? [];
   }
