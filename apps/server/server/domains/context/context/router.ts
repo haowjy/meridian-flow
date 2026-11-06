@@ -821,18 +821,19 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     async commitWriterLocation(sourceUri, destinationUri, options) {
       const source = await resolve(sourceUri);
       if (!source.ok) return source;
-      const destination = await resolveMutation(destinationUri);
-      if (!destination.ok) return destination;
+      const folder = destinationUri === null ? null : await resolveMutation(destinationUri);
+      if (folder && !folder.ok) return folder;
       const destinationParent = options.destinationParent;
       if (
+        folder &&
         destinationParent?.kind === "root" &&
-        (destinationParent.scheme !== destination.value.scheme ||
+        (destinationParent.scheme !== folder.value.scheme ||
           (destinationParent.owner.workId !== null &&
-            destinationParent.owner.workId !== destination.value.workScopeId))
+            destinationParent.owner.workId !== folder.value.workScopeId))
       )
-        return Err({ code: "destination_missing", uri: destinationUri });
-      const name = destination.value.path.split("/").at(-1) ?? "";
+        return Err({ code: "destination_missing", uri: destinationUri ?? sourceUri });
       const identityParent = destinationParent?.kind === "folder" ? destinationParent : null;
+      // A destination folder named by identity is read again under the locks.
       const resolveDestination = identityParent
         ? async (): Promise<Result<ContextTreeDispatch, ContextError>> => {
             const parent = await resolveIdentityDestination(identityParent, {
@@ -840,21 +841,15 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
               ...(options.origin ? { origin: options.origin } : {}),
             });
             if (!parent.ok) return parent;
-            const target = await resolveMutation(
-              joinContextPath(parent.value.canonical, [name]),
-              options.origin,
-            );
-            if (!target.ok) return Err({ code: "destination_missing", uri: destinationUri });
-            const denied = moveCreationDenied(source.value, target.value);
-            return denied ?? target;
+            return moveCreationDenied(source.value, parent.value) ?? parent;
           }
         : undefined;
-      if (!resolveDestination) {
-        const creationDenied = moveCreationDenied(source.value, destination.value);
+      if (folder && !resolveDestination) {
+        const creationDenied = moveCreationDenied(source.value, folder.value);
         if (creationDenied) return creationDenied;
       }
       const { authorizeDestination, ...rest } = options;
-      return treeMover.commitWriterLocation(source.value, destination.value, {
+      return treeMover.commitWriterLocation(source.value, folder?.value ?? null, {
         ...rest,
         ...(resolveDestination
           ? { resolveDestination }

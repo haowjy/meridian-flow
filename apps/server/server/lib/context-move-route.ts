@@ -198,10 +198,6 @@ function basename(path: string): string {
   return path.split("/").filter(Boolean).at(-1) ?? "";
 }
 
-function dirname(path: string): string {
-  return path.split("/").filter(Boolean).slice(0, -1).join("/");
-}
-
 function joinPath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
 }
@@ -239,10 +235,11 @@ export async function handleContextMoveRequest(
   const { address, locator: source } = await locateEntry(deps, { ...input, kind: move.kind });
   if (source.scope === "chat") throw uploadsNotMovable();
 
-  // Where it lands: the parent the writer chose, else the folder it is in now.
+  // Where it lands: the parent the writer chose. Without one the mover keeps the folder the row
+  // is in under the locks, so the area is all this lookup supplies.
   const parent = move.destinationParent;
   async function destinationLocator(): Promise<{ locator: ResolvedContextLocator; dir: string }> {
-    if (!parent) return { locator: source as ResolvedContextLocator, dir: dirname(address.path) };
+    if (!parent) return { locator: source as ResolvedContextLocator, dir: "" };
     if (parent.kind === "folder") {
       const folder = await locateEntry(deps, {
         projectId: input.projectId,
@@ -331,10 +328,7 @@ export async function handleContextMoveRequest(
   const result = await withEditGrants(deps.fileAccess, grants, () =>
     port.commitWriterLocation(
       address.uri,
-      locatorUri(
-        destination.locator,
-        joinPath(destination.dir, move.name ?? basename(address.path)),
-      ),
+      parent ? locatorUri(destination.locator, destination.dir) : null,
       {
         origin: { type: "human", userId: input.userId },
         expected: { kind: move.kind, nodeId: address.id },

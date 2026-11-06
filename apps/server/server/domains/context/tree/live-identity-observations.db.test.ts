@@ -13,6 +13,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { moveTo } from "../../../test-support/entry-ref.js";
 import { createTreeReader, LIVE_TREE } from "./tree-view.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -80,15 +81,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const lore = await s.hiddenFolder("lore");
       const chapter = await s.scenario.writer.createDocument("chapter", "Chapter one.");
 
-      const moved = await s.port.commitWriterLocation(
-        "manuscript://chapter",
-        "manuscript://lore/chapter",
-        {
-          origin: { type: "human", userId: s.userId },
-          expected: { kind: "file", nodeId: chapter },
-          destinationParent: { kind: "folder", folderId: lore },
-        },
-      );
+      const moved = await moveTo(s.port, "manuscript://chapter", "manuscript://lore/chapter", {
+        origin: { type: "human", userId: s.userId },
+        expected: { kind: "file", nodeId: chapter },
+        destinationParent: { kind: "folder", folderId: lore },
+      });
 
       expect(moved).toMatchObject({ ok: false, error: { code: "destination_missing" } });
       expect(await s.scenario.view("live").locate(chapter)).toBe("manuscript://chapter");
@@ -101,20 +98,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const lore = await s.hiddenFolder("lore");
       const chapter = await s.scenario.writer.createDocument("chapter", "Chapter one.");
 
-      const moved = await s.port.commitWriterLocation(
-        "manuscript://chapter",
-        "manuscript://lore/chapter",
-        {
-          origin: { type: "human", userId: s.userId },
-          expected: { kind: "file", nodeId: chapter },
-          destinationParent: {
-            kind: "root",
-            scheme: "manuscript",
-            owner: { workId: null },
-            createFolders: ["lore"],
-          },
+      const moved = await moveTo(s.port, "manuscript://chapter", "manuscript://lore/chapter", {
+        origin: { type: "human", userId: s.userId },
+        expected: { kind: "file", nodeId: chapter },
+        destinationParent: {
+          kind: "root",
+          scheme: "manuscript",
+          owner: { workId: null },
+          createFolders: ["lore"],
         },
-      );
+      });
 
       expect(moved).toMatchObject({ ok: true, value: { destinationPath: "lore/chapter" } });
       const live = await tree.resolvePath(LIVE_TREE, {

@@ -79,12 +79,8 @@ describe("ContextTreeMover result-aware command ownership", () => {
   ])("finds a replaced source identity gone before moving or graduating to %s", async (path) => {
     const mover = new ContextTreeMover();
     const source = dispatch({ canonical: "manuscript://draft.md", path: "draft.md" });
-    const destination =
-      path === "draft.md"
-        ? source
-        : dispatch({ canonical: `manuscript://${path}`, path, token: null });
     await expect(
-      mover.commitWriterLocation(source, destination, {
+      mover.commitWriterLocation(source, null, {
         expected: { kind: "file", nodeId: "original-document" },
       }),
     ).resolves.toEqual(Err({ code: "not_found", uri: "manuscript://draft.md" }));
@@ -112,9 +108,9 @@ describe("ContextTreeMover result-aware command ownership", () => {
     const target = dispatch({ canonical: "manuscript://draft.md", path: "draft.md" });
 
     const expected = { kind: "file" as const, nodeId: "document-1" };
-    const first = mover.commitWriterLocation(target, target, { expected });
+    const first = mover.commitWriterLocation(target, null, { expected });
     await vi.waitFor(() => expect(entries).toBe(1));
-    const second = mover.commitWriterLocation(target, target, { expected });
+    const second = mover.commitWriterLocation(target, null, { expected });
     await vi.waitFor(() => expect(entries).toBe(2));
     settleFirst();
 

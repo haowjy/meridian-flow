@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
+import { moveTo } from "../../../test-support/entry-ref.js";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
 import {
@@ -298,15 +299,15 @@ describe("context router scheme creation capabilities", () => {
     const oldDocument = { kind: "file" as const, nodeId: "document-old" };
 
     await expect(
-      port.commitWriterLocation(`scratch://@w7/old.md`, `uploads://old.md`, {
+      moveTo(port, `scratch://@w7/old.md`, `uploads://old.md`, {
         expected: oldDocument,
       }),
     ).resolves.toMatchObject({
       ok: false,
-      error: { code: "invalid_operation", uri: "uploads://@c12/old.md" },
+      error: { code: "invalid_operation", uri: "uploads://@c12/" },
     });
     await expect(
-      port.commitWriterLocation(`uploads://old.md`, `uploads://renamed.md`, {
+      moveTo(port, `uploads://old.md`, `uploads://renamed.md`, {
         expected: oldDocument,
       }),
     ).resolves.toEqual({

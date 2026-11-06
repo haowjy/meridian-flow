@@ -23,7 +23,7 @@ import {
   createTestDocumentRemoval,
   createTestRemovalDeps,
 } from "../../test-support/document-removal.js";
-import { entryAt } from "../../test-support/entry-ref.js";
+import { entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { contextErrorToHttp } from "../context-error-http.js";
 
@@ -109,7 +109,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         if (!authority) throw new Error("missing Work authority for move test");
         return { scope: "work" as const, scheme: scheme as never, path, authority };
       };
-      const leaf = body.newName ?? body.path.split("/").at(-1);
       const source = await resolve(
         input.sourceScheme,
         body.path,
@@ -118,7 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const destination = await resolve(
         body.destinationScheme,
-        [body.destinationFolderPath, leaf].filter(Boolean).join("/"),
+        body.destinationFolderPath ?? "",
         body.destinationWorkId,
         body.destinationRootThreadId,
       );
@@ -130,7 +129,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expected: body.expected,
           destinationParent: body.destinationParent,
           position: body.position,
-          ...(body.newName ? { name: body.newName } : {}),
+          ...(body.name ? { name: body.name } : {}),
           operationId: body.operationId,
         },
       );
@@ -320,25 +319,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const operationId = crypto.randomUUID();
       const options = { operationId, expected: { kind: "file" as const, nodeId: DOCUMENT_ID } };
       const source = "scratch://@w1/Untitled 1";
-      const first = await port.commitWriterLocation(source, "manuscript://first", options);
+      const first = await moveTo(port, source, "manuscript://first", options);
       expect(first.ok).toBe(true);
       await expect(
-        port.commitWriterLocation("manuscript://first", "manuscript://second", {
+        moveTo(port, "manuscript://first", "manuscript://second", {
           operationId: crypto.randomUUID(),
           expected: options.expected,
         }),
       ).resolves.toMatchObject({ ok: true });
       const commits = await db.select().from(schema.contextCatalogCommits);
-      await expect(
-        port.commitWriterLocation(source, "manuscript://first", options),
-      ).resolves.toEqual(first);
+      await expect(moveTo(port, source, "manuscript://first", options)).resolves.toEqual(first);
       await expect(port.lookupOperation(operationId)).resolves.toMatchObject({
         operationId,
         result: first,
       });
       expect(await db.select().from(schema.contextCatalogCommits)).toEqual(commits);
       await expect(
-        port.commitWriterLocation(source, "manuscript://other", { ...options, name: "other" }),
+        moveTo(port, source, "manuscript://other", { ...options, name: "other" }),
       ).resolves.toMatchObject({
         ok: false,
         error: { code: "operation_mismatch" },
@@ -509,7 +506,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         error: { code: "context_unavailable" },
       });
       await expect(
-        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://moved", {
+        moveTo(port, "scratch://@w1/Untitled 1", "manuscript://moved", {
           expected: { kind: "file", nodeId: DOCUMENT_ID },
         }),
       ).resolves.toMatchObject({ ok: false, error: { code: "context_unavailable" } });
@@ -518,7 +515,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await documentOwner(DOCUMENT_ID)).sourceWorkId).toBe(workId);
       await db.update(schema.works).set({ archivedAt: null }).where(eq(schema.works.id, workId));
       await expect(
-        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://moved", {
+        moveTo(port, "scratch://@w1/Untitled 1", "manuscript://moved", {
           expected: { kind: "file", nodeId: DOCUMENT_ID },
         }),
       ).resolves.toMatchObject({ ok: true });
@@ -544,7 +541,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const folderId = await destinationFolder(projectId);
       const operationId = crypto.randomUUID();
       await expect(
-        port.commitWriterLocation("manuscript://Act 1", "kb://Renamed", {
+        moveTo(port, "manuscript://Act 1", "kb://Renamed", {
           expected: { kind: "folder", nodeId: folderId },
           operationId: crypto.randomUUID(),
         }),
@@ -568,7 +565,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(port.stat("manuscript://Act 1")).resolves.toMatchObject({ ok: false });
       await expect(port.stat("kb://Renamed/Untitled 1")).resolves.toMatchObject({ ok: true });
       await expect(
-        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
+        moveTo(port, "scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
           operationId,
           expected: { kind: "file", nodeId: DOCUMENT_ID },
           destinationParent: { kind: "folder", folderId: crypto.randomUUID() },
@@ -579,7 +576,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("lands beside an occupied name at the renamed identity", async () => {
       const { projectId, workId, port } = await arrangeUntitled();
       const folderId = await destinationFolder(projectId);
-      await port.commitWriterLocation("manuscript://Act 1", "manuscript://Renamed", {
+      await moveTo(port, "manuscript://Act 1", "manuscript://Renamed", {
         expected: { kind: "folder", nodeId: folderId },
         operationId: crypto.randomUUID(),
       });
@@ -611,7 +608,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const folderId = await destinationFolder(projectId);
       const operationId = crypto.randomUUID();
       await expect(
-        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
+        moveTo(port, "scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
           operationId,
           expected: { kind: "file", nodeId: DOCUMENT_ID },
           destinationParent: { kind: "folder", folderId },
@@ -655,7 +652,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentAlias: folderDocumentName("Destination"),
       });
       await expect(
-        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
+        moveTo(port, "scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", {
           operationId: crypto.randomUUID(),
           expected: { kind: "file", nodeId: DOCUMENT_ID },
           destinationParent: { kind: "folder", folderId },
@@ -724,7 +721,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expected: { kind: "file" as const, nodeId: DOCUMENT_ID },
         destinationParent: { kind: "folder" as const, folderId: parent.id },
       };
-      const result = await port.commitWriterLocation(
+      const result = await moveTo(
+        port,
         "scratch://@w1/Untitled 1",
         "manuscript://Act 1/Untitled 1",
         options,
@@ -735,11 +733,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         result,
       });
       await expect(
-        port.commitWriterLocation(
-          "scratch://@w1/Untitled 1",
-          "manuscript://Act 1/Untitled 1",
-          options,
-        ),
+        moveTo(port, "scratch://@w1/Untitled 1", "manuscript://Act 1/Untitled 1", options),
       ).resolves.toEqual(result);
       await expect(port.stat("manuscript://Act 1")).resolves.toMatchObject({ ok: false });
       const [document] = await db
@@ -764,7 +758,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!parent) throw new Error("Missing parent");
       const folderId = parent.id;
       await expect(
-        port.commitWriterLocation("scratch://@w1/Untitled 1", "manuscript://loose", {
+        moveTo(port, "scratch://@w1/Untitled 1", "manuscript://loose", {
           expected: { kind: "file", nodeId: DOCUMENT_ID },
           operationId: crypto.randomUUID(),
         }),
@@ -775,7 +769,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destinationParent: { kind: "folder", folderId },
       };
       await expect(
-        port.commitWriterLocation("scratch://@w1/B", "manuscript://Renamed", {
+        moveTo(port, "scratch://@w1/B", "manuscript://Renamed", {
           expected: { kind: "folder", nodeId: folderId },
           operationId: crypto.randomUUID(),
         }),
@@ -811,10 +805,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destinationScheme: "manuscript",
         destinationFolderPath: "Act 1/New Arc/Part 1",
         destinationParent: { kind: "folder", folderId, createFolders: ["New Arc", "Part 1"] },
-        newName: "Chapter 1",
+        name: "Chapter 1",
       };
       await expect(
-        port.commitWriterLocation("manuscript://Act 1", "manuscript://Renamed", {
+        moveTo(port, "manuscript://Act 1", "manuscript://Renamed", {
           expected: { kind: "folder", nodeId: folderId },
           operationId: crypto.randomUUID(),
         }),
@@ -865,7 +859,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             path: "Untitled 1",
             sourceWorkId: workId,
             expected: { kind: "file", nodeId: DOCUMENT_ID },
-            newName: "Chapter 1",
+            name: "Chapter 1",
             destinationScheme: "manuscript",
             destinationFolderPath: "New Arc/Part 1",
             destinationParent: {
@@ -1302,7 +1296,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const cast = await write("user://cast");
       await db.insert(schema.documentLinks).values([row(holder, cast), row(otherHolder, cast)]);
       await expect(
-        port.commitWriterLocation("user://cast", "kb://cast", {
+        moveTo(port, "user://cast", "kb://cast", {
           expected: await entryAt(port, "user://cast"),
         }),
       ).resolves.toMatchObject({
@@ -1334,12 +1328,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .orderBy(schema.documentLinks.linkKey);
       const linksBefore = await holderLinks();
       await expect(
-        port.commitWriterLocation("manuscript://Chapter 2", "manuscript://Chapter 3", {
+        moveTo(port, "manuscript://Chapter 2", "manuscript://Chapter 3", {
           expected: await entryAt(port, "manuscript://Chapter 2"),
         }),
       ).resolves.toMatchObject({ ok: true, value: { linkUpdate: { links: 2, documents: 1 } } });
       await expect(
-        port.commitWriterLocation("manuscript://Chapter 1", "manuscript://Chapter 2", {
+        moveTo(port, "manuscript://Chapter 1", "manuscript://Chapter 2", {
           expected: await entryAt(port, "manuscript://Chapter 1"),
         }),
       ).resolves.toMatchObject({ ok: true, value: { linkUpdate: { links: 1, documents: 1 } } });
