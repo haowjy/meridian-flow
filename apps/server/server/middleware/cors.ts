@@ -16,6 +16,6 @@ export default defineEventHandler((event) => {
 });
 
 function isAllowedAppOrigin(origin: string): boolean {
-  const hostname = new URL(origin).hostname;
+  const hostname = URL.canParse(origin) ? new URL(origin).hostname : "";
   return hostname === "app.meridian.localhost" || hostname.endsWith(".app.meridian.localhost");
 }

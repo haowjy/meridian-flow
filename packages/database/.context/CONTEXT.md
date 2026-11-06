@@ -204,8 +204,8 @@ semantics; raw SELECT order is never a lifecycle contract.
 
 DB tests seed `public.users` only through the shared fixture helper
 (`src/__test-support__/db-fixtures.ts`), which gives each suite its own
-`fixture+<suite>@test.invalid` email. A test that seeded the dev-login email
-would overwrite the real WorkOS user and break dev login.
+`fixture+<suite>@test.invalid` email. A test that seeded the dev auth
+bypass email (`<DEV_AUTH_USER_ID>@example.com`) would overwrite the dev user's row.
 
 Prompt bakes are insert-only and their pointers are write-once; a rebake inserts
 a new row (only the runtime's `beginPromptEpoch` does, for compaction), and a

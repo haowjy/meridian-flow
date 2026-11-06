@@ -5,7 +5,7 @@ folder chip opens the drill-in menu inside its folder, wherever the folder now
 lives.
 
 Use this checkout's `pnpm dev` stack and the URLs from `pnpm portless:list`.
-Sign in with dev-login. Seed a chat with `./mf seed tools/mf/fixtures/basic.json`,
+The stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in. Seed a chat with `./mf seed tools/mf/fixtures/basic.json`,
 then a folder with one document and an empty subfolder:
 
 ```bash
