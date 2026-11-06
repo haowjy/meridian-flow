@@ -44,7 +44,7 @@ import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
-import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
+import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { claimEditorFocus, focusIsFree } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
@@ -520,9 +520,7 @@ function TrackedEditorCanvas({
       scrollClassName="meridian-editor main-pane"
       onScroll={onScroll}
     >
-      <div className={cn(editorColumnCanvas, editorColumnFill)}>
-        <EditorContent editor={editor} className={editorColumnFill} />
-      </div>
+      <EditorContent editor={editor} className={editorColumnFill} />
     </EditorSurfaceFrame>
   );
 }
