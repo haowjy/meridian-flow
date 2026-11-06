@@ -169,8 +169,8 @@ folder and document under it, so a pending child's create stops with the parent:
 
 - Hold a folder's create, create a child folder inside it, then delete the child: no POST
   for the child, and the delete settles locally.
-- The replica keeps these deletions for ten minutes (`localDeletion.notBefore`,
-  `LOCAL_DELETION_UNDO_MS`) and can undo them, but no screen offers that now.
+- The replica clears these deletions after ten minutes (`localDeletion.notBefore`,
+  `LOCAL_DELETION_UNDO_MS`).
 
 ## A folder create carries position
 

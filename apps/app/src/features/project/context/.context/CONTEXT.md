@@ -92,15 +92,17 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
                      │
           validateContextEntryName (pure)
 
-A move, copy or delete that works shows only its result in the tree. One that fails
-toasts (`notifyFailure`, `components/app/failure-toast.tsx`), and the toast stays until it
-is dismissed or the next failure replaces it. Failures the replica refuses at once come
-from their callers (`use-entry-list.tsx`, `use-delete-context-entry.ts`). Failures the
-server refuses later come from `RefusalToasts`, mounted once per project in `ProjectView`:
-it watches the replica for rows that need repair and for refused Copies, names what failed,
-offers Retry and resolves a refused Copy in the journal. A refused move or delete also
-keeps its mark on the row; a row refused before this tab opened shows only that mark. These
-toasts share one key, so a new one replaces the last rather than stacking.
+A move, copy or delete that works shows only its result in the tree. One that fails toasts
+(`notifyFailure`, `components/app/failure-toast.tsx`) until the writer closes the toast, what it
+reports stops being refused, or the writer leaves the project. `entry-drag/entry-failure.ts` is
+the one path: `runMove`, `runCopy` and `runDelete` do the work and own the failure toast and its
+Retry, and a Retry re-reads the replica, so a row the writer changed since is left alone.
+`RefusalToasts`, mounted once per project in `ProjectView`, watches the replica for what the
+server refused later. A refused Move or delete keeps its mark on the row, so rows refused together
+share one toast under one key and a newer failure replaces it; a row refused before this project
+opened shows only the mark. A refused Copy has no row left, so each has its own toast and stays in
+the journal until the toast is closed or Retry lands: it survives a reload, and closing it in one
+tab closes it in the others.
 
 ContextPaneController
        ├─ route ↔ server-tab reconciliation

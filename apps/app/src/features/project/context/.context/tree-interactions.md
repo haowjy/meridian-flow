@@ -112,9 +112,8 @@ proves document removal.
 
 Writer deletion has no confirmation step and no Undo: the row leaves the tree, and the document
 waits in Trash. Delete progress is derived from the namespace journal. A document the server never
-accepted has no Trash entry; its deletion settles on this device. The replica still holds that
-deletion for ten minutes (`LOCAL_DELETION_UNDO_MS`, `cleanup.notBefore`) and keeps
-`undoLocalDeletion`, which no screen calls today.
+accepted has no Trash entry; its deletion settles on this device. Its content is cleaned up after ten
+minutes (`LOCAL_DELETION_UNDO_MS`, `cleanup.notBefore`), and nothing brings it back.
 
 ## Downlinks
 
@@ -276,9 +275,9 @@ hint ("chapter-1 will be renamed chapter-1 (2)", or "3 items will be renamed").
 Letting go accepts it; Escape or another target declines it. A drop moves every carried row through
 `moveRows` (`entry-drag/execute-move.ts`), reselects them and reveals the destination (the target's
 own `reveal`, the same one the spring calls). The tree is the whole report of a move that works.
-A row the replica won't admit toasts "Couldn't move chapter-3 to Act 2." with Retry for the rows
-it refused. A row the server refuses later goes back with its failure mark and `RefusalToasts`
-shows the same toast (see `CONTEXT.md`).
+A row the replica won't admit toasts "Couldn't move chapter-3 to Act 2." ("Couldn't move 3 items
+to Act 2." for several) with Retry for the rows it refused. A row the server refuses later goes
+back with its failure mark and `RefusalToasts` shows the same toast (see `CONTEXT.md`).
 
 Move… and Copy to… report the same way, whether or not a list is mounted. A desktop list
 selects the moved row; the phone browser needs no selection or drop scope. Move… does not reveal a
@@ -399,8 +398,8 @@ waits for them, and the replica resends for up to two minutes before refusing.
 
 The copy's rows show at once, before the server answers. A refused Copy
 removes its rows, and `RefusalToasts` shows "Couldn't copy chapter-3 to Vault. A source or the
-destination is no longer there." with Retry when the destination still resolves, then resolves
-the refusal in the journal (`copy-refusal.ts`).
+destination is no longer there.", with Retry while every source and the destination still resolve.
+The journal keeps the refusal until that toast closes or Retry lands (`copy-refusal.ts`).
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the

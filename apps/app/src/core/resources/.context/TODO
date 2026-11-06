@@ -7,7 +7,7 @@ Admission reads only in-flight intents (`readPlacementAdmissionView`, the
 still load every intent a handle ever stored:
 
 - The reactive account projection and `commitPlan` read full per-handle
-  journals. Receipts, Undo and identity checks read settled intents there
+  journals. Receipts and identity checks read settled intents there
   (`intents[0].projectId`, a settled create, `settledAt`). Move those readers to
   on-demand journal reads, then trim the projection to unresolved intents.
 - Folder records load whole for parent resolution because their intents are

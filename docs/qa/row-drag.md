@@ -156,12 +156,14 @@ One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
 2. The same from the row's `…` menu, Move…. Retry with no rewrite: the row moves,
    the mark and the toast go.
 3. Multi-row drag with only the first request rewritten: the other row lands and
-   the refused row stays at its source with the mark.
+   the refused row stays at its source with the mark. With every request rewritten
+   the toast reads "Couldn't move 3 items to <folder>." and Retry moves all three.
 4. Refused delete: the row comes back with "Couldn't delete this document.
    Try again." (folder: "Couldn't delete this folder. Try again.") and the toast
    "Couldn't delete <name>." with Retry. Exactly one POST; no resend. Retry deletes it.
 5. A second refusal replaces the first toast rather than stacking; the first row
-   keeps its mark.
+   keeps its mark. Refuse a move, rename the row, and the toast closes. Refuse a move,
+   press Retry after renaming from another client: nothing happens to the row.
 6. Control: an un-rewritten move and delete succeed with no toast and no mark.
 7. Hover or focus the mark: `title` and `aria-label` are the mark copy above.
    No console errors beyond the expected 400s.

@@ -24,9 +24,7 @@ import {
   planCopy,
   planFolderCreate,
   planFolderDeletion,
-  planFolderLocalDeletionUndo,
   planFolderLocation,
-  planLocalDeletionUndo,
   planResourceDeletion,
   planResourceLocation,
   publishResourceTerminal,
@@ -1088,78 +1086,6 @@ export class AccountResourceReplica {
     );
     this.reconciler.schedule(key);
     return admitted === "committed" && planned ? { operationId } : {};
-  }
-
-  /**
-   * Undo of a local deletion while its window is open: a document comes back with its text, a
-   * folder with the children the same operation took down. False once the window has closed or
-   * when no such deletion is held. Document content stays under the lock cleanup holds while it
-   * clears it, so Undo never revives a document whose text was just cleared.
-   */
-  async restoreLocalDeletion(projectId: string, operationId: string): Promise<boolean> {
-    this.requireOpen();
-    const projection = await this.metadata.readProjection(projectId);
-    let restored = false;
-    for (const folder of projection.folders) {
-      if (
-        !folder.intents.some(
-          (intent) => intent.operationId === operationId && intent.desired.kind === "delete",
-        )
-      )
-        continue;
-      if (await this.restoreFolderLocalDeletion(folder.folderId, operationId)) restored = true;
-    }
-    for (const record of projection.records) {
-      if (
-        !record.intents.some(
-          (intent) => intent.operationId === operationId && intent.desired.kind === "delete",
-        )
-      )
-        continue;
-      const key = { handle: record.resource.handle };
-      const restoredRecord = await this.withResourceLock(key, async () => {
-        let restored = false;
-        await this.commitPlan(key, (current) => {
-          const write = planLocalDeletionUndo(current, {
-            operationId,
-            createIntentId: crypto.randomUUID(),
-            now: Date.now(),
-          });
-          restored = write !== null;
-          return write;
-        });
-        return restored;
-      });
-      if (restoredRecord) {
-        this.reconciler.schedule(key);
-        restored = true;
-      }
-    }
-    return restored;
-  }
-
-  private async restoreFolderLocalDeletion(
-    folderId: string,
-    operationId: string,
-  ): Promise<boolean> {
-    const folder = await this.metadata.readFolderById(folderId);
-    if (!folder) return false;
-    const key: ResourceKey = { handle: folder.handle };
-    const restored = await this.withResourceLock(key, async () => {
-      for (;;) {
-        const current = await this.metadata.readFolder(key);
-        if (!current) return false;
-        const write = planFolderLocalDeletionUndo(current, {
-          operationId,
-          createIntentId: crypto.randomUUID(),
-          now: Date.now(),
-        });
-        if (!write) return false;
-        if ((await this.metadata.commitFolder(write)) === "committed") return true;
-      }
-    });
-    if (restored) this.reconciler.scheduleFolder(key);
-    return restored;
   }
 
   private async commitPlan(

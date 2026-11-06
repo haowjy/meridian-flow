@@ -4,11 +4,7 @@
  * - One-shot exact-content reservation lifecycle
  */
 import { expect, it } from "vitest";
-import {
-  LOCAL_DELETION_UNDO_MS,
-  planLocalDeletionUndo,
-  planResourceDeletion,
-} from "./resource-deletion";
+import { LOCAL_DELETION_UNDO_MS, planResourceDeletion } from "./resource-deletion";
 import { prepareNamespaceAttempt } from "./resource-namespace";
 import type { ResourceRecord } from "./resource-records";
 import { untitledDestination } from "./resource-records";
@@ -196,27 +192,6 @@ it("does not let reserved content change identity or restart after acknowledgeme
     });
     expect(write.next.intents.map(({ state }) => state)).toEqual(["cancelled", "settled-locally"]);
     expect(() => validateResourceRecordUpdate(before, write.next)).not.toThrow();
-    // Undo inside the window supersedes the deletion and sends the create again; after it, nothing.
-    const undo = planLocalDeletionUndo(write.next, {
-      operationId: "operation",
-      createIntentId: "again",
-      now: 1000 + LOCAL_DELETION_UNDO_MS - 1,
-    });
-    if (!undo) throw new Error("Undo inside the window was refused");
-    expect(() => validateResourceRecordUpdate(write.next, undo.next)).not.toThrow();
-    expect(undo.next.intents.map(({ state }) => state)).toEqual([
-      "cancelled",
-      "superseded",
-      "pending",
-    ]);
-    expect(undo.next.resource.obligations.cleanup).toBeUndefined();
-    expect(
-      planLocalDeletionUndo(write.next, {
-        operationId: "operation",
-        createIntentId: "again",
-        now: 1000 + LOCAL_DELETION_UNDO_MS,
-      }),
-    ).toBeNull();
     expect(planResourceDeletion(write.next, "project", "another-delete")).toBeNull();
     const revived = structuredClone(write.next);
     revived.resource.revision++;
