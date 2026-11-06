@@ -17,7 +17,11 @@ boot-script preferences are separate from this envelope.
 `src/server/config.ts` is server-only. It parses `APP_ENV`, `LOG_LEVEL`, and the WorkOS
 redirect URI; isomorphic helpers keep guarded environment reads local instead of
 importing server config. Auth is WorkOS AuthKit: the hosted callback mints the
-sealed `wos-session` cookie and logout clears it.
+sealed `wos-session` cookie and logout clears it. Reach `/logout` with a
+full-document `<a href>`, never `<Link>`: `signOut()` redirects to api.workos.com,
+which a client-side navigation would `fetch` and fail on CORS. Logout passes
+`returnTo` = `/login` on the request origin, which must be registered in WorkOS as a
+sign-out redirect.
 
 `DEV_AUTH_BYPASS=1` skips all of that: `meridianAuthkitMiddleware` makes every
 request the dev user before it touches AuthKit or any `WORKOS_*` setting, and

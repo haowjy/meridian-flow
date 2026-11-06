@@ -1146,7 +1146,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     threadEventHub,
     threadRuntime: createThreadRuntimeService({
-      db: ports.db,
       statusReader: ports.statusReader,
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
@@ -1428,18 +1427,6 @@ export function createInMemoryAppServices(): AppServices {
       async readModelProjectionWatermark() {
         return 0n;
       },
-      async listByThread() {
-        return [];
-      },
-      async listByType() {
-        return [];
-      },
-      async listSince() {
-        return [];
-      },
-      async listByTimeRange() {
-        return [];
-      },
     },
     journalWriter: {
       async appendEvents(threadId, events) {
@@ -1470,9 +1457,6 @@ export function createInMemoryAppServices(): AppServices {
       },
       async readRunState() {
         throw new Error("in-memory thread runtime has no run state");
-      },
-      async journalEvents() {
-        return [];
       },
     },
     documentSync,

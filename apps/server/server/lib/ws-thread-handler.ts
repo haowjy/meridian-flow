@@ -14,7 +14,10 @@ import {
   runWithEventCorrelation,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
+import {
+  type SequencedEventInternal,
+  ThreadEventReplayGapError,
+} from "../domains/threads/thread-event-hub.js";
 import { parseRequestId } from "../shared/uuid.js";
 import type { AppServices } from "./app.js";
 
@@ -230,6 +233,8 @@ async function subscribeThread(
           if (lease.phase === "active") flushBuffered();
         });
       },
+      // The client reconnects from its own position and takes the replay gap path.
+      () => peer.close(1011, "frames_lost"),
     );
     if (!currentLease()) {
       unsubscribe();
@@ -259,6 +264,20 @@ async function subscribeThread(
     flushBuffered();
   } catch (error) {
     if (!currentLease()) return;
+    if (error instanceof ThreadEventReplayGapError) {
+      disposeLease(lease);
+      state.subscriptions.delete(threadId);
+      sendFrame(peer, {
+        type: "gap",
+        requestId,
+        threadId,
+        cause: "replay_limit_exceeded",
+        fromSeq: error.fromSeq.toString(),
+        toSeq: error.toSeq.toString(),
+        message: "The thread snapshot is newer than the retained stream history",
+      });
+      return;
+    }
     disposeLease(lease);
     state.subscriptions.delete(threadId);
     // A failed read is the one retryable subscribe failure: the client asks again.
