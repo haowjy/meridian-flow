@@ -15,7 +15,6 @@ import {
   allocateFilename,
   type ContextSiblingPosition,
   type Filetype,
-  type NamespaceNameClaim,
   namespaceName,
   sameNamespaceName,
 } from "@meridian/contracts/protocol";
@@ -30,7 +29,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { writeCollabMarkdownHeld } from "../../context/collab-document-sync.js";
-import { joinPath, renderFilename } from "../../context/paths.js";
+import { renderFilename } from "../../context/paths.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import {
@@ -183,64 +182,6 @@ export class LiveCreate {
           code: "conflict",
           ...(attempted.value.occupantKind ? { occupantKind: attempted.value.occupantKind } : {}),
         });
-  }
-
-  /**
-   * Allocate a free document name and seed its content as one command. Batch claims are
-   * caller reservations; live occupancy and races stay inside this operation.
-   */
-  async createAtFreeName(
-    path: string,
-    markdown: string,
-    reserved: readonly NamespaceNameClaim[],
-    options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
-    const target = resolveCreateTarget(path);
-    if (!target.ok) return target;
-    let startSuffix = 1;
-    for (;;) {
-      let found: Exclude<Discovery, { kind: "conflict" }> | null = null;
-      let checks = 0;
-      const filename = await allocateFilename(
-        { kind: "document", name: target.value.name, extension: target.value.extension },
-        async (candidate) => {
-          checks += 1;
-          if (reserved.some((claim) => sameNamespaceName(candidate, claim))) return true;
-          const candidatePath = joinPath(target.value.dir.join("/"), candidate.filename);
-          const candidateTarget = resolveCreateTarget(candidatePath);
-          if (!candidateTarget.ok) {
-            throw new Error(`Allocator produced an invalid context path: ${candidatePath}`);
-          }
-          const discovery = await this.deps.executor.exclusive(() =>
-            this.discover(candidateTarget.value),
-          );
-          if (discovery.kind === "conflict") return true;
-          found = discovery;
-          return false;
-        },
-        startSuffix,
-      );
-      const candidatePath = joinPath(target.value.dir.join("/"), filename);
-      if (!found) throw new Error(`Free-name allocation did not inspect ${candidatePath}`);
-      const binding =
-        markdown.length > 0
-          ? await this.deps.boundWrites.bind(candidatePath, null, markdown)
-          : null;
-      if (binding && !binding.ok) return binding;
-      const attempted = await this.createAttempt(
-        candidatePath,
-        binding?.value ?? null,
-        options,
-        found,
-      );
-      if (!attempted.ok) return attempted;
-      if (attempted.value.kind === "created") {
-        return Ok({ documentId: attempted.value.documentId, path: candidatePath });
-      }
-      // Only admission can invalidate the accepted candidate. Continue after it rather than
-      // replaying every occupied prefix through discovery.
-      startSuffix += checks;
-    }
   }
 
   private async createAttempt(
