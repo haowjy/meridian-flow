@@ -6,6 +6,10 @@
  *
  * A drag has one kind (an editor selection, a project-tree row, a desktop
  * file, or text from outside) and the host has at most one door for it.
+ * A text selection lifted by pressing its highlight (`selection-drag.ts`) is
+ * not a separate path: it sends this plugin the same drag events a native drag
+ * would, so the caret, the doors and the drop below serve it unchanged.
+ *
  * `landingAt` says where the pointer is, the door turns the landing into a
  * plan, and the caret, the hint by the pointer and the drop all read that
  * plan, so the caret the writer sees is where the content stands.
@@ -27,6 +31,7 @@ import { DropCaretView } from "./drop-caret";
 import type { DropDoor } from "./drop-plan";
 import { type Landing, landingAt } from "./point-landing";
 import { pressOnInertTarget } from "./press";
+import { claimRepress, installSelectionDrag } from "./selection-drag";
 import { droppedSlicePlan, sliceDoor } from "./slice-drop";
 import { viewGeometry } from "./view-geometry";
 
@@ -106,9 +111,11 @@ export const LandingExtension = Extension.create<LandingOptions>({
           const onLeave = (event: DragEvent) => leave(view, event);
           view.dom.addEventListener("dragover", onOver, true);
           view.dom.addEventListener("dragleave", onLeave);
+          const stopSelectionDrag = installSelectionDrag(view, editor);
           return {
             update: (current, previous) => caret?.update(current, previous),
             destroy() {
+              stopSelectionDrag();
               view.dom.removeEventListener("dragover", onOver, true);
               view.dom.removeEventListener("dragleave", onLeave);
               clear();
@@ -142,6 +149,12 @@ export const LandingExtension = Extension.create<LandingOptions>({
               return true;
             },
           },
+
+          // A press on the selection's highlight is the selection drag's
+          // (`selection-drag.ts`), whatever click it counts as: ProseMirror
+          // and the browser must not widen the selection to a word or paragraph.
+          handleDoubleClick: (view, _pos, event) => claimRepress(view, editor, event, false),
+          handleTripleClick: (view, _pos, event) => claimRepress(view, editor, event, true),
 
           /** A click on inert space (a margin, a gap between blocks) puts the caret where the landing says; presses on text and objects never get here. */
           handleClick: (view, _pos, event) => pressOnInertTarget(view, editor, event),
