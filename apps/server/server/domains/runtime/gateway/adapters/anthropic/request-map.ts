@@ -34,9 +34,8 @@
  *   (Anthropic's "moving breakpoint" guidance). Anthropic folds tool results into
  *   user turns, so a long assistant/tool loop still leaves the previous tail as
  *   the second-latest user message; its ~20-block lookback tolerates a steer
- *   landing beside a tool result. Marks are chosen on wire blocks because a block
- *   that cannot carry `cache_control` (thinking, empty text) would silently lose
- *   the mark and the turn would write no new prefix. Marks move as the tail
+ *   landing beside a tool result. Marks go on wire user messages, whose last block
+ *   always accepts `cache_control`. Marks move as the tail
  *   advances; providers hash content, not the marker, so that never invalidates
  *   a cached prefix. A 1h write costs 2x input tokens (5m: 1.25x) — see the
  *   registry's `cacheWriteUsdPerMillionTokens` pinned rates.
@@ -309,24 +308,15 @@ function extractSystem(messages: Message[]): string | undefined {
 
 // ── Cache marking ─────────────────────────────────────────────────
 
-/** Thinking blocks and empty text cannot carry `cache_control`. */
-function canCarryCacheControl(block: Anthropic.Messages.ContentBlockParam): boolean {
-  if (block.type === "thinking" || block.type === "redacted_thinking") return false;
-  return block.type !== "text" || block.text.length > 0;
-}
-
-/** Put `cacheControl` on the last block that can carry it; returns null if none can. */
-function markLastCarrier(
+/** Put `cacheControl` on the last block. Wire user messages are never empty and hold no thinking or empty-text block (both are dropped when mapped), so the last block can always carry it. */
+function markLastBlock(
   content: Anthropic.Messages.MessageParam["content"],
   cacheControl: CacheControl,
-): Anthropic.Messages.ContentBlockParam[] | null {
+): Anthropic.Messages.ContentBlockParam[] {
   const blocks = messageContentBlocks(content);
-  for (let index = blocks.length - 1; index >= 0; index--) {
-    if (!canCarryCacheControl(blocks[index])) continue;
-    blocks[index] = { ...blocks[index], cache_control: cacheControl } as any;
-    return blocks;
-  }
-  return null;
+  const last = blocks.length - 1;
+  blocks[last] = { ...blocks[last], cache_control: cacheControl } as any;
+  return blocks;
 }
 
 /** Mark the system prompt and the two most recent wire user messages. */
@@ -343,8 +333,10 @@ function markCachePrefix(
   for (let index = marked.length - 1; index >= 0 && remaining > 0; index--) {
     if (marked[index].role !== "user") continue;
     remaining--;
-    const content = markLastCarrier(marked[index].content, cacheControl);
-    if (content) marked[index] = { ...marked[index], content };
+    marked[index] = {
+      ...marked[index],
+      content: markLastBlock(marked[index].content, cacheControl),
+    };
   }
   return {
     system: system && [{ type: "text", text: system, cache_control: cacheControl }],
