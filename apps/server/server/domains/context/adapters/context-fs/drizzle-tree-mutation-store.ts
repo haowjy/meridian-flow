@@ -122,34 +122,27 @@ export async function inspectTreeLocation(
       ? { kind: "directory", nodeId: folderIds[0] as FolderId, sourceId, path: normalized }
       : null;
   }
-  // A document answers at its canonical name (`ch1.md` is `ch1`); a folder at its literal one.
+  // A document answers at the name it is stored under, which is how a file kept as `binary.md`
+  // is found, then at its canonical one (`ch1.md` is `ch1`); a folder only at its literal name.
+  const resolve = (at: string) =>
+    tree.resolveAddress(view, { contextSourceId: sourceId as ContextSourceId, path: at });
+  const literal = await resolve(normalized);
   const documentPath = canonicalDocumentPath(normalized);
-  const asDocument =
-    documentPath === null
-      ? null
-      : await tree.resolvePath(view, {
-          contextSourceId: sourceId as ContextSourceId,
-          path: documentPath,
-        });
-  if (asDocument?.kind === "found" && asDocument.node.kind === "document") {
-    const document = asDocument.node.document;
+  const canonical =
+    documentPath === null || documentPath === normalized ? null : await resolve(documentPath);
+  for (const found of [literal, canonical]) {
+    if (found?.kind !== "found" || found.node.kind !== "document") continue;
+    const document = found.node.document;
     return {
       kind: "file",
       nodeId: document.id,
       sourceId,
-      path: documentPath as string,
+      path: document.path,
       filetype: isStorageBackedDocument(document) ? null : document.fileType,
     };
   }
-  const found =
-    documentPath === normalized && asDocument
-      ? asDocument
-      : await tree.resolvePath(view, {
-          contextSourceId: sourceId as ContextSourceId,
-          path: normalized,
-        });
-  if (found.kind !== "found" || found.node.kind !== "folder") return null;
-  return { kind: "directory", nodeId: found.node.folder.id, sourceId, path: normalized };
+  if (literal.kind !== "found" || literal.node.kind !== "folder") return null;
+  return { kind: "directory", nodeId: literal.node.folder.id, sourceId, path: normalized };
 }
 
 /** Drizzle implementation of the backing-scoped atomic ContextFS tree mutator. */
