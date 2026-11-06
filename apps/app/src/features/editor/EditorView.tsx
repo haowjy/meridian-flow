@@ -18,6 +18,7 @@ import { useInlineReviewSync } from "./useInlineReviewSync";
 
 export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   documentId: string;
+  reviewReadOnly?: boolean;
   draftOnly?: boolean;
   onCloseDraftOnly?: () => void;
   /** Exact host-owned live/local session; absent for a draft-only destination. */
@@ -207,7 +208,11 @@ export function EditorView(props: EditorViewProps) {
               holderUri={reviewHolderUri}
               surfaceOptions={{
                 ...surfaceOptions,
-                editable: roomOwner.inputEligible && reviewPainted ? props.editable : false,
+                editable:
+                  !props.reviewReadOnly && roomOwner.inputEligible && reviewPainted
+                    ? props.editable
+                    : false,
+                showToolbar: !props.reviewReadOnly && surfaceOptions.showToolbar,
               }}
               onConstructed={(editor) => {
                 if (!editor) {
