@@ -1,47 +1,20 @@
 # @meridian/agent-edit
 
-Reusable Yjs editing core for model-facing document `read` and `write`,
-response-scoped commit buffering, write handles, and forward inverses. Reads
-and writes are separate entry points; every write command changes a document.
+Reusable Yjs editing core for the model's document `read` and `write`,
+reply-scoped save buffering, write handles and forward inverses. Hosts supply
+the journal, coordinator, lifecycle, link and model ports; this package owns no
+Postgres, routes, auth or Project/Work concepts.
 
-## Mental model
+- Hold no document, cache or LRU between calls. Every call reads the room fresh
+  through `DocumentCoordinator.readRoom`, and a reply's accepted mutations live
+  in the `ReplyMutations` the host's reply owns.
+- Every write lands through `ResponseCommitter` and `prepareSave`. Durability
+  comes from the host's commit, never from what reached a room: a live room hears
+  of a save only after it.
+- Reporting is best-effort and never changes what a save keeps.
+- Attribution comes from the host per interaction, never from session-lifetime
+  snapshots.
+- `./diff` and `./yjs-mutation` load in the browser and import no host code;
+  `./yjs-mutation` imports only Yjs, not the package barrel or the undo engine.
 
-Agent-edit holds no document between calls. Every model call reads the room
-fresh through `DocumentCoordinator.readRoom` (a disposable copy of what the
-host holds, plus the edit scope's kept staged writes) and renders from it. A
-write plans on the model's view (the frontier its request showed, plus the
-reply's own updates), echoes on the room copy, and stages its captured update
-for the reply's save, or saves it at once when it belongs to no reply. The host supplies durable journal, coordinator, lifecycle,
-link, and model ports; this package owns no Postgres, routes, auth, or
-Meridian Project/Work concepts.
-
-`ResponseCommitter` is the explicit response durability lifecycle: it stages
-writes and accepts or rolls them back according to host settlement. Every write
-lands through one save per document (`tool/document-save.ts` over
-`DocumentCoordinator.prepareSave`), a reply's and an immediate save's
-(`saveNow`, a write outside a reply) alike, on either host; detection, receipts
-and the recorded frontier read the one cut that save's `persist` returns. The reply's
-own accepted mutations live in `ReplyMutations`, which the host's reply owns and
-passes in `WriteContext.frontiers.reply`: the committer appends a save's entries
-there at its root commit, an inverse and an immediate write append their bytes,
-and the reply clears it at its terminal boundary. No core, cache cap or LRU
-holds them. Reporting is best-effort and never changes what the save keeps.
-
-## Rules
-
-- Public reads use `read()` and mutations use `write()` or response lifecycle
-  APIs. The browser-safe `./diff` subpath owns pure text review, Apply composition,
-  Discard and rebase, not host persistence. The browser-safe `./yjs-mutation` subpath is only the host's pinned
-  reconstruction adapter; it does not own persistence, attribution, or undo.
-- Never bypass `ResponseCommitter` or infer durability from what reached a room.
-  The host's commit decides; a live room hears of a save only after it.
-- Yjs merge is trusted. Concurrent attribution is report-only and never blocks an
-  otherwise valid agent write or supplies apply authority.
-- Attribution is host-provided per interaction and must not depend on
-  session-lifetime snapshots.
-- Keep the kernel CRDT-neutral while treating v1 content as ProseMirror via
-  `@meridian/markup`.
-
-See [contracts and architecture](.context/CONTEXT.md), which links the port,
-write, invariant, link, and tool-surface references. Deferred work and rejected
-alternatives are [TODO/FUTURE](.context/TODO.md) and [ALTERNATIVES](.context/ALTERNATIVES.md).
+Contracts and architecture: [.context/CONTEXT.md](.context/CONTEXT.md).
