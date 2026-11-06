@@ -23,3 +23,6 @@
   block handle.
 - **A highlighted row of cells drags only one word.** The browser drags the word under its own selection, not the cells' text, so the row can't move or copy as one.
 - **ArrowDown stops at a closing diagram.** A caret can't go down past a document's last rendered diagram; a click below it opens a new line instead.
+- **Press handling has no single owner.** One listener per feature (ProseMirror, the selection drag, cell interiors, object physics, links, inline review, peer markers, the chrome kernel, the block gesture's body door), and registration order decides which wins. Drops solved the same shape with one plugin and doors. Copy that the next time two press handlers conflict.
+- **The Yjs undo patch is temporary.** `patches/yjs@13.6.31.patch` carries yjs/yjs#836. Remove it when that lands. yjs/yjs#810 stays out: a native-shape move can undo one step too far, restoring valid text.
+- **Stray list blanks.** Dropping a list at the start of a list item can leave an empty line, and undoing then redoing a multi-line move can leave a sliver selection at the old seam.
