@@ -110,8 +110,8 @@ request is long and the two lifetimes differ; when a provider omits the cache-wr
 split by lifetime, the adapters attribute all writes to the lifetime the request asked for.
 `validateModelRegistry` (adapter-neutral) rejects a long lifetime shorter than the short
 one, one null with the other set, and two lifetimes with a `cacheWriteUsdPerMillionTokens`
-but no `cacheWriteLongUsdPerMillionTokens`. At gateway creation the OpenAI adapter requires
-30m/12h whenever the lifetimes differ, and the Anthropic adapter 5m/1h for explicit models.
+but no `cacheWriteLongUsdPerMillionTokens`. Each adapter keeps one table of the lifetimes its wire can express, used for both the creation-time check and the request mapping: the OpenAI adapter accepts
+30m and 12h (sending `prompt_cache_options` for 12h, whichever of the two lifetimes the request resolves to) and the Anthropic adapter 5m/1h for explicit models.
 Only `explicit` offerings get `cache_control` on the wire. The Anthropic adapter marks
 the last system block and the last block of the two most recent wire `user` messages (tool
 results are user turns there), walking back past a block that cannot carry the mark

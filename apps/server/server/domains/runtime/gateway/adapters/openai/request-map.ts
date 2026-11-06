@@ -39,21 +39,18 @@ import { safeToolOutput } from "../../helpers/serialize.js";
 const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
 const TWELVE_HOURS_MS = 12 * 60 * 60 * 1_000;
 
-/** `prompt_cache_options.ttl` for a lifetime: "12h" is the only longer option; the 30m default is sent as no parameter. */
-function openaiCacheTtlWire(ttlMs: number | null): "12h" | undefined {
-  return ttlMs === TWELVE_HOURS_MS ? "12h" : undefined;
-}
+/** The `prompt_cache_options.ttl` each supported lifetime is sent as; the 30m default is sent as no parameter. */
+const TTL_WIRE = new Map<number, "12h" | undefined>([
+  [THIRTY_MINUTES_MS, undefined],
+  [TWELVE_HOURS_MS, "12h"],
+]);
 
-/** Reject, at construction, a model whose long cache lifetime this API cannot be sent. */
+/** Reject, at gateway creation, a model whose cache lifetimes this API cannot be sent. A null lifetime (unknown) sends nothing. */
 export function assertCacheTtlsOnWire(model: Pick<ModelInfo, "id" | "promptCache">): void {
-  const { shortTtlMs, longTtlMs } = model.promptCache;
-  if (
-    longTtlMs !== shortTtlMs &&
-    (shortTtlMs !== THIRTY_MINUTES_MS || openaiCacheTtlWire(longTtlMs) !== "12h")
-  ) {
-    throw new Error(
-      `OpenAI prompt cache TTLs for ${model.id} must be 30m, with 12h as the long one`,
-    );
+  for (const ttl of [model.promptCache.shortTtlMs, model.promptCache.longTtlMs]) {
+    if (ttl !== null && !TTL_WIRE.has(ttl)) {
+      throw new Error(`OpenAI prompt cache TTLs for ${model.id} must be 30m or 12h`);
+    }
   }
 }
 
@@ -353,6 +350,7 @@ export function toOpenAIResponsesParams(
   const { id: modelId, provider: providerId } = model;
   const instructions = extractInstructions(request.messages);
   const input = flattenAssistantToolCalls(request.messages, providerId, modelId);
+  const cacheTtl = call.cacheTtlMs === null ? undefined : TTL_WIRE.get(call.cacheTtlMs);
 
   return {
     model: modelId,
@@ -373,8 +371,6 @@ export function toOpenAIResponsesParams(
       : {}),
     ...(request.promptCacheKey ? { prompt_cache_key: request.promptCacheKey } : {}),
     // The 30m default needs no parameter. The SDK (6.45.0) predates `prompt_cache_options`.
-    ...(call.longCacheWrites
-      ? { prompt_cache_options: { ttl: openaiCacheTtlWire(call.cacheTtlMs) } }
-      : {}),
+    ...(cacheTtl ? { prompt_cache_options: { ttl: cacheTtl } } : {}),
   } as OpenAI.Responses.ResponseCreateParamsStreaming;
 }
