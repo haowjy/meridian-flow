@@ -29,7 +29,7 @@ stack.
 - [Document removal records](document-removal-records.md): populated upgrade, actor readback, Trash list/read/restore, pending-Work retention, permanent purge, closure/admission races, storage release and after-commit room retirement.
 - [Document existence admission](../../apps/server/server/domains/collab/.context/qa/document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
 - [Runtime protocols](../../apps/server/server/domains/runtime/.context/qa/runtime-probes.md): RP-1 through RP-21, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
-- [Project chrome and shell](../../apps/app/src/features/project/.context/qa/project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`. Their durable halves are RP-13 and RP-14.
+- [Project chrome and shell](../../apps/app/src/features/project/.context/qa/project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`.
 - [Stop and hand-back](../../apps/server/server/domains/runtime/.context/qa/stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
 - [Failure cards](../../apps/app/src/features/chat/.context/qa/failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
 - [Queue controls](../../apps/app/src/features/chat/.context/qa/queue-controls.md): QC-01 to QC-08, the queued look, the x, Cancel queue, Send now and every failure card, driven in the browser with injected faults.
