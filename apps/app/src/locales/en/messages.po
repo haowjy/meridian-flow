@@ -150,8 +150,8 @@ msgstr "{0, plural, one {Continues in # min} other {Continues in # min}}"
 #. placeholder {1}: copy.destinationName
 #. placeholder {2}: copy.destinationName
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "{0, plural, one {Couldn't copy # item to {1}.} other {Couldn't copy # items to {2}.}}"
-msgstr "{0, plural, one {Couldn't copy # item to {1}.} other {Couldn't copy # items to {2}.}}"
+#~ msgid "{0, plural, one {Couldn't copy # item to {1}.} other {Couldn't copy # items to {2}.}}"
+#~ msgstr "{0, plural, one {Couldn't copy # item to {1}.} other {Couldn't copy # items to {2}.}}"
 
 #. placeholder {0}: sources.length
 #: src/features/project/context/entry-drag/copy-refusal.ts
@@ -165,8 +165,8 @@ msgstr "{0, plural, one {Couldn't copy # item.} other {Couldn't copy # items.}}"
 
 #. placeholder {0}: rows.length
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "{0, plural, one {Couldn't delete # item.} other {Couldn't delete # items.}}"
-msgstr "{0, plural, one {Couldn't delete # item.} other {Couldn't delete # items.}}"
+#~ msgid "{0, plural, one {Couldn't delete # item.} other {Couldn't delete # items.}}"
+#~ msgstr "{0, plural, one {Couldn't delete # item.} other {Couldn't delete # items.}}"
 
 #. placeholder {0}: failed.length
 #: src/features/project/context/entry-drag/move-operation.ts
@@ -786,6 +786,7 @@ msgid "A source is no longer there."
 msgstr "A source is no longer there."
 
 #: src/features/project/context/entry-drag/copy-refusal.ts
+#: src/features/project/context/entry-drag/entry-failure.ts
 msgid "A source or the destination is no longer there."
 msgstr "A source or the destination is no longer there."
 
@@ -1939,8 +1940,8 @@ msgstr "Couldn't copy"
 #. placeholder {0}: only.name
 #. placeholder {1}: copy.destinationName
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "Couldn't copy {0} to {1}."
-msgstr "Couldn't copy {0} to {1}."
+#~ msgid "Couldn't copy {0} to {1}."
+#~ msgstr "Couldn't copy {0} to {1}."
 
 #. placeholder {0}: only.name
 #: src/features/project/context/entry-drag/copy-refusal.ts
@@ -2014,7 +2015,7 @@ msgstr "Couldn’t create this Work."
 msgid "Couldn't delete"
 msgstr "Couldn't delete"
 
-#. placeholder {0}: only.name
+#. placeholder {0}: failure.name
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "Couldn't delete {0}."
 msgstr "Couldn't delete {0}."
@@ -3224,6 +3225,10 @@ msgid "Images need a project before they can be uploaded."
 msgstr "Images need a project before they can be uploaded."
 
 #: src/features/import/ImportPanel.tsx
+msgid "Import"
+msgstr "Import"
+
+#: src/features/import/ImportPanel.tsx
 msgid "Import another"
 msgstr "Import another"
 
@@ -3232,8 +3237,12 @@ msgid "Import didn't finish"
 msgstr "Import didn't finish"
 
 #: src/features/import/import-presentation.ts
-msgid "Import didn't start"
-msgstr "Import didn't start"
+#~ msgid "Import didn't start"
+#~ msgstr "Import didn't start"
+
+#: src/features/import/ImportsProvider.tsx
+msgid "Import didn't start. {sentence}"
+msgstr "Import didn't start. {sentence}"
 
 #: src/features/import/import-presentation.ts
 msgid "Import discarded"

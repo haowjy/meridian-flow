@@ -1,26 +1,19 @@
 /**
- * A refused Copy, derived from the operations journal: what to say about it. The journal keeps a
- * refused Copy until the writer closes its toast or Retry lands, so a refusal that arrived while
- * this tab was closed still reads here.
+ * A refused Copy, derived from the operations journal, as an `EntryFailure`. The journal keeps it
+ * until the writer closes its toast or Retry lands, so a refusal that arrived while this tab was
+ * closed still reads here.
  */
 import { plural, t } from "@lingui/core/macro";
 import type { ContextError } from "@meridian/contracts/protocol";
-import type { CopyDesired, NamespaceIntent, OperationRecord } from "@meridian/resource-replica";
-import { schemeLabel } from "../context-schemes";
-import { entryNameNow, type PlacementView, type ReadyCopy } from "./move-plan";
-
-export type CopyRefusal = {
-  operationId: string;
-  message: string;
-  /** The same Copy again; absent once a source or the destination is gone. */
-  copy?: ReadyCopy;
-};
+import type { NamespaceIntent, OperationRecord } from "@meridian/resource-replica";
+import { entryToast, type RefusedFailure } from "./entry-failure";
+import { entryNameNow, type PlacementView, parentName } from "./move-plan";
 
 /** The refused Copies of a project, oldest first. */
-export function copyRefusals(
+export function copyFailures(
   view: PlacementView & { operations: readonly OperationRecord[] },
   projectId: string,
-): CopyRefusal[] {
+): RefusedFailure[] {
   return view.operations.flatMap((operation) => {
     if (operation.projectId !== projectId) return [];
     const intent = operation.intents.find((candidate) => candidate.state === "needs-repair");
@@ -30,46 +23,42 @@ export function copyRefusals(
       entryNameNow(view, { kind: root.kind, id: root.sourceId }),
     );
     const sources = names.map((name, index) => name ?? copy.roots[index]?.predictedName ?? "");
-    const destination = destinationName(view, copy);
-    const scheme = destinationScheme(view, copy);
+    const { parent } = copy.destination;
+    const destination = parentName(view, parent);
+    const scheme =
+      parent.kind === "root"
+        ? parent.scheme
+        : view.placement.folderLocation(parent.folderId)?.scheme;
     return [
       {
-        operationId: operation.operationId,
-        message: describeRefusal(sources, destination, reasonOf(intent)),
-        ...(destination && scheme && names.every(Boolean)
-          ? {
-              copy: {
-                kind: "ready" as const,
-                destinationName: destination,
-                scheme,
-                into: copy.destination.parent,
-                ...(copy.destination.position ? { position: copy.destination.position } : {}),
-                copies: copy.roots.map((root, index) => ({
-                  entry: { kind: root.kind, id: root.sourceId },
-                  name: sources[index] ?? root.predictedName,
-                  view: root.view,
-                })),
-              },
-            }
-          : {}),
+        intents: [operation.operationId],
+        failure: {
+          key: entryToast(projectId, `copy:${operation.operationId}`),
+          kind: "copy" as const,
+          operationId: operation.operationId,
+          sources,
+          destination,
+          reason: reasonOf(intent),
+          ...(destination && scheme && names.every(Boolean)
+            ? {
+                copy: {
+                  kind: "ready" as const,
+                  destinationName: destination,
+                  scheme,
+                  into: parent,
+                  ...(copy.destination.position ? { position: copy.destination.position } : {}),
+                  copies: copy.roots.map((root, index) => ({
+                    entry: { kind: root.kind, id: root.sourceId },
+                    name: sources[index] ?? root.predictedName,
+                    view: root.view,
+                  })),
+                },
+              }
+            : {}),
+        },
       },
     ];
   });
-}
-
-/** The destination's name, or null once the destination is gone. */
-function destinationName(view: PlacementView, copy: CopyDesired): string | null {
-  const { parent } = copy.destination;
-  return parent.kind === "root"
-    ? schemeLabel(parent.scheme)
-    : (view.placement.folderLocation(parent.folderId)?.name ?? null);
-}
-
-function destinationScheme(view: PlacementView, copy: CopyDesired) {
-  const { parent } = copy.destination;
-  return parent.kind === "root"
-    ? parent.scheme
-    : view.placement.folderLocation(parent.folderId)?.scheme;
 }
 
 /** What the server (or the replica, before sending) said was wrong, when it said. */
@@ -105,7 +94,7 @@ function describeContextError(error: ContextError): string | null {
   }
 }
 
-function describeRefusal(
+export function copyFailureTitle(
   sources: readonly string[],
   destination: string | null,
   reason: string | null,

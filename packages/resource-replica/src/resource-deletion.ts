@@ -11,9 +11,9 @@ import type {
 import { deleteNeedsServer } from "./server-hold";
 
 /**
- * How long a deleted document that exists only on this device can be brought back. The server
- * keeps its own deletions in Trash; this device has no Trash, so the exact content waits out the
- * window and is then cleaned up.
+ * How long a deleted document that exists only on this device keeps its content before cleanup.
+ * The server keeps its own deletions in Trash; this device has none, and nothing brings the
+ * document back during this window. Kept for #1219, which decides what recovers it.
  */
 export const LOCAL_DELETION_UNDO_MS = 10 * 60_000;
 

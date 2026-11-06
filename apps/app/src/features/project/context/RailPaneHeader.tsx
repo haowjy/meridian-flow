@@ -95,7 +95,7 @@ export function PaneHeaderActionButton({
   icon: LucideIcon;
   iconClassName?: string;
   label: string;
-} & React.ComponentProps<"button">) {
+} & React.ComponentPropsWithoutRef<"button">) {
   return (
     <IconButton
       size="xs"

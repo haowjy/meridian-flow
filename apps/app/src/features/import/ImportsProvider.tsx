@@ -1,4 +1,5 @@
 /** One import owner for the authenticated account, independent of the current project. */
+import { t } from "@lingui/core/macro";
 import {
   createContext,
   type ReactNode,
@@ -15,7 +16,15 @@ import { useImportMilestone } from "./milestones";
 
 const Context = createContext<ImportCoordinator | null>(null);
 export function ImportsProvider({ children }: { children: ReactNode }) {
-  const [coordinator] = useState(() => new ImportCoordinator(importApi));
+  const [coordinator] = useState(
+    () =>
+      new ImportCoordinator(importApi, (sentence) =>
+        notifyFailure({
+          key: `import-refused:${crypto.randomUUID()}`,
+          title: t`Import didn't start. ${sentence}`,
+        }),
+      ),
+  );
   useEffect(() => coordinator.start(), [coordinator]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -50,12 +59,6 @@ function ImportWatch({
 }) {
   const { state, title } = importPresentation(summary, local);
   useImportMilestone(state, title);
-  // Refused before it started: nothing exists to come back to, so it closes here.
-  useEffect(() => {
-    if (state !== "refused") return;
-    notifyFailure({ key: "import-refused", title: `${title}. ${local.error ?? ""}`.trim() });
-    void coordinator.acknowledge(importId);
-  }, [state, title, local.error, coordinator, importId]);
   useEffect(() => {
     if (summary.state === "finished" && detail?.state !== "finished" && !local.error && !local.busy)
       void coordinator.loadDetail(importId);
