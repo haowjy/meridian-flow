@@ -21,9 +21,11 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
 
 1. **Letters and gaps.** Sweep a range across two lines. Press on its letters, then on the space
    between its lines, and move 10px: both lift (the highlight stays, a caret follows the pointer,
-   no drag image). A press right of the last highlighted word on a partly selected line of a single
-   block, or on unselected text, does not (in a multi-block range it does: step 18). (A block the range covers whole may lift from its margin; a press
-   there that doesn't travel still places a caret.)
+   no drag image). The test is ProseMirror's own: the position under the pointer lies in the range.
+   So a press on unselected text does not lift, wherever it is: after the range's last character
+   on its last line, in a neighbouring cell, or on a new sweep begun beside the highlight (it starts
+   a new selection). A block the range covers whole may lift from its margin; a press there that
+   doesn't travel still places a caret.
 2. **Move.** Release in another paragraph: the text moved and is still selected. Ctrl+Z puts it
    back in one step.
 3. **No pause.** Press and move at once; it lifts the same.
@@ -66,4 +68,4 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
 18. **Every painted highlight.** Ctrl+A, then drag a little: the document is lifted and a drop on
     itself changes nothing; dragging it into the composer copies and leaves the document as it was.
     Sweep a range across several paragraphs and press in the blank past a line's last word: it lifts
-    like a press on the letters. A press in the margin beside a line outside the range stays native.
+    like a press on the letters; the same blank past the range's last line does not. A press in the margin beside a line outside the range stays native.
