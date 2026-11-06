@@ -1406,7 +1406,7 @@ export function createInMemoryAppServices(): AppServices {
           finishReason: "end_turn" as const,
           usage: { inputTokens: 0, outputTokens: 0 },
           model: request.model ?? "in-memory",
-          provider: request.provider ?? "in-memory",
+          provider: "in-memory",
         };
       },
       listModels: () => [],

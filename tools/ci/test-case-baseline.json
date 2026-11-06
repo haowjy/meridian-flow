@@ -264,7 +264,6 @@
     "apps/server/server/domains/runtime/gateway/adapters/openai-compatible/request-map.test.ts": 2,
     "apps/server/server/domains/runtime/gateway/adapters/provider-http-error.test.ts": 6,
     "apps/server/server/domains/runtime/gateway/attempt-stream.test.ts": 7,
-    "apps/server/server/domains/runtime/gateway/create-gateway.test.ts": 1,
     "apps/server/server/domains/runtime/gateway/deadline.test.ts": 3,
     "apps/server/server/domains/runtime/handoff/brief-request.test.ts": 2,
     "apps/server/server/domains/runtime/handoff/brief-service.db.test.ts": 8,

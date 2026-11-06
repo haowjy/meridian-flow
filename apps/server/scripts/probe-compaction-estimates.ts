@@ -307,7 +307,7 @@ for (const [provider, key] of providerKeys) {
     ...(provider === "deepseek" ? { FLOW_DEEPSEEK_API_KEY: key } : {}),
   };
   const { gateway, cleanup } = await createGatewayFromEnv(env);
-  const models = gateway.listModels?.() ?? [];
+  const models = gateway.listModels();
   const model = models.find((candidate) => candidate.capabilities.has("image_input")) ?? models[0];
   if (!model) {
     for (const { corpus } of requests)

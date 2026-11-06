@@ -76,7 +76,7 @@ function inferDefaultModel(gateway: Gateway): string | undefined {
 }
 
 function providerIdsFromGateway(gateway: Gateway): string[] {
-  const models = gateway.listModels?.() ?? [];
+  const models = gateway.listModels();
   return [...new Set(models.map((m) => m.provider))];
 }
 

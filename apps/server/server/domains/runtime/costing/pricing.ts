@@ -15,7 +15,7 @@ import {
 } from "../gateway/config/registry.js";
 import { readMeteringStatus } from "../gateway/domain/metering.js";
 
-export type ModelTokenRateLayer = "pinned" | "override";
+export type ModelTokenRateLayer = "pinned" | "override" | "unmetered";
 
 export interface ResolvedModelTokenRate extends ModelTokenRate {
   /** Layer that supplied the rate; persisted in pricingSnapshot for audits. */
@@ -49,15 +49,6 @@ export const MOCK_FIXTURE_TOKEN_RATES: readonly ModelTokenRate[] = [
   {
     provider: "mock",
     model: "mock-llm-v1",
-    inputUsdPerMillionTokens: "0",
-    cachedInputUsdPerMillionTokens: "0",
-    cacheWriteUsdPerMillionTokens: "0",
-    outputUsdPerMillionTokens: "0",
-    source: ZERO_FIXTURE_SOURCE,
-  },
-  {
-    provider: "mock",
-    model: "mock-model",
     inputUsdPerMillionTokens: "0",
     cachedInputUsdPerMillionTokens: "0",
     cacheWriteUsdPerMillionTokens: "0",

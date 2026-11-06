@@ -68,16 +68,12 @@ export function buildProviderConfigs(
 export function defaultGatewayOptions(
   providers: ProviderConfig[],
   defaultModel?: string,
-): Pick<
-  GatewayConfig,
-  "defaultModel" | "retry" | "fallback" | "attemptStallMs" | "attemptCeilingMs"
-> {
+): Pick<GatewayConfig, "defaultModel" | "retry" | "attemptStallMs" | "attemptCeilingMs"> {
   return {
     // Only the local mock fallback reaches here without a registry default.
     defaultModel: defaultModel ?? providers[0]?.models[0]?.id,
     attemptStallMs: DEFAULT_ATTEMPT_STALL_MS,
     attemptCeilingMs: DEFAULT_ATTEMPT_CEILING_MS,
     retry: { maxAttempts: 3, initialDelayMs: 500, maxDelayMs: 8_000 },
-    fallback: { enabled: providers.length > 1 },
   };
 }
