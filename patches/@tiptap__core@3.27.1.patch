@@ -1,0 +1,171 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index a704646b232e1fcf84e5e6cb24d092a92cff1e18..cb0fed0cbf8a4f861b9fc4ea71d93e815795b034 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -4478,7 +4478,6 @@ function run2(config) {
+   const success = handlers.every((handler) => handler !== null);
+   return success;
+ }
+-var tiptapDragFromOtherEditor = null;
+ var createClipboardPasteEvent = (text) => {
+   var _a;
+   const event = new ClipboardEvent("paste", {
+@@ -4538,21 +4537,11 @@ function pasteRulesPlugin(props) {
+         const handleDragstart = (event) => {
+           var _a;
+           dragSourceElement = ((_a = view.dom.parentElement) == null ? void 0 : _a.contains(event.target)) ? view.dom.parentElement : null;
+-          if (dragSourceElement) {
+-            tiptapDragFromOtherEditor = editor;
+-          }
+-        };
+-        const handleDragend = () => {
+-          if (tiptapDragFromOtherEditor) {
+-            tiptapDragFromOtherEditor = null;
+-          }
+         };
+         window.addEventListener("dragstart", handleDragstart);
+-        window.addEventListener("dragend", handleDragend);
+         return {
+           destroy() {
+             window.removeEventListener("dragstart", handleDragstart);
+-            window.removeEventListener("dragend", handleDragend);
+           }
+         };
+       },
+@@ -4561,20 +4550,6 @@ function pasteRulesPlugin(props) {
+           drop: (view, event) => {
+             isDroppedFromProseMirror = dragSourceElement === view.dom.parentElement;
+             dropEvent = event;
+-            if (!isDroppedFromProseMirror) {
+-              const dragFromOtherEditor = tiptapDragFromOtherEditor;
+-              if (dragFromOtherEditor == null ? void 0 : dragFromOtherEditor.isEditable) {
+-                setTimeout(() => {
+-                  const selection = dragFromOtherEditor.state.selection;
+-                  if (selection) {
+-                    dragFromOtherEditor.commands.deleteRange({
+-                      from: selection.from,
+-                      to: selection.to
+-                    });
+-                  }
+-                }, 10);
+-              }
+-            }
+             return false;
+           },
+           paste: (_view, event) => {
+diff --git a/dist/index.js b/dist/index.js
+index 7cc633c66630573562c670379f566403e75c739f..38064d87d93eec61ab5080c3cf5cfce78b258930 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -4339,7 +4339,6 @@ function run2(config) {
+   const success = handlers.every((handler) => handler !== null);
+   return success;
+ }
+-var tiptapDragFromOtherEditor = null;
+ var createClipboardPasteEvent = (text) => {
+   var _a;
+   const event = new ClipboardEvent("paste", {
+@@ -4399,21 +4398,11 @@ function pasteRulesPlugin(props) {
+         const handleDragstart = (event) => {
+           var _a;
+           dragSourceElement = ((_a = view.dom.parentElement) == null ? void 0 : _a.contains(event.target)) ? view.dom.parentElement : null;
+-          if (dragSourceElement) {
+-            tiptapDragFromOtherEditor = editor;
+-          }
+-        };
+-        const handleDragend = () => {
+-          if (tiptapDragFromOtherEditor) {
+-            tiptapDragFromOtherEditor = null;
+-          }
+         };
+         window.addEventListener("dragstart", handleDragstart);
+-        window.addEventListener("dragend", handleDragend);
+         return {
+           destroy() {
+             window.removeEventListener("dragstart", handleDragstart);
+-            window.removeEventListener("dragend", handleDragend);
+           }
+         };
+       },
+@@ -4422,20 +4411,6 @@ function pasteRulesPlugin(props) {
+           drop: (view, event) => {
+             isDroppedFromProseMirror = dragSourceElement === view.dom.parentElement;
+             dropEvent = event;
+-            if (!isDroppedFromProseMirror) {
+-              const dragFromOtherEditor = tiptapDragFromOtherEditor;
+-              if (dragFromOtherEditor == null ? void 0 : dragFromOtherEditor.isEditable) {
+-                setTimeout(() => {
+-                  const selection = dragFromOtherEditor.state.selection;
+-                  if (selection) {
+-                    dragFromOtherEditor.commands.deleteRange({
+-                      from: selection.from,
+-                      to: selection.to
+-                    });
+-                  }
+-                }, 10);
+-              }
+-            }
+             return false;
+           },
+           paste: (_view, event) => {
+diff --git a/src/PasteRule.ts b/src/PasteRule.ts
+index d050b8d0611c80a0e669ebde88f9279a2ef39d7b..4d04e30b51b62dcc390f0ab54a0910caba0bf340 100644
+--- a/src/PasteRule.ts
++++ b/src/PasteRule.ts
+@@ -180,7 +180,6 @@ function run(config: {
+ }
+ 
+ // When dragging across editors, must get another editor instance to delete selection content.
+-let tiptapDragFromOtherEditor: Editor | null = null
+ 
+ const createClipboardPasteEvent = (text: string) => {
+   const event = new ClipboardEvent('paste', {
+@@ -263,24 +262,14 @@ export function pasteRulesPlugin(props: { editor: Editor; rules: PasteRule[] }):
+             ? view.dom.parentElement
+             : null
+ 
+-          if (dragSourceElement) {
+-            tiptapDragFromOtherEditor = editor
+-          }
+         }
+ 
+-        const handleDragend = () => {
+-          if (tiptapDragFromOtherEditor) {
+-            tiptapDragFromOtherEditor = null
+-          }
+-        }
+ 
+         window.addEventListener('dragstart', handleDragstart)
+-        window.addEventListener('dragend', handleDragend)
+ 
+         return {
+           destroy() {
+             window.removeEventListener('dragstart', handleDragstart)
+-            window.removeEventListener('dragend', handleDragend)
+           },
+         }
+       },
+@@ -291,23 +280,6 @@ export function pasteRulesPlugin(props: { editor: Editor; rules: PasteRule[] }):
+             isDroppedFromProseMirror = dragSourceElement === view.dom.parentElement
+             dropEvent = event as DragEvent
+ 
+-            if (!isDroppedFromProseMirror) {
+-              const dragFromOtherEditor = tiptapDragFromOtherEditor
+-
+-              if (dragFromOtherEditor?.isEditable) {
+-                // setTimeout to avoid the wrong content after drop, timeout arg can't be empty or 0
+-                setTimeout(() => {
+-                  const selection = dragFromOtherEditor.state.selection
+-
+-                  if (selection) {
+-                    dragFromOtherEditor.commands.deleteRange({
+-                      from: selection.from,
+-                      to: selection.to,
+-                    })
+-                  }
+-                }, 10)
+-              }
+-            }
+             return false
+           },
+ 
