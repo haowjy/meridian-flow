@@ -7,7 +7,6 @@
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
 import {
-  type DeleteContextEntryResult,
   filenameForBinary,
   type ParsedDocumentFilename,
   renderFilename,
@@ -28,7 +27,6 @@ import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
   ContextCreateUntitledDocumentResult,
-  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextListing,
@@ -856,14 +854,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
     async changeInBranch(command) {
       const { record, changedBy, documentId } = command;
-      const source = await resolve(command.op === "move" ? command.sourceUri : command.uri);
+      const source = await resolve(command.area);
       if (!source.ok) return source;
       const sourceTree = source.value.adapter.branchTree;
       if (!sourceTree || !source.value.adapter.capabilities.writable)
         return Err({ code: "permission_denied", uri: source.value.canonical });
       if (command.op === "delete") {
         const deleted = await callAdapter(source.value.canonical, () =>
-          sourceTree.delete(source.value.path, { documentId, changedBy, record }),
+          sourceTree.delete({ documentId, changedBy, record }),
         );
         return deleted.ok ? Ok({ uri: source.value.canonical, moved: false }) : deleted;
       }
@@ -874,22 +872,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({ code: "permission_denied", uri: destination.value.canonical });
       const creationDenied = moveCreationDenied(source.value, destination.value);
       if (creationDenied) return creationDenied;
-      // The source as the branch shows it, for the destination's filetype check.
-      const ref = await callAdapter(source.value.canonical, () =>
-        source.value.adapter.stat(source.value.path),
-      );
-      if (!ref.ok) return ref;
-      if (ref.value?.documentId !== documentId)
-        return Err({ code: "stale_source", uri: source.value.canonical });
-      const from = {
-        path: source.value.path,
-        filetype: ref.value.kind === "tracked" ? ref.value.filetype : null,
-        sourceId: await sourceTree.sourceId(),
-      };
       const moved = await callAdapter(destination.value.canonical, () =>
         destinationTree.move(destination.value.path, {
           documentId,
-          from,
           changedBy,
           record,
           ...(command.position ? { position: command.position } : {}),

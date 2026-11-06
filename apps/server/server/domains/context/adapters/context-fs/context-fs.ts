@@ -284,7 +284,7 @@ export class ContextFS implements ContextSchemeAdapter {
         sourceId: () => this.store.contextSourceId(),
         // The destination's name as a move names it: an extensionless one keeps the source's
         // extension, and a rename never converts a document to another file type.
-        move: async (path, { from, ...command }) => {
+        move: async (path, command) => {
           const { dir, filename } = splitPath(path);
           // The stored extension, not the branch path's leaf: a kept `binary.md` and a document
           // `binary` share a leaf alias, and the row says which this is.
@@ -293,6 +293,13 @@ export class ContextFS implements ContextSchemeAdapter {
             command.documentId as DocumentId,
           );
           if (!located) return Err({ code: "stale_source" });
+          const ref = fileRefOf(located.document, located.path);
+          if (!ref.ok) return ref;
+          const from = {
+            path: located.path,
+            filetype: ref.value.kind === "tracked" ? ref.value.filetype : null,
+            sourceId: await this.store.contextSourceId(),
+          };
           const { extension: storedExtension } = located.document;
           const parsed = storedFilename(filename, { extension: storedExtension });
           if (!parsed.ok) return Err(parsed.error);
@@ -324,7 +331,7 @@ export class ContextFS implements ContextSchemeAdapter {
               })
             : moved;
         },
-        delete: (_path, command) =>
+        delete: (command) =>
           branchTree.delete({ ...command, documentId: command.documentId as DocumentId }),
       };
     }

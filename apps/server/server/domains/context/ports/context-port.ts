@@ -451,21 +451,25 @@ export interface ContextLocationChange {
   inTransaction?: (moved: ContextMoveResult) => Promise<void>;
 }
 
-/** What `changeInBranch` does: the document it names must be at the source address. */
+/**
+ * What `changeInBranch` does to the document it names, wherever the branch has it now. `area` is
+ * the root URI of the scheme and owner it was last seen in, as for `commitWriterLocation`.
+ */
 export type ContextBranchTreeCommand = {
   documentId: string;
+  area: string;
   changedBy: BranchChangeAuthor;
   record(change: RecordedBranchTreeChange): Promise<void>;
 } & (
   | {
       op: "move";
-      sourceUri: string;
       destinationUri: string;
       position?: MoveContextEntryRequest["position"];
     }
-  | { op: "delete"; uri: string }
+  | { op: "delete" }
 );
 
+/** `uri` is where a move landed; a delete answers its area and `moved: false`. */
 export type ContextBranchTreeResult = { uri: string; moved: boolean };
 
 export interface ContextDeleteOptions {

@@ -8,7 +8,6 @@
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type {
   DeleteContextEntryResult,
-  Filetype,
   InvalidOperationReason,
   NamespaceNameClaim,
   ParsedDocumentFilename,
@@ -173,28 +172,24 @@ export interface ContextBranchTreeAdapter {
   /** This adapter's source, provisioned. */
   sourceId(): Promise<string>;
   /**
-   * `moved: false` when the branch already has it at `path`: nothing is written. `path` is
-   * the destination as stored (an extensionless name keeps the document's extension).
+   * Moves the document wherever the branch has it now; `moved: false` when it is already at
+   * `path`: nothing is written. `path` is the destination as stored (an extensionless name keeps
+   * the document's extension).
    */
   move(
     path: string,
     input: {
       documentId: string;
-      /** Where the branch has it now: its path and filetype there, and that source. */
-      from: { path: string; filetype: Filetype | null; sourceId: string };
       changedBy: BranchChangeAuthor;
       record(change: RecordedBranchTreeChange): Promise<void>;
       position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
     },
   ): Promise<Result<{ moved: boolean; path: string }, AdapterFault>>;
-  delete(
-    path: string,
-    input: {
-      documentId: string;
-      changedBy: BranchChangeAuthor;
-      record(change: RecordedBranchTreeChange): Promise<void>;
-    },
-  ): Promise<Result<void, AdapterFault>>;
+  delete(input: {
+    documentId: string;
+    changedBy: BranchChangeAuthor;
+    record(change: RecordedBranchTreeChange): Promise<void>;
+  }): Promise<Result<void, AdapterFault>>;
 }
 
 /**

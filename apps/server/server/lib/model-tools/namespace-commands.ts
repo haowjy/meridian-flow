@@ -283,6 +283,7 @@ async function commitDrafted(
   };
   const command = {
     documentId: source.documentId,
+    area: contextAreaOf(source.uri),
     changedBy: { threadId, ...(turnId ? { turnId } : {}) },
     record,
   };
@@ -291,11 +292,10 @@ async function commitDrafted(
       ? {
           ...command,
           op: "move",
-          sourceUri: source.uri,
           destinationUri: input.path,
           ...(position ? { position } : {}),
         }
-      : { ...command, op: "delete", uri: source.uri },
+      : { ...command, op: "delete" },
   );
   if (!changed.ok)
     return namespaceContextRefusal(input.command, changed.error, {
@@ -308,7 +308,7 @@ async function commitDrafted(
       destination: input.path,
     });
   if (!recorded) throw new Error(`A drafted ${input.command} committed without its tree entry`);
-  return { handle: recorded, uri: changed.value.uri };
+  return { handle: recorded, uri: input.command === "move" ? changed.value.uri : source.uri };
 }
 
 /**
