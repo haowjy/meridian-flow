@@ -1,9 +1,8 @@
 /**
- * The one way a tree Move, Copy or delete runs and fails. Each `run…` does the work and owns its
- * failure toast and that toast's Retry, and a Retry re-reads the replica when pressed: a row the
- * writer has changed since is left alone. `entryRefusals` reads the rows the server refused for
- * `RefusalToasts`, and `retryRefusals` retries them by intent, so a server refusal and one the
- * replica made at once retry through the same paths.
+ * The one way a tree Move, Copy or delete runs and fails. A failure is data with its own key,
+ * whether the replica refused it at once (`run…`) or the server refused it later
+ * (`entryFailures`). One function titles it, one shows it and one retries it, re-reading the
+ * replica first: a row the writer has changed since is left alone.
  */
 import { plural, t } from "@lingui/core/macro";
 import {
@@ -11,15 +10,13 @@ import {
   placementParentKey,
   projectFolderNeedsRepair,
   projectResourceNeedsRepair,
-  type ResourceDestination,
 } from "@meridian/resource-replica";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import { getContextTabs } from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
 import { useDockDocumentStore } from "../../dock/dock-document-store";
-import { schemeLabel } from "../context-schemes";
 import type { RemovedNoticeStore } from "../removed-notice-store";
-import { copyRefusals } from "./copy-refusal";
+import { copyFailures, copyFailureTitle } from "./copy-refusal";
 import type { EntryRef } from "./entry";
 import { copyRows } from "./execute-copy";
 import { currentView, moveRows, type ReplicaContext } from "./execute-move";
@@ -27,22 +24,43 @@ import {
   entryNameNow,
   type MoveRow,
   type PlacementView,
+  parentName,
   parentOf,
   type ReadyCopy,
   sameParent,
   within,
 } from "./move-plan";
 
-/** The toast key of a failed Move or delete, and of a Copy the replica would not admit. */
-export const ENTRY_FAILURE_TOAST = "entry-failure";
-
 export type EntryContext = ReplicaContext & {
   notices?: Pick<RemovedNoticeStore, "markOwnRemoval"> | null;
 };
 
-type Named = { name: string };
+export type EntryFailure = { key: string } & (
+  | { kind: "move"; rows: readonly MoveRow[]; destination: string | null }
+  | { kind: "delete"; entry: EntryRef; name: string }
+  | {
+      kind: "copy";
+      sources: readonly string[];
+      destination: string | null;
+      reason: string | null;
+      /** What Retry copies; absent once a source or the destination is gone. */
+      copy?: ReadyCopy;
+      /** A Copy the server refused: the journal keeps it until the toast closes or Retry lands. */
+      operationId?: string;
+    }
+);
 
-function moveFailure(rows: readonly Named[], destination: string | null): string {
+/** What the server refused and the intents behind it. */
+export type RefusedFailure = { failure: EntryFailure; intents: readonly string[] };
+
+/** The key of a project's failure, under that project's prefix (`entryToast(projectId)`). */
+export const entryToast = (projectId: string, failure = "") => `entry:${projectId}:${failure}`;
+
+export function failureTitle(failure: EntryFailure): string {
+  if (failure.kind === "copy")
+    return copyFailureTitle(failure.sources, failure.destination, failure.reason);
+  if (failure.kind === "delete") return t`Couldn't delete ${failure.name}.`;
+  const { rows, destination } = failure;
   const [only] = rows;
   if (rows.length === 1 && only)
     return destination
@@ -56,24 +74,69 @@ function moveFailure(rows: readonly Named[], destination: string | null): string
     : plural(rows.length, { one: "Couldn't move # item.", other: "Couldn't move # items." });
 }
 
-function deleteFailure(rows: readonly Named[]): string {
-  const [only] = rows;
-  return rows.length === 1 && only
-    ? t`Couldn't delete ${only.name}.`
-    : plural(rows.length, { one: "Couldn't delete # item.", other: "Couldn't delete # items." });
+/** Toasts a failure. `onHandled` runs once the writer closes it or presses Retry. */
+export function showFailure(
+  context: EntryContext,
+  failure: EntryFailure,
+  onHandled?: () => void,
+): void {
+  notifyFailure({
+    key: failure.key,
+    title: failureTitle(failure),
+    onClose: () => {
+      onHandled?.();
+      if (failure.kind === "copy" && failure.operationId)
+        void context.resources.resolveCopyRefusal(failure.operationId);
+    },
+    onRetry:
+      failure.kind !== "copy" || failure.copy
+        ? () => {
+            onHandled?.();
+            return retryFailure(context, failure, onHandled);
+          }
+        : undefined,
+  });
 }
 
-/** The rows still as they were when the Move failed. */
-async function unchangedRows(context: ReplicaContext, rows: readonly MoveRow[]) {
+async function retryFailure(
+  context: EntryContext,
+  failure: EntryFailure,
+  onHandled?: () => void,
+): Promise<void> {
   const view = await currentView(context);
-  return rows.filter((row) => {
-    const parent = parentOf(view, row.entry);
-    return (
-      entryNameNow(view, row.entry) === row.name &&
-      parent !== null &&
-      sameParent(parent, row.before)
-    );
-  });
+  if (failure.kind === "move") {
+    const rows = failure.rows.filter((row) => {
+      const parent = parentOf(view, row.entry);
+      return (
+        entryNameNow(view, row.entry) === row.name &&
+        parent !== null &&
+        sameParent(parent, row.before)
+      );
+    });
+    await runMove(context, rows, failure.destination);
+  } else if (failure.kind === "delete") {
+    if (entryNameNow(view, failure.entry))
+      await runDelete(context, { ...failure.entry, name: failure.name });
+  } else if (failure.copy) {
+    const copies = failure.copy.copies.flatMap((row) => {
+      const name = entryNameNow(view, row.entry);
+      return name ? [{ ...row, name }] : [];
+    });
+    const copy = { ...failure.copy, copies };
+    if (copies.length < failure.copy.copies.length || !parentName(view, copy.into))
+      showFailure(
+        context,
+        {
+          ...failure,
+          copy: undefined,
+          reason: t`A source or the destination is no longer there.`,
+        },
+        onHandled,
+      );
+    else if (!(await copyRows(copy, context)))
+      showFailure(context, { ...failure, copy }, onHandled);
+    else if (failure.operationId) await context.resources.resolveCopyRefusal(failure.operationId);
+  }
 }
 
 export async function runMove(
@@ -86,12 +149,11 @@ export async function runMove(
   onMoved?.(moved);
   if (failed.length === 0) return;
   const refused = new Set(failed.map(({ entry }) => entry));
-  const again = rows.filter(({ entry }) => refused.has(entry));
-  notifyFailure({
-    key: ENTRY_FAILURE_TOAST,
-    title: moveFailure(again, destination),
-    onRetry: async () =>
-      runMove(context, await unchangedRows(context, again), destination, onMoved),
+  showFailure(context, {
+    key: entryToast(context.projectId, crypto.randomUUID()),
+    kind: "move",
+    rows: rows.filter(({ entry }) => refused.has(entry)),
+    destination,
   });
 }
 
@@ -101,29 +163,16 @@ export async function runCopy(
   onCopied?: (copies: readonly EntryRef[]) => void,
 ): Promise<void> {
   const rows = await copyRows(copy, context);
-  if (rows) {
-    onCopied?.(rows);
-    return;
-  }
-  const [only] = copy.copies;
-  notifyFailure({
-    key: ENTRY_FAILURE_TOAST,
-    title:
-      copy.copies.length === 1 && only
-        ? t`Couldn't copy ${only.name} to ${copy.destinationName}.`
-        : plural(copy.copies.length, {
-            one: `Couldn't copy # item to ${copy.destinationName}.`,
-            other: `Couldn't copy # items to ${copy.destinationName}.`,
-          }),
-    onRetry: async () => {
-      const view = await currentView(context);
-      const copies = copy.copies.flatMap((row) => {
-        const name = entryNameNow(view, row.entry);
-        return name ? [{ ...row, name }] : [];
-      });
-      if (copies.length > 0) await runCopy(context, { ...copy, copies }, onCopied);
-    },
-  });
+  if (rows) onCopied?.(rows);
+  else
+    showFailure(context, {
+      key: entryToast(context.projectId, crypto.randomUUID()),
+      kind: "copy",
+      sources: copy.copies.map(({ name }) => name),
+      destination: copy.destinationName,
+      reason: null,
+      copy,
+    });
 }
 
 /** The documents on the writer's own tabs and dock that deleting `entry` takes away. */
@@ -145,8 +194,8 @@ async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<stri
 }
 
 export async function runDelete(
-  { name, ...entry }: EntryRef & Named,
   context: EntryContext,
+  { name, ...entry }: EntryRef & { name: string },
 ): Promise<void> {
   const { resources, projectId, notices } = context;
   const settleMark = notices?.markOwnRemoval(projectId, await ownRemovals(context, entry));
@@ -160,125 +209,100 @@ export async function runDelete(
     settleMark?.("removed");
   } catch {
     settleMark?.("kept");
-    notifyFailure({
-      key: ENTRY_FAILURE_TOAST,
-      title: deleteFailure([{ name }]),
-      onRetry: () => runDelete({ name, ...entry }, context),
+    showFailure(context, {
+      key: entryToast(projectId, crypto.randomUUID()),
+      kind: "delete",
+      entry,
+      name,
     });
   }
 }
 
-/** One row the server refused, as it can be retried now. */
-export type EntryRefusal = {
-  intentId: string;
-  /** Rows refused together share a toast: every delete, or every Move to one place. */
-  group: string;
-  title: (rows: readonly EntryRefusal[]) => string;
-} & (
-  | { kind: "delete"; entry: EntryRef; name: string }
-  | { kind: "move"; row: MoveRow; name: string; destination: string | null }
-);
-
-const placeName = (view: PlacementView, { parent }: ResourceDestination) =>
-  parent.kind === "root"
-    ? schemeLabel(parent.scheme)
-    : (view.placement.folderLocation(parent.folderId)?.name ?? null);
-
-function refusal(
+function rowFailure(
+  projectId: string,
   view: PlacementView,
   entry: EntryRef,
   repair: ReturnType<typeof projectFolderNeedsRepair>,
   current: ParentRef | null,
-): EntryRefusal[] {
-  if (!repair) return [];
+): RefusedFailure | null {
+  if (!repair) return null;
   const name = entryNameNow(view, entry) ?? repair.name;
+  const intents = [repair.intentId];
   if (repair.kind === "delete")
-    return [
-      {
-        intentId: repair.intentId,
-        group: "delete",
-        title: deleteFailure,
+    return {
+      intents,
+      failure: {
+        key: entryToast(projectId, `delete:${repair.intentId}`),
         kind: "delete",
         entry,
         name,
       },
-    ];
+    };
   const place = refusedMoveDestination(repair.destination, current);
-  if (repair.kind !== "set-location" || !place || !current) return [];
-  const destination = placeName(view, place);
-  return [
-    {
-      intentId: repair.intentId,
-      group: `move:${placementParentKey(place.parent)}`,
-      title: (rows) => moveFailure(rows, destination),
+  if (repair.kind !== "set-location" || !place || !current) return null;
+  const row: MoveRow = {
+    entry,
+    name,
+    typed: place.name,
+    before: current,
+    after: place.parent,
+    ...(place.position ? { position: place.position } : {}),
+  };
+  return {
+    intents,
+    failure: {
+      key: entryToast(projectId, `move:${placementParentKey(place.parent)}`),
       kind: "move",
-      name,
-      destination,
-      row: {
-        entry,
-        name,
-        typed: place.name,
-        before: current,
-        after: place.parent,
-        ...(place.position ? { position: place.position } : {}),
-      },
+      rows: [row],
+      destination: parentName(view, place.parent),
     },
-  ];
+  };
 }
 
-export function entryRefusals(view: PlacementView, projectId: string): EntryRefusal[] {
-  return [
-    ...view.records.flatMap((record) => {
+/** What the server refused, leaving out `handled` intents. Moves to one place are one failure. */
+export function entryFailures(
+  view: Parameters<typeof copyFailures>[0],
+  projectId: string,
+  handled: ReadonlySet<string> = new Set(),
+): RefusedFailure[] {
+  const rows = [
+    ...view.records.map((record) => {
       const documentId = record.resource.identity?.documentId;
       return documentId
-        ? refusal(
+        ? rowFailure(
+            projectId,
             view,
             { kind: "file", id: documentId },
             projectResourceNeedsRepair(projectId, record),
             view.placement.parentForResource(record),
           )
-        : [];
+        : null;
     }),
-    ...(view.folders ?? []).flatMap((folder) =>
-      refusal(
+    ...(view.folders ?? []).map((folder) =>
+      rowFailure(
+        projectId,
         view,
         { kind: "folder", id: folder.folderId },
         projectFolderNeedsRepair(folder),
         view.placement.parentForFolder(folder.folderId),
       ),
     ),
+    ...copyFailures(view, projectId),
   ];
-}
-
-/** Retries the intents still refused; one the writer has since superseded is gone from the list. */
-export async function retryRefusals(context: EntryContext, intentIds: ReadonlySet<string>) {
-  const view = await currentView(context);
-  const refused = entryRefusals(view, context.projectId).filter(({ intentId }) =>
-    intentIds.has(intentId),
-  );
-  const moves = refused.flatMap((row) => (row.kind === "move" ? [row] : []));
-  if (moves[0])
-    await runMove(
-      context,
-      moves.map(({ row }) => row),
-      moves[0].destination,
+  const failures = new Map<string, RefusedFailure>();
+  for (const refused of rows) {
+    if (!refused || refused.intents.some((intent) => handled.has(intent))) continue;
+    const { failure, intents } = refused;
+    const same = failures.get(failure.key);
+    failures.set(
+      failure.key,
+      same?.failure.kind === "move" && failure.kind === "move"
+        ? {
+            intents: [...same.intents, ...intents],
+            failure: { ...failure, rows: [...same.failure.rows, ...failure.rows] },
+          }
+        : refused,
     );
-  for (const row of refused)
-    if (row.kind === "delete") await runDelete({ ...row.entry, name: row.name }, context);
-}
-
-/** Copies a refused Copy again; the refusal resolves once the replica admits it. */
-export async function retryCopyRefusal(
-  context: EntryContext,
-  operationId: string,
-  onFailed: () => void,
-) {
-  const snapshot = await context.resources.readProjection(context.projectId);
-  const view = { ...(await currentView(context)), operations: snapshot.operations };
-  const copy = copyRefusals(view, context.projectId).find(
-    (candidate) => candidate.operationId === operationId,
-  )?.copy;
-  if (!copy) return;
-  if (await copyRows(copy, context)) await context.resources.resolveCopyRefusal(operationId);
-  else onFailed();
+  }
+  return [...failures.values()];
 }

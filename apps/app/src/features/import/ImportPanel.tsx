@@ -205,14 +205,21 @@ export function ImportPanelBody({
   );
   return (
     <>
-      <ul className="min-h-0 divide-y divide-border-subtle overflow-y-auto overscroll-contain">
-        {items.map((item) => (
-          <ImportCard key={item.importId} item={item} touch={touch} onClose={onClose} />
-        ))}
-      </ul>
-      <div className="flex shrink-0 items-center gap-1 border-t border-border-subtle px-3 py-1.5">
+      {items.length > 0 ? (
+        <ul className="min-h-0 divide-y divide-border-subtle overflow-y-auto overscroll-contain">
+          {items.map((item) => (
+            <ImportCard key={item.importId} item={item} touch={touch} onClose={onClose} />
+          ))}
+        </ul>
+      ) : null}
+      <div
+        className={cn(
+          "flex shrink-0 items-center gap-1 px-3 py-1.5",
+          items.length > 0 && "border-t border-border-subtle",
+        )}
+      >
         <span className="min-w-0 flex-1 text-caption text-ink-muted">
-          <Trans>Import another</Trans>
+          {items.length > 0 ? <Trans>Import another</Trans> : <Trans>Import</Trans>}
         </span>
         {canPickFolders() ? another("folder", <Trans>Folder…</Trans>) : null}
         {another("files", <Trans>Files…</Trans>)}

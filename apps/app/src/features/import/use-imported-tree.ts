@@ -28,7 +28,7 @@ export function useImportedTree(
         catalog.normalized.entries.has(summary.root.id),
         local.phase === "reading",
       );
-      if (!draw || local.phase === "refused") continue;
+      if (!draw) continue;
       const parentId = summary.destination.folderId ?? catalog.root.entryId;
       const rows = pending.get(parentId) ?? [];
       rows.push({

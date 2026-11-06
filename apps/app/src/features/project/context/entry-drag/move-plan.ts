@@ -149,6 +149,13 @@ export function folderChain(view: PlacementView, ref: EntryRef): string[] | null
   return chain;
 }
 
+/** A parent's name, or null once that folder is gone. */
+export function parentName({ placement }: PlacementView, parent: ParentRef): string | null {
+  return parent.kind === "root"
+    ? schemeLabel(parent.scheme)
+    : (placement.folderLocation(parent.folderId)?.name ?? null);
+}
+
 /** The parent `ref` sits in now, or null when it is gone or not placed yet. */
 export function parentOf(view: PlacementView, ref: EntryRef): ParentRef | null {
   return placeEntryRef(view, ref)?.parent ?? null;

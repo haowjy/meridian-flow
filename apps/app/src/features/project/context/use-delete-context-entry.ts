@@ -11,10 +11,10 @@ export function useDeleteContextEntry(projectId: string) {
   const requestDelete = useCallback(
     (target: DeleteTarget) =>
       void runDelete(
+        { resources, projectId, notices },
         target.kind === "file"
           ? { kind: "file", id: target.documentId, name: target.name }
           : { kind: "folder", id: target.entryId, name: target.name },
-        { resources, projectId, notices },
       ),
     [notices, projectId, resources],
   );

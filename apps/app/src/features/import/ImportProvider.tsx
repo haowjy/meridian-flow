@@ -121,10 +121,6 @@ export function ImportProvider({
       if (importStatus(item) === null && !item.local.busy && !shown(item))
         void coordinator.acknowledge(item.importId);
   }, [own, scope, coordinator]);
-  // Nothing left to show (Stop discarded the last import): the popup closes itself.
-  useEffect(() => {
-    if (scope !== null && !own.some((item) => inScope(item, scope))) setScope(null);
-  }, [own, scope]);
   const latest = useRef({ own, shown });
   latest.current = { own, shown };
   const panel = useMemo<Panel>(

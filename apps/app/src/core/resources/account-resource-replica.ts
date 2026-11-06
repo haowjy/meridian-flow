@@ -874,8 +874,7 @@ export class AccountResourceReplica {
 
   async deleteFolder(projectId: string, folderId: string): Promise<{ operationId?: string }> {
     const result = await this.commitFolderPlan(projectId, folderId, null, planFolderDeletion);
-    // A folder only this device held settles its delete here; its pending children go with it
-    // and the same Undo window brings the subtree back.
+    // A folder only this device held settles its delete here; its pending children go with it.
     if (result.operationId)
       await this.settleLocalFolderChildren(projectId, folderId, result.operationId);
     return result;
@@ -946,7 +945,7 @@ export class AccountResourceReplica {
   /**
    * A local folder delete is one operation over its local subtree: every never-accepted folder
    * and document under it settles its own delete under the same operation, so its pending
-   * creates stop and one Undo restores them all. Server-held descendants keep their own
+   * creates stop. Server-held descendants keep their own
    * lifecycle and are not deleted by their local parent.
    */
   private async settleLocalFolderChildren(

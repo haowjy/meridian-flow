@@ -1,7 +1,7 @@
 /**
  * Failure toasts: `notifyFailure` from anywhere, one `FailureToaster` at the app root. Only for a
  * failure that has no place of its own on a document or in the import popup; a success never
- * toasts. A failure stays until dismissed or replaced by the next one under its key.
+ * toasts. A failure stays until dismissed, and `visibleToasts` caps how many show at once.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
@@ -9,7 +9,7 @@ import { Toaster, toast } from "sonner";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 
 /** The open toast under each key. Each toast has its own Sonner id: reusing one races its exit. */
-const shown = new Map<string, { id: string | number; onClose?: () => void }>();
+const shown = new Map<string, string | number>();
 
 export function notifyFailure({
   key,
@@ -17,19 +17,17 @@ export function notifyFailure({
   onRetry,
   onClose,
 }: {
-  /** What this failure replaces: the kind of work that failed, not the row. */
+  /** This failure's own: a second toast under one key replaces the first. */
   key: string;
   /** Names what failed: "Couldn't move Chapter 3 to Act 2." */
   title: string;
   /** Only where running it again can help. */
   onRetry?: () => void | Promise<void>;
-  /** The writer closed it, or a newer failure replaced it. Not called after Retry. */
+  /** The writer closed it. */
   onClose?: () => void;
 }) {
-  const previous = shown.get(key);
   dismissFailure(key);
-  previous?.onClose?.();
-  const owns = () => shown.get(key)?.id === id;
+  const owns = () => shown.get(key) === id;
   const id = toast.error(title, {
     duration: Number.POSITIVE_INFINITY,
     onDismiss: () => {
@@ -47,15 +45,20 @@ export function notifyFailure({
         }
       : undefined,
   });
-  shown.set(key, { id, onClose });
+  shown.set(key, id);
 }
 
 /** Closes a failure that no longer applies, without counting as the writer closing it. */
 export function dismissFailure(key: string) {
-  const open = shown.get(key);
-  if (!open) return;
+  const id = shown.get(key);
+  if (id === undefined) return;
   shown.delete(key);
-  toast.dismiss(open.id);
+  toast.dismiss(id);
+}
+
+/** Closes every failure under a key prefix, such as a project's on leaving it. */
+export function dismissFailures(prefix: string) {
+  for (const key of [...shown.keys()]) if (key.startsWith(prefix)) dismissFailure(key);
 }
 
 /** Below the dock's header on desktop, below the top bar on a phone. */

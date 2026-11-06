@@ -19,12 +19,10 @@ export type ImportState =
   | "done"
   | "needs-look"
   | "failed"
-  | "refused"
   | "expired";
 export function importState(summary: ImportSummary, local: LocalUpload): ImportState {
   if (local.stopAsked) return "stop";
   if (local.phase === "reading" || local.phase === "creating") return "reading";
-  if (local.phase === "refused") return "refused";
   if (summary.state === "cancelled") return "expired";
   if (summary.state === "finished") return summary.counts.needsLook ? "needs-look" : "done";
   if (local.stopLost) return "adding";
@@ -97,7 +95,6 @@ function fallbackNote(state: ImportState): string | undefined {
       return t`The destination was deleted. Trying again adds it at the area root.`;
     case "stop":
     case "expired":
-    case "refused":
       return undefined;
     default:
       return t`The destination was deleted. It will be added at the area root.`;
@@ -180,7 +177,6 @@ export function importPresentation(summary: ImportSummary, local: LocalUpload) {
       title: t`Import didn't finish`,
       detail: t`Nothing was added. Your files are kept for 7 days so you can try again.`,
     },
-    refused: { title: t`Import didn't start`, detail: local.error },
     expired: { title: t`Import discarded`, detail: t`It was waiting for 7 days.` },
   };
   return {
