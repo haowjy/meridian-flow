@@ -8,11 +8,11 @@ marks, a link, and a TypeScript fence.
 
 Check desktop and 390px in light and dark:
 
-- The editor has not changed. Chat keeps 14px body text against the editor's
-  16px default, with 4px between list rows and no paragraph gaps inside them.
+- The editor has not changed. Chat uses the chat text scale, with 4px between
+  list rows and no paragraph gaps inside them.
 - Quotes have the editor's jade border. Tables have cell rules, not an outer card.
-- Code has lowlight colors and no language header or download action. At the
-  default scales, its font is 11.375px in chat and 13px in the editor.
+- Code has lowlight colors and no language header or download action. Its size
+  follows the surface's text scale.
 - The code copy button is hidden at rest, appears on hover or keyboard focus,
   and copies only the source, not token markup. Clipboard failure never reports
   success. External links open a new tab and retain the outbound arrow. Internal links use
@@ -60,13 +60,5 @@ precedence. Chat
 images use the Editor's positive browser-source allowlist; unavailable sources
 show their alt text without fetching an app-origin or disallowed URL.
 
-Performance: `pnpm --filter @meridian/app bench:markdown` streams one 30,381-character,
-5,071-word text block at 30 tokens/s. It reports synchronous main-thread React
-commits, forced layout, and arrival-to-next-paint delay after the matching worker
-result. It also measures cold and cached mounts for both a repeated 50-message
-fixture and 50 distinct replies of 100 to 1,500 words, plus one long reply. Keep
-the fixtures and cadence unchanged for comparisons; alternate baseline and
-candidate runs on a shared host, and do not run checks concurrently.
-
-Focused contract checks:
-`pnpm --filter @meridian/app exec vitest run src/rich-content/reference-occurrences.test.tsx`.
+The renderer must also preserve the canonical reference and skill ranges while
+streaming and settling; only the authored link range becomes a token.

@@ -1,7 +1,7 @@
 # Chat Files menu
 
-The Files dropdown combines shared Scratch and files attached in this chat. Use the
-lane's `pnpm dev` stack and URLs from `pnpm portless:list`; sign in with
+The Files dropdown combines shared Scratch and files attached in this chat. Use an
+owned `pnpm dev` stack and URLs from `pnpm portless:list`; sign in with
 dev-login. Drive it with `agent-browser` under one session name. Attach through
 the composer's Attach file input (`agent-browser upload`), since the files must
 come in through the real intake.
@@ -35,7 +35,7 @@ come in through the real intake.
    right rail expanded). Reload: the dock tab comes back. This also holds for a chat
    created with its first attachment. On the Work and Editor screens, where the chat is
    the dock, rows offer no Open, and the sent message's attachment is not a link: those
-   screens have no viewer ([#884](https://github.com/haowjy/meridian-flow/issues/884)).
+   screens have no viewer.
 7. Open a second chat in the same Work: Files shows the same shared Scratch and
    no uploads from the first chat. Fork the first chat: the fork's
    trigger reads "Files" and its menu says "No files attached in this chat yet."
@@ -57,39 +57,3 @@ host the same way.
 two hidden file inputs (the dock editor's figure input and the composer's), and the first
 match may attach to another chat's composer draft. Upload with the ref of the composer's
 "Choose File" button, one file per call.
-
-## Shared Scratch and nested trees
-
-Seed a Work note at `scratch://notes/research/timing` through `./mf doc put`
-with that Work selected. Open Work Files, expand both folders, then open the
-same Work chat's Files menu and sidebar Scratch. All three show the actual
-`notes → research → timing` tree, with matching guide lines and folder actions.
-Use the phone coarse-pointer setup above to verify Work Files, the chat drawer,
-and Editor's nested project tree. Folder disclosure expands in place; opening a
-file navigates. There are no thread-folder badges or Open chat actions.
-
-Search Work Files for `timing`: both ancestors remain visible. Collapse/reopen a
-search result, clear the query, and confirm normal saved expansion is unchanged.
-Rename to an existing *filtered-out* sibling: collision validation still refuses.
-Search for a nonmatching name, click New note, and name the new note in place;
-its pending/error row and rename field must remain visible during the search.
-
-Rename, move and delete a note from each surface, reload, and compare the other
-surfaces. An archived Work permits browsing but offers no mutation actions.
-A failed refresh keeps already loaded rows, with Retry below them. Before chat
-ownership resolves, the menu must not fetch a global Scratch catalog. Two No Work
-lineages show different Scratch; forks/subagents retain their lineage's Scratch,
-and an actual handoff starts fresh. Rebinding changes the source, never copies
-notes. Uploads remain attached to their source primary chat throughout.
-
-## Tree guides, spacing and row actions
-
-Compare expanded Manuscript in the sidebar with nested Scratch in Work Files
-and the phone browser. Each visible expandable parent has one continuous guide
-through its children, aligned with its disclosure arrow. Hover and select a
-child: the guide stays above the fill, without blocking clicks or focus.
-Standalone lists start flush at their first depth (no phantom parent indent);
-real nesting adds one step. Check inline creation, rename, and filtered Work
-Files too. On both page and sidebar, hovering the ellipsis has a distinct fill
-from the hovered row. Repeat in light and dark themes, with a fine pointer;
-phone coarse-pointer rows and action targets remain at least 44px tall.

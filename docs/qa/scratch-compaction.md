@@ -40,20 +40,7 @@ are not provider-performance evidence. Avoid concurrent globally queued scripts.
    not a handoff file. List Scratch after each run: no automatic `.handoffs`,
    `handoff.md`, chat folders or copied notes.
 
-Verify ownership independently: another chat in the same Work sees the same
-Scratch; independent No Work chats do not; a No Work fork and subagent share
-the source lineage; an actual handoff starts a new lineage. Rebinding moves no
-notes. Complete [the Files browser checks](chat-files.md) on desktop and
-phone and capture the compaction/held rows after reloading the chat.
-
 Cold ordering: script a held `return_result` or `spawn` followed by prose in the
 same model response. After reload, the paired call must appear once as neutral
 Not run before compaction, never as a report or a hidden call. Ordinary failed
 `return_result` calls separated from their result by prose retain their reason.
-
-Tree composition: in a No Work chat create nested Scratch, then explicitly rebind
-it to a named Work with different nested Scratch. Both catalog trees must remain
-browsable in Files and the rail; Earlier notes itself offers no mutations.
-Rename/move/delete inside Earlier notes retain lineage ownership, while an archived
-Work makes only the Work tree read-only. Preserve disclosure after reload and show
-cached entries alongside refresh failure/Retry.

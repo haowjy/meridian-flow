@@ -24,10 +24,11 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
    lock is held ask for it from a SQL removal. PASS: the removal waits; after
    the file is deleted the reply's row commits first and the removal's lock is
    granted after it.
-3. **Reply write staged before a delete.** Pause at `save.afterWorkLock`; a
-   draft-mode chat inserts; `./mf doc rm` the document; resume. PASS: no draft
-   or live row for the write; an open live tab holds no AI text; the receipt
-   says the file was deleted before the reply was saved. Repeat in a No Work chat.
+3. **Reply write staged before a delete.** Pause at `save.beforeWorkLock`; a
+   draft-mode chat inserts; `./mf doc rm` the document; resume. The save has not
+   taken the Work lock, so the removal wins. PASS: no draft or live row for the
+   write; an open live tab holds no AI text; the receipt says the file was
+   deleted before the reply was saved. Repeat in a No Work chat.
 4. **Staged create after Discard.** Pause at `save.beforeWorkLock`; a
    draft-mode chat creates a file; Discard all the Work's branch; resume. PASS:
    the hidden row is a `discarded` tombstone with no head, no checkpoint, no

@@ -32,7 +32,7 @@ the result.
    that calls `work` with `{ "command": "write_mode", "mode": "draft" }`, then
    writes to the seeded document before ending.
 2. The command result says Draft applies from the next reply. The write made
-   later in this same reply lands live: the running execution stayed in its
+   later in this same reply lands live because the running execution keeps its
    starting mode.
 3. Send another message scripted to write the document. This write appears in
    draft review and leaves the live document unchanged.
@@ -63,10 +63,5 @@ Bind a read-only Agent to a fresh chat. Calls to `work switch` and
 chat's Work, applied write mode, pending controls, and Work default do not
 change. `work list` and `work show` still succeed.
 
-## Evidence and cleanup
-
-Capture the tool result and Work chip after the switch, the live-versus-draft
-document result across the two write-mode replies, both message transcripts,
-and both read-Agent refusals. Record the commit, stack URL, mock scripts and
-`./mf` JSON in the active work directory. Close the named browser session and
-stop only this worktree's stack with `pnpm dev --stop`.
+Close the named browser session and stop only this worktree's stack with
+`pnpm dev --stop`.

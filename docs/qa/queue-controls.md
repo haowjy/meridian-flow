@@ -1,10 +1,8 @@
 # Queue controls
 
-Browser checks for the chat queue: the queued look, the x, Cancel queue, Send now and the cards
-for every failure. One queue per chat: any tab's press takes any queued message into its own
-box, above typed text. Run each at a desktop (1280 wide) and a phone (390 wide) viewport, in
-light and dark. A step is not a claim that it passed on the current commit: record the commit,
-date, provider and evidence path after each run, in the active work directory.
+Browser checks for the chat queue: the queued look, the x, Cancel queue, Send now and recovery
+cards. Any tab's press takes queued messages into its own box, above typed text. Run at desktop
+and phone widths in light and dark.
 
 ## Setup
 
@@ -107,7 +105,7 @@ the words arrive in the box exactly once, and the card is gone.
 - **Racing Stop:** hold `send-now`, press Send now, then Stop, then release. Stop's hand-back won:
   the words are in the box once, the held Send now shows no card. For the other order press Send now
   first and release before Stop; the queue runs next.
-- **Replay after settlement** (needs `./mf thread queue send-now --replay`, lane M): replaying the
+- **Replay after settlement** (needs `./mf thread queue send-now --replay`): replaying the
   printed body after the next reply started prints "this attempt requested no cancellation" and
   does not cancel the next reply.
 - **Compaction holding the queue** (needs a start-time compaction): Send now answers null, and the
@@ -120,33 +118,11 @@ and queue `late 1`. Hold the `hand-back` POST, press the x, wait until `./mf thr
 `late 1` no longer queued (the tool boundary adopted it), then release. The row comes back as an
 ordinary message the reply answers, the box is empty, and no card shows.
 
-## QC-08: failure cards
+## QC-08: queue-specific failure cards
 
-Hand-back failures are `FailureCard`s above the box. A queued-command failure
-sits in that command's row. None announces itself; the chat's keyed announcer
-publishes watched cards.
-
-- **Committed, answer lost:** as QC-05 without reloading. Rows gone, card with Try again. Restore
-  `fetch`, Try again: the words arrive once, the card clears.
-- **Failed composer write:** hold the `hand-back` POST, press Cancel queue, fill `sessionStorage`,
-  release. Rows gone and the card shows. Free storage, Try again: the words arrive once.
-- **Unsaved:** fill `sessionStorage` first, press the x. Nothing is sent, the row stays queued and
-  the card shows. Free storage, Try again: the row leaves and the words arrive.
-- **Occurrence identity:** lose a hand-back answer, then make the composer storage write fail.
-  Press Try again twice: each press has a new card key, no new POST occurs, and the already
-  stored command and its recovery card remain. Restore storage, Retry with another lost answer,
-  and read the pending command's `occurrence`. Reload while the response is still lost: the
-  stored occurrence and card key stay the same. Restore transport and reload: words arrive once,
-  the command/card retire, and a second reload does not duplicate the words. A refused write
-  cannot preserve its new occurrence across reload; only the last saved occurrence survives.
-- **Refused:** answer `hand-back` with 409. The rows come back and the card has Dismiss only;
-  Dismiss clears it. The copy follows the row count: "Couldn't move your queued message." for one
-  row, "Couldn't move your queued messages." for more.
-- **Send now:** drop the `send-now` request. "Couldn't send now." with Try again, which re-sends the
-  same body once `fetch` is restored. A 409 offers Dismiss.
-- **Stop:** drop the `stop` request. "Couldn't stop the reply." with Try again, which replays the
-  same request.
-- **A queued `/compact`'s Stop:** drop the `withdraw` request and press Stop on the row. "Couldn't
-  stop the compaction." with Try again sits in the control's row in place of Stop. Restore `fetch`,
-  Try again: the row leaves.
-- No red text line remains anywhere in the queue.
+Use [Failure cards](failure-cards.md) for shared card and live-region cases. Keep
+the queue-specific paths here: drop `send-now` and expect "Couldn't send now."
+with Try again or Dismiss; drop `stop` and expect "Couldn't stop the reply."
+with Try again; and drop a queued `/compact` row's `withdraw` request and expect
+"Couldn't stop the compaction." with Try again in that row. Restore `fetch` and
+confirm each retry completes once and removes its card.

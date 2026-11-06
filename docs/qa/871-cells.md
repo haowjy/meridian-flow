@@ -1,22 +1,20 @@
-# #871 cells: the writer types while the AI rewrites
+# Writer typing while the AI rewrites
 
-Protects [#871](https://github.com/haowjy/meridian-flow/issues/871): an AI write plans on what the
-model was shown, so writer text typed after the model's read survives unless the write deletes the
-block holding it. Four cells, each in auto-apply (No Work, direct) and draft mode (a named Work,
-`aiWriteMode: "draft"`). Run it in the browser with `agent-browser`; `./mf` sets up and reads back.
+Run four cells in auto-apply and Draft mode. `./mf` sets up and reads back the
+documents; `agent-browser` drives the writer's typing.
 
 ## Stack and seed
 
 ```bash
 MODEL_PROVIDER=mock pnpm dev
-pnpm portless:list          # this worktree's app and server
+pnpm portless:list
 P=$(./mf project default --json | jq -r .projectId)
 ```
 
-`chapter.md` (pass it with `--text @chapter.md`; a shell `$'…'` string collapses to one block):
+Use this fixture as `chapter.md` with `--text @chapter.md`:
 
 ```markdown
-# 871 Chapter
+# Chapter
 
 Paragraph A stood at the gate.
 
@@ -29,90 +27,44 @@ Paragraph D kept two clocks.
 Paragraph E watched the hawk.
 ```
 
-One document per cell and mode, so writes can't contaminate each other:
-
-```bash
-for c in C1 C2 C3 C4; do for m in Direct Draft; do
-  ./mf doc put "manuscript://871 $c $m" --text @chapter.md --overwrite --json
-done; done
-./mf api POST "/api/projects/$P/works" --data '{"name":"871 Sweep Probe"}' --json > work.json
-W=$(jq -r .id work.json)
-./mf api GET "/api/agents?projectId=$P&limit=100" --json \
-  | jq '.agents[] | select(.slug=="general").selection' > agent-selection.json
-for c in c1 c2 c3 c4; do
-  ./mf thread create --title "871 $c direct" --json > thread-$c-direct.json
-  jq -n --arg p "$P" --arg w "$W" --arg id "$(node -p 'crypto.randomUUID()')" --arg t "871 $c draft" \
-    --argjson sel "$(cat agent-selection.json)" \
-    '{id:$id,projectId:$p,title:$t,agentSelection:$sel,workId:$w,aiWriteMode:"draft"}' > body-$c.json
-  ./mf api POST /api/threads --data @body-$c.json --json > thread-$c-draft.json
-done
-```
-
-Read each document once on its thread to learn the block hashes (blocks are heading, A, B, C, D,
-E), with `./mf thread send "$T" 'Read.' --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://871 C1 Direct"}}]},{"text":"Read."}]'`
-and `./mf thread view "$T" --last 2 --full --json`. Hashes differ per document and per run.
-
-**Prime each draft document** with one draft-mode write to paragraph A (`in: <hash-A>`, content
-`Paragraph A stood at the gate (draft primed).`), so a Work draft exists and the writer can type in
-the draft editor. Its `itemKey` (`branchId:documentId`) comes from
-`./mf api GET "/api/projects/$P/works/$W/branches"`; the draft editor is
-`/p/<P>/editor/manuscript/871%20C1%20Draft?work=<W>&item=<itemKey>`. Auto-apply opens the same path
-without `?work=`.
+Create one document for each cell and mode with `./mf doc put`, create one Work
+with `POST /api/projects/$P/works`, and create one direct and one Draft chat per
+cell. The Draft chats use `workId` and `aiWriteMode: "draft"`. Read each
+document once on its chat to learn the hashes for heading, A, B, C, D, and E.
+Prime each Draft document with a write to paragraph A so its Work draft exists;
+get the `itemKey` from `GET /api/projects/$P/works/$W/branches` and open
+`/p/<P>/editor/manuscript/<document>?work=<W>&item=<itemKey>`.
 
 ## Each cell
 
-One reply, three model calls: read, a write held with `delayMs: 30000` so the writer types after
-the read, then text.
+Send one mocked reply with a `read`, a write held by `delayMs: 30000`, and a
+final text step:
 
-| Cell | Write | Writer types, after the read (press End on the paragraph first) |
+| Cell | Model write | Writer types after the read |
 |---|---|---|
-| 1 | `replace`, `in: [hash-B, hash-C]`, two rewritten paragraphs | on B: `Enter`, then `hmmm WRITER-P` |
-| 2 | `replace`, `in: hash-B`, `Paragraph B was rewritten by the model.` | on B: ` WRITER-W` |
-| 3 | `remove`, `in: hash-D` | on D: ` WRITER-D` |
-| 4 | same as 2 | on E: `Enter`, then `WRITER-OUT` |
+| 1 | `replace`, `in: [hash-B, hash-C]`, two rewritten paragraphs | On B, press Enter and type `hmmm WRITER-P`. |
+| 2 | `replace`, `in: hash-B`, rewrite B | Append ` WRITER-W` to B. |
+| 3 | `remove`, `in: hash-D` | Append ` WRITER-D` to D. |
+| 4 | Same as cell 2 | On E, press Enter and type `WRITER-OUT`. |
 
-```json
-[
-  {"toolCalls":[{"name":"read","args":{"path":"manuscript://871 C1 Direct"}}]},
-  {"delayMs":30000,"toolCalls":[{"name":"write","args":{"command":"replace","path":"manuscript://871 C1 Direct","in":["<hash-B>","<hash-C>"],"content":"Paragraph B was rewritten by the model.\n\nParagraph C was rewritten by the model."}}]},
-  {"text":"Done."}
-]
-```
+Start the send in the background. After the NDJSON has `type: tool.completed`
+with `name: read`, type into the visible
+`[contenteditable][aria-label="Collaborative document editor"]`. Close the
+chat switcher first.
 
-Start the send in the background (`./mf thread send "$T" '…' --mock @c1-direct.json --json > c1-direct.ndjson`),
-wait until the NDJSON has `type: tool.completed` with `name: read`, then type in the browser.
-The draft review page holds two editors (a hidden live one); type into the
-`[contenteditable][aria-label="Collaborative document editor"]` whose height is above 0. Close the
-chat switcher before typing.
+## Expected result
 
-## Expect
+- Cell 1 keeps the writer paragraph between rewritten B and C.
+- Cell 2 keeps ` WRITER-W` as B's suffix.
+- Cell 3 loses D and ` WRITER-D`; the ancestor delete removed the block.
+- Cell 4 keeps `WRITER-OUT` outside the model's passage and lists it under
+  `concurrent edits by the user`.
 
-No concurrent writer edit refuses the model write; the Yjs merge decides what survives.
+No concurrent writer edit refuses the model write, no text is duplicated, and
+Draft mode leaves the live document unchanged. Repeat cell 2 with a sentence
+longer than ten words: the write lands and the receipt names the user's
+contribution. A write based on a partial read follows the same rule.
 
-| Cell | Both modes |
-|---|---|
-| 1 | writer paragraph kept between the rewritten B and C |
-| 2 | B rewritten, ` WRITER-W` kept as its suffix |
-| 3 | D and ` WRITER-D` gone (ancestor delete: the write removed the block holding the writer's text) |
-| 4 | `WRITER-OUT` kept; it is outside the write's passage and listed under `concurrent edits by the user` |
-
-No result prints a `swept:` line.
-
-No text duplicated anywhere. In draft mode the live document keeps the five original paragraphs
-(`./mf doc read`). Repeat cell 2 with a sentence longer than ten words: the write still lands,
-the normal receipt shows the resulting B block, and `concurrent edits by the user` names the
-user's contribution. A write based on a partial read lands by the same rule.
-
-Capture per cell the `tool.settled` line, `./mf thread view "$T" --last 2 --full --json`, the
-document text (auto-apply: `./mf doc read`; draft: the visible editor), and one screenshot of the
-editor beside the chat dock.
-
-## Last run
-
-2026-10-19, M2's last fix round (`persist` returns a save's only cut and an "only if empty"
-precondition is judged inside the append; a delivery request cuts a retry's wait short), API level
-only (an in-process probe on the real collab domain, writer edits applied as Yjs updates to the live
-room and as writer frames to the Work draft): all eight cells as expected above, text identical to
-fix round 4's apart from Yjs-client-dependent hashes. Before-state and W1's browser run:
-`work/concurrent-edit-design/m2/probe/before/` and `probe/after/` in the docs repository; raw
-results: `probe/final/cells-871.md`. A browser run is still owed.
+For each cell capture the `tool.settled` line, `./mf thread view "$T" --last 2
+--full --json`, document text (`./mf doc read` for auto-apply), and a screenshot
+of the editor beside the chat.

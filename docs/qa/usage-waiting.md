@@ -44,7 +44,7 @@ idempotency key on each drain, as above; replaying a key does not drain again.
 5. `./mf thread send <id> "Another kept message" --json --timeout 10s`
    exits 1 with `status: "blocked", reason: "credits_exhausted"`, not timeout.
 6. Capture existing/new chats at 1280px and a touch-enabled 390px phone viewport,
-   light and dark. Crop the desktop sidebar containing the dev account address.
+   light and dark.
 
 ## Restore usage and observe without another send or reload
 
@@ -90,4 +90,4 @@ On an existing chat with a completed reply and exhausted usage:
    the response. The CLI must return that completed reply with its turn ID and
    exit 0, even when catch-up contains the old blocked event.
 5. Existing blocked sends still exit 1 promptly. Recovery removes the card and
-   the queued look at start. No rendering change is expected from this rework.
+   the queued look at start.

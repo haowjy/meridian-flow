@@ -5,16 +5,12 @@ content acquisition, and that the installed destination owns the one content
 open. Run it on an owned mock stack with a fresh database and a named
 `agent-browser` session.
 
-## Setup and measurements
+## Setup
 
-1. Seed a project with 250-word, 5,000-word, and 30,000-word chapters, more than
-   100 catalog entries, and a chat with a long transcript. Open every chapter
-   once when an exact-local case is needed.
-2. Before each click, install uncapped browser probes for `fetch`,
-   `IDBDatabase.transaction`, `longtask`, and `long-animation-frame`. Record the
-   transaction stack. Record click to URL, destination host, and visible content
-   separately. Run every timed case at least three times and report host load.
-3. For phone runs, use CDP touch emulation as well as a 390 by 844 viewport.
+1. Seed a project with short, long, and very long chapters, more than 100
+   catalog entries, and a chat with a long transcript. Open a chapter once when
+   an exact-local case is needed.
+2. For phone runs, use CDP touch emulation as well as a 390 by 844 viewport.
    Assert `matchMedia(PHONE_SHELL_QUERY).matches`, the **Open navigation** phone
    control, and `MobileDocumentHost` after opening a document.
 
@@ -23,11 +19,10 @@ open. Run it on an owned mock stack with a fresh database and a named
 1. Open an unmounted exact-local chapter, a cold server-only chapter, and a
    mounted tab. The URL, tab, or dock header changes on acceptance. Exact-local
    paint makes no availability request. A cold open makes one availability
-   POST. Attribute every metadata transaction to its caller.
+   POST.
 2. From Chat, open a document door and a Recent row into the dock. The chat
    stays visible while the dock header commits, then content paints. Repeat
-   during a long paced mock reply with reasoning and keep the transaction probe
-   uncapped.
+   during a long paced mock reply with reasoning.
 3. From the phone drawer, open a chapter. The drawer closes on commitment.
    Block availability and confirm the phone destination shows the failure and
    Retry. Unblock it and Retry; a new POST opens the chapter.
@@ -77,4 +72,6 @@ editor.
 
 Download prose documents named `Ending`, `part.one`, and `龙脉终章`, plus a non-prose
 document. The prose downloads are `Ending.md`, `part.one.md`, and `龙脉终章.md`;
-the non-prose download keeps its stored name.
+the non-prose download keeps its stored name. Inspect `Content-Disposition` for
+the ASCII fallback and UTF-8 filename, and confirm binary downloads return the
+stored bytes.
