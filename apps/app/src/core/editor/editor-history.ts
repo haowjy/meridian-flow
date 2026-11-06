@@ -1,15 +1,16 @@
 /** One mounted editor's chronological history across Yjs edits and editor Apply commands. */
 import type { Editor } from "@tiptap/core";
-import { TextSelection } from "@tiptap/pm/state";
+import type { Node as PMNode } from "@tiptap/pm/model";
+import { type Selection, TextSelection } from "@tiptap/pm/state";
 import {
   getRelativeSelection,
   relativePositionToAbsolutePosition,
   ySyncPluginKey,
   yUndoPluginKey,
 } from "@tiptap/y-tiptap";
-import type { UndoManager } from "yjs";
+import * as Y from "yjs";
 
-type StackItem = UndoManager["undoStack"][number];
+type StackItem = Y.UndoManager["undoStack"][number];
 
 type EditorHistoryAction = {
   undo(): void;
@@ -35,8 +36,40 @@ function insert(entries: Entry[], entry: Entry): void {
   entries.splice(index < 0 ? entries.length : index, 0, entry);
 }
 
+/** Whether the selection touched the span of the document that `after` changed from `before`. */
+function overlapsChange(before: PMNode, after: PMNode, selection: Selection): boolean {
+  const start = before.content.findDiffStart(after.content);
+  const end = before.content.findDiffEnd(after.content);
+  if (start === null || end === null) return false;
+  return selection.from <= end.a && selection.to >= start;
+}
+
+/**
+ * A relative position as a document position, or null when it no longer
+ * stands for live text. `relativePositionToAbsolutePosition` resolves a
+ * position inside a deleted paragraph to wherever the walk ends up, often the
+ * end of the document, so any deleted ancestor counts as unresolved.
+ */
+export function liveAbsolutePosition(
+  binding: {
+    doc: Y.Doc;
+    type: Y.XmlFragment;
+    mapping: Parameters<typeof relativePositionToAbsolutePosition>[3];
+  },
+  relative: RelativeSelection["anchor"],
+): number | null {
+  const decoded = Y.createAbsolutePositionFromRelativePosition(relative, binding.doc);
+  if (!decoded) return null;
+  for (let type: Y.AbstractType<unknown> | null = decoded.type; type; ) {
+    const item: Y.Item | null = type._item;
+    if (item?.deleted) return null;
+    type = (item?.parent as Y.AbstractType<unknown> | null | undefined) ?? null;
+  }
+  return relativePositionToAbsolutePosition(binding.doc, binding.type, relative, binding.mapping);
+}
+
 class MountedEditorHistory implements EditorHistoryHandle {
-  private readonly manager: UndoManager;
+  private readonly manager: Y.UndoManager;
   private readonly undo: Entry[] = [];
   private readonly redo: Entry[] = [];
   private sequence = 0;
@@ -113,6 +146,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
     stack.splice(0, stack.length, ...original.filter((item) => allowed.has(item)));
 
     const before = this.relativeSelection();
+    const { doc: docBefore, selection: selectionBefore } = this.editor.state;
     this.suppressManagerEvents = true;
     this.managerGenerated = null;
     let popped: StackItem | null = null;
@@ -125,7 +159,10 @@ class MountedEditorHistory implements EditorHistoryHandle {
     this.reconcileNativeSegment(source, stack, original, allowed);
     const generated = this.managerGenerated as StackItem | null;
     if (popped) this.restoreRange(popped);
-    if (before) generated?.meta.set(RANGE_META, before);
+    // Redo gives back the range only if it was at the change: elsewhere it is unrelated.
+    if (before && overlapsChange(docBefore, this.editor.state.doc, selectionBefore)) {
+      generated?.meta.set(RANGE_META, before);
+    }
     if (popped && generated) {
       const known = popped.meta.get(HISTORY_META) as Entry | undefined;
       const moved: Entry = {
@@ -160,16 +197,14 @@ class MountedEditorHistory implements EditorHistoryHandle {
       | null
       | undefined;
     if (!binding || before?.type !== "text") return;
-    const resolve = (relative: RelativeSelection["anchor"]) =>
-      relativePositionToAbsolutePosition(binding.doc, binding.type, relative, binding.mapping);
-    const anchor = resolve(before.anchor);
-    const head = resolve(before.head);
+    const anchor = liveAbsolutePosition(binding, before.anchor);
+    const head = liveAbsolutePosition(binding, before.head);
     if (anchor === null || head === null || anchor === head) return;
     const { state, view } = this.editor;
     view.dispatch(
-      state.tr.setSelection(
-        TextSelection.between(state.doc.resolve(anchor), state.doc.resolve(head)),
-      ),
+      state.tr
+        .setSelection(TextSelection.between(state.doc.resolve(anchor), state.doc.resolve(head)))
+        .scrollIntoView(),
     );
   }
 
