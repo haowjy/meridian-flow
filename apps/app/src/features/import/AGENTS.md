@@ -50,27 +50,30 @@ it and a report leaves its marks. Missing files stay awaiting until the writer c
 "Import without them". Starting an upload still never hashes or sniffs files.
 
 The browser mints the import id before reading; every create replay uses that id.
-Creation knowledge (`local`, `uncertain`, `created`), not the toast phase, decides
+Creation knowledge (`local`, `uncertain`, `created`), not the displayed phase, decides
 what dismissal can do. Only an import no create could have committed closes
 locally. Later refusals and an empty open list cannot erase an unanswered start;
 Stop replays uncertain create before cancelling. Response revisions and upload
 attempts fence late answers; polling never overwrites an in-flight command or
 clears its error. Catalog/receipt progress cannot regress on an old response.
 
-`toast-presentation.ts` owns the state table; `ImportToasts` renders its controls. Stop in any
+`import-presentation.ts` owns the state table; `ImportPanel` renders its controls. The Import button in a destination section header (`ImportHeaderAction`) shows a spinner while an import runs and a dot when one needs the writer, and opens the panel in a popover; a phone opens it in a sheet from the Import entry in the `+` menu. An import in another project shows nothing here. Stop in any
 phase before reveal discards everything; a reveal winning the race reports that
 it finished. Failed organize offers Try again or Stop, never partial import.
 `import_finished` clears confirmation and records the lost Stop race before any
 optional detail read. Stop stays hidden, and Adding counts organized as well as
 prepared files until the server says finished. A clean completion acknowledges
-only after six visible seconds. Local refusals
-close locally; durable terminal acknowledgements apply across tabs.
+at once, or when an open popup that shows it closes. A finished import that skipped a file the
+writer would care about (anything but `hidden` and `trash`) needs the writer, like a needs-look
+result; closing the popup acknowledges a result that
+needed a look. Show opens one of the import's files, one that needs a look first, so the tree
+reveals it. An import refused before it starts toasts (`notifyFailure`) and closes locally; durable terminal acknowledgements apply across tabs.
 
 `pending-roots.ts` is the five-rule projection. Catalog identity wins; historical
 `root.created` is not liveness. The coordinator remembers observed roots across
 account-lifetime navigation. The 30-second catalog bridge starts when it learns
 creation, not when a tree remounts. Pending roots have no URI or document capabilities: activating
-one reveals its toast, never opens an editor. No import state enters the replica.
+one opens its popup, never an editor. No import state enters the replica.
 A pending root takes the slot its folder will land in (`withPendingRoots`): default-order position in a default
 parent, last in a manual one, so it does not jump at reveal.
 

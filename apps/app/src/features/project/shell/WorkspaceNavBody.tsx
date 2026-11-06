@@ -36,8 +36,6 @@ export type WorkspaceNavBodyProps = {
   scratch?: ReactNode;
   /** Opens the project's Trash; its row sits below Scratch. */
   onOpenTrash?: () => void;
-  /** The phone drawer's notice under the file tree: it takes height from the tree, so nothing shifts or is covered. Desktop notices sit in the window's corner. */
-  notice?: ReactNode;
 };
 
 export function WorkspaceNavBody({
@@ -48,7 +46,6 @@ export function WorkspaceNavBody({
   childrenRef,
   user,
   scratch,
-  notice,
   onOpenTrash,
 }: WorkspaceNavBodyProps) {
   const phone = presentation === "phone";
@@ -86,8 +83,6 @@ export function WorkspaceNavBody({
       >
         {children}
       </div>
-
-      {notice}
 
       {/* Docked sections draw their own dividers, so none shows for an absent one. */}
       {user}

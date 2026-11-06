@@ -10,12 +10,11 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { useDeleteContextEntry } from "../context/document-delete-undo";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
-import { SurfaceNotices } from "../context/project-notices";
 import { DropRegion } from "../context/tree-drop/DropRegion";
 import { useTreeDropTarget } from "../context/tree-drop/tree-drop";
 import { treeFolderIds } from "../context/tree-expansion-state";
+import { useDeleteContextEntry } from "../context/use-delete-context-entry";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
@@ -77,7 +76,7 @@ type WorkFilesViewProps = {
 
 export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewProps) {
   const { scratch, intake } = files;
-  const scratchDelete = useDeleteContextEntry("work-files");
+  const scratchDelete = useDeleteContextEntry(projectId);
   const catalog = scratch.catalog;
   const openFile = useOpenDocumentInDock();
   const docked = useDockDocument(useProjectScreen(), projectId)?.tab.documentId;
@@ -128,7 +127,7 @@ export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewP
       catalog ? [{ scheme: "scratch" as const, owner, catalog, accepts: files.editable }] : [],
     [catalog, owner, files.editable],
   );
-  const list = useEntryList({ projectId, surface: "work-files", areas });
+  const list = useEntryList({ projectId, areas });
   const matchesSearch = workFileSearch(search);
   const hasRows = catalog
     ?.children(catalog.root.entryId)
@@ -200,7 +199,6 @@ export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewP
         </ScratchDropGroup>
       </EntryList>
       {/* Under the list, which stays visible with the sidebar collapsed. */}
-      <SurfaceNotices surface="work-files" className="sticky bottom-2 mx-2 mt-2" />
     </div>
   );
 }

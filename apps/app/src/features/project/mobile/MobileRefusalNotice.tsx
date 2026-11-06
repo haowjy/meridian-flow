@@ -13,7 +13,6 @@ import { parentContextEntryPath } from "../context/context-entry-name";
 import { EntryDestinationPicker } from "../context/EntryDestinationPicker";
 import { EntryNameField } from "../context/EntryNameField";
 import { EntryRefusalNotice } from "../context/EntryRefusalNotice";
-import { OperationFeedbackProvider } from "../context/entry-drag/operation-notice";
 import { useEntryInteraction } from "../context/use-entry-interaction";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 
@@ -73,24 +72,21 @@ function RefusedDocument({
     onRequestDelete: () => undefined,
     siblings: parent?.kind === "dir" ? catalog.children(parent.entryId) : [],
   });
-  // Move… publishes its operation under the phone's surface, as the Files list does.
   return (
-    <OperationFeedbackProvider feedback={{ surface: "mobile" }}>
-      <EntryDestinationPicker {...interaction.picker}>
-        <div className={className}>
-          {interaction.renaming ? (
-            <RenameField options={interaction.rename} />
-          ) : file.namespaceFailure ? (
-            <EntryRefusalNotice
-              failure={file.namespaceFailure}
-              move={Boolean(file.namespaceRepairMove)}
-              actions={interaction.actions}
-              onAction={interaction.onAction}
-            />
-          ) : null}
-        </div>
-      </EntryDestinationPicker>
-    </OperationFeedbackProvider>
+    <EntryDestinationPicker {...interaction.picker}>
+      <div className={className}>
+        {interaction.renaming ? (
+          <RenameField options={interaction.rename} />
+        ) : file.namespaceFailure ? (
+          <EntryRefusalNotice
+            failure={file.namespaceFailure}
+            move={Boolean(file.namespaceRepairMove)}
+            actions={interaction.actions}
+            onAction={interaction.onAction}
+          />
+        ) : null}
+      </div>
+    </EntryDestinationPicker>
   );
 }
 

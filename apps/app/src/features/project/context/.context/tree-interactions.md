@@ -110,17 +110,10 @@ settles the folder and exact descendant identities atomically. Pending deletion
 hides the subtree; refusal restores rows with a failure mark. Tree absence never
 proves document removal.
 
-Writer deletion has no confirmation step. One project-scoped owner keeps the short-lived
-Undo windows for all mounted tree surfaces, while delete progress remains derived from the
-namespace journal. Undo waits for a pending intent, reads the delete receipt, and restores the
-receipt's named removals. The catalog stream makes restored identities visible again. A local
-file restoration then replays the deletion-time sibling witnesses through `moveRows`, so a manual
-parent regains the file's former position and remains manual; it is skipped when the writer admitted
-a newer placement of the restored file meanwhile (`placementTakenSince`). A document the server never
-accepted gets an Undo window too, ten minutes (`LOCAL_DELETION_UNDO_MS`): the deletion settles on this device
-and its exact content waits out the window (`cleanup.notBefore`). Undo supersedes that deletion and sends the
-document's create again; a document whose create the server refused is refused again, once, and stays listed
-in Unfiled with its text. An empty folder deletion has no Undo window.
+Writer deletion has no confirmation step and no Undo: the row leaves the tree, and the document
+waits in Trash. Delete progress is derived from the namespace journal. A document the server never
+accepted has no Trash entry; its deletion settles on this device. Its content is cleaned up after ten
+minutes (`LOCAL_DELETION_UNDO_MS`, `cleanup.notBefore`), and nothing brings it back.
 
 ## Downlinks
 
@@ -157,7 +150,7 @@ retries.
 A document whose create the server refused sits in Unfiled with its text and the same mark
 (`namespaceFailure: "create"`, "Couldn't create this document. Try another place."). Its row menu
 repairs it like any row: Move… or Rename files it with a new create under the same id,
-Delete removes it from this device with the Undo window above. A refused named create (New file in a folder, a link's
+Delete removes it from this device. A refused named create (New file in a folder, a link's
 Create) is listed at its name, not under a folder of the refused destination.
 
 The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
@@ -185,8 +178,8 @@ Scratch/Uploads, never project-owned Manuscript/KB/User paths.
 
 Move… follows Rename in the shared action specification, including phone actions,
 and Copy to… follows Move…. They are one component:
-`EntryDestinationPicker` takes an `action` ("move" or "copy") and the rows to pick
-for (Move… takes one row; the refused-Copy notice sends back all of a Copy's).
+`EntryDestinationPicker` takes an `action` ("move" or "copy") and the row to pick
+for (one row, from the row menu).
 Both offer the same destinations, and a folder cannot go inside itself in either.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
 position choices (it always adds, and its copy takes the next free name in the
@@ -195,7 +188,7 @@ parent the row is already in), and it calls `copyRows` where Move… calls `move
 the current parent for a new move or copy (at the project's root when no area is given). A retry opens at the refused destination
 when it still resolves (matching owner and full path), otherwise at the
 current parent with the refusal message. It disables files and the moved folder's subtree, and offers no
-commit at the area list. In the current parent the action is "Change position in <folder>", which
+commit at the area list. In the current parent the action is "Change position", which
 opens the places among its siblings in place of the tree (`DrillAction.choices`): the top, after each
 sibling, the bottom, read from the replica's complete sibling order (`childrenAt`, not what a search
 shows), without the place it already holds. It reads "Already in <folder>" only when the entry has no
@@ -214,8 +207,7 @@ picker and a hover agree even while a peer moves rows. A ready drag plan already
 contains rows with their authoritative `ParentRef`; hover prediction and
 `moveRows` consume those rows without resolving the destination again.
 `moveRows` (`entry-drag/execute-move.ts`) places, remembers each operation for
-its row's link-update note and returns the result to the project-owned notice
-surface. Root authority resolution lives in `move-entry.ts`; arrival naming is
+its row's link-update note and returns which rows moved and which the replica refused. Root authority resolution lives in `move-entry.ts`; arrival naming is
 `arrivals` in `execute-move.ts`, over `context-entry-name.ts`. A positional
 destination makes a same-parent placement a reorder rather than "already there";
 the subject is removed from name occupancy, so keeping its name cannot collide
@@ -281,80 +273,24 @@ final name. The hover shows that prediction before the drop: an accept whose
 rows would arrive renamed carries a warning, drawn as a second line under the
 hint ("chapter-1 will be renamed chapter-1 (2)", or "3 items will be renamed").
 Letting go accepts it; Escape or another target declines it. A drop moves every carried row through
-`moveRows` (`entry-drag/execute-move.ts`), reselects them, reveals the destination (the target's
-own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
-2." (or "Moved chapter-3 to Act 2 as chapter-3 (2).") with Undo on the surface
-that took the drop, in that surface's one notice place, shared with delete
-notices (see `CONTEXT.md`). On desktop every surface shares one place: a
-card in the window's bottom-right corner, stacked by time with the import
-toasts. On a phone it sits in
-the drawer between the Files tree and User and at the end of the folder
-browser, part of the layout: it takes height from the tree's scroll area and
-never covers a control. It stays until the next move or delete in
-that place, Dismiss, or the project changing, so Undo is never a race.
-`OperationNoticesProvider` keeps each surface's latest move or copy, as data, whether or
-not the list that made it is still on screen; a kind supplies its message, how it
-follows the server and how it is taken back (`move-operation.ts`,
-`copy-operation.ts`), and the phases below are the same for both. Undo shows only while it has
-something to put back: the provider watches the replica and retires Undo once
-every moved row was renamed, moved again, reordered or deleted (only after the move has
-shown in the replica, which can trail the placement by a moment); the message
-stays until dismissed. A row the server refuses goes back with its failure mark,
-and the notice stops saying it moved: "Couldn't move chapter-3." without Undo,
-or "Moved 2 items to Act 2. Couldn't move chapter-3." when the rest landed.
-Refused means the replica settled that move's own operation (`MoveEffect.operationId`)
-as needs-repair (`intentSettlement`); a row the writer changed since supersedes that
-intent, so it only loses Undo. A refusal names its row as it was (`entryNameNow`), so the
-notice drops that line once the row is renamed or gone, and the notice itself once nothing is left to say.
-Freshness uses the move receipt's per-entry `locationVersion` after its server observation fence,
-not the catalog's scope-wide observation version; unrelated namespace edits therefore do not retire
-Undo, while a same-entry peer change does even if it later returns to the same rank.
+`moveRows` (`entry-drag/execute-move.ts`), reselects them and reveals the destination (the target's
+own `reveal`, the same one the spring calls). The tree is the whole report of a move that works.
+A row the replica won't admit toasts "Couldn't move chapter-3 to Act 2." ("Couldn't move 3 items
+to Act 2." for several) with Retry for the rows it refused. A row the server refuses later goes
+back with its failure mark and `RefusalToasts` shows the same toast (see `CONTEXT.md`).
 
-Each surface's window is in one phase, and the phase decides what shows:
-
-| Phase | Shows | Watches |
-|---|---|---|
-| `active` | "Moved …" or "Copying …"/"Copied …", Undo while `undoable` | what the kind follows: a move's unsettled operations, a Copy's operation record |
-| `undoing` | the same notice, Undo disabled | nothing; the replica is admitting the reverse moves |
-| `reversing` | nothing | reverse moves the server hasn't settled |
-| `undo-failed` | "Couldn't move chapter-3 back.", Dismiss only | the rest of the reverse moves, which can only add to the count |
-
-Undo goes to `reversing` when the replica took every row back, or to `undo-failed`
-when it refused some (or threw). A server refusal in `reversing` brings the notice
-back as `undo-failed`. `reversing` ends once every reverse move is accepted or
-superseded by the writer's next change; a newer notice on the surface or the project
-changing ends any phase. Only a settled state retires a tracked operation:
-the replica admits a move before its projection shows the intent, so an intent
-`intentSettlement` can't find yet counts as pending. Journals keep their intents, so
-"not found" is never a pruned intent. A row whose record left the projection stays
-pending; its window ends with the next notice or the project.
-
-Move… and Copy to… publish through the required surface supplied around their rows, whether
-or not a list is mounted. A desktop list optionally selects the moved row and
-restores focus after its notice closes; the phone browser needs neither list
-behavior nor a drop scope. Move… does not reveal a
+Move… and Copy to… report the same way, whether or not a list is mounted. A desktop list
+selects the moved row; the phone browser needs no selection or drop scope. Move… does not reveal a
 collapsed destination (expansion belongs to each section); moving the open
 document reveals it through the active-document reveal.
 
 Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server
-refusal lands on the row as its failure mark. A row the replica won't admit is
-named in the notice, and Undo still covers the rows that moved. Undo returns
-each row to its previous parent and sibling position (the next free name there if its own was taken
-since, read from the replica's placement with `childrenAt`). The reverse placement
-leaves that parent manually ordered. Undo is a compensating placement batch: it
-skips a row whose placement another operation owns now (`placementStillOwned`:
-a newer live placement of that row in the journal, or after the receipt is
-covered by the catalog, a different `locationVersion`), never because a sibling
-gap looks different, so rows moved together can all be undone before any is
-acknowledged. The compensation is admitted after the originals and projects at
-once. It reads the replica as it
-is when pressed, not as it was at the drop. Verdicts likewise resolve each
+refusal lands on the row as its failure mark. Verdicts likewise resolve each
 dragged row by identity from the replica's placement graph (rows another list
 dragged included), so a peer's rename or move during the drag can't slip a
 folder inside itself. A lone moved row stays selected on its own (an explicit
-selection of one), not the open row, and Undo needs no reselect because keys
-never change.
+selection of one), not the open row.
 
 ### Dropping across systems, and dropping references
 
@@ -374,7 +310,7 @@ close it with nothing changed, and focus returns to the list. The whole selectio
 takes one choice; the same-system subset never moves alone. A drop never asks when
 nothing it offers is enabled: a folder over its own subtree and a selection that
 lost a row refuse on hover instead. Choosing Move goes through `moveRows`, the path
-Move… and a same-system drop use, and reports with the same notice and Undo.
+Move… and a same-system drop use.
 Choosing Copy goes through `copyRows` (below). Phones have no drag, so no menu: they
 use Move… and Copy to…, which already cross systems.
 
@@ -399,8 +335,8 @@ is a new item there and a branch in the list's `choose`. The contract:
   into a plan; an action plans from the resolution and never resolves identities
   again.
 - `PendingChoice` (`drop-choice.ts`): a drop that asks, waiting for its choice, held
-  by the list. It carries the drag, the target, the pointer point, the
-  notice surface and the focus-return callback, captured at the drop because
+  by the list. It carries the drag, the target, the pointer point and the
+  focus-return callback, captured at the drop because
   `dragend` clears the drag session right after it. `EntriesRoute.drop`
   therefore receives the point.
 - `DropChoiceItem` (`drop-choice.ts`): `{ action, label, enabled, reason? }`. The
@@ -460,20 +396,10 @@ the whole Copy (see `packages/resource-replica/.context/CONTEXT.md`, "Copy"). A
 document the device holds open sends its pending edits with the Copy; the server
 waits for them, and the replica resends for up to two minutes before refusing.
 
-The notice says "Copying chapter-3 to Vault…" while the server has not answered
-and "Copied chapter-3 to Vault." (or "… as chapter-3 (2).") once it has, with Undo
-in both. The `copy-operation.ts` adapter takes the receipt's entries into the
-window's own state when it first sees the operation settled (the record retires a
-while later), and a record that is gone after it was seen is a Copy that settled.
-Undo (`undoCopy`) is ordinary deletes of every copy still listed, except the ones
-inside another (a copy moved out of its folder is still found, because the receipt
-names every identity); edits and additions made since go with a folder. Before the
-answer the deletes queue behind the Copy. A refused Copy removes its rows, closes
-the window, and the journal keeps the refusal: `CopyRefusalNotices` shows "Couldn't
-copy chapter-3 to Vault. A source or the destination is no longer there." with
-Copy to… (the same rows, picked afresh) and Dismiss, on the destination list's
-surface, or on the surface that started it when the destination is gone, until the
-writer resolves it.
+The copy's rows show at once, before the server answers. A refused Copy
+removes its rows, and `RefusalToasts` shows "Couldn't copy chapter-3 to Vault. A source or the
+destination is no longer there.", with Retry while every source and the destination still resolve.
+The journal keeps the refusal until that toast closes or Retry lands (`copy-refusal.ts`).
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the

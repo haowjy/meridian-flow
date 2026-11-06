@@ -49,13 +49,13 @@ tree's own drag is [Row selection and drag](row-drag.md); the menu's Copy is
    too. Then rebind the chat to another Work (`./mf api PUT /api/threads/<chat>/work --data
    '{"workId":"<other>"}'`) and copy all three again: each still holds the first Work's draft, never the
    chat's current Work's or the live text. With the ask menu open on the change row, Discard the Work's
-   draft (`POST …/works/<w>/branches/discard`) and choose Copy: nothing is copied and the notice says
+   draft (`POST …/works/<w>/branches/discard`) and choose Copy: nothing is copied and the toast says
    "That Work no longer has a draft of it."
 8. **Uploads.** Open the chat's Files menu and drag `notes` to a folder: it asks; Copy leaves the upload in
    the menu. Drag it onto the Uploads heading: no drop, and the hint says files move or copy out of Uploads,
    not in.
-9. **Rows still move.** Drag the Prologue row onto `Act 2` in the same tree: it moves at once,
-   "Moved Prologue to Act 2." with Undo, no menu.
+9. **Rows still move.** Drag the Prologue row onto `Act 2` in the same tree: it moves at once, with no
+   menu and no toast.
 10. **Phone.** Over CDP (393×852, `isMobile`, `hasTouch`; the `phone-driver.cjs` in the evidence folder)
     open a document and the chat with sent chips: `(pointer: coarse)` matches and no element is
     `draggable`.

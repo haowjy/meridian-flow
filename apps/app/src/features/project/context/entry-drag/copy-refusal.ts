@@ -1,75 +1,64 @@
 /**
- * A refused Copy, derived from the operations journal: which surfaces say so, what they say, and
- * which rows to offer back. The journal keeps a refused Copy until the writer dismisses it or
- * sends it again, so the refusal survives a reload and shows in every tab; nothing here is
- * remembered by a notice.
- *
- * It shows where the writer was looking when it was destination: on the destination list's
- * surface (the Files lists share one family, a chat's Scratch and a Work's Files are their own),
- * or on the surface that started it when the destination is gone.
+ * A refused Copy, derived from the operations journal, as an `EntryFailure`. The journal keeps it
+ * until the writer closes its toast or Retry lands, so a refusal that arrived while this tab was
+ * closed still reads here.
  */
 import { plural, t } from "@lingui/core/macro";
 import type { ContextError } from "@meridian/contracts/protocol";
-import type { CopyDesired, NamespaceIntent } from "@meridian/resource-replica";
-import { isNoticeSurface, type NoticeSurface } from "../../shell/SurfaceNotice";
-import { schemeLabel } from "../context-schemes";
-import { entryNameNow } from "./move-plan";
-import type { NoticeView } from "./operation-notice";
-
-export type CopyRefusal = {
-  operationId: string;
-  message: string;
-  surfaces: readonly NoticeSurface[];
-  /** The rows the Copy was asked to copy, as the writer sees them now. */
-  sources: readonly { kind: "file" | "folder"; id: string; name: string }[];
-};
+import type { NamespaceIntent, OperationRecord } from "@meridian/resource-replica";
+import { entryToast, type RefusedFailure } from "./entry-failure";
+import { entryNameNow, type PlacementView, parentName } from "./move-plan";
 
 /** The refused Copies of a project, oldest first. */
-export function copyRefusals(view: NoticeView, projectId: string): CopyRefusal[] {
-  return (view.operations ?? []).flatMap((operation) => {
+export function copyFailures(
+  view: PlacementView & { operations: readonly OperationRecord[] },
+  projectId: string,
+): RefusedFailure[] {
+  return view.operations.flatMap((operation) => {
     if (operation.projectId !== projectId) return [];
     const intent = operation.intents.find((candidate) => candidate.state === "needs-repair");
     if (intent?.desired.kind !== "copy") return [];
     const copy = intent.desired;
-    const sources = copy.roots.map((root) => ({
-      kind: root.kind,
-      id: root.sourceId,
-      name: entryNameNow(view, { kind: root.kind, id: root.sourceId }) ?? root.predictedName,
-    }));
-    const destination = destinationName(view, copy);
+    const names = copy.roots.map((root) =>
+      entryNameNow(view, { kind: root.kind, id: root.sourceId }),
+    );
+    const sources = names.map((name, index) => name ?? copy.roots[index]?.predictedName ?? "");
+    const { parent } = copy.destination;
+    const destination = parentName(view, parent);
+    const scheme =
+      parent.kind === "root"
+        ? parent.scheme
+        : view.placement.folderLocation(parent.folderId)?.scheme;
     return [
       {
-        operationId: operation.operationId,
-        message: describeRefusal(sources, destination, reasonOf(intent)),
-        surfaces: surfacesOf(view, copy, destination !== null),
-        sources,
+        intents: [operation.operationId],
+        failure: {
+          key: entryToast(projectId, `copy:${operation.operationId}`),
+          kind: "copy" as const,
+          operationId: operation.operationId,
+          sources,
+          destination,
+          reason: reasonOf(intent),
+          ...(destination && scheme && names.every(Boolean)
+            ? {
+                copy: {
+                  kind: "ready" as const,
+                  destinationName: destination,
+                  scheme,
+                  into: parent,
+                  ...(copy.destination.position ? { position: copy.destination.position } : {}),
+                  copies: copy.roots.map((root, index) => ({
+                    entry: { kind: root.kind, id: root.sourceId },
+                    name: sources[index] ?? root.predictedName,
+                    view: root.view,
+                  })),
+                },
+              }
+            : {}),
+        },
       },
     ];
   });
-}
-
-/** The destination's name, or null once the destination is gone. */
-function destinationName(view: NoticeView, copy: CopyDesired): string | null {
-  const { parent } = copy.destination;
-  return parent.kind === "root"
-    ? schemeLabel(parent.scheme)
-    : (view.placement.folderLocation(parent.folderId)?.name ?? null);
-}
-
-function surfacesOf(
-  view: NoticeView,
-  copy: CopyDesired,
-  destinationPresent: boolean,
-): readonly NoticeSurface[] {
-  const { parent } = copy.destination;
-  const place =
-    parent.kind === "root"
-      ? { scheme: parent.scheme, ...parent.owner }
-      : view.placement.folderLocation(parent.folderId);
-  if (!destinationPresent || !place)
-    return isNoticeSurface(copy.origin) ? [copy.origin] : ["sidebar", "mobile"];
-  if (place.scheme === "scratch") return [place.rootThreadId ? "chat-files" : "work-files"];
-  return ["sidebar", "mobile"];
 }
 
 /** What the server (or the replica, before sending) said was wrong, when it said. */
@@ -105,8 +94,8 @@ function describeContextError(error: ContextError): string | null {
   }
 }
 
-function describeRefusal(
-  sources: CopyRefusal["sources"],
+export function copyFailureTitle(
+  sources: readonly string[],
   destination: string | null,
   reason: string | null,
 ): string {
@@ -114,8 +103,8 @@ function describeRefusal(
   const said =
     sources.length === 1 && only
       ? destination
-        ? t`Couldn't copy ${only.name} to ${destination}.`
-        : t`Couldn't copy ${only.name}.`
+        ? t`Couldn't copy ${only} to ${destination}.`
+        : t`Couldn't copy ${only}.`
       : destination
         ? plural(sources.length, {
             one: `Couldn't copy # item to ${destination}.`,

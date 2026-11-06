@@ -55,10 +55,10 @@ stack.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Text-derived draft disposition](draft-disposition.md): inverse policy, historical Apply evidence and whole-Work close, with an isolated PostgreSQL runner.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
-- [Row selection and drag](row-drag.md): multi-select, dragging rows into folders and areas, reordering on row edges and through Move…, refusals, Undo, Scratch and Work Files.
+- [Row selection and drag](row-drag.md): multi-select, dragging rows into folders and areas, reordering on row edges and through Move…, refusal toasts, Scratch and Work Files.
 - [Refused document creates](refused-create.md): a create the server refuses settles once, keeps the document and its text in Unfiled with a mark, and files again from the row or the identity bar; network drops still retry.
 - [New folder](folder-create.md): a folder listed at once and settled in the background: offline and reload, documents and reorders put in a pending folder, a refused create with contents, deleting before it lands, rename, and two tabs.
-- [Copy in the tree](copy-browser.md): a drop across systems and Copy to… in the browser: the menu, predicted names, Undo before and after the answer, a refusal in another tab, a source with unsynced edits, a queued rename, a hidden draft at the target name, a selection another peer nested before the send and the phone, with `agent-browser`.
+- [Copy in the tree](copy-browser.md): a drop across systems and Copy to… in the browser: the menu, predicted names, a refusal toast, a source with unsynced edits, a queued rename, a hidden draft at the target name, a selection another peer nested before the send and the phone, with `agent-browser`.
 - [The server Copy command](copy-server.md): rich folder, hidden occupants, draft sources, fifty documents, a failure on the last child, replay, a source not yet caught up, positions, refusals, other owners and the model's copy, driven with `./mf`.
 - [Desktop files dropped on a chat](chat-file-drop.md): files onto the composer and the transcript attach through the paperclip's intake; folders, a bad name, offline, the tree's own drops and the phone.
 - [Dragging from places that aren't tree rows](drag-sources.md): tabs, path crumbs, Recent rows, mention chips (composer and transcript), selected Editor links, receipt and Work change rows and Uploads entries dragging out, always asking Move / Copy / Cancel, a draft tab copying its draft, Uploads refusing drops, same-system row drags still moving at once and the phone with no drag, with `agent-browser`.
@@ -166,18 +166,20 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    lock and no other tab does. Continue asks for the original folder. Repick with one
    changed file and one missing file: only awaiting files send, the changed file is
    marked, and the missing choice stays inline. Navigate to another project during
-   upload and confirm activity continues with the source project title. Stop in Reading,
+   upload: nothing shows there, and the source project's Import button still carries
+   the spinner when you return. Stop in Reading,
    Uploading, Organizing, and Adding uses one confirmation and discards everything before
    reveal. Cancelling that confirmation resumes the same activity.
 8. Let the real organizer finish. The whole staged tree and catalog appear together
    with Done; no imported child is visible beforehand. A lost Stop race says it
-   finished before it could stop. Clean Done acknowledges only after six visible
-   seconds; needs-a-look results stay until dismissed. The fake import API remains
+   finished before it could stop. A clean result acknowledges at once, or when
+   an open popup that shows it closes; a needs-a-look result stays until its popup is opened
+   and closed. The fake import API remains
    useful for isolated rendering work, but is not acceptance evidence.
 9. Fail the first create transport, then return an empty open list. Retry and
    Stop must remain available with held files. Restore transport and Retry:
    the same import id succeeds. A later 4xx must not turn an earlier unanswered
-   create into a locally dismissible refusal.
+   create into a refusal that closes locally.
 10. Verify atomic reveal and complete documents with the notes-folder fixture under
    `apps/server/server/domains/import/__fixtures__/`, including properties and links.
 11. Verify order. In one project make a Knowledge Base folder with four documents and

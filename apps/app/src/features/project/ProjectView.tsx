@@ -81,9 +81,9 @@ import type { ContextRemovalRoutePort } from "./context/context-removal-coordina
 import { DocumentTrashDialog } from "./context/DocumentTrashDialog";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
 import { resolveEditorFrame } from "./context/editor-presentation";
+import { RefusalToasts } from "./context/entry-drag/RefusalToasts";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
-import { ProjectNoticesProvider } from "./context/project-notices";
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
@@ -387,37 +387,36 @@ export function ProjectView(props: ProjectViewProps) {
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
   };
   return (
-    <ProjectNoticesProvider key={props.projectId} projectId={props.projectId}>
-      <DocumentTrashRestoreProvider projectId={props.projectId}>
-        <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-          <DocumentTrashDialog projectId={props.projectId} />
-          {hydrated ? (
-            <>
-              {resolvedProps.contextLive && editorScope.status === "ready" ? (
-                <ProjectContextRemovalController
-                  projectId={props.projectId}
-                  activeScreen={props.activeScreen}
-                  activeContextScheme={props.activeContextScheme}
-                  activeContextPath={props.activeContextPath}
-                  activeContextChat={props.activeContextChat}
-                  editorWorkId={editorScope.workId}
-                  localDocumentId={props.activeLocalDocumentId}
-                  route={props.contextRemovalRoute}
-                />
-              ) : null}
-              <ImportProvider key={props.projectId} projectId={props.projectId}>
-                <WindowDropGuard />
-                <HydratedReviewProject
-                  {...resolvedProps}
-                  projectTitle={projectTitle}
-                  titleEdit={{ projectId: props.projectId, onSave: renameProject }}
-                />
-              </ImportProvider>
-            </>
-          ) : null}
-        </div>
-      </DocumentTrashRestoreProvider>
-    </ProjectNoticesProvider>
+    <DocumentTrashRestoreProvider key={props.projectId} projectId={props.projectId}>
+      <RefusalToasts projectId={props.projectId} />
+      <div className="flex h-full min-h-0 w-full bg-background text-foreground">
+        <DocumentTrashDialog projectId={props.projectId} />
+        {hydrated ? (
+          <>
+            {resolvedProps.contextLive && editorScope.status === "ready" ? (
+              <ProjectContextRemovalController
+                projectId={props.projectId}
+                activeScreen={props.activeScreen}
+                activeContextScheme={props.activeContextScheme}
+                activeContextPath={props.activeContextPath}
+                activeContextChat={props.activeContextChat}
+                editorWorkId={editorScope.workId}
+                localDocumentId={props.activeLocalDocumentId}
+                route={props.contextRemovalRoute}
+              />
+            ) : null}
+            <ImportProvider key={props.projectId} projectId={props.projectId}>
+              <WindowDropGuard />
+              <HydratedReviewProject
+                {...resolvedProps}
+                projectTitle={projectTitle}
+                titleEdit={{ projectId: props.projectId, onSave: renameProject }}
+              />
+            </ImportProvider>
+          </>
+        ) : null}
+      </div>
+    </DocumentTrashRestoreProvider>
   );
 }
 

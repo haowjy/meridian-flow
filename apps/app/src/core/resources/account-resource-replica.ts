@@ -24,9 +24,7 @@ import {
   planCopy,
   planFolderCreate,
   planFolderDeletion,
-  planFolderLocalDeletionUndo,
   planFolderLocation,
-  planLocalDeletionUndo,
   planResourceDeletion,
   planResourceLocation,
   publishResourceTerminal,
@@ -749,8 +747,6 @@ export class AccountResourceReplica {
       /** The destination's scheme: an account-owned `user` folder belongs to no project. */
       scheme: ProjectContextTreeScheme;
       destination: { parent: ParentRef; position?: ContextSiblingPosition };
-      /** Where the writer started it; a refusal shows there when the destination is gone. */
-      origin?: string;
     },
   ): Promise<{ operationId: string; roots: readonly CopyRoot[] }> {
     this.requireOpen();
@@ -799,7 +795,6 @@ export class AccountResourceReplica {
             scheme: input.scheme,
             roots,
             destination: input.destination,
-            origin: input.origin,
           }),
         );
         if (committed !== "committed") throw new Error("Copy operation identity collided");
@@ -879,8 +874,7 @@ export class AccountResourceReplica {
 
   async deleteFolder(projectId: string, folderId: string): Promise<{ operationId?: string }> {
     const result = await this.commitFolderPlan(projectId, folderId, null, planFolderDeletion);
-    // A folder only this device held settles its delete here; its pending children go with it
-    // and the same Undo window brings the subtree back.
+    // A folder only this device held settles its delete here; its pending children go with it.
     if (result.operationId)
       await this.settleLocalFolderChildren(projectId, folderId, result.operationId);
     return result;
@@ -951,7 +945,7 @@ export class AccountResourceReplica {
   /**
    * A local folder delete is one operation over its local subtree: every never-accepted folder
    * and document under it settles its own delete under the same operation, so its pending
-   * creates stop and one Undo restores them all. Server-held descendants keep their own
+   * creates stop. Server-held descendants keep their own
    * lifecycle and are not deleted by their local parent.
    */
   private async settleLocalFolderChildren(
@@ -1091,78 +1085,6 @@ export class AccountResourceReplica {
     );
     this.reconciler.schedule(key);
     return admitted === "committed" && planned ? { operationId } : {};
-  }
-
-  /**
-   * Undo of a local deletion while its window is open: a document comes back with its text, a
-   * folder with the children the same operation took down. False once the window has closed or
-   * when no such deletion is held. Document content stays under the lock cleanup holds while it
-   * clears it, so Undo never revives a document whose text was just cleared.
-   */
-  async restoreLocalDeletion(projectId: string, operationId: string): Promise<boolean> {
-    this.requireOpen();
-    const projection = await this.metadata.readProjection(projectId);
-    let restored = false;
-    for (const folder of projection.folders) {
-      if (
-        !folder.intents.some(
-          (intent) => intent.operationId === operationId && intent.desired.kind === "delete",
-        )
-      )
-        continue;
-      if (await this.restoreFolderLocalDeletion(folder.folderId, operationId)) restored = true;
-    }
-    for (const record of projection.records) {
-      if (
-        !record.intents.some(
-          (intent) => intent.operationId === operationId && intent.desired.kind === "delete",
-        )
-      )
-        continue;
-      const key = { handle: record.resource.handle };
-      const restoredRecord = await this.withResourceLock(key, async () => {
-        let restored = false;
-        await this.commitPlan(key, (current) => {
-          const write = planLocalDeletionUndo(current, {
-            operationId,
-            createIntentId: crypto.randomUUID(),
-            now: Date.now(),
-          });
-          restored = write !== null;
-          return write;
-        });
-        return restored;
-      });
-      if (restoredRecord) {
-        this.reconciler.schedule(key);
-        restored = true;
-      }
-    }
-    return restored;
-  }
-
-  private async restoreFolderLocalDeletion(
-    folderId: string,
-    operationId: string,
-  ): Promise<boolean> {
-    const folder = await this.metadata.readFolderById(folderId);
-    if (!folder) return false;
-    const key: ResourceKey = { handle: folder.handle };
-    const restored = await this.withResourceLock(key, async () => {
-      for (;;) {
-        const current = await this.metadata.readFolder(key);
-        if (!current) return false;
-        const write = planFolderLocalDeletionUndo(current, {
-          operationId,
-          createIntentId: crypto.randomUUID(),
-          now: Date.now(),
-        });
-        if (!write) return false;
-        if ((await this.metadata.commitFolder(write)) === "committed") return true;
-      }
-    });
-    if (restored) this.reconciler.scheduleFolder(key);
-    return restored;
   }
 
   private async commitPlan(

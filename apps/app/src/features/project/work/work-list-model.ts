@@ -43,8 +43,8 @@ export type WorkListProjection = {
 /**
  * Active: Works being created, then each just-deleted Work's Undo row (newest
  * delete first), then the tab's Works. Archived: its Undo rows, then its
- * Works. Deleted: Works still inside their retention window that are not
- * offered for Undo.
+ * Works. Deleted: every Work still inside its retention window, from the
+ * moment it is deleted; a Work with an open Undo row shows in both.
  */
 export function workListEntries(
   projected: WorkListProjection,
@@ -73,11 +73,10 @@ export function workListEntries(
       state: phase === "failed" ? "notCreated" : "creating",
     }),
   );
-  const undoable = new Set(windows.map((open) => open.workId));
   return {
     active: [...creating, ...tab("active")],
     archived: tab("archived"),
-    deleted: restorableWorks(projected.deleted, now, undoable).map((work) => ({
+    deleted: restorableWorks(projected.deleted, now).map((work) => ({
       key: work.id,
       work,
       state: "idle",
@@ -86,17 +85,10 @@ export function workListEntries(
   };
 }
 
-/** Deleted Works still inside their retention window, minus those offered for Undo. */
-export function restorableWorks<W extends Work>(
-  deleted: readonly W[],
-  now: number,
-  undoable: ReadonlySet<string>,
-): W[] {
+/** Deleted Works still inside their retention window. */
+function restorableWorks<W extends Work>(deleted: readonly W[], now: number): W[] {
   return deleted.filter(
-    (work) =>
-      work.deletedAt !== null &&
-      !undoable.has(work.id) &&
-      deletionPurgeAt(work.deletedAt).getTime() > now,
+    (work) => work.deletedAt !== null && deletionPurgeAt(work.deletedAt).getTime() > now,
   );
 }
 

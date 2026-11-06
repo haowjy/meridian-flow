@@ -11,7 +11,6 @@ import {
   namespaceRepairDestination,
   resolveUnavailableNamespace,
   settleNamespaceIntent,
-  undoLocalDeletion,
   validateNamespaceJournal,
 } from "./namespace-journal-policy";
 import { namespaceReceiptIs } from "./namespace-receipts";
@@ -222,7 +221,7 @@ export function planFolderDeletion(input: {
   if (folderOwnsDeletion(record)) return null;
   if (record.canonical) resourceContextAuthority(record.canonical.scheme, record.canonical);
   // A folder the server never accepted has nothing to delete there: deleting it is local, and
-  // the writer keeps the same Undo window a server deletion has.
+  // its window keeps the folder's content until cleanup.
   const localDeletion = !deleteNeedsServer(record.serverHold);
   const now = input.now ?? Date.now();
   const superseded = supersedeRepairableNamespaceWork(record, record.projectId);
@@ -259,31 +258,6 @@ export function planFolderDeletion(input: {
         },
       ],
     },
-  };
-}
-
-/**
- * Undo of a folder deletion that settled on this device inside its window: the deletion is
- * superseded and the folder's last placement is queued again, with the children it kept. Null
- * once the window has closed or when no such deletion is held.
- */
-export function planFolderLocalDeletionUndo(
-  record: FolderNamespaceRecord,
-  input: { operationId: string; createIntentId: string; now: number },
-): FolderNamespaceWrite | null {
-  const intents = undoLocalDeletion({
-    intents: record.intents,
-    window: record.localDeletion,
-    operationId: input.operationId,
-    createIntentId: input.createIntentId,
-    identityRevision: 1,
-    now: input.now,
-  });
-  if (!intents) return null;
-  const { localDeletion: _closed, ...withoutWindow } = record;
-  return {
-    expectedRevision: record.revision,
-    next: { ...withoutWindow, revision: record.revision + 1, intents },
   };
 }
 
@@ -466,17 +440,6 @@ export function validateFolderNamespaceUpdate(
     identityRevision: 1,
     terminal: Boolean(next.terminal),
     localDeletionAllowed: !deleteNeedsServer(next.serverHold),
-    // Undo of a local folder deletion clears its window; that deletion may become superseded.
-    revokedLocalDeletions: new Set(
-      previous?.intents
-        .filter(
-          (intent) =>
-            intent.state === "settled-locally" &&
-            previous.localDeletion?.obligationId === intent.intentId &&
-            next.localDeletion?.obligationId !== intent.intentId,
-        )
-        .map((intent) => intent.intentId),
-    ),
   });
   if (
     next.localDeletion &&
@@ -494,7 +457,7 @@ export function validateFolderNamespaceUpdate(
       (intent) => intent.desired.kind === "delete" && intent.state === "settled-locally",
     )
   )
-    throw new Error("A settled local deletion keeps its Undo window");
+    throw new Error("A settled local deletion keeps its window");
   if (next.canonical && next.serverHold !== "held")
     throw new Error("A folder the server placed is held");
   if (previous?.serverHold === "held" && next.serverHold !== "held")

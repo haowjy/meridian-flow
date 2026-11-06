@@ -3,8 +3,8 @@
 import type { ImportSummary } from "@meridian/contracts";
 import { expect, it } from "vitest";
 import type { LocalUpload } from "./import-coordinator";
+import { importState } from "./import-presentation";
 import { pendingRoot } from "./pending-roots";
-import { toastState } from "./toast-presentation";
 
 const summary: ImportSummary = {
   importId: "i",
@@ -45,7 +45,7 @@ it("presents local ownership, preparation and all five root rules without drawin
     [{ state: "finished", counts: { ...summary.counts, needsLook: 1 } }, {}, "needs-look"],
   ];
   for (const [patch, local, expected] of rows)
-    expect(toastState({ ...summary, ...patch }, local)).toBe(expected);
+    expect(importState({ ...summary, ...patch }, local)).toBe(expected);
   const fresh = { seen: false, drawn: false };
   const drawn = pendingRoot(summary, fresh, false, 0);
   expect(drawn.draw).toBe(true);

@@ -215,74 +215,19 @@ export function namespaceRepairDestination(
 }
 
 /**
- * The Undo window a deletion that settled on this device leaves open: its obligation id and the
- * time it closes.
+ * The window a deletion that settled on this device leaves open: its obligation id and the time
+ * it closes.
  */
 export type LocalDeletionWindow = { obligationId: string; notBefore?: number };
-
-/**
- * Undo of a deletion that settled on this device, inside its window: the deletion is superseded
- * and the identity's latest placement is queued again, since what the deletion cancelled cannot
- * restart. Null once the window has closed (the content may already be cleaned up) or when no
- * such deletion is held. Each journal clears its own window field around this.
- */
-export function undoLocalDeletion(input: {
-  intents: readonly NamespaceIntent[];
-  window: LocalDeletionWindow | null | undefined;
-  operationId: string;
-  createIntentId: string;
-  identityRevision: number;
-  now: number;
-}): NamespaceIntent[] | null {
-  const deletion = input.intents.find(
-    (intent) =>
-      intent.operationId === input.operationId &&
-      intent.desired.kind === "delete" &&
-      intent.state === "settled-locally",
-  );
-  const window = input.window;
-  if (
-    !deletion ||
-    window?.obligationId !== deletion.intentId ||
-    (window.notBefore !== undefined && input.now >= window.notBefore)
-  )
-    return null;
-  const placement = input.intents
-    .filter(
-      (intent) =>
-        intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location",
-    )
-    .sort((left, right) => right.sequence - left.sequence)[0];
-  if (!placement) return null;
-  return [
-    ...input.intents.map((intent) =>
-      intent === deletion ? { ...intent, state: "superseded" as const } : intent,
-    ),
-    {
-      projectId: placement.projectId,
-      handle: placement.handle,
-      intentId: input.createIntentId,
-      sequence: Math.max(...input.intents.map((intent) => intent.sequence)) + 1,
-      identityRevision: input.identityRevision,
-      desired: placement.desired,
-      ...(placement.admission ? { admission: placement.admission } : {}),
-      attempts: [],
-      state: "pending",
-    },
-  ];
-}
 
 export function validateNamespaceJournal(input: {
   previous: Journal | null;
   next: Journal;
   identityRevision: number;
   localDeletionAllowed?: boolean;
-  /** Local deletions whose Undo cleared their cleanup in this write: they may become superseded. */
-  revokedLocalDeletions?: ReadonlySet<string>;
   terminal?: boolean;
 }): void {
   const { previous, next, identityRevision, localDeletionAllowed = false } = input;
-  const revoked = input.revokedLocalDeletions ?? new Set<string>();
   const previousMax = Math.max(0, ...(previous?.intents.map((intent) => intent.sequence) ?? []));
   const previousIds = new Set(previous?.intents.map((intent) => intent.intentId));
   const ids = new Set<string>();
@@ -449,8 +394,7 @@ export function validateNamespaceJournal(input: {
         (previousIntent &&
           previousIntent.state !== "needs-repair" &&
           previousIntent.state !== "received" &&
-          previousIntent.state !== "superseded" &&
-          !revoked.has(intent.intentId)))
+          previousIntent.state !== "superseded"))
     )
       throw new Error("Only failed namespace work can be superseded");
     if (intent.state === "pending" && intent.attempts.length > 0)
@@ -473,9 +417,7 @@ export function validateNamespaceJournal(input: {
       throw new Error("Recorded namespace intention cannot be replaced");
     if (
       (oldIntent.state === "cancelled" || oldIntent.state === "settled-locally") &&
-      ((intent.state !== oldIntent.state &&
-        !(revoked.has(intent.intentId) && intent.state === "superseded")) ||
-        intent.attempts.length > 0)
+      (intent.state !== oldIntent.state || intent.attempts.length > 0)
     )
       throw new Error("Locally completed namespace work cannot restart");
     if (

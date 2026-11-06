@@ -127,9 +127,9 @@ answer sets `canonical` from the answered path; a typed refusal leaves the recor
 (`create`), listed in Unfiled under the name last typed, as a refused document is. Later intentions
 queue behind the create like any placement, and its admission makes the folder a predecessor of
 whatever is put inside or after it. Deleting a folder the server may not hold
-(`!deleteNeedsServer`: `local` or `spent`) settles locally with the same Undo
+(`!deleteNeedsServer`: `local` or `spent`) settles locally with the same
 window a document gets (`localDeletion.notBefore`); the replica settles every local
-folder and document under it under that one operation, so one Undo restores the subtree.
+folder and document under it under that one operation.
 `folderListedLocally` keeps a row in the projection beside the catalog's until a catalog
 read observes the folder.
 
@@ -196,7 +196,7 @@ accepted one an outstanding canonical refresh waits on, found by index
 (`readPlacementAdmissionView`), never a handle's whole journal. The high-water mark is a stored
 counter raised in the commit that stores an admitted intent, so it is read inside that lock without
 a scan. Folder records (embedded histories, needed for parent resolution) and the reactive account
-projection still load complete journals, which Undo and receipts read. A predecessor reference names the admission `order`, the placement's
+projection still load complete journals, which receipts read. A predecessor reference names the admission `order`, the placement's
 logical identity, and resolves to the newest intent carrying it, so a remint's replacements stay
 waited on. Project area roots are qualified by project in the scope; the User area is shared.
 
@@ -211,9 +211,6 @@ Three consumers read that record and nothing else:
   typed repair instead of executing it against a different list. A pending folder create is a
   predecessor of every intent that names the folder as its destination parent or position anchor;
   if the create is refused, those intents settle to repair with it.
-- **Undo** is a compensating placement batch. It asks which operation owns a subject's placement
-  (the newest live placement intent; after a receipt, the canonical `locationVersion`), never whether
-  a sibling gap still looks the same.
 
 Transport waits are bounded (`NAMESPACE_REQUEST_DEADLINE_MS`), but a deadline ends only the wait: the
 attempt stays `submitted`, the next pass reads its receipt or re-sends the identical recorded request
@@ -361,8 +358,7 @@ authority, so a refused create means the server holds none; an id held where the
 no longer edit answers `conflict`, which is `spent`). Deleting it settles locally
 (`!deleteNeedsServer`), including a delete queued behind the
 in-flight create when the refusal arrives (`prepareNamespaceAttempt`). The local deletion keeps
-the exact content for `LOCAL_DELETION_UNDO_MS` (`cleanup.notBefore`); `planLocalDeletionUndo`
-supersedes it and files the last placement again inside the window. A refusal is the writer's
+the exact content for `LOCAL_DELETION_UNDO_MS` (`cleanup.notBefore`), then clears it. A refusal is the writer's
 to repair; a `conflict` is the runner's to replace (above).
 
 Folder deletion shares the folder namespace journal. Only a delete receipt's exact

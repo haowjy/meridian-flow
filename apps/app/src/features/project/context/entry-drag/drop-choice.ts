@@ -10,7 +10,6 @@
  * branch in the list's `choose`; the menu's mechanics don't change.
  */
 import { plural, t } from "@lingui/core/macro";
-import type { NoticeSurface } from "../../shell/SurfaceNotice";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
 import type { EntryDrag } from "./entry";
@@ -44,8 +43,6 @@ export type PendingChoice = {
   target: TreeDropTarget;
   /** Where the pointer let go, in client coordinates; the menu hangs here. */
   point: { x: number; y: number };
-  /** Where the chosen action's notice shows. */
-  surface: NoticeSurface;
   /** Puts focus back in the list when the menu closes. */
   returnFocus: () => void;
 };

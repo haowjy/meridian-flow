@@ -4,18 +4,12 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { FilePlus, FolderPlus, ImportIcon } from "lucide-react";
+import { FilePlus, FolderPlus } from "lucide-react";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
-import { ImportMenuItems } from "@/features/import/ImportMenuItems";
 import {
   type PickKind,
   useImportsSnapshot,
@@ -33,13 +27,14 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
-import { useDeleteContextEntry } from "./document-delete-undo";
 import { EntryList, useEntryList } from "./entry-drag/use-entry-list";
+import { ImportHeaderAction } from "./ImportHeaderAction";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
 import { dragEdgeScroll, type FilesRoute } from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
+import { useDeleteContextEntry } from "./use-delete-context-entry";
 import { useTreeExpansion } from "./use-tree-expansion";
 
 /** Left pad (px) for a row at `depth` — depth 1 = a section's direct child. */
@@ -156,7 +151,6 @@ function useSchemeTree(
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
   const list = useEntryList({
     projectId,
-    surface: "sidebar",
     areas: schemes.flatMap((scheme) => {
       const catalog = catalogs[scheme]?.catalog;
       return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
@@ -322,8 +316,9 @@ function SchemeSection({
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
-  const deletion = useDeleteContextEntry();
-  const importable = imports !== null && isImportScheme(scheme);
+  const deletion = useDeleteContextEntry(projectId);
+  const importScheme = imports !== null && isImportScheme(scheme) ? scheme : null;
+  const importable = importScheme !== null;
   const pickImport = imports?.pick;
   const env = useMemo<TreeEnv | null>(
     () =>
@@ -410,22 +405,16 @@ function SchemeSection({
               label={t`New folder`}
               onClick={() => requestCreate("folder", "")}
             />
-            {importable ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <PaneHeaderActionButton icon={ImportIcon} label={t`Import…`} />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <ImportMenuItems
-                    onPick={(kind: PickKind) => {
-                      const destination = destinationOf(scheme, null);
-                      if (!destination) return;
-                      setExpanded(true);
-                      pickImport?.(destination, kind);
-                    }}
-                  />
-                </DropdownMenuContent>
-              </DropdownMenu>
+            {importScheme ? (
+              <ImportHeaderAction
+                scheme={importScheme}
+                onPick={(kind: PickKind) => {
+                  const destination = destinationOf(scheme, null);
+                  if (!destination) return;
+                  setExpanded(true);
+                  pickImport?.(destination, kind);
+                }}
+              />
             ) : null}
           </>
         ) : undefined
