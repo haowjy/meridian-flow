@@ -9,8 +9,8 @@ project, owned by the same writer, with the same lineage root. Spawn and fork
 edges connect a lineage. A handoff starts a new lineage but remains connected
 to its direct source (the owner of its `originTurnId`), in both directions.
 That connection is one hop only: it does not admit earlier handoff sources or
-either thread's other lineage members. Background `thread_message` shares this
-connection check; foreground messages still require the caller's subtree.
+either thread's other lineage members. Background `thread_message` reaches any live
+chat of the same user in the project; foreground messages require the caller's subtree.
 A trashed target is not readable directly;
 a fork still reads the inherited prefix of a trashed source.
 
