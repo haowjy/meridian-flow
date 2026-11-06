@@ -40,8 +40,11 @@ function devAuthResult(dev: { externalId: string; email: string }): AuthResult {
 /**
  * AuthKit middleware with a per-request redirect URI (portless / Tailscale in dev).
  *
- * SYNC: keep aligned with `@workos/authkit-tanstack-react-start@0.8.6`
- * `dist/server/middleware-body.js` — only `redirectUri` resolution differs.
+ * SYNC: keep aligned with `@workos/authkit-tanstack-react-start@0.10.1`
+ * `dist/server/middleware-body.js` — `redirectUri` resolution and the dev-auth bypass
+ * branch differ. A bypass-refused request gets `{ user: null }`, so loaders that call
+ * `getSignInUrl` on it can fail (no WorkOS keys, or a no-op `__setPendingHeader` drops
+ * the cookie); it still fails closed.
  * Prefer upstream `authkitMiddleware({ redirectUri })` when it supports per-request values.
  */
 export function meridianAuthkitMiddleware() {
