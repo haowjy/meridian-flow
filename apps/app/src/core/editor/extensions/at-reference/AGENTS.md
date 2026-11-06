@@ -1,37 +1,13 @@
 # extensions/at-reference — `@` in the Editor
 
-Typing `@` in prose opens the reference browser
-([`@/core/completion`](../../../completion/AGENTS.md)); choosing a document
-writes a **standard Markdown link** to its address. `@` is how a writer types a
-document link in the Editor: a typed `[[name]]` is plain text and opens nothing
-(a pasted one becomes a link, which is [`../../links/`](../../links/AGENTS.md)'s
-paste policy). The surface is `AtReferenceMenu` in
-[`features/editor/surfaces/link/`](../../../../features/editor/surfaces/link/AGENTS.md).
+Behavior is in [one predictive browser][at-references] and
+[link identity][link-identity].
 
-## Key rules
+- A choice's node takes the row's id, not a parsed path, so the link follows the
+  document through moves.
+- Each host owns one terminal-row node builder. `@` selection and row drops both
+  consume it, so a document, asset or folder has one node shape per host.
+  Interaction code still owns its own landing, spacing and Undo.
 
-- **A document choice is a link that names its document.** Its canonical node
-  carries `{ href: <full Context URI>, ref: doc:<id> }`: the row's id, never a
-  parsed path, so the link follows the document through moves while every
-  surface spells its current path. An uploaded picture goes in as an image with
-  its `asset:` identity instead.
-- **A folder mention is a link that names its folder.** The listing's "Mention
-  <folder>" row carries `{ href: <folder URI with trailing />, ref:
-  folder:<id> }`. Pressing it opens the folder menu (`../../links/`), not a
-  document.
-- **The Editor links ahead.** When a root search names no listed document
-  exactly, the catalog's `linkAhead` adds one row that links
-  `<holder folder>/<name>.md` (`linkAheadAddress`, the filename rule a follow's
-  Create shares; `manuscript://<name>.md` from a holder with no address or in
-  Scratch, Uploads, or Unfiled, which a link cannot create into). It
-  inserts a link with a freshly minted ahead ref (`insertLinkAhead`, offline,
-  at `aheadAddress`) and creates nothing: the chip is dashed until a document
-  arrives at exactly that address (a follow's Create), which settles the ref.
-- **Each host owns one terminal-row node builder.** `@` selection and row drops
-  both consume that builder, so a document, asset, or folder has one node shape
-  per host. Interaction code still owns its own landing, spacing, and Undo.
-  The composer has no `linkAhead`: a chat reference must name an existing row.
-
-→ [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts) — the
-  mechanism every lane shares
-→ [`../../links/AGENTS.md`](../../links/AGENTS.md) — what a link means once it exists
+[at-references]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/editor/media/at-references-design.md
+[link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-identity.md
