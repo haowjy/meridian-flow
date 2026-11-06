@@ -241,13 +241,17 @@ function blocksAtLanding(
   slice: Slice,
   selection: Selection | null,
 ): BlockSlice | null {
+  const structure =
+    selection instanceof TextSelection
+      ? selection.$from.doc.slice(selection.from, selection.to)
+      : slice;
   let textblocks = 0;
-  slice.content.descendants((node) => {
+  structure.content.descendants((node) => {
     if (node.isTextblock) textblocks++;
   });
   if (textblocks < 2 || landingBlock.type.spec.code) return null;
 
-  let nodes = slice.content.content.slice();
+  let nodes = structure.content.content.slice();
   let joinsTail = false;
   if (selection instanceof TextSelection) {
     const { $from, $to } = selection;
@@ -265,24 +269,16 @@ function blocksAtLanding(
     }
 
     const shared = $from.sharedDepth($to.pos);
-    const insideCell = Array.from({ length: shared }, (_, index) => shared - index).some((depth) =>
-      isTableCell($from.node(depth)),
-    );
-    if (insideCell) {
-      let open = slice.content.childCount === 1 ? slice.content.firstChild : null;
-      while (open && !isTableCell(open) && open.childCount === 1) open = open.firstChild;
-      if (open && isTableCell(open)) nodes = open.content.content.slice();
-    } else if (shared > 0) {
-      let content = Fragment.from(nodes.map(closeNode));
-      for (let depth = shared; depth > 0; depth--) {
-        const source = $from.node(depth);
-        const closed = source.type.createAndFill(source.attrs, content, source.marks);
-        if (!closed) break;
-        content = Fragment.from(closed);
-        if (source.type.spec.group?.split(" ").includes("block")) break;
-      }
-      nodes = content.content.slice();
+    let content = Fragment.from(nodes.map(closeNode));
+    for (let depth = shared; depth > 0; depth--) {
+      const source = $from.node(depth);
+      if (isTableCell(source)) break;
+      const closed = source.type.createAndFill(source.attrs, content, source.marks);
+      if (!closed) break;
+      content = Fragment.from(closed);
+      if (source.type.spec.group?.split(" ").includes("block")) break;
     }
+    nodes = content.content.slice();
   }
 
   const content = Fragment.from(nodes.map(closeNode));
