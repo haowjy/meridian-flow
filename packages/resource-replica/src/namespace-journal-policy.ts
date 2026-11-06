@@ -278,7 +278,7 @@ export function validateNamespaceJournal(input: {
         const command = receipt.command;
         const matchesIdentity =
           request.kind === "move" && command.kind === "move"
-            ? request.body.expected.kind === command.expected.kind &&
+            ? request.body.kind === command.expected.kind &&
               request.entryId === command.expected.nodeId
             : request.kind === "copy" && command.kind === "copy"
               ? request.body.sources.length === command.sources.length &&
@@ -290,7 +290,7 @@ export function validateNamespaceJournal(input: {
                 )
               : request.kind === "delete" &&
                 command.kind === "delete" &&
-                request.body.expected.kind === command.expected.kind &&
+                request.body.kind === command.expected.kind &&
                 request.entryId === command.expected.nodeId;
         if (!matchesIdentity)
           throw new Error("Namespace outcome does not match submitted identity");

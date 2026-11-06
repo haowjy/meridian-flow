@@ -15,7 +15,7 @@ export async function deleteDocument(session: Session, projectId: string, target
   const documentId = await resolveDocumentId(session, projectId, target);
   const body: DeleteContextEntryRequest = {
     operationId: randomUUID(),
-    expected: { kind: "file" },
+    kind: "file",
   };
   await session.request("POST", apiProjectContextEntryDeletePath(projectId, documentId), body, {
     decode: jsonResponse(

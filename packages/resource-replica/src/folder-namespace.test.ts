@@ -224,7 +224,7 @@ it("dispatches despite a foreign catalog move during receipt lookup", async () =
       submit: async (_project, request) => {
         expect(request).toMatchObject({
           entryId: "folder",
-          body: { expected: { kind: "folder" } },
+          body: { kind: "folder" },
         });
         return { kind: "operation", receipt: receipt("B", false) };
       },
@@ -275,7 +275,7 @@ it("admits recursive deletion in the folder journal and settles a delete receipt
       expect(request).toMatchObject({
         kind: "delete",
         entryId: "folder",
-        body: { expected: { kind: "folder" } },
+        body: { kind: "folder" },
       });
       return {
         kind: "operation",
@@ -364,7 +364,7 @@ it.each([
       expect(request).toMatchObject({
         kind: "delete",
         entryId: "folder",
-        body: { expected: { kind: "folder" } },
+        body: { kind: "folder" },
       });
       return {
         kind: "operation",

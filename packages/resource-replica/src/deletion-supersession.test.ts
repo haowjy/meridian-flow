@@ -47,7 +47,7 @@ function deleted(
     operationId: request.body.operationId,
     command: {
       kind: "delete",
-      expected: { kind: request.body.expected.kind, nodeId: request.entryId },
+      expected: { kind: request.body.kind, nodeId: request.entryId },
     },
     result: {
       ok: true,

@@ -56,7 +56,7 @@ export function ownerOf(location: ResourceOwner): ResourceOwner {
     : { workId: location.workId, workHandle: location.workHandle };
 }
 /** What decides whether two owners are the same: the Work, or the lineage. Handles follow. */
-export type ResourceOwnerKey = {
+type ResourceOwnerKey = {
   workId: string | null;
   workHandle?: string | null;
   rootThreadId?: string | null;

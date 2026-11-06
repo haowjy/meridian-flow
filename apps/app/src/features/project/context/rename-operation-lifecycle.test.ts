@@ -54,7 +54,7 @@ function settled(overrides: Partial<NamespaceIntent> = {}): NamespaceIntent {
         request: {
           kind: "move",
           entryId: "entry",
-          body: { operationId: "move", expected: { kind: "file" } },
+          body: { operationId: "move", kind: "file" },
         },
         outcome: { kind: "operation", receipt },
       },

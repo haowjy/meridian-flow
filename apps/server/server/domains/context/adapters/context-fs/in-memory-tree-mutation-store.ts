@@ -460,18 +460,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         );
         destinationPath = [targetParentPath, targetBasename].filter(Boolean).join("/");
         const { name, extension } = input.destinationFilename;
-        const basenameChanged = targetBasename !== treeBasename(input.source.path);
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
         sourceRow.extension = extension;
-        if (
-          (basenameChanged ||
-            ("graduateProvisionalName" in input && input.graduateProvisionalName)) &&
-          sourceRow.provisionalName
-        ) {
-          sourceRow.provisionalName = false;
-        }
+        // A writer-location command ends provisional naming whether or not the name changed.
+        sourceRow.provisionalName = false;
         if (input.destinationFiletype != null) {
           sourceRow.filetype = input.destinationFiletype;
         }

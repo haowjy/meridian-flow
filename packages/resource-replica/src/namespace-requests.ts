@@ -16,7 +16,7 @@ export function deleteRequest(
   return {
     kind: "delete",
     entryId: entry.id,
-    body: { operationId, expected: { kind: entry.kind } },
+    body: { operationId, kind: entry.kind },
   };
 }
 
@@ -41,7 +41,7 @@ export function moveRequest(
     entryId: entry.id,
     body: {
       operationId,
-      expected: { kind: entry.kind },
+      kind: entry.kind,
       ...(sameParent
         ? {}
         : {

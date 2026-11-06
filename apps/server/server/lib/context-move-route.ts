@@ -11,7 +11,6 @@
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type {
-  ContextMoveResult,
   ContextSiblingPosition,
   MoveContextEntryRequest,
   MoveContextEntryResult,
@@ -24,7 +23,6 @@ import {
   moveCommand,
   type ProjectContextAvailabilityPort,
   type ProjectContextFsScheme,
-  parseUnifiedContextUri,
   type UnifiedContextPortFactory,
   type WorkScopedContextFsScheme,
 } from "../domains/context/index.js";
@@ -58,7 +56,7 @@ export interface ContextMoveRouteDeps {
 
 export interface ParsedContextMove {
   operationId: string;
-  kind: MoveContextEntryRequest["expected"]["kind"];
+  kind: MoveContextEntryRequest["kind"];
   destinationParent?: MoveContextEntryRequest["destinationParent"];
   position?: MoveContextEntryRequest["position"];
   name?: string;
@@ -71,7 +69,8 @@ function uploadsNotMovable() {
   });
 }
 
-function parseWorkId(raw: unknown, field: "destinationWorkId") {
+function parseWorkId(raw: unknown) {
+  const field = "destinationParent.owner.workId";
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== "string" || raw.trim() === "") {
     throw createError({ statusCode: 400, message: `\`${field}\` must be a non-empty string` });
@@ -100,7 +99,7 @@ function parseRootLocator(
   if (workId)
     throw createError({
       statusCode: 400,
-      message: `\`destinationWorkId\` is not valid for ${scheme}`,
+      message: `\`destinationParent.owner.workId\` is not valid for ${scheme}`,
     });
   return { scope: "project", scheme: scheme as ProjectContextFsScheme, path };
 }
@@ -130,7 +129,7 @@ export function parseDestinationParent(
       kind: "root",
       scheme: parent.scheme,
       owner: {
-        workId: parseWorkId(owner.workId, "destinationWorkId"),
+        workId: parseWorkId(owner.workId),
         ...(typeof owner.workHandle === "string" || owner.workHandle === null
           ? { workHandle: owner.workHandle }
           : {}),
@@ -178,9 +177,8 @@ export function parseContextMove(body: unknown): ParsedContextMove {
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   }
   const fields = body as Record<string, unknown>;
-  const expected = fields.expected as Record<string, unknown> | undefined;
-  if (!expected || (expected.kind !== "file" && expected.kind !== "folder")) {
-    throw createError({ statusCode: 400, message: "Expected source kind is required" });
+  if (fields.kind !== "file" && fields.kind !== "folder") {
+    throw createError({ statusCode: 400, message: "Entry kind is required" });
   }
   const destinationParent =
     fields.destinationParent === undefined
@@ -188,33 +186,18 @@ export function parseContextMove(body: unknown): ParsedContextMove {
       : parseDestinationParent(fields.destinationParent);
   return {
     operationId: requireRequestId(fields.operationId, "operationId"),
-    kind: expected.kind,
+    kind: fields.kind,
     ...(destinationParent ? { destinationParent } : {}),
     ...(fields.position === undefined ? {} : { position: parseSiblingPosition(fields.position) }),
     ...(fields.name === undefined ? {} : { name: parseContextMutationName(fields.name, "name") }),
   };
 }
 
-function basename(path: string): string {
-  return path.split("/").filter(Boolean).at(-1) ?? "";
-}
-
 function joinPath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
 }
 
-/** What the writer sees of a committed move; a replay answers the recorded one the same way. */
-function movedResponse(moved: ContextMoveResult): MoveContextEntryResult {
-  const destination = parseUnifiedContextUri(moved.destinationUri);
-  if (!destination.ok) contextErrorToHttp(destination.error);
-  return {
-    status: "moved",
-    ...(moved.linkUpdate ? { linkUpdate: moved.linkUpdate } : {}),
-    scheme: destination.value.scheme as MoveContextEntryResult["scheme"],
-    path: moved.destinationPath,
-    name: basename(moved.destinationPath),
-  };
-}
+const MOVED: MoveContextEntryResult = { status: "moved" };
 
 export async function handleContextMoveRequest(
   deps: ContextMoveRouteDeps,
@@ -231,7 +214,7 @@ export async function handleContextMoveRequest(
   );
   if (replay) {
     if (!replay.ok) contextErrorToHttp(replay.error);
-    return movedResponse(replay.value);
+    return MOVED;
   }
   const { address, locator: source } = await locateEntry(deps, { ...input, kind: move.kind });
   if (source.scope === "chat") throw uploadsNotMovable();
@@ -356,5 +339,5 @@ export async function handleContextMoveRequest(
     ),
   );
   if (!result.ok) contextErrorToHttp(result.error);
-  return movedResponse(result.value);
+  return MOVED;
 }

@@ -24,38 +24,22 @@ import { getProjectDocumentRead } from "@/client/api/projects-api";
 
 export type ContextReadStatus = {
   data: ContextReadResponse | null;
-  status: "loading" | "ready" | "error" | "disabled";
+  status: "loading" | "ready" | "error";
   isError: boolean;
   isFetching: boolean;
-  /** Re-reads, resolving to the fresh answer (null when disabled or failed). */
+  /** Re-reads, resolving to the fresh answer (null when failed). */
   refetch: () => Promise<ContextReadResponse | null>;
 };
 
-export function useProjectContextRead(
-  projectId: string,
-  documentId: string,
-  options: { enabled?: boolean } = {},
-): ContextReadStatus {
-  const enabled = options.enabled ?? true;
+export function useProjectContextRead(projectId: string, documentId: string): ContextReadStatus {
   const result = useQuery({
     queryKey: ["projects", projectId, "context", "read", documentId] as const,
     queryFn: () => getProjectDocumentRead(projectId, documentId),
-    enabled,
     // Signed URLs are short-lived. Re-fetch on focus / remount, never cache hot.
     staleTime: 0,
     gcTime: 60_000,
     retry: 0,
   });
-
-  if (!enabled) {
-    return {
-      data: null,
-      status: "disabled",
-      isError: false,
-      isFetching: false,
-      refetch: async () => null,
-    };
-  }
 
   return {
     data: result.data ?? null,

@@ -32,16 +32,16 @@ export interface ContextDeleteRouteDeps {
   availability: ProjectContextAvailabilityPort;
 }
 
-export function parseContextDelete(body: unknown): {
+function parseContextDelete(body: unknown): {
   operationId: string;
   kind: "file" | "folder";
 } {
   if (!body || typeof body !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
-  const fields = body as { operationId?: unknown; expected?: { kind?: unknown } };
-  const kind = fields.expected?.kind;
+  const fields = body as { operationId?: unknown; kind?: unknown };
+  const { kind } = fields;
   if (kind !== "file" && kind !== "folder")
-    throw createError({ statusCode: 400, message: "Expected entry kind is required" });
+    throw createError({ statusCode: 400, message: "Entry kind is required" });
   return { operationId: requireRequestId(fields.operationId, "operationId"), kind };
 }
 

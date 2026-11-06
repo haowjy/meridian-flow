@@ -227,7 +227,7 @@ export type DeleteContextEntryResult = z.infer<typeof deleteContextEntryResultSc
 /** Delete the entry in the URL; the server finds the row by id. */
 export type DeleteContextEntryRequest = {
   operationId: string;
-  expected: { kind: "file" | "folder" };
+  kind: "file" | "folder";
 };
 
 export const restoreContextDocumentsRequestSchema = z.object({
@@ -319,19 +319,14 @@ export type ContextEntryRef = { kind: "file" | "folder"; nodeId: string };
  */
 export type MoveContextEntryRequest = {
   operationId: string;
-  expected: { kind: "file" | "folder" };
+  kind: "file" | "folder";
   destinationParent?: ContextDestinationParent;
   position?: ContextSiblingPosition;
   name?: string;
 };
 
-export type MoveContextEntryResult = {
-  linkUpdate?: { links: number; documents: number };
-  status: "moved";
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  name: string;
-};
+/** The route's answer; where the entry landed is in the operation's receipt. */
+export type MoveContextEntryResult = { status: "moved" };
 
 /** Which version of a source Copy reads: what the writer's surface shows (D24, 2c). */
 export type CopyContextEntryView =

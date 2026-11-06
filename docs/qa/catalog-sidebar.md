@@ -174,8 +174,9 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
 5. Delete another open folder through `./mf api` using its catalog folder node
    ID. Availability reconciliation closes its tabs and dock (wake/focus/poll),
    without a general durable deletion intake (session authority retains its adopted
-   local-origin exception). A delayed delete naming an old folder
-   ID at a replacement folder's path must return `stale_target`.
+   local-origin exception). A delayed delete naming the deleted
+   folder's ID must answer 404 `not_found` and leave a replacement folder at the same
+   path untouched.
 6. Delete a Scratch note independently, then trash and restore its No Work chat
    and its Work. Availability must still say `deleted`, including while its lineage
    is hidden; the independently deleted note never returns.

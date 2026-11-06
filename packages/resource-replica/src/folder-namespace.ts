@@ -411,7 +411,7 @@ export function validateFolderNamespaceUpdate(
           ? true
           : request.kind === "create-folder"
             ? !named(request.body.folderId)
-            : request.body.expected.kind !== "folder" || !named(request.entryId),
+            : request.body.kind !== "folder" || !named(request.entryId),
       ),
     )
   )
@@ -869,7 +869,7 @@ export function reconcileFolderNamespace(input: {
       if (request.kind === "create-folder") return request.body.folderId === record.folderId;
       return (
         !record.canonicalRefresh &&
-        request.body.expected.kind === "folder" &&
+        request.body.kind === "folder" &&
         request.entryId === record.folderId
       );
     },

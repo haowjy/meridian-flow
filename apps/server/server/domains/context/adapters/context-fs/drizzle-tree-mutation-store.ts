@@ -388,11 +388,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           beforePlacement?.parentId !== afterPlacement.parentId,
       });
       if (placed === "stale-anchor") rollback("stale_target");
-      if (
-        input.source.kind === "file" &&
-        (targetBasename !== treeBasename(input.source.path) ||
-          ("graduateProvisionalName" in input && input.graduateProvisionalName))
-      ) {
+      // A writer-location command ends provisional naming whether or not the name changed.
+      if (input.source.kind === "file") {
         await currentDrizzleDb(this.db)
           .update(documents)
           .set({ provisionalName: false })

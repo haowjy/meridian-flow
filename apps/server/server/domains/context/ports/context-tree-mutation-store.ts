@@ -65,8 +65,6 @@ type PreparedFileMove = PreparedContextMoveBase & {
   /** The destination leaf's stored parts, parsed once by the mover; storage never re-parses them. */
   destinationFilename: { name: string; extension: string };
   source: Extract<ContextLocationToken, { kind: "file" }>;
-  /** The exact writer-location command ends provisional naming on commit. */
-  graduateProvisionalName: boolean;
 };
 
 type PreparedDirectoryMove = PreparedContextMoveBase & {
