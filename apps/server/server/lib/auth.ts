@@ -3,6 +3,7 @@
  * storage and user resolution) and resolves an authenticated identity. Owns the auth
  * provider integration; depends inward on the user repository port.
  */
+import { devAuthAppliesToRequest, resolveDevAuthUser } from "@meridian/contracts/dev-auth";
 import type { UserId } from "@meridian/contracts/runtime";
 import { CookieSessionStorage, createAuthService, validateConfig } from "@workos/authkit-session";
 import { HTTPError } from "nitro/h3";
@@ -87,10 +88,18 @@ function composeName(firstName: string | null, lastName: string | null): string 
 }
 
 export async function validateAuthConfiguration(): Promise<void> {
+  // Raw process.env on purpose: see `@meridian/contracts/dev-auth`. Throws when
+  // the bypass is set outside a local dev process.
+  if (resolveDevAuthUser(process.env)) return;
   await ensureAuthConfig();
 }
 
 export async function resolveUser(request: Request): Promise<ResolvedExternalUser | null> {
+  const devUser = resolveDevAuthUser(process.env);
+  if (devUser) {
+    if (!devAuthAppliesToRequest(request)) return null;
+    return { ...devUser, name: null, avatarUrl: null };
+  }
   await ensureAuthConfig();
   const { auth } = await authkit.withAuth(request);
   if (!auth.user) return null;

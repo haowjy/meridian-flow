@@ -1,10 +1,41 @@
+import { devAuthAppliesToRequest, resolveDevAuthUser } from "@meridian/contracts/dev-auth";
 import { createMiddleware } from "@tanstack/react-start";
-import { validateConfig } from "@workos/authkit-session";
+import { type AuthResult, validateConfig } from "@workos/authkit-session";
 import { getAuthkit } from "@workos/authkit-tanstack-react-start";
 
 import { resolveAuthRedirectUri } from "./auth-redirect-uri";
 
 let configValidated = false;
+
+/**
+ * The AuthKit-shaped auth for the dev user. Empty `sessionId` makes AuthKit's
+ * `signOut` return to `/` without a WorkOS call; the tokens are never read.
+ */
+function devAuthResult(dev: { externalId: string; email: string }): AuthResult {
+  const now = new Date().toISOString();
+  return {
+    user: {
+      object: "user",
+      id: dev.externalId,
+      email: dev.email,
+      emailVerified: true,
+      firstName: null,
+      lastName: null,
+      profilePictureUrl: null,
+      lastSignInAt: now,
+      createdAt: now,
+      updatedAt: now,
+      externalId: null,
+      metadata: {},
+      name: dev.externalId,
+      locale: null,
+    },
+    sessionId: "",
+    accessToken: "",
+    refreshToken: "",
+    claims: { sub: dev.externalId, sid: "", iss: "", exp: 0, iat: 0 },
+  };
+}
 
 /**
  * AuthKit middleware with a per-request redirect URI (portless / Tailscale in dev).
@@ -15,6 +46,22 @@ let configValidated = false;
  */
 export function meridianAuthkitMiddleware() {
   return createMiddleware().server(async (args) => {
+    // Raw process.env on purpose: see `@meridian/contracts/dev-auth`.
+    const devUser = resolveDevAuthUser(process.env);
+    if (devUser) {
+      const auth: AuthResult = devAuthAppliesToRequest(args.request)
+        ? devAuthResult(devUser)
+        : { user: null };
+      return args.next({
+        context: {
+          auth: () => auth,
+          request: args.request,
+          redirectUri: "",
+          __setPendingHeader: () => {},
+        },
+      });
+    }
+
     const authkit = await getAuthkit();
     if (!configValidated) {
       await validateConfig();
