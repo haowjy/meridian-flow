@@ -39,7 +39,7 @@ export type Capability = "image_input";
 
 /** Registry-declared provider cache behavior and its best-known retention window. */
 export interface PromptCacheDescriptor {
-  kind: "explicit" | "automatic" | "none";
+  kind: "explicit" | "automatic";
   /** Lifetime in milliseconds of a short-retention request (subagents); null means the provider documents none. */
   shortTtlMs: number | null;
   /** Lifetime of a long-retention request (primary chats); equals `shortTtlMs` when the provider offers one lifetime. */

@@ -110,15 +110,17 @@ request is long and the two lifetimes differ; when a provider omits the cache-wr
 split by lifetime, the adapters attribute all writes to the lifetime the request asked for.
 `validateModelRegistry` (adapter-neutral) rejects a long lifetime shorter than the short
 one, one null with the other set, and two lifetimes with a `cacheWriteUsdPerMillionTokens`
-but no `cacheWriteLongUsdPerMillionTokens`. Each adapter keeps one table of the lifetimes its wire can express, used for both the creation-time check and the request mapping: the OpenAI adapter accepts
-30m and 12h (sending `prompt_cache_options` for 12h, whichever of the two lifetimes the request resolves to) and the Anthropic adapter 5m/1h for explicit models.
+but no `cacheWriteLongUsdPerMillionTokens`. Each adapter keeps one table of the lifetimes its wire can express, used for both the
+creation-time check and the request mapping: OpenAI accepts 30m and 12h (sending
+`prompt_cache_options` for 12h, whichever lifetime the request resolves to) and Anthropic
+5m/1h for explicit models.
 Only `explicit` offerings get `cache_control` on the wire. The Anthropic adapter marks
 the last system block and the last block of the two most recent wire `user` messages (tool
 results are user turns there), walking back past a block that cannot carry the mark
 (thinking, empty text); DeepSeek gets none and keeps a joined `system` string. The loop
 assembles requests with no marks, so every Anthropic-format request, summarizer calls
-included, is marked the same way. Automatic offerings receive no marks and `none` predict
-cold. A null lifetime means unknown, not infinite: prediction reads it as cold
+included, is marked the same way. Automatic offerings receive no marks. A null
+lifetime means unknown, not infinite: prediction reads it as cold
 (`ttl_unknown`), so Gemini always reads cold.
 
 Claude and GPT-5.6+ bill cache writes by the TTL written. `Usage.cacheWriteLongTokens`

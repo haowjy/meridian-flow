@@ -198,7 +198,6 @@ export function selectReusablePrefixResponse(input: DerivePrefixCacheStateInput)
 }
 
 export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): PrefixCacheState {
-  if (input.promptCache.kind === "none") return cold("uncached");
   const selected = selectReusablePrefixResponse(input);
   if (!selected.response) return cold(selected.reason);
   const response = selected.response;

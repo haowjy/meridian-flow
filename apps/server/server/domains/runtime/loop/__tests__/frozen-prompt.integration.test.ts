@@ -234,7 +234,7 @@ describe("frozen prompt provider requests", () => {
             displayName: "Fixture",
             contextWindow: 100_000,
             maxOutputTokens: 4_096,
-            promptCache: { kind: "none" as const, shortTtlMs: null, longTtlMs: null },
+            promptCache: { kind: "automatic" as const, shortTtlMs: null, longTtlMs: null },
             capabilities: new Set(["image_input" as const]),
           },
         ],
@@ -301,7 +301,7 @@ describe("frozen prompt provider requests", () => {
       displayName: "Fixture",
       contextWindow: 100_000,
       maxOutputTokens: 4_096,
-      promptCache: { kind: "none", shortTtlMs: null, longTtlMs: null },
+      promptCache: { kind: "automatic", shortTtlMs: null, longTtlMs: null },
       reasoning: { efforts: ["low", "medium", "high", "max"] },
       capabilities: new Set(["image_input"]),
     };
