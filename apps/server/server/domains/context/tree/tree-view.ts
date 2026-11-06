@@ -16,7 +16,7 @@ import type {
 import { addressCandidates, filenameSplits } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { eq, inArray, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
@@ -108,7 +108,7 @@ export type VisibleFolder = {
   path: string;
 };
 
-/** A path to resolve. A folder and a document clash when the folder's name is the document's rendered filename. */
+/** A source-relative path to resolve. */
 export type PathQuery = { contextSourceId: ContextSourceId; path: string };
 
 export type PathResolution<N> =
@@ -234,13 +234,19 @@ export interface TreeReader {
     },
   ): Promise<PathResolution<NodeRef>>;
   /**
-   * What this view shows at each source-relative path, in input order: the documents and
-   * the folders there (more than one of either when they clash).
+   * The rendered filenames this view shows directly under a folder (`parentId`, null: the
+   * source root) or under the folders a path `dir` names (none yet: no names), except `except`
+   * itself. Documents and folders clash by these strings alone, so this is what a free name
+   * is chosen against.
    */
-  occupancy(
+  namesAt(
     view: TreeView,
-    at: readonly PathQuery[],
-  ): Promise<{ documents: DocumentId[]; folders: FolderId[] }[]>;
+    at: { contextSourceId: ContextSourceId } & (
+      | { parentId: FolderId | null }
+      | { dir: readonly string[] }
+    ),
+    except?: NodeRef,
+  ): Promise<Set<string>>;
   /** An id names one node; other visible ids at its address in this view are `clashesWith`. */
   findById(
     view: TreeView,
@@ -498,6 +504,63 @@ export function createTreeReader(
     if (!first) return { kind: "not_found" };
     if (!second) return { kind: "found", node: first };
     return { kind: "ambiguous", nodes: [first, second, ...rest] };
+  }
+
+  async function namesAt(
+    view: TreeView,
+    at: { contextSourceId: ContextSourceId } & (
+      | { parentId: FolderId | null }
+      | { dir: readonly string[] }
+    ),
+    except?: NodeRef,
+  ): Promise<Set<string>> {
+    let parents: (FolderId | null)[];
+    if ("parentId" in at) parents = [at.parentId];
+    else if (at.dir.length === 0) parents = [null];
+    else {
+      const [found] = await pathOccupants(view, [
+        { contextSourceId: at.contextSourceId, path: at.dir.join("/") },
+      ]);
+      parents = found?.folders ?? [];
+    }
+    if (parents.length === 0) return new Set();
+    const folderIds = parents.filter((id): id is FolderId => id !== null);
+    const vd = visibleDocuments(view);
+    const vf = visibleFolders(view);
+    const [docs, dirs] = await Promise.all([
+      tx()
+        .select({ id: vd.id, name: vd.name, extension: vd.extension })
+        .from(vd)
+        .where(
+          and(
+            eq(vd.contextSourceId, at.contextSourceId),
+            or(
+              parents.includes(null) ? isNull(vd.folderId) : undefined,
+              folderIds.length ? inArray(vd.folderId, folderIds) : undefined,
+            ),
+          ),
+        ),
+      tx()
+        .select({ id: vf.id, name: vf.name })
+        .from(vf)
+        .where(
+          and(
+            eq(vf.contextSourceId, at.contextSourceId),
+            or(
+              parents.includes(null) ? isNull(vf.parentId) : undefined,
+              folderIds.length ? inArray(vf.parentId, folderIds) : undefined,
+            ),
+          ),
+        ),
+    ]);
+    return new Set([
+      ...docs
+        .filter((row) => !(except?.kind === "document" && except.id === row.id))
+        .map((row) => renderFilename(row.name, row.extension)),
+      ...dirs
+        .filter((row) => !(except?.kind === "folder" && except.id === row.id))
+        .map((row) => row.name),
+    ]);
   }
 
   async function findById(view: TreeView, id: DocumentId) {
@@ -856,20 +919,12 @@ export function createTreeReader(
     return { kind: "not_found" };
   }
 
-  async function occupancy(view: TreeView, at: readonly PathQuery[]) {
-    if (at.length === 0) return [];
-    return (await pathOccupants(view, at)).map(({ documents, folders }) => ({
-      documents,
-      folders,
-    }));
-  }
-
   return {
     resolvePath,
     resolveAddress,
     resolveDocumentAddress,
     childAt,
-    occupancy,
+    namesAt,
     findById,
     findFolderById,
     identityStatus,

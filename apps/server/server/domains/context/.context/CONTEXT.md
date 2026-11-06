@@ -29,20 +29,24 @@ out of a lineage, but may not create notes or move files into one.
 URI paths reject `..`, normalize slash segments, and reserve a leading `@` in
 writer-created names for authority qualifiers. Canonical filename parsing is
 owned by `@meridian/contracts/protocol`. Every tree lookup of a typed name asks
-`addressCandidates` (literal, then the codec's alias); `TreeReader.resolveAddress` is the one
-tree walk over them, `matchDocumentAddress` and the client catalog's `findPath` the same order
-over a list. Only a link may also leave a registered extension off (`outline` for
+`addressCandidates` (literal, then the codec's alias), and whatever holds the literal name
+answers whatever its kind: `TreeReader.resolveAddress` is the one tree walk over them,
+`matchDocumentAddress` and the client catalog's `findPath` the same order over a list. A caller
+that wants a document (`read`, a link, a document address) asks `resolveDocumentAddress` or
+`resolveDocumentAt`, which skips a folder and tries the alias. Only a link may also leave a registered extension off (`outline` for
 `outline.json`): `matchDocumentPath` adds that unique-match step after the address, and no
 `stat`, route or other tree lookup does. A binary write carries its decided name parts
 (`ContextWriteBinaryOptions.filename`), so a copy's name is parsed once. Naming asks the row's kind
-(`storedFilename` with `{ extension, stored }`): a stored file keeps its literal name, a tracked
+(`storedFilename` with `{ extension, editable }`): a stored file keeps its literal name, a tracked
 document follows the alias rules, and a move with no typed name keeps the token's `name` and
 `extension` without parsing. Documents and folders share one namespace by
 literal name: a folder clashes with a document when the folder's name equals the
 document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
 two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
-coexist; a link to `Lore.md` still reaches the document, because `resolveAddress` prefers a document at
-the written leaf or its alias over a folder.
+coexist; a link to `Lore.md` still reaches the document, because a document lookup skips the folder,
+while a path that names a folder (`ls`, `move`, `delete` of `Lore.md/`, a reorder of the folder) acts on the folder.
+A free name is chosen against `TreeReader.namesAt` (the rendered filenames under a parent) by the
+contracts' `firstFreeName`; nothing re-derives a name's parts from the rendered string.
 
 ## Access, source capabilities, and transactions
 

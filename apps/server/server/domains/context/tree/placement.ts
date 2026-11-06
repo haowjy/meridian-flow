@@ -13,7 +13,7 @@
  * source involved and the document locks of every target document.
  */
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
-import { freeFilename } from "@meridian/contracts/protocol";
+import { firstFreeName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -141,10 +141,10 @@ export async function createLiveFolder(
 ): Promise<{ name: string }> {
   const { contextSourceId, parentId } = input;
   const tree = createTreeReader(db);
-  const name = await freeFilename({ name: input.name }, async (filename) => {
-    const occupant = await tree.childAt(LIVE_TREE, { contextSourceId, parentId, filename });
-    return occupant.kind !== "not_found";
-  });
+  const { name } = firstFreeName(
+    { name: input.name },
+    await tree.namesAt(LIVE_TREE, { contextSourceId, parentId }),
+  );
   await insertFolder(db, { contextSourceId, parentId, name }, { hidden: false, id: input.id });
   await claimDocumentLocation(db, contextSourceId, parentId, name);
   await absorbAt(db, input.id);
@@ -290,25 +290,16 @@ async function prepareLivePlacement(
   if (!ancestors.ok) return ancestors;
   const { parentId } = ancestors.value;
   const extension = target.node.kind === "document" ? (target.at.extension ?? "") : "";
-  const filename = await freeFilename({ name: target.at.name, extension }, async (filename) =>
-    Boolean(
-      ancestorTaken(
-        [...ancestors.value.path, filename].join("/"),
-        await tree.childAt(LIVE_TREE, {
-          contextSourceId: target.at.contextSourceId,
-          parentId,
-          filename,
-        }),
-        target.node,
-      ),
+  const free = firstFreeName(
+    { name: target.at.name, extension },
+    await tree.namesAt(
+      LIVE_TREE,
+      { contextSourceId: target.at.contextSourceId, parentId },
+      target.node,
     ),
   );
-  const at: LiveLocation = {
-    ...target.at,
-    parentFolderId: parentId,
-    name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
-  };
-  return Ok({ ancestors: ancestors.value.placed, parentId, at, filename });
+  const at: LiveLocation = { ...target.at, parentFolderId: parentId, name: free.name };
+  return Ok({ ancestors: ancestors.value.placed, parentId, at, filename: free.filename });
 }
 
 /** A hidden target's row at its final location, visible. */

@@ -1,6 +1,6 @@
 import {
   addressCandidates,
-  freeFilename,
+  firstFreeName,
   type RetractionCause,
 } from "@meridian/contracts/protocol";
 /**
@@ -96,6 +96,35 @@ export function findInMemoryContextDocumentAt(
     }
   }
   return null;
+}
+
+/** The rendered filenames live under one folder, other than `exceptId` itself. */
+export function entryNames(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  parentId: string | null,
+  exceptId?: string,
+): Set<string> {
+  return new Set([
+    ...[...backing.documents.values()]
+      .filter(
+        (row) =>
+          row.id !== exceptId &&
+          row.contextSourceId === sourceId &&
+          row.folderId === parentId &&
+          row.deletedAt === null,
+      )
+      .map((row) => renderFilename(row.name, row.extension)),
+    ...[...backing.folders.values()]
+      .filter(
+        (row) =>
+          row.id !== exceptId &&
+          row.contextSourceId === sourceId &&
+          row.parentId === parentId &&
+          row.deletedAt === null,
+      )
+      .map((row) => row.name),
+  ]);
 }
 
 export function hasOppositeEntry(
@@ -312,11 +341,9 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     }
     // The catalog's entry-id space is global, and another source holding the id is final too.
     if (this.backing.documents.has(input.id)) throw new ContextEntryConflictError("folder");
-    const name = await freeFilename({ name: input.name }, (filename) =>
-      Promise.resolve(
-        this.findFolderRecord(input.parentId, filename) !== null ||
-          hasOppositeEntry(this.backing, this.sourceId, input.parentId, filename, "folder"),
-      ),
+    const { name } = firstFreeName(
+      { name: input.name },
+      entryNames(this.backing, this.sourceId, input.parentId),
     );
     const folder: FolderRow = {
       id: input.id,
@@ -601,6 +628,10 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
 
   async parentOrderPolicy(_view: TreeView, _parentId: string | null) {
     return "default" as const;
+  }
+
+  async namesAt(_view: TreeView, parentId: string | null): Promise<Set<string>> {
+    return entryNames(this.backing, this.sourceId, parentId);
   }
 
   async listFolders(_view: TreeView, parentId: string | null): Promise<ContextFolder[]> {

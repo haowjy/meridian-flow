@@ -60,7 +60,7 @@ import {
   loadHiddenFilenames,
 } from "../../tree/tree-view-sql.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
-import { hasLiveFolderNamed, lockContextSources } from "./document-locations.js";
+import { lockContextSources } from "./document-locations.js";
 
 type DocumentRow = Pick<
   VisibleDocument,
@@ -338,7 +338,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         const [folder] = await loadFolderIdentityRows(this.db, [input.id as FolderId]);
         if (folder) throw new ContextEntryConflictError("folder");
       }
-      const occupant = await liveFileOccupant(this, this.deps.db, this.sourceId, input);
+      const occupant = await liveFileOccupant(this.deps.db, this.sourceId, input);
       if (occupant === "folder") throw new ContextEntryConflictError("folder");
       if (occupant) return null;
       const created = await createLive(this.deps.db, {
@@ -412,7 +412,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      const occupant = await liveFileOccupant(this, this.deps.db, this.sourceId, input);
+      const occupant = await liveFileOccupant(this.deps.db, this.sourceId, input);
       if (occupant) throw new ContextEntryConflictError(occupant);
       // A live upload at a hidden image's path is a different document (12b-Q2).
       const documentId = await insertDocumentRow(
@@ -472,6 +472,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     ).policy;
   }
 
+  namesAt(view: TreeView, parentId: string | null): Promise<Set<string>> {
+    return createTreeReader(this.deps.db).namesAt(view, {
+      contextSourceId: this.sourceId,
+      parentId: parentId as FolderId | null,
+    });
+  }
+
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const vf = visibleFolders(view);
     const rows = await this.db
@@ -523,21 +530,21 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 }
 
-/** What live entry already holds this file's rendered filename: a document, or a folder of that name. Null when free. */
+/**
+ * What live entry already holds this file's rendered filename, by any split of it: a document,
+ * or a folder of that name. Null when free.
+ */
 async function liveFileOccupant(
-  store: DrizzleContextDocumentStore,
   db: Database,
   sourceId: string,
   input: { folderId: string | null; name: string; extension: string },
 ): Promise<"file" | "folder" | null> {
-  if (await store.findDocument(input.folderId, input.name, input.extension)) {
-    return "file";
-  }
-  const folder = await hasLiveFolderNamed(
-    db,
-    sourceId,
-    input.folderId,
-    renderFilename(input.name, input.extension),
-  );
-  return folder ? "folder" : null;
+  const occupant = await createTreeReader(db).childAt(LIVE_TREE, {
+    contextSourceId: sourceId as ContextSourceId,
+    parentId: input.folderId as FolderId | null,
+    filename: renderFilename(input.name, input.extension),
+  });
+  if (occupant.kind === "not_found") return null;
+  const first = occupant.kind === "found" ? occupant.node : occupant.nodes[0];
+  return first.kind === "folder" ? "folder" : "file";
 }

@@ -2,7 +2,7 @@
 import type { AheadMint } from "@meridian/agent-edit/integration";
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { freeFilename, renderFilename } from "@meridian/contracts/protocol";
+import { renderFilename } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -225,11 +225,7 @@ export function createDrizzleContextStagedCreation(deps: {
       for (const row of siblings) reserve(row);
       for (const row of top) {
         const names = occupied.get(parentKey(row.area, row.parentId));
-        if (
-          !names ||
-          (await freeFilename(row, async (filename) => names.has(filename))) !==
-            renderFilename(row.name, row.extension)
-        )
+        if (!names || names.has(renderFilename(row.name, row.extension)))
           return { kind: "changed" };
         reserve(row);
       }

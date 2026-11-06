@@ -2,7 +2,7 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, works } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   getDrizzleTransactionLocal,
@@ -11,7 +11,6 @@ import {
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
 import { ContextEntryConflictError } from "../../ports/context-document-store.js";
-import { LIVE_TREE, visibleFolders } from "../../tree/tree-view.js";
 import { loadWorkRestoreNamespaceRows } from "../../tree/tree-view-sql.js";
 
 export type ContextNamespace = {
@@ -202,32 +201,6 @@ export async function readTreeLocations(
     FROM documents d JOIN paths p ON d.folder_id = p.id
     WHERE d.context_source_id = ${source.sourceId} AND d.deleted_at IS NULL
   `);
-}
-
-/**
- * Whether a live folder is named exactly `filename`, which a document with that rendered
- * filename would clash with. Caller holds the logical namespace lock. Only the live tree
- * occupies a path: a hidden node never blocks a live entry.
- */
-export async function hasLiveFolderNamed(
-  db: Database,
-  sourceId: string,
-  parentId: string | null,
-  filename: string,
-): Promise<boolean> {
-  const vf = visibleFolders(LIVE_TREE);
-  const [row] = await currentDrizzleDb(db)
-    .select({ id: vf.id })
-    .from(vf)
-    .where(
-      and(
-        eq(vf.contextSourceId, sourceId as never),
-        parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as never),
-        eq(vf.name, filename),
-      ),
-    )
-    .limit(1);
-  return !!row;
 }
 
 /**

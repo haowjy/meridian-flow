@@ -1,6 +1,6 @@
 /** Hidden-node yielding for the exact claims a live tree write installed. */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
-import { filenameSplits, freeFilename, renderFilename } from "@meridian/contracts/protocol";
+import { filenameSplits, firstFreeName, renderFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
@@ -81,28 +81,28 @@ export async function normalizeNames(db: Database, arrivals: readonly NodeRef[])
 
 async function renameHiddenClaim(db: Database, claim: Claim): Promise<void> {
   const tx = currentDrizzleDb(db);
-  const filename = await freeFilename(claim, async (candidate) => {
-    const matching = matchingClaim(candidate, claim, claim.id);
-    const [row] = await tx.execute<{ taken: boolean }>(sql`SELECT EXISTS (
-      SELECT 1 FROM documents d WHERE ${matching.document}
-      UNION ALL
-      SELECT 1 FROM folders f WHERE ${matching.folder}
-    ) AS taken`);
-    return row?.taken ?? false;
-  });
+  const taken = await tx.execute<{ filename: string }>(sql`
+    SELECT CASE WHEN d.extension = '' THEN d.name ELSE d.name || '.' || d.extension END AS filename
+    FROM documents d
+    WHERE d.deleted_at IS NULL AND d.context_source_id = ${claim.contextSourceId}::uuid
+      AND d.folder_id IS NOT DISTINCT FROM ${claim.parentId}::uuid AND d.id <> ${claim.id}::uuid
+    UNION ALL
+    SELECT f.name FROM folders f
+    WHERE f.deleted_at IS NULL AND f.context_source_id = ${claim.contextSourceId}::uuid
+      AND f.parent_id IS NOT DISTINCT FROM ${claim.parentId}::uuid AND f.id <> ${claim.id}::uuid`);
+  const free = firstFreeName(claim, new Set(taken.map((row) => row.filename)));
   const now = new Date();
   if (claim.kind === "document") {
-    const name = claim.extension ? filename.slice(0, -(claim.extension.length + 1)) : filename;
     await tx
       .update(documents)
-      .set({ name, updatedAt: now })
+      .set({ name: free.name, updatedAt: now })
       .where(eq(documents.id, claim.id as DocumentId));
     await bumpLocationVersions(db, { documentIds: [claim.id as DocumentId] });
     return;
   }
   await tx
     .update(folders)
-    .set({ name: filename, updatedAt: now })
+    .set({ name: free.filename, updatedAt: now })
     .where(eq(folders.id, claim.id as FolderId));
   const subtree = await loadSubtreeNodes(tx, [claim.id as FolderId]);
   await bumpLocationVersions(db, {

@@ -1,5 +1,5 @@
 /** Stable sibling-safe names for new Scratch notes. */
-import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
+import { firstFreeName, parseDocumentFilename } from "@meridian/contracts/protocol";
 
 /**
  * The first free name from `baseName`, numbered the way the server numbers a
@@ -11,8 +11,6 @@ export function uniqueScratchNoteName(baseName: string, siblingNames: readonly s
   if (!occupied.has(baseName)) return baseName;
 
   const parsed = parseDocumentFilename(baseName);
-  const { name, extension } = parsed.ok ? parsed.value : { name: baseName, extension: "" };
-  let suffix = 2;
-  while (occupied.has(renderFilename(`${name} (${suffix})`, extension))) suffix += 1;
-  return renderFilename(`${name} (${suffix})`, extension);
+  return firstFreeName(parsed.ok ? parsed.value : { name: baseName, extension: "" }, occupied)
+    .filename;
 }

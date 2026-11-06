@@ -83,15 +83,18 @@ have diagnostic lineages, so known-id file access can deny access with their
 removal record; this never grants content access or makes them visible.
 
 Anything deciding whether a node may stand at a path asks what the view shows
-there (`resolvePath`, `childAt`, `occupancy`), literally: a folder and a document
+there (`resolvePath`, `childAt`, `namesAt`), literally: a folder and a document
 clash when the folder's name is the document's rendered filename. Create refuses an
 occupied claim; moves, restores and Apply allocate a free leaf name but refuse a
-document blocking an ancestor. A path two nodes share answers a clash, never a pick.
+document blocking an ancestor. A path two nodes share answers a clash, never a pick; a
+path one folder holds answers that folder, and the codec's alias applies only when nothing
+holds the literal name (`resolveAddress`). A caller that wants a document (`resolveDocumentAddress`)
+skips the folder and tries the alias.
 
 An address consumer that already carries a target kind is not making a
 namespace claim. Folder-link preparation passes `directory` to
-`inspectTreeLocation`, so it can select the folder from a legacy same-address
-folder/document collision instead of letting document-first inspection hide it.
+`inspectTreeLocation` and a document address passes `file`, so each selects its own kind
+beside a folder `Lore.md` and a document `Lore`.
 
 ## Lifecycle rules
 
