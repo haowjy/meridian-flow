@@ -1,101 +1,38 @@
 /**
  * OpenAI Responses provider adapter: implements the provider-adapter port over
  * the OpenAI Responses API, translating to/from canonical gateway types. Owns
- * the OpenAI-specific streaming wiring; depends on its request-map/stream-collect/errors siblings.
- *
- * Streaming lifecycle:
- * 1. Create accumulator → yield `start` event
- * 2. Map canonical request to Responses params (request-map)
- * 3. Call `client.responses.create()` with `stream: true`
- * 4. For each SSE event, yield canonical StreamEvents (stream-collect)
- * 5. Build final GenerateResult from accumulator → yield `end` event
- * 6. On error, map to canonical error event (errors module)
+ * the OpenAI-specific streaming wiring. The shared stream envelope is
+ * `../provider-stream.ts`.
  */
 import OpenAI from "openai";
-import { modelAttemptTimeoutEvent } from "../../deadline.js";
-import type {
-  GenerateRequest,
-  ModelInfo,
-  ProviderConfig,
-  ResolvedCall,
-  StreamEvent,
-} from "../../domain/index.js";
+import type { ProviderConfig } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import { mapProviderHttpError, providerFetch } from "../provider-http-error.js";
+import { providerClientOptions } from "../provider-http-error.js";
+import { streamProvider } from "../provider-stream.js";
 import { toOpenAIResponsesParams } from "./request-map.js";
 import {
-  accumulatorHasPartialResult,
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromResponseStreamEvent,
 } from "./stream-collect.js";
 
-function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
-  if (!auth?.apiKey) return undefined;
-  return typeof auth.apiKey === "function" ? auth.apiKey() : auth.apiKey;
-}
-
 export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAdapter {
-  const apiKey = resolveApiKey(config.auth);
-  const client = new OpenAI({
-    apiKey: apiKey ?? "not-needed",
-    ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
-    defaultHeaders: config.auth?.headers,
-    // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
-    maxRetries: 0,
-    fetch: providerFetch,
-  });
-
+  const client = new OpenAI(providerClientOptions(config));
   const providerId = config.id;
 
   return {
-    async *stream(
-      request: GenerateRequest,
-      model: ModelInfo,
-      call: ResolvedCall,
-    ): AsyncIterable<StreamEvent> {
-      // Create a fresh accumulator per stream call — each generate request
-      // gets its own streaming state.
+    stream(request, model, call) {
       const acc = createStreamAccumulator(model.id, providerId, call.longCacheWrites);
-      yield { type: "start", model: model.id, provider: providerId };
-
-      try {
-        const params = toOpenAIResponsesParams(request, model, call);
-        const stream = await client.responses.create(params, { signal: request.signal });
-
-        for await (const event of stream) {
-          for (const mapped of eventsFromResponseStreamEvent(event, acc)) {
-            yield mapped;
-            if (mapped.type === "error") return;
-          }
-        }
-
-        const result = buildGenerateResult(acc);
-        yield { type: "end", result };
-      } catch (err) {
-        // Check for abort before mapping to provider errors — aborted requests
-        // may produce a timeout event (from deadline.ts) or a generic abort error.
-        if (request.signal?.aborted) {
-          const timeout = modelAttemptTimeoutEvent(request.signal);
-          if (timeout) {
-            yield timeout;
-            return;
-          }
-          if (accumulatorHasPartialResult(acc)) {
-            yield { type: "end", result: buildGenerateResult(acc) };
-            return;
-          }
-          yield {
-            type: "error",
-            code: "invalid_request",
-            message: "Request aborted",
-            retryable: false,
-          };
-          return;
-        }
-        const mapped = mapProviderHttpError(err);
-        yield { type: "error", ...mapped };
-      }
+      return streamProvider({
+        start: { type: "start", model: model.id, provider: providerId },
+        signal: request.signal,
+        open: () =>
+          client.responses.create(toOpenAIResponsesParams(request, model, call), {
+            signal: request.signal,
+          }),
+        events: (event) => eventsFromResponseStreamEvent(event, acc),
+        result: () => buildGenerateResult(acc),
+      });
     },
   };
 }
