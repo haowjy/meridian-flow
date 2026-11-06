@@ -103,11 +103,10 @@ export async function copyBinaryDocument(
     throw new Error("A binary copy's grant must name its source document");
   }
   const slash = input.destinationUri.lastIndexOf("/");
-  // The source URI leaf is its stored name, so a prose suffix on it marks a kept file.
-  const destinationParts = storedFilename(
-    input.destinationUri.slice(slash + 1),
-    input.source.uri.slice(input.source.uri.lastIndexOf("/") + 1),
-  );
+  const destinationParts = storedFilename(input.destinationUri.slice(slash + 1), {
+    extension: input.source.extension,
+    stored: true,
+  });
   if (!destinationParts.ok) return Err({ ...destinationParts.error, uri: input.destinationUri });
   const parts = filenameForBinary(
     destinationParts.filename,

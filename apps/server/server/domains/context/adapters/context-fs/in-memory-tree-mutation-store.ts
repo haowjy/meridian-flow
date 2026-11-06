@@ -1,8 +1,8 @@
 /** Atomic move/delete CAS operations over the shared in-memory context backing. */
 import { serializeRemovalIdentity } from "@meridian/contracts";
 import {
+  addressCandidates,
   allocateFilename,
-  parseDocumentFilename,
   renderFilename as renderDocumentFilename,
   sameNamespaceName,
 } from "@meridian/contracts/protocol";
@@ -217,18 +217,14 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     if (!filename) return null;
     const folderId = await this.findFolderId(sourceId, dir);
     if (folderId === MISSING_FOLDER) return null;
-    // The exact stored name first (a file kept as `binary.md`), then the codec's alias.
-    for (const storageBacked of [true, false]) {
-      const parsed = parseDocumentFilename(filename, { storageBacked });
-      if (!parsed.ok) continue;
-      const { name, extension } = parsed.value;
+    for (const { leaf, extensionOmitted } of addressCandidates(filename)) {
+      if (extensionOmitted) continue;
       for (const doc of this.backing.documents.values()) {
         if (
           doc.contextSourceId === sourceId &&
           doc.deletedAt === null &&
           doc.folderId === folderId &&
-          doc.name === name &&
-          doc.extension === extension
+          renderFilename(doc.name, doc.extension) === leaf
         ) {
           return doc;
         }
@@ -257,6 +253,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           "/",
         ),
         filetype: doc.filetype,
+        name: doc.name,
         extension: doc.extension,
       };
     }
@@ -296,6 +293,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         sourceId: doc.contextSourceId,
         path: [...dirOf(doc.folderId), renderDocumentFilename(doc.name, doc.extension)].join("/"),
         filetype: doc.filetype,
+        name: doc.name,
         extension: doc.extension,
       };
     }

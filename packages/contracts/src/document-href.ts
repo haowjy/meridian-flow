@@ -6,7 +6,12 @@ import {
   parseContextUri,
   splitDocumentHrefSuffix,
 } from "./context-uri.js";
-import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
+import {
+  addressCandidates,
+  parseDocumentFilename,
+  renderFilename,
+} from "./protocol/document-filename.js";
+import { filetypeForExtension } from "./protocol/filetype.js";
 
 export { splitDocumentHrefSuffix } from "./context-uri.js";
 
@@ -104,32 +109,35 @@ export function documentPathCandidateNames(path: string): string[] {
 }
 
 /**
- * The one candidate at a resolved path: the exact path, or else the path with
- * its final extension omitted when exactly one candidate fits. Addresses are
- * unique, so there is never a choice between several.
+ * The one candidate at a resolved path: the first of `addressCandidates` that names one
+ * (the exact path, its alias, then the unique path that differs only by an omitted extension).
  */
 export function matchDocumentPath<T>(
   candidates: readonly T[],
   path: string,
   pathOf: (candidate: T) => string,
 ): T | null {
-  const key = documentPathKey(path);
-  // The literal path first: a document `binary` and a file kept as `binary.md` share a key.
-  const exact =
-    candidates.find((candidate) => pathOf(candidate) === path) ??
-    candidates.find((candidate) => documentPathKey(pathOf(candidate)) === key);
-  if (exact) return exact;
-  const loose = candidates.filter((candidate) => {
-    const value = pathOf(candidate);
-    const slash = value.lastIndexOf("/");
-    const parsed = parseDocumentFilename(value.slice(slash + 1));
-    return (
-      parsed.ok &&
-      parsed.value.extension !== "" &&
-      value.slice(0, slash + 1) + parsed.value.name === key
-    );
-  });
-  return loose.length === 1 ? (loose[0] ?? null) : null;
+  const slash = path.lastIndexOf("/");
+  const dir = path.slice(0, slash + 1);
+  for (const { leaf, extensionOmitted } of addressCandidates(path.slice(slash + 1))) {
+    const wanted = dir + leaf;
+    if (!extensionOmitted) {
+      const found = candidates.find((candidate) => pathOf(candidate) === wanted);
+      if (found) return found;
+      continue;
+    }
+    const loose = candidates.filter((candidate) => {
+      const value = pathOf(candidate);
+      const dot = value.lastIndexOf(".");
+      return (
+        dot > value.lastIndexOf("/") + 1 &&
+        filetypeForExtension(value.slice(dot + 1)) !== null &&
+        value.slice(0, dot) === wanted
+      );
+    });
+    if (loose.length === 1) return loose[0] ?? null;
+  }
+  return null;
 }
 
 function decodePath(path: string): string | null {

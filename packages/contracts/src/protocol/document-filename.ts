@@ -18,13 +18,13 @@ export type DocumentFilenameResult =
   | { ok: false; error: { code: "invalid_name"; message: string } };
 
 /**
- * A registered suffix is explicit; otherwise a destination inherits its source extension.
- * A prose suffix is an alias for the bare name (`ch1.md` is `ch1`) except on `storageBacked`
- * input: a file kept under one (`binary.md`) holds it as its extension.
+ * A tracked document's name rules. A registered suffix is explicit; otherwise a destination
+ * inherits its source extension. A prose suffix is an alias for the bare name (`ch1.md` is
+ * `ch1`). A stored file's name is `fileName`'s, chosen by the row's kind.
  */
 export function parseDocumentFilename(
   filename: string,
-  options: { sourceExtension?: string; storageBacked?: boolean } = {},
+  options: { sourceExtension?: string } = {},
 ): DocumentFilenameResult {
   const input = filename.trim();
   let name = input;
@@ -37,7 +37,7 @@ export function parseDocumentFilename(
     name = input.slice(0, dot).trim();
     extension = suffix;
   } else extension = sourceExtension;
-  if (!options.storageBacked && PROSE_EXTENSIONS.has(extension)) {
+  if (PROSE_EXTENSIONS.has(extension)) {
     extension = "";
     while (true) {
       const dot = name.lastIndexOf(".");
@@ -75,11 +75,9 @@ export function parseDocumentFilename(
 /** Binary storage chooses a registered suffix only when the parsed name is prose.
  * Identity parsing itself never depends on storage kind.
  */
-export function filenameForBinary(
-  parsed: ParsedDocumentFilename,
-  filetype: string,
-  mimeType?: string,
-): ParsedDocumentFilename {
+export function filenameForBinary<
+  T extends { name: string; extension: string; filetype?: Filetype | null },
+>(parsed: T, filetype: string, mimeType?: string): T {
   if (parsed.extension) return parsed;
   const mimeFiletype = mimeType ? filetypeForKnownMimeType(mimeType) : null;
   const type =
@@ -153,34 +151,29 @@ export async function allocateFilename(
   throw new Error("unreachable");
 }
 
-/** Destination naming shared by optimistic clients and server commands.
- * Explicit registered suffixes state the type; other names keep the source extension.
- * Parsed parts accompany the full name so storage never infers the destination twice.
- * `current` is the stored name, or its stored extension when the caller has the row. A prose
- * extension on a stored file means it was kept as a file (`binary.md`; documents store none),
- * so its destination keeps that suffix literally instead of reading it as an alias.
+/** What a row says about its own name: its stored extension and whether it is a stored file. */
+export interface NamedRow {
+  extension: string;
+  stored: boolean;
+}
+
+export type StoredFilenameResult =
+  | {
+      ok: true;
+      name: string;
+      filename: { name: string; extension: string; filetype: Filetype | null };
+    }
+  | { ok: false; message: string; error: { code: "invalid_name"; message: string } };
+
+/**
+ * Destination naming shared by optimistic clients and server commands, chosen by the row's
+ * kind and never by its suffix: a stored file keeps its name literally (`fileName`), a tracked
+ * document follows the document rules. No row is a create. `filetype` null keeps the file's type.
  */
-export function storedFilename(
-  typed: string,
-  current?: string | Pick<ParsedDocumentFilename, "extension">,
-):
-  | { ok: true; name: string; filename: ParsedDocumentFilename }
-  | { ok: false; message: string; error: { code: "invalid_name"; message: string } } {
-  const source =
-    typeof current === "string" ? parseDocumentFilename(current, { storageBacked: true }) : null;
-  const sourceExtension =
-    typeof current === "object" ? current.extension : source?.ok ? source.value.extension : "";
-  const storageBacked = PROSE_EXTENSIONS.has(sourceExtension);
-  const parsed = parseDocumentFilename(typed, { sourceExtension, storageBacked });
-  if (
-    parsed.ok &&
-    storageBacked &&
-    PROSE_EXTENSIONS.has(parsed.value.extension) &&
-    parsed.value.extension !== sourceExtension
-  ) {
-    const message = `a kept file keeps its \`.${sourceExtension}\` suffix; \`.${parsed.value.extension}\` would not convert it`;
-    return { ok: false, message, error: { code: "invalid_name", message } };
-  }
+export function storedFilename(typed: string, row?: NamedRow): StoredFilenameResult {
+  const parsed = row?.stored
+    ? fileName(typed, row)
+    : parseDocumentFilename(typed, { sourceExtension: row?.extension });
   return parsed.ok
     ? {
         ok: true,
@@ -188,4 +181,61 @@ export function storedFilename(
         filename: parsed.value,
       }
     : { ok: false, message: parsed.error.message, error: parsed.error };
+}
+
+export type StoredFileNameResult =
+  | { ok: true; value: { name: string; extension: string; filetype: Filetype | null } }
+  | { ok: false; error: { code: "invalid_name"; message: string } };
+
+/**
+ * A stored file's name (bytes in object storage, or a file kept under a prose suffix such as
+ * `binary.md`): literal, never an alias. A typed registered suffix states the extension, the
+ * file's own suffix counts even unregistered, and any other name inherits the row's extension.
+ * `filetype` is null while the extension is the row's, so the file keeps its type; any other
+ * registered suffix names the type it would convert to, which the mover then refuses or accepts.
+ */
+export function fileName(typed: string, row: { extension: string }): StoredFileNameResult {
+  const input = typed.trim();
+  const dot = input.lastIndexOf(".");
+  const suffix = dot >= 0 ? input.slice(dot + 1).toLowerCase() : "";
+  const explicit = Boolean(filetypeForExtension(suffix) || (suffix && suffix === row.extension));
+  const name = explicit ? input.slice(0, dot).trim() : input;
+  const extension = explicit ? suffix : row.extension;
+  if (!name || name === "." || name === "..")
+    return {
+      ok: false,
+      error: {
+        code: "invalid_name",
+        message: "A document name must have a nonempty stem other than . or ..",
+      },
+    };
+  return {
+    ok: true,
+    value: {
+      name,
+      extension,
+      filetype: extension === row.extension ? null : (filetypeForExtension(extension) ?? null),
+    },
+  };
+}
+
+/** One spelling a lookup tries; `extensionOmitted` matches a row whose own extension is dropped. */
+export interface AddressCandidate {
+  leaf: string;
+  extensionOmitted: boolean;
+}
+
+/**
+ * The spellings a lookup tries for a path's leaf, in order: as written (a file kept as
+ * `binary.md` has that exact name), the codec's alias (`ch1.md` is `ch1`), then the alias
+ * against rows that carry an extension the writer left off.
+ */
+export function addressCandidates(leaf: string): AddressCandidate[] {
+  const parsed = parseDocumentFilename(leaf);
+  const alias = parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : leaf;
+  return [
+    { leaf, extensionOmitted: false },
+    ...(alias === leaf ? [] : [{ leaf: alias, extensionOmitted: false }]),
+    { leaf: alias, extensionOmitted: true },
+  ];
 }

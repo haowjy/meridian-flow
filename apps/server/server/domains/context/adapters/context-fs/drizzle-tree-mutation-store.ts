@@ -99,6 +99,7 @@ function fileToken(document: VisibleDocument): Extract<ContextLocationToken, { k
     sourceId: document.contextSourceId,
     path: document.path,
     filetype: isStorageBackedDocument(document) ? null : document.fileType,
+    name: document.name,
     extension: document.extension,
   };
 }
@@ -138,20 +139,14 @@ export async function inspectTreeLocation(
       ? { kind: "directory", nodeId: folderIds[0] as FolderId, sourceId, path: normalized }
       : null;
   }
-  // A document answers at the name it is stored under, which is how a file kept as `binary.md`
-  // is found, then at its canonical one (`ch1.md` is `ch1`); a folder only at its literal name.
-  const resolve = (at: string) =>
-    tree.resolvePath(view, { contextSourceId: sourceId as ContextSourceId, path: at });
-  const literal = await resolve(normalized);
-  const documentPath = canonicalDocumentPath(normalized);
-  const canonical =
-    documentPath === null || documentPath === normalized ? null : await resolve(documentPath);
-  for (const found of [literal, canonical]) {
-    if (found?.kind !== "found" || found.node.kind !== "document") continue;
-    return fileToken(found.node.document);
-  }
-  if (literal.kind !== "found" || literal.node.kind !== "folder") return null;
-  return { kind: "directory", nodeId: literal.node.folder.id, sourceId, path: normalized };
+  const found = await tree.resolveAddress(view, {
+    contextSourceId: sourceId as ContextSourceId,
+    path: normalized,
+  });
+  if (found.kind !== "found") return null;
+  return found.node.kind === "document"
+    ? fileToken(found.node.document)
+    : { kind: "directory", nodeId: found.node.folder.id, sourceId, path: normalized };
 }
 
 /** Drizzle implementation of the backing-scoped atomic ContextFS tree mutator. */
@@ -537,12 +532,4 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       return Ok({ removed: [...removed], availabilityGeneration });
     });
   }
-}
-
-/** `path` with its leaf spelled as the codec's canonical document name; null when it can't name one. */
-function canonicalDocumentPath(path: string): string | null {
-  const { dir, filename } = splitPath(path);
-  const parsed = parseDocumentFilename(filename);
-  if (!parsed.ok) return null;
-  return [...dir, renderDocumentFilename(parsed.value.name, parsed.value.extension)].join("/");
 }

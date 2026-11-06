@@ -6,6 +6,7 @@ import {
 } from "@meridian/contracts/context-entry-validation";
 import {
   filenameCandidates,
+  type NamedRow,
   type NamespaceNameClaim,
   namespaceName,
   parseDocumentFilename,
@@ -24,21 +25,15 @@ export function entryNameKey(name: string): string {
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : bare;
 }
 
-/**
- * A sibling file's key from its stored name. Unlike a typed name, a stored name keeps a prose
- * suffix only when a file was kept under it, so `again.md` is its own name beside a document `again`.
- */
-function storedNameKey(name: string): string {
-  const parsed = parseDocumentFilename(name, { storageBacked: true });
-  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : name;
+/** A tracked document's naming facts from its canonical name: a registered suffix is its own. */
+export function documentRow(name: string): NamedRow {
+  const parsed = parseDocumentFilename(name);
+  return { extension: parsed.ok ? parsed.value.extension : "", stored: false };
 }
 
-/** Where the part a writer renames ends: before a visible extension, otherwise the whole name. */
-export function entryNameStemEnd(name: string, kind: ContextCreateKind = "file"): number {
-  if (kind === "folder") return name.length;
-  // A prose suffix on a displayed name is a kept file's own extension (`binary.md`).
-  const parsed = parseDocumentFilename(name, { storageBacked: true });
-  const extension = parsed.ok ? parsed.value.extension : "";
+/** Where the part a writer renames ends: before the row's extension, otherwise the whole name. */
+export function entryNameStemEnd(name: string, row?: NamedRow): number {
+  const extension = row?.extension ?? "";
   return extension && name.toLowerCase().endsWith(`.${extension}`)
     ? name.length - extension.length - 1
     : name.length;
@@ -73,8 +68,8 @@ export function parentContextEntryPath(path: string): string {
   return cut <= 0 ? "" : path.slice(0, cut);
 }
 
-/** Why a typed document name is refused, or null; `current` is the stored name being renamed. */
-export function invalidContextEntryNameReason(name: string, current?: string): string | null {
+/** Why a typed document name is refused, or null; `current` is the row being renamed. */
+export function invalidContextEntryNameReason(name: string, current?: NamedRow): string | null {
   const result = validateSharedContextEntryName(name);
   if (!result.ok) return validationReason(result);
   const stored = storedFilename(result.value, current);
@@ -102,8 +97,8 @@ export function validateContextEntryName(
   raw: string,
   siblings: readonly ContextEntrySibling[],
   kind: ContextCreateKind = "file",
-  /** The stored name of the file being renamed; absent when creating. */
-  current?: string,
+  /** The file being renamed; absent when creating. */
+  current?: NamedRow,
 ): ContextEntryNameSeverity | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -115,13 +110,15 @@ export function validateContextEntryName(
     if (!stored.ok) return { level: "error", message: stored.message };
     candidate = stored.name;
   }
-  // Renaming a kept file (`again.md`) names another kept file, not a document's alias.
-  const kept = current !== undefined && storedNameKey(current) !== entryNameKey(current);
-  const key = kept ? storedNameKey(candidate) : entryNameKey(candidate);
+  // A stored file compares by its literal name, so a kept `again.md` is its own name beside a
+  // document `again`; a document compares as the codec reads it.
+  const key = current?.stored ? candidate : entryNameKey(candidate);
   const occupant = siblings.find((sibling) =>
-    kind === "folder" && sibling.kind === "dir"
-      ? sibling.name === candidate
-      : (sibling.kind === "dir" ? entryNameKey(sibling.name) : storedNameKey(sibling.name)) === key,
+    sibling.kind === "dir"
+      ? kind === "folder"
+        ? sibling.name === candidate
+        : entryNameKey(sibling.name) === key
+      : sibling.name === (kind === "folder" ? key : candidate),
   );
   if (occupant) {
     return {
@@ -175,7 +172,7 @@ export function allocateContextEntryArrivalName(
   typed: string,
   occupied: NameOccupancy,
   kind: ContextCreateKind,
-  current?: string,
+  current?: NamedRow,
 ): string {
   const stored = kind === "folder" ? null : storedFilename(typed, current);
   if (stored && !stored.ok) return typed.trim();

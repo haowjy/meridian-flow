@@ -41,6 +41,7 @@ const record = (id: string, aliases: string[] = []) =>
     resource: {
       handle: `handle-${id}`,
       identity: { documentId: id },
+      classification: { extension: "", editable: true },
       aliases: Object.fromEntries(
         aliases.map((alias) => [alias, { introducedAtIdentityRevision: 1 }]),
       ),

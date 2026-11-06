@@ -16,6 +16,7 @@ import {
 import {
   type ContextEntryRef,
   type DeleteContextEntryResult,
+  renderFilename,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -241,6 +242,7 @@ export class ContextTreeMover {
           const prepared = await this.prepareMove(sourceToken.value, destination, {
             folderPath,
             leaf,
+            typed: change.name !== undefined,
             anchor,
             createFolders,
           });
@@ -376,6 +378,8 @@ export class ContextTreeMover {
     target: {
       folderPath: string;
       leaf: string;
+      /** Whether the writer typed the leaf; otherwise it is the node's own. */
+      typed: boolean;
       /** The existing folder the destination hangs from, when it names one. */
       anchor?: Extract<ContextLocationToken, { kind: "directory" }>;
       createFolders: readonly string[];
@@ -412,20 +416,25 @@ export class ContextTreeMover {
       const claimed = await claim(target.leaf);
       return claimed.ok ? Ok({ ...claimed.value, source: sourceNode }) : claimed;
     }
-    const { extension, filetype } = sourceNode;
-    const parts = storedFilename(target.leaf, { extension });
+    // A move without a typed name keeps the stored parts; a typed one follows the row's kind.
+    const parts = target.typed
+      ? storedFilename(target.leaf, {
+          extension: sourceNode.extension,
+          stored: sourceNode.filetype === null,
+        })
+      : {
+          ok: true as const,
+          filename: { name: sourceNode.name, extension: sourceNode.extension, filetype: null },
+        };
     if (!parts.ok) return Err({ ...parts.error, uri: destination.canonical });
-    const claimed = await claim(parts.name);
+    const { name, extension, filetype } = parts.filename;
+    const claimed = await claim(renderFilename(name, extension));
     if (!claimed.ok) return claimed;
     return Ok({
       ...claimed.value,
       source: sourceNode,
-      // A storage-backed file keeps its type unless the extension changes.
-      destinationFiletype:
-        filetype === null && parts.filename.extension === extension
-          ? null
-          : parts.filename.filetype,
-      destinationFilename: parts.filename,
+      destinationFiletype: filetype,
+      destinationFilename: { name, extension },
     });
   }
 

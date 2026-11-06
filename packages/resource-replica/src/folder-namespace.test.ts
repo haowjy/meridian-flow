@@ -472,6 +472,7 @@ it.each([
 
       hasProperties: false,
       provisionalName: false,
+      extension: "",
       editable: true,
       filetype: "markdown",
       schemaType: "document",
@@ -562,6 +563,7 @@ it.each([
         identity: { documentId: "doc", revision: 1 },
         content: { kind: "unacquired" as const },
         classification: {
+          extension: "",
           editable: true as const,
           filetype: "markdown" as const,
           schemaType: "document" as const,

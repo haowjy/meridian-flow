@@ -4,9 +4,11 @@
  * differ in what picking does. Move… offers the row's position among the folder's siblings; Copy
  * to… always adds.
  */
+
 import { t } from "@lingui/core/macro";
 import type {
   ContextSiblingPosition,
+  NamedRow,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import type { ParentRef, ResourceDestination } from "@meridian/resource-replica";
@@ -37,7 +39,13 @@ import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
-export type PickedEntry = { kind: "file" | "folder"; id: string; name: string; path: string };
+export type PickedEntry = {
+  kind: "file" | "folder";
+  id: string;
+  name: string;
+  path: string;
+  row?: NamedRow;
+};
 
 type EntryDestinationPickerProps = {
   projectId: string;
@@ -183,6 +191,7 @@ function OpenPicker({
           {
             entry: ref,
             name: entry.name,
+            ...(entry.row ? { row: entry.row } : {}),
             typed: name,
             before,
             after,
@@ -233,7 +242,7 @@ function OpenPicker({
     destinationName,
     scheme,
     into,
-    copies: [{ entry: ref, name: entry.name, view: LIVE_VIEW }],
+    copies: [{ entry: ref, name: entry.name, row: entry.row, view: LIVE_VIEW }],
   });
 
   return (
@@ -311,7 +320,10 @@ function OpenPicker({
           ];
         const after = destination && !already && destinationParent(destination, works, noWork);
         const renamed = after
-          ? renamesOnArrival([{ entry: ref, name: entry.name, typed: name, after }], view)
+          ? renamesOnArrival(
+              [{ entry: ref, name: entry.name, row: entry.row, typed: name, after }],
+              view,
+            )
           : [];
         return [
           {

@@ -13,7 +13,7 @@ import type {
   ProjectId,
   WorkId,
 } from "@meridian/contracts";
-import { namespaceName } from "@meridian/contracts/protocol";
+import { addressCandidates, namespaceName } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
@@ -216,6 +216,12 @@ export type DocumentLineage = {
 
 export interface TreeReader {
   resolvePath(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
+  /**
+   * `resolvePath` for a spelling a writer or model typed: the document under its literal name
+   * (a file kept as `binary.md`), else under the codec's alias (`ch1.md` is `ch1`), else the
+   * literal answer (a folder answers only to its own name).
+   */
+  resolveAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
   /**
    * One step of a walk: what this view shows named `filename` directly under `parentId`
    * (null: the source root). The same answer as `resolvePath` at that folder's path plus
@@ -939,6 +945,22 @@ export function createTreeReader(
     return (await lineages(view, [id])).get(id) ?? null;
   }
 
+  async function resolveAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>> {
+    const slash = at.path.lastIndexOf("/");
+    const aliases = addressCandidates(at.path.slice(slash + 1))
+      .filter((candidate) => !candidate.extensionOmitted)
+      .slice(1);
+    const first = await resolvePath(view, at);
+    if (first.kind === "ambiguous" || (first.kind === "found" && first.node.kind === "document"))
+      return first;
+    for (const { leaf } of aliases) {
+      const found = await resolvePath(view, { ...at, path: at.path.slice(0, slash + 1) + leaf });
+      if (found.kind === "ambiguous" || (found.kind === "found" && found.node.kind === "document"))
+        return found;
+    }
+    return first;
+  }
+
   async function occupancy(view: TreeView, at: readonly PathQuery[]) {
     if (at.length === 0) return [];
     return (await pathOccupants(view, at)).map(({ documents, folders }) => ({
@@ -949,6 +971,7 @@ export function createTreeReader(
 
   return {
     resolvePath,
+    resolveAddress,
     childAt,
     occupancy,
     findById,

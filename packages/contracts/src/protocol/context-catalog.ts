@@ -82,8 +82,11 @@ type CatalogFileEntryBase = {
   upload?: { attachedAt: string; used: boolean; intakeId: string; locationRevision: string };
 };
 
-/** Persisted viewer/storage classification. It is never reconstructed from a filename. */
-export type CatalogFileClassification =
+/**
+ * Persisted viewer/storage classification. It is never reconstructed from a filename. The stored
+ * `extension` is the row's own: a name's suffix cannot say whether it is one (`Vol. 2`).
+ */
+export type CatalogFileClassification = { extension: string } & (
   | {
       editable: true;
       filetype: Filetype;
@@ -106,7 +109,8 @@ export type CatalogFileClassification =
       mimeType: string | null;
       filetype: Filetype;
       schemaType?: never;
-    };
+    }
+);
 
 export type CatalogFileEntry = CatalogFileEntryBase & CatalogFileClassification;
 

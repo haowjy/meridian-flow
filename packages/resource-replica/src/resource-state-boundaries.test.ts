@@ -23,7 +23,12 @@ function reserved(): ResourceRecord {
         schema: null,
         initialization: "reserved",
       },
-      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      classification: {
+        extension: "",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
       materialization: {
         kind: "untitled",
         folderPath: "",
@@ -138,7 +143,12 @@ it("does not let reserved content change identity or restart after acknowledgeme
         revision: 1,
         identity: { documentId: "document", revision: 1 },
         content: { kind: "exact", databaseName: "original", schema: null },
-        classification: { editable: true, filetype: "markdown", schemaType: "document" },
+        classification: {
+          extension: "",
+          editable: true,
+          filetype: "markdown",
+          schemaType: "document",
+        },
         materialization: {
           kind: "untitled",
           folderPath: "",

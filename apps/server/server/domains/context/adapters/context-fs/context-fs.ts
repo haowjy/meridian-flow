@@ -141,8 +141,8 @@ function moveFiletypeTransition(
   destinationPath: string,
   destinationFiletype: Filetype | null,
 ): Result<Filetype | null, AdapterFault> {
+  if (destinationFiletype === null) return Ok(null);
   if (source.filetype === null) {
-    if (destinationFiletype === null) return Ok(null);
     const destination = classifyFiletype(destinationFiletype);
     if (destination.kind !== "tracked") return Ok(null);
     return Err({
@@ -299,17 +299,12 @@ export class ContextFS implements ContextSchemeAdapter {
             filetype: ref.value.kind === "tracked" ? ref.value.filetype : null,
             sourceId: located.contextSourceId,
           };
-          const { extension: storedExtension } = located.document;
-          const parsed = storedFilename(filename, { extension: storedExtension });
+          const parsed = storedFilename(filename, {
+            extension: located.document.extension,
+            stored: from.filetype === null,
+          });
           if (!parsed.ok) return Err(parsed.error);
-          // A storage-backed file keeps its type unless the extension changes.
-          const transition = moveFiletypeTransition(
-            from,
-            path,
-            from.filetype === null && parsed.filename.extension === storedExtension
-              ? null
-              : parsed.filename.filetype,
-          );
+          const transition = moveFiletypeTransition(from, path, parsed.filename.filetype);
           if (!transition.ok) return transition;
           const { name, extension } = parsed.filename;
           const moved = await branchTree.move(
@@ -361,8 +356,8 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * The document at `path` in `view` under its canonical name, or null. A path two of the
-   * view's files share is the clash fault, never one of them.
+   * The document `path` addresses in `view`, by any spelling the store resolves. A path two of
+   * the view's files share is the clash fault, never one of them.
    */
   private async findDocumentAt(
     view: TreeView,
@@ -370,14 +365,7 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<ContextDocument | null, AdapterFault>> {
     const parsed = parseDocumentPath(path);
     if (!parsed.ok || !parsed.value) return Ok(null);
-    const { dir, name, extension } = parsed.value;
-    // A file kept under a prose suffix (`binary.md`) has that exact name; the codec would drop it.
-    const exact = await this.store.resolveDocumentAt(view, path);
-    const canonical = joinPath(dir.join("/"), renderFilename(name, extension));
-    const found =
-      exact.kind === "not_found" && canonical !== path
-        ? await this.store.resolveDocumentAt(view, canonical)
-        : exact;
+    const found = await this.store.resolveDocumentAt(view, path);
     if (found.kind === "ambiguous")
       return Err(found.outlived ? OUTLIVED_PATH_FAULT : AMBIGUOUS_PATH_FAULT);
     return Ok(found.kind === "found" ? found.node : null);

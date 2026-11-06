@@ -274,6 +274,8 @@ export interface TrackedFileRef extends BaseFileRef {
 export interface BinaryFileRef extends BaseFileRef {
   kind: "binary";
   fileType: DocumentFileType;
+  /** The stored extension, which the leaf alone cannot tell from a document's suffix. */
+  extension: string;
   /** Stable object-store reference for storage-backed files. */
   storageUrl: string;
   /** Persisted MIME type for the stored object, when known. */
