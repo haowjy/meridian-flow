@@ -66,6 +66,9 @@ export function namespaceContextRefusal(
   error: ContextError,
   paths: NamespaceRefusalPaths,
 ): WriteToolErrorOutput {
+  // The entry changed area mid-call; like any stale location, check with `ls` and retry.
+  if (error.code === "io_error" && error.reason === "namespace_changed")
+    return namespaceRefusal(command, "stale_location", paths);
   switch (error.code) {
     case "conflict":
       return namespaceRefusal(command, "location_taken", paths);
