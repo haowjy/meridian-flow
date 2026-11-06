@@ -150,8 +150,8 @@ export function resolveLiveWorktreeDatabaseNames(
 /**
  * Fill step shared by every env consumer: sets variables that are still unset
  * from the checkout's own `.env.local`, then the main checkout's `.env` (so a
- * worktree override beats the shared file, and both lose to a non-empty value in the
- * caller's environment), and pins `LOG_DIR`. `.env.local` may not define a database URL:
+ * worktree override beats the shared file, even when its value is empty, and both lose to a
+ * non-empty value in the caller's environment), and pins `LOG_DIR`. `.env.local` may not define a database URL:
  * the main `.env` is the one source of the base database.
  */
 export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
@@ -164,10 +164,13 @@ export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
       );
     }
   }
-  for (const file of [local, readMainEnvFile(repoRoot)]) {
-    for (const [key, value] of Object.entries(file)) {
-      if (!env[key]) env[key] = value;
-    }
+  const main = readMainEnvFile(repoRoot);
+  for (const [key, value] of Object.entries(local)) {
+    if (!env[key]) env[key] = value;
+  }
+  for (const [key, value] of Object.entries(main)) {
+    // A key present in .env.local wins even when empty, so `KEY=` turns off a main-.env setting.
+    if (!env[key] && !(key in local)) env[key] = value;
   }
 
   // The dev stack owns the structured-event mirror location. Pin it here rather
