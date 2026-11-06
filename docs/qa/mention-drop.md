@@ -65,10 +65,12 @@ it trails the last move by one `dragover`.
 12. **Inline code.** Over the middle of a code span: the caret draws at the
     span's nearer edge and the chip lands there, outside the span. The hint
     reads **Mention**, not a refusal.
-13. **Rendered diagram.** Over a rendered diagram with the caret elsewhere: the
-    caret draws at the seam before or after it by the pointer's half, and the
-    chip gets its own paragraph. With the caret inside the diagram's source
-    before the drag, the result is the same.
+13. **Rendered diagram and component block.** Over a rendered diagram with the
+    caret elsewhere: the caret draws at the seam before or after it by the
+    pointer's half, and the chip gets its own paragraph. With the caret inside
+    the diagram's source before the drag, the result is the same. A component
+    block behaves the same way: the caret draws beside it, never inside, and
+    the hint reads **Mention**.
 14. **Empty document.** Over any point of a blank document: the chip lands in
     the one empty paragraph and no second paragraph appears.
 15. **Files.** Drag a PNG over each of 8-14: it lands at the same place as the
@@ -76,6 +78,18 @@ it trails the last move by one `dragover`.
     a video: the hint reads **Only pictures can be dropped here**, no caret
     draws, the overlay stays away, the drop changes nothing, and the browser
     does not open the file.
+
+## Text dropped in a table cell
+
+16. In a table, select a second table's cells (or the whole second table) and
+    drag them into a cell. During the drag the caret stands in the cell and no
+    refusal shows. On drop the cell holds the dragged text on one line, no
+    table nests, and the grid keeps its row and column counts. Copy (hold
+    Ctrl, or Option on Mac) leaves the source; a move deletes it, unless
+    deleting would change the source table's own grid, which is refused with
+    **Can’t put that in a table cell**. Drag a picture together with table
+    text: the same refusal. Drag a selection onto its own range: nothing
+    changes and no hint shows.
 
 ## Ownership and recovery
 

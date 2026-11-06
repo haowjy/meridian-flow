@@ -31,9 +31,11 @@ which line a caret is on).
    cell with two paragraphs, at its edges. The caret stays in the pressed cell
    every time. In a table wider than the pane, click the margin beside the
    clipped part: the caret goes to the last visible cell.
-5. **Diagram.** Click beside the rendered diagram, above and below its middle.
-   The caret goes to the neighbouring paragraph's line (prose beats the
-   diagram), the diagram stays rendered, and no source opens.
+5. **Diagram and component block.** Click beside the rendered diagram, above
+   and below its middle. The caret goes to the neighbouring paragraph's line
+   (prose beats the diagram), the diagram stays rendered, and no source opens.
+   Do the same beside a component block: the caret lands in the paragraph
+   before or after it, never inside the block.
 6. **Below each ending.** Click in the space below the last block of the first
    document: the caret goes to the end of the final paragraph. In the second,
    the caret goes to the fence's end. In the third, a gap cursor stands after
