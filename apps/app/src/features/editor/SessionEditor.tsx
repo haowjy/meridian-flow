@@ -281,7 +281,7 @@ function ActiveSessionEditorView({
           },
         labels: {
           accept: t`Mention`,
-          unavailable: t`Not available in this document`,
+          unavailable: t`Can’t mention that here`,
           code: t`Can’t mention inside code`,
         },
       }),
