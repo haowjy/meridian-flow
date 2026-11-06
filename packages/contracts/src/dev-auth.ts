@@ -31,11 +31,12 @@ export function devAuthIdentity(env: EnvLike): DevAuthUser {
 /**
  * The dev user when the bypass is on, `null` when it is off. Throws when it is on
  * outside a local dev process (allowlist: `NODE_ENV=development` and `APP_ENV`
- * unset or `dev`), so a deployed process never silently falls back or acts as the
- * dev user.
+ * unset or `dev`, with `NODE_ENV=test` meaning off), so a deployed process never
+ * silently falls back or acts as the dev user.
  */
 export function resolveDevAuthUser(env: EnvLike): DevAuthUser | null {
-  if (env.DEV_AUTH_BYPASS !== "1") return null;
+  // Off under test: a developer's `.env` reaches test processes, which aren't deployed.
+  if (env.DEV_AUTH_BYPASS !== "1" || env.NODE_ENV === "test") return null;
   if (env.NODE_ENV !== "development" || (env.APP_ENV !== undefined && env.APP_ENV !== "dev")) {
     throw new Error(
       "DEV_AUTH_BYPASS=1 is allowed only with NODE_ENV=development and APP_ENV unset or dev. Unset it in this environment.",
@@ -48,10 +49,14 @@ export function resolveDevAuthUser(env: EnvLike): DevAuthUser | null {
  * Whether the dev user applies to this request. The `wos-session` cookie was
  * SameSite=Lax, which kept other sites from acting as the user; without it, a
  * cross-site request is unauthenticated unless it is a top-level GET navigation,
- * which is what Lax allowed. Node clients (`./mf`, smoke scripts) send no
+ * which is what Lax allowed: `dest=document` excludes framing, also `mode=navigate`. Node clients (`./mf`, smoke scripts) send no
  * `Sec-Fetch-Site` and pass.
  */
 export function devAuthAppliesToRequest(request: Request): boolean {
   if (request.headers.get("sec-fetch-site") !== "cross-site") return true;
-  return request.method === "GET" && request.headers.get("sec-fetch-mode") === "navigate";
+  return (
+    request.method === "GET" &&
+    request.headers.get("sec-fetch-mode") === "navigate" &&
+    request.headers.get("sec-fetch-dest") === "document"
+  );
 }

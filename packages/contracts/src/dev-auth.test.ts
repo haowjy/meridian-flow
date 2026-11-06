@@ -15,6 +15,7 @@ describe("resolveDevAuthUser", () => {
     ["local, APP_ENV unset", { ...on, NODE_ENV: "development" }, "test"],
     ["local, APP_ENV dev", { ...on, NODE_ENV: "development", APP_ENV: "dev" }, "test"],
     ["custom id", { ...on, NODE_ENV: "development", DEV_AUTH_USER_ID: "ada" }, "ada"],
+    ["off under test", { ...on, NODE_ENV: "test" }, null],
   ])("%s", (_name, env, id) => {
     const user = resolveDevAuthUser(env);
     expect(user?.externalId ?? null).toBe(id);
@@ -26,7 +27,6 @@ describe("resolveDevAuthUser", () => {
     ["production", { NODE_ENV: "production", APP_ENV: "production" }],
     ["production NODE_ENV, APP_ENV unset", { NODE_ENV: "production" }],
     ["both unset", {}],
-    ["test", { NODE_ENV: "test" }],
     ["development NODE_ENV on staging", { NODE_ENV: "development", APP_ENV: "staging" }],
   ])("refuses %s", (_name, env) => {
     expect(() => resolveDevAuthUser({ ...on, ...env })).toThrow(/DEV_AUTH_BYPASS/);
@@ -49,8 +49,21 @@ describe("devAuthAppliesToRequest", () => {
     ],
     [
       "cross-site top-level navigation",
-      req("GET", { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" }),
+      req("GET", {
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-dest": "document",
+      }),
       true,
+    ],
+    [
+      "cross-site iframe",
+      req("GET", {
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-dest": "iframe",
+      }),
+      false,
     ],
   ])("%s", (_name, request, applies) => {
     expect(devAuthAppliesToRequest(request)).toBe(applies);
