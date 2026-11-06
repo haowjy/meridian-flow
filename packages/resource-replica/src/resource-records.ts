@@ -71,6 +71,35 @@ export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): bool
     (left.chatId ?? null) === (right.chatId ?? null)
   );
 }
+/** A parent as a request or a record carries it: a folder by id, or a root by scheme and owner. */
+type ParentLike =
+  | { kind: "folder"; folderId: string; createFolders?: readonly string[] }
+  | {
+      kind: "root";
+      scheme: string;
+      owner: { workId: string | null; rootThreadId?: string | null; chatId?: string | null };
+      createFolders?: readonly string[];
+    };
+/**
+ * Whether two parents are the same place, with the same folders to create beneath it. A Work or
+ * lineage is its id: the server acts on ids, so a handle that differs does not make a parent differ.
+ */
+export function sameDestinationParent(
+  left: ParentLike | undefined,
+  right: ParentLike | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  if (JSON.stringify(left.createFolders ?? []) !== JSON.stringify(right.createFolders ?? []))
+    return false;
+  if (left.kind === "folder" || right.kind === "folder")
+    return left.kind === "folder" && right.kind === "folder" && left.folderId === right.folderId;
+  return (
+    left.scheme === right.scheme &&
+    left.owner.workId === right.owner.workId &&
+    (left.owner.rootThreadId ?? null) === (right.owner.rootThreadId ?? null) &&
+    (left.owner.chatId ?? null) === (right.owner.chatId ?? null)
+  );
+}
 /** A picked folder identity or a qualified area's root. Paths are observations, not edges. */
 export type ParentRef =
   | Readonly<{ kind: "folder"; folderId: string }>

@@ -52,7 +52,7 @@ interface PreparedContextMoveBase {
   destinationParentToken?: Extract<ContextLocationToken, { kind: "directory" }>;
   /** Validated suffix below destinationParentToken, ensured inside the commit transaction. */
   destinationCreateFolders?: string[];
-  /** Final normalized target path after Unix mv basename/directory resolution. */
+  /** The final target path: the destination folder joined with the leaf. */
   destinationPath: string;
   /** Destination state inspected during preparation; commit must prove it has not changed. */
   expectedTarget: ContextTargetExpectation;

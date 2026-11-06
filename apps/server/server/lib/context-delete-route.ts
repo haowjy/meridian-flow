@@ -6,31 +6,14 @@
  */
 import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
-import {
-  contextPortForProjectAuthorities,
-  deleteCommand,
-  type ProjectContextAvailabilityPort,
-  type UnifiedContextPortFactory,
-} from "../domains/context/index.js";
-import type { FileAccess } from "../domains/file-policy/index.js";
-import {
-  type ProjectRepository,
-  type ProjectWorkAuthorityResolver,
-  requireProjectOwner,
-} from "../domains/projects/index.js";
-import { locateEntry, replayedResult } from "./context-entry-route.js";
-import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
+import { deleteCommand } from "../domains/context/index.js";
+import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
+import { type EntryRouteDeps, runEntryCommand } from "./context-entry-route.js";
 import { containerOf, locatorUri } from "./context-locator.js";
-import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
+import { documentTarget } from "./file-access-http.js";
 import { requireRequestId } from "./request-id.js";
 
-export interface ContextDeleteRouteDeps {
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
-  projectRepo: ProjectRepository;
-  contextPorts: UnifiedContextPortFactory;
-  workAuthorityResolver: ProjectWorkAuthorityResolver;
-  availability: ProjectContextAvailabilityPort;
-}
+export type ContextDeleteRouteDeps = EntryRouteDeps & { projectRepo: ProjectRepository };
 
 function parseContextDelete(body: unknown): {
   operationId: string;
@@ -51,35 +34,19 @@ export async function handleContextDeleteRequest(
 ): Promise<DeleteContextEntryResult> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const { operationId, kind } = parseContextDelete(input.body);
-  const requested = { kind, nodeId: input.entryId };
-  const command = deleteCommand({ expected: requested });
-  const replay = await replayedResult(deps, input, operationId, command);
-  if (replay) {
-    if (!replay.ok) contextErrorToHttp(replay.error);
-    return replay.value;
-  }
-  const { address, locator } = await locateEntry(deps, { ...input, kind });
-  if (locator.scope === "chat")
-    throw createError({ statusCode: 400, message: "Uploads are removed from their chat" });
-  const workIds =
-    locator.scope === "work" ? new Set([locator.authority.workId]) : new Set<string>();
-  const port = await contextPortForProjectAuthorities({
-    deps: { contextPorts: deps.contextPorts, workAuthorityResolver: deps.workAuthorityResolver },
-    projectId: input.projectId,
-    userId: input.userId,
-    workIds,
-    primaryWorkId: [...workIds][0],
-  });
-  if (!port) return throwContextWorkUnavailableHttpError("work_missing");
-  const target =
-    kind === "file" ? documentTarget(address.id) : containerOf(locator, input.projectId);
-  const grant = await requireFileGrant(deps.fileAccess, input.userId, target, "edit");
-  const result = await withEditGrants(deps.fileAccess, [grant], () =>
-    port.delete({ kind, nodeId: address.id }, locatorUri(locator, ""), {
-      origin: { type: "human", userId: input.userId },
-      operation: { id: operationId, command },
+  const command = deleteCommand({ expected: { kind, nodeId: input.entryId } });
+  return runEntryCommand(deps, input, {
+    kind,
+    operationId,
+    command,
+    uploads: "Uploads are removed from their chat",
+    plan: async ({ address, source }) => ({
+      grants: [kind === "file" ? documentTarget(address.id) : containerOf(source, input.projectId)],
+      commit: (port) =>
+        port.delete({ kind, nodeId: address.id }, locatorUri(source, ""), {
+          origin: { type: "human", userId: input.userId },
+          operation: { id: operationId, command },
+        }),
     }),
-  );
-  if (!result.ok) contextErrorToHttp(result.error);
-  return result.value;
+  });
 }

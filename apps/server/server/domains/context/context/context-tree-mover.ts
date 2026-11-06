@@ -16,7 +16,6 @@ import {
 import {
   type ContextEntryRef,
   type DeleteContextEntryResult,
-  type Filetype,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -39,11 +38,7 @@ import type {
   PreparedContextMove,
 } from "../ports/context-tree-mutation-store.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
-import {
-  type ContextOperationReceipts,
-  deleteCommand,
-  moveCommand,
-} from "./context-operation-receipts.js";
+import type { ContextOperationReceipts } from "./context-operation-receipts.js";
 import { invalidEntryError } from "./invalid-entry-error.js";
 import {
   createResultAwareCommandExecutor,
@@ -307,10 +302,9 @@ export class ContextTreeMover {
 
   private async graduateInPlace(
     source: ContextTreeDispatch,
-    token: ContextLocationToken,
+    token: Extract<ContextLocationToken, { kind: "file" }>,
     destination: ContextTreeDispatch,
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    if (token.kind !== "file") return Err({ code: "invalid_operation", uri: source.canonical });
     const result = await callAdapter(
       source.canonical,
       () =>

@@ -13,7 +13,7 @@ import type {
   CopyContextEntryView,
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { decodeStateVector } from "yjs";
 import {
@@ -22,25 +22,24 @@ import {
   parseUnifiedContextUri,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
-import {
-  type FileAccess,
-  type FileTarget,
-  isFileAccessDenied,
-} from "../domains/file-policy/index.js";
+import type { FileAccess, FileTarget } from "../domains/file-policy/index.js";
 import {
   type ProjectRepository,
   type ProjectWorkAuthorityResolver,
   requireProjectOwner,
 } from "../domains/projects/index.js";
+import { parseDestinationParent, parseSiblingPosition } from "./context-destination.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import {
   type ContextLocator,
+  canEditContextUri,
   containerOf,
   locatorUri,
   type ResolvedContextLocator,
+  resolveLocator as resolveLocatorFor,
   resolveLocatorUri,
+  throwLocatorRefusal,
 } from "./context-locator.js";
-import { parseDestinationParent } from "./context-move-route.js";
 import {
   parseContextMutationName,
   parseContextMutationPath,
@@ -104,7 +103,7 @@ export function parseContextCopy(input: { body: unknown }): ParsedCopy {
     ...(body.destinationParent === undefined
       ? {}
       : { destinationParent: parseDestinationParent(body.destinationParent) }),
-    ...(body.position === undefined ? {} : { position: parsePosition(body.position) }),
+    ...(body.position === undefined ? {} : { position: parseSiblingPosition(body.position) }),
   };
 }
 
@@ -271,21 +270,6 @@ function uploadsOutOnly() {
   });
 }
 
-function parsePosition(raw: unknown): ContextSiblingPosition {
-  const position = raw as Record<string, unknown> | null;
-  if (!position || typeof position !== "object") {
-    throw createError({ statusCode: 400, message: "Position is invalid" });
-  }
-  if (position.kind === "start" || position.kind === "end") return { kind: position.kind };
-  if (position.kind === "before" || position.kind === "after") {
-    return {
-      kind: position.kind,
-      siblingId: requireRequestId(position.siblingId, "position.siblingId"),
-    };
-  }
-  throw createError({ statusCode: 400, message: "Position is invalid" });
-}
-
 function parseWorkId(raw: unknown, field: string): string | null {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== "string" || raw.trim() === "") {
@@ -316,21 +300,12 @@ export async function handleContextCopyRequest(
     locator: ContextLocator,
     options: { destination?: boolean } = {},
   ): Promise<ResolvedContextLocator> {
-    if (locator.scope === "project") return locator;
-    if (locator.scope === "lineage") {
-      const lineage = await deps.contextPorts.lineages.byId(input.projectId, locator.rootThreadId);
-      if (!lineage) {
-        if (options.destination) throwContextWorkUnavailableHttpError("work_missing");
-        throw createError({ statusCode: 404, message: "Chat not found" });
-      }
-      return { ...locator, authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef } };
-    }
-    const authority =
-      locator.scope === "none"
-        ? await deps.workAuthorityResolver.noWork(input.projectId)
-        : await deps.workAuthorityResolver.byId(input.projectId, locator.workId);
-    if (!authority) throwContextWorkUnavailableHttpError("work_missing");
-    return { scope: "work", scheme: locator.scheme, path: locator.path, authority };
+    const resolved = await resolveLocatorFor(deps, input.projectId, locator);
+    if (resolved.ok) return resolved.value;
+    // A destination chat that is gone reads as an unavailable owner, a source's as a 404.
+    if (options.destination && resolved.error.reason === "chat_missing")
+      throwContextWorkUnavailableHttpError("work_missing");
+    return throwLocatorRefusal(resolved.error);
   }
 
   const sources: ResolvedSource[] = [];
@@ -444,23 +419,7 @@ export async function handleContextCopyRequest(
       destinationUri,
       ...(copy.destinationParent ? { destinationParent: copy.destinationParent } : {}),
       ...(copy.position ? { position: copy.position } : {}),
-      ...(folderUri === null
-        ? {}
-        : {
-            authorizeDestination: async (uri: string) => {
-              const target = await resolveDestinationUri(deps, input.projectId, uri);
-              if (!target) return false;
-              const grant = await deps.fileAccess.authorize(
-                { accountId: input.userId as UserId },
-                containerOf(target, input.projectId),
-                "edit",
-              );
-              return (
-                !isFileAccessDenied(grant) &&
-                (await deps.fileAccess.confirmEdit([grant])).length === 0
-              );
-            },
-          }),
+      ...(folderUri === null ? {} : { authorizeDestination: canEditContextUri(deps, input) }),
     });
 
   const result = editGrant ? await withEditGrants(deps.fileAccess, [editGrant], run) : await run();

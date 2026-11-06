@@ -3,27 +3,28 @@
  * the destination root's address when the parent is an area root, the container the writer must
  * be able to edit there, and the check on the address the port finally resolves.
  */
-import {
-  type CanonicalContextAuthority,
-  isWorkScopedScheme,
-} from "@meridian/contracts/context-uri";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextCreateDestination } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type {
   HeldContextNode,
   ProjectContextAvailabilityPort,
 } from "../../../../../../domains/context/index.js";
-import { isFileAccessDenied } from "../../../../../../domains/file-policy/index.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
-import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
-import { containerOfUri } from "../../../../../../lib/context-locator.js";
 import {
   parseDestinationParent,
   parseSiblingPosition,
-} from "../../../../../../lib/context-move-route.js";
+} from "../../../../../../lib/context-destination.js";
+import {
+  type ContextLocator,
+  canEditContextUri,
+  containerOfUri,
+  locatorUri,
+  resolveLocator,
+  throwLocatorRefusal,
+} from "../../../../../../lib/context-locator.js";
 import { parseContextMutationName } from "../../../../../../lib/context-mutation-validation.js";
-import { toUri } from "./_helpers.js";
 
 export function parseCreateDestination(raw: unknown): ContextCreateDestination {
   if (!raw || typeof raw !== "object") {
@@ -44,38 +45,18 @@ async function destinationRootUri(
   parent: Extract<ContextCreateDestination["parent"], { kind: "root" }>,
 ): Promise<string> {
   const { scheme, owner } = parent;
-  let authority: CanonicalContextAuthority = { kind: "contextual" };
+  let locator: ContextLocator;
   if (owner.rootThreadId) {
     if (scheme !== "scratch")
       throw createError({ statusCode: 400, message: "Only Scratch belongs to a chat" });
-    const lineage = await app.contextPorts.lineages.byId(projectId, owner.rootThreadId);
-    if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
-    authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
+    locator = { scope: "lineage", scheme, rootThreadId: owner.rootThreadId, path: "" };
   } else if (isWorkScopedScheme(scheme)) {
     if (!owner.workId)
       throw createError({ statusCode: 400, message: "Scratch belongs to a Work or a chat" });
-    else {
-      const resolved = await app.workAuthorityResolver.byId(projectId, owner.workId);
-      if (!resolved) throwContextWorkUnavailableHttpError("work_missing");
-      authority = resolved;
-    }
-  }
-  return toUri(scheme, "", authority);
-}
-
-/** Whether the writer can still edit the context address `uri` names. */
-export function canEditContextUri(input: {
-  app: AppServices;
-  userId: string;
-  projectId: string;
-}): (uri: string) => Promise<boolean> {
-  const { app, userId, projectId } = input;
-  return async (uri: string) => {
-    const target = await containerOfUri(app, projectId, uri);
-    if (!target) return false;
-    const grant = await app.fileAccess.authorize({ accountId: userId as UserId }, target, "edit");
-    return !isFileAccessDenied(grant) && (await app.fileAccess.confirmEdit([grant])).length === 0;
-  };
+    locator = { scope: "work", scheme, workId: owner.workId, path: "" };
+  } else locator = { scope: "project", scheme, path: "" } as ContextLocator;
+  const resolved = await resolveLocator(app, projectId, locator);
+  return resolved.ok ? locatorUri(resolved.value) : throwLocatorRefusal(resolved.error);
 }
 
 /**
@@ -131,6 +112,6 @@ export async function createDestinationAccess(input: {
   return {
     rootUri,
     rootContainer,
-    authorizeDestination: canEditContextUri({ app, userId, projectId }),
+    authorizeDestination: canEditContextUri(app, { userId, projectId }),
   };
 }

@@ -1,11 +1,11 @@
 /**
- * One writer-chosen context end as a route resolves it: the address a move or a copy
- * names, and the container its files live in. Each route parses its own locators and words
- * its own refusals; these are the meanings they share, so a move and a copy cannot disagree
- * about who owns an address or which URI spells it.
+ * One writer-chosen context end as a route resolves it: the address a move, copy or create
+ * names, the owner it resolves to, and the container its files live in. Each route parses its
+ * own locators and words its own refusals; these are the meanings they share, so they cannot
+ * disagree about who owns an address, whether the writer can edit it, or which URI spells it.
  */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
-import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
@@ -18,7 +18,11 @@ import {
   type UnifiedContextPortFactory,
   type WorkScopedContextFsScheme,
 } from "../domains/context/index.js";
-import type { FileTarget } from "../domains/file-policy/index.js";
+import {
+  type FileAccess,
+  type FileTarget,
+  isFileAccessDenied,
+} from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/index.js";
 import { Err, Ok, type Result } from "../shared/result.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
@@ -160,6 +164,29 @@ export async function resolveLocatorUri(
   return Ok({ scope: "project", scheme: scheme as ProjectContextFsScheme, path });
 }
 
+/**
+ * The owner an unresolved locator names, resolved against this project: its Work (No Work for
+ * `none`) or lineage. A Work or chat that is gone refuses.
+ */
+export async function resolveLocator(
+  deps: LocatorDeps,
+  projectId: string,
+  locator: ContextLocator,
+): Promise<Result<ResolvedContextLocator, LocatorRefusal>> {
+  if (locator.scope === "project") return Ok(locator);
+  if (locator.scope === "lineage") {
+    const lineage = await deps.contextPorts.lineages.byId(projectId, locator.rootThreadId);
+    if (!lineage) return Err({ reason: "chat_missing" });
+    return Ok({ ...locator, authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef } });
+  }
+  const authority =
+    locator.scope === "none"
+      ? await deps.workAuthorityResolver.noWork(projectId)
+      : await deps.workAuthorityResolver.byId(projectId, locator.workId);
+  if (!authority) return Err({ reason: "work_missing" });
+  return Ok({ scope: "work", scheme: locator.scheme, path: locator.path, authority });
+}
+
 /** The container a canonical address lives in, or null when it names no owner this project can reach. */
 export async function containerOfUri(
   deps: LocatorDeps,
@@ -168,6 +195,26 @@ export async function containerOfUri(
 ): Promise<FileTarget | null> {
   const resolved = await resolveLocatorUri(deps, projectId, uri);
   return resolved.ok ? containerOf(resolved.value, projectId) : null;
+}
+
+/**
+ * Whether the writer can still edit the address `uri` names: the recheck a move, a copy or a
+ * create runs on a destination it resolved again inside its locks.
+ */
+export function canEditContextUri(
+  deps: LocatorDeps & { fileAccess: Pick<FileAccess, "authorize" | "confirmEdit"> },
+  input: { projectId: string; userId: string },
+): (uri: string) => Promise<boolean> {
+  return async (uri) => {
+    const target = await containerOfUri(deps, input.projectId, uri);
+    if (!target) return false;
+    const grant = await deps.fileAccess.authorize(
+      { accountId: input.userId as UserId },
+      target,
+      "edit",
+    );
+    return !isFileAccessDenied(grant) && (await deps.fileAccess.confirmEdit([grant])).length === 0;
+  };
 }
 
 /** The HTTP answer a route gives a refused locator. */
