@@ -134,7 +134,6 @@ function buildRequest(corpus: CorpusDefinition, imageData: string): GenerateRequ
     model: "",
     messages,
     ...(corpus.id === "image-heavy" ? {} : { tools: [TOOL] }),
-    maxTokens: 8,
     reasoning: "disabled",
     promptCacheRetention: "short",
   };
@@ -163,7 +162,6 @@ async function completeToolTranscript(
   const prime = await gateway.generate({
     ...request,
     model,
-    maxTokens: 1_024,
     messages: transcript,
   });
   const call = prime.toolCalls.find(({ name }) => name === TOOL.name);
