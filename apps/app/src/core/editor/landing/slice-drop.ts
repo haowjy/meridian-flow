@@ -1,7 +1,7 @@
 /**
  * The slice door: text and node drags inside the editor, and text dragged in
  * from outside. A slice lands where the landing says, as PM's own drop would,
- * with the table's shape held fixed.
+ * unless that would change a table's grid.
  */
 
 import { t } from "@lingui/core/macro";
@@ -132,7 +132,9 @@ function slicePlan(
       ? (dropPoint(state.doc, landing.pos, slice) ?? landing.pos)
       : landing.pos;
   const built = sliceDropTransaction(state, pos, slice, source);
-  if (!built || !keepsTableShape(state, pos, built)) return { kind: "refuse" };
+  if (!built) return { kind: "refuse" };
+  const broken = tableRefusal(state, pos, built);
+  if (broken) return { kind: "refuse", hint: broken };
   return { kind: "accept", pos, commit: (target) => finish(target, built.transaction) };
 }
 
@@ -155,13 +157,15 @@ function deleteSource(transaction: Transaction, source: SliceSource): void {
  * an ordinary move within a line.
  */
 function overlapsMovedBlock(state: EditorState, landing: Landing, source: SliceSource): boolean {
-  const range = source.node ?? state.selection;
-  if (landing.pos >= range.from && landing.pos <= range.to) return true;
   const $pos = state.doc.resolve(landing.pos);
-  if (!$pos.parent.isTextblock) return false;
-  const overlaps = range.from < $pos.end() && range.to > $pos.start();
-  const inside = range.from >= $pos.start() && range.to <= $pos.end();
-  return overlaps && !inside;
+  return (source.node ?? state.selection).ranges.some((range) => {
+    const [from, to] = [range.$from.pos, range.$to.pos];
+    if (landing.pos >= from && landing.pos <= to) return true;
+    if (!$pos.parent.isTextblock) return false;
+    const overlaps = from < $pos.end() && to > $pos.start();
+    const inside = from >= $pos.start() && to <= $pos.end();
+    return overlaps && !inside;
+  });
 }
 
 type BuiltDrop = { transaction: Transaction; from: number; to: number };
@@ -204,48 +208,58 @@ function sliceDropTransaction(
   return { transaction, from, to: end };
 }
 
-function rowWidths(table: PMNode): number[] {
-  const widths: number[] = [];
-  table.forEach((row) => {
-    widths.push(row.childCount);
-  });
-  return widths;
+function sameGrid(a: PMNode, b: PMNode): boolean {
+  if (a.childCount !== b.childCount) return false;
+  for (let row = 0; row < a.childCount; row++) {
+    if (a.child(row).childCount !== b.child(row).childCount) return false;
+  }
+  return true;
 }
 
-/** The pressed cell and table around `pos`, or null outside a table. */
-function tableAround(state: EditorState, pos: number) {
+/** The position of the innermost table, row or cell around `pos`, or null outside a table. */
+function tablePartAround(state: EditorState, pos: number): number | null {
   const $pos = state.doc.resolve(pos);
-  let cell: number | null = null;
   for (let depth = $pos.depth; depth > 0; depth--) {
-    const node = $pos.node(depth);
-    if (cell === null && isTableCell(node)) cell = $pos.before(depth);
-    if (isTable(node)) return { table: $pos.before(depth), cell, rows: rowWidths(node) };
+    if ($pos.node(depth).type.spec.tableRole) return $pos.before(depth);
   }
   return null;
 }
 
 /**
- * A drop never changes a table's grid and never spills out of the cell it
- * landed in: the fitter is free to improvise a landing beyond it, and a landing
- * the caret never promised is a refusal, not a surprise.
+ * Why this drop can't happen, or null when it can. A table's rows and columns
+ * are fixed, so every table that survives, nested ones included, must keep its
+ * grid (one whose whole range the drop deletes is gone, not changed). In a
+ * cell, the drop also stays in that cell: the fitter is free to improvise a
+ * landing the caret never promised.
  */
-function keepsTableShape(
+function tableRefusal(
   before: EditorState,
   pos: number,
   { transaction, from, to }: BuiltDrop,
-): boolean {
-  const shape = tableAround(before, pos);
-  if (!shape) return true;
-  if (shape.cell === null) return false;
+): string | null {
+  const part = tablePartAround(before, pos);
+  const inCell = t`Can’t put that in a table cell`;
+  let broken: string | null = null;
+  before.doc.descendants((node, at) => {
+    if (broken || !isTable(node)) return !broken;
+    const start = transaction.mapping.mapResult(at, 1);
+    const end = transaction.mapping.mapResult(at + node.nodeSize, -1);
+    if (!(start.deletedAfter && end.deletedBefore)) {
+      const now = transaction.doc.nodeAt(start.pos);
+      if (!(now && isTable(now) && sameGrid(node, now))) {
+        // A table around the landing may have broken from the insert or from
+        // the move's deletion; the first reads as the drop's fault.
+        broken = pos > at && pos < at + node.nodeSize ? inCell : t`Can’t move part of a table`;
+      }
+    }
+    return !broken;
+  });
+  if (broken) return broken;
+  if (part === null) return null;
 
-  const table = transaction.doc.nodeAt(transaction.mapping.map(shape.table, -1));
-  if (!table || !isTable(table)) return false;
-  const rows = rowWidths(table);
-  if (rows.length !== shape.rows.length || rows.some((width, index) => width !== shape.rows[index]))
-    return false;
-
-  const cellPos = transaction.mapping.map(shape.cell, -1);
+  const cellPos = transaction.mapping.map(part, -1);
   const cell = transaction.doc.nodeAt(cellPos);
-  if (!cell || !isTableCell(cell)) return false;
-  return from >= cellPos + 1 && to <= cellPos + 1 + cell.content.size;
+  return cell && isTableCell(cell) && from >= cellPos + 1 && to <= cellPos + 1 + cell.content.size
+    ? null
+    : inCell;
 }

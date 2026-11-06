@@ -13,7 +13,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 
 import { caretInsideNodeAt } from "../objects/object-selection";
-import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
+import { isCodeBlock, isObjectLike, isOpaqueObject } from "../objects/object-types";
 import { snapOutOfAtom } from "./inline-snap";
 
 export type Point = { x: number; y: number };
@@ -34,7 +34,11 @@ export type Landing =
   | { kind: "inline"; pos: number }
   /** Between blocks, where a textblock fits. */
   | { kind: "seam"; pos: number }
-  /** Inside a real code block's text (or clamped to one where no textblock fits). */
+  /**
+   * Inside a real code block's text (or clamped to one where no textblock
+   * fits). Another source block, such as a component, is an object here: a
+   * point over it lands at the seam beside it.
+   */
   | { kind: "source"; pos: number };
 
 export type Child = { node: PMNode; pos: number };
@@ -97,7 +101,7 @@ export function landingAt(
     const { node } = child;
     const inside = within(rect, point);
     const showsSource =
-      isSourceBlock(node) &&
+      isCodeBlock(node) &&
       !(isOpaqueObject(node) && !caretInsideNodeAt(state, geometry.focused(), child.pos));
     if (showsSource && inside) {
       return { kind: "source", pos: clampInto(geometry.inlineAt(point.x, point.y), child) };
@@ -247,7 +251,7 @@ function seamBefore(
   if (paragraph && container.node.canReplaceWith(index, index, paragraph))
     return { kind: "seam", pos };
 
-  const source = [after, before].find((child) => child && isSourceBlock(child.node));
+  const source = [after, before].find((child) => child && isCodeBlock(child.node));
   if (!source) return { kind: "seam", pos };
   return { kind: "source", pos: clampInto(pos, source) };
 }

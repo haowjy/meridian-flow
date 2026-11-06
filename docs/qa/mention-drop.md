@@ -35,8 +35,8 @@ Chromium's hidden drag payload or ProseMirror's event order.
    code block: no caret appears, the hint reads **Can’t mention inside code**,
    and content does not change.
 5. Drag a row the surface's `@` catalog cannot name, including an area root.
-   The hint reads **Not available in this chat** over the composer and **Not
-   available in this document** over the manuscript; content does not change.
+   The hint reads **Can’t mention that here** over the composer and the
+   manuscript alike; content does not change.
 6. Insert a multiword reference with `@`, then drop a row over the middle of
    its label. The caret snaps to the nearer outside edge and the whole original
    reference remains one chip after the drop. Repeat over a composer reference
@@ -64,10 +64,12 @@ it trails the last move by one `dragover`.
 12. **Inline code.** Over the middle of a code span: the caret draws at the
     span's nearer edge and the chip lands there, outside the span. The hint
     reads **Mention**, not a refusal.
-13. **Rendered diagram.** Over a rendered diagram with the caret elsewhere: the
-    caret draws at the seam before or after it by the pointer's half, and the
-    chip gets its own paragraph. With the caret inside the diagram's source
-    before the drag, the result is the same.
+13. **Rendered diagram and component block.** Over a rendered diagram with the
+    caret elsewhere: the caret draws at the seam before or after it by the
+    pointer's half, and the chip gets its own paragraph. With the caret inside
+    the diagram's source before the drag, the result is the same. A component
+    block behaves the same way: the caret draws beside it, never inside, and
+    the hint reads **Mention**.
 14. **Empty document.** Over any point of a blank document: the chip lands in
     the one empty paragraph and no second paragraph appears.
 15. **Files.** Drag a PNG over each of 8-14: it lands at the same place as the
@@ -75,6 +77,19 @@ it trails the last move by one `dragover`.
     a video: the hint reads **Only pictures can be dropped here**, no caret
     draws, the overlay stays away, the drop changes nothing, and the browser
     does not open the file.
+
+## Text dropped in a table cell
+
+16. Tables keep their grid. Drag a selection that runs from a paragraph into a
+    second table onto a cell of the first table (a move, not a copy): the hint reads **Can’t move
+    part of a table** and nothing changes, because deleting the selection would
+    cut the second table. Drag the same selection onto a paragraph: the same
+    hint. Hold Ctrl (Option on Mac) to copy onto a paragraph: it takes it. Drag a paragraph, a picture
+    or a chip, with other text, onto a cell: it lands in the cell and both
+    grids keep their row and column counts. Drag a selection onto its own
+    range: nothing changes and no hint shows. A highlighted row of cells drags
+    only the word under the browser's selection; that word lands in the
+    cell like any text.
 
 ## Ownership and recovery
 
