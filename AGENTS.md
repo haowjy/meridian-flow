@@ -26,8 +26,9 @@ never to get a task passing:
 - Every copy of a document's text converges, and no accepted edit is lost in the
   merge. [`text-convergence.test.ts`](apps/server/server/domains/collab/text-convergence.test.ts)
   checks this through the production room, persistence, and stored-state path.
-- Writer text stays out of logs and diagnostics. Only `packages/yjs-inspect` checks
-  this, with its canary test.
+- Writer text stays out of logs and diagnostics. The sanitizers are checked
+  (`packages/yjs-inspect`'s canary, `safe-event.test.ts`); what emit sites pass them
+  is not.
 - Marks and receipts say truthfully who did what. Partly checked.
 - One project's or account's content never reaches another. Checked feature by
   feature.
