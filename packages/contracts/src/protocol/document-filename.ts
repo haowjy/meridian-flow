@@ -31,11 +31,12 @@ export function parseDocumentFilename(
   let extension = "";
   const dot = input.lastIndexOf(".");
   const suffix = dot >= 0 ? input.slice(dot + 1).toLowerCase() : "";
-  const typed = filetypeForExtension(suffix);
-  if (typed) {
+  const sourceExtension = options.sourceExtension?.toLowerCase() ?? "";
+  // The source's own suffix is explicit even unregistered: `page.html` kept as a file stays one `.html`.
+  if (filetypeForExtension(suffix) || (suffix && suffix === sourceExtension)) {
     name = input.slice(0, dot).trim();
     extension = suffix;
-  } else extension = options.sourceExtension?.toLowerCase() ?? "";
+  } else extension = sourceExtension;
   if (!options.storageBacked && PROSE_EXTENSIONS.has(extension)) {
     extension = "";
     while (true) {

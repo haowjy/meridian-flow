@@ -14,7 +14,7 @@ a scratch directory outside the checkout:
 - `map.tiff` (any TIFF, for example `sharp({create:{width:800,height:600,channels:3,background:'#c33'}}).tiff()`)
 - `photo.heic` (a HEVC HEIC; libheif's `examples/example.heic` works)
 - `plain.bmp` (a 24-bit BMP)
-- `notes.pdf`, `thing.xyz` (a few random bytes) and `thesis.docx` containing an embedded TIFF
+- `notes.pdf`, `thing.xyz` (a few random bytes; a `.xyz` holding plain UTF-8 text imports as a document) and `thesis.docx` containing an embedded TIFF
 - `broken.tiff` (the first 200 bytes of `map.tiff`)
 
 ## Steps
