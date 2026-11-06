@@ -58,24 +58,29 @@ const modifiersOf = ({ ctrlKey, altKey, shiftKey, metaKey }: Modifiers): Modifie
  * count, and unselected text after the range's end does not. A press that
  * doesn't travel still places a caret.
  */
-function pressOnSelection(view: EditorView, event: MouseEvent): boolean {
+function selectionPress(view: EditorView, event: MouseEvent): "on" | "beside" | null {
   const { selection } = view.state;
   if (event.button !== 0 || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) {
-    return false;
+    return null;
   }
   if (!(selection instanceof TextSelection || selection instanceof AllSelection) || selection.empty)
-    return false;
-  if (!view.editable || !view.hasFocus()) return false;
+    return null;
+  if (!view.editable || !view.hasFocus()) return null;
   const target = event.target;
-  if (!(target instanceof Element) || !view.dom.contains(target)) return false;
+  if (!(target instanceof Element) || !view.dom.contains(target)) return null;
   if (target.closest('[contenteditable="false"]') !== view.dom.closest('[contenteditable="false"]'))
-    return false;
+    return null;
   const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
-  if (!at || at.pos < selection.from || at.pos > selection.to) return false;
+  if (!at || at.pos < selection.from || at.pos > selection.to) return null;
   if (at.pos === selection.from && event.clientX < view.coordsAtPos(selection.from).left)
-    return false;
-  if (at.pos === selection.to && event.clientX > view.coordsAtPos(selection.to).left) return false;
-  return true;
+    return "beside";
+  if (at.pos === selection.to && event.clientX > view.coordsAtPos(selection.to).left)
+    return "beside";
+  return "on";
+}
+
+function pressOnSelection(view: EditorView, event: MouseEvent): boolean {
+  return selectionPress(view, event) === "on";
 }
 
 /**
@@ -110,7 +115,15 @@ export function installSelectionDrag(view: EditorView, editor: Editor): () => vo
     // highlight redraw away; ProseMirror's click machinery still sees the
     // `mouseup`.
     const chrome = getEditorChrome(editor);
-    if (cancel || !chrome || !pressOnSelection(view, event)) return;
+    if (cancel || !chrome) return;
+    const hit = selectionPress(view, event);
+    if (hit === "beside") {
+      // Chrome otherwise starts its native drag from the painted half of the
+      // adjacent glyph, before its default action can replace the old range.
+      placeCaret(view, event.clientX, event.clientY, false);
+      return;
+    }
+    if (hit !== "on") return;
     event.preventDefault();
     cancel = startGesture(view, chrome, event, () => {
       cancel = null;
