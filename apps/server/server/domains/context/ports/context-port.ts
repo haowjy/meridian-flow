@@ -419,8 +419,10 @@ export interface ContextLocationOptions extends ContextWriteOptions {
   /** Reconfirm the resolved destination's edit authority under its namespace locks. */
   authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
-  /** The node that moves: found by id under the locks, wherever it is by then. */
+  /** The node that moves, as the caller named it: found by id under the locks, wherever it is by then. */
   expected: ContextEntryRef;
+  /** The id the node has now, when `expected` names one a join has since forwarded. */
+  nodeId?: string;
   /** The name the writer typed, when they did; omitted keeps the node's own name. */
   name?: string;
   /**
@@ -450,7 +452,10 @@ export type ContextBranchTreeResult = { uri: string; moved: boolean };
 export interface ContextDeleteOptions extends ContextWriteOptions {
   removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
+  /** The node as the caller named it; its receipt records this id. */
   expected: ContextEntryRef;
+  /** The id the node has now, when `expected` names one a join has since forwarded. */
+  nodeId?: string;
   /**
    * Delete only while the node is still at this path of the URI's area; a node the writer has
    * renamed or moved since survives, and the delete answers `stale_target`.

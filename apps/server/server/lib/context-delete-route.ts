@@ -8,6 +8,7 @@ import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import {
   contextPortForProjectAuthorities,
+  deleteCommand,
   type ProjectContextAvailabilityPort,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
@@ -50,10 +51,13 @@ export async function handleContextDeleteRequest(
 ): Promise<DeleteContextEntryResult> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const { operationId, kind } = parseContextDelete(input.body);
-  const replay = await replayedResult(deps, input, operationId, {
-    kind: "delete",
-    expected: { kind, nodeId: input.entryId },
-  });
+  const requested = { kind, nodeId: input.entryId };
+  const replay = await replayedResult(
+    deps,
+    input,
+    operationId,
+    deleteCommand({ expected: requested }),
+  );
   if (replay) {
     if (!replay.ok) contextErrorToHttp(replay.error);
     return replay.value;
@@ -77,7 +81,8 @@ export async function handleContextDeleteRequest(
   const result = await withEditGrants(deps.fileAccess, [grant], () =>
     port.delete(address.uri, {
       origin: { type: "human", userId: input.userId },
-      expected: { kind, nodeId: address.id },
+      expected: requested,
+      nodeId: address.id,
       operationId,
     }),
   );

@@ -6,11 +6,37 @@ import type {
   ContextOperationResult,
 } from "@meridian/contracts/protocol";
 import type { ContextOperationReceiptStore } from "../ports/context-operation-receipts.js";
+import type { ContextDeleteOptions, ContextLocationOptions } from "../ports/context-port.js";
 
 class RejectedOperation<K extends ContextOperationCommand["kind"]> extends Error {
   constructor(readonly result: Extract<ContextOperationResult<K>, { ok: false }>) {
     super("Context namespace attempt rejected");
   }
+}
+
+type MoveCommand = Extract<ContextOperationCommand, { kind: "move" }>;
+
+/**
+ * What a move was asked to do, as its receipt records it: a function of the request alone, so a
+ * resend matches however the row has moved since. The route and the mover both build it here.
+ */
+export function moveCommand(
+  options: Pick<ContextLocationOptions, "expected" | "destinationParent" | "position" | "name">,
+): MoveCommand {
+  const { expected, destinationParent, position, name } = options;
+  return {
+    kind: "move",
+    expected,
+    ...(destinationParent ? { destinationParent } : {}),
+    ...(position ? { position } : {}),
+    ...(name ? { name } : {}),
+  };
+}
+
+export function deleteCommand(
+  options: Pick<ContextDeleteOptions, "expected">,
+): Extract<ContextOperationCommand, { kind: "delete" }> {
+  return { kind: "delete", expected: options.expected };
 }
 
 /**

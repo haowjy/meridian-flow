@@ -38,7 +38,11 @@ import type {
   PreparedContextMove,
 } from "../ports/context-tree-mutation-store.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
-import type { ContextOperationReceipts } from "./context-operation-receipts.js";
+import {
+  type ContextOperationReceipts,
+  deleteCommand,
+  moveCommand,
+} from "./context-operation-receipts.js";
 import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
@@ -118,6 +122,11 @@ function namespaceChanged(uri: string): Result<never, ContextError> {
   });
 }
 
+/** The node a command acts on: the one the caller named, at the id it has now. */
+function nodeOf(options: { expected: ContextEntryRef; nodeId?: string }): ContextEntryRef {
+  return { kind: options.expected.kind, nodeId: options.nodeId ?? options.expected.nodeId };
+}
+
 /** The writer-location command's options; `inTransaction` runs inside the locks. */
 type LocationChangePolicy = ContextLocationOptions & {
   resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
@@ -150,21 +159,11 @@ export class ContextTreeMover {
     destination: ContextTreeDispatch | null,
     options: LocationChangePolicy,
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    const { expected, operationId, destinationParent, position, name } = options;
+    const { operationId } = options;
     if (operationId) {
       if (!this.receipts) return Err({ code: "invalid_operation", uri: source.canonical });
-      return this.receipts.execute(
-        operationId,
-        {
-          kind: "move",
-          expected,
-          ...(destinationParent ? { destinationParent } : {}),
-          ...(position ? { position } : {}),
-          ...(name ? { name } : {}),
-        },
-        source.canonical,
-        () =>
-          this.commitWriterLocation(source, destination, { ...options, operationId: undefined }),
+      return this.receipts.execute(operationId, moveCommand(options), source.canonical, () =>
+        this.commitWriterLocation(source, destination, { ...options, operationId: undefined }),
       );
     }
     return this.changeLocation(source, destination, options);
@@ -202,7 +201,7 @@ export class ContextTreeMover {
               return namespaceChanged(into.canonical);
             into = current.value;
           }
-          const sourceToken = await this.inspectSource(source, policy.expected);
+          const sourceToken = await this.inspectSource(source, nodeOf(policy));
           if (!sourceToken.ok) return sourceToken;
           // The node's own folder and name, as the locks see them, fill what the caller left out.
           const leaf = policy.name ?? basename(sourceToken.value.path);
@@ -306,7 +305,7 @@ export class ContextTreeMover {
       if (!this.receipts) return Err({ code: "invalid_operation", uri: target.canonical });
       return this.receipts.execute(
         options.operationId,
-        { kind: "delete", expected: options.expected },
+        deleteCommand(options),
         target.canonical,
         () => this.delete(target, { ...options, operationId: undefined }),
       );
@@ -332,7 +331,7 @@ export class ContextTreeMover {
       return Err({ code: "permission_denied", uri: target.canonical });
     }
 
-    const token = await this.inspectSource(target, options.expected, options.onlyAt);
+    const token = await this.inspectSource(target, nodeOf(options), options.onlyAt);
     if (!token.ok) return token;
 
     const result = await callAdapter(
