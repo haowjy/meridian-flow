@@ -1,7 +1,7 @@
 /**
  * PR-body gate: every PR body must carry the sections of
- * .github/PULL_REQUEST_TEMPLATE.md, and UI-touching PRs must carry visual
- * evidence. The template is the single source — headings and scaffold lines
+ * .github/PULL_REQUEST_TEMPLATE.md, and a PR that changes product source must
+ * carry browser screenshots or say why it has none. The template is the single source — headings and scaffold lines
  * are read from it, so editing the template updates this gate without
  * touching this script.
  *
@@ -28,14 +28,15 @@ import {
 
 const TEMPLATE_PATH = ".github/PULL_REQUEST_TEMPLATE.md";
 
-// Sources whose change obligates visual evidence: app/site UI and the design
-// tokens every surface renders through. Tests change without changing pixels.
-const UI_FILE = /^(apps\/(app|www)\/src\/.+\.(tsx|css)|packages\/design-tokens\/src\/.+)$/;
-const TEST_FILE = /\.test\./;
+// Product source: what a writer's experience runs through, server included.
+// Verification is a browser run with screenshots for every such change
+// (AGENTS.md, Dev environment). Tests and test support change no behavior.
+const PRODUCT_FILE = /^(apps|packages)\/.+\.(ts|tsx|css|mjs|js)$/;
+const TEST_FILE = /\.test\.|\/test-support\/|\/__tests__\/|\/__test-support__\//;
 
-// The escape hatch for UI-file diffs that change no pixels (pure refactors,
-// type-only churn). Writing it is a reviewable claim, not a free pass.
-const NO_VISUAL_CLAIM = /no visual change/i;
+// The escape hatch for a product change no writer can reach. Writing it is a
+// reviewable claim, not a free pass.
+const NO_BROWSER_CLAIM = /browser:\s*none\b/i;
 const IMAGE = /!\[[^\]]*\](?:\([^)]+\)|\[[^\]]+\])|<img\s/;
 
 const template = readFileSync(TEMPLATE_PATH, "utf8");
@@ -102,7 +103,7 @@ if (local) {
   changedFileText = readFileSync(process.argv[2], "utf8");
 }
 // Trimmed like the body lines: a CRLF or copy-pasted entry must not slip past
-// the anchored UI_FILE match and silently skip the visual-evidence rule.
+// the anchored PRODUCT_FILE match and silently skip the browser-evidence rule.
 const changedFiles = changedFileText
   .split("\n")
   .map((line) => line.trim())
@@ -130,11 +131,13 @@ for (const heading of headings) {
   }
 }
 
-const touchesUi = changedFiles.some((file) => UI_FILE.test(file) && !TEST_FILE.test(file));
-if (touchesUi && !IMAGE.test(body) && !NO_VISUAL_CLAIM.test(body)) {
+const touchesProduct = changedFiles.some(
+  (file) => PRODUCT_FILE.test(file) && !TEST_FILE.test(file),
+);
+if (touchesProduct && !IMAGE.test(body) && !NO_BROWSER_CLAIM.test(body)) {
   failures.push(
-    "UI sources changed but the body has no screenshot/GIF and no explicit " +
-      '"no visual change" claim — the merge gate is visual',
+    "product sources changed but the body has no browser screenshot or GIF and no " +
+      '"Browser: none" claim with its reason: verification is a browser run (AGENTS.md)',
   );
 }
 

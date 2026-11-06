@@ -128,6 +128,7 @@ const expectedSuites = [
   "apps/server/server/lib/routes/context-thread-manifest-lock.db.test.ts",
   "apps/server/server/lib/routes/context-create-untitled.db.test.ts",
   "apps/server/server/lib/routes/context-move.db.test.ts",
+  "apps/server/server/shared/drizzle-transaction.db.test.ts",
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/migrations/0107_grep_tool_rename.db.test.ts",

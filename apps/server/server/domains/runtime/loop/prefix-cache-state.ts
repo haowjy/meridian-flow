@@ -243,15 +243,20 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
     const thread = await deps.repos.threads.findByIdIncludingDeleted(input.threadId);
     if (!thread || !input.model) return cold("facts_unavailable");
 
-    let turns = input.knownLocalTurns ?? (await deps.repos.turns.listByThread(input.threadId));
+    const [listedTurns, unboundedResponse] = await Promise.all([
+      input.knownLocalTurns ?? deps.repos.turns.listByThread(input.threadId),
+      input.throughTurnId ? null : deps.repos.modelResponses.findLatestByThread(input.threadId),
+    ]);
+    let turns = listedTurns;
+    let latestResponse = unboundedResponse;
     if (input.throughTurnId) {
       const cutoffIndex = turns.findIndex((turn) => turn.id === input.throughTurnId);
       if (cutoffIndex < 0) return cold("fork_cutoff");
       turns = turns.slice(0, cutoffIndex + 1);
+      latestResponse = await deps.repos.modelResponses.findLatestForTurns(
+        turns.map((turn) => turn.id),
+      );
     }
-    const latestResponse = input.throughTurnId
-      ? await deps.repos.modelResponses.findLatestForTurns(turns.map((turn) => turn.id))
-      : await deps.repos.modelResponses.findLatestByThread(input.threadId);
     const history: PrefixCacheHistory = {
       thread,
       turns,
@@ -271,8 +276,10 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
       }
       const owner = await deps.repos.threads.findByIdIncludingDeleted(ownerThreadId);
       if (!owner) return cold("facts_unavailable");
-      const ownerTurns = await deps.repos.turns.listByThread(ownerThreadId);
-      const ownerResponse = await deps.repos.modelResponses.findLatestByThread(ownerThreadId);
+      const [ownerTurns, ownerResponse] = await Promise.all([
+        deps.repos.turns.listByThread(ownerThreadId),
+        deps.repos.modelResponses.findLatestByThread(ownerThreadId),
+      ]);
       forkOwner = {
         thread: owner,
         turns: ownerTurns,

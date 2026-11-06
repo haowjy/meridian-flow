@@ -13,7 +13,6 @@ export default defineEventHandler(async (event) => {
   const port = await contextPortForProjectBrowse({
     deps: {
       contextPorts: app.contextPorts,
-      works: app.workRepo,
       workAuthorityResolver: app.workAuthorityResolver,
     },
     projectId,
