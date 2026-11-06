@@ -1,194 +1,93 @@
 # Editor document lifecycle
 
-Document navigation has separate address, tab-publication, and content owners.
-A pending address is not a reason to hide an already usable editor. Retention
-is presentation continuity, not authorization for the requested document.
-
-```mermaid
-flowchart TD
-  A[Document navigation] --> B[Resolve destination identity and authority]
-  B --> C[Prepare tab and request shared leave decision]
-  C --> D[Accept URL then commit workspace]
-  D --> E[Document host binds existing or new session]
-  E --> F[Render target content]
-  B -. during same-Work pending navigation .-> G[Keep prior document and matching chrome visible]
-```
+Document navigation has separate address, tab-publication and content owners. A pending address is
+not a reason to hide a usable editor, and retention is presentation continuity, not authorization for
+the requested document.
 
 ## Entry paths
 
-- **Editor navigation item:** once project workspace validation is live, choose the
-  selected eligible open tab or a remembered identity that is still open. Use
-  its current metadata, not its historical path. Navigate directly to it. Before
-  workspace validation finishes, navigate to empty Editor without mutating persisted
-  selection. No later mount effect restores a document or opens the first file.
-- **Bare `/editor` without a local-document history pointer:** explicitly empty
-  on direct entry, reload and Back/Forward. Empty means no tab is opened. The
-  pane may offer this project's recently opened documents as a chooser. It paints
-  the device record, including after reload, and does not wait for the server
-  list. Choosing navigates, and entry itself still opens nothing.
-  Closing every tab and switching screens cannot reopen a closed identity.
-- **Tab-strip chooser control:** clear the document address and any local-document
-  history pointer, and leave the working set alone. A local draft is already
-  `/editor`; the pointer is what selects it. Not the Editor navigation item: it
-  resolves no remembered identity and opens no tab, so the pane it lands on stays
-  empty. Clicking a tab returns. Back returns to the document that was showing.
-
-- **Readable URL, reload, Back/Forward:** `ReadableProjectRoute` resolves the
-  project and document address. `ProjectAddressDocument` uses the authorized
-  result's catalog entry to publish tab metadata. It does not invoke a second
-  live opener. While a lookup is refetching, cached metadata cannot publish
-  an admission or repair the URL.
-- **Stable document ID, such as a wikilink or search result:**
-  `ProjectDocumentNavigationAdapter` opens known exact initialized content through
-  the resource owner; unacquired content uses the live opener. It passes prepared
-  tab metadata to the route owner. Accepted history commits the tab and
-  selection; a cancelled decision publishes neither. A background open publishes
-  the tab without navigating or cancelling a foreground attempt. Uploads resources are not Editor
-  tabs (`isEditorScheme`): their resolved URLs show the deferred chat-resource viewing notice. The only viewer is the dock
-  beside a centered chat, so Open on an upload (`useOpenChatResource`, the Files menu and a sent
-  attachment) is offered only there; the docked chat on Work and Editor pages and the phone offer none.
-  A Work's Scratch is an Editor tab only in that Work's Editor, and a chat's
-  Scratch (`rootThreadId`) in every Editor (`isEditorTab`).
-  The URL layer still does not repeat
-  live admission; session binding belongs to the host.
-- **New or pending local Unfiled writing:** an exact local identity in `/editor`
-  history state selects the durable resource/session. New is available without
-  a Work; the first content change starts project-owned `unfiled://` creation.
-  Closed pending writing can be reopened from Unfiled, independently of tabs.
-  Acknowledgement or remint preserves the resource handle and editor session while the address adopts the current Document ID.
-  See [local writing ownership](../context/.context/resource-catalog-and-editor-lifecycle.md#unfiled-materialization-and-recovery)
-  for remint, queued filing, and recovery constraints.
+- **Editor navigation item:** once workspace validation is live, it goes to the selected open tab or a
+  remembered identity still open, using current metadata, not its historical path. Before validation
+  it goes to empty Editor without mutating persisted selection. No later mount effect restores a
+  document or opens the first file.
+- **Bare `/editor`:** explicitly empty on direct entry, reload and Back/Forward. The pane may offer
+  recent documents as a chooser, painted from the device record without waiting for the server list.
+  Closing every tab and switching screens can't reopen a closed identity.
+- **Tab-strip chooser:** clears the document address and any local-document history pointer and leaves
+  the working set alone. It resolves no remembered identity, unlike the navigation item.
+- **Readable URL, reload, Back/Forward:** `ProjectAddressDocument` publishes tab metadata from the
+  authorized catalog entry and invokes no second live opener. While a lookup is refetching, cached
+  metadata can't publish an admission or repair the URL.
+- **Stable document ID:** `ProjectDocumentNavigationAdapter` opens known initialized content through
+  the resource owner and passes prepared tab metadata to the route owner. Accepted history commits the
+  tab and selection; a cancelled decision publishes neither. A background open publishes the tab
+  without navigating or cancelling a foreground attempt.
+- **Uploads** aren't Editor tabs. The only viewer is the dock beside a centered chat, so Open on an
+  upload is offered only there.
+- **Pending local Unfiled writing:** an exact local identity in `/editor` history state selects the
+  durable resource and session. Acknowledgement or remint preserves the resource handle and editor
+  session while the address adopts the current Document ID. See
+  [local writing ownership](../context/.context/resource-catalog-and-editor-lifecycle.md).
 
 ## Ordered handoff
 
-1. Capture the navigation's ownership ticket or latest-attempt predicate.
-2. Resolve the requested document and its scope. A path is a reusable address;
-   the returned document ID is identity.
-3. Claim the application navigation intent before cancelling any older decision.
-   The history-owned restoration barrier retires pending native traversals and
-   returns the browser to its accepted entry. Its settled fast path is synchronous.
-4. Ask the shared Work metadata guard. After permission and any restoration,
-   revalidate the operation, caller lifetime and existing member instance.
-   Snapshot the displayed departure and dispatch the destination as one ordered
-   operation. Do not await route loaders as proof that navigation was accepted.
-5. On the matching history notification, flush the native URL, then synchronously
-   install/select the prepared tab or commit Close's successor/empty workspace.
-   Snapshot persistence failure is observable; it does not roll back the live
-   workspace. Delayed Close cannot remove a reopened member instance.
-6. A cold readable address is already accepted before `ProjectAddressDocument`
-   publishes its authorized metadata. Alias replacement remains pending until
-   canonical navigation settles; only a current failure may expose an error.
-7. The document host owns content startup and session binding. Finishing
-   address admission does not prove that a cold document's content is ready.
+1. Capture the navigation's ownership ticket.
+2. Resolve the requested document and its scope.
+3. Claim the application navigation intent before cancelling any older decision. The history-owned
+   restoration barrier retires pending native traversals and returns the browser to its accepted entry.
+4. Ask the shared Work metadata guard. After permission and any restoration, revalidate the operation,
+   caller lifetime and existing member instance, then snapshot the departure and dispatch the
+   destination as one ordered operation. Route loaders aren't proof that navigation was accepted.
+5. On the matching history notification, flush the native URL, then synchronously install the prepared
+   tab or commit Close's successor. Snapshot persistence failure is observable and doesn't roll back the
+   live workspace.
+6. A cold readable address is already accepted before `ProjectAddressDocument` publishes. Alias
+   replacement stays pending until canonical navigation settles.
+7. The document host owns content startup. Finishing address admission doesn't prove a cold document's
+   content is ready.
 
-The availability coordinator joins simultaneous explicit opens of one identity.
-Each lookup holds its own document watch until settlement, independently of
-a departing view's watch. Neither tab cleanup nor another identical opener can
-invalidate that caller merely by replacing its request generation.
+The availability coordinator joins simultaneous opens of one identity. Each lookup holds its own document
+watch until settlement, so tab cleanup or another identical opener can't invalidate that caller by
+replacing its request generation.
 
-## Native history ownership
+## Native history
 
-The scoped `@tanstack/history` patch owns traversal epochs and restoration.
-Returning to the accepted key/index retires stale decisions without `go(0)`.
-A cancelled traversal and a superseding application intent share one restoration;
-unexpected native movement or destruction resolves it as superseded. Application
-navigation waits for restoration before writing its departure snapshot and
-destination. It never repairs the browser with a second URL normalizer.
+The scoped `@tanstack/history` patch owns traversal epochs and restoration. Returning to the accepted
+key/index retires stale decisions without `go(0)`. Application navigation waits for restoration before
+writing its departure snapshot and never repairs the browser with a second URL normalizer.
 
-The route's shared guard owns Save/Discard/Keep editing. Retiring a decision
-dismisses the dialog without clearing the draft. Native Back/Forward uses the
-same decision owner; Settings remains its existing routed overlay.
+The route's shared guard owns Save/Discard/Keep editing. Retiring a decision dismisses the dialog without
+clearing the draft.
 
 ## What stays visible
 
-For a same-project, same-Work Editor transition with prior usable content,
-`ProjectRouteBoundary` leaves that content visible and non-inert, without a
-spinner or loading label. Desktop surfaces remain mounted; returning to a warm
-document can reuse its editor and session.
+For a same-project, same-Work Editor transition with prior usable content, `ProjectRouteBoundary` leaves
+that content visible and non-inert, with no spinner. Phone retention keeps the old document's path,
+identity and breadcrumb together, and navigation commands stay current, so clicking the retained
+breadcrumb can supersede the pending open.
 
-Phone retention keeps the old document's path, identity, and breadcrumb
-presentation together. `HydratedReviewScopes` supplies that same identity to
-both recovery and the phone document host. Navigation commands remain current,
-so clicking the retained Files breadcrumb can supersede the pending open.
-Retention does not change the phone viewer's existing read-only behavior.
+Cold address entry keeps the shell and pane geometry with hidden, inert pending content. The pane stays
+blank for about 500ms, then shows a skeleton. Only that fallback is keyed by the destination; the editor
+is never keyed or remounted for loading. Settlement removes feedback immediately, with no minimum
+display time.
 
-Retention ends when the new address is admitted or the transition is no longer
-eligible. Cold address entry keeps the shell and pane geometry, with hidden/inert pending
-content. The pane stays blank for approximately 500ms, then shows a skeleton if
-still pending. Only that fallback is keyed by the destination; the editor is
-never keyed or remounted for loading. Settlement removes feedback immediately,
-with no minimum display duration. Busy state is exposed without loading copy.
-Different-project entry, Work recovery, unavailable destinations, and errors do
-not expose retained content as if it were the requested destination.
-A masked destination leaves the workspace rails, dock and address navigation
-usable. Desktop supplies route-derived chrome outside the content mask when no
-admitted document chrome can be shown; the path is a locator, not an admitted
-identity or an editable placement. Review's prose-width hold does not collapse
-the sidebar while a route issue is shown. Phone keeps its top bar and drawer
-outside the boundary and mounts a document host only after admission (or for a
-retained warm transition), so a masked missing address cannot repair itself to
-Files. A cold
-content host may also need its own startup UI after address resolution.
+Different-project entry, Work recovery, unavailable destinations and errors don't expose retained content
+as if it were the requested destination. A masked destination leaves rails, dock and address navigation
+usable. Phone mounts a document host only after admission or for a retained warm transition, so a masked
+missing address can't repair itself to Files.
 
-## Session and synchronization boundary
+## Session boundary
 
-This route lifecycle uses the existing session registry and Yjs/IndexedDB
-persistence. It adds neither a second content cache nor a sync-based read-only
-gate. Warm navigation can reuse a live session and connection. A new session
-has its own local-replay and transport-startup lifecycle; address admission
-must not be confused with local persistence readiness or server reconciliation.
-See the [editor core contract](../../../core/editor/.context/CONTEXT.md).
-The basic editor module loads with the project hosts, so first local New does
-not require a dynamic import after the loaded workspace goes offline. Persistent
-root/auth/project loaders do not refetch on same-shell navigation; explicit
-invalidation and new entries still acquire authority. Cold offline app boot
-remains unsupported.
+This lifecycle adds neither a second content cache nor a sync-based read-only gate. Address admission isn't
+local persistence readiness or server reconciliation; see the
+[editor core contract](../../../core/editor/.context/CONTEXT.md).
 
-Transport remains room-scoped; multiplexing is outside this routing contract.
+## Review addresses
 
-## Source and checks
+Only a route with `itemKey` and a resolved Work sends its Work and per-document draft selector, both in the
+address query key. A plain manuscript address stays live-only, and no caller guesses a review selector from a
+path or a Work's draft list.
 
-- [Address admission](../routing/ProjectAddressDocument.tsx) and its sibling tests.
-- [Navigation ownership](../routing/project-navigation.ts) and its sibling tests.
-- [Stable-ID navigation](../context/open-project-document.ts).
-- [Loading boundary](../routing/ProjectRouteBoundary.tsx) and its sibling tests.
-- [Shell and phone retention](../ProjectView.tsx).
-- [Workspace transitions and restoration codec](../../../client/stores/context-tabs-store/editor-workspace-state.ts).
-
-
-Review-only document admission uses `getProjectDocumentAddress`. Only a route
-with `itemKey` and a resolved Work sends its Work and per-document draft
-selector, both included in the address query key. The server alone maps that
-review item to the whole branch tree after validating it. A plain
-manuscript address remains live-only; `gateLiveView` is unchanged, and no
-caller guesses a review selector from a path or a Work's draft list.
-
-`ReadableProjectRoute` retains `useDraftMetadata` above editor address admission.
-A metadata `gone` answer and the room's terminal `4205 draft-closed` frame are two arrivals of one
-account-owned disposition: available documents leave review for live; removed
-documents use availability's removal record. Catalog invalidation must not
-unmount the room first and strand the destination as unavailable. Unknown or
-failed metadata reads never prove closure. See the
-[review runtime](../../draft-review/.context/draft-review.md) for command and
-room ownership.
-
-### Who decides what
-
-- **A chat door's document** (a tool card's name, a receipt row, a passage door;
-  `chat/ProjectChatContextNavigationProvider.tsx`) is asked of the scoped link
-  follower a transcript link uses (`features/links`). A live answer opens where the
-  door opens documents (the Editor route, or the dock beside the chat). A hidden
-  document answers with its Work and item key (the server resolves an address the
-  live tree leaves empty in the request Work's branch view, as it does a ref) and
-  goes through the review handoff by identity. A missing answer routes the plain
-  address so the route says so in place. The Editor command only navigates explicit destinations and keeps the
-  review identity it already holds (caller, addressed tab, current address).
-- **Whether the destination is admitted** is the route's alone
-  (`ReadableProjectRoute`: address binding, local and remote resolution, draft
-  gating, tab admission), reported as the Editor mask's `issue`.
-- **The pane waits; the boundary presents** (`context/context-pane-state.ts`). `loading`
-  and an admitted address still waiting for its tab render the destination's
-  pending tab and a neutral body. A terminal verdict (`unavailable` or `error`) is
-  `ProjectRouteBoundary`'s alone, so one verdict never has two presentations. The pane never reads the live catalog to decide existence,
-  because a draft-only document is never in it. Retained documents and the removal
-  fence are separate inputs. The route installs tabs; the pane has no auto-open.
+`ReadableProjectRoute` keeps `useDraftMetadata` above editor address admission, so catalog invalidation can't
+unmount the room first and strand the destination as unavailable. See the
+[review runtime](../../draft-review/.context/draft-review.md).

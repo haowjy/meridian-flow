@@ -15,7 +15,7 @@ Consumers use `markdownCodec` and `mdxCodec`. Codec and plugin composition
 stays internal; agent-edit's hash-prefixed echo and view formatting lives
 outside this package.
 
-## Invariants
+## Contracts
 
 - One codec name per ProseMirror node/mark. Duplicate block or mark
   registrations are build-time errors.

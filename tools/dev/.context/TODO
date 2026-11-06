@@ -1,27 +1,9 @@
 # Dev tooling follow-up
 
-- Make `cli/commands/thread/send.ts` follow a reply across assistant/compaction
-  splits instead of stopping on the first `turn.finished`. Today it exits 0 with
-  `status: complete, finalText: null` for an empty first turn even when its
-  successor later fails with `context_window_exceeded`. Follow the execution's
-  successor selector through completion; apply the same semantics to
-  `thread/tail.ts --until-idle`. Reproduce by scripting mock overflow, summary,
-  overflow and comparing `thread send` with the final snapshot and journal.
-  Until fixed, assert split outcomes from snapshots and journal events, not the
-  send command's early terminal envelope.
-
-- Align `cli/commands/thread/transcript.ts` generic custom-block output with
-  `docs/debugging.md`'s untruncated JSON contract. `thread view --json` still
-  clips an unknown custom block's `summary` unless `--full` is also passed.
-  The dedicated `thread-reference` projection exposes all props, but handoff
-  cards still need `--full` for complete frozen text. Reproduce with a handoff
-  seed and compare `thread view --json` against `thread view --full --json`.
-
-- Let `./mf doc read|put` and `./mf thread send --ref` name a chat lineage's
-  Scratch note (`scratch://@c12/x`). They send no `rootThreadId`, so a lineage
-  note is reachable only through `./mf api ... rootThreadId=<first chat id>`.
-  Fix in `cli/commands/doc/` and the thread send reference path when a probe
-  needs it.
+- Align `thread view --json` with `docs/debugging.md`'s untruncated JSON contract.
+  `tools/mf/src/commands/thread/chat-view.ts` still clips text unless `--full` is
+  also passed. Reproduce with a handoff seed and compare `thread view --json` against
+  `thread view --full --json`.
 
 - Give the dev log directory and Nitro's watcher exclusion one source of truth.
   `apps/server/nitro.config.ts` builds its own `<repo>/logs/**` exclusion while
@@ -31,11 +13,5 @@
 
 - Make `db:generate` derive its next numeric filename ordinal from the highest
   existing tag, not Drizzle's journal idx. The frozen idx/tag offset makes default
-  generation overwrite older snapshots (0071 and 0072 were overwritten after
-  tag 0076). Until automated, follow the timestamp-prefix workflow in
-  `packages/database/.context/CONTEXT.md`; never rewrite applied identities.
-
-- Delete the default-server shim once no stack from before the private tmux
-  socket is running: `legacyDefaultServerArgs` in `lib/dev-tmux-socket.ts`,
-  `TmuxSessionStore.legacyDefaultServerHasSession`, and its guard in
-  `dev-tmux.ts`.
+  generation overwrite older snapshots. Until automated, follow the timestamp-prefix
+  workflow in `packages/database/.context/CONTEXT.md`.

@@ -849,10 +849,7 @@ restart smoke check.
      `draft:<work_draft.id>` (the draft the inverse ran on), never the thread peer.
 - **Evidence:** each send NDJSON, the SQL dumps, the fork body, `document_drafts` ids next to
   `room_key`, seq occupancy 1..last_value, and the captured model requests.
-- **Last run:** 2026-10-19 on `689678a032` (`feat/m1-frontier` revision 4), mock, detached checkout
-  `p13652-m1-probe` (prefix `detached-689678a032-p13652-m1-probe-17a578e6`, database
-  `meridian_detached-689678a032-p13652-m1-probe`), all seven cells passed. Evidence:
-  `work/concurrent-edit-design/m1/probe/p13652/` in the docs repository. Browser: none
+- **Last run:** 2026-10-19 on `689678a032` (`feat/m1-frontier` revision 4), mock, all seven cells passed. Browser: none
   (no writer-visible change). Recipe change this run: step 5 now includes the write-then-read
   commands; step 7 has the undo send commands. Steps 5 and 7 passed again on `77667d7e1b`
   (the save derives its room; a live undo reads its generation before the call), on the branch
@@ -879,7 +876,7 @@ restart smoke check.
 
 ## RP-21: M2c re-shows every listed document that fits, most important first
 
-- **Protects:** owner rulings C12/C13. No listed-document count cap or fixed token
+- **Protects:** no listed-document count cap or fixed token
   budget; the only budget is half the compacted request's headroom under the
   auto-compaction trigger, less 1,000 tokens of estimator slack. The budget
   includes the list the server writes back into the summary. Without a trigger it
