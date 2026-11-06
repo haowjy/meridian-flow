@@ -110,10 +110,10 @@ branch: each finished piece bases on it and merges into it, instead of PRs stack
 each other, and the piece's worktree, stack and processes go as soon as it's in. One PR
 carries the integration branch into `main`.
 
-An agent may merge a fix or an approved refactor into `main` without asking, at any
-size. A fix restores intended behavior; changing what writers are meant to see is a
-feature. A refactor, reorganization or architecture change needs the owner's approval
-first, quoted in its issue or PR; another agent's report of that approval doesn't count.
+An agent may merge a fix or a refactor into `main` without asking, at any size. A fix
+restores intended behavior; changing what writers are meant to see is a feature. A big
+refactor, reorganization or architecture change needs the owner's approval first, quoted
+in its issue or PR; another agent's report of that approval doesn't count.
 Small fixes need no approval to start. Before merging, CI is green, the regressions the
 change could cause are tested, and the PR body is reread against the final diff, with
 evidence from the commit being merged. A big fix also needs an independent review.
