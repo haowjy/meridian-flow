@@ -280,7 +280,7 @@ export function createConversationSummarizer(
               provider: result.provider,
               finishReason: result.finishReason,
               providerRequestId: result.providerRequestId ?? null,
-              providerData: result.providerData,
+              meteringStatus: result.meteringStatus,
               ...modelResponseTimingFields(result),
             });
           input.signal.throwIfAborted();

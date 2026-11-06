@@ -159,7 +159,7 @@ describe("model pricing", () => {
       provider: "openai",
       model: "gpt-6.1-sol",
       usage: { inputTokens: 0, outputTokens: 0 },
-      providerData: { meteringStatus: "missing_usage" },
+      meteringStatus: "missing_usage",
       rateSource,
     });
 

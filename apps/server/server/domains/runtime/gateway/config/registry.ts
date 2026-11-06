@@ -121,88 +121,12 @@ const GEMINI_PROMPT_CACHE: PromptCacheDescriptor = {
   longTtlMs: null,
 };
 
-// Claude bills cache writes by the TTL written: 5m at 1.25x input, 1h at 2x. Anthropic's
-// usage reports the split, so `cacheWriteUsdPerMillionTokens` is the 5m rate and
-// `cacheWriteLongUsdPerMillionTokens` the 1h one.
-const CLAUDE_OPUS_5_5_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "4.00",
-  cachedInputUsdPerMillionTokens: "0.20",
-  cacheWriteUsdPerMillionTokens: "5.00",
-  cacheWriteLongUsdPerMillionTokens: "8.00",
-  outputUsdPerMillionTokens: "20.00",
-  source: ANTHROPIC_PRICING_SOURCE,
-};
-
-const CLAUDE_SONNET_5_5_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "2.00",
-  cachedInputUsdPerMillionTokens: "0.10",
-  cacheWriteUsdPerMillionTokens: "2.50",
-  cacheWriteLongUsdPerMillionTokens: "4.00",
-  outputUsdPerMillionTokens: "10.00",
-  source: ANTHROPIC_PRICING_SOURCE,
-};
-
-const CLAUDE_FABLE_5_1_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "10.00",
-  cachedInputUsdPerMillionTokens: "0.25",
-  cacheWriteUsdPerMillionTokens: "12.50",
-  cacheWriteLongUsdPerMillionTokens: "20.00",
-  outputUsdPerMillionTokens: "50.00",
-  source: ANTHROPIC_PRICING_SOURCE,
-};
-
 // OpenAI bills cache writes by TTL too: 30m at 1.25x input, 12h at 2.5x. Above 272K input
 // tokens the whole request is billed at 2x input and cache rates and 1.5x output; the same
 // threshold drives compaction planning.
 const OPENAI_LONG_CONTEXT = {
   inputTierTokens: 272_000,
   aboveTierMultipliers: { input: 2, output: 1.5 },
-};
-
-const GPT_6_1_SOL_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "2.00",
-  cachedInputUsdPerMillionTokens: "0.10",
-  cacheWriteUsdPerMillionTokens: "2.50",
-  cacheWriteLongUsdPerMillionTokens: "5.00",
-  outputUsdPerMillionTokens: "10.00",
-  ...OPENAI_LONG_CONTEXT,
-  source: OPENAI_PRICING_SOURCE,
-};
-
-const GPT_6_1_TERRA_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "1.00",
-  cachedInputUsdPerMillionTokens: "0.05",
-  cacheWriteUsdPerMillionTokens: "1.25",
-  cacheWriteLongUsdPerMillionTokens: "2.50",
-  outputUsdPerMillionTokens: "5.00",
-  ...OPENAI_LONG_CONTEXT,
-  source: OPENAI_PRICING_SOURCE,
-};
-
-const GPT_5_6_LUNA_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "0.20",
-  cachedInputUsdPerMillionTokens: "0.02",
-  cacheWriteUsdPerMillionTokens: "0.25",
-  cacheWriteLongUsdPerMillionTokens: "0.50",
-  outputUsdPerMillionTokens: "1.20",
-  ...OPENAI_LONG_CONTEXT,
-  source: OPENAI_PRICING_SOURCE,
-};
-
-// Peak rates; off-peak is half.
-const DEEPSEEK_FLASH_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "0.30",
-  cachedInputUsdPerMillionTokens: "0.006",
-  outputUsdPerMillionTokens: "1.20",
-  source: DEEPSEEK_PRICING_SOURCE,
-};
-
-// Implicit cache only: no write fee.
-const GEMINI_4_ARGON_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "4.00",
-  cachedInputUsdPerMillionTokens: "0.20",
-  outputUsdPerMillionTokens: "20.00",
-  source: GEMINI_PRICING_SOURCE,
 };
 
 // Reasoning rows are copied from models.dev `reasoning_options`, minus `xhigh`, which Flow never
@@ -307,9 +231,42 @@ export const MODEL_REGISTRY: ModelRegistry = {
       apiKeyEnv: "FLOW_ANTHROPIC_API_KEY",
       projectToolSchema: true,
       offerings: [
-        { model: CLAUDE_OPUS_5_5_MODEL, pricing: CLAUDE_OPUS_5_5_PRICING },
-        { model: CLAUDE_SONNET_5_5_MODEL, pricing: CLAUDE_SONNET_5_5_PRICING },
-        { model: CLAUDE_FABLE_5_1_MODEL, pricing: CLAUDE_FABLE_5_1_PRICING },
+        // Claude bills cache writes by the TTL written: 5m at 1.25x input, 1h at 2x. Anthropic's
+        // usage reports the split, so `cacheWriteUsdPerMillionTokens` is the 5m rate and
+        // `cacheWriteLongUsdPerMillionTokens` the 1h one.
+        {
+          model: CLAUDE_OPUS_5_5_MODEL,
+          pricing: {
+            inputUsdPerMillionTokens: "4.00",
+            cachedInputUsdPerMillionTokens: "0.20",
+            cacheWriteUsdPerMillionTokens: "5.00",
+            cacheWriteLongUsdPerMillionTokens: "8.00",
+            outputUsdPerMillionTokens: "20.00",
+            source: ANTHROPIC_PRICING_SOURCE,
+          },
+        },
+        {
+          model: CLAUDE_SONNET_5_5_MODEL,
+          pricing: {
+            inputUsdPerMillionTokens: "2.00",
+            cachedInputUsdPerMillionTokens: "0.10",
+            cacheWriteUsdPerMillionTokens: "2.50",
+            cacheWriteLongUsdPerMillionTokens: "4.00",
+            outputUsdPerMillionTokens: "10.00",
+            source: ANTHROPIC_PRICING_SOURCE,
+          },
+        },
+        {
+          model: CLAUDE_FABLE_5_1_MODEL,
+          pricing: {
+            inputUsdPerMillionTokens: "10.00",
+            cachedInputUsdPerMillionTokens: "0.25",
+            cacheWriteUsdPerMillionTokens: "12.50",
+            cacheWriteLongUsdPerMillionTokens: "20.00",
+            outputUsdPerMillionTokens: "50.00",
+            source: ANTHROPIC_PRICING_SOURCE,
+          },
+        },
       ],
     },
     {
@@ -319,17 +276,41 @@ export const MODEL_REGISTRY: ModelRegistry = {
       offerings: [
         {
           model: GPT_6_1_SOL_MODEL,
-          pricing: GPT_6_1_SOL_PRICING,
+          pricing: {
+            inputUsdPerMillionTokens: "2.00",
+            cachedInputUsdPerMillionTokens: "0.10",
+            cacheWriteUsdPerMillionTokens: "2.50",
+            cacheWriteLongUsdPerMillionTokens: "5.00",
+            outputUsdPerMillionTokens: "10.00",
+            ...OPENAI_LONG_CONTEXT,
+            source: OPENAI_PRICING_SOURCE,
+          },
           promptCache: OPENAI_PROMPT_CACHE,
         },
         {
           model: GPT_6_1_TERRA_MODEL,
-          pricing: GPT_6_1_TERRA_PRICING,
+          pricing: {
+            inputUsdPerMillionTokens: "1.00",
+            cachedInputUsdPerMillionTokens: "0.05",
+            cacheWriteUsdPerMillionTokens: "1.25",
+            cacheWriteLongUsdPerMillionTokens: "2.50",
+            outputUsdPerMillionTokens: "5.00",
+            ...OPENAI_LONG_CONTEXT,
+            source: OPENAI_PRICING_SOURCE,
+          },
           promptCache: OPENAI_PROMPT_CACHE,
         },
         {
           model: GPT_5_6_LUNA_MODEL,
-          pricing: GPT_5_6_LUNA_PRICING,
+          pricing: {
+            inputUsdPerMillionTokens: "0.20",
+            cachedInputUsdPerMillionTokens: "0.02",
+            cacheWriteUsdPerMillionTokens: "0.25",
+            cacheWriteLongUsdPerMillionTokens: "0.50",
+            outputUsdPerMillionTokens: "1.20",
+            ...OPENAI_LONG_CONTEXT,
+            source: OPENAI_PRICING_SOURCE,
+          },
           promptCache: OPENAI_PROMPT_CACHE,
         },
       ],
@@ -342,7 +323,13 @@ export const MODEL_REGISTRY: ModelRegistry = {
       offerings: [
         {
           model: DEEPSEEK_FLASH_MODEL,
-          pricing: DEEPSEEK_FLASH_PRICING,
+          // Peak rates; off-peak is half.
+          pricing: {
+            inputUsdPerMillionTokens: "0.30",
+            cachedInputUsdPerMillionTokens: "0.006",
+            outputUsdPerMillionTokens: "1.20",
+            source: DEEPSEEK_PRICING_SOURCE,
+          },
           promptCache: DEEPSEEK_PROMPT_CACHE,
         },
       ],
@@ -355,7 +342,13 @@ export const MODEL_REGISTRY: ModelRegistry = {
       offerings: [
         {
           model: GEMINI_4_ARGON_MODEL,
-          pricing: GEMINI_4_ARGON_PRICING,
+          // Implicit cache only: no write fee.
+          pricing: {
+            inputUsdPerMillionTokens: "4.00",
+            cachedInputUsdPerMillionTokens: "0.20",
+            outputUsdPerMillionTokens: "20.00",
+            source: GEMINI_PRICING_SOURCE,
+          },
           promptCache: GEMINI_PROMPT_CACHE,
         },
       ],

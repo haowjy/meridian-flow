@@ -8,6 +8,7 @@
  * secrets from a secret store.
  */
 import { mockModelDefaultResponseSchema } from "@meridian/contracts/protocol";
+import { isProductionEnv } from "../../../../lib/production-env.js";
 import { createMockScriptQueue, type MockScriptQueue } from "../adapters/mock/script-queue.js";
 import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
 import { assertModelsOnWire, createGateway } from "../create-gateway.js";
@@ -71,16 +72,6 @@ function formatGatewayStartupInfo(
 }
 
 /**
- * Production as `resolveDebugPathsEnabled` sees it: `APP_ENV=production`, or
- * `NODE_ENV=production` with `APP_ENV` unset or `dev`, so a deployed process
- * missing `APP_ENV` fails closed. Staging is not production.
- */
-function isProductionEnv(env: GatewayEnvInput): boolean {
-  const appEnv = env.APP_ENV ?? "dev";
-  return appEnv === "production" || (env.NODE_ENV === "production" && appEnv === "dev");
-}
-
-/**
  * Build a gateway from environment inputs.
  *
  * When no real provider keys are configured (or MODEL_PROVIDER is "mock"),
@@ -105,6 +96,24 @@ export async function createGatewayFromEnv(
   let mockScript: MockScriptQueue | undefined;
   const { providers, defaultModel: registryDefaultModel } = buildProviderConfigs(env);
 
+  // Validate before starting the mock server, so a bad value leaves nothing to clean up.
+  const liveTestModel = env.LIVE_TEST_MODEL;
+  if (liveTestModel && isProductionEnv({ rawNodeEnv: env.NODE_ENV, rawAppEnv: env.APP_ENV })) {
+    throw new Error(
+      "LIVE_TEST_MODEL: not allowed in production; unset it. On staging, set APP_ENV=staging.",
+    );
+  }
+  if (liveTestModel && !providers.some((p) => p.models.some((m) => m.id === liveTestModel))) {
+    const inRegistry = MODEL_REGISTRY.providers.some((p) =>
+      p.offerings.some((o) => o.model.id === liveTestModel),
+    );
+    throw new Error(
+      inRegistry
+        ? `LIVE_TEST_MODEL=${liveTestModel}: its provider has no API key set`
+        : `LIVE_TEST_MODEL=${liveTestModel}: not a registry model id`,
+    );
+  }
+
   if (providers.length === 0) {
     let baseUrl = options?.mockBaseUrl;
     if (!baseUrl) {
@@ -124,24 +133,6 @@ export async function createGatewayFromEnv(
   const gatewayOptions = defaultGatewayOptions(providers, registryDefaultModel);
   const defaultModel = gatewayOptions.defaultModel;
   if (!defaultModel) throw new Error("Gateway configuration has no default model");
-  const liveTestModel = env.LIVE_TEST_MODEL;
-  if (liveTestModel && isProductionEnv(env)) {
-    await cleanup?.();
-    throw new Error(
-      "LIVE_TEST_MODEL: not allowed in production; unset it. On staging, set APP_ENV=staging.",
-    );
-  }
-  if (liveTestModel && !providers.some((p) => p.models.some((m) => m.id === liveTestModel))) {
-    const inRegistry = MODEL_REGISTRY.providers.some((p) =>
-      p.offerings.some((o) => o.model.id === liveTestModel),
-    );
-    await cleanup?.();
-    throw new Error(
-      inRegistry
-        ? `LIVE_TEST_MODEL=${liveTestModel}: its provider has no API key set`
-        : `LIVE_TEST_MODEL=${liveTestModel}: not a registry model id`,
-    );
-  }
   const startupInfo = formatGatewayStartupInfo(providers, defaultModel, liveTestModel);
   if (options?.onInfo) {
     options.onInfo(startupInfo);

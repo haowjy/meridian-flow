@@ -13,7 +13,6 @@ import {
   MODEL_REGISTRY,
   type ModelTokenRate,
 } from "../gateway/config/registry.js";
-import { readMeteringStatus } from "../gateway/domain/metering.js";
 
 export type ModelTokenRateLayer = "pinned" | "override" | "unmetered";
 
@@ -164,12 +163,12 @@ export function computeModelCost(input: {
   provider: string;
   model: string;
   usage: Usage;
-  providerData?: unknown;
+  meteringStatus?: "missing_usage";
   rateSource?: ModelTokenRateSource;
 }): ComputedModelCost {
   assertValidUsage(input.usage);
 
-  if (readMeteringStatus(input.providerData) === "missing_usage") {
+  if (input.meteringStatus === "missing_usage") {
     return computeMissingUsageCost({ provider: input.provider, model: input.model });
   }
 

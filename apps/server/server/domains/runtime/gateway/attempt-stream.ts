@@ -141,8 +141,7 @@ function estimatedEventBytes(event: StreamEvent): number {
       return (
         256 +
         estimatedUnknownBytes(event.result.content) +
-        estimatedUnknownBytes(event.result.toolCalls) +
-        estimatedUnknownBytes(event.result.providerData)
+        estimatedUnknownBytes(event.result.toolCalls)
       );
   }
 }
