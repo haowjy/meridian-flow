@@ -55,8 +55,11 @@ export interface RegisteredModel {
 export interface RegisteredOffering {
   model: RegisteredModel;
   pricing: ModelPricing;
-  /** Omitted means `DEFAULT_PROMPT_CACHE`. */
-  promptCache?: PromptCacheDescriptor;
+  /**
+   * Fields this offering changes from `DEFAULT_PROMPT_CACHE`; a field left out keeps the
+   * default and `null` stays `null` (the provider documents no lifetime).
+   */
+  promptCache?: Partial<PromptCacheDescriptor>;
 }
 
 export interface RegisteredProvider {
@@ -92,8 +95,8 @@ const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
 const ONE_HOUR_MS = 60 * 60 * 1_000;
 const TWELVE_HOURS_MS = 12 * ONE_HOUR_MS;
 
-// An offering with no `promptCache` takes this: explicit breakpoints, 5 minutes for subagents
-// and 1 hour for primary chats (Anthropic's two lifetimes).
+// Every offering starts from this and overrides fields in `promptCache`: explicit breakpoints,
+// 5 minutes for subagents and 1 hour for primary chats (Anthropic's two lifetimes).
 const DEFAULT_PROMPT_CACHE: PromptCacheDescriptor = {
   kind: "explicit",
   shortTtlMs: FIVE_MINUTES_MS,
@@ -356,11 +359,15 @@ export const MODEL_REGISTRY: ModelRegistry = {
   ],
 };
 
+/** The descriptor `ModelInfo` carries; the validator checks this same value. */
+function resolvePromptCache({ promptCache }: RegisteredOffering): PromptCacheDescriptor {
+  return { ...DEFAULT_PROMPT_CACHE, ...promptCache };
+}
+
 /** Adapter-neutral registry checks, run as soon as a registry is loaded. */
 export function validateModelRegistry(registry: ModelRegistry): void {
-  for (const { model, pricing, promptCache = DEFAULT_PROMPT_CACHE } of registry.providers.flatMap(
-    (provider) => provider.offerings,
-  )) {
+  for (const offering of registry.providers.flatMap((provider) => provider.offerings)) {
+    const { model, pricing } = offering;
     const tier = pricing.inputTierTokens;
     if (
       tier !== undefined &&
@@ -370,7 +377,7 @@ export function validateModelRegistry(registry: ModelRegistry): void {
         `Input pricing tier for ${model.id} must be positive and below its context window`,
       );
     }
-    const { shortTtlMs, longTtlMs } = promptCache;
+    const { shortTtlMs, longTtlMs } = resolvePromptCache(offering);
     if ((shortTtlMs === null) !== (longTtlMs === null)) {
       throw new Error(`Prompt cache lifetimes for ${model.id} must both be set or both be null`);
     }
@@ -400,10 +407,8 @@ export function hasRealApiKey(key: string | undefined): boolean {
   return Boolean(key && key.length > 0 && !key.startsWith("dev-"));
 }
 
-function toModelInfo(
-  provider: RegisteredProvider,
-  { model, pricing, promptCache = DEFAULT_PROMPT_CACHE }: RegisteredOffering,
-): ModelInfo {
+function toModelInfo(provider: RegisteredProvider, offering: RegisteredOffering): ModelInfo {
+  const { model, pricing } = offering;
   return {
     id: model.id,
     provider: provider.id,
@@ -413,7 +418,7 @@ function toModelInfo(
     inputTierTokens: pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
     ...(provider.projectToolSchema ? { projectToolSchema: true as const } : {}),
-    promptCache,
+    promptCache: resolvePromptCache(offering),
     reasoning: model.reasoning,
     capabilities: new Set(model.capabilities),
   };
