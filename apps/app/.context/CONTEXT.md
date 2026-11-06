@@ -14,25 +14,32 @@ boot-script preferences are separate from this envelope.
 
 ## Server config, auth, and watcher boundaries
 
-`src/server/config.ts` is server-only. It parses `APP_ENV`, `LOG_LEVEL`,
-WorkOS settings, and `MERIDIAN_API_ORIGIN`; isomorphic helpers keep guarded
-environment reads local instead of importing server config. Auth is WorkOS
-AuthKit: hosted callback and dev login mint the sealed `wos-session` cookie,
-and logout clears it. Dev autologin is production-disabled and requires its
-explicit credentials.
+`src/server/config.ts` is server-only. It parses `APP_ENV`, `LOG_LEVEL`, and the WorkOS
+redirect URI; isomorphic helpers keep guarded environment reads local instead of
+importing server config. Auth is WorkOS AuthKit: the hosted callback mints the
+sealed `wos-session` cookie and logout clears it.
+
+`DEV_AUTH_BYPASS=1` skips all of that: `meridianAuthkitMiddleware` makes every
+request the dev user before it touches AuthKit or any `WORKOS_*` setting, and
+`signOut` just returns to `/`. The rule lives in `@meridian/contracts/dev-auth`
+and is read from raw `process.env`; the setting throws unless `NODE_ENV` is
+`development` and `APP_ENV` is unset or `dev`, and `scripts/validate-start-env.mjs`
+refuses it under `NODE_ENV=production`. The gate is at runtime, not
+`import.meta.env.DEV`, because the production-client profile serves a production
+build with `NODE_ENV=development`.
 
 The generated repository `logs/` tree is ignored by Vite's watcher, including
 descendants but not similarly prefixed siblings. Do not weaken that boundary.
 
 The dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades, which go
 through Vite `server.proxy`. Its explicit route-owner inventory keeps
-`/api/auth/callback` and `/api/auth/dev-login` in TanStack Start and forwards the
+`/api/auth/callback` in TanStack Start and forwards the
 rest of the server-owned auth family, including `/api/auth/me`, to `apps/server`.
 The production-client profiler uses that same route-owner inventory in
 `scripts/profile-dev-stack.ts`: app-owned routes and built assets go to the
 built Nitro server, while server-owned HTTP and WebSocket paths go to the paired
 dev server. The built client is production code; the local Nitro runtime stays
-in development mode so dev login remains available. The launcher requires the
+in development mode so the dev auth bypass and debug routes remain available. The launcher requires the
 dev-stack marker, a dev application environment, and a local Portless API
 origin before it can make that override. It owns the Nitro child, gateway,
 proxied HTTP transactions, and upgraded sockets as one lifetime: any child,

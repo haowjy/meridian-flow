@@ -56,7 +56,7 @@ Then, in the checkout:
 mise install                  # pinned Node and Python from .tool-versions
 eval "$(mise activate bash)"  # or add this line to ~/.bashrc
 pnpm install
-cp .env.example .env          # fill in WorkOS keys, etc.
+cp .env.example .env          # DEV_AUTH_BYPASS=1 needs no WorkOS keys; fill them in for real login
 pnpm dev:infra                # start the Postgres + pg_bigm Docker container (:54422) if not running
 pnpm exec lefthook install --reset-hooks-path
 pnpm bootstrap                # create the DB, migrate, apply-functions
@@ -97,7 +97,7 @@ not an app bug.
 
 ## Local database
 
-Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `postgres:16` plus `pg_bigm` (btree_gin and pg_trgm are contrib), with `pg_bigm` preloaded. Writer search needs all three. Compose is `tools/dev/docker-compose.yml`. App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`.
+Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `postgres:16` plus `pg_bigm` (btree_gin and pg_trgm are contrib), with `pg_bigm` preloaded. Writer search needs all three. Compose is `tools/dev/docker-compose.yml`. App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`. Local dev can skip it: `DEV_AUTH_BYPASS=1` makes every request the dev user (`DEV_AUTH_USER_ID`, default `test`, email `<id>@example.com`), refused outside `NODE_ENV=development` and by `pnpm dev --funnel`. Set it to `0` to test real login.
 
 | Command | Purpose |
 |---------|---------|

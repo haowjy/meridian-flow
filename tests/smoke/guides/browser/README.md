@@ -23,10 +23,10 @@ verify real browser behavior, console output, WebSocket state, and database rows
    export NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem"
    ```
 
-3. Login through the dev-login route:
+3. Open the app. With `DEV_AUTH_BYPASS=1` in `.env` there is no login step; you are the dev user:
 
    ```bash
-   playwright-cli goto "$APP_URL/dev-login"
+   playwright-cli goto "$APP_URL/"
    ```
 
 4. Database checks go through `tools/dev/psql`, which targets the worktree's database:

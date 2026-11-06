@@ -82,7 +82,7 @@ Script automation and catalog repairs are tracked in [#726](https://github.com/h
 
 Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list` and confirm they carry your worktree's prefix before any
-`./mf seed` or send, then pass `MF_APP_URL` and `MF_SERVER_URL` explicitly. A
+`./mf seed` or send, then pass `MF_SERVER_URL` explicitly (recipes use `MF_APP_URL` as the browser URL). A
 detached-HEAD checkout has no prefix: when another checkout holds the unprefixed
 routes, `pnpm dev` still reports `started` with that checkout's URLs, and `./mf`
 writes into its database ([#615](https://github.com/haowjy/meridian-flow/issues/615)).

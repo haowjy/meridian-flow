@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 import {
   cleanupProjectFixture,
   findTestUserId,
-  login,
   openE2eDb,
   type ProjectFixture,
   seedProjectFixture,
@@ -18,7 +17,6 @@ test.describe("project shell selection", () => {
     );
     test.skip(!DATABASE_URL, "MOBILE_SHELL_DATABASE_URL or DATABASE_URL is required");
 
-    await login(page);
     const db = openE2eDb(DATABASE_URL ?? "");
     let fixture: ProjectFixture | undefined;
     try {
@@ -49,7 +47,6 @@ test.describe("project shell selection", () => {
     );
     test.skip(!DATABASE_URL, "MOBILE_SHELL_DATABASE_URL or DATABASE_URL is required");
 
-    await login(page);
     const db = openE2eDb(DATABASE_URL ?? "");
     let fixture: ProjectFixture | undefined;
     try {
@@ -72,7 +69,6 @@ test.describe("project shell selection", () => {
   test("bare project address replaces itself with the chat index", async ({ page }) => {
     test.skip(!DATABASE_URL, "MOBILE_SHELL_DATABASE_URL or DATABASE_URL is required");
 
-    await login(page);
     const db = openE2eDb(DATABASE_URL ?? "");
     let fixture: ProjectFixture | undefined;
     try {
@@ -97,7 +93,6 @@ test.describe("project shell selection", () => {
   test("an invalid address shows the unavailable state and keeps its URL", async ({ page }) => {
     test.skip(!DATABASE_URL, "MOBILE_SHELL_DATABASE_URL or DATABASE_URL is required");
 
-    await login(page);
     const db = openE2eDb(DATABASE_URL ?? "");
     let fixture: ProjectFixture | undefined;
     try {
@@ -123,7 +118,6 @@ test("unavailable document masks only its body and navigation opens another docu
   page,
 }) => {
   test.skip(!DATABASE_URL, "MOBILE_SHELL_DATABASE_URL or DATABASE_URL is required");
-  await login(page);
   const db = openE2eDb(DATABASE_URL ?? "");
   let fixture: ProjectFixture | undefined;
   try {

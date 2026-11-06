@@ -7,8 +7,9 @@ and phone widths in light and dark.
 ## Setup
 
 Follow [Runtime probes](../../../../../../../docs/qa/README.md): `MODEL_PROVIDER=mock pnpm dev --no-tailscale`,
-`pnpm portless:list`, routes that carry this worktree's prefix, `MF_APP_URL` and `MF_SERVER_URL`
-passed explicitly. Sign in at `/api/auth/dev-login` in `agent-browser` (`--session qc`; a second
+`pnpm portless:list`, routes that carry this worktree's prefix, `MF_SERVER_URL`
+passed explicitly and `MF_APP_URL` as the browser URL. The stack runs with `DEV_AUTH_BYPASS=1`,
+so `agent-browser` opens signed in (`--session qc`; a second
 `--session qc2` is an independent tab with its own `sessionStorage`). Dark is
 `document.documentElement.dataset.uiTheme = 'dark'` through `agent-browser eval`.
 
