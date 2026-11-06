@@ -54,12 +54,6 @@ const DebugOverlay =
     ? lazy(() => import("@/features/debug/DebugOverlay").then((m) => ({ default: m.DebugOverlay })))
     : null;
 
-const ReactQueryDevtools = import.meta.env.DEV
-  ? lazy(() =>
-      import("@tanstack/react-query-devtools").then((m) => ({ default: m.ReactQueryDevtools })),
-    )
-  : null;
-
 /**
  * Decide where to send an UNAUTHENTICATED request, server-side.
  * Returns the `/dev-login` intermediary screen when dev-autologin is enabled (it
@@ -225,11 +219,6 @@ function AuthenticatedProviderTree({
                 {DebugOverlay ? (
                   <Suspense fallback={null}>
                     <DebugOverlay />
-                  </Suspense>
-                ) : null}
-                {ReactQueryDevtools ? (
-                  <Suspense fallback={null}>
-                    <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
                   </Suspense>
                 ) : null}
               </DensityPopoverCollisionProvider>
