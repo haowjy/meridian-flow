@@ -30,8 +30,6 @@ never to get a task passing:
   (`packages/yjs-inspect`'s canary, `safe-event.test.ts`); what emit sites pass them
   is not.
 - Marks and receipts say truthfully who did what. Partly checked.
-- One project's or account's content never reaches another. Checked feature by
-  feature.
 
 Everything else is the current implementation, open to rewriting once evidence or
 testing shows something better. The owner's words are direction, not rulings:
