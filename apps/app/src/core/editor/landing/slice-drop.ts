@@ -18,6 +18,7 @@ import type { EditorView } from "@tiptap/pm/view";
 
 import type { DropDoor, DropPlan } from "./drop-plan";
 import { isTable, isTableCell, type Landing } from "./point-landing";
+import { crossesTextblocks, removeRange } from "./range-removal";
 
 type SliceSource = {
   moved: boolean;
@@ -147,7 +148,9 @@ function finish(view: EditorView, transaction: Transaction): void {
 function deleteSource(transaction: Transaction, source: SliceSource): void {
   if (!source.moved) return;
   if (source.node) source.node.replace(transaction);
-  else transaction.deleteSelection();
+  else if (crossesTextblocks(transaction.selection)) {
+    removeRange(transaction, transaction.selection.from, transaction.selection.to);
+  } else transaction.deleteSelection();
 }
 
 /**
