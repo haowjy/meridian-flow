@@ -152,13 +152,11 @@ function MobileFolderTree({
               createdFile: (path) => onSelectContextPath(path, scheme),
             },
             onSelectFile: (_scheme, file) => {
-              if (file.editable)
-                void openDocument({
-                  documentId: file.documentId,
-                  known: { scheme, file, workId: editorWorkId },
-                  workId: editorWorkId ?? undefined,
-                });
-              else onSelectContextPath(file.path, scheme);
+              void openDocument({
+                documentId: file.documentId,
+                known: { scheme, file, workId: editorWorkId },
+                workId: editorWorkId ?? undefined,
+              });
             },
           }}
         >

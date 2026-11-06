@@ -804,7 +804,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
           onSelectScreen={screenSwitch.selectScreen}
-          onSelectContextPath={props.onSelectContextPath}
           onCollapse={close("threads")}
         />
       ),

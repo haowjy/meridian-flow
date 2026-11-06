@@ -11,12 +11,18 @@
  * The signed URL has a TTL; we treat the response as stale-fast (`staleTime:
  * 0`) and keep it in cache only briefly. UI state is honest via
  * `ContextReadStatus` instead of `array.length`.
+ *
+ * The query is keyed by document identity when the tab has one: a rename is
+ * the same file at a new path, and the bytes already on screen stay. A 404
+ * after that is the move not having landed yet — keep those bytes rather than
+ * treating the file as gone.
  */
 
 import { isOwnedContextScheme } from "@meridian/contracts/context-uri";
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { httpErrorStatus } from "@/client/api/http-client";
 import { getProjectContextRead } from "@/client/api/projects-api";
 
 import { type ContextOwner, contextRequestOptionsForScheme } from "./context-request-options";
@@ -35,35 +41,53 @@ export function contextReadQueryKey(
   scheme: ProjectContextTreeScheme,
   path: string,
   owner: ContextOwner = {},
+  documentId?: string,
 ) {
+  const identity = documentId ?? path;
   if (!isOwnedContextScheme(scheme)) {
-    return ["projects", projectId, "context", scheme, "read", path] as const;
+    return ["projects", projectId, "context", scheme, "read", identity] as const;
   }
   const ownerId = owner.chatThreadId ?? owner.rootThreadId ?? owner.workId;
   return ownerId
-    ? (["projects", projectId, "context", scheme, ownerId, "read", path] as const)
-    : (["projects", projectId, "context", scheme, "read", path] as const);
+    ? (["projects", projectId, "context", scheme, ownerId, "read", identity] as const)
+    : (["projects", projectId, "context", scheme, "read", identity] as const);
 }
 
 export function useProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme | null,
   path: string | null,
-  options: { enabled?: boolean } & ContextOwner,
+  options: { enabled?: boolean; documentId?: string } & ContextOwner,
 ): ContextReadStatus {
   const callerEnabled = options.enabled ?? true;
   const resolvedScheme = scheme ?? "kb";
   const enabled = callerEnabled && Boolean(scheme) && Boolean(path);
   const contextOpts = scheme ? contextRequestOptionsForScheme(scheme, options) : undefined;
+  const queryClient = useQueryClient();
+  const queryKey = contextReadQueryKey(
+    projectId,
+    resolvedScheme,
+    path ?? "",
+    options,
+    options.documentId,
+  );
   const result = useQuery({
-    queryKey: contextReadQueryKey(projectId, resolvedScheme, path ?? "", options),
-    queryFn: () =>
-      getProjectContextRead(
-        projectId,
-        scheme as ProjectContextTreeScheme,
-        path as string,
-        contextOpts,
-      ),
+    queryKey,
+    queryFn: async () => {
+      try {
+        return await getProjectContextRead(
+          projectId,
+          scheme as ProjectContextTreeScheme,
+          path as string,
+          contextOpts,
+        );
+      } catch (error) {
+        if (httpErrorStatus(error) !== 404) throw error;
+        const cached = queryClient.getQueryData<ContextReadResponse>(queryKey);
+        if (cached) return cached;
+        throw error;
+      }
+    },
     enabled,
     // Signed URLs are short-lived. Re-fetch on focus / remount, never cache hot.
     staleTime: 0,

@@ -46,7 +46,6 @@ type LeftSidebarProps = {
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
-  onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
   /** Collapse the sidebar rail. */
   onCollapse: () => void;
 };
@@ -62,7 +61,6 @@ export function LeftSidebar({
   activeContextScheme,
   activeContextPath,
   onSelectScreen,
-  onSelectContextPath,
   onCollapse,
 }: LeftSidebarProps) {
   const trashNavigation = useProjectTrashNavigation();
@@ -74,11 +72,8 @@ export function LeftSidebar({
     options?: { focus?: true },
   ) => {
     // The tree is navigation: on every screen, a pick goes to the Editor, unlike a chat
-    // mention, which peeks in the dock.
-    if (!file.editable) {
-      onSelectContextPath(file.path, scheme);
-      return;
-    }
+    // mention, which peeks in the dock. Identity, not the path: a kept file under a
+    // rename is still this row's document.
     void openDocument({
       documentId: file.documentId,
       known: { scheme, file, workId: editorWorkId },

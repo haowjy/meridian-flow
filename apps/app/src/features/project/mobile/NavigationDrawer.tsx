@@ -28,7 +28,6 @@ export type NavigationDrawerProps = {
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
-  onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
   /** The chat on screen, which the Scratch control browses; null hides the control. */
   chatThreadId: string | null;
 };
@@ -45,7 +44,6 @@ export function NavigationDrawer({
   activeContextScheme,
   activeContextPath,
   onSelectScreen,
-  onSelectContextPath,
   chatThreadId,
 }: NavigationDrawerProps) {
   const trashNavigation = useProjectTrashNavigation();
@@ -55,11 +53,6 @@ export function NavigationDrawer({
     file: ContextFile,
     options?: { focus?: true },
   ) => {
-    if (!file.editable) {
-      onSelectContextPath(file.path, scheme);
-      onOpenChange(false);
-      return;
-    }
     void openDocument({
       documentId: file.documentId,
       known: { scheme, file, workId: editorWorkId },
