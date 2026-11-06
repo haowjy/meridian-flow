@@ -24,7 +24,8 @@ never to get a task passing:
 - Migrations lose no data: online-safe DDL, and no skip that relies on empty
   tables ([`migration-lint`](tools/dev/migration-lint.ts)).
 - Every copy of a document's text converges, and no accepted edit is lost in the
-  merge. No check yet.
+  merge. [`text-convergence.test.ts`](apps/server/server/domains/collab/text-convergence.test.ts)
+  checks this through the production room, persistence, and stored-state path.
 - Writer text stays out of logs and diagnostics. Only `packages/yjs-inspect` checks
   this, with its canary test.
 - Marks and receipts say truthfully who did what. Partly checked.
