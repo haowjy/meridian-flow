@@ -230,7 +230,10 @@ keyboard, pointer, drop, or draft-recovery answer.
   range does not), with focus, no modifier, an editable view
   and a chrome kernel. `handleDoubleClick` and `handleTripleClick` claim a
   second or third press there so neither the browser nor ProseMirror widens
-  the selection; the claim also records a third press for the no-travel case. Past 4px it sends a synthetic
+  the selection; the claim also records a third press for the no-travel case. The file has two halves:
+  `startGesture` follows the mouse (click or lift; ignores a `mouseup` from any
+  button but the left) and `liftSelection` pumps the drag events, so a block
+  gesture could reuse the first. Past 4px it sends a synthetic
   `dragstart` (at `view.dom`, positioned at the press, since a fast first move
   may already be off the selection) with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
   on a target change and `dragover` (so the caret, the 5s caret timeout and
