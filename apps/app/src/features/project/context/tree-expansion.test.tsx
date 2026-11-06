@@ -44,7 +44,6 @@ it("keeps live toggles in memory when storage is blocked", async () => {
     expect(button?.getAttribute("aria-expanded")).toBe("true");
   });
 });
-
 it("does not prune unloaded catalogs and restores independent tree scopes", async () => {
   const folders = ["kept"];
   function Harness() {
@@ -119,16 +118,4 @@ it("drops missing folders and keeps explicit closed folders", () => {
   expect(
     pruneTreeExpansion({ expanded: true, entries: { gone: true, kept: false } }, ["kept"]),
   ).toEqual({ expanded: true, entries: { kept: false } });
-});
-
-it("tolerates blocked storage", () => {
-  vi.stubGlobal("window", {
-    get sessionStorage() {
-      throw Error("blocked");
-    },
-  });
-  expect(readTreeExpansion("tree", "account")).toEqual(EMPTY_TREE_EXPANSION);
-  expect(() =>
-    writeTreeExpansion("tree", "account", { expanded: true, entries: {} }),
-  ).not.toThrow();
 });
