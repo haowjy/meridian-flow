@@ -73,7 +73,7 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
       yield { type: "start", model: model.id, provider: providerId };
 
       try {
-        const params = toAnthropicMessageParams(request, model, call, providerId);
+        const params = toAnthropicMessageParams(request, model, call);
         const stream = await client.messages.create(params, { signal: request.signal });
 
         for await (const event of stream) {

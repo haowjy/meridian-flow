@@ -147,9 +147,11 @@ adapter sends `reasoning.effort` (`none` for `off`) with `summary: "auto"`; the
 `openai-compatible` adapter (Gemini 4 Argon, Google maps `reasoning_effort` to
 `thinking_level`) sends `reasoning_effort`. Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 have
 no toggle, so they never resolve to `off`: `thinking: disabled` and `budget_tokens` are a
-400 on them, and no registered model gets a thinking budget. Models that think by default
-(`canDisable`, such as DeepSeek) get an empty thinking block before a replayed `tool_use`
-unless reasoning is `off`.
+400 on them, and no registered model gets a thinking budget. Models that declare
+`reasoning.thinksByDefault` (DeepSeek; not inferred from `canDisable`) get an empty
+thinking block before a replayed `tool_use` unless reasoning is `off`. A provider row
+declares `projectToolSchema` (copied onto `ModelInfo`; only Anthropic) to get
+`anthropicToolSchema` on its tools; the adapter reads the flag and `model.provider`, never a provider id literal.
 
 Every model declares a tokenizer family with no fallback; runtime compaction
 uses it for CJK estimates. Output limits are provider defaults unless a request

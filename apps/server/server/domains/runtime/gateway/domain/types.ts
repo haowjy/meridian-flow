@@ -73,6 +73,12 @@ export interface ReasoningSupport {
   efforts: readonly ReasoningEffort[];
   /** Whether reasoning can be turned off: a `toggle` option or a `none` effort. */
   canDisable?: true;
+  /**
+   * The model reasons unless switched off, so the Anthropic adapter must repair a replayed
+   * tool-use turn that lost its thinking block. Declared, not inferred from `canDisable`:
+   * a model can have a toggle and still not think by default.
+   */
+  thinksByDefault?: true;
 }
 
 /**
@@ -81,6 +87,8 @@ export interface ReasoningSupport {
  */
 export interface ModelInfo {
   reasoning: ReasoningSupport;
+  /** The serving provider wants Anthropic's tool-schema projection (`anthropicToolSchema`); others get the schema as given. */
+  projectToolSchema?: true;
   /** Whole-request input repricing threshold, if the model has one. */
   inputTierTokens?: number;
   /** Underlying tokenizer family. */

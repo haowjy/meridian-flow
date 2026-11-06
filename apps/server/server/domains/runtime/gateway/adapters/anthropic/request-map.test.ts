@@ -22,12 +22,18 @@ function toParams(
 ) {
   const reasoning =
     providerId === "deepseek"
-      ? { efforts: ["low", "high", "max"] as const, canDisable: true as const }
+      ? {
+          efforts: ["low", "high", "max"] as const,
+          canDisable: true as const,
+          thinksByDefault: true as const,
+        }
       : { efforts: ["low", "medium", "high", "max"] as const };
   return toAnthropicMessageParams(
     request,
     {
       ...model,
+      provider: providerId,
+      ...(providerId === "anthropic" ? { projectToolSchema: true as const } : {}),
       reasoning,
       promptCache: {
         kind: providerId === "deepseek" ? ("automatic" as const) : ("explicit" as const),
@@ -40,7 +46,6 @@ function toParams(
       longCacheWrites: false,
       reasoning: resolveReasoning(request.reasoning, reasoning),
     },
-    providerId,
   );
 }
 

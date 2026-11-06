@@ -15,7 +15,7 @@
  * - Consecutive same-role messages are merged to satisfy Anthropic's
  *   alternating user/assistant requirement. Thinking blocks within assistant
  *   content are ordered first (Anthropic requires thinking before tool_use/text).
- * - Last-step repair: models that think by default (`reasoning.canDisable`) and
+ * - Last-step repair: models that think by default (`reasoning.thinksByDefault`) and
  *   are not switched off prepend empty `{ type: "thinking", thinking: "" }` when an
  *   assistant message has tool_use and no thinking block. Missing tool_result
  *   is repaired earlier in context-builder `completeToolResultGroups`.
@@ -362,14 +362,14 @@ function markCachePrefix(
 
 function mapTools(
   tools: Tool[] | undefined,
-  providerId: string,
+  projectSchema: boolean,
 ): Anthropic.Messages.ToolUnion[] | undefined {
   if (!tools?.length) return undefined;
 
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    input_schema: (providerId === "anthropic"
+    input_schema: (projectSchema
       ? anthropicToolSchema(tool.inputSchema)
       : tool.inputSchema) as Anthropic.Messages.Tool.InputSchema,
   }));
@@ -383,25 +383,27 @@ function mapTools(
 
 export function toAnthropicMessageParams(
   request: GenerateRequest,
-  model: Pick<ModelInfo, "id" | "maxOutputTokens" | "reasoning" | "promptCache">,
+  model: Pick<
+    ModelInfo,
+    "id" | "provider" | "maxOutputTokens" | "reasoning" | "promptCache" | "projectToolSchema"
+  >,
   call: ResolvedCall,
-  providerId = "anthropic",
 ): Anthropic.Messages.MessageCreateParamsStreaming {
   // Only an explicit-cache model gets cache_control: DeepSeek, on this adapter, caches on its own.
   const cacheControl =
     model.promptCache.kind === "explicit" && call.cacheTtlMs !== null
       ? CACHE_CONTROL_BY_TTL.get(call.cacheTtlMs)
       : undefined;
-  const tools = mapTools(request.tools, providerId);
+  const tools = mapTools(request.tools, model.projectToolSchema === true);
   const messages = mergeConsecutiveSameRole(
     request.messages
-      .map((message) => mapMessage(message, providerId, model.id))
+      .map((message) => mapMessage(message, model.provider, model.id))
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 
   const { reasoning } = call;
   const repaired =
-    model.reasoning.canDisable && reasoning !== "off"
+    model.reasoning.thinksByDefault && reasoning !== "off"
       ? ensureThinkingBeforeToolUse(messages)
       : messages;
   const plainSystem = extractSystem(request.messages);

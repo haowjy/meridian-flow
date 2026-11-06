@@ -66,6 +66,8 @@ export interface RegisteredProvider {
   /** Environment variable that must contain a real key for this provider to enable. */
   apiKeyEnv: string;
   baseUrl?: string;
+  /** Anthropic-format hosts that need Anthropic's tool-schema projection; the first-party API is the only one today. */
+  projectToolSchema?: true;
   offerings: readonly RegisteredOffering[];
 }
 
@@ -282,7 +284,7 @@ const DEEPSEEK_FLASH_MODEL = {
   maxOutputTokens: 393_216,
   capabilities: ["image_input"],
   // models.dev: a thinking toggle, and low/high/max (no medium).
-  reasoning: { efforts: ["low", "high", "max"], canDisable: true },
+  reasoning: { efforts: ["low", "high", "max"], canDisable: true, thinksByDefault: true },
 } satisfies RegisteredModel;
 
 const GEMINI_4_ARGON_MODEL = {
@@ -303,6 +305,7 @@ export const MODEL_REGISTRY: ModelRegistry = {
       id: "anthropic",
       adapter: "anthropic",
       apiKeyEnv: "FLOW_ANTHROPIC_API_KEY",
+      projectToolSchema: true,
       offerings: [
         { model: CLAUDE_OPUS_5_5_MODEL, pricing: CLAUDE_OPUS_5_5_PRICING },
         { model: CLAUDE_SONNET_5_5_MODEL, pricing: CLAUDE_SONNET_5_5_PRICING },
@@ -416,6 +419,7 @@ function toModelInfo(
     contextWindow: model.contextWindow,
     inputTierTokens: pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
+    ...(provider.projectToolSchema ? { projectToolSchema: true as const } : {}),
     promptCache,
     reasoning: model.reasoning,
     capabilities: new Set(model.capabilities),
