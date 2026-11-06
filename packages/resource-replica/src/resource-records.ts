@@ -341,8 +341,6 @@ export type CopyDesired = {
   /** The selection's outermost roots as the device saw them at the drop, in selection order; the request names fewer when the server holds one inside another. */
   roots: readonly CopyRoot[];
   destination: Pick<ResourceDestination, "parent" | "position">;
-  /** Where the writer started it (opaque to the replica): a refusal shows there when the destination is gone. */
-  origin?: string;
 };
 
 export type NamespaceIntent = ResourceKey & {

@@ -15,7 +15,6 @@ import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import {
   type FolderNamespaceRecord,
   type ParentRef,
-  placementStillOwned,
   type ResourceIdentityIndex,
   type ResourceLocation,
   type ResourcePlacement,
@@ -63,42 +62,6 @@ export type PlacedEntry = {
   name: string;
   location: ResourceLocation;
   parent: ParentRef;
-};
-
-export type SiblingPositionWitness = {
-  beforeId?: string;
-  afterId?: string;
-};
-
-/** The adjacent identities that let a later restoration survive intervening sibling changes. */
-export function siblingPositionWitness(
-  view: { records: readonly ResourceRecord[]; placement: Pick<ResourcePlacement, "childrenAt"> },
-  parent: ParentRef,
-  entryId: string,
-): SiblingPositionWitness {
-  const placed = view.placement.childrenAt(parent, view.records);
-  const original = placed.findIndex((entry) => entry.entryId === entryId);
-  if (original < 0) return {};
-  const siblings = placed.filter((entry) => entry.entryId !== entryId);
-  const before = siblings.find((_, index) => index >= original);
-  const after = original > 0 ? siblings[original - 1] : undefined;
-  return {
-    ...(before ? { beforeId: before.entryId } : {}),
-    ...(after ? { afterId: after.entryId } : {}),
-  };
-}
-
-/** One row the replica admitted: where it was and under what name, where it went and the name it arrived under. */
-export type MoveEffect = {
-  entry: EntryRef;
-  name: string;
-  previousName: string;
-  before: ParentRef;
-  after: ParentRef;
-  previousPosition: SiblingPositionWitness;
-  action: "move" | "reorder";
-  /** The replica intent's operation; absent when the replica had nothing to change. */
-  operationId?: string;
 };
 
 /** One row ready for `moveRows`: its current name and parent, and its resolved destination. */
@@ -171,15 +134,6 @@ function within(view: PlacementView, start: ParentRef | null, folderId: string):
     parent = view.placement.parentForFolder(parent.folderId);
   }
   return false;
-}
-
-/**
- * The placed rows among `refs` that no other of them sits above, by where they are now: the rows
- * whose deletion takes the rest with them. A row that is gone or not placed yet is left out.
- */
-export function outermostEntries(view: PlacementView, refs: readonly EntryRef[]): PlacedEntry[] {
-  const placed = refs.flatMap((ref) => placeEntryRef(view, ref) ?? []);
-  return dropNested(view, placed, (entry) => entry.parent);
 }
 
 /** The folders `ref` sits inside now, outermost first; null when it is gone or not placed yet. */
@@ -476,151 +430,4 @@ function planPositioned(
     beside: { kind: position.kind, name: anchor.name },
     moves,
   };
-}
-
-/**
- * What Undo puts back. A row still where the drop put it, under the name it
- * arrived with, returns to its previous parent under its previous name (the
- * next free one if that was taken since); one renamed, moved again or gone
- * since carries the writer's newer choice and stays. (This can't tell a row
- * that left and came back from one that never left; both return.)
- */
-export function planUndo(view: PlacementView, effects: readonly MoveEffect[]) {
-  const eligible = effects.filter((effect) => {
-    const now = placeEntryRef(view, effect.entry);
-    if (!now) return false;
-    return (
-      now.name === effect.name &&
-      sameParent(now.parent, effect.after) &&
-      placementIsFresh(view, effect)
-    );
-  });
-  const groups: MoveEffect[][] = [];
-  for (const effect of eligible) {
-    const group = groups.find((candidate) => {
-      const first = candidate[0];
-      return first ? sameParent(first.before, effect.before) : false;
-    });
-    if (group) group.push(effect);
-    else groups.push([effect]);
-  }
-  return groups.flatMap((group) => planUndoGroup(view, group));
-}
-
-function planUndoGroup(view: PlacementView, effects: readonly MoveEffect[]): MoveRow[] {
-  const first = effects[0];
-  if (!first) return [];
-  const pending = [...effects];
-  const moving = new Set(pending.map((effect) => effect.entry.id));
-  const working = view.placement
-    .childrenAt(first.before, view.records)
-    .map((entry) => entry.entryId)
-    .filter((entryId) => !moving.has(entryId));
-  const rows: MoveRow[] = [];
-  while (pending.length > 0) {
-    const index = restorationCandidate(pending, working);
-    const [effect] = pending.splice(index, 1);
-    if (!effect) break;
-    const position = positionFromWitness(effect.previousPosition, working);
-    insertWorking(working, effect.entry.id, position);
-    rows.push({
-      entry: effect.entry,
-      name: effect.previousName,
-      before: effect.after,
-      after: effect.before,
-      position,
-    });
-  }
-  return rows;
-}
-
-function restorationCandidate(effects: readonly MoveEffect[], working: readonly string[]): number {
-  const anchoredAfter = effects.findIndex(
-    (effect) =>
-      effect.previousPosition.afterId && working.includes(effect.previousPosition.afterId),
-  );
-  if (anchoredAfter >= 0) return anchoredAfter;
-  const anchoredBefore = effects.findIndex(
-    (effect) =>
-      effect.previousPosition.beforeId && working.includes(effect.previousPosition.beforeId),
-  );
-  if (anchoredBefore >= 0) return anchoredBefore;
-  const start = effects.findIndex(
-    (effect) => !effect.previousPosition.afterId && Boolean(effect.previousPosition.beforeId),
-  );
-  if (start >= 0) return start;
-  const end = effects.findIndex((effect) => !effect.previousPosition.beforeId);
-  return end >= 0 ? end : 0;
-}
-
-/** Restore one removed row against the siblings that still exist now. */
-export function positionFromWitness(
-  witness: SiblingPositionWitness,
-  working: readonly string[],
-): ContextSiblingPosition {
-  const { beforeId, afterId } = witness;
-  if (afterId && working.includes(afterId)) return { kind: "after", siblingId: afterId };
-  if (beforeId && working.includes(beforeId)) return { kind: "before", siblingId: beforeId };
-  if (!afterId && beforeId) return { kind: "start" };
-  return { kind: "end" };
-}
-
-function insertWorking(working: string[], entryId: string, position: ContextSiblingPosition): void {
-  if (position.kind === "start") {
-    working.unshift(entryId);
-    return;
-  }
-  if (position.kind === "end") {
-    working.push(entryId);
-    return;
-  }
-  if (!("siblingId" in position)) return;
-  const anchor = working.indexOf(position.siblingId);
-  working.splice(position.kind === "before" ? anchor : anchor + 1, 0, entryId);
-}
-
-/** Whether the operation this effect admitted still owns its row's placement (the journal decides). */
-function placementIsFresh(view: PlacementView, effect: MoveEffect): boolean {
-  const holder =
-    effect.entry.kind === "folder"
-      ? view.folders?.find((folder) => folder.folderId === effect.entry.id)
-      : recordFor(view.records, effect.entry.id);
-  if (!holder) return Boolean(effect.operationId);
-  const canonical = "resource" in holder ? holder.resource : holder;
-  return placementStillOwned({
-    intents: holder.intents,
-    operationId: effect.operationId,
-    canonicalLocationVersion: canonical.canonicalLocationVersion,
-    canonicalObservationVersion: canonical.observationVersion,
-  });
-}
-
-const UNANSWERED = new Set(["pending", "submitted", "received"]);
-
-/**
- * Where the server stands on each operation a notice follows (a move, or the deletes an Undo
- * admitted). Refused: the row's intent for that operation settled as needs-repair, so the row
- * went back to where it was carrying the failure mark. Pending: unanswered, or not in this
- * projection yet (the replica admits an operation before its projection shows the intent).
- * Journals keep their intents, so a missing intent is never one that was pruned. Every other
- * state (accepted, superseded by the writer's next change, cancelled) settled it for good, and
- * it is in neither list.
- */
-export function intentSettlement<T extends { entry: EntryRef; operationId?: string }>(
-  view: { records: readonly ResourceRecord[]; folders: readonly FolderNamespaceRecord[] },
-  followed: readonly T[],
-): { refused: T[]; pending: T[] } {
-  const refused: T[] = [];
-  const pending: T[] = [];
-  for (const item of followed) {
-    if (!item.operationId) continue;
-    const intents =
-      item.entry.kind === "folder"
-        ? view.folders.find((folder) => folder.folderId === item.entry.id)?.intents
-        : recordFor(view.records, item.entry.id)?.intents;
-    const state = intents?.find((intent) => intent.operationId === item.operationId)?.state;
-    if (state === "needs-repair") refused.push(item);
-    else if (!state || UNANSWERED.has(state)) pending.push(item);
-  }
-  return { refused, pending };
 }

@@ -18,7 +18,7 @@ import type {
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
-import { useToastRegistry } from "@/components/app/toast-registry";
+import { useRevealImport } from "@/features/import/ImportProvider";
 import {
   type ImportedTree,
   type PendingRow,
@@ -335,7 +335,7 @@ function DirRow({
 
 /** A folder root shown while its import is still being built out of sight. */
 function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
-  const registry = useToastRegistry();
+  const reveal = useRevealImport();
   const element = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     element.current?.scrollIntoView({ block: "nearest" });
@@ -345,7 +345,7 @@ function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
       type="button"
       ref={element}
       data-import-root={row.id}
-      onClick={() => registry.reveal(row.importId)}
+      onClick={() => reveal?.(row.importId)}
       className={cn(
         "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left text-sm text-ink-muted hover:bg-sidebar-accent/50",
         contextTreeRowGrowClassName,

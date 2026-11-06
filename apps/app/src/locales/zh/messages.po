@@ -107,7 +107,7 @@ msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other 
 msgstr ""
 
 #. placeholder {0}: local.missing?.length ?? 0
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "{0, plural, one {# file wasn't in the folder you picked} other {# files weren't in the folder you picked}}"
 msgstr ""
 
@@ -133,18 +133,18 @@ msgstr "{0, plural, other {# 分钟后继续}}"
 
 #. placeholder {0}: copies.length
 #: src/features/project/context/entry-drag/copy-operation.ts
-msgid "{0, plural, one {Copied # item to {destinationName}.} other {Copied # items to {destinationName}.}}"
-msgstr ""
+#~ msgid "{0, plural, one {Copied # item to {destinationName}.} other {Copied # items to {destinationName}.}}"
+#~ msgstr ""
 
 #. placeholder {0}: entries.length
 #: src/features/project/context/EntryDestinationPicker.tsx
-msgid "{0, plural, one {Copy # item} other {Copy # items}}"
-msgstr ""
+#~ msgid "{0, plural, one {Copy # item} other {Copy # items}}"
+#~ msgstr ""
 
 #. placeholder {0}: copies.length
 #: src/features/project/context/entry-drag/copy-operation.ts
-msgid "{0, plural, one {Copying # item to {destinationName}…} other {Copying # items to {destinationName}…}}"
-msgstr ""
+#~ msgid "{0, plural, one {Copying # item to {destinationName}…} other {Copying # items to {destinationName}…}}"
+#~ msgstr ""
 
 #. placeholder {0}: sources.length
 #: src/features/project/context/entry-drag/copy-refusal.ts
@@ -158,13 +158,13 @@ msgstr ""
 
 #. placeholder {0}: failed.length
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
-msgstr ""
+#~ msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
+#~ msgstr ""
 
 #. placeholder {0}: failed.length
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
-msgstr ""
+#~ msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
+#~ msgstr ""
 
 #. placeholder {0}: card.count
 #: src/features/chat/chat-card-copy.ts
@@ -178,13 +178,13 @@ msgstr ""
 
 #. placeholder {0}: failed.length
 #: src/features/project/context/entry-drag/copy-operation.ts
-msgid "{0, plural, one {Couldn't remove # copy.} other {Couldn't remove # copies.}}"
-msgstr ""
+#~ msgid "{0, plural, one {Couldn't remove # copy.} other {Couldn't remove # copies.}}"
+#~ msgstr ""
 
 #. placeholder {0}: moved.length
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
-msgstr ""
+#~ msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
+#~ msgstr ""
 
 #. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
@@ -193,8 +193,8 @@ msgstr ""
 
 #. placeholder {0}: moved.length
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "{0, plural, one {Reordered # item.} other {Reordered # items.}}"
-msgstr ""
+#~ msgid "{0, plural, one {Reordered # item.} other {Reordered # items.}}"
+#~ msgstr ""
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
@@ -233,8 +233,8 @@ msgstr ""
 
 #. placeholder {0}: running.length
 #: src/components/app/ToastRegion.tsx
-msgid "{0} in progress"
-msgstr ""
+#~ msgid "{0} in progress"
+#~ msgstr ""
 
 #. placeholder {0}: file.name
 #: src/core/editor/images/image-uploads.ts
@@ -394,7 +394,7 @@ msgstr ""
 msgid "{count} documents were removed ({names})."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "{count} uploaded. Pick {name} again to continue."
 msgstr ""
 
@@ -430,19 +430,19 @@ msgstr ""
 msgid "{filename} did not import. It stayed a link."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "{files, plural, one {{prepared} of # file ready} other {{prepared} of # files ready}}"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "{files, plural, one {{received} of # file} other {{received} of # files}}"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "{files, plural, one {# file} other {# files}}"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "{files, plural, one {Imported {organized} of # file} other {Imported {organized} of # files}}"
 msgstr ""
 
@@ -568,7 +568,7 @@ msgstr ""
 msgid "{names} is back in the manuscript."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
 msgstr ""
 
@@ -681,8 +681,8 @@ msgid "{work} is reordering this."
 msgstr ""
 
 #: src/components/app/ToastRegion.tsx
-msgid "+{hidden} more"
-msgstr ""
+#~ msgid "+{hidden} more"
+#~ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
@@ -842,12 +842,12 @@ msgid "Active Work"
 msgstr ""
 
 #: src/components/app/ToastRegion.tsx
-msgid "Activity"
-msgstr ""
+#~ msgid "Activity"
+#~ msgstr ""
 
 #: src/components/app/ToastRegion.tsx
-msgid "Activity ({FOCUS_KEY})"
-msgstr ""
+#~ msgid "Activity ({FOCUS_KEY})"
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Actually…"
@@ -898,7 +898,7 @@ msgstr ""
 msgid "Added as {renamed}"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Adding {name} to {area}"
 msgstr ""
 
@@ -1023,7 +1023,7 @@ msgstr ""
 msgid "An entry named {name} already exists in this location."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Another import in this project is organizing."
 msgstr ""
 
@@ -1506,7 +1506,7 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Check your connection."
 msgstr ""
 
@@ -1576,9 +1576,8 @@ msgstr "清除目标"
 msgid "Clear the status"
 msgstr "清除状态"
 
-#: src/components/app/ToastRegion.tsx
-#: src/components/ui/persistent-toast.tsx
 #: src/features/editor/EditorView.tsx
+#: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Close"
 msgstr ""
@@ -1660,8 +1659,8 @@ msgid "Collaborator"
 msgstr ""
 
 #: src/components/ui/persistent-toast.tsx
-msgid "Collapse"
-msgstr ""
+#~ msgid "Collapse"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Collapse changes"
@@ -1688,8 +1687,8 @@ msgid "Column options"
 msgstr ""
 
 #: src/components/app/ToastRegion.tsx
-msgid "Combined progress"
-msgstr ""
+#~ msgid "Combined progress"
+#~ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Commands"
@@ -1747,7 +1746,7 @@ msgstr ""
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "Continue…"
 msgstr ""
 
@@ -1785,12 +1784,12 @@ msgid "Copied {source} to {place}"
 msgstr ""
 
 #: src/features/project/context/entry-drag/copy-operation.ts
-msgid "Copied {sourceName} to {destinationName} as {name}."
-msgstr ""
+#~ msgid "Copied {sourceName} to {destinationName} as {name}."
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/copy-operation.ts
-msgid "Copied {sourceName} to {destinationName}."
-msgstr ""
+#~ msgid "Copied {sourceName} to {destinationName}."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copied file"
@@ -1852,7 +1851,6 @@ msgid "Copy to {destinationName}"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/context/entry-drag/CopyRefusalNotices.tsx
 msgid "Copy to…"
 msgstr ""
 
@@ -1869,8 +1867,8 @@ msgid "Copying {source} to"
 msgstr ""
 
 #: src/features/project/context/entry-drag/copy-operation.ts
-msgid "Copying {sourceName} to {destinationName}…"
-msgstr ""
+#~ msgid "Copying {sourceName} to {destinationName}…"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying from {source} into"
@@ -1923,16 +1921,29 @@ msgstr ""
 
 #. placeholder {0}: only.name
 #: src/features/project/context/entry-drag/copy-refusal.ts
-msgid "Couldn't copy {0} to {destination}."
-msgstr ""
+#~ msgid "Couldn't copy {0} to {destination}."
+#~ msgstr ""
 
 #. placeholder {0}: only.name
 #: src/features/project/context/entry-drag/copy-refusal.ts
-msgid "Couldn't copy {0}."
+#~ msgid "Couldn't copy {0}."
+#~ msgstr ""
+
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "Couldn't copy {only} to {destination}."
+msgstr ""
+
+#: src/features/project/context/entry-drag/copy-refusal.ts
+msgid "Couldn't copy {only}."
 msgstr ""
 
 #: src/features/project/context/entry-drag/use-entry-list.tsx
-msgid "Couldn't copy these items"
+#~ msgid "Couldn't copy these items"
+#~ msgstr ""
+
+#. placeholder {0}: copy.destinationName
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Couldn't copy these items to {0}."
 msgstr ""
 
 #: src/features/editor/SchemaNotices.tsx
@@ -1981,8 +1992,17 @@ msgid "Couldn't delete"
 msgstr ""
 
 #. placeholder {0}: target.name
-#: src/features/project/context/document-delete-undo.tsx
-msgid "Couldn't delete {0}. Try again."
+#: src/features/project/context/use-delete-context-entry.ts
+msgid "Couldn't delete {0}."
+msgstr ""
+
+#. placeholder {0}: target.name
+#: src/features/project/context/use-delete-context-entry.ts
+#~ msgid "Couldn't delete {0}. Try again."
+#~ msgstr ""
+
+#: src/features/project/context/entry-drag/RefusalToasts.tsx
+msgid "Couldn't delete {name}."
 msgstr ""
 
 #: src/features/project/chat-list/useChatRowCommands.tsx
@@ -2107,17 +2127,31 @@ msgstr ""
 
 #. placeholder {0}: lost.name
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "Couldn't move {0} back."
+#~ msgid "Couldn't move {0} back."
+#~ msgstr ""
+
+#. placeholder {0}: failed.name
+#. placeholder {1}: move.destinationName
+#: src/features/project/context/entry-drag/use-entry-list.tsx
+msgid "Couldn't move {0} to {1}."
 msgstr ""
 
 #. placeholder {0}: lost.name
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "Couldn't move {0}."
+#~ msgid "Couldn't move {0}."
+#~ msgstr ""
+
+#: src/features/project/context/entry-drag/RefusalToasts.tsx
+msgid "Couldn't move {name} to {to}."
+msgstr ""
+
+#: src/features/project/context/entry-drag/RefusalToasts.tsx
+msgid "Couldn't move {name}."
 msgstr ""
 
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "Couldn't move it back."
-msgstr ""
+#~ msgid "Couldn't move it back."
+#~ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't move this entry. Try again."
@@ -2182,8 +2216,8 @@ msgstr ""
 
 #. placeholder {0}: lost.name
 #: src/features/project/context/entry-drag/copy-operation.ts
-msgid "Couldn't remove {0}."
-msgstr ""
+#~ msgid "Couldn't remove {0}."
+#~ msgstr ""
 
 #: src/features/chat/ChatThreadTitle.tsx
 msgid "Couldn’t rename this chat. Try again."
@@ -2211,28 +2245,28 @@ msgstr ""
 
 #. placeholder {0}: lost.name
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "Couldn't reorder {0}."
-msgstr ""
+#~ msgid "Couldn't reorder {0}."
+#~ msgstr ""
 
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-msgid "Couldn't restore {0}."
-msgstr ""
+#~ msgid "Couldn't restore {0}."
+#~ msgstr ""
 
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-msgid "Couldn't restore {0}. A file is in the way."
-msgstr ""
+#~ msgid "Couldn't restore {0}. A file is in the way."
+#~ msgstr ""
 
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
-msgid "Couldn't restore {0}. Try again."
-msgstr ""
+#~ msgid "Couldn't restore {0}. Try again."
+#~ msgstr ""
 
 #. placeholder {0}: lost.name
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "Couldn't restore {0}'s position."
-msgstr ""
+#~ msgid "Couldn't restore {0}'s position."
+#~ msgstr ""
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}."
@@ -2384,6 +2418,14 @@ msgstr ""
 msgid "Create file or folder"
 msgstr ""
 
+#: src/features/project/mobile/MobileCreateEntryMenu.tsx
+msgid "Create file or folder, import in progress"
+msgstr ""
+
+#: src/features/project/mobile/MobileCreateEntryMenu.tsx
+msgid "Create file or folder, import needs your attention"
+msgstr ""
+
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
@@ -2486,8 +2528,8 @@ msgstr ""
 
 #. placeholder {0}: notice.label
 #: src/features/project/context/document-delete-undo.tsx
-msgid "Deleted {0}"
-msgstr ""
+#~ msgid "Deleted {0}"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -2619,13 +2661,13 @@ msgstr ""
 msgid "Discarding"
 msgstr ""
 
+#: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#: src/features/project/shell/SurfaceNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 #: src/features/project/work/WorkFileRows.tsx
@@ -2815,8 +2857,8 @@ msgid "epigraph"
 msgstr ""
 
 #: src/components/ui/persistent-toast.tsx
-msgid "Expand"
-msgstr ""
+#~ msgid "Expand"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -2884,6 +2926,10 @@ msgstr "失败"
 msgid "Failed to load image"
 msgstr "图片加载失败"
 
+#: src/components/app/failure-toast.tsx
+msgid "Failures"
+msgstr ""
+
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Favorite wasn’t saved"
@@ -2941,6 +2987,7 @@ msgid "Files move or copy out of Uploads; they can't be dropped into it"
 msgstr ""
 
 #: src/features/import/ImportMenuItems.tsx
+#: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Files…"
 msgstr ""
@@ -2975,6 +3022,7 @@ msgid "Folder name"
 msgstr ""
 
 #: src/features/import/ImportMenuItems.tsx
+#: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Folder…"
 msgstr ""
@@ -3143,15 +3191,19 @@ msgstr ""
 msgid "Images need a project before they can be uploaded."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/ImportPanel.tsx
+msgid "Import another"
+msgstr ""
+
+#: src/features/import/import-presentation.ts
 msgid "Import didn't finish"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Import didn't start"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Import discarded"
 msgstr ""
 
@@ -3164,18 +3216,30 @@ msgstr ""
 msgid "Import into {0}"
 msgstr ""
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "Import without them"
 msgstr ""
 
+#: src/features/import/ImportPanel.tsx
+msgid "Import, in progress"
+msgstr ""
+
+#: src/features/import/ImportPanel.tsx
+msgid "Import, needs your attention"
+msgstr ""
+
+#: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Import…"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Imported {name}"
+msgstr ""
+
+#: src/features/import/ImportPanel.tsx
+msgid "Imports"
 msgstr ""
 
 #: src/core/editor/links/link-mark-view.ts
@@ -3267,7 +3331,7 @@ msgstr ""
 msgid "Invoking a skill…"
 msgstr ""
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "It finished before it could stop."
 msgstr ""
 
@@ -3275,7 +3339,7 @@ msgstr ""
 msgid "It may have moved or been removed."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "It was waiting for 7 days."
 msgstr ""
 
@@ -3318,11 +3382,11 @@ msgstr ""
 msgid "Keep editing"
 msgstr ""
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "Keep going"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Keep this tab open until the upload finishes."
 msgstr ""
 
@@ -3680,13 +3744,13 @@ msgstr ""
 #. placeholder {0}: first.previousName
 #. placeholder {1}: first.name
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "Moved {0} to {destinationName} as {1}."
-msgstr ""
+#~ msgid "Moved {0} to {destinationName} as {1}."
+#~ msgstr ""
 
 #. placeholder {0}: first.name
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "Moved {0} to {destinationName}."
-msgstr ""
+#~ msgid "Moved {0} to {destinationName}."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Moved {source} to"
@@ -3984,7 +4048,7 @@ msgid "Not Found"
 msgstr "未找到"
 
 #. placeholder {0}: skipped.join(", ")
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "Not imported: {0}"
 msgstr ""
 
@@ -4008,7 +4072,7 @@ msgstr ""
 msgid "Notes the AI kept, grouped by Work."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Nothing from it will be kept."
 msgstr ""
 
@@ -4036,11 +4100,11 @@ msgstr ""
 msgid "Nothing to undo yet."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Nothing uploaded yet. Pick {name} again to continue."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Nothing was added. Your files are kept for 7 days so you can try again."
 msgstr ""
 
@@ -4201,7 +4265,7 @@ msgstr "或输入你自己的回答"
 msgid "ordered"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Organizing {name}"
 msgstr ""
 
@@ -4261,11 +4325,11 @@ msgstr ""
 msgid "photo"
 msgstr ""
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "Pick again"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Pick the folder named {name} to continue."
 msgstr ""
 
@@ -4380,7 +4444,7 @@ msgstr ""
 msgid "Reading"
 msgstr "阅读中"
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Reading {name}"
 msgstr ""
 
@@ -4560,8 +4624,8 @@ msgstr "切换设备时，会重新打开你之前打开的文档。"
 
 #. placeholder {0}: first.name
 #: src/features/project/context/entry-drag/move-operation.ts
-msgid "Reordered {0}."
-msgstr ""
+#~ msgid "Reordered {0}."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -4620,9 +4684,7 @@ msgstr ""
 msgid "Restored as {0}."
 msgstr ""
 
-#. placeholder {0}: alternateLocations.join(", ")
 #. placeholder {0}: notice.location
-#: src/features/project/context/document-delete-undo.tsx
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Restored at {0}."
 msgstr ""
@@ -4634,13 +4696,14 @@ msgstr ""
 
 #. placeholder {0}: notice.label
 #: src/features/project/context/document-delete-undo.tsx
-msgid "Restoring {0}"
-msgstr ""
+#~ msgid "Restoring {0}"
+#~ msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume my documents on any device"
 msgstr "在任何设备上继续处理我的文档"
 
+#: src/components/app/failure-toast.tsx
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
@@ -4653,7 +4716,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/editor/EditorView.tsx
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -4836,7 +4899,7 @@ msgstr "正在搜索…"
 msgid "section"
 msgstr ""
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "See files"
 msgstr ""
 
@@ -4925,7 +4988,7 @@ msgstr ""
 msgid "Shared an attachment"
 msgstr "分享了附件"
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "Show"
 msgstr ""
 
@@ -4939,8 +5002,8 @@ msgid "Show chats"
 msgstr ""
 
 #: src/components/app/ToastRegion.tsx
-msgid "Show fewer"
-msgstr ""
+#~ msgid "Show fewer"
+#~ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -5099,7 +5162,7 @@ msgstr ""
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "Stop"
 msgstr "停止"
 
@@ -5107,11 +5170,11 @@ msgstr "停止"
 msgid "Stop \"{name}\""
 msgstr "停止“{name}”"
 
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 msgid "Stop and discard"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Stop and discard this import?"
 msgstr ""
 
@@ -5522,15 +5585,15 @@ msgstr ""
 msgid "The destination is no longer there."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "The destination was deleted. Added at the area root."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "The destination was deleted. It will be added at the area root."
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "The destination was deleted. Trying again adds it at the area root."
 msgstr ""
 
@@ -6088,7 +6151,7 @@ msgstr ""
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/import/ImportToasts.tsx
+#: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
 msgstr ""
@@ -6173,7 +6236,6 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
-#: src/features/project/shell/SurfaceNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "撤销"
@@ -6262,7 +6324,7 @@ msgstr ""
 msgid "Upload or paste"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Upload paused"
 msgstr ""
 
@@ -6276,7 +6338,7 @@ msgstr ""
 msgid "Uploading {0}…"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Uploading {name}"
 msgstr ""
 
@@ -6284,7 +6346,7 @@ msgstr ""
 msgid "Uploading elsewhere…"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Uploading in another window"
 msgstr ""
 
@@ -6328,7 +6390,7 @@ msgstr ""
 msgid "Waiting for your review"
 msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "Waiting to organize {name}"
 msgstr ""
 
@@ -6349,8 +6411,8 @@ msgid "What are you writing?"
 msgstr ""
 
 #: src/components/app/ToastRegion.tsx
-msgid "What is running in the background, with its controls."
-msgstr ""
+#~ msgid "What is running in the background, with its controls."
+#~ msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "What is your goal?"
@@ -6473,7 +6535,7 @@ msgstr ""
 #~ msgid "you answered"
 #~ msgstr ""
 
-#: src/features/import/toast-presentation.ts
+#: src/features/import/import-presentation.ts
 msgid "You can close this tab."
 msgstr ""
 
@@ -6499,6 +6561,10 @@ msgstr ""
 
 #: src/features/import/ImportProvider.tsx
 msgid "your files"
+msgstr ""
+
+#: src/features/import/ImportPanel.tsx
+msgid "Your imports in this project, with their controls."
 msgstr ""
 
 #: src/features/chat/UserTurn.tsx

@@ -7,14 +7,12 @@
  * target would do and what a drop does. A list row dropped within one system
  * moves at once; a drop across systems, and any other source (a chip, tab,
  * crumb, Recent row, receipt or Uploads entry), waits for the writer's choice
- * at the drop point, Move or Copy (see `drop-choice.ts`). It also offers optional selection and focus
- * effects to Move… and Copy to…; the project-owned notice does not depend on a list.
+ * at the drop point, Move or Copy (see `drop-choice.ts`).
  */
 import { t } from "@lingui/core/macro";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import { announceError } from "@/client/stores";
-import type { NoticeSurface } from "../../shell/SurfaceNotice";
+import { notifyFailure } from "@/components/app/failure-toast";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
@@ -26,7 +24,6 @@ import {
   TreeDropScope,
   treeDropTargetKey,
 } from "../tree-drop/tree-drop";
-import { copyOperation } from "./copy-operation";
 import { DropChoiceMenu, type DropChoiceState } from "./DropChoiceMenu";
 import { activeDragSession } from "./drag-session";
 import {
@@ -39,10 +36,9 @@ import {
   noLongerThere,
   type PendingChoice,
 } from "./drop-choice";
-import { type EntryRef, entryKey } from "./entry";
+import { ENTRY_FAILURE_TOAST } from "./entry";
 import { copyArrivals, copyRows } from "./execute-copy";
 import { moveRows, renamesOnArrival } from "./execute-move";
-import { moveOperation } from "./move-operation";
 import {
   type MoveArea,
   type MoveView,
@@ -51,13 +47,12 @@ import {
   type ReadyMove,
   resolveDrop,
 } from "./move-plan";
-import { type Operation, OperationFeedbackProvider, useOperationNotices } from "./operation-notice";
-import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
-
-type ListEffects = {
-  select: (rows: readonly EntryRef[]) => void;
-  refocus: () => void;
-};
+import {
+  type EntrySelection,
+  EntrySelectionProvider,
+  selectRows,
+  useEntrySelection,
+} from "./selection";
 
 /** The placement and catalogs a drop is judged against. */
 const moveView = (now: {
@@ -70,68 +65,59 @@ const moveView = (now: {
 type EntryListController = {
   selection: EntrySelection;
   route: EntriesRoute;
-  feedback: ListEffects & { surface: NoticeSurface };
   /** The menu a drop across systems waits on; null while none does. */
   choice: DropChoiceState | null;
 };
 
 export function useEntryList({
   projectId,
-  surface,
   areas,
 }: {
   projectId: string;
-  /** Where the list's notices show. */
-  surface: NoticeSurface;
   /** Every catalog this list shows; a target names its catalog by root ID. */
   areas: readonly MoveArea[];
 }): EntryListController {
   const resources = useAccountResourceReplica();
   const { works, noWork } = useWorks(projectId);
   const projection = useAccountResourceProjection(projectId);
-  const notices = useOperationNotices();
   const selection = useEntrySelection();
   const latest = useRef({ areas, projection, works, noWork, selection });
   useLayoutEffect(() => {
     latest.current = { areas, projection, works, noWork, selection };
   });
 
-  const listEffects = useMemo<ListEffects>(
-    () => ({
-      select(rows) {
-        if (rows.length > 0) latest.current.selection.replace(rows.map(entryKey));
-      },
-      refocus: () => latest.current.selection.focus(),
-    }),
-    [],
-  );
-
   const [pending, setPending] = useState<PendingChoice | null>(null);
 
-  /** Reports an operation on `to`'s surface and selects its rows, the way Move… and Copy to… do. */
-  const publish = useCallback(
-    (operation: Operation, to: Pick<PendingChoice, "surface" | "returnFocus">) => {
-      listEffects.select(operation.rows);
-      notices.publish(to.surface, operation, to.returnFocus);
-    },
-    [notices, listEffects],
-  );
   const runMove = useCallback(
-    (move: ReadyMove, to: Pick<PendingChoice, "surface" | "returnFocus">) => {
-      void moveRows(move.moves, { resources, projectId }).then((result) =>
-        publish(moveOperation(result, move.destinationName), to),
-      );
-    },
-    [resources, projectId, publish],
-  );
-  const runCopy = useCallback(
-    (copy: ReadyCopy, to: Pick<PendingChoice, "surface" | "returnFocus">) => {
-      void copyRows(copy, { resources, projectId }, to.surface).then((result) => {
-        if (result) publish(copyOperation(result), to);
-        else announceError(t`Couldn't copy these items`);
+    function run(move: ReadyMove) {
+      void moveRows(move.moves, { resources, projectId }).then((result) => {
+        selectRows(latest.current.selection, result.moved);
+        const [failed] = result.failed;
+        if (!failed) return;
+        const refused = new Set(result.failed.map(({ entry }) => entry));
+        notifyFailure({
+          key: ENTRY_FAILURE_TOAST,
+          title: t`Couldn't move ${failed.name} to ${move.destinationName}.`,
+          onRetry: () =>
+            run({ ...move, moves: move.moves.filter(({ entry }) => refused.has(entry)) }),
+        });
       });
     },
-    [resources, projectId, publish],
+    [resources, projectId],
+  );
+  const runCopy = useCallback(
+    function run(copy: ReadyCopy) {
+      void copyRows(copy, { resources, projectId }).then((rows) => {
+        if (rows) selectRows(latest.current.selection, rows);
+        else
+          notifyFailure({
+            key: ENTRY_FAILURE_TOAST,
+            title: t`Couldn't copy these items to ${copy.destinationName}.`,
+            onRetry: () => run(copy),
+          });
+      });
+    },
+    [resources, projectId],
   );
 
   const route = useMemo<EntriesRoute>(() => {
@@ -192,18 +178,22 @@ export function useEntryList({
         const drop = resolve(target);
         const resolved = drop?.resolved;
         if (!drop || !resolved) return;
-        const to = { surface, returnFocus: listEffects.refocus };
         if (resolved.asks) {
           if (dropChoices(drop.view, resolved, target).items.some((item) => item.enabled))
             // `dragend` clears the drag session after this, so the choice keeps the drag.
-            setPending({ drag: drop.drag, target, point, ...to });
+            setPending({
+              drag: drop.drag,
+              target,
+              point,
+              returnFocus: () => latest.current.selection.focus(),
+            });
           return;
         }
         const planned = planMove(drop.view, resolved);
-        if (planned.kind === "ready") runMove(planned, to);
+        if (planned.kind === "ready") runMove(planned);
       },
     };
-  }, [runMove, surface, listEffects]);
+  }, [runMove]);
 
   const choice = useMemo<DropChoiceState | null>(() => {
     if (!pending) return null;
@@ -216,18 +206,14 @@ export function useEntryList({
       choose(action: DropAction) {
         // Judged again from the replica now: the destination may have been renamed or removed.
         const { plans } = choicesNow(moveView(latest.current));
-        if (action === "move" && plans.move) runMove(plans.move, pending);
-        else if (action === "copy" && plans.copy) runCopy(plans.copy, pending);
+        if (action === "move" && plans.move) runMove(plans.move);
+        else if (action === "copy" && plans.copy) runCopy(plans.copy);
       },
       dismiss: () => setPending(null),
     };
   }, [pending, areas, projection, works, noWork, runMove, runCopy]);
 
-  const feedback = useMemo(() => ({ ...listEffects, surface }), [listEffects, surface]);
-  return useMemo(
-    () => ({ selection, route, feedback, choice }),
-    [selection, route, feedback, choice],
-  );
+  return useMemo(() => ({ selection, route, choice }), [selection, route, choice]);
 }
 
 /** Gives a list's rows and targets its selection and drop scope. */
@@ -244,10 +230,8 @@ export function EntryList({
   return (
     <TreeDropScope routes={routes}>
       <EntrySelectionProvider selection={list.selection}>
-        <OperationFeedbackProvider feedback={list.feedback}>
-          {children}
-          {list.choice ? <DropChoiceMenu {...list.choice} /> : null}
-        </OperationFeedbackProvider>
+        {children}
+        {list.choice ? <DropChoiceMenu {...list.choice} /> : null}
       </EntrySelectionProvider>
     </TreeDropScope>
   );
