@@ -8,7 +8,9 @@ The aggregate's readiness is terminal-turn and `rollback_pending`. A trail shell
 building/settling/settled lifecycle is delivery state, not an Apply settlement batch.
 Reconciliation consumes exactly the dirty signals in its cut, under sorted aggregate
 locks. Sequence allocation is not commit order. Delivery follows commit, through the
-trail dispatcher's outbox.
+trail dispatcher's outbox; once the journal append commits, the outbox row is deleted in
+that same transaction. The shell keeps its counts, document summaries and word totals
+because document details are manuscript-bearing and cascade when a document is purged.
 
 Trail detail authorization precedes manuscript-bearing materialization. Denied
 occurrences disappear; authorized deleted anchors keep their evidence. Durable
