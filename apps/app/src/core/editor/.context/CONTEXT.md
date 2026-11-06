@@ -214,16 +214,21 @@ keyboard, pointer, drop, or draft-recovery answer.
   (`landing/slice-drop.ts`: text and nodes moved or copied inside the editor,
   or text from outside), project-tree rows (`referenceDropOptions`, handed in
   from `config.ts`) and files (the image door, also handed in). `landing/`
-  imports neither lane. A host mounts only the doors it has; a code file and
-  the Composer mount no press route. A drop is claimed even when it lands
-  nothing, and a refused file drag is claimed at `dragover` with
-  `dropEffect = "none"`, because an unclaimed file is opened by the browser.
+  imports neither lane. A host mounts only the doors it has; the click route
+  rides with the plugin, so a code file and the Composer have it too. A drag
+  with a plan is claimed at `dragover`, and a refusal sets
+  `dropEffect = "none"`: an unclaimed file is opened by the browser. `dragover`
+  and `dragleave` are direct listeners on `view.dom`, because a node view stops
+  them before `handleDOMEvents`. A drag whose files the browser hides until the
+  drop (Safari lists none, Firefox `application/x-moz-file`) is taken, and the
+  drop looks again.
 - **Snapping.** An inline landing moves out of a code span, a chip (an atom or
   a link naming a file), then a word (`landing/inline-snap.ts`, in that order).
   A diagram that is not open is one object: a drop beside it lands at the seam
-  before or after it. A diagram is open when the editor is focused, the
+  before or after it. A diagram is open when the editor is focused (`editor.isFocused`, the answer the
+  walk and the diagram's node view both read), the
   selection is not a `NodeSelection`, and the caret is inside it.
-- **What refuses.** Text dropped into a fence becomes plain characters. A
+- **What refuses.** Text dropped into a fence becomes plain characters (a hard break is a newline); a slice holding a picture or chip is refused (`Can’t put that inside code`), and a move released on its own range changes nothing. A
   picture over a fence is refused (`Can’t put a picture inside code`) and a
   tree row too (`Can’t mention inside code`), each with no caret. Inline code
   is not a fence: a drop there snaps to the span's edge. A file that is not a picture shows `Only pictures can be dropped

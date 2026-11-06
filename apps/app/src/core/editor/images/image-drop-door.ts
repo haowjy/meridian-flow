@@ -21,15 +21,22 @@ type FileLike = Pick<File, "type" | "name">;
 
 /**
  * Does this door take the file? The one place that maps a file to accept or
- * refuse. A dragged file whose type the browser would not read counts as taken:
- * the drop looks again with the real file.
+ * refuse. A dragged file whose type the browser would not read counts as taken
+ * (Firefox reports `application/x-moz-file`): the drop looks again with the
+ * real file.
  */
 function takesFile(file: FileLike): boolean {
-  return (file.type === "" && file.name === "") || isImageFile(file);
+  const unread = file.name === "" && (file.type === "" || file.type === "application/x-moz-file");
+  return unread || isImageFile(file);
+}
+
+/** A drag that lists no file at all (Safari hides the list until the drop) is unread too. */
+function takesDrag(files: readonly FileLike[]): boolean {
+  return files.length === 0 || files.some(takesFile);
 }
 
 function plan(editor: Editor, files: readonly FileLike[], landing: Landing): DropPlan {
-  if (!files.some(takesFile)) return { kind: "refuse", hint: t`Only pictures can be dropped here` };
+  if (!takesDrag(files)) return { kind: "refuse", hint: t`Only pictures can be dropped here` };
   if (landing.kind === "source")
     return { kind: "refuse", hint: t`Can’t put a picture inside code` };
 
@@ -38,7 +45,7 @@ function plan(editor: Editor, files: readonly FileLike[], landing: Landing): Dro
       ? { kind: "inline", pos: snapOutOfCode(editor.state.doc, landing.pos) }
       : landing;
   if (at.kind === "inline" && !acceptsInlineImage(editor.state.doc, at.pos))
-    return { kind: "refuse", hint: t`A picture cannot go there` };
+    return { kind: "refuse", hint: t`A picture cannot go there.` };
 
   return {
     kind: "accept",
@@ -62,9 +69,9 @@ export const imageDropDoor: FilesDoor = {
     if (dropped.kind === "accept") dropped.commit(editor.view);
     // The drag could not read the file's type, so it promised a landing; the
     // drop is where a file that is not a picture is named.
-    else if (!files.some(takesFile)) {
+    else if (!takesDrag(files)) {
       imageIngressStorage(editor)?.status.refuse(
-        t`${files[0]?.name ?? ""} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG.`,
+        t`${files[0].name} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG.`,
       );
     }
   },

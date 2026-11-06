@@ -430,7 +430,7 @@ function ActiveSessionEditorView({
           <SyncStatus session={session} onReopen={onReopen} removal={removal} />
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>
-        <TrackedEditorCanvas
+        <EditorCanvas
           editor={editor}
           notices={
             <SchemaNotices
@@ -482,7 +482,7 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
     >
       {/* The toolbar is persistent chrome: it holds its place while the
           document opens, greyed and saying so, rather than popping in. */}
-      <TrackedEditorCanvas
+      <EditorCanvas
         editor={null}
         toolbar={showToolbar ? <DocumentToolbar editor={null} /> : undefined}
       />
@@ -490,7 +490,7 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
   );
 }
 
-function TrackedEditorCanvas({
+function EditorCanvas({
   editor,
   notices,
   toolbar,
@@ -507,7 +507,7 @@ function TrackedEditorCanvas({
     <EditorSurfaceFrame
       notices={notices}
       toolbar={toolbar}
-      editor={editor}
+      textCursor={editor !== null}
       scrollRef={scrollRef}
       scrollClassName="meridian-editor main-pane"
       onScroll={onScroll}

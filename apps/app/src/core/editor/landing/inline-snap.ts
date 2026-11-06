@@ -73,7 +73,12 @@ export function snapOutOfIdentityLink(doc: PMNode, pos: number): number {
 }
 
 /** A pointer over an inline atom (a mention chip) chooses its nearer side. */
-export function snapOutOfAtom(doc: PMNode, pos: number, point: Point, geometry: Geometry): number {
+export function snapOutOfAtom(
+  doc: PMNode,
+  pos: number,
+  point: Point,
+  rectOf: Geometry["rectOf"],
+): number {
   const $pos = doc.resolve(pos);
   if (!$pos.parent.isTextblock) return pos;
   const candidates = [
@@ -82,7 +87,7 @@ export function snapOutOfAtom(doc: PMNode, pos: number, point: Point, geometry: 
   ];
   for (const { node, start } of candidates) {
     if (!node?.isInline || !node.isAtom || node.isText) continue;
-    const box = geometry.rectOf(start);
+    const box = rectOf(start);
     if (point.x < box.left || point.x > box.right || point.y < box.top || point.y > box.bottom)
       continue;
     return point.x <= (box.left + box.right) / 2 ? start : start + node.nodeSize;

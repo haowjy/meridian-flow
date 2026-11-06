@@ -4,6 +4,7 @@
  * with the table's shape held fixed.
  */
 
+import { t } from "@lingui/core/macro";
 import type { Node as PMNode, Slice } from "@tiptap/pm/model";
 import {
   type EditorState,
@@ -18,7 +19,7 @@ import type { EditorView } from "@tiptap/pm/view";
 import type { DropPlan } from "./drop-plan";
 import type { Landing } from "./point-landing";
 
-export type SliceSource = {
+type SliceSource = {
   moved: boolean;
   /** The dragged node's own selection, when the drag carried one. */
   node: Selection | null;
@@ -51,9 +52,20 @@ export function slicePlan(
   if (!slice) return { kind: "accept", pos: landing.pos, commit: () => {} };
 
   if (landing.kind === "source") {
-    // A code block holds characters: whatever the slice reads as.
+    // A code block holds characters: a slice reads as its text and its hard
+    // breaks. Any other leaf (a picture, a chip) has none to give, and a move
+    // would delete it for nothing.
+    let leaves = true;
+    slice.content.descendants((node) => {
+      if (node.isLeaf && !node.isText && node.type.name !== "hard_break") leaves = false;
+    });
     const text = slice.content.textBetween(0, slice.content.size, "\n", "\n");
-    if (!text) return { kind: "refuse" };
+    if (!leaves || !text) return { kind: "refuse", hint: t`Can’t put that inside code` };
+    // Released on the range it came from, a move changes nothing.
+    if (source.moved) {
+      const range = source.node ?? state.selection;
+      if (landing.pos >= range.from && landing.pos <= range.to) return { kind: "refuse" };
+    }
     return {
       kind: "accept",
       pos: landing.pos,
@@ -154,11 +166,7 @@ function tableAround(state: EditorState, pos: number) {
  * landed in: the fitter is free to improvise a landing beyond it, and a landing
  * the caret never promised is a refusal, not a surprise.
  */
-export function keepsTableShape(
-  before: EditorState,
-  pos: number,
-  transaction: Transaction,
-): boolean {
+function keepsTableShape(before: EditorState, pos: number, transaction: Transaction): boolean {
   const shape = tableAround(before, pos);
   if (!shape) return true;
   if (shape.cell === null) return false;

@@ -241,7 +241,7 @@ msgstr ""
 msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
 
-#. placeholder {0}: files[0]?.name ?? ""
+#. placeholder {0}: files[0].name
 #: src/core/editor/images/image-drop-door.ts
 msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr ""
@@ -764,12 +764,13 @@ msgid "A folder named {name} already exists in this location."
 msgstr ""
 
 #: src/core/editor/images/image-drop-door.ts
-msgid "A picture cannot go there"
-msgstr "图片不能放在这里"
+#~ msgid "A picture cannot go there"
+#~ msgstr "图片不能放在这里"
 
+#: src/core/editor/images/image-drop-door.ts
 #: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
-msgstr ""
+msgstr "图片不能放在这里。"
 
 #: src/features/project/context/entry-drag/copy-refusal.ts
 msgid "A source is no longer there."
@@ -1299,6 +1300,10 @@ msgstr ""
 #: src/core/editor/images/image-drop-door.ts
 msgid "Can’t put a picture inside code"
 msgstr "无法将图片放入代码中"
+
+#: src/core/editor/landing/slice-drop.ts
+msgid "Can’t put that inside code"
+msgstr "无法将其放入代码中"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."

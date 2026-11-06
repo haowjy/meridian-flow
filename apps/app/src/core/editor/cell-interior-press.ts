@@ -19,6 +19,7 @@
  * inert from alive.
  */
 
+import type { Editor } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
@@ -48,7 +49,7 @@ function cellContainerAtDOM(view: EditorView, dom: Element): Child | null {
  * drag's mousemove listeners are armed before this claim runs — so sweeping
  * a selection out of a padding press still becomes a `CellSelection`.
  */
-export function cellInteriorPressPlugin(): Plugin {
+export function cellInteriorPressPlugin(editor: Editor): Plugin {
   return new Plugin({
     props: {
       handleDOMEvents: {
@@ -63,7 +64,7 @@ export function cellInteriorPressPlugin(): Plugin {
           const selection = pressSelection(
             view.state,
             { x: event.clientX, y: event.clientY },
-            viewGeometry(view),
+            viewGeometry(view, editor),
             cell,
           );
           // No selection is claimed too: the browser's default for this press

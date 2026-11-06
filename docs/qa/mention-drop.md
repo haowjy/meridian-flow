@@ -71,9 +71,10 @@ it trails the last move by one `dragover`.
 14. **Empty document.** Over any point of a blank document: the chip lands in
     the one empty paragraph and no second paragraph appears.
 15. **Files.** Drag a PNG over each of 8-14: it lands at the same place as the
-    chip would. Drag a video: the hint reads **Only pictures can be dropped
-    here**, no caret draws, the drop changes nothing, and the browser does not
-    open the file.
+    chip would, and the dashed **Drop image to insert it** overlay shows. Drag
+    a video: the hint reads **Only pictures can be dropped here**, no caret
+    draws, the overlay stays away, the drop changes nothing, and the browser
+    does not open the file.
 
 ## Ownership and recovery
 

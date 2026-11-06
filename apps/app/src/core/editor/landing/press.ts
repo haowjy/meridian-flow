@@ -7,11 +7,11 @@
  * when the pointer is between blocks, and which neighbour wins.
  */
 
+import type { Editor } from "@tiptap/core";
 import { GapCursor } from "@tiptap/pm/gapcursor";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, type Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
-
 import { gapCursorFits } from "../objects/object-selection";
 import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
 import { type Child, type Geometry, isTable, landingAt, type Point } from "./point-landing";
@@ -110,12 +110,12 @@ function lineIn(
  * stays the browser's own, which knows the line it sits on (a landing
  * dispatched at the end of a wrapped line would jump to the next line's start).
  */
-export function pressOnInertTarget(view: EditorView, event: MouseEvent): boolean {
+export function pressOnInertTarget(view: EditorView, editor: Editor, event: MouseEvent): boolean {
   if (event.button !== 0 || !view.editable || !isContainerElement(view, event.target)) return false;
   const selection = pressSelection(
     view.state,
     { x: event.clientX, y: event.clientY },
-    viewGeometry(view),
+    viewGeometry(view, editor),
   );
   const { selection: current } = view.state;
   const standing =

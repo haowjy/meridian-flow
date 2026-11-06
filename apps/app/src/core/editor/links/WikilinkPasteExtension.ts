@@ -60,6 +60,7 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, Wik
 
   addProseMirrorPlugins() {
     const read = this.options.catalog;
+    const editor = this.editor;
     // ProseMirror's paste-without-formatting flag, ORed with "the destination
     // is code", from `transformPastedText`. That hook and `transformPasted`
     // run as a synchronous pair inside one parse of clipboard text, so the
@@ -78,7 +79,7 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, Wik
               const landing = landingAt(
                 view.state,
                 { x: event.clientX, y: event.clientY },
-                viewGeometry(view),
+                viewGeometry(view, editor),
               );
               pendingDrop = view.state.doc.resolve(landing.pos);
               queueMicrotask(() => {
