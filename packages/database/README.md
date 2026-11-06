@@ -40,9 +40,8 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 |--------|------|
 | `input_tokens` / `output_tokens` | Headline totals (queryable) |
 | `usage_breakdown` | Nullable JSONB with DB default `'{}'`; omit only when usage is unknown |
-| `response_metadata` | Audit only (provider request IDs) |
-| `provider_request_id` | Provider request ID |
-| `price_source` | `computed`, `unknown` (usage missing), or the unused `provider_reported`, `configured_rate`; default `computed` |
+| `response_metadata` | Audit only; rows from before the `provider_request_id` drop (0113) may carry `providerRequestId`, the provider's generation ID |
+| `price_source` | `computed` or `unknown` (usage missing); default `computed` |
 | `pricing_snapshot` | JSONB copy of the pricing data used at billing time |
 
 `output_tokens` is total billable output (includes reasoning when known). See `@meridian/contracts` (`UsageBreakdown`, `parseUsageBreakdown`).

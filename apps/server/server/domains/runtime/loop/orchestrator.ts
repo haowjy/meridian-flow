@@ -1006,7 +1006,6 @@ async function persistModelResponse(input: {
           sequence: responseSeq,
           provider: result.provider,
           model: result.model,
-          providerRequestId: result.providerRequestId ?? null,
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
           reasoningTokens: result.usage.reasoningTokens ?? null,
