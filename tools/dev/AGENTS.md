@@ -26,7 +26,7 @@ directory never imports application packages. The `./mf` CLI lives in
   the image tag in `docker-compose.yml` with the pg_bigm pin, then run
   `pnpm dev:infra:upgrade` from a checkout that has merged `main`; compose
   recreates the container onto the tag and the named volume keeps the data. `pnpm db:check-extensions` proves the extensions work.
-- Change schemas with `generate` plus `migrate`, never `push`. Migration lint
+- Change schemas with `pnpm db:generate` plus `pnpm db:migrate`, never `push`. Migration lint
   has one `RULES` list; a skip must be safe on populated tables.
 - No secret value appears in the tmux command, stdout or
   `.meridian/dev-session.json`: services get secrets from `with-dev-env.ts`,
@@ -56,6 +56,20 @@ directory never imports application packages. The `./mf` CLI lives in
   the app launcher; do not add a second route inventory here.
 - Dev stacks use more memory than the tests. `pnpm dev:stacks` reports each
   stack's memory and idle time.
+
+## Cleaning up
+
+1. Stop the dev stack with `pnpm dev --stop`.
+2. End anything still running from the checkout: the Nx daemon, `agent-browser`
+   sessions, watchers.
+3. Remove the worktree, its database and its merged branch with
+   `pnpm dev:prune-worktrees -- --target <branch|path>`, `--dry-run` first.
+4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
+   `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
+5. On `main` after a PR merges, `git rm -r .github/pr-assets/<dir>` and commit. PR
+   bodies link each image at a commit, so the images stay readable.
+
+Run `pnpm dev:gc-dbs` after a batch of cleanups.
 
 Contracts for databases, sessions, cleanup evidence and migrations:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

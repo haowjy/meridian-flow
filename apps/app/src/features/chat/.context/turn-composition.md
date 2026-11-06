@@ -110,7 +110,7 @@ Unknown tools show a humanized name only, never arguments or paths. Inline
 expansions show curated result rows, stream tails, or plain output, never raw
 JSON (that goes behind a dev-only setting).
 
-## Invariants
+## Contracts
 
 - Thinking is collapsed by default in live and settled turns. Never branch
   partitioning on `isLive`, partial shape, or stream buffers.
