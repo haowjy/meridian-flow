@@ -198,9 +198,21 @@ else {
         .where(eq(schema.threads.id, fork.id));
       await db.delete(schema.documentDrafts).where(eq(schema.documentDrafts.id, ids.draftId));
 
+      expect(
+        await db
+          .select({ id: schema.promptBakes.id })
+          .from(schema.promptBakes)
+          .where(eq(schema.promptBakes.ownerThreadId, ids.threadId)),
+      ).toHaveLength(1);
+
       await db.delete(schema.users).where(eq(schema.users.id, ids.userId));
 
-      expect(await db.select({ id: schema.promptBakes.id }).from(schema.promptBakes)).toEqual([]);
+      expect(
+        await db
+          .select({ id: schema.promptBakes.id })
+          .from(schema.promptBakes)
+          .where(eq(schema.promptBakes.ownerThreadId, ids.threadId)),
+      ).toEqual([]);
       expect(await db.select({ id: schema.users.id }).from(schema.users)).toEqual([]);
     });
   });

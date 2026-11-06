@@ -30,8 +30,8 @@ never to get a task passing:
   (`packages/yjs-inspect`'s canary, `safe-event.test.ts`); what emit sites pass them
   is not.
 - Marks and receipts say truthfully who did what. Checked for live and draft
-  writes, response rollback, and subagent bylines. Not checked for undo, redo,
-  revert or Apply authorship, tree receipts, or what the browser shows.
+  writes, response rollback, subagent bylines, model and writer inverse receipts,
+  Apply settlement, and tree receipts. Browser display is not checked.
 
 Everything else is the current implementation, open to rewriting once evidence or
 testing shows something better. The owner's words are direction, not rulings:
