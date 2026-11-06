@@ -221,26 +221,36 @@ keyboard, pointer, drop, or draft-recovery answer.
   `landing/` imports neither lane. A host mounts only the doors it has; a
   payload with no door is unclaimed at `dragover`, `drop` and `handleDrop`
   alike, and the click route rides with the plugin, so a code file and the
-  Composer have it too. A drag with a plan is claimed at `dragover`, and a
+  Composer have it too. A nonempty slice still goes through the landing when
+  the types also list Files. A drag with a plan is claimed at `dragover`, and a
   refusal sets `dropEffect = "none"`: an unclaimed file is opened by the
-  browser. `dragover` and `dragleave` are direct listeners on `view.dom`,
-  because a node view stops them before `handleDOMEvents`. A drag whose files
-  the browser hides until the drop (Safari lists none, Firefox
-  `application/x-moz-file`) is taken, and the drop looks again. The hint beside
-  the pointer is `landing/drag-hint-store.ts`, drawn by `DragHint` in the
-  project feature.
-- **Snapping.** An inline landing first takes the nearer side of a chip under the pointer (in the walk), then moves out of a code span, a chip (an atom or
-  a link naming a file), then a word (`landing/inline-snap.ts`, in that order).
-  A diagram that is not open is one object: a drop beside it lands at the seam
-  before or after it. A diagram is open when the editor is focused (`editor.isFocused`, the answer the
-  walk and the diagram's node view both read), the
-  selection is not a `NodeSelection`, and the caret is inside it.
-- **What refuses.** Text dropped into a fence becomes plain characters (a hard break is a newline); a slice holding a picture or chip is refused (`Can’t put that inside code`), and a move released on its own range changes nothing. A
-  picture over a fence is refused (`Can’t put a picture inside code`) and a
-  tree row too (`Can’t mention inside code`), each with no caret. Inline code
-  is not a fence: a drop there snaps to the span's edge. A file that is not a picture shows `Only pictures can be dropped
-  here` while dragging. A table's shape is held: a structural drop never
-  makes a table column, and a drop in a table lands in a cell.
+  browser. `dragover` is a capture listener on `view.dom`, because a node view
+  stops it before `handleDOMEvents` and SVG children can stop the bubble.
+  `dragleave` with a null `relatedTarget` (Chrome crossing into SVG) still
+  checks the point, so the caret is not cleared while the pointer is in the
+  editor. A drag whose files the browser hides until the drop (Safari lists
+  none, Firefox `application/x-moz-file`) is taken, and the drop looks again.
+  The hint beside the pointer is `landing/drag-hint-store.ts`, drawn by
+  `DragHint` in the project feature.
+- **Snapping.** The walk takes the nearer side of a chip under the pointer.
+  Each door then snaps further on its own (`landing/inline-snap.ts`): a tree
+  row moves out of a code span, a chip (an atom or a link naming a file), then
+  a word; a picture moves out of a code span only; a slice stays where the walk
+  put it, so text dropped in inline code stays in the span. A diagram that is
+  not open is one object: a drop beside it lands at the seam before or after
+  it. A diagram is open when the editor is focused (`editor.isFocused`, the
+  answer the walk and the diagram's node view both read), the selection is not
+  a `NodeSelection`, and the caret is inside it.
+- **What refuses.** Text dropped into a fence becomes plain characters (a hard
+  break is a newline); a slice holding a picture or chip is refused (`Can’t put
+  that inside code`), and a move that lands in a block the selection reaches
+  into changes nothing. A picture over a fence is refused (`Can’t put a picture
+  inside code`) and a tree row too (`Can’t mention inside code`), each with no
+  caret. Inline code is not a fence: a tree row or picture there snaps to the
+  span's edge; a text slice stays in the span. A file that is not a picture
+  shows `Only pictures can be dropped here` while dragging. A table's shape is
+  held: a structural drop never makes a table column, and a drop in a table
+  lands in a cell.
 - StarterKit's dropcursor stays disabled; two landings answering one drag is
   the bug this prevents. `landing/drop-caret.ts` draws the one caret.
   Keyboard behavior follows the same reading, so no input device places a

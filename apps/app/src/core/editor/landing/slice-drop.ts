@@ -99,6 +99,9 @@ function slicePlan(
 ): DropPlan {
   const { state } = view;
   if (!slice) return { kind: "accept", pos: landing.pos };
+  // A move into a block the selection already reaches into would delete across
+  // that block and write into what was left of it.
+  if (source.moved && overlapsMovedBlock(state, landing, source)) return { kind: "refuse" };
 
   if (landing.kind === "source") {
     // A code block holds characters: a slice reads as its text and its hard
@@ -110,11 +113,6 @@ function slicePlan(
     });
     const text = slice.content.textBetween(0, slice.content.size, "\n", "\n");
     if (!leaves || !text) return { kind: "refuse", hint: t`Can’t put that inside code` };
-    // Released on the range it came from, a move changes nothing.
-    if (source.moved) {
-      const range = source.node ?? state.selection;
-      if (landing.pos >= range.from && landing.pos <= range.to) return { kind: "refuse" };
-    }
     return {
       kind: "accept",
       pos: landing.pos,
@@ -150,6 +148,19 @@ function deleteSource(transaction: Transaction, source: SliceSource): void {
   if (!source.moved) return;
   if (source.node) source.node.replace(transaction);
   else transaction.deleteSelection();
+}
+
+/**
+ * True when this move would land in a textblock the dragged range already
+ * reaches into, or on a seam inside that range. Deleting the range and writing
+ * into what remains of the same block would flatten structure into that block.
+ */
+function overlapsMovedBlock(state: EditorState, landing: Landing, source: SliceSource): boolean {
+  const range = source.node ?? state.selection;
+  if (landing.pos >= range.from && landing.pos <= range.to) return true;
+  const $pos = state.doc.resolve(landing.pos);
+  if (!$pos.parent.isTextblock) return false;
+  return range.from < $pos.end() && range.to > $pos.start();
 }
 
 type BuiltDrop = { transaction: Transaction; from: number; to: number };
