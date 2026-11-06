@@ -15,14 +15,12 @@
  * - `partIndex` on stream deltas is the provider's content-block/output-item position
  *   index (Anthropic block `index`, OpenAI Responses `output_index`, OpenAI-Chat
  *   `tool_calls[].index`), used by adapters to reconstruct source order.
- * - `ContentPart.cacheBreakpoint` and `GenerateRequest.promptCacheKey` are
- *   canonical prompt-cache *intent*, not provider syntax, so they stay
- *   top-level (never nested in `providerOptions`): the loop that assembles a
- *   request knows where a cache boundary belongs and what the thread's stable
- *   key is, but has no opinion on TTL or wire shape. Each adapter decides
- *   whether and how to translate that intent for its own API (explicit
- *   `cache_control` breakpoints, an automatic top-level marker, a
- *   `prompt_cache_key` routing hint, or nothing at all).
+ * - `GenerateRequest.promptCacheKey` is canonical prompt-cache *intent*, not
+ *   provider syntax, so it stays top-level (never nested in `providerOptions`):
+ *   the loop knows the thread's stable key but has no opinion on TTL or wire
+ *   shape. Each adapter decides whether to forward it (a `prompt_cache_key`
+ *   routing hint, or nothing). Cache breakpoints are not part of the request:
+ *   the Anthropic adapter places them on the wire blocks itself.
  */
 import type { Usage } from "@meridian/contracts/runtime";
 import type { ProviderErrorResponse } from "@meridian/contracts/threads";
@@ -109,30 +107,20 @@ export interface ModelInfo {
  *   so the provider knows to retry or report the error.
  */
 
-/**
- * Marks this part as a recommended provider prompt-cache boundary. Set by
- * `loop/prompt-cache-marks.ts`; each adapter decides how many of its marked
- * parts it can honor and how to encode the boundary for its own API. Absent
- * (not `false`) means "no opinion" — there is no meaningful false state.
- */
-export interface CacheBreakpointMarker {
-  cacheBreakpoint?: true;
-}
-
-export interface TextPart extends CacheBreakpointMarker {
+export interface TextPart {
   type: "text";
   text: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface ImagePart extends CacheBreakpointMarker {
+export interface ImagePart {
   type: "image";
   data: string | URL;
   mediaType: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface FilePart extends CacheBreakpointMarker {
+export interface FilePart {
   type: "file";
   data: string | URL;
   mediaType: string;
@@ -140,13 +128,13 @@ export interface FilePart extends CacheBreakpointMarker {
   providerOptions?: ProviderOptions;
 }
 
-export interface ReasoningPart extends CacheBreakpointMarker {
+export interface ReasoningPart {
   type: "reasoning";
   text: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface ToolUsePart extends CacheBreakpointMarker {
+export interface ToolUsePart {
   type: "tool_use";
   toolCallId: string;
   toolName: string;
@@ -161,7 +149,7 @@ export interface ToolUsePart extends CacheBreakpointMarker {
   providerOptions?: ProviderOptions;
 }
 
-export interface ToolResultPart extends CacheBreakpointMarker {
+export interface ToolResultPart {
   type: "tool_result";
   toolCallId: string;
   output: unknown;

@@ -54,7 +54,6 @@ import {
 } from "./image-context.js";
 import type { ToolPolicy } from "./permissions/tool-policy.js";
 import { promptCacheRetentionFor } from "./prefix-cache-state.js";
-import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
 
 /** Baked `Tool[]` is opaque JSON at the contract boundary; the runtime owns its shape. */
@@ -328,10 +327,7 @@ export function renderPreparedTurnContext(
     ...context,
     tools: functionToolsFromAdvertised(built.tools),
     generateRequest: {
-      messages:
-        context.resolvedModel?.promptCache.kind === "explicit"
-          ? applyPromptCacheMarks(built.messages)
-          : built.messages,
+      messages: built.messages,
       tools: built.tools,
       // Forks route to the owner of their cutoff; each adapter decides whether to forward it.
       promptCacheKey,

@@ -112,8 +112,12 @@ split by lifetime, the adapters attribute all writes to the lifetime the request
 one, one null with the other set, and two lifetimes with a `cacheWriteUsdPerMillionTokens`
 but no `cacheWriteLongUsdPerMillionTokens`. At gateway creation the OpenAI adapter requires
 30m/12h whenever the lifetimes differ, and the Anthropic adapter 5m/1h for explicit models.
-Only `explicit` offerings get `cache_control` on the wire (the Anthropic adapter checks
-`kind`, so DeepSeek gets none); automatic offerings receive no marks and `none` predict
+Only `explicit` offerings get `cache_control` on the wire. The Anthropic adapter marks
+the last system block and the last block of the two most recent wire `user` messages (tool
+results are user turns there), walking back past a block that cannot carry the mark
+(thinking, empty text); DeepSeek gets none and keeps a joined `system` string. The loop
+assembles requests with no marks, so every Anthropic-format request, summarizer calls
+included, is marked the same way. Automatic offerings receive no marks and `none` predict
 cold. A null lifetime means unknown, not infinite: prediction reads it as cold
 (`ttl_unknown`), so Gemini always reads cold.
 

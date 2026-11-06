@@ -193,7 +193,7 @@ describe("frozen prompt provider requests", () => {
     );
     try {
       // Use the exact same runtime path as production, with a cache-capable
-      // model so the snapshot also captures canonical cacheBreakpoint marks.
+      // model so the request goes through the explicit-cache path.
       const rig = await fixture(undefined, "00000000-0000-4000-8000-000000000010", gateway);
       const plain = await rig.run(rig.thread.id, tools);
       const { thread: fork } = await forkThreadAgent(rig.derive, {

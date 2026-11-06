@@ -24,13 +24,22 @@
  *   `thinking: {type: "disabled"}`; `default` sends nothing. Opus 5.5, Sonnet 5.5
  *   and Fable 5.1 think adaptively, and `thinking: disabled` or `budget_tokens`
  *   is a 400 on them, which is why they never resolve to `off`.
- * - Prompt caching: a canonical `ContentPart.cacheBreakpoint` (set by
- *   `loop/prompt-cache-marks.ts`, at most three per request) becomes an
- *   explicit `cache_control` on that part. Its TTL comes from the registry
- *   descriptor; a 1h write costs 2x input tokens (vs 1.25x for 5m) — see the
- *   registry's `cacheWriteUsdPerMillionTokens` pinned rates. Tools are
- *   never marked directly: Anthropic renders tools before system before
- *   messages, so the system-message breakpoint already covers them.
+ * - Prompt caching: when the call resolves to an explicit `cache_control`
+ *   (`markCachePrefix`), the mapper marks the last system block and the last
+ *   block of the two most recent wire `user` messages — three breakpoints, under
+ *   Anthropic's limit of 4. Tools are never marked: Anthropic renders tools before
+ *   system before messages, so the system breakpoint covers them. The newest user
+ *   mark writes this request's cache entry; the older one is the read point, where
+ *   the previous request wrote its own tail, so the prefix is served from cache
+ *   (Anthropic's "moving breakpoint" guidance). Anthropic folds tool results into
+ *   user turns, so a long assistant/tool loop still leaves the previous tail as
+ *   the second-latest user message; its ~20-block lookback tolerates a steer
+ *   landing beside a tool result. Marks are chosen on wire blocks because a block
+ *   that cannot carry `cache_control` (thinking, empty text) would silently lose
+ *   the mark and the turn would write no new prefix. Marks move as the tail
+ *   advances; providers hash content, not the marker, so that never invalidates
+ *   a cached prefix. A 1h write costs 2x input tokens (5m: 1.25x) — see the
+ *   registry's `cacheWriteUsdPerMillionTokens` pinned rates.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
@@ -101,18 +110,13 @@ function mapContentPartToAnthropicBlock(
   part: ContentPart,
   targetProviderId: string,
   targetModelId: string,
-  cacheControl: CacheControl | undefined,
 ): AnthropicContentBlock | null {
-  if (part.cacheBreakpoint && !cacheControl) {
-    throw new Error("Prompt cache breakpoint requires a supported registry TTL");
-  }
   switch (part.type) {
     case "text":
       if (part.text.length === 0) return null;
       return {
         type: "text" as const,
         text: part.text,
-        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "image": {
       const data = part.data instanceof URL ? part.data.href : part.data;
@@ -137,7 +141,6 @@ function mapContentPartToAnthropicBlock(
         id: part.toolCallId,
         name: part.toolName,
         input: part.input,
-        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "tool_result":
       return {
@@ -145,7 +148,6 @@ function mapContentPartToAnthropicBlock(
         tool_use_id: part.toolCallId,
         content: safeToolOutput(part.output),
         is_error: part.isError ?? false,
-        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "reasoning": {
       if (!matchesReasoningOrigin(part, targetProviderId, targetModelId)) return null;
@@ -188,9 +190,9 @@ function textFromParts(parts: ContentPart[]): string {
 //
 // Canonical Message → Anthropic MessageParam.
 // System messages are extracted separately. Tool messages become user messages
-// with tool_result blocks. Simple text-only messages use the string shorthand
-// unless cache_control is present. Consecutive same-role messages are merged
-// to satisfy Anthropic's alternating-role constraint.
+// with tool_result blocks. Simple text-only messages use the string shorthand.
+// Consecutive same-role messages are merged to satisfy Anthropic's
+// alternating-role constraint.
 //
 
 /**
@@ -208,7 +210,6 @@ function mapMessage(
   message: Message,
   targetProviderId: string,
   targetModelId: string,
-  cacheControl: CacheControl | undefined,
 ): Anthropic.Messages.MessageParam | null {
   // system messages are extracted separately
   if (message.role === "system") return null;
@@ -219,7 +220,7 @@ function mapMessage(
   if (message.role === "tool") {
     const blocks = message.content
       .filter((p) => p.type === "tool_result")
-      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId, cacheControl))
+      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId))
       .filter((p): p is AnthropicContentBlock => p !== null);
     return blocks.length > 0 ? { role: "user", content: blocks as any } : null;
   }
@@ -229,16 +230,11 @@ function mapMessage(
   if (hasOnlyText && message.content.length > 0) {
     const text = textFromParts(message.content);
     if (text.length === 0) return null;
-    const hasCacheBreakpoint = message.content.some((p) => p.cacheBreakpoint);
-    if (!hasCacheBreakpoint) {
-      return { role, content: text };
-    }
+    return { role, content: text };
   }
 
   const blocks = message.content
-    .map((part) =>
-      mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId, cacheControl),
-    )
+    .map((part) => mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId))
     .filter((p): p is AnthropicContentBlock => p !== null);
   return blocks.length > 0 ? { role, content: orderedAnthropicBlocks(blocks) as any } : null;
 }
@@ -305,38 +301,60 @@ function mergeConsecutiveSameRole(
 
 // ── System prompt extraction ──────────────────────────────────────
 //
-// Extract system messages from the canonical request.
-// Without cache_control, system prompts are joined into a single string.
-// With cache_control on any system text part, system is emitted as an array
-// of text blocks with individual cache_control markers.
+// System messages are joined into the top-level `system` string; cache marking
+// turns it into a single marked text block (see `markCachePrefix`).
 //
 
-function extractSystem(
-  messages: Message[],
-  cacheControl: CacheControl | undefined,
-): string | Anthropic.Messages.TextBlockParam[] | undefined {
-  const systemMessages = messages.filter((m) => m.role === "system");
-  if (systemMessages.length === 0) return undefined;
+function extractSystem(messages: Message[]): string | undefined {
+  const system = textFromParts(
+    messages.filter((m) => m.role === "system").flatMap((m) => m.content),
+  );
+  return system.length > 0 ? system : undefined;
+}
 
-  const systemParts = systemMessages.flatMap((m) => m.content);
-  const hasCacheBreakpoint = systemParts.some((p) => p.cacheBreakpoint);
+// ── Cache marking ─────────────────────────────────────────────────
 
-  if (!hasCacheBreakpoint) {
-    const system = textFromParts(systemParts);
-    return system.length > 0 ? system : undefined;
+/** Thinking blocks and empty text cannot carry `cache_control`. */
+function canCarryCacheControl(block: Anthropic.Messages.ContentBlockParam): boolean {
+  if (block.type === "thinking" || block.type === "redacted_thinking") return false;
+  return block.type !== "text" || block.text.length > 0;
+}
+
+/** Put `cacheControl` on the last block that can carry it; returns null if none can. */
+function markLastCarrier(
+  content: Anthropic.Messages.MessageParam["content"],
+  cacheControl: CacheControl,
+): Anthropic.Messages.ContentBlockParam[] | null {
+  const blocks = messageContentBlocks(content);
+  for (let index = blocks.length - 1; index >= 0; index--) {
+    if (!canCarryCacheControl(blocks[index])) continue;
+    blocks[index] = { ...blocks[index], cache_control: cacheControl } as any;
+    return blocks;
   }
-  if (!cacheControl) throw new Error("Prompt cache breakpoint requires a supported registry TTL");
+  return null;
+}
 
-  const systemBlocks = systemParts
-    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
-    .filter((p) => p.text.length > 0)
-    .map((p) => ({
-      type: "text" as const,
-      text: p.text,
-      ...(p.cacheBreakpoint ? { cache_control: cacheControl } : {}),
-    }));
-
-  return systemBlocks.length > 0 ? systemBlocks : undefined;
+/** Mark the system prompt and the two most recent wire user messages. */
+function markCachePrefix(
+  system: string | undefined,
+  messages: Anthropic.Messages.MessageParam[],
+  cacheControl: CacheControl,
+): {
+  system: string | Anthropic.Messages.TextBlockParam[] | undefined;
+  messages: Anthropic.Messages.MessageParam[];
+} {
+  const marked = [...messages];
+  let remaining = 2;
+  for (let index = marked.length - 1; index >= 0 && remaining > 0; index--) {
+    if (marked[index].role !== "user") continue;
+    remaining--;
+    const content = markLastCarrier(marked[index].content, cacheControl);
+    if (content) marked[index] = { ...marked[index], content };
+  }
+  return {
+    system: system && [{ type: "text", text: system, cache_control: cacheControl }],
+    messages: marked,
+  };
 }
 
 // ── Tool mapping ──────────────────────────────────────────────────
@@ -387,9 +405,7 @@ function mapToolChoice(
 //
 // Assembles the full MessageCreateParamsStreaming from a canonical
 // GenerateRequest. Always sets stream:true. Passes through any extra
-// providerOptions.anthropic keys verbatim; prompt-cache marks are canonical
-// `ContentPart.cacheBreakpoint`, not a providerOptions key, so nothing needs
-// excluding here.
+// providerOptions.anthropic keys verbatim.
 //
 
 export function toAnthropicMessageParams(
@@ -402,11 +418,10 @@ export function toAnthropicMessageParams(
   const cacheControl =
     model.promptCache.kind === "explicit" ? cacheControlForTtl(call.cacheTtlMs) : undefined;
   const maxTokens = request.maxTokens ?? model.maxOutputTokens;
-  const system = extractSystem(request.messages, cacheControl);
   const tools = mapTools(request.tools, providerId);
   const messages = mergeConsecutiveSameRole(
     request.messages
-      .map((message) => mapMessage(message, providerId, model.id, cacheControl))
+      .map((message) => mapMessage(message, providerId, model.id))
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 
@@ -415,11 +430,15 @@ export function toAnthropicMessageParams(
     model.reasoning.canDisable && reasoning !== "off"
       ? ensureThinkingBeforeToolUse(messages)
       : messages;
+  const plainSystem = extractSystem(request.messages);
+  const { system, messages: wireMessages } = cacheControl
+    ? markCachePrefix(plainSystem, repaired, cacheControl)
+    : { system: plainSystem, messages: repaired };
 
   return {
     model: model.id,
     max_tokens: maxTokens,
-    messages: repaired,
+    messages: wireMessages,
     stream: true,
     ...(system !== undefined ? { system } : {}),
     ...(tools ? { tools } : {}),
