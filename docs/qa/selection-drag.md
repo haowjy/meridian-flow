@@ -57,7 +57,12 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
 17. **Into a touched block.** Sweep a range from mid-paragraph A to mid-paragraph B (also across a
     list item, a heading, a code block). Drop it in A's unselected head, then in B's unselected
     tail, and into a code block's unselected part: the text lands at the caret, nothing is lost or
-    doubled, and Ctrl+Z restores text and highlight. A drop inside the range stays a no-op.
+    doubled, and Ctrl+Z restores text, blocks and highlight in one step. A drop inside the range stays
+    a no-op. The lines stay lines: `# Chapter [1⏎Lorem ipsum.] Donec. | Vestibulum.` dropped at `|`
+    gives `# Chapter`, `Donec.`, `1`, `Lorem ipsum. Vestibulum.` (four blocks; the blocks the range
+    reached into keep their text and type, and nothing is left empty). Also try a range from a
+    block's very start and one to its very end, three or more blocks, and a copy: same lines, source
+    untouched. A range that cuts a table is still refused (`Can’t move part of a table`).
 18. **Every painted highlight.** Ctrl+A, then drag a little: the document is lifted and a drop on
     itself changes nothing; dragging it into the composer copies and leaves the document as it was.
     Sweep a range across several paragraphs and press in the blank past a line's last word: it lifts
