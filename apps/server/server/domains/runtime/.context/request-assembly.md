@@ -66,9 +66,9 @@ response counts as a reusable prefix. A fork routes its cache key to the thread
 that owns its cutoff turn. Prediction columns are non-null so the audited
 summarizer decision always stores one.
 
-`ContentPart.cacheBreakpoint` is provider-neutral intent. The loop marks only
-models with explicit cache descriptors, while adapter TTLs and wire shape live
-in the [gateway context](../gateway/.context/CONTEXT.md).
+The loop places no cache breakpoints. The Anthropic adapter marks the wire
+request itself (system, and the two latest user turns) for explicit-cache
+offerings; see the [gateway context](../gateway/.context/CONTEXT.md).
 
 No Work context explains bare Scratch as the chat lineage's notes, shared by
 forks/subagents at the first-chat handle. Named-Work Scratch remains the

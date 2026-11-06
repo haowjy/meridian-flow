@@ -199,79 +199,94 @@ describe("Anthropic message alternation", () => {
   });
 });
 
-describe("Anthropic prompt-cache breakpoints", () => {
-  it("translates a cacheBreakpoint into ephemeral cache_control with a 1h ttl for system, tool_use, and tool_result blocks", () => {
+describe("Anthropic prompt-cache marks", () => {
+  const sonnet = { id: "claude-sonnet-4-5", maxOutputTokens: 256 };
+  const blocksOf = (content: unknown) => (Array.isArray(content) ? content : []);
+
+  it("marks the system block and the last block of the two latest user messages", () => {
     const params = toParams(
       {
         promptCacheRetention: "short" as const,
         messages: [
-          {
-            ...system("You are Writer."),
-            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
-          },
-          assistant([
-            {
-              type: "tool_use",
-              toolCallId: "call_1",
-              toolName: "grep",
-              input: {},
-              cacheBreakpoint: true,
-            },
-          ]),
-          {
-            ...toolResult("call_1", "result", false),
-            content: [
-              {
-                type: "tool_result",
-                toolCallId: "call_1",
-                output: "result",
-                isError: false,
-                cacheBreakpoint: true,
-              },
-            ],
-          },
+          system("You are Writer."),
+          user("first"),
+          assistant([{ type: "tool_use", toolCallId: "c1", toolName: "grep", input: {} }]),
+          toolResult("c1", "result", false),
+          assistant([{ type: "text", text: "done" }]),
+          user("older"),
+          assistant([{ type: "tool_use", toolCallId: "c2", toolName: "grep", input: {} }]),
+          toolResult("c2", "result", false),
         ],
         tools: [{ type: "function", name: "grep", description: "Search.", inputSchema: {} }],
       },
-      { id: "claude-sonnet-4-5", maxOutputTokens: 256 },
+      sonnet,
       "anthropic",
       60 * 60 * 1_000,
     );
     expect(params.system).toEqual([
       { type: "text", text: "You are Writer.", cache_control: EPHEMERAL_1H },
     ]);
-    // Tools are never marked directly (Anthropic renders tools before system,
-    // so the system breakpoint above already covers them).
     expect(params.tools?.[0]).not.toHaveProperty("cache_control");
-    const assistantMessage = params.messages.find((m) => m.role === "assistant");
-    if (!assistantMessage) throw new Error("Expected an assistant message");
-    expect(assistantBlocks({ ...params, messages: [assistantMessage] })[0]).toMatchObject({
-      type: "tool_use",
+    const marked = params.messages.flatMap((m, i) =>
+      blocksOf(m.content).some((b: { cache_control?: unknown }) => b.cache_control) ? [i] : [],
+    );
+    // Tool results fold into user turns: the final tool_result and the "older" user turn.
+    expect(marked).toEqual([params.messages.length - 3, params.messages.length - 1]);
+    expect(blocksOf(params.messages.at(-1)?.content).at(-1)).toMatchObject({
+      type: "tool_result",
       cache_control: EPHEMERAL_1H,
     });
-    const toolMessage = params.messages.find(
-      (m) =>
-        m.role === "user" &&
-        Array.isArray(m.content) &&
-        m.content.some((block) => block.type === "tool_result"),
+    expect(blocksOf(params.messages.at(-3)?.content).at(-1)).toMatchObject({
+      type: "text",
+      text: "older",
+      cache_control: EPHEMERAL_1H,
+    });
+  });
+
+  it("keeps the tail mark when the last user block is an image", () => {
+    const params = toParams(
+      {
+        promptCacheRetention: "short" as const,
+        messages: [
+          system("You are Writer."),
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "look" },
+              { type: "image", data: "aGk=", mediaType: "image/png" },
+            ],
+          },
+        ],
+      },
+      sonnet,
+      "anthropic",
+      60 * 60 * 1_000,
     );
-    const toolContent = toolMessage?.content;
-    const toolBlock = (Array.isArray(toolContent) ? toolContent : []).find(
-      (block: { type: string }) => block.type === "tool_result",
+    expect(blocksOf(params.messages[0].content).map((b: { type: string }) => b.type)).toEqual([
+      "text",
+      "image",
+    ]);
+    expect(blocksOf(params.messages[0].content)[1]).toMatchObject({
+      type: "image",
+      cache_control: EPHEMERAL_1H,
+    });
+  });
+
+  it("sends a joined system string and no cache_control when the model caches automatically", () => {
+    const params = toParams(
+      { promptCacheRetention: "short" as const, messages: [system("Sys"), user("hi")] },
+      { id: "deepseek-flash", maxOutputTokens: 256 },
+      "deepseek",
     );
-    expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL_1H });
+    expect(params.system).toBe("Sys");
+    expect(JSON.stringify(params)).not.toContain("cache_control");
   });
 });
 
 it("keeps implicit thinking and cached content unchanged when only the output cap changes", () => {
   const request = {
     promptCacheRetention: "short" as const,
-    messages: [
-      {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: "Task", cacheBreakpoint: true as const }],
-      },
-    ],
+    messages: [user("Task")],
     reasoning: { effort: "low" as const },
   };
   const original = toParams(

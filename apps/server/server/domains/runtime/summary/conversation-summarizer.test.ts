@@ -136,8 +136,8 @@ describe("conversation summarizer", () => {
       model: threadModel.id,
       promptCacheRetention: "short",
       messages: [
-        { role: "system", content: [{ type: "text", text: "Frozen", cacheBreakpoint: true }] },
-        { role: "user", content: [{ type: "text", text: "Task", cacheBreakpoint: true }] },
+        { role: "system", content: [{ type: "text", text: "Frozen" }] },
+        { role: "user", content: [{ type: "text", text: "Task" }] },
       ],
       tools: [{ type: "function", name: "read", description: "Read", inputSchema: {} }],
       toolChoice: "required",
@@ -146,9 +146,7 @@ describe("conversation summarizer", () => {
       maxTokens: 500,
       providerOptions: { anthropic: { thinking: { type: "disabled" } } },
     };
-    rig.input.retainedMessages = [
-      { role: "user", content: [{ type: "text", text: "Task", cacheBreakpoint: true }] },
-    ];
+    rig.input.retainedMessages = [{ role: "user", content: [{ type: "text", text: "Task" }] }];
     const before = JSON.stringify(rig.input.requestInHand);
     const result = await rig.service.summarize(rig.input);
     const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
