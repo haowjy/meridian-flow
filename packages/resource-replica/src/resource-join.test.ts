@@ -80,6 +80,7 @@ function catalogWithJoin(documentId: string) {
         path: ["Chapter 2.md"],
         uri: "manuscript://Chapter 2.md",
         provisionalName: false,
+        extension: "",
         editable: true,
         filetype: "markdown",
         schemaType: "document",

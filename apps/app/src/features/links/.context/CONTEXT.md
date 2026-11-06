@@ -51,8 +51,9 @@ fallback.
 
 The address answers apply one rule (`matchDocumentPath` from
 `@meridian/contracts`, beside `resolveDocumentHref`, through
-`indexedDocumentAt`): the exact path, or the path with its final extension
-omitted when exactly one document fits. Addresses are unique, so there is no
+`indexedDocumentAt`): the first of `addressCandidates` that names a document (the
+exact path, its alias, then the path with its final extension omitted when exactly one
+document fits). Addresses are unique, so there is no
 "several documents" answer. An ahead ref not known to be settled asks the
 server, because settlement is server state; the local exact-address step turns it solid at
 once when a local-first arrival (a follow's Create) sits there, and a server

@@ -47,6 +47,7 @@ export function node(
         aliases: [],
         hasProperties: false,
         provisionalName: false,
+        extension: "",
         editable: true,
         filetype: "markdown",
         schemaType: "document",

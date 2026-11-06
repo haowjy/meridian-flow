@@ -46,7 +46,7 @@ export function reserveResourceDocument(input: {
       schema: input.schema,
       initialization: "reserved",
     },
-    classification: { editable: true, filetype: "markdown", schemaType: "document" },
+    classification: { extension: "", editable: true, filetype: "markdown", schemaType: "document" },
     materialization: {
       kind: "untitled",
       folderPath,
@@ -124,10 +124,10 @@ export function planResourceLocation(input: {
     Boolean(record.resource.obligations.canonicalRefresh),
   );
   // Compute the optimistic name once, retaining the input for server dispatch.
+  const { classification } = record.resource;
   const stored = storedFilename(
     input.destination.name,
-    (latest?.desired.kind === "set-location" ? latest.desired.destination.name : undefined) ??
-      record.resource.canonical?.name,
+    classification && { extension: classification.extension, stored: !classification.editable },
   );
   const destination = stored.ok ? { ...input.destination, name: stored.name } : input.destination;
   const superseded = supersedeRepairableNamespaceWork(record, input.projectId);

@@ -4,11 +4,13 @@
  * list dragged, or a peer renamed or moved, is judged as it is now. Pure and
  * synchronous: hovering plans on every `dragover`.
  */
+
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextOwner,
   ContextSiblingPosition,
   CopyContextEntryView,
+  NamedRow,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
@@ -60,6 +62,7 @@ export type MoveView = PlacementView & {
 export type PlacedEntry = {
   ref: EntryRef;
   name: string;
+  row?: NamedRow;
   location: ResourceLocation;
   parent: ParentRef;
 };
@@ -68,6 +71,7 @@ export type PlacedEntry = {
 export type MoveRow = {
   entry: EntryRef;
   name: string;
+  row?: NamedRow;
   /** A Move… retry keeps the writer's refused name; a drag uses the row's current name. */
   typed?: string;
   before: ParentRef;
@@ -114,7 +118,9 @@ function placeEntryRef({ records, placement }: PlacementView, ref: EntryRef): Pl
   const location = record ? placement.resourceLocation(record) : null;
   if (!record || !location) return null;
   const parent = placement.parentForResource(record);
-  return parent ? { ref, name: location.name, location, parent } : null;
+  const { classification } = record.resource;
+  const row = { extension: classification.extension, stored: !classification.editable };
+  return parent ? { ref, name: location.name, row, location, parent } : null;
 }
 
 /** The name `ref` carries now; null once the row is gone. */
@@ -332,13 +338,26 @@ export function planMove(view: PlacementView, resolved: ResolvedDrop | null): Mo
   const moves = sources.flatMap((source) =>
     sameParent(source.parent, into)
       ? []
-      : [{ entry: source.ref, name: source.name, before: source.parent, after: into }],
+      : [
+          {
+            entry: source.ref,
+            name: source.name,
+            row: source.row,
+            before: source.parent,
+            after: into,
+          },
+        ],
   );
   return moves.length === 0 ? NONE : { kind: "ready", destinationName, moves };
 }
 
 /** One row a Copy duplicates: the row as it is named now, and the view it reads. */
-export type CopyRow = { entry: EntryRef; name: string; view: CopyContextEntryView };
+export type CopyRow = {
+  entry: EntryRef;
+  name: string;
+  row?: NamedRow;
+  view: CopyContextEntryView;
+};
 
 export type CopyPlan =
   | { kind: "none" }
@@ -369,6 +388,7 @@ export function planCopy(view: PlacementView, resolved: ResolvedDrop | null): Co
   const copies = sources.map((source) => ({
     entry: source.ref,
     name: source.name,
+    row: source.row,
     view: source.view,
   }));
   if (!position) return { kind: "ready", destinationName, scheme, into, copies };
@@ -426,6 +446,7 @@ function planPositioned(
     return {
       entry: source.ref,
       name: source.name,
+      row: source.row,
       before: source.parent,
       after: into,
       position: previous ? ({ kind: "after", siblingId: previous.ref.id } as const) : position,

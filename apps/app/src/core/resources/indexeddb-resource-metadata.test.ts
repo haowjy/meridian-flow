@@ -54,7 +54,12 @@ function resource(handle = "doc", revision = 1): ResourceRecord {
       revision,
       identity: { documentId: handle, revision: 1 },
       content: { kind: "exact", databaseName: `exact:${handle}`, schema: "0.5" },
-      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      classification: {
+        extension: "",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
       materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
       serverHold: "local",

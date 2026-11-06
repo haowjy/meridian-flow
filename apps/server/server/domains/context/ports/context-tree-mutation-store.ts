@@ -25,7 +25,8 @@ export type ContextLocationToken =
       path: string;
       /** Persisted Yjs classification; null identifies a storage-backed document. */
       filetype: string | null;
-      /** The stored extension: `md` on a file kept as `binary.md`, which `path` alone cannot tell. */
+      /** The stored name and extension: `binary` and `md` for a file kept as `binary.md`, which `path` alone cannot tell. */
+      name: string;
       extension: string;
     }
   | {
@@ -60,7 +61,7 @@ interface PreparedContextMoveBase {
 }
 
 type PreparedFileMove = PreparedContextMoveBase & {
-  /** Resolved by the destination codec; null keeps a storage-backed file's type. */
+  /** Resolved by the destination codec; null keeps the file's type. */
   destinationFiletype: Filetype | null;
   /** The destination leaf's stored parts, parsed once by the mover; storage never re-parses them. */
   destinationFilename: { name: string; extension: string };

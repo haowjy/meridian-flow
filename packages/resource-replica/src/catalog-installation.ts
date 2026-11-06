@@ -141,10 +141,12 @@ export function sameResourceLocation(
 }
 
 function classificationFor(entry: CatalogFileEntry): CatalogFileClassification {
+  const { extension } = entry;
   if (entry.editable)
-    return { editable: true, filetype: entry.filetype, schemaType: entry.schemaType };
+    return { extension, editable: true, filetype: entry.filetype, schemaType: entry.schemaType };
   if (entry.disposition === "custom")
     return {
+      extension,
       editable: false,
       disposition: "custom",
       fileType: entry.fileType,
@@ -152,6 +154,7 @@ function classificationFor(entry: CatalogFileEntry): CatalogFileClassification {
       filetype: entry.filetype,
     };
   return {
+    extension,
     editable: false,
     disposition: "binary",
     fileType: entry.fileType,

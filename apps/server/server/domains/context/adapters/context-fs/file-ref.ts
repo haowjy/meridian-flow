@@ -49,6 +49,7 @@ export function fileRefOf(
     ...base,
     kind: "binary",
     fileType: doc.fileType,
+    extension: doc.extension,
     storageUrl: doc.storageUrl,
     mimeType: doc.mimeType ?? undefined,
     hasPreview: doc.hasPreview,

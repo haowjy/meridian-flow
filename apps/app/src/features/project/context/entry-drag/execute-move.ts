@@ -7,6 +7,7 @@
  * move needs no list on screen. Results are data; selection belongs to the caller.
  */
 
+import type { NamedRow } from "@meridian/contracts/protocol";
 import {
   type ParentRef,
   placementParentKey,
@@ -48,6 +49,8 @@ export type MoveResult = {
 export type Arrival = {
   entry: EntryRef;
   name: string;
+  /** The file's own naming facts; a folder has none. */
+  row?: NamedRow;
   /** The name the writer asked for (a Move… retry keeps a refused rename); the row's own otherwise. */
   typed?: string;
   before?: ParentRef;
@@ -115,7 +118,7 @@ export function arrivals(view: NamingView, rows: readonly Arrival[]) {
         row.typed ?? row.name,
         occupancy(row.after),
         row.entry.kind,
-        row.name,
+        row.row,
       ),
     reserve: (row: Arrival, name: string) =>
       occupancy(row.after).claim({

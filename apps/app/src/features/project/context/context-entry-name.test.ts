@@ -33,12 +33,16 @@ describe("entryNameStemEnd", () => {
   });
 
   it("selects the part before a visible extension", () => {
-    expect(entryNameStemEnd("outline.json")).toBe("outline".length);
-    expect(entryNameStemEnd("Vol. 2.json")).toBe("Vol. 2".length);
+    expect(entryNameStemEnd("outline.json", { extension: "json", stored: false })).toBe(
+      "outline".length,
+    );
+    expect(entryNameStemEnd("Vol. 2.json", { extension: "json", stored: false })).toBe(
+      "Vol. 2".length,
+    );
   });
 
   it("selects a folder's whole name", () => {
-    expect(entryNameStemEnd("v1.json", "folder")).toBe("v1.json".length);
+    expect(entryNameStemEnd("v1.json")).toBe("v1.json".length);
   });
 });
 
@@ -92,7 +96,7 @@ describe("validateContextEntryName", () => {
         "settings",
         [{ entryId: "sibling", name: "settings.toml", kind: "file" }],
         "file",
-        "config.toml",
+        { extension: "toml", stored: false },
       )?.level,
     ).toBe("error");
     expect(

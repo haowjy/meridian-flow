@@ -1,4 +1,5 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
+import { matchDocumentPath } from "@meridian/contracts";
 import {
   type CatalogScope,
   type CatalogWakeHint,
@@ -182,6 +183,7 @@ export function projectCatalogFile(
     parentId: entry.parentId,
     documentId: entry.entryId,
     name: entry.name,
+    extension: entry.extension,
     aliases: entry.aliases,
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
@@ -342,16 +344,20 @@ export function projectCatalogView(
         return child ? [child] : [];
       }),
     files,
-    findPath: (path) =>
-      files().find((file) => file.path === path) ??
-      [...view.entries.values()].flatMap((entry) =>
-        entry.kind === "folder" &&
-        entry.sourceId === sourceId &&
-        `/${entry.path.join("/")}` === path
-          ? [projectCatalogDirectory(entry, foldersById.get(entry.entryId), placement)]
-          : [],
-      )[0] ??
-      null,
+    findPath: (path) => {
+      const all = files();
+      const literal =
+        all.find((file) => file.path === path) ??
+        [...view.entries.values()].flatMap((entry) =>
+          entry.kind === "folder" &&
+          entry.sourceId === sourceId &&
+          `/${entry.path.join("/")}` === path
+            ? [projectCatalogDirectory(entry, foldersById.get(entry.entryId), placement)]
+            : [],
+        )[0];
+      // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
+      return literal ?? matchDocumentPath(all, path, (file) => file.path);
+    },
     findDocument: (documentId) => {
       const found = node(documentId);
       return found?.kind === "file" ? found : null;

@@ -34,7 +34,12 @@ function local(): ResourceRecord {
       revision: 1,
       identity: { documentId: "document", revision: 1 },
       content: { kind: "exact", databaseName: "content", schema: null },
-      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      classification: {
+        extension: "",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
       materialization: {
         kind: "untitled",
         folderPath: "drafts",

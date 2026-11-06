@@ -9,8 +9,8 @@ import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/c
 import {
   filenameForBinary,
   type ParsedDocumentFilename,
+  parseDocumentFilename,
   renderFilename,
-  storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -525,11 +525,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
     const segments = dispatch.path.split("/");
     const filename = segments.pop() ?? "";
-    const parsed = storedFilename(filename, { extension: sourceExtension ?? "" });
+    const parsed = parseDocumentFilename(filename, { sourceExtension });
     if (!parsed.ok) return Err({ ...parsed.error, uri: dispatch.canonical });
     const parts = binary
-      ? filenameForBinary(parsed.filename, binary.fileType, binary.mimeType)
-      : parsed.filename;
+      ? filenameForBinary(parsed.value, binary.fileType, binary.mimeType)
+      : parsed.value;
     const path = [...segments, renderFilename(parts.name, parts.extension)].join("/");
     return Ok({
       ...dispatch,
