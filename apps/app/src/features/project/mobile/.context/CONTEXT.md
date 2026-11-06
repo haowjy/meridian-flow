@@ -35,18 +35,16 @@ mount only its active main screen, unlike desktop persistent surfaces.
 
 ## Document registry and review
 
-Mobile documents are read-only for the writer but live for AI edits (a review's
-draft body too). Every editable phone document (the ordinary route, the local
+The writer can type in a phone document, as on desktop; a review's draft body
+stays read-only. Every editable phone document (the ordinary route, the local
 pointer and a draft-only document) renders `ContextDocumentHost` directly, inside
 a `relative min-h-0 flex-1` frame that is a direct child of a flex column, with
 `PHONE_DOCUMENT_PRESENTATION` (`context/document-presentation.ts`). It does not
 use `ContextEditorMountHost`, the desktop's warm-set LRU.
 
-The presentation value is the whole phone difference: it never types (no
-toolbar; the host's `readOnly` stays the Work's archived scope, which the
-room-scope check compares with the room's access), shows no remote carets, names
-the body "Read-only live document", suspends presence from the click that
-requests a review, and sets the binding owner id `mobile-project-document-host`.
+The presentation value is the whole phone difference: it shows no remote carets,
+keeps a review body read-only, suspends presence from the click that requests a review, and sets the binding
+owner id `mobile-project-document-host`.
 Everything else is the shared host.
 
 The route-owned phone presentation reuses the installed Editor tab's instance
