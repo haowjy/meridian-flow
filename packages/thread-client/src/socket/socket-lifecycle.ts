@@ -379,9 +379,8 @@ export class SocketLifecycleController {
           },
           phase: "recorded",
         });
-      } catch {
-        // Observer diagnostics are host callbacks too; they cannot affect transport.
-      }
+        // slop-lint: allow swallowed-error the failure log is a host callback too, and transport must survive it
+      } catch {}
     }
   }
 }
