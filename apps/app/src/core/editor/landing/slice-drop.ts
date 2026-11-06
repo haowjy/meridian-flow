@@ -177,7 +177,7 @@ type BuiltDrop = { transaction: Transaction; from: number; to: number };
  * The transaction one slice drop dispatches, with the range it inserts in the
  * new document, or null when it changes nothing. Follows ProseMirror's own
  * drop (move-delete, node-vs-slice insert, landing selection), except that a
- * a multi-line slice is inserted as blocks at a gap in the landing line.
+ * multi-line slice is inserted as blocks at a gap in the landing line.
  */
 function sliceDropTransaction(
   state: EditorState,
@@ -185,6 +185,7 @@ function sliceDropTransaction(
   slice: Slice,
   source: SliceSource,
 ): BuiltDrop | null {
+  if (invisibleBoundaryRange(source.selection)) return null;
   const transaction = state.tr;
   deleteSource(transaction, source);
   const mapped = transaction.mapping.map(pos);
@@ -232,6 +233,22 @@ function sliceDropTransaction(
     transaction.setSelection(TextSelection.between($landing, transaction.doc.resolve(end)));
   }
   return { transaction, from, to: end };
+}
+
+function invisibleBoundaryRange(selection: Selection | null): boolean {
+  if (
+    !(selection instanceof TextSelection) ||
+    selection.$from.parentOffset !== selection.$from.parent.content.size ||
+    selection.$to.parentOffset !== 0
+  )
+    return false;
+  let textblocks = 0;
+  let carriesLeaf = false;
+  selection.$from.doc.slice(selection.from, selection.to).content.descendants((node) => {
+    if (node.isTextblock) textblocks++;
+    if (node.isLeaf) carriesLeaf = true;
+  });
+  return textblocks === 2 && !carriesLeaf;
 }
 
 type BlockSlice = { slice: Slice; joinsTail: boolean };

@@ -1,9 +1,10 @@
 /**
  * Takes a text selection out of the document without joining the blocks it
  * crosses. A textblock the range only reaches into keeps its unselected text
- * and its type; a block the range covers entirely goes, and so do the
- * containers that would be left empty (a list item, a list). `deleteSelection`
- * would merge the last block into the first.
+ * and its type; prose whitespace beside the removed text is trimmed. A block
+ * the range covers entirely goes, and so do the containers that would be left
+ * empty (a list item, a list). `deleteSelection` would merge the last block
+ * into the first.
  */
 
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -11,11 +12,10 @@ import { type Selection, TextSelection, type Transaction } from "@tiptap/pm/stat
 
 import { isTable, isTableCell } from "./point-landing";
 
-/** True when `selection` is one range that crosses textblocks, which is what this removes. */
+/** True when `selection` crosses textblocks, which is what this removes. */
 export function crossesTextblocks(selection: Selection): boolean {
   return (
     selection instanceof TextSelection &&
-    selection.ranges.length === 1 &&
     !selection.empty &&
     !(selection.$from.parent.isTextblock && selection.$from.sameParent(selection.$to))
   );
