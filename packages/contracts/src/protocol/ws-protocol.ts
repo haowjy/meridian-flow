@@ -86,7 +86,7 @@ const wsAskAnswerMessageSchema = z.object({
 
 /**
  * The writer is interacting with an open question ask. No reply: the server moves the ask's
- * deadline out and publishes it only if the deadline moved. `answers`, when present, replace the
+ * deadline out and publishes it when the deadline crosses a 30 s step or the draft changed. `answers`, when present, replace the
  * draft the server holds; a report without them (page activity) leaves that draft as it is.
  */
 const wsAskPresenceMessageSchema = z.object({

@@ -37,7 +37,7 @@ function questionResult(question: string, answer: ResolvedQuestionAnswer): JsonO
     case "timeout":
       return { question, answer: answer.label, timed_out: true };
     case "unsent":
-      return { question, answer: answer.text, free_text: true, timed_out: true };
+      return { question, answer: null, unsent_text: answer.text, timed_out: true };
   }
 }
 
