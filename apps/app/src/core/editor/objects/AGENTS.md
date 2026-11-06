@@ -34,7 +34,7 @@ tables use the full-cell `CellSelection` spelling consumed by
 - `typeBesideObjectTransaction` inserts beside a selected object. Destructive
   commands remove the registered node, not a table's cell selection. A block
   drag uses the block surface and `NodeHold`; inline drag uses ProseMirror.
-- Keep table landing and pointer-boundary decisions in their shared helpers.
+- Keep table landing and press landing decisions in their shared helpers.
   A structural drop must resolve inside a cell rather than manufacture a
   column.
 
