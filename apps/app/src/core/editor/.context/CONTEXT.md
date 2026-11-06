@@ -193,7 +193,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   document over its boxes and returns a landing for any point, including a
   margin and the space below the last block: `inline` (a caret in writer
   text), `seam` (between blocks, where a paragraph fits) or `source` (inside a
-  code block's text). Nothing is outside `view.dom`: the ProseMirror node spans
+  code block's text, and only a real code block's: a component block is an
+  object, so a point over it lands at the seam before or after it). Nothing is outside `view.dom`: the ProseMirror node spans
   the whole pane and carries the margin as its own padding, so a press or a
   drop anywhere on the pane reaches the walk. A press and a drop read the same
   landing; they differ in what they do with it.
@@ -248,9 +249,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   inside code`) and a tree row too (`Can’t mention inside code`), each with no
   caret. Inline code is not a fence: a tree row or picture there snaps to the
   span's edge; a text slice stays in the span. A file that is not a picture
-  shows `Only pictures can be dropped here` while dragging. A table's shape is
-  held: a structural drop never makes a table column, and a drop in a table
-  lands in a cell.
+  shows `Only pictures can be dropped here` while dragging. A drop never changes
+  a table's rows or columns, spills out of its cell or nests a table (Markdown
+  can't hold one). A slice that can't land in a cell whole lands as its text
+  there, the way it does in a code block, with a moved source deleted; one with
+  a picture or chip in it, or whose moved source can't be deleted without
+  breaking its own table, is refused with `Can’t put that in a table cell`.
+  A move onto the selection's own range changes nothing and shows no hint.
 - StarterKit's dropcursor stays disabled; two landings answering one drag is
   the bug this prevents. `landing/drop-caret.ts` draws the one caret.
   Keyboard behavior follows the same reading, so no input device places a
