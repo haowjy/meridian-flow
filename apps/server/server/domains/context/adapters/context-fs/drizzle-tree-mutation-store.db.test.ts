@@ -126,6 +126,35 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow("Context entry already exists");
     });
 
+    it("moves a file into a folder whose name is the alias of a sibling document", async () => {
+      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
+      await store.createDocumentRecordIfAbsent({
+        folderId: null,
+        name: "Lore",
+        extension: "",
+        filetype: "markdown",
+      });
+      await store.ensureFolderPath(["Lore.md"]);
+      await insertDocument(DOC_DELETE_ID, "Chapter");
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
+      const source = await tree.inspect(SOURCE_ID, "Chapter");
+      const folder = await tree.inspect(SOURCE_ID, "Lore.md");
+      if (source?.kind !== "file" || folder?.kind !== "directory") throw new Error("missing node");
+      expect(
+        await tree.commitMove({
+          source,
+          destinationSourceId: SOURCE_ID,
+          destinationPath: "Lore.md/Chapter",
+          destinationParentToken: folder,
+          destinationFilename: { name: "Chapter", extension: "" },
+          destinationFiletype: "markdown",
+          expectedTarget: { state: "absent" },
+        }),
+      ).toMatchObject({ ok: true });
+    });
+
     it("records direct identity history and permanently consumes reused file and folder paths", async () => {
       await insertDocument(DOC_DELETE_ID, "alpha");
       const tree = new DrizzleContextTreeMutationStore(db, {

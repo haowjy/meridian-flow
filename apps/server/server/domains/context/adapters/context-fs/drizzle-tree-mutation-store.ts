@@ -135,10 +135,12 @@ export async function inspectTreeLocation(
       ? { kind: "directory", nodeId: folderIds[0] as FolderId, sourceId, path: normalized }
       : null;
   }
-  const found = await tree.resolveAddress(view, {
-    contextSourceId: sourceId as ContextSourceId,
-    path: normalized,
-  });
+  const query = { contextSourceId: sourceId as ContextSourceId, path: normalized };
+  // A caller that wants a document reaches `Lore` by `Lore.md` beside a folder `Lore.md`; with
+  // no document it still sees the folder that holds the literal path.
+  const document =
+    expectedKind === "file" ? await tree.resolveDocumentAddress(view, query) : undefined;
+  const found = document?.kind === "found" ? document : await tree.resolveAddress(view, query);
   if (found.kind !== "found") return null;
   return found.node.kind === "document"
     ? fileToken(found.node.document)

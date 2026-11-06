@@ -230,7 +230,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it.each([
       { occupant: "folder", existing: "outline.json", type: "file", path: "outline.json" },
-      { occupant: "file", existing: "Taken", type: "folder", path: "Taken.md" },
+      { occupant: "file", existing: "Taken", type: "folder", path: "Taken" },
     ] as const)("carries a server-discovered $occupant conflict through the create HTTP client", async ({
       occupant,
       existing,
