@@ -198,9 +198,9 @@ shows), without the place it already holds. It reads "Already in <folder>" only 
 siblings. The phone uses the same picker; it has no drag.
 A taken name never refuses: the row arrives at the next free name (predicted
 from the destination's rows, decided by the server) through `setLocation` for
-files and `setFolderLocation` for folders. Before the click, the destination's
-Move action carries a warning line under it ("chapter-1 will be renamed
-chapter-1 (2)", the `note` of a `DrillAction`).
+files and `setFolderLocation` for folders. Move and Copy say nothing about the
+new name beforehand: there is nothing to decide, and the tree shows it at once.
+The rename field does warn, since the writer can still type something else.
 Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
 
@@ -272,10 +272,7 @@ itself", a folder over its own subtree), or nothing (the row is already there, t
 navigation-only folder, or the selection holds a row that can't move or has gone). A taken name never refuses: each row arrives at the next free
 name (`chapter-2 (2)`), predicted (`arrivals` in `execute-move.ts`) against the destination's
 rows plus the rows placed before it in the same drop; the server decides the
-final name. The hover shows that prediction before the drop: an accept whose
-rows would arrive renamed carries a warning, drawn as a second line under the
-hint ("chapter-1 will be renamed chapter-1 (2)", or "3 items will be renamed").
-Letting go accepts it; Escape or another target declines it. A drop moves every carried row through
+final name. A drop moves every carried row through
 `moveRows` (`entry-drag/execute-move.ts`), reselects them and reveals the destination (the target's
 own `reveal`, the same one the spring calls). The tree is the whole report of a move that works.
 A row the replica won't admit toasts "Couldn't move chapter-3 to Act 2." ("Couldn't move 3 items

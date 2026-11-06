@@ -122,7 +122,7 @@ Use a `__delay` of `8000` to `14000` where a step says "hold".
 12. Phone: a refused folder row in Files → Unfiled says "Couldn't create this folder. Try
     another place." with Move… and Rename under it (drive the phone over CDP as in
     [refused-create](refused-create.md) step 14). Move… opens at the refused destination;
-    Move to Manuscript lands the folder and its mark goes.
+    Move here lands the folder and its mark goes.
 
 ## Server refusals a folder create can get
 
