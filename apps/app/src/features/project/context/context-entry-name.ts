@@ -36,7 +36,8 @@ function storedNameKey(name: string): string {
 /** Where the part a writer renames ends: before a visible extension, otherwise the whole name. */
 export function entryNameStemEnd(name: string, kind: ContextCreateKind = "file"): number {
   if (kind === "folder") return name.length;
-  const parsed = parseDocumentFilename(name);
+  // A prose suffix on a displayed name is a kept file's own extension (`binary.md`).
+  const parsed = parseDocumentFilename(name, { storageBacked: true });
   const extension = parsed.ok ? parsed.value.extension : "";
   return extension && name.toLowerCase().endsWith(`.${extension}`)
     ? name.length - extension.length - 1

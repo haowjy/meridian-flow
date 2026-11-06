@@ -246,10 +246,11 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
 
   async resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>> {
     const { dir, filename } = splitPath(normalizeTreePath(path));
-    const parsed = parseDocumentFilename(filename);
-    if (!parsed.ok) return { kind: "not_found" };
     const folder = await this.resolveFolderAt(view, dir.join("/"));
     if (folder.kind !== "found") return { kind: "not_found" };
+    // The literal stored name, as the Drizzle tree resolves it; ContextFS adds the alias lookup.
+    const parsed = parseDocumentFilename(filename, { storageBacked: true });
+    if (!parsed.ok) return { kind: "not_found" };
     const document = this.findDocumentRecord(
       folder.node?.id ?? null,
       parsed.value.name,

@@ -16,7 +16,6 @@ import {
   type ContextDestinationParent,
   type DeleteContextEntryResult,
   type Filetype,
-  parseDocumentFilename,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -452,20 +451,24 @@ export class ContextTreeMover {
       policy.target === "exact",
     );
     if (!targetPath.ok) return targetPath;
-    let destinationFiletype: Filetype | null | undefined;
-    let destinationFilename: { name: string; extension: string } | undefined;
+    let fileDestination:
+      | {
+          destinationFiletype: Filetype | null;
+          destinationFilename: { name: string; extension: string };
+        }
+      | undefined;
     if (sourceToken.value.kind === "file") {
-      const targetParts = storedFilename(basename(targetPath.value), sourceBasename);
+      const { extension, filetype } = sourceToken.value;
+      const targetParts = storedFilename(basename(targetPath.value), { extension });
       if (!targetParts.ok) return Err({ ...targetParts.error, uri: destination.canonical });
-      // A storage-backed file keeps its type unless the extension changes.
-      const sourceParts = parseDocumentFilename(sourceBasename, { storageBacked: true });
-      destinationFiletype =
-        sourceToken.value.filetype === null &&
-        sourceParts.ok &&
-        targetParts.filename.extension === sourceParts.value.extension
-          ? null
-          : targetParts.filename.filetype;
-      destinationFilename = targetParts.filename;
+      fileDestination = {
+        // A storage-backed file keeps its type unless the extension changes.
+        destinationFiletype:
+          filetype === null && targetParts.filename.extension === extension
+            ? null
+            : targetParts.filename.filetype,
+        destinationFilename: targetParts.filename,
+      };
       targetPath = Ok(joinPath(dirname(targetPath.value), targetParts.name));
     }
     if (!targetPath.ok) return targetPath;
@@ -507,12 +510,11 @@ export class ContextTreeMover {
     };
     if (sourceToken.value.kind === "directory")
       return Ok({ ...prepared, source: sourceToken.value });
-    if (!destinationFilename) throw new Error("a file move names its destination");
+    if (!fileDestination) throw new Error("a file move names its destination");
     return Ok({
       ...prepared,
       source: sourceToken.value,
-      destinationFiletype,
-      destinationFilename,
+      ...fileDestination,
       graduateProvisionalName: policy.target === "exact" && policy.graduateProvisionalName === true,
     });
   }
