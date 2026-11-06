@@ -5,7 +5,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import type { Node as PMNode, Slice } from "@tiptap/pm/model";
+import { Fragment, type Node as PMNode, type ResolvedPos, Slice } from "@tiptap/pm/model";
 import {
   type EditorState,
   NodeSelection,
@@ -168,8 +168,9 @@ type BuiltDrop = { transaction: Transaction; from: number; to: number };
 
 /**
  * The transaction one slice drop dispatches, with the range it inserts in the
- * new document, or null when it changes nothing. Mirrors ProseMirror's own
- * drop: move-delete, node-vs-slice insert, landing selection.
+ * new document, or null when it changes nothing. Follows ProseMirror's own
+ * drop (move-delete, node-vs-slice insert, landing selection), except that a
+ * multi-line slice breaks the line it lands in (see `breakAtLanding`).
  */
 function sliceDropTransaction(
   state: EditorState,
@@ -185,8 +186,11 @@ function sliceDropTransaction(
       ? slice.content.firstChild
       : null;
   const beforeInsert = transaction.doc;
+  const inserted = transaction.steps.length;
+  const $mapped = transaction.doc.resolve(mapped);
+  const broken = single ? null : breakAtLanding($mapped, slice);
   if (single) transaction.replaceRangeWith(mapped, mapped, single);
-  else transaction.replaceRange(mapped, mapped, slice);
+  else transaction.replaceRange(mapped, mapped, broken ?? slice);
   if (transaction.doc.eq(beforeInsert)) return null;
 
   // Assoc -1 keeps an insertion at `pos` from pushing the start past its own content.
@@ -195,13 +199,79 @@ function sliceDropTransaction(
   transaction.mapping.maps.at(-1)?.forEach((_from, _to, _newFrom, newTo) => {
     end = newTo;
   });
-  const $landing = transaction.doc.resolve(mapped);
+  // Landing at a block's start leaves an empty block before the first line.
+  if (broken && $mapped.parentOffset === 0) {
+    transaction.delete(mapped - 1, mapped + 1);
+    end = transaction.mapping.slice(inserted + 1).map(end, -1);
+  }
+  const $landing = transaction.doc.resolve(broken ? Math.min(mapped + 1, end) : mapped);
   if (single && NodeSelection.isSelectable(single) && $landing.nodeAfter?.sameMarkup(single)) {
     transaction.setSelection(new NodeSelection($landing));
   } else {
     transaction.setSelection(TextSelection.between($landing, transaction.doc.resolve(end)));
   }
   return { transaction, from, to: end };
+}
+
+/**
+ * A slice of several lines landing inside a textblock keeps its lines: the
+ * first starts its own line and the last joins what follows, both as blocks of
+ * the landing's type. (A line whose end the selection cut through is retyped; a
+ * block the slice carries whole keeps its type.) A leading empty block of the
+ * landing's type, left open at its start, is what makes the first line a new
+ * block rather than a continuation of the text before the caret. Null when the
+ * slice lands whole.
+ */
+function breakAtLanding($landing: ResolvedPos, slice: Slice): Slice | null {
+  const block = $landing.parent;
+  if (!block.isTextblock || block.type.spec.code) return null;
+  const retype = (line: PMNode): PMNode =>
+    block.type.validContent(line.content)
+      ? block.type.create(block.attrs, line.content, line.marks)
+      : line;
+
+  const blocks = slice.content.content.slice();
+  const first = peelLine(blocks, 0, slice.openStart);
+  const last = blocks.length > 0 ? peelLine(blocks, blocks.length - 1, slice.openEnd) : null;
+  if (!first || !last) return null;
+  const lines = [
+    block.type.create(block.attrs),
+    slice.openStart > 0 ? retype(first) : first,
+    ...blocks,
+    slice.openEnd > 0 ? retype(last) : last,
+  ];
+  return new Slice(Fragment.from(lines), 1, slice.openEnd > 0 ? 1 : 0);
+}
+
+/**
+ * Takes the textblock at the end of the open edge out of `blocks[index]`,
+ * leaving what remains of its ancestors (or nothing) in its place. Null, with
+ * `blocks` unchanged, when the edge doesn't end in a textblock.
+ */
+function peelLine(blocks: PMNode[], index: number, open: number): PMNode | null {
+  const atStart = index === 0;
+  const peel = (node: PMNode, depth: number): { line: PMNode; rest: PMNode | null } | null => {
+    if (node.isTextblock) return { line: node, rest: null };
+    if (depth >= open || node.childCount === 0) return null;
+    const at = atStart ? 0 : node.childCount - 1;
+    const inner = peel(node.child(at), depth + 1);
+    if (!inner) return null;
+    const siblings: PMNode[] = [];
+    node.forEach((child, _offset, i) => {
+      if (i !== at) siblings.push(child);
+    });
+    const kept = inner.rest
+      ? atStart
+        ? [inner.rest, ...siblings]
+        : [...siblings, inner.rest]
+      : siblings;
+    return { line: inner.line, rest: kept.length ? node.copy(Fragment.from(kept)) : null };
+  };
+  const peeled = peel(blocks[index], 0);
+  if (!peeled) return null;
+  if (peeled.rest) blocks[index] = peeled.rest;
+  else blocks.splice(index, 1);
+  return peeled.line;
 }
 
 function sameGrid(a: PMNode, b: PMNode): boolean {
