@@ -140,17 +140,13 @@ describe("conversation summarizer", () => {
         { role: "user", content: [{ type: "text", text: "Task" }] },
       ],
       tools: [{ type: "function", name: "read", description: "Read", inputSchema: {} }],
-      toolChoice: "required",
       reasoning: "disabled",
       promptCacheKey: "owner",
-      maxTokens: 500,
-      providerOptions: { anthropic: { thinking: { type: "disabled" } } },
     };
     rig.input.retainedMessages = [{ role: "user", content: [{ type: "text", text: "Task" }] }];
     const before = JSON.stringify(rig.input.requestInHand);
     const result = await rig.service.summarize(rig.input);
     const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
-    expect(sent.maxTokens).toBe(500);
     expect(sent.messages.at(-1)?.content).toMatchObject([
       { type: "text", text: expect.stringContaining('user: "Task"') },
     ]);
@@ -163,9 +159,7 @@ describe("conversation summarizer", () => {
       "immediately before this system update",
     );
 
-    expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
-      before,
-    );
+    expect(JSON.stringify({ ...sent, messages: sent.messages.slice(0, -1) })).toBe(before);
     expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
     expect(sent.messages.at(-1)?.content).toMatchObject([
       { type: "text", text: expect.stringContaining("Style directions") },

@@ -283,27 +283,6 @@ describe("Anthropic prompt-cache marks", () => {
   });
 });
 
-it("keeps implicit thinking and cached content unchanged when only the output cap changes", () => {
-  const request = {
-    promptCacheRetention: "short" as const,
-    messages: [user("Task")],
-    reasoning: { effort: "low" as const },
-  };
-  const original = toParams(
-    request,
-    { id: "claude-sonnet-5-5", maxOutputTokens: 16384 },
-    "anthropic",
-    3600000,
-  );
-  const capped = toParams(
-    { ...request, maxTokens: 4096 + 300 },
-    { id: "claude-sonnet-5-5", maxOutputTokens: 16384 },
-    "anthropic",
-    3600000,
-  );
-  expect(capped).toEqual({ ...original, max_tokens: 4396 });
-});
-
 it("preserves real Work and Write command instructions only when projecting for Anthropic", () => {
   for (const input of [WorkCommandSchema, WriteToolInputSchema]) {
     const inputSchema = modelToolSchema(input);

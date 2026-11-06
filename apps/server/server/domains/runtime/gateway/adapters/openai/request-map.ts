@@ -268,26 +268,6 @@ function mapTools(tools: Tool[] | undefined): ResponsesTool[] | undefined {
   );
 }
 
-// ── Tool choice mapping ───────────────────────────────────────────
-//
-// Canonical toolChoice → OpenAI Responses tool_choice. `required` maps to
-// `required` (Responses supports it natively); `auto`/`none`/named tool
-// map directly.
-//
-
-function mapToolChoice(
-  toolChoice: GenerateRequest["toolChoice"],
-): OpenAI.Responses.ToolChoiceOptions | OpenAI.Responses.ToolChoiceFunction | undefined {
-  if (!toolChoice) return undefined;
-  if (toolChoice === "auto") return "auto";
-  if (toolChoice === "none") return "none";
-  if (toolChoice === "required") return "required";
-  if (typeof toolChoice === "object" && "tool" in toolChoice) {
-    return { type: "function", name: toolChoice.tool };
-  }
-  return undefined;
-}
-
 // ── Reasoning config ──────────────────────────────────────────────
 //
 // Canonical reasoning → OpenAI Responses reasoning config.
@@ -300,38 +280,6 @@ function mapReasoning(reasoning: ResolvedCall["reasoning"]): object {
   if (reasoning === "off") return { effort: "none" };
   if (reasoning === "default") return { summary: "auto" };
   return { effort: reasoning.effort, summary: "auto" };
-}
-
-// ── Response format mapping ───────────────────────────────────────
-//
-// Canonical responseFormat → OpenAI Responses text config.
-// json → json_object format; json_schema → json_schema format with
-// name/schema/strict. `text` type means no format constraint (undefined).
-//
-
-function mapResponseFormat(
-  format: GenerateRequest["responseFormat"],
-): OpenAI.Responses.ResponseTextConfig | undefined {
-  if (!format || format.type === "text") return undefined;
-
-  if (format.type === "json") {
-    return {
-      format: { type: "json_object" },
-    } as any;
-  }
-
-  if (format.type === "json_schema") {
-    return {
-      format: {
-        type: "json_schema",
-        name: format.name ?? "response",
-        schema: format.schema,
-        strict: format.strict ?? true,
-      },
-    } as any;
-  }
-
-  return undefined;
 }
 
 // ── Public: build Responses API params ────────────────────────────
@@ -359,16 +307,7 @@ export function toOpenAIResponsesParams(
     include: ["reasoning.encrypted_content" as const],
     ...(instructions ? { instructions } : {}),
     ...(mapTools(request.tools) ? { tools: mapTools(request.tools) } : {}),
-    ...(mapToolChoice(request.toolChoice)
-      ? { tool_choice: mapToolChoice(request.toolChoice) }
-      : {}),
-    ...(request.maxTokens ? { max_output_tokens: request.maxTokens } : {}),
-    ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-    ...(request.topP !== undefined ? { top_p: request.topP } : {}),
     reasoning: mapReasoning(call.reasoning),
-    ...(mapResponseFormat(request.responseFormat)
-      ? { text: mapResponseFormat(request.responseFormat) }
-      : {}),
     ...(request.promptCacheKey ? { prompt_cache_key: request.promptCacheKey } : {}),
     // The 30m default needs no parameter. The SDK (6.45.0) predates `prompt_cache_options`.
     ...(cacheTtl ? { prompt_cache_options: { ttl: cacheTtl } } : {}),
