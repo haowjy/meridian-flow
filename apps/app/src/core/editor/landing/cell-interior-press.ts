@@ -5,7 +5,7 @@
  * between two blocks, the space around a rendered object, an opaque-only
  * cell's margins — has no text under it, and the browser's answer to such a
  * press is a hunt for the nearest editable position, which beside a border is
- * the NEIGHBOURING cell (the S6 probe watched exactly that teleport). The
+ * the NEIGHBOURING cell. The
  * landing walk is started from the pressed cell, so the answer never leaves
  * it; this plugin is the router that gives `landing/press.ts` the press and the
  * cell. A `td` that is not a document cell (a foreign one in a node view) is

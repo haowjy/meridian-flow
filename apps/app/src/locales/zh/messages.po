@@ -1279,6 +1279,11 @@ msgstr ""
 msgid "Can’t mention inside code"
 msgstr ""
 
+#: src/components/app/composer/Composer.tsx
+#: src/features/editor/SessionEditor.tsx
+msgid "Can’t mention that here"
+msgstr ""
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr ""
@@ -1311,6 +1316,10 @@ msgstr ""
 msgid "Can't move {source}: the folder for {place} doesn't exist."
 msgstr ""
 
+#: src/core/editor/landing/slice-drop.ts
+msgid "Can’t move part of a table"
+msgstr ""
+
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Can't move these from here"
 msgstr ""
@@ -1318,6 +1327,10 @@ msgstr ""
 #: src/core/editor/images/image-drop-door.ts
 msgid "Can’t put a picture inside code"
 msgstr "无法将图片放入代码中"
+
+#: src/core/editor/landing/slice-drop.ts
+msgid "Can’t put that in a table cell"
+msgstr ""
 
 #: src/core/editor/landing/slice-drop.ts
 msgid "Can’t put that inside code"
@@ -4088,12 +4101,12 @@ msgid "No Work yet."
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
-msgid "Not available in this chat"
-msgstr ""
+#~ msgid "Not available in this chat"
+#~ msgstr ""
 
 #: src/features/editor/SessionEditor.tsx
-msgid "Not available in this document"
-msgstr ""
+#~ msgid "Not available in this document"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
