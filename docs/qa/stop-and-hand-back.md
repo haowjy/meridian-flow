@@ -55,7 +55,7 @@ reports `handed_back` or `cancelled` (exit 5), not `timeout`. Read the `turns` r
 For each step, confirm in the browser last: open the thread, repeat the action with the Stop button, and
 check that the composer and the rows match `thread view --json`.
 
-The composer has one button (owner ruling). With the box empty and a reply running it is Stop (Stopping
+The composer has one button. With the box empty and a reply running it is Stop (Stopping
 is its spinning ring; a failed Stop is the red "Couldn't stop the reply." card above the box with Try again, which
 re-posts the same request and stays until the Stop is confirmed; once its reply ends, a Stop that had queued messages reads "Couldn't move your
 queued message to the message box.", plural for several, and a refused one reads "Couldn't move your queued

@@ -105,9 +105,7 @@
 
 ## Stop the reply and send this message now, from the queue
 
-The owner, on removing Stop from beside Send: "why would u want to prepare something but stop it...?
-unless u want to stop and send it... which there should be a way to do that in the queue". Add a per-message
-"stop the reply and send this now" to the queue's controls. The composer doesn't offer it.
+Add a per-message "stop the reply and send this now" to the queue's controls. The composer doesn't offer it.
 
 ## Cancelled failure-announcement batches
 
