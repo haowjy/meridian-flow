@@ -1,6 +1,7 @@
 /** Derives live outputs from durable cuts; timers are hints, database staleness is authority. */
 
 import { createHash } from "node:crypto";
+import { countWords } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodecFactory,
   blockItemIdKey,
@@ -22,7 +23,6 @@ import type {
   DocumentDerivationService,
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
-import { countWords } from "./word-count.js";
 
 /**
  * What the derivation reads a cut with: the model that projects it, the codec that spells it.
