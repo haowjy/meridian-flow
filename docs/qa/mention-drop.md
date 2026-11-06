@@ -35,8 +35,9 @@ Chromium's hidden drag payload or ProseMirror's event order.
    code block: no caret appears, the hint reads **Can’t mention inside code**,
    and content does not change.
 5. Drag a row the surface's `@` catalog cannot name, including an area root.
-   The hint reads **Not available in this chat** over the composer and **Not
-   available in this document** over the manuscript; content does not change.
+   The hint reads **Can’t mention that in this chat** over the composer and
+   **Uploads stay with their chat** over the manuscript (a chat upload dragged
+   from the Files menu is the case a writer reaches); content does not change.
 6. Insert a multiword reference with `@`, then drop a row over the middle of
    its label. The caret snaps to the nearer outside edge and the whole original
    reference remains one chip after the drop. Repeat over a composer reference

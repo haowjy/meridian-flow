@@ -279,7 +279,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             },
             labels: {
               accept: t`Mention`,
-              unavailable: t`Not available in this chat`,
+              unavailable: t`Can’t mention that in this chat`,
               code: t`This part of the message can’t hold mentions`,
             },
           }),

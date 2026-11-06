@@ -1279,6 +1279,10 @@ msgstr "Can't go inside itself"
 msgid "Can’t mention inside code"
 msgstr "Can’t mention inside code"
 
+#: src/components/app/composer/Composer.tsx
+msgid "Can’t mention that in this chat"
+msgstr "Can’t mention that in this chat"
+
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
 msgstr "Can't move {source} to that location."
@@ -4088,12 +4092,12 @@ msgid "No Work yet."
 msgstr "No Work yet."
 
 #: src/components/app/composer/Composer.tsx
-msgid "Not available in this chat"
-msgstr "Not available in this chat"
+#~ msgid "Not available in this chat"
+#~ msgstr "Not available in this chat"
 
 #: src/features/editor/SessionEditor.tsx
-msgid "Not available in this document"
-msgstr "Not available in this document"
+#~ msgid "Not available in this document"
+#~ msgstr "Not available in this document"
 
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -6424,6 +6428,10 @@ msgstr "Uploads"
 #: src/features/chat/document-display-name.ts
 msgid "Uploads for {name}"
 msgstr "Uploads for {name}"
+
+#: src/features/editor/SessionEditor.tsx
+msgid "Uploads stay with their chat"
+msgstr "Uploads stay with their chat"
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx
