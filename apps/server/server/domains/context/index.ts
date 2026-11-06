@@ -34,6 +34,7 @@ export {
 } from "./context/restore-removed-documents.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
+  contextAreaOf,
   parseContextUri,
   parseUnifiedContextUri,
   toCanonical,
@@ -102,12 +103,14 @@ export type {
   BinaryFileRef,
   ContextCreateUntitledDocumentOptions,
   ContextCreateUntitledDocumentResult,
+  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextFileEntry,
   ContextListEntry,
   ContextListing,
   ContextListOptions,
+  ContextLocationChange,
   ContextPort,
   ContextReadResult,
   ContextScheme,

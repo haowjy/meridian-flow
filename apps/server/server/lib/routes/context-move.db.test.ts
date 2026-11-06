@@ -5,7 +5,7 @@
  * - receipt lifetime, root representation, lineage-move policy, and provisional-name graduation
  */
 
-import { folderDocumentName } from "@meridian/contracts/protocol";
+import { type ContextDestinationParent, folderDocumentName } from "@meridian/contracts/protocol";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -13,7 +13,7 @@ import {
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
 import { createDrizzleContextCatalog } from "../../domains/context/adapters/context-catalog.js";
-import { parseUnifiedContextUri } from "../../domains/context/index.js";
+import { moveCommand, parseUnifiedContextUri } from "../../domains/context/index.js";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import {
   createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository,
@@ -23,7 +23,7 @@ import {
   createTestDocumentRemoval,
   createTestRemovalDeps,
 } from "../../test-support/document-removal.js";
-import { entryAt, moveTo } from "../../test-support/entry-ref.js";
+import { deleteAt, entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { contextErrorToHttp } from "../context-error-http.js";
 
@@ -121,18 +121,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         body.destinationWorkId,
         body.destinationRootThreadId,
       );
-      const result = await input.port.commitWriterLocation(
-        locatorUri(source),
-        locatorUri(destination),
-        {
-          origin: { type: "human", userId: input.userId },
-          expected: body.expected,
-          destinationParent: body.destinationParent,
-          position: body.position,
-          ...(body.name ? { name: body.name } : {}),
-          operationId: body.operationId,
+      const parent = body.destinationParent as ContextDestinationParent | undefined;
+      const result = await input.port.commitWriterLocation(body.expected, locatorUri(source, ""), {
+        origin: { type: "human", userId: input.userId },
+        destination:
+          parent?.kind === "folder"
+            ? {
+                kind: "folder",
+                folderId: parent.folderId,
+                createFolders: parent.createFolders,
+                authorize: body.authorizeDestination ?? (async () => true),
+              }
+            : {
+                kind: "at",
+                folderUri: locatorUri(destination, parent ? "" : destination.path),
+                createFolders: parent?.createFolders,
+              },
+        position: body.position,
+        ...(body.name ? { name: body.name } : {}),
+        operation: {
+          id: body.operationId,
+          command: moveCommand({
+            expected: body.expected,
+            destinationParent: parent,
+            position: body.position,
+            name: body.name,
+          }),
         },
-      );
+      });
       if (!result.ok) contextErrorToHttp(result.error);
       const destinationUri = parseUnifiedContextUri(result.value.destinationUri);
       if (!destinationUri.ok) throw new Error("move answered an invalid address");
@@ -334,9 +350,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         result: first,
       });
       expect(await db.select().from(schema.contextCatalogCommits)).toEqual(commits);
-      await expect(
-        moveTo(port, source, "manuscript://other", { ...options, name: "other" }),
-      ).resolves.toMatchObject({
+      await expect(moveTo(port, source, "manuscript://other", options)).resolves.toMatchObject({
         ok: false,
         error: { code: "operation_mismatch" },
       });
@@ -392,14 +406,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const uri = "scratch://@w1/Untitled 1";
       const operationId = crypto.randomUUID();
       const options = { operationId, expected: { kind: "file" as const, nodeId: DOCUMENT_ID } };
-      const deleted = await port.delete(uri, options);
+      const deleted = await deleteAt(port, uri, options);
       expect(deleted).toMatchObject({
         ok: true,
         value: { removed: [{ documentId: DOCUMENT_ID }] },
       });
       const replacement = await port.createTrackedDocument(uri, "replacement writing");
       expect(replacement.ok).toBe(true);
-      await expect(port.delete(uri, options)).resolves.toEqual(deleted);
+      await expect(deleteAt(port, uri, options)).resolves.toEqual(deleted);
       await expect(port.read(uri)).resolves.toMatchObject({
         ok: true,
         value: { content: "replacement writing\n" },
@@ -612,7 +626,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           operationId,
           expected: { kind: "file", nodeId: DOCUMENT_ID },
           destinationParent: { kind: "folder", folderId },
-          authorizeDestination: async () => false,
+          authorize: async () => false,
         }),
       ).resolves.toMatchObject({ ok: false, error: { code: "permission_denied" } });
       await expect(port.lookupOperation(operationId)).resolves.toMatchObject({
@@ -712,7 +726,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
       if (!parent) throw new Error("Missing fixture parent");
       const operationId = crypto.randomUUID();
-      await port.delete("manuscript://Act 1", {
+      await deleteAt(port, "manuscript://Act 1", {
         expected: { kind: "folder", nodeId: parent.id },
         operationId: crypto.randomUUID(),
       });
@@ -880,7 +894,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId, port } = await arrangeUntitled();
       const folderId = await destinationFolder(projectId);
       await expect(
-        port.delete("manuscript://Act 1", {
+        deleteAt(port, "manuscript://Act 1", {
           expected: { kind: "folder", nodeId: folderId },
           operationId: crypto.randomUUID(),
         }),

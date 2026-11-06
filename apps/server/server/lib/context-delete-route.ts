@@ -20,7 +20,7 @@ import {
 } from "../domains/projects/index.js";
 import { locateEntry, replayedResult } from "./context-entry-route.js";
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
-import { containerOf } from "./context-locator.js";
+import { containerOf, locatorUri } from "./context-locator.js";
 import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
 import { requireRequestId } from "./request-id.js";
 
@@ -52,12 +52,8 @@ export async function handleContextDeleteRequest(
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const { operationId, kind } = parseContextDelete(input.body);
   const requested = { kind, nodeId: input.entryId };
-  const replay = await replayedResult(
-    deps,
-    input,
-    operationId,
-    deleteCommand({ expected: requested }),
-  );
+  const command = deleteCommand({ expected: requested });
+  const replay = await replayedResult(deps, input, operationId, command);
   if (replay) {
     if (!replay.ok) contextErrorToHttp(replay.error);
     return replay.value;
@@ -79,11 +75,9 @@ export async function handleContextDeleteRequest(
     kind === "file" ? documentTarget(address.id) : containerOf(locator, input.projectId);
   const grant = await requireFileGrant(deps.fileAccess, input.userId, target, "edit");
   const result = await withEditGrants(deps.fileAccess, [grant], () =>
-    port.delete(address.uri, {
+    port.delete({ kind, nodeId: address.id }, locatorUri(locator, ""), {
       origin: { type: "human", userId: input.userId },
-      expected: requested,
-      nodeId: address.id,
-      operationId,
+      operation: { id: operationId, command },
     }),
   );
   if (!result.ok) contextErrorToHttp(result.error);

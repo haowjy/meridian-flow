@@ -80,8 +80,8 @@ describe("ContextTreeMover result-aware command ownership", () => {
     const mover = new ContextTreeMover();
     const source = dispatch({ canonical: "manuscript://draft.md", path: "draft.md" });
     await expect(
-      mover.commitWriterLocation(source, null, {
-        expected: { kind: "file", nodeId: "original-document" },
+      mover.commitWriterLocation({ kind: "file", nodeId: "original-document" }, source, {
+        destination: { kind: "keep" },
       }),
     ).resolves.toEqual(Err({ code: "not_found", uri: "manuscript://draft.md" }));
   });
@@ -108,9 +108,9 @@ describe("ContextTreeMover result-aware command ownership", () => {
     const target = dispatch({ canonical: "manuscript://draft.md", path: "draft.md" });
 
     const expected = { kind: "file" as const, nodeId: "document-1" };
-    const first = mover.commitWriterLocation(target, null, { expected });
+    const first = mover.commitWriterLocation(expected, target, { destination: { kind: "keep" } });
     await vi.waitFor(() => expect(entries).toBe(1));
-    const second = mover.commitWriterLocation(target, null, { expected });
+    const second = mover.commitWriterLocation(expected, target, { destination: { kind: "keep" } });
     await vi.waitFor(() => expect(entries).toBe(2));
     settleFirst();
 
@@ -136,7 +136,7 @@ it("refuses a delayed folder delete when a different folder occupies the path", 
     path: "folder",
     token: { kind: "directory", nodeId: "replacement", sourceId: "source-1", path: "folder" },
   });
-  await expect(
-    mover.delete(target, { expected: { kind: "folder", nodeId: "original" } }),
-  ).resolves.toEqual(Err({ code: "not_found", uri: "manuscript://folder" }));
+  await expect(mover.delete({ kind: "folder", nodeId: "original" }, target, {})).resolves.toEqual(
+    Err({ code: "not_found", uri: "manuscript://folder" }),
+  );
 });

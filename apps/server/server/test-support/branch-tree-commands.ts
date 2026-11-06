@@ -41,7 +41,7 @@ import {
 import { createUntitledContextDocument } from "../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
 import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
-import { entryAt, moveTo } from "./entry-ref.js";
+import { deleteAt, entryAt, moveTo } from "./entry-ref.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
@@ -410,7 +410,7 @@ export function branchTreeCommands(
       // stat answers files only; anything else at the path is the folder being deleted.
       const stat = await port.stat(uri(path));
       if (stat.ok) {
-        return port.delete(uri(path), {
+        return deleteAt(port, uri(path), {
           origin: human(),
           ...(operationId ? { operationId } : {}),
           expected: { kind: "file", nodeId: stat.value.documentId ?? "" },
@@ -421,7 +421,7 @@ export function branchTreeCommands(
         contextSourceId: world.project.sources[scheme],
         path: rel,
       });
-      return port.delete(uri(path), {
+      return deleteAt(port, uri(path), {
         origin: human(),
         ...(operationId ? { operationId } : {}),
         expected: {

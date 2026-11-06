@@ -1,12 +1,14 @@
 /** Immutable attempt settlement around the existing result-aware namespace owner. */
 import { isDeepStrictEqual } from "node:util";
 import type {
+  ContextDestinationParent,
+  ContextEntryRef,
   ContextOperationCommand,
   ContextOperationReceipt,
   ContextOperationResult,
+  ContextSiblingPosition,
 } from "@meridian/contracts/protocol";
 import type { ContextOperationReceiptStore } from "../ports/context-operation-receipts.js";
-import type { ContextDeleteOptions, ContextLocationOptions } from "../ports/context-port.js";
 
 class RejectedOperation<K extends ContextOperationCommand["kind"]> extends Error {
   constructor(readonly result: Extract<ContextOperationResult<K>, { ok: false }>) {
@@ -14,16 +16,18 @@ class RejectedOperation<K extends ContextOperationCommand["kind"]> extends Error
   }
 }
 
-type MoveCommand = Extract<ContextOperationCommand, { kind: "move" }>;
-
 /**
  * What a move was asked to do, as its receipt records it: a function of the request alone, so a
- * resend matches however the row has moved since. The route and the mover both build it here.
+ * resend matches however the row has moved since. The route builds it once, for both the resend
+ * lookup and the mover.
  */
-export function moveCommand(
-  options: Pick<ContextLocationOptions, "expected" | "destinationParent" | "position" | "name">,
-): MoveCommand {
-  const { expected, destinationParent, position, name } = options;
+export function moveCommand(request: {
+  expected: ContextEntryRef;
+  destinationParent?: ContextDestinationParent;
+  position?: ContextSiblingPosition;
+  name?: string;
+}): Extract<ContextOperationCommand, { kind: "move" }> {
+  const { expected, destinationParent, position, name } = request;
   return {
     kind: "move",
     expected,
@@ -33,10 +37,10 @@ export function moveCommand(
   };
 }
 
-export function deleteCommand(
-  options: Pick<ContextDeleteOptions, "expected">,
-): Extract<ContextOperationCommand, { kind: "delete" }> {
-  return { kind: "delete", expected: options.expected };
+export function deleteCommand(request: {
+  expected: ContextEntryRef;
+}): Extract<ContextOperationCommand, { kind: "delete" }> {
+  return { kind: "delete", expected: request.expected };
 }
 
 /**
