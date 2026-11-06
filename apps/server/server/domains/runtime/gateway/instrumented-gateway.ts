@@ -280,48 +280,6 @@ export function createInstrumentedGateway(
       }
     },
 
-    async generate(request) {
-      const startedAt = performance.now();
-      const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
-      const emitter = createCallEmitter(request, deps, gatewayCallId);
-      let route: { provider?: string; model?: string } = { model: request.model };
-      emitter.emit("debug", "stream.open", routePayload(route), route);
-
-      try {
-        const result = await gateway.generate(request);
-        const terminalAt = performance.now();
-        route = { provider: result.provider, model: result.model };
-        const outcome = classifyTerminalOutcome({ type: "end" }, request.signal);
-        emitter.emit(
-          outcome === "ok" ? "info" : "warn",
-          "stream.close",
-          streamClosePayload({
-            gatewayObservationDurationMs: elapsedMs(startedAt, terminalAt),
-            result,
-            outcome,
-          }),
-          route,
-        );
-        return result;
-      } catch (error) {
-        const terminalAt = performance.now();
-        const errorCode = errorCodeFrom(error);
-        const outcome = classifyTerminalOutcome({ type: "error", cause: error }, request.signal);
-        emitter.emit(
-          "warn",
-          "stream.close",
-          {
-            gatewayObservationDurationMs: elapsedMs(startedAt, terminalAt),
-            outcome,
-            ...(errorCode ? { errorCode } : {}),
-          },
-          route,
-          { errorCode },
-        );
-        throw error;
-      }
-    },
-
     listModels() {
       return gateway.listModels();
     },

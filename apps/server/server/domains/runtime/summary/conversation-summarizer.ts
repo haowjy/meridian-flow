@@ -278,8 +278,7 @@ export function createConversationSummarizer(
             Object.assign(row, {
               model: result.model,
               provider: result.provider,
-              // A stopped call's finish reason is the adapter's default, not what happened.
-              ...(input.signal.aborted ? {} : { finishReason: result.finishReason }),
+              finishReason: result.finishReason,
               meteringStatus: result.meteringStatus,
               ...modelResponseTimingFields(result),
             });

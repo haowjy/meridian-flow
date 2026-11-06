@@ -8,6 +8,7 @@ import {
   blockPlainText,
   type FinishReason,
   isTerminalTurnStatus,
+  type ModelResponse,
   type OrchestratorEvent,
   type ProviderErrorResponse,
   type Turn,
@@ -46,26 +47,31 @@ export type FinalizedExecution = {
 };
 
 /**
- * Text of the turn's latest response that has any. A response with no text is skipped, so a
- * call stopped before output cannot blank what an earlier response in the turn said.
+ * Text of the turn's latest response that produced anything: the provider metered it, or it left
+ * blocks. A call stopped before output leaves an unmetered, blockless row, which must not blank
+ * what an earlier response said. A turn with no such row (crashed mid-stream) keeps its blocks
+ * unattached.
  */
-function publicText(blocks: Block[], responseIds: readonly string[]): string {
-  // A turn with no response row yet (crashed mid-stream) keeps its blocks unattached.
-  const candidates: (string | null)[] = responseIds.length ? [...responseIds].reverse() : [null];
-  for (const responseId of candidates) {
-    const text = blocks
-      .filter((block) => block.responseId === responseId && block.blockType === "text")
-      .map((block) => blockPlainText(block.blockType, block.content) ?? "")
-      .join("");
-    if (text) return text;
-  }
-  return "";
+function publicText(blocks: Block[], responses: readonly ModelResponse[]): string {
+  const responseId =
+    [...responses]
+      .reverse()
+      .find(
+        (row) =>
+          row.inputTokens > 0 ||
+          row.outputTokens > 0 ||
+          blocks.some((block) => block.responseId === row.id),
+      )?.id ?? null;
+  return blocks
+    .filter((block) => block.responseId === responseId && block.blockType === "text")
+    .map((block) => blockPlainText(block.blockType, block.content) ?? "")
+    .join("");
 }
 
 async function resolveReportContent(
   input: {
     turnId: TurnId;
-    responseIds: readonly string[];
+    responses: readonly ModelResponse[];
     capture: SavedExecutionReport["capture"];
     empty: boolean;
   },
@@ -75,7 +81,7 @@ async function resolveReportContent(
 
   const text = input.capture
     ? ""
-    : publicText(await deps.blocks.listByTurn(input.turnId), input.responseIds);
+    : publicText(await deps.blocks.listByTurn(input.turnId), input.responses);
   return {
     source: input.capture
       ? ("return_result" as const)
@@ -299,7 +305,7 @@ export async function finalizeExecution(
         const content = await resolveReportContent(
           {
             turnId: turn.id,
-            responseIds: responses.map((row) => row.id),
+            responses,
             capture,
             empty: input.reportContent === "empty",
           },

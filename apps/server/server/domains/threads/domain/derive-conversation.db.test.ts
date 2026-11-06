@@ -718,9 +718,6 @@ else
             },
           };
         },
-        async generate() {
-          throw new Error("The test summarizer uses stream");
-        },
       };
       const runtime = createRuntimeHarness({
         repos,
