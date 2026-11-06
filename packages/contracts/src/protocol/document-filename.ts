@@ -17,10 +17,14 @@ export type DocumentFilenameResult =
   | { ok: true; value: ParsedDocumentFilename }
   | { ok: false; error: { code: "invalid_name"; message: string } };
 
-/** A registered suffix is explicit; otherwise a destination inherits its source extension. */
+/**
+ * A registered suffix is explicit; otherwise a destination inherits its source extension.
+ * A prose suffix is an alias for the bare name (`ch1.md` is `ch1`) except on `storageBacked`
+ * input: a file kept under one (`binary.md`) holds it as its extension.
+ */
 export function parseDocumentFilename(
   filename: string,
-  options: { sourceExtension?: string } = {},
+  options: { sourceExtension?: string; storageBacked?: boolean } = {},
 ): DocumentFilenameResult {
   const input = filename.trim();
   let name = input;
@@ -32,7 +36,7 @@ export function parseDocumentFilename(
     name = input.slice(0, dot).trim();
     extension = suffix;
   } else extension = options.sourceExtension?.toLowerCase() ?? "";
-  if (PROSE_EXTENSIONS.has(extension)) {
+  if (!options.storageBacked && PROSE_EXTENSIONS.has(extension)) {
     extension = "";
     while (true) {
       const dot = name.lastIndexOf(".");
@@ -151,6 +155,8 @@ export async function allocateFilename(
 /** Destination naming shared by optimistic clients and server commands.
  * Explicit registered suffixes state the type; other names keep the source extension.
  * Parsed parts accompany the full name so storage never infers the destination twice.
+ * A string `current` is the stored name: one with a prose suffix is a file kept as such, and
+ * its destination keeps that suffix literally instead of reading it as an alias.
  */
 export function storedFilename(
   typed: string,
@@ -158,10 +164,13 @@ export function storedFilename(
 ):
   | { ok: true; name: string; filename: ParsedDocumentFilename }
   | { ok: false; message: string; error: { code: "invalid_name"; message: string } } {
-  const source = typeof current === "string" ? parseDocumentFilename(current) : null;
+  const source =
+    typeof current === "string" ? parseDocumentFilename(current, { storageBacked: true }) : null;
   const sourceExtension =
     typeof current === "object" ? current.extension : source?.ok ? source.value.extension : "";
-  const parsed = parseDocumentFilename(typed, { sourceExtension });
+  // A stored name carries a prose suffix only when a file was kept under it (`binary.md`).
+  const storageBacked = source?.ok === true && PROSE_EXTENSIONS.has(source.value.extension);
+  const parsed = parseDocumentFilename(typed, { sourceExtension, storageBacked });
   return parsed.ok
     ? {
         ok: true,

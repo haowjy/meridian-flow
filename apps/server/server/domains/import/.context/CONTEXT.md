@@ -41,8 +41,11 @@ A file that can't become a document is stored as a file, never as garbage text:
 `classify` (whole bytes, at receipt) marks `kept_as_file` for a document extension over
 non-text bytes, text that isn't valid UTF-8, and `.html`/`.htm` (tags aren't prose; the
 MIME type is `text/html`). The entry's reason is `kept_as_file`, so the result needs a
-look, and its name keeps its extension. URIs drop a prose suffix, so a kept `binary.md` is
-addressed as `binary`; `TreeReader.resolveAddress` finds it where nothing else holds that name. A
+look, and its name keeps its extension. A kept `binary.md` is stored as name `binary`,
+extension `md`: a stored name carries a prose suffix only for such a file, so lookups try the
+exact stored name before the codec's alias (`binary.md` finds it; `binary` stays a document's),
+and `storedFilename` reads a prose-suffixed current name as a kept file and keeps its suffix
+through rename and move. A
 broken DOCX takes the same reason later, when
 prepare's conversion fails. `changed_after_pick` wins when both apply.
 

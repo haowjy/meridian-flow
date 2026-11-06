@@ -368,10 +368,15 @@ export class ContextFS implements ContextSchemeAdapter {
     const parsed = parseDocumentPath(path);
     if (!parsed.ok || !parsed.value) return Ok(null);
     const { dir, name, extension } = parsed.value;
-    const found = await this.store.resolveDocumentAt(
-      view,
-      joinPath(dir.join("/"), renderFilename(name, extension)),
-    );
+    // A file kept under a prose suffix (`binary.md`) has that exact name; the codec would drop it.
+    const exact = await this.store.resolveDocumentAt(view, path);
+    const found =
+      exact.kind === "not_found"
+        ? await this.store.resolveDocumentAt(
+            view,
+            joinPath(dir.join("/"), renderFilename(name, extension)),
+          )
+        : exact;
     if (found.kind === "ambiguous")
       return Err(found.outlived ? OUTLIVED_PATH_FAULT : AMBIGUOUS_PATH_FAULT);
     return Ok(found.kind === "found" ? found.node : null);
@@ -941,14 +946,14 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
-    if (prepared.source.kind === "file") {
+    if ("destinationFilename" in prepared) {
       // The mover found the source through its own adapter's inspectMovable,
       // which filters by that source's view in this transaction.
       const source = prepared.source;
       const destinationFiletype = moveFiletypeTransition(
         source,
         prepared.destinationPath,
-        "destinationFiletype" in prepared ? prepared.destinationFiletype : undefined,
+        prepared.destinationFiletype,
       );
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
@@ -962,9 +967,9 @@ export class ContextFS implements ContextSchemeAdapter {
         expectedTarget: prepared.expectedTarget,
         overwrite: prepared.overwrite,
         position: prepared.position,
-        graduateProvisionalName:
-          "graduateProvisionalName" in prepared && prepared.graduateProvisionalName === true,
+        graduateProvisionalName: prepared.graduateProvisionalName,
         destinationFiletype: destinationFiletype.value,
+        destinationFilename: prepared.destinationFilename,
       });
       if (!committed.ok) return Err(this.mutationFault(committed.error));
       return Ok({

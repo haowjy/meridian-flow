@@ -125,7 +125,7 @@ export async function inspectTreeLocation(
   // A document answers at the name it is stored under, which is how a file kept as `binary.md`
   // is found, then at its canonical one (`ch1.md` is `ch1`); a folder only at its literal name.
   const resolve = (at: string) =>
-    tree.resolveAddress(view, { contextSourceId: sourceId as ContextSourceId, path: at });
+    tree.resolvePath(view, { contextSourceId: sourceId as ContextSourceId, path: at });
   const literal = await resolve(normalized);
   const documentPath = canonicalDocumentPath(normalized);
   const canonical =
@@ -347,11 +347,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       }
 
       const isFile = input.source.kind === "file";
-      const parsed = isFile ? parseDocumentFilename(targetBasename) : null;
-      if (parsed && !parsed.ok) return Err({ code: "invalid_operation" });
-      const { name, extension } = parsed?.ok
-        ? parsed.value
-        : { name: targetBasename, extension: undefined };
+      const { name, extension } =
+        "destinationFilename" in input
+          ? input.destinationFilename
+          : { name: targetBasename, extension: undefined };
       const moved = await moveNode(this.db, {
         node: isFile
           ? { kind: "document", id: input.source.nodeId as DocumentId }

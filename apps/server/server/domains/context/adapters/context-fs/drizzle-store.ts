@@ -131,7 +131,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>> {
-    const found = await createTreeReader(this.deps.db).resolveAddress(view, {
+    const found = await createTreeReader(this.deps.db).resolvePath(view, {
       contextSourceId: this.sourceId,
       path,
     });

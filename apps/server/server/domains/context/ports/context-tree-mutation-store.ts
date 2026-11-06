@@ -63,6 +63,8 @@ interface PreparedContextMoveBase {
 type PreparedFileMove = PreparedContextMoveBase & {
   /** Resolved by the destination codec; null keeps an unregistered binary name. */
   destinationFiletype?: Filetype | null;
+  /** The destination leaf's stored parts, parsed once by the mover; storage never re-parses them. */
+  destinationFilename: { name: string; extension: string };
   source: Extract<ContextLocationToken, { kind: "file" }>;
   /** The exact writer-location command ends provisional naming on commit. */
   graduateProvisionalName: boolean;

@@ -13,7 +13,7 @@ import type {
   ProjectId,
   WorkId,
 } from "@meridian/contracts";
-import { namespaceName, PROSE_EXTENSIONS } from "@meridian/contracts/protocol";
+import { namespaceName } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
@@ -216,12 +216,6 @@ export type DocumentLineage = {
 
 export interface TreeReader {
   resolvePath(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
-  /**
-   * `resolvePath` for a reader's address, which also reaches a file kept under a prose suffix
-   * (`binary.md`). URIs drop that suffix, so such a file is addressed as `binary`; it answers
-   * only where nothing else holds that name. Claims use `resolvePath`.
-   */
-  resolveAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
   /**
    * One step of a walk: what this view shows named `filename` directly under `parentId`
    * (null: the source root). The same answer as `resolvePath` at that folder's path plus
@@ -573,17 +567,6 @@ export function createTreeReader(
     if (!first) return { kind: "not_found" };
     if (!second) return { kind: "found", node: first };
     return { kind: "ambiguous", nodes: [refOf(first), refOf(second), ...rest.map(refOf)] };
-  }
-
-  async function resolveAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>> {
-    const found = await resolvePath(view, at);
-    if (found.kind !== "not_found") return found;
-    const spellings = [...PROSE_EXTENSIONS].map((extension) => ({
-      ...at,
-      path: `${at.path}.${extension}`,
-    }));
-    const kept = (await pathOccupants(view, spellings)).find((hit) => hit.documents.length > 0);
-    return kept ? resolvePath(view, { ...at, path: kept.path }) : found;
   }
 
   async function childAt(
@@ -966,7 +949,6 @@ export function createTreeReader(
 
   return {
     resolvePath,
-    resolveAddress,
     childAt,
     occupancy,
     findById,
