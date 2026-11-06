@@ -35,7 +35,9 @@ which line a caret is on).
    and below its middle. The caret goes to the neighbouring paragraph's line
    (prose beats the diagram), the diagram stays rendered, and no source opens.
    Do the same beside a component block: the caret lands in the paragraph
-   before or after it, never inside the block.
+   before or after it, or a gap cursor stands there when no paragraph does;
+   it is never inside the block. (No writer path makes a component block yet;
+   check this in a test document.)
 6. **Below each ending.** Click in the space below the last block of the first
    document: the caret goes to the end of the final paragraph. In the second,
    the caret goes to the fence's end. In the third, a gap cursor stands after

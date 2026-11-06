@@ -1280,8 +1280,13 @@ msgid "Can’t mention inside code"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
-msgid "Can’t mention that in this chat"
+#: src/features/editor/SessionEditor.tsx
+msgid "Can’t mention that here"
 msgstr ""
+
+#: src/components/app/composer/Composer.tsx
+#~ msgid "Can’t mention that in this chat"
+#~ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source} to that location."
@@ -1313,6 +1318,10 @@ msgstr ""
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "Can't move {source}: the folder for {place} doesn't exist."
+msgstr ""
+
+#: src/core/editor/landing/slice-drop.ts
+msgid "Can’t move part of a table"
 msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
@@ -6434,8 +6443,8 @@ msgid "Uploads for {name}"
 msgstr ""
 
 #: src/features/editor/SessionEditor.tsx
-msgid "Uploads stay with their chat"
-msgstr ""
+#~ msgid "Uploads stay with their chat"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx
