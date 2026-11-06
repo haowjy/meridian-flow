@@ -52,3 +52,7 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
 16. **Undo and redo.** After a move, Ctrl+Z puts the text back with the range selected at its
     old place; Ctrl+Shift+Z moves it again, selected; one more Ctrl+Z restores it again. Typing
     undo still leaves a caret.
+17. **Into a touched block.** Sweep a range from mid-paragraph A to mid-paragraph B (also across a
+    list item, a heading, a code block). Drop it in A's unselected head, then in B's unselected
+    tail, and into a code block's unselected part: the text lands at the caret, nothing is lost or
+    doubled, and Ctrl+Z restores text and highlight. A drop inside the range stays a no-op.

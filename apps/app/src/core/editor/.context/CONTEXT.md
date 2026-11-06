@@ -284,8 +284,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   a `NodeSelection`, and the caret is inside it.
 - **What refuses.** Text dropped into a fence becomes plain characters (a hard
   break is a newline); a slice holding a picture or chip is refused (`Can’t put
-  that inside code`), and a move that lands in a block the selection reaches
-  into changes nothing. A picture over a fence is refused (`Can’t put a picture
+  that inside code`). A picture over a fence is refused (`Can’t put a picture
   inside code`) and a tree row too (`Can’t mention inside code`), each with no
   caret. Inline code is not a fence: a tree row or picture there snaps to the
   span's edge; a text slice stays in the span. A file that is not a picture
@@ -295,7 +294,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   table cell` when it lands in a cell, `Can’t move part of a table` when a
   move's deletion would cut a table elsewhere. A slice that changes nothing is
   refused with no hint. A picture or chip in an ordinary slice lands in a cell.
-  A move onto the selection's own range changes nothing and shows no hint.
+  A move onto the selection's own range changes nothing and shows no hint; the
+  unselected part of a block the selection reaches into is an ordinary landing.
 - StarterKit's dropcursor stays disabled; two landings answering one drag is
   the bug this prevents. `landing/drop-caret.ts` draws the one caret.
   Keyboard behavior follows the same reading, so no input device places a
