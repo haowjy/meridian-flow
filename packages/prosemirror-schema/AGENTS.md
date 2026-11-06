@@ -4,8 +4,8 @@ The shared ProseMirror structural contract for the TipTap/Yjs editor and server
 collab code. DOM and editor runtime behavior live outside it.
 
 - The app builds its TipTap schema separately. Any node, mark or attr change updates
-  `apps/app/src/core/editor/extensions/meridian-extensions.ts` in the same commit; no
-  test guards that mirror.
+  `apps/app/src/core/editor/extensions/meridian-extensions.ts` in the same commit;
+  `apps/app/src/core/editor/schema-mirror.test.ts` guards that mirror.
 - Random authoring docs use `createCollabYDoc()`, which avoids the reserved
   server-authored client-ID band.
 
