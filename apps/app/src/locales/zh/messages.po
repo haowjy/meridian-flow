@@ -1568,9 +1568,6 @@ msgstr ""
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr ""
 
-#: src/components/app/ToastRegion.tsx
-#: src/components/ui/persistent-toast.tsx
-
 #: src/features/chat/ask/permission-request.ts
 msgid "Clear the goal"
 msgstr "清除目标"
@@ -1579,6 +1576,8 @@ msgstr "清除目标"
 msgid "Clear the status"
 msgstr "清除状态"
 
+#: src/components/app/ToastRegion.tsx
+#: src/components/ui/persistent-toast.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Close"
@@ -5104,6 +5103,10 @@ msgstr ""
 msgid "Stop"
 msgstr "停止"
 
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Stop \"{name}\""
+msgstr "停止“{name}”"
+
 #: src/features/import/ImportToasts.tsx
 msgid "Stop and discard"
 msgstr ""
@@ -5111,10 +5114,6 @@ msgstr ""
 #: src/features/import/toast-presentation.ts
 msgid "Stop and discard this import?"
 msgstr ""
-
-#: src/features/chat/RunningSubagentsStrip.tsx
-msgid "Stop \"{name}\""
-msgstr "停止“{name}”"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/thread-controls/control-copy.ts

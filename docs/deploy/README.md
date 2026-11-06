@@ -36,8 +36,8 @@ libc (glibc or musl) and architecture, or build in an image that matches it. Nev
 `node_modules` or `apps/server/.output` across platforms: the traced
 `.output/server/node_modules` holds only the builder's platform packages.
 
-The previews are made in a worker thread (`image-preview-worker.mjs`, which the build emits
-into `.output/server/_chunks/`). A worker that dies leaves its file with a file card, not a
+The previews are made in a worker thread (`image-preview-worker.ts`, which the build emits
+as `.output/server/workers/image-preview-worker.mjs`). A worker that dies leaves its file with a file card, not a
 failed save.
 
 ## Database

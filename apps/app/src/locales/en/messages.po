@@ -1568,9 +1568,6 @@ msgstr "Choose Work for new chat, currently {0}"
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
-#: src/components/app/ToastRegion.tsx
-#: src/components/ui/persistent-toast.tsx
-
 #: src/features/chat/ask/permission-request.ts
 msgid "Clear the goal"
 msgstr "Clear the goal"
@@ -1579,6 +1576,8 @@ msgstr "Clear the goal"
 msgid "Clear the status"
 msgstr "Clear the status"
 
+#: src/components/app/ToastRegion.tsx
+#: src/components/ui/persistent-toast.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Close"
@@ -5104,6 +5103,10 @@ msgstr "Stayed as you edited it"
 msgid "Stop"
 msgstr "Stop"
 
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Stop \"{name}\""
+msgstr "Stop \"{name}\""
+
 #: src/features/import/ImportToasts.tsx
 msgid "Stop and discard"
 msgstr "Stop and discard"
@@ -5111,10 +5114,6 @@ msgstr "Stop and discard"
 #: src/features/import/toast-presentation.ts
 msgid "Stop and discard this import?"
 msgstr "Stop and discard this import?"
-
-#: src/features/chat/RunningSubagentsStrip.tsx
-msgid "Stop \"{name}\""
-msgstr "Stop \"{name}\""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/thread-controls/control-copy.ts
