@@ -9,7 +9,7 @@ import {
   REASONING_EFFORTS,
   type ReasoningEffort,
   type ReasoningSupport,
-  resolvePromptCacheTtlMs,
+  resolvePromptCacheTtlMinutes,
 } from "./types.js";
 
 /** `default` sends nothing and leaves the model's own default; `off` is only resolved for models that can disable reasoning. */
@@ -17,7 +17,7 @@ export type ResolvedReasoning = "default" | "off" | { effort: ReasoningEffort };
 
 export interface ResolvedCall {
   /** Lifetime to put on the wire for cache breakpoints; null when the provider publishes none or the retention is `none` (no mark sent). */
-  cacheTtlMs: number | null;
+  cacheTtlMinutes: number | null;
   /** Whether cache writes are billed at the model's long lifetime. */
   longCacheWrites: boolean;
   reasoning: ResolvedReasoning;
@@ -57,9 +57,10 @@ export function resolveCall(
 ): ResolvedCall {
   const { promptCache } = model;
   return {
-    cacheTtlMs: resolvePromptCacheTtlMs(promptCache, request.promptCacheRetention),
+    cacheTtlMinutes: resolvePromptCacheTtlMinutes(promptCache, request.promptCacheRetention),
     longCacheWrites:
-      request.promptCacheRetention === "long" && promptCache.longTtlMs !== promptCache.shortTtlMs,
+      request.promptCacheRetention === "long" &&
+      promptCache.longTtlMinutes !== promptCache.shortTtlMinutes,
     reasoning: resolveReasoning(request.reasoning, model.reasoning),
   };
 }
