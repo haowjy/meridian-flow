@@ -3551,6 +3551,11 @@ msgstr "未报告"
 msgid "Not run before compaction"
 msgstr ""
 
+#. placeholder {0}: answer.text
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Not sent: {0}"
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 msgid "Notebook"
 msgstr ""

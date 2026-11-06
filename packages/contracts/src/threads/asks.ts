@@ -132,10 +132,14 @@ export const questionAnswerSchema = z.discriminatedUnion("kind", [
   skippedAnswerSchema,
 ]);
 
-/** One question's outcome in a resolved ask: the writer's answer, or the timeout's pick. */
+/**
+ * One question's outcome in a resolved ask: the writer's answer, the timeout's pick, or words
+ * they typed and never sent (kept at the timeout so they can be shown, not offered as an answer).
+ */
 export const resolvedQuestionAnswerSchema = z.discriminatedUnion("kind", [
   ...questionAnswerSchema.options,
   z.strictObject({ kind: z.literal("timeout"), label: z.string().nullable() }),
+  z.strictObject({ kind: z.literal("unsent"), text: z.string() }),
 ]);
 
 /**
