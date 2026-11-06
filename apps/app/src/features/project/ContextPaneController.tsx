@@ -28,7 +28,10 @@ import { deriveContextPaneState } from "./context/context-pane-state";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import type { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
-import { useFollowOpenDocumentPlacement } from "./context/use-follow-open-document-placement";
+import {
+  settleWriterClose,
+  useFollowOpenDocumentPlacement,
+} from "./context/use-follow-open-document-placement";
 import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
 import {
   type OpenContextRoute,
@@ -397,18 +400,6 @@ export function ContextViewerSurfaceController({
         else onSelectContextPath(path, scheme);
       }}
     />
-  );
-}
-
-function settleWriterClose(
-  result: ReturnType<ReturnType<typeof useContextRemovalCoordinator>["writerClose"]>,
-): void {
-  if (!(result instanceof Promise)) return;
-  void result.then(
-    (settlement) => {
-      if (settlement.kind === "failed") reportError(settlement.error);
-    },
-    (error: unknown) => reportError(error),
   );
 }
 

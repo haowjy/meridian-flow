@@ -120,7 +120,7 @@ export function useFollowOpenDocumentPlacement(input: {
   ]);
 }
 
-function settleWriterClose(
+export function settleWriterClose(
   result: ReturnType<ReturnType<typeof useContextRemovalCoordinator>["writerClose"]>,
 ): void {
   if (!(result instanceof Promise)) return;
