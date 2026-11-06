@@ -100,7 +100,7 @@ Ownership decides the scope:
 |---|---|
 | Stop or Send now (`thread` reach) | The owner's reply only: its live execution, open asks and owed continuations. A foreground child follows the reply's abort signal. A stopped subagent still in its spawn run ends there, so its children end with it. |
 | Cancelling a turn | Only subtrees whose root that turn's execution spawned (`origin_turn_id`). A turn parked on its question is cancelled by withdrawing it. |
-| Deleting or archiving a thread or Work (`stopThreads`: trash, archive, Work delete, the work tool, receipt reversal) | Each thread's run, open asks and owed continuations, and its whole subtree, one lineage per topmost thread. |
+| Deleting or archiving a thread, or deleting a Work (`stopThreads`: trash, thread archive, Work delete, the work tool, receipt reversal). Archiving a Work stops nothing | Each thread's run, open asks and owed continuations, and its whole subtree, one lineage per topmost thread. |
 | A child's terminal run | Its whole subtree, before its claim is released. |
 
 [kb-spawn]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/conversations/spawn-child-conversation.md

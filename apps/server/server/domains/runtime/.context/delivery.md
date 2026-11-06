@@ -99,6 +99,9 @@ a switch another tab commits first is always seen. Writer enqueue materializes o
 directed messages and pending notices under the same lock, so turns follow inbox
 order.
 
+A thread blocked on credits resumes through the ordinary wake sweep; clients don't
+poll for restored balance.
+
 ## Prepare and commit
 
 One `prepareAndCommit` serves drain start and mid-run adoption

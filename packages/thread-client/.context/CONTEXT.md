@@ -124,7 +124,7 @@ back as link text. The limit and its fix are in [FUTURE](FUTURE).
 `run-state-view.ts` owns the only newness and retirement rule: `receiveRecord` keeps the record with the
 greatest `version` (`compareSeq`), and an intent retires once the held record is at or past its answer
 version. Answers are kept beside the intents for the view's lifetime, so an answer that beats its intent, or
-an intent a journal rebuild re-adds, still meets it. The bound is distinct answered intents per store
+an intent a journal rebuild re-adds, still meets it. The bound is distinct answered switches per store
 lifetime, reset by a reload.
 
 A switch never counts as a writer message. `reconcileRetries` is Retry's one retirement rule: a stand-in

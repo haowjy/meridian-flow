@@ -29,9 +29,9 @@ before/after document for every group. A later Un-Apply rebuilds the complete de
 chain before selecting effects that remain active, so an earlier partial reversal
 can't remove the starting point or an intermediate delta.
 
-`apply.measured` emits compile and Work-boundary times by command id. The append
-door's lock-to-root-commit `holdMs` joins them through an async diagnostic scope. Apply
-takes no draft lock outside that door, so `holdMs` covers its whole hold.
+`apply.measured` emits compile and Work-boundary times by command id. The draft
+append's lock-to-root-commit `holdMs` joins them through an async diagnostic scope. Apply
+takes no draft lock outside that append, so `holdMs` covers its whole hold.
 
 The API-core recipe is [atomic Apply](../../../../../../docs/qa/atomic-apply.md). It
 does not stand in for integrated browser FIFO and optimistic-review verification.

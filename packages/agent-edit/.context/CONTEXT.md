@@ -12,8 +12,10 @@ directions are in [ALTERNATIVES.md](ALTERNATIVES.md).
 
 ## Pinned reconstruction adapter
 
-`src/yjs-mutation.ts` holds every mechanic that depends on Yjs internals, which is
-why `yjs` is exactly pinned in `package.json`. Keep version-sensitive
+Several files read Yjs struct internals, among them `frontier.ts`, `model/block-hash.ts`,
+`undo/forward-inverse.ts` and `diff/`, which is why `yjs` is exactly pinned in
+`package.json`; check them all when the pin changes. `src/yjs-mutation.ts` holds the
+mutation mechanics. Keep version-sensitive
 reconstruction here rather than in app or undo copies. Hosts choose operations,
 supply identity mapping and own transactions; the adapter copies an item's own
 content, never its descendants.

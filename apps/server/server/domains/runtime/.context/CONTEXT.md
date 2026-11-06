@@ -23,5 +23,6 @@ use, persists every side effect through the threads repositories, and emits
 
 Deferred work: [TODO](TODO) and [FUTURE](FUTURE).
 
-Runtime reaches `domains/collab` and `domains/context` only through ports the
-composition root fills; compaction imports just the `DocumentRevisions` port type.
+Runtime reaches `domains/collab` and `domains/context` through ports the composition
+root fills, apart from the `scratchOwnerFor` import in `loop/permissions/agent-chain.ts`;
+compaction imports just the `DocumentRevisions` port type.

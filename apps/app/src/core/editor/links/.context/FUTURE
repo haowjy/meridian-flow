@@ -1,5 +1,8 @@
 # Deferred, links
 
+- A paste into the chat composer keeps `[[…]]` as text. To link it, mount
+  `WikilinkPasteExtension` there with a paste catalog (without one it converts nothing)
+  and spell full URIs as chat links do.
 - Unfiled and Uploads documents aren't candidates for a pasted `[[Name]]`
   (`pasteTargets` in `features/editor/EditorView.tsx`). Decide whether they should be
   linkable by name.

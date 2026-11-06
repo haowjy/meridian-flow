@@ -106,7 +106,7 @@ handle minting through the project advisory lock.
   foreign or concealed rows don't leak existence. A fully owned deleted thread gets the
   attested `thread_deleted` response; WebSocket subscribe still conceals it as
   `not_found`. Delete and archive end the chat's run, asks and subagent subtree inside
-  their own transaction, before the thread row lock (`stopThreads`, see
+  the delete or archive transaction, before taking the thread row lock (`stopThreads`, see
   [spawn](../../runtime/.context/spawn.md)).
 - `rootThreadId` is non-null and authoritative. Organic primaries and handoffs root at
   themselves; spawn and fork copy the source root. A missing root is an integrity
@@ -118,7 +118,8 @@ handle minting through the project advisory lock.
 - Code that needs the latest turn reads `threads.active_leaf_turn_id`, never timestamp
   order: two turns created in the same millisecond are a normal production path.
 - Visibility keys on `metadata.kind`, not `origin`
-  ([why][kb-system-updates]). Keep the domain predicate, both SQL copies, and the view
+  ([why][kb-system-updates]). Keep the domain predicate, the SQL copies in `adapters/drizzle/transcript-reader.ts` and
+  `turn-repository.ts`, and the view
   model's `classifyTurn` (`@meridian/thread-client`) in sync.
 - `last_activity_at` and `conversational_leaf_turn_id` are written only by database
   projection triggers; no repository recomputes them. This departs from the database
