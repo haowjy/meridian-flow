@@ -78,12 +78,13 @@ it("keeps the characters when pasted into a code block", () => {
 
 /**
  * The browser's drop from outside the editor, landing at `pos`. jsdom has no
- * layout, so the pointer's position is stubbed where ProseMirror (and the
- * paste policy) ask for it.
+ * layout (every box is empty at the origin, where the pointer is), so the
+ * character the pointer is over is stubbed where ProseMirror asks for it.
  */
 function drop(target: Editor, pos: number, data: Record<string, string>) {
   target.view.posAtCoords = () => ({ pos, inside: -1 });
   const event = new Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperties(event, { clientX: { value: 0 }, clientY: { value: 0 } });
   Object.defineProperty(event, "dataTransfer", {
     value: { types: Object.keys(data), files: [], getData: (type: string) => data[type] ?? "" },
   });

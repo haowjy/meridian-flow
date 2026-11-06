@@ -7,8 +7,8 @@
  */
 import { t } from "@lingui/core/macro";
 import { type DragEvent, useCallback, useEffect, useRef, useState } from "react";
-import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
-import { dragPayloadKind } from "@/features/project/context/tree-drop/drag-payload";
+import { clearDragHint, showDragHint } from "@/core/editor/landing/drag-hint-store";
+import { dragPayloadKind } from "@/core/editor/landing/drag-payload";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 
 /** One thing the writer dropped. A folder is named, not read: the intake takes files only. */

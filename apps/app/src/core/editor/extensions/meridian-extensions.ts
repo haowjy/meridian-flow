@@ -27,7 +27,6 @@ import TableRow from "@tiptap/extension-table-row";
 import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
-import { cellInteriorPressPlugin } from "../cell-interior-press";
 import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { imageDragPreviewPlugin } from "../images/image-drag-preview";
@@ -35,6 +34,7 @@ import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { browserPictureSource } from "../images/image-workflow";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
+import { cellInteriorPressPlugin } from "../landing/cell-interior-press";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
 import { drawLinkAnswer } from "../links/link-mark-view";
 import { mountedLinks } from "../links/link-storage";
@@ -235,7 +235,11 @@ export const MeridianTable = Table.extend({
   // a column-resize press must claim first, and the cell-sweep drag must arm
   // its listeners before the router claims an inert padding press.
   addProseMirrorPlugins() {
-    return [tableSweepPastePlugin(), ...(this.parent?.() ?? []), cellInteriorPressPlugin()];
+    return [
+      tableSweepPastePlugin(),
+      ...(this.parent?.() ?? []),
+      cellInteriorPressPlugin(this.editor),
+    ];
   },
 
   addAttributes() {

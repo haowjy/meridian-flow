@@ -19,6 +19,7 @@ export {
 export {
   caretBesideObjectTransaction,
   caretHomeFromObjectTransaction,
+  caretInsideNodeAt,
   caretInsideObjectTransaction,
   gapCursorFits,
   type ObjectAt,
@@ -30,6 +31,7 @@ export {
 export {
   EDITOR_OBJECT_TYPES,
   isEditorObject,
+  isObjectLike,
   isOpaqueObject,
   isSourceBlock,
   type ObjectBody,

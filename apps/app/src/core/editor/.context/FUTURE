@@ -1,0 +1,23 @@
+# Deferred, editor core
+
+- **Block moves read every block on each pointer move.** `seamIndexAtPointer`
+  in `surfaces/blocks` walks the top-level blocks per `pointermove`, so a
+  100-chapter-length document pays O(blocks) in a hot path. `findByY` in
+  `landing/point-landing.ts` already does this with a binary search over boxes;
+  the block move can read the same way.
+- **`referenceDrop` crosses too many files on its way to the plugin.** The
+  option passes through `config.ts`, `mounted-editor.ts` and each host. Passing
+  doors as one host port would shorten that path, but it reaches every host and
+  this code gained no port when `LandingExtension` arrived, so it waits for the
+  next door.
+- **The session files could move into `core/editor/session/`.** The directory
+  mixes session code with extensions. `document-session-authority-store.ts` is
+  near 1,000 lines; a move is the moment to split it.
+- **`EditorView.tsx` churns on review state.** It rerenders on review changes
+  it doesn't read.
+- **The app schema and `packages/prosemirror-schema` are kept in step by hand.**
+  Nothing fails when they drift; `.context/TODO.md` only asks that they stay
+  mirrored.
+- **Two press edges.** A press exactly on a cell border can land in the
+  neighbouring cell, and the first sweep started in the margin can catch the
+  block handle.

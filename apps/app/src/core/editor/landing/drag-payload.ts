@@ -1,8 +1,6 @@
 /** What a drag carries, decided from its types alone (the data is hidden until the drop). */
 
-export { MERIDIAN_ENTRIES_MIME } from "@/core/editor/extensions/reference-drop";
-
-import { MERIDIAN_ENTRIES_MIME } from "@/core/editor/extensions/reference-drop";
+export const MERIDIAN_ENTRIES_MIME = "application/x-meridian-entries";
 
 export type DragPayloadKind = "entries" | "files" | "none";
 

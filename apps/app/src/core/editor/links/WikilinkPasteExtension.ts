@@ -16,6 +16,8 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 
 import type { PluggableList } from "unified";
 
+import { landingAt } from "../landing/point-landing";
+import { viewGeometry } from "../landing/view-geometry";
 import { remarkKeepWikilinkEscapes } from "./wikilink-escape";
 import { linkPastedWikilinks, type WikilinkPasteCatalog } from "./wikilink-paste";
 
@@ -58,6 +60,7 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, Wik
 
   addProseMirrorPlugins() {
     const read = this.options.catalog;
+    const editor = this.editor;
     // ProseMirror's paste-without-formatting flag, ORed with "the destination
     // is code", from `transformPastedText`. That hook and `transformPasted`
     // run as a synchronous pair inside one parse of clipboard text, so the
@@ -73,8 +76,12 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, Wik
         props: {
           handleDOMEvents: {
             drop: (view, event) => {
-              const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
-              pendingDrop = at ? view.state.doc.resolve(at.pos) : null;
+              const landing = landingAt(
+                view.state,
+                { x: event.clientX, y: event.clientY },
+                viewGeometry(view, editor),
+              );
+              pendingDrop = view.state.doc.resolve(landing.pos);
               queueMicrotask(() => {
                 pendingDrop = null;
               });

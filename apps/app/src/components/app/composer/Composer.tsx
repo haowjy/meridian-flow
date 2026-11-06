@@ -29,11 +29,11 @@ import type {
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
-import { ReferenceDropExtension } from "@/core/editor/extensions/reference-drop";
+import { referenceDropDoor } from "@/core/editor/extensions/reference-drop";
+import { LandingExtension } from "@/core/editor/landing/LandingExtension";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
-import { activeDragSession } from "@/features/project/context/entry-drag/drag-session";
-import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
+import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
@@ -234,7 +234,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const intakeFilesRef = useRef(new Map<string, File>());
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ hardBreak: {} }),
+      StarterKit.configure({ hardBreak: {}, dropcursor: false }),
       ChromeKernelExtension,
       ComposerReferenceNode.extend({
         addNodeView: () =>
@@ -269,25 +269,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
       }),
-      ReferenceDropExtension.configure({
-        activeDrag: () => activeDragSession()?.entries ?? null,
-        content: (schema, entries) => {
-          const catalog = referenceCatalogRef.current;
-          if (!catalog) return null;
-          const nodes = entries.map((entry) => {
-            const row = catalog.resolveReference(entry.ref);
-            return row ? composerReferenceNode(schema, row) : null;
-          });
-          return nodes.every((node) => node !== null) ? nodes : null;
-        },
-        label: (kind) =>
-          kind === "accept"
-            ? t`Mention`
-            : kind === "unavailable"
-              ? t`Not available in this chat`
-              : t`This part of the message can’t hold mentions`,
-        showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
-        clearHint: clearDragHint,
+      // Rows and text only: desktop files are `useFileDrop`'s, below.
+      LandingExtension.configure({
+        entries: referenceDropDoor(
+          referenceDropOptions({
+            catalog: () => {
+              const catalog = referenceCatalogRef.current;
+              return catalog && { ...catalog, referenceNode: composerReferenceNode };
+            },
+            labels: {
+              accept: t`Mention`,
+              unavailable: t`Not available in this chat`,
+              code: t`This part of the message can’t hold mentions`,
+            },
+          }),
+        ),
       }),
       ComposerCommandExtension.configure({
         catalog: () => {

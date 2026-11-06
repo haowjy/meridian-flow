@@ -258,8 +258,8 @@ msgstr "{0} imported, but its link had moved on."
 msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
-#. placeholder {0}: intent.filename
-#: src/core/editor/images/ImageIngressExtension.ts
+#. placeholder {0}: listed[0].name
+#: src/core/editor/images/image-drop-door.ts
 msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
@@ -681,6 +681,10 @@ msgstr "{who} discarded this document from the draft before this reply saved its
 msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr "{words, plural, one {# word removed} other {# words removed}}"
 
+#: src/features/editor/WordCount.tsx
+msgid "{words, plural, one {# word} other {# words}}"
+msgstr "{words, plural, one {# word} other {# words}}"
+
 #: src/features/draft-review/tree-line.ts
 msgid "{work} is deleting this."
 msgstr "{work} is deleting this."
@@ -776,8 +780,12 @@ msgstr "A file path in this selection is too long to import."
 msgid "A folder named {name} already exists in this location."
 msgstr "A folder named {name} already exists in this location."
 
+#: src/core/editor/images/image-drop-door.ts
+#~ msgid "A picture cannot go there"
+#~ msgstr "A picture cannot go there"
+
+#: src/core/editor/images/image-drop-door.ts
 #: src/core/editor/images/image-uploads.ts
-#: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
 
@@ -1306,6 +1314,14 @@ msgstr "Can't move {source}: the folder for {place} doesn't exist."
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Can't move these from here"
 msgstr "Can't move these from here"
+
+#: src/core/editor/images/image-drop-door.ts
+msgid "Can’t put a picture inside code"
+msgstr "Can’t put a picture inside code"
+
+#: src/core/editor/landing/slice-drop.ts
+msgid "Can’t put that inside code"
+msgstr "Can’t put that inside code"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: {place} was moved or deleted after you undid this change."
@@ -4182,6 +4198,10 @@ msgstr "Only one question or request can wait for an answer at a time, so this o
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Only part of this change could be reversed."
 msgstr "Only part of this change could be reversed."
+
+#: src/core/editor/images/image-drop-door.ts
+msgid "Only pictures can be dropped here"
+msgstr "Only pictures can be dropped here"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "Open"
