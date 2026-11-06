@@ -281,7 +281,7 @@ function ActiveSessionEditorView({
           },
         labels: {
           accept: t`Mention`,
-          unavailable: t`Uploads stay with their chat`,
+          unavailable: t`Can’t mention that here`,
           code: t`Can’t mention inside code`,
         },
       }),

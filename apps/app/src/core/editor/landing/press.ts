@@ -13,7 +13,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, type Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { gapCursorFits } from "../objects/object-selection";
-import { isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
+import { isCodeBlock, isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
 import {
   type Child,
   childrenOf,
@@ -79,7 +79,7 @@ function seamSelection(
     [near, far],
     [far, near],
   ] as const) {
-    if (!fence?.node.isTextblock || !isSourceBlock(fence.node) || isOpaqueObject(fence.node))
+    if (!fence?.node.isTextblock || !isCodeBlock(fence.node) || isOpaqueObject(fence.node))
       continue;
     if (other && isProse(other.node)) continue;
     return TextSelection.create(doc, fence === above ? seam - 1 : seam + 1);
