@@ -44,7 +44,7 @@ literal name: a folder clashes with a document when the folder's name equals the
 document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
 two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
 coexist; a link to `Lore.md` still reaches the document, because a document lookup skips the folder,
-while a path that names a folder (`ls`, `move`, `delete` of `Lore.md/`, a reorder of the folder) acts on the folder.
+while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it. The model's `move` and `delete` refuse it with `source_is_folder`.
 A free name is chosen against `TreeReader.namesAt` (the rendered filenames under a parent) by the
 contracts' `firstFreeName`; nothing re-derives a name's parts from the rendered string.
 
