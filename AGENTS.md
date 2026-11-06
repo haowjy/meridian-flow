@@ -105,7 +105,8 @@ decision, change the test.
 ## Git
 
 Commit often. Worktrees, commits, pushes, PRs and issues need no permission.
-Documentation-only changes need no PR: push them straight to `main`.
+Documentation-only and comment-only changes need no PR: push them straight to `main`.
+A wrong comment or doc gets fixed as soon as you see it, without asking.
 
 A human merges features into `main` or `staging`. A big feature gets one integration
 branch: each finished piece bases on it and merges into it, instead of PRs stacked on
