@@ -1,7 +1,7 @@
 /** One mounted editor's chronological history across Yjs edits and editor Apply commands. */
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { type Selection, TextSelection } from "@tiptap/pm/state";
+import { type Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
 import {
   getRelativeSelection,
   relativePositionToAbsolutePosition,
@@ -26,7 +26,7 @@ type Entry =
 
 const histories = new WeakMap<Editor, MountedEditorHistory>();
 const HISTORY_META = "meridian-editor-history";
-/** On a stack item an undo or redo generated: the selection from just before it ran. */
+/** On a stack item: the range selection from just before the change it holds ran. */
 const RANGE_META = "meridian-editor-range";
 
 type RelativeSelection = ReturnType<typeof getRelativeSelection>;
@@ -75,6 +75,8 @@ class MountedEditorHistory implements EditorHistoryHandle {
   private sequence = 0;
   private suppressManagerEvents = false;
   private managerGenerated: StackItem | null = null;
+  /** The range selected when the dispatch now running began, for the stack item that dispatch adds. */
+  private rangeBeforeDispatch: RelativeSelection | null = null;
   private active = true;
 
   constructor(private readonly editor: Editor) {
@@ -83,12 +85,14 @@ class MountedEditorHistory implements EditorHistoryHandle {
     this.manager = manager;
     manager.on("stack-item-added", this.managerAdded);
     manager.on("stack-cleared", this.managerCleared);
+    editor.on("beforeTransaction", this.rememberRange);
   }
 
   destroy(): void {
     this.active = false;
     this.manager.off("stack-item-added", this.managerAdded);
     this.manager.off("stack-cleared", this.managerCleared);
+    this.editor.off("beforeTransaction", this.rememberRange);
     this.undo.length = 0;
     this.redo.length = 0;
   }
@@ -183,19 +187,16 @@ class MountedEditorHistory implements EditorHistoryHandle {
   /**
    * Gives back the range a change started from. Yjs undo maps the selection
    * the document has now, and a range that was moved or replaced has just been
-   * removed, so it collapses into a caret. y-tiptap saves the selection from
-   * before each change on its stack item but reads it only after the document
-   * has been redrawn, and for the item an undo or redo generates it saves one
-   * taken against the already-changed document. So the first undo reads the
-   * item's own, and every item this class generates carries `RANGE_META`,
-   * taken before it ran. Carets and node selections keep the mapped result.
+   * removed, so it collapses into a caret. Every stack item that holds a change
+   * from a range carries it in `RANGE_META`: taken by `rememberRange` before
+   * the dispatch that made the item, or for an item an undo or redo generates,
+   * just before that run. (y-tiptap saves its own copy on each item, but reads
+   * it from the last transaction of a dispatch, which is the wrong range when a
+   * plugin appends one.) Carets and node selections keep the mapped result.
    */
   private restoreRange(popped: StackItem): void {
     const binding = ySyncPluginKey.getState(this.editor.state)?.binding;
-    const before = (popped.meta.get(RANGE_META) ?? (binding && popped.meta.get(binding))) as
-      | RelativeSelection
-      | null
-      | undefined;
+    const before = popped.meta.get(RANGE_META) as RelativeSelection | undefined;
     if (!binding || before?.type !== "text") return;
     const anchor = liveAbsolutePosition(binding, before.anchor);
     const head = liveAbsolutePosition(binding, before.head);
@@ -207,6 +208,32 @@ class MountedEditorHistory implements EditorHistoryHandle {
         .scrollIntoView(),
     );
   }
+
+  /**
+   * Remembers the range an editor change started from. `beforeTransaction`
+   * still sees the state the change applies to; the stack item it adds is
+   * created within that dispatch, so the microtask drops the memory once the
+   * dispatch is done (a transaction a filter rejects never reaches
+   * `transaction`, and a later write that didn't come from the editor must not
+   * inherit the range).
+   */
+  private readonly rememberRange = ({ transaction }: { transaction: Transaction }) => {
+    const { selection } = this.editor.state;
+    const binding = ySyncPluginKey.getState(this.editor.state)?.binding;
+    if (
+      !binding ||
+      !transaction.docChanged ||
+      transaction.getMeta(ySyncPluginKey) ||
+      !(selection instanceof TextSelection) ||
+      selection.empty
+    ) {
+      return;
+    }
+    this.rangeBeforeDispatch = getRelativeSelection(binding, this.editor.state);
+    queueMicrotask(() => {
+      this.rangeBeforeDispatch = null;
+    });
+  };
 
   /** Remove only items Yjs consumed from the segment it was allowed to traverse. */
   private reconcileNativeSegment(
@@ -236,6 +263,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
     if (known) return;
     const entry: Entry = { kind: "yjs", sequence: ++this.sequence, item: stackItem };
     stackItem.meta.set(HISTORY_META, entry);
+    if (this.rangeBeforeDispatch) stackItem.meta.set(RANGE_META, this.rangeBeforeDispatch);
     this.undo.push(entry);
     this.clearRedo();
   };

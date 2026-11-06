@@ -31,6 +31,8 @@ it("preserves native history order across Apply boundaries when a remote write m
       },
     },
     view: { dispatch() {} },
+    on() {},
+    off() {},
     isDestroyed: false,
   } as unknown as Editor;
   const callbacks: string[] = [];
