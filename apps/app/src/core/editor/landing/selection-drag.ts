@@ -51,11 +51,11 @@ const modifiersOf = ({ ctrlKey, altKey, shiftKey, metaKey }: Modifiers): Modifie
 
 /**
  * Whether a press lands on the highlight of a text selection this gesture
- * takes. The rects are the browser's own highlight, grown to the line height,
- * so letters and the space between lines of a multi-line range count, and in
- * a multi-block range the sliver past each line's last word. A block
- * the range covers whole can report a full-width rect too, so its margin
- * counts there; a press that doesn't travel still places a caret.
+ * takes. The test is the one ProseMirror's own `dragstart` applies: the
+ * position under the pointer lies in the selection's range. So letters, the
+ * space between a range's lines and the blank past a covered line's last word
+ * count, and unselected text after the range's end does not. A press that
+ * doesn't travel still places a caret.
  */
 function pressOnSelection(view: EditorView, editor: Editor, event: MouseEvent): boolean {
   const { selection } = view.state;
@@ -69,33 +69,8 @@ function pressOnSelection(view: EditorView, editor: Editor, event: MouseEvent): 
   if (!(target instanceof Element) || !view.dom.contains(target)) return false;
   if (target.closest('[contenteditable="false"]') !== view.dom.closest('[contenteditable="false"]'))
     return false;
-
-  const domSelection = view.dom.ownerDocument.getSelection();
-  if (!domSelection || domSelection.rangeCount === 0) return false;
-  const range = domSelection.getRangeAt(0);
-  if (!view.dom.contains(range.commonAncestorContainer)) return false;
-  // A rect is the glyph box; the highlight paints the whole line box, so grow
-  // each rect to the line height or the space between lines would not count.
-  const style = getComputedStyle(target);
-  const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
-  // Across blocks the highlight also paints the sliver past each line's last
-  // word, out to the editor's right edge.
-  const multiBlock = !(
-    selection.$from.parent.isTextblock && selection.$from.sameParent(selection.$to)
-  );
-  const editorRight = view.dom.getBoundingClientRect().right;
-  for (const rect of range.getClientRects()) {
-    const lead = Math.max(0, (lineHeight - rect.height) / 2);
-    if (
-      event.clientX >= rect.left &&
-      event.clientX <= (multiBlock ? editorRight : rect.right) &&
-      event.clientY >= rect.top - lead &&
-      event.clientY <= rect.bottom + lead
-    ) {
-      return true;
-    }
-  }
-  return false;
+  const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+  return !!at && at.pos >= selection.from && at.pos <= selection.to;
 }
 
 /**

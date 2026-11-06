@@ -222,9 +222,11 @@ keyboard, pointer, drop, or draft-recovery answer.
   third click and, on macOS browsers, waits 150ms (from their source; not run
   here), so the editor lifts the selection itself. ProseMirror's `mousedown`
   runs first (it counts clicks), then a listener on `view.dom` prevents the
-  default when the press is on the highlight of a nonempty `TextSelection`
-  (hit-tested on the DOM selection's client rects grown to the line height, so
-  the space between lines counts), with focus, no modifier, an editable view
+  default when the press is on the highlight of a nonempty `TextSelection` or
+  `AllSelection` (the test ProseMirror's own `dragstart` applies: `posAtCoords`
+  at the pointer lies in the selection's range, so the space between lines and
+  the blank past a covered line's last word count and unselected text after the
+  range does not), with focus, no modifier, an editable view
   and a chrome kernel. `handleDoubleClick` and `handleTripleClick` claim a
   second or third press there so neither the browser nor ProseMirror widens
   the selection; the claim also records a third press for the no-travel case. Past 4px it sends a synthetic
