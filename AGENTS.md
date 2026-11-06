@@ -29,7 +29,9 @@ never to get a task passing:
 - Writer text stays out of logs and diagnostics. The sanitizers are checked
   (`packages/yjs-inspect`'s canary, `safe-event.test.ts`); what emit sites pass them
   is not.
-- Marks and receipts say truthfully who did what. Partly checked.
+- Marks and receipts say truthfully who did what. Checked for live and draft
+  writes, response rollback, and subagent bylines. Not checked for undo, redo,
+  revert or Apply authorship, tree receipts, or what the browser shows.
 
 Everything else is the current implementation, open to rewriting once evidence or
 testing shows something better. The owner's words are direction, not rulings:
