@@ -352,8 +352,8 @@ export function createConversationSummarizer(
         const requestFor = (segment: string[]): GenerateRequest => ({
           model: model.id,
           reasoning: "disabled",
-          // Rolling summaries carry no cache marks; the short lifetime is explicit, not defaulted.
-          promptCacheRetention: "short",
+          // A rolling summary is a one-shot call: a cache write would never be read.
+          promptCacheRetention: "none",
           messages: [
             { role: "system", content: [{ type: "text", text: prompt }] },
             {
