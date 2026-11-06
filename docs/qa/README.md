@@ -201,6 +201,12 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    opens as a card with Download (never "PK" or tags as text) and its See files line reads
    "Couldn't turn this into a document. Kept as a file."; the names keep `.md`, `.txt`,
    `.html`. The good `.md`, `.docx` and Chinese `.txt` open as prose.
+   Then Rename (a name without a suffix keeps it: `binary.md` → `renamed` is `renamed.md`),
+   Move into a folder, Copy, Delete and Restore each kept file at the root and in a folder:
+   each keeps its name and suffix and still opens as a card. With a document `binary` beside
+   a kept `binary.md`, each opens its own content and a link `[x](binary.md)` binds the kept
+   file, `[x](binary)` the document. Rename the open kept file: its tab stays active. In a
+   draft-mode chat an agent `write move` of a kept file keeps its suffix too.
 13. Reconcile a re-picked folder. To stop mid-upload at a known point, wrap
    `XMLHttpRequest.prototype.send` in the page so `POST …/imports/<id>/files` fails
    after N requests, then reload. Check each case with the done card's See files list

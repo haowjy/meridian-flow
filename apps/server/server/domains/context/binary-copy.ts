@@ -11,11 +11,7 @@
  * creates the destination in one go for callers with nothing to join.
  */
 
-import {
-  filenameForBinary,
-  parseDocumentFilename,
-  renderFilename,
-} from "@meridian/contracts/protocol";
+import { filenameForBinary, renderFilename, storedFilename } from "@meridian/contracts/protocol";
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
 import {
@@ -106,17 +102,15 @@ export async function copyBinaryDocument(
   if (granted.kind === "container" || granted.documentId !== input.source.documentId) {
     throw new Error("A binary copy's grant must name its source document");
   }
-  const sourceParts = parseDocumentFilename(
+  const slash = input.destinationUri.lastIndexOf("/");
+  // The source URI leaf is its stored name, so a prose suffix on it marks a kept file.
+  const destinationParts = storedFilename(
+    input.destinationUri.slice(slash + 1),
     input.source.uri.slice(input.source.uri.lastIndexOf("/") + 1),
   );
-  if (!sourceParts.ok) return Err({ ...sourceParts.error, uri: input.source.uri });
-  const slash = input.destinationUri.lastIndexOf("/");
-  const destinationParts = parseDocumentFilename(input.destinationUri.slice(slash + 1), {
-    sourceExtension: sourceParts.value.extension,
-  });
   if (!destinationParts.ok) return Err({ ...destinationParts.error, uri: input.destinationUri });
   const parts = filenameForBinary(
-    destinationParts.value,
+    destinationParts.filename,
     input.source.fileType,
     input.source.mimeType ?? undefined,
   );

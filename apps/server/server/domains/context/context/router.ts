@@ -586,9 +586,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!resolved.ok) return resolved;
       const r = fileDispatch(resolved.value);
       if (!r.ok) return r;
-      const { adapter, scheme, authority, path, canonical } = r.value;
+      const { adapter, scheme, authority, canonical } = r.value;
 
-      const result = await callAdapter(canonical, () => adapter.stat(path));
+      // The adapter gets the path as written: it tries the exact stored name before the
+      // codec's, so a file kept as `binary.md` is found beside a document `binary`.
+      const result = await callAdapter(canonical, () => adapter.stat(resolved.value.path));
       if (!result.ok) return result;
       if (result.value === null) return Err({ code: "not_found", uri: canonical });
       return Ok(toFileRef(scheme, authority, result.value, !adapter.capabilities.writable));
@@ -599,9 +601,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!resolved.ok) return resolved;
       const r = fileDispatch(resolved.value);
       if (!r.ok) return r;
-      const { adapter, path, canonical } = r.value;
+      const { adapter, canonical } = r.value;
 
-      const result = await callAdapter(canonical, () => adapter.read(path));
+      const result = await callAdapter(canonical, () => adapter.read(resolved.value.path));
       if (!result.ok) return result;
       if (result.value === null) return Err({ code: "not_found", uri: canonical });
       return Ok({ ...result.value, uri: canonical });

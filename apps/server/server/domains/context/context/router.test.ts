@@ -36,7 +36,8 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
             kind: "file" as const,
             nodeId: "document-old",
             sourceId: `${scheme}-source`,
-            path,
+            // A stored document's path is its canonical name: a prose suffix is dropped.
+            path: "old",
             filetype: "markdown",
           });
         }

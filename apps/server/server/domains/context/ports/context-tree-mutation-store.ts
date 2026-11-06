@@ -25,6 +25,8 @@ export type ContextLocationToken =
       path: string;
       /** Persisted Yjs classification; null identifies a storage-backed document. */
       filetype: string | null;
+      /** The stored extension: `md` on a file kept as `binary.md`, which `path` alone cannot tell. */
+      extension: string;
     }
   | {
       kind: "directory";
@@ -61,8 +63,10 @@ interface PreparedContextMoveBase {
 }
 
 type PreparedFileMove = PreparedContextMoveBase & {
-  /** Resolved by the destination codec; null keeps an unregistered binary name. */
-  destinationFiletype?: Filetype | null;
+  /** Resolved by the destination codec; null keeps a storage-backed file's type. */
+  destinationFiletype: Filetype | null;
+  /** The destination leaf's stored parts, parsed once by the mover; storage never re-parses them. */
+  destinationFilename: { name: string; extension: string };
   source: Extract<ContextLocationToken, { kind: "file" }>;
   /** The exact writer-location command ends provisional naming on commit. */
   graduateProvisionalName: boolean;
@@ -74,17 +78,12 @@ type PreparedDirectoryMove = PreparedContextMoveBase & {
 
 export type PreparedContextMove = PreparedFileMove | PreparedDirectoryMove;
 
-type PreparedFileMoveCommand = PreparedFileMove & {
-  /** New persisted classification for a tracked file; null preserves storage-backed metadata. */
-  destinationFiletype: Filetype | null;
-};
-
 type PreparedDirectoryMoveCommand = PreparedDirectoryMove & {
   destinationFiletype?: never;
 };
 
 /** Store-ready move command after ContextFS has resolved any filetype transition. */
-export type ContextTreeMoveCommand = PreparedFileMoveCommand | PreparedDirectoryMoveCommand;
+export type ContextTreeMoveCommand = PreparedFileMove | PreparedDirectoryMoveCommand;
 
 export type ContextTreeMutationError =
   | { code: "destination_missing" }

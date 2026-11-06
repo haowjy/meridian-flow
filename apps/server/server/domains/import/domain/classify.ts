@@ -44,13 +44,18 @@ export async function classify(filename: string, bytes: Uint8Array) {
   let filetype: Filetype = html ? "binary" : await classifyUpload({ filename, mimeType, bytes });
   const asText = classifyFiletype(filetype).kind === "tracked";
   const declared = filetypeForKnownPath(filename);
-  const keptAsFile =
+  let keptAsFile =
     html ||
     (asText && !isUtf8(bytes)) ||
     (!asText && !sniffed && declared !== null && classifyFiletype(declared).kind === "tracked");
   if (keptAsFile && asText) filetype = "binary";
-  const parsed = intakeFilename(filename, filetype, mimeType);
-  if (!parsed.ok) throw new RangeError("Invalid import filename");
+  let parsed = intakeFilename(filename, filetype, mimeType);
+  if (!parsed.ok) {
+    // A name the codec refuses (`thesis.docx.md`) must not abort intake: keep the file as picked.
+    keptAsFile = true;
+    filetype = "binary";
+    parsed = { ok: true, value: { name: filename, extension: "", filetype: "binary" } };
+  }
   const tracked = classifyFiletype(filetype);
   const kind =
     tracked.kind === "tracked" ? (tracked.schemaType === "code" ? "code" : "note") : "binary";
