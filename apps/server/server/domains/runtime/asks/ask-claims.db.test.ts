@@ -151,42 +151,52 @@ else
       }
     });
 
+    const openQuestion = async (round: number, prev: TurnId) => {
+      const executionId = crypto.randomUUID();
+      const turn = await repos.turns.create({
+        threadId: ids.caller,
+        prevTurnId: prev,
+        role: "assistant",
+        origin: "assistant",
+        status: "awaiting_answer",
+        executionId,
+      });
+      const now = new Date();
+      const ask = await repos.asks.create({
+        threadId: ids.caller,
+        askingTurnId: turn.id,
+        executionId,
+        toolCallId: `ask-presence-${round}`,
+        kind: "question",
+        payload: {
+          questions: [
+            { question: "One?", options: [{ label: "A" }, { label: "B" }], recommended: "B" },
+            { question: "Two?", options: [{ label: "C" }, { label: "D" }], recommended: "D" },
+          ],
+        },
+        permissionCommand: null,
+        deadlineAt: now,
+        status: "open",
+        resolution: null,
+        submissionId: null,
+      });
+      await db
+        .update(schema.asks)
+        .set({ openedAt: now, deadlineAt: now })
+        .where(eq(schema.asks.id, ask.id));
+      return { ask, turn, now };
+    };
+
+    it("keeps the stored draft when a presence carries no answers", async () => {
+      const { ask, now } = await openQuestion(100, ids.callerTurn);
+      const held = [{ kind: "option" as const, label: "A" }, null];
+      const input = { userId: ids.user, threadId: ids.caller, askId: ask.id, now };
+      expect(await asks.presence({ ...input, answers: held })).toBeNull();
+      expect(await asks.presence(input)).toBeNull();
+      expect((await repos.asks.findById(ask.id))?.draftAnswers).toEqual(held);
+    });
+
     it("settles a presence bump against the sweep cleanly, and keeps what the writer held", async () => {
-      const openQuestion = async (round: number, prev: TurnId) => {
-        const executionId = crypto.randomUUID();
-        const turn = await repos.turns.create({
-          threadId: ids.caller,
-          prevTurnId: prev,
-          role: "assistant",
-          origin: "assistant",
-          status: "awaiting_answer",
-          executionId,
-        });
-        const now = new Date();
-        const ask = await repos.asks.create({
-          threadId: ids.caller,
-          askingTurnId: turn.id,
-          executionId,
-          toolCallId: `ask-presence-${round}`,
-          kind: "question",
-          payload: {
-            questions: [
-              { question: "One?", options: [{ label: "A" }, { label: "B" }], recommended: "B" },
-              { question: "Two?", options: [{ label: "C" }, { label: "D" }], recommended: "D" },
-            ],
-          },
-          permissionCommand: null,
-          deadlineAt: now,
-          status: "open",
-          resolution: null,
-          submissionId: null,
-        });
-        await db
-          .update(schema.asks)
-          .set({ openedAt: now, deadlineAt: now })
-          .where(eq(schema.asks.id, ask.id));
-        return { ask, turn, now };
-      };
       const held = [{ kind: "option" as const, label: "A" }, null];
 
       let prev = ids.callerTurn;
