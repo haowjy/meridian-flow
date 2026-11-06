@@ -1553,7 +1553,7 @@ export function createInMemoryRepositories(
           ...ask,
           deadlineAt:
             ask.deadlineAt && ask.deadlineAt > input.deadline ? ask.deadlineAt : input.deadline,
-          draftAnswers: input.draftAnswers,
+          draftAnswers: input.draftAnswers ?? ask.draftAnswers,
         };
         asks.set(row.id, row);
         return row;

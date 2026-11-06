@@ -88,22 +88,22 @@ export interface AskService {
     answer: AskAnswer;
   }): Promise<AskAnswerResult>;
   /**
-   * The writer is interacting with an open question ask: stores the answers they hold and
-   * moves its deadline out. Publishes the ask only when the stored answers changed or the
-   * deadline moved by `PRESENCE_PUBLISH_MS`. Refused (nothing changes, the reason returned)
-   * for a thread the user doesn't own, a closed or permission ask, or draft answers that don't
-   * fit the questions.
+   * The writer is interacting with an open question ask: moves its deadline out and, when
+   * `answers` come with it, stores them as the draft (without them the stored draft stays).
+   * Publishes the ask only when the stored answers changed or the deadline moved by
+   * `PRESENCE_PUBLISH_MS`. Refused (nothing changes, the reason returned) for a thread the
+   * user doesn't own, a closed or permission ask, or draft answers that don't fit the questions.
    */
   presence(input: {
     userId: string;
     threadId: ThreadId;
     askId: string;
-    answers: DraftAnswers;
+    answers?: DraftAnswers;
     now?: Date;
   }): Promise<PresenceRefusal | null>;
   /**
-   * Resolves every open question ask past its deadline: what the writer had answered stands,
-   * and each other question takes its Recommended option.
+   * Resolves every open question ask past its deadline: a held option or skip stands, held typed
+   * words become `unsent`, and each other question takes its Recommended option.
    */
   expireDue(now?: Date, limit?: number): Promise<number>;
   /**
@@ -415,7 +415,10 @@ export function createAskService(deps: {
           )
             return "not_open_question";
           const { questions } = stored.payload as QuestionAskPayload;
-          if (input.answers.length > questions.length || firstMisfit(questions, input.answers) >= 0)
+          if (
+            input.answers &&
+            (input.answers.length > questions.length || firstMisfit(questions, input.answers) >= 0)
+          )
             return "draft_misfit";
           const deadline = askDeadline(now, stored.openedAt);
           const updated = await deps.repos.asks.recordPresence({
@@ -426,6 +429,7 @@ export function createAskService(deps: {
           if (!updated) return "not_open_question";
           const moved = (updated.deadlineAt?.getTime() ?? 0) - (stored.deadlineAt?.getTime() ?? 0);
           const draftChanged =
+            input.answers !== undefined &&
             JSON.stringify(updated.draftAnswers) !== JSON.stringify(stored.draftAnswers);
           if (!draftChanged && moved < PRESENCE_PUBLISH_MS) return null;
           await persistAndAppendEvents(deps, input.threadId, async () => ({

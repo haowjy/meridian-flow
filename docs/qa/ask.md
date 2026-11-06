@@ -93,7 +93,7 @@ and revert before committing.
    "timed_out":true}`, and `./mf thread view` shows `unsent text: …`: typed words the
    writer never sent are not an answer.
 3. **Presence bumps the deadline.** On an open ask, note `continues at` in
-   `./mf thread view`, run `./mf thread presence` (with `--answer none` per question)
+   `./mf thread view`, run `./mf thread presence "$chat"`
    about halfway through the idle time. PASS: `continues at` moves to the idle time after
    the presence. Repeat before each deadline. PASS: the deadline moves each time and stops
    at 55 minutes after the ask opened (`opened_at`); a presence after that moves nothing,
@@ -199,8 +199,11 @@ Open the chat in the browser with `agent-browser`, at desktop width and at 390 p
    option, and read it again. PASS: it moved to 4 minutes after the click, and the
    takeover's countdown follows. Typing within 30 seconds sends one more presence when
    the 30 seconds are up, holding the typed words. Then change nothing: move the mouse,
-   scroll or press a key (on the first question, before any pick, too). PASS: within 30
-   seconds `continues at` moves again and no held answer is lost. After the answer
+   press a key or use the wheel (on the first question, before any pick, too). PASS: within
+   30 seconds `continues at` moves again and no held answer is lost. Then, from a second
+   tab or `./mf thread presence` with other `--answer`s, change the held answers and move
+   the mouse in the first tab. PASS: the server's answers stay as the second sender set
+   them. A page-caused scroll (content moving under a still mouse) moves nothing. After the answer
    sends, further activity moves nothing.
    - **Unsent words.** Type in "Or type your own answer" without Enter or Next and let
      the ask time out. PASS: the receipt shows "Not sent: …" and counts the question

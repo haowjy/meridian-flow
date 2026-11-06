@@ -400,7 +400,12 @@ function PermissionTakeover({
           ))}
         </ul>
       ) : null}
-      <div className="flex flex-wrap items-center gap-[var(--chat-space-inline)]">
+      <fieldset
+        aria-labelledby={titleId}
+        data-ask-place=""
+        tabIndex={-1}
+        className="flex min-w-0 flex-wrap items-center gap-[var(--chat-space-inline)] outline-none"
+      >
         <Button type="button" variant="quiet" size="sm" onClick={() => onAnswer({ kind: "deny" })}>
           {t`Deny`}
         </Button>
@@ -416,7 +421,7 @@ function PermissionTakeover({
         <Button type="button" size="sm" onClick={() => onAnswer({ kind: "allow" })}>
           {t`Allow`}
         </Button>
-      </div>
+      </fieldset>
     </TakeoverFrame>
   );
 }

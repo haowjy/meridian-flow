@@ -74,12 +74,13 @@ takeover unmounts while an answer sends and must reopen with every answer after 
 failed send. Every answer, a single question's included, passes through that draft
 before it sends. The hook keeps the draft in the tab's session storage, one per chat, so typed
 words survive leaving the chat; an ask that ended meanwhile closes, and adds the words, when the
-chat opens again. Each draft change also reports `ask.presence`, at most every 30 s with a
-trailing send, so the server's idle deadline follows the writer; a report still owed is sent on
+chat opens again. Page activity and each draft change report `ask.presence`, at most every 30 s with a
+trailing send, so the server's idle deadline follows the writer; only a draft change carries
+the answers, and they stay owed until a send leaves; a report still owed is sent on
 pagehide and unmount, and one the socket dropped is sent on reconnect. The server keeps those
 answers and sends them back as `ThreadAsk.draftAnswers`. A takeover the writer hasn't touched (a
 reload, another tab) follows them as they change, until the writer's first change makes the
-draft theirs. With two tabs on one ask the last to report wins. A send refused as
+draft theirs. With two tabs on one ask the tab whose writer changed an answer last wins. A send refused as
 `invalid_answer` moves the draft to the question the refusal names. The asking turn draws its receipt after its items and
 before its deliveries (`ask/AskReceipt.tsx`): a delivery placed under the asking
 turn arrived after the question. The `ask_user` tool row itself is hidden. Ask

@@ -85,14 +85,15 @@ const wsAskAnswerMessageSchema = z.object({
 });
 
 /**
- * The writer is interacting with an open question ask, holding `answers` so far. No reply:
- * the server moves the ask's deadline out and publishes it only if the deadline moved.
+ * The writer is interacting with an open question ask. No reply: the server moves the ask's
+ * deadline out and publishes it only if the deadline moved. `answers`, when present, replace the
+ * draft the server holds; a report without them (page activity) leaves that draft as it is.
  */
 const wsAskPresenceMessageSchema = z.object({
   type: z.literal("ask.presence"),
   threadId: z.string().min(1),
   askId: z.string().min(1),
-  answers: draftAnswersSchema,
+  answers: draftAnswersSchema.optional(),
 });
 
 export const wsClientMessageSchema = z.discriminatedUnion("type", [
