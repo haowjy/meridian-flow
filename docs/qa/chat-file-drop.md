@@ -41,7 +41,7 @@ folder path arrives as a directory entry. `dragCancel` does not deliver
 7. Drag a tree row onto the composer text: the caret and **Mention** hint show
    and one mention chip lands. Over the transcript nothing lights and nothing
    lands. Drop a desktop file on a Manuscript row: **Import into Manuscript** and
-   the import toast, with the composer unlit.
+   the spinner on Manuscript's Import button, with the composer unlit.
 8. Emulate the phone shell (CDP `Emulation.setDeviceMetricsOverride` mobile with
    `setTouchEmulationEnabled`, held open while driving, as in
    [Chat Files menu](chat-files.md)) and drag a file over the composer: nothing
