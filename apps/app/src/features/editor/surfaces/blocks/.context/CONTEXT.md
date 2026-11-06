@@ -34,8 +34,8 @@ unmount. It releases the hold and kernel token exactly once. Suppression is
 kernel-owned, and this surface adds no timer or independent pointer state. Touch
 uses the same identity and seam calculation after its movement threshold.
 
-A picture travels by ProseMirror's own drag, landing between two words with
-the dropcursor; its paragraph's margin handle still moves the whole line to a
+A picture travels by ProseMirror's own drag, landing between two words at the
+caret `core/editor/landing` draws; its paragraph's margin handle still moves the whole line to a
 block seam. ProseMirror's HTML5 drag is refused for block objects because
 re-parsing the dropped HTML turns a figure into a bare paragraph.
 

@@ -31,9 +31,9 @@ Chromium's hidden drag payload or ProseMirror's event order.
    would subsume its selected children. Send the message and open its folder
    chip: the menu lists the folder's children.
 4. Drop at a table-cell seam. The caret and insertion both resolve inside the
-   nearest cell; the table keeps its row and column counts. Drop over a code
-   block: no caret appears, the hint reads **Can’t mention inside code**, and
-   content does not change.
+   nearest cell; the table keeps its row and column counts. Drop over a fenced
+   code block: no caret appears, the hint reads **Can’t mention inside code**,
+   and content does not change.
 5. Drag a row the surface's `@` catalog cannot name, including an area root.
    The hint reads **Not available in this chat** over the composer and **Not
    available in this document** over the manuscript; content does not change.
@@ -43,6 +43,37 @@ Chromium's hidden drag payload or ProseMirror's event order.
    atom.
 7. In the composer, type one character immediately after a drop. The first Undo
    removes only that character; the second removes every chip from the drop.
+
+## Every point has a landing
+
+Drag one row each time and read the caret during the drag, then the document
+after the drop. Move the pointer once more and wait before reading the caret:
+it trails the last move by one `dragover`.
+
+8. **Gap between blocks.** Over the strip between two paragraphs: the caret
+   draws there, and the drop makes a new paragraph holding the chip. If the
+   gap borders an empty paragraph, the chip goes into it and no second blank
+   line appears.
+9. **Past the end.** Below the last block, in the reserve space: the drop makes
+   a new last paragraph with the chip. (A press there never makes one; see
+   [Presses](presses.md).)
+10. **Margin.** In the left or right margin beside a paragraph: the chip lands
+    on that paragraph's nearest line, never at the document start or end.
+11. **Bullets.** Between two bullets, and in the gap above a list: the chip
+    goes into the nearest bullet's line, not between items.
+12. **Inline code.** Over the middle of a code span: the caret draws at the
+    span's nearer edge and the chip lands there, outside the span. The hint
+    reads **Mention**, not a refusal.
+13. **Rendered diagram.** Over a rendered diagram with the caret elsewhere: the
+    caret draws at the seam before or after it by the pointer's half, and the
+    chip gets its own paragraph. With the caret inside the diagram's source
+    before the drag, the result is the same.
+14. **Empty document.** Over any point of a blank document: the chip lands in
+    the one empty paragraph and no second paragraph appears.
+15. **Files.** Drag a PNG over each of 8-14: it lands at the same place as the
+    chip would. Drag a video: the hint reads **Only pictures can be dropped
+    here**, no caret draws, the drop changes nothing, and the browser does not
+    open the file.
 
 ## Ownership and recovery
 
