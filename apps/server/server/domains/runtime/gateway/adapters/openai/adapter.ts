@@ -23,7 +23,7 @@ import type {
 import { hasBillableTokenUsage, withMissingUsageMetering } from "../../domain/metering.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
 import { mapProviderHttpError, providerFetch } from "../provider-http-error.js";
-import { assertCacheTtlsOnWire, toOpenAIResponsesParams } from "./request-map.js";
+import { toOpenAIResponsesParams } from "./request-map.js";
 import {
   accumulatorHasPartialResult,
   buildGenerateResult,
@@ -37,7 +37,6 @@ function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
 }
 
 export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAdapter {
-  for (const model of config.models) assertCacheTtlsOnWire(model);
   const apiKey = resolveApiKey(config.auth);
   const client = new OpenAI({
     apiKey: apiKey ?? "not-needed",
