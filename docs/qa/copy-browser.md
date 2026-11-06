@@ -53,7 +53,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    hidden row.
 9. **Regressions.** A same-system drop moves at once ("Move to Act 1", no ellipsis, no
     menu). A cross-system Move from the menu works. Move… opens
-    its picker, with "Change position in <folder>" where the row already is. A folder
+    its picker, with "Change position" where the row already is. A folder
     dragged over its own subtree refuses with "Can't go inside itself".
 10. **The phone.** Emulate 393 px, touch and a coarse pointer over CDP (`Emulation.setDeviceMetricsOverride`,
     `Emulation.setTouchEmulationEnabled`). In the drawer, a row's menu offers Copy to…;
