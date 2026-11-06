@@ -3,7 +3,6 @@
  * The checks fail fast for missing persistence, cloud object storage without
  * credentials, and production auth placeholders.
  */
-import { resolveDevAuthUser } from "@meridian/contracts/dev-auth";
 import type { ObjectStoreProvider } from "./backend-policy.js";
 
 const DEFAULT_DEV_SECRETS = new Set(["", "dev-workos-key", "dev-workos-client"]);
@@ -140,8 +139,6 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
 }
 
 export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
-  // Throws when DEV_AUTH_BYPASS=1 is set outside a local dev process.
-  resolveDevAuthUser(process.env);
   const { env } = await import("./env.js");
   const { resolveBackends } = await import("./backend-policy.js");
   const backends = resolveBackends(process.env);

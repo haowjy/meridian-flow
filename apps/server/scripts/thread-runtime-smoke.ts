@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { devAuthIdentity } from "@meridian/contracts/dev-auth";
-import { EventType } from "@meridian/contracts/protocol";
+import { API_AUTH_ME_PATH, type AuthMeResponse, EventType } from "@meridian/contracts/protocol";
 import {
   createDb,
   creditLots,
@@ -24,29 +23,6 @@ import {
 } from "../server/domains/threads/index.js";
 
 applyDevEnvToProcess();
-
-/** Resolve internal `public.users.id` for the dev auth user (post-bootstrap). */
-async function resolveDevInternalUserId(
-  databaseUrl: string,
-  externalUserId: string,
-): Promise<string> {
-  const { default: postgres } = await import("postgres");
-  const sql = postgres(databaseUrl, { max: 1 });
-  try {
-    const rows = await sql<{ id: string }[]>`
-      SELECT id::text AS id FROM public.users WHERE external_id = ${externalUserId} LIMIT 1
-    `;
-    const id = rows[0]?.id;
-    if (!id) {
-      throw new Error(
-        `No public.users row for external_id=${externalUserId}; run pnpm bootstrap first`,
-      );
-    }
-    return id;
-  } finally {
-    await sql.end();
-  }
-}
 
 const serverUrl = process.env.SMOKE_SERVER_URL;
 const databaseUrl = process.env.DATABASE_URL;
@@ -116,7 +92,11 @@ function waitForEventTypes(ws: WebSocket, expected: Set<string>): Promise<string
 }
 
 // The server runs with DEV_AUTH_BYPASS=1, so requests carry no credentials.
-const userId = await resolveDevInternalUserId(databaseUrl, devAuthIdentity(process.env).externalId);
+// Also provisions the dev user on first sign-in.
+const meResponse = await fetch(new URL(API_AUTH_ME_PATH, serverUrl));
+if (!meResponse.ok) throw new Error(`GET ${API_AUTH_ME_PATH} failed: ${meResponse.status}`);
+const { user } = (await meResponse.json()) as AuthMeResponse;
+const userId = user.userId;
 const db = createDb(databaseUrl);
 const projectId = randomUUID();
 const workId = randomUUID();
