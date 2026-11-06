@@ -145,6 +145,20 @@ function LlmCallsContent({
   const responseCallKey = derivedCalls
     .map((call) => `${call.gatewayCallId}:${call.outcome}`)
     .join(",");
+  // The turn can settle after its call closes, so a closed call on a turn still streaming
+  // keeps refetching; otherwise a stop would stay `error` until the window remounts.
+  const [snapshotRetry, setSnapshotRetry] = useState(0);
+  const turnStillSettling = derivedCalls.some(
+    (call) =>
+      call.outcome !== "in-flight" &&
+      call.turnId !== undefined &&
+      turnsById[call.turnId]?.status === "streaming",
+  );
+  useEffect(() => {
+    if (!turnStillSettling) return;
+    const timer = window.setTimeout(() => setSnapshotRetry((count) => count + 1), POLL_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [turnStillSettling, snapshotRetry]);
   useEffect(() => {
     let active = true;
     const threadIds = responseThreadKey ? responseThreadKey.split(",") : [];
@@ -172,7 +186,7 @@ function LlmCallsContent({
     return () => {
       active = false;
     };
-  }, [responseCallKey, responseThreadKey]);
+  }, [responseCallKey, responseThreadKey, snapshotRetry]);
   const calls = useMemo(
     () =>
       filter
