@@ -5,7 +5,8 @@
  *
  * After an abort, `end` carries whatever accumulated, possibly nothing, whether the SDK
  * swallowed the abort or threw it. That `end` is not success: `streamWithRetry` owns what
- * a stop or timeout means.
+ * a stop or timeout means. A stop before any output never waits for this `end`: the
+ * attempt driver ends the call itself.
  */
 import type { GenerateResult, StreamEvent } from "../domain/index.js";
 import { mapProviderHttpError, type ProviderErrorPatterns } from "./provider-http-error.js";

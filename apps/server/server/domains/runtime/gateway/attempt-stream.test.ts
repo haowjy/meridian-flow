@@ -348,3 +348,28 @@ describe("cancel drain", () => {
     }
   });
 });
+
+describe("stop before output", () => {
+  it("ends at once with a missing_usage result even when the SDK ignores the abort", async () => {
+    const controller = new AbortController();
+    const { adapter } = scriptedAdapter([
+      async function* () {
+        await new Promise(() => {});
+      },
+    ]);
+    const stream = streamWithRetry(
+      adapter,
+      { ...REQUEST, signal: controller.signal },
+      MODEL,
+      { ...RETRY, maxAttempts: 1 },
+      { stallMs: 60_000, ceilingMs: 60_000 },
+    );
+    const first = stream.next();
+    controller.abort();
+    const event = (await first).value;
+    expect(event).toMatchObject({
+      type: "end",
+      result: { content: [], meteringStatus: "missing_usage", usage: { inputTokens: 0 } },
+    });
+  });
+});

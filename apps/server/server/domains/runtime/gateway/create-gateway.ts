@@ -99,7 +99,10 @@ export function createGateway(config: GatewayConfig): Gateway {
     },
 
     async generate(request: GenerateRequest): Promise<GenerateResult> {
-      return consumeStream(gateway.stream(request));
+      const result = await consumeStream(gateway.stream(request));
+      // A stopped call ends with a partial or empty result, which is not a completed generation.
+      request.signal?.throwIfAborted();
+      return result;
     },
 
     listModels(): ModelInfo[] {
