@@ -24,7 +24,7 @@ import type { EditorView } from "@tiptap/pm/view";
 import { type DragPayloadKind, dragPayloadKind } from "./drag-payload";
 import { DropCaretView } from "./drop-caret";
 import type { DropHint, DropPlan } from "./drop-plan";
-import { type Landing, landingAt, type Point } from "./point-landing";
+import { type Landing, landingAt } from "./point-landing";
 import { pressOnInertTarget } from "./press";
 import { dragSource, slicePlan } from "./slice-drop";
 import { viewGeometry } from "./view-geometry";
@@ -43,7 +43,7 @@ export type FilesDoor = {
 
 export type DropLandingOptions = {
   /** Project-tree rows. */
-  entries?: (view: EditorView, landing: Landing, point: Point) => DropPlan;
+  entries?: (view: EditorView, landing: Landing) => DropPlan;
   files?: FilesDoor;
   /** The label by the pointer. */
   hint?: {
@@ -65,7 +65,6 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
 
     const landingOf = (view: EditorView, event: DragEvent): Landing =>
       landingAt(view.state, { x: event.clientX, y: event.clientY }, viewGeometry(view, editor));
-    const pointOf = (event: DragEvent): Point => ({ x: event.clientX, y: event.clientY });
     const draggedFiles = (transfer: DataTransfer | null): DraggedFile[] =>
       Array.from(transfer?.items ?? [])
         .filter((item) => item.kind === "file")
@@ -84,7 +83,7 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
         return slicePlan(view, landing, view.dragging.slice, dragSource(view, event));
       switch (kind) {
         case "entries":
-          return entries ? entries(view, landing, pointOf(event)) : null;
+          return entries ? entries(view, landing) : null;
         case "files":
           return files ? files.plan(editor, draggedFiles(event.dataTransfer), landing) : null;
         default:
@@ -168,7 +167,7 @@ export const DropLandingExtension = Extension.create<DropLandingOptions>({
               if (kind === "entries") {
                 // Rows only: the tree's own window listeners must not see this drop.
                 event.stopPropagation();
-                const planned = entries?.(view, landing, pointOf(event));
+                const planned = entries?.(view, landing);
                 if (planned?.kind === "accept") planned.commit(view);
               } else files?.drop(editor, dropped, landing);
               return true;

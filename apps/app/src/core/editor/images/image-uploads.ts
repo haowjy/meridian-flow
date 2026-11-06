@@ -163,7 +163,12 @@ export function pasteImageFile(editor: Editor | null, file: File): void {
     openImageFileUpload(editor, file, insertPendingImageInSweep);
     return;
   }
-  insertImageFile(editor, file, { kind: "inline", pos: editor.state.selection.from });
+  const { from } = editor.state.selection;
+  // A selection that cannot hold a picture (code) puts it after its block.
+  insertImageFile(editor, file, {
+    kind: acceptsInlineImage(editor.state.doc, from) ? "inline" : "source",
+    pos: from,
+  });
 }
 
 /** One lifecycle for a picture file with somewhere to go: validate the file, open the upload, let `place` land the slot, and start the bytes. */
@@ -222,9 +227,8 @@ export function removePendingImage(editor: Editor | null, pos: number): void {
 
 /**
  * The picture's slot, opened where the landing says: in the text at an inline
- * landing, in a paragraph of its own at a seam. An inline position whose
- * parent cannot hold a picture (a paste in code) puts the paragraph after that
- * block.
+ * landing, in a paragraph of its own at a seam, and after the block at a
+ * source landing (a paste in code).
  */
 function insertPendingImageNode(
   editor: Editor,
@@ -244,17 +248,14 @@ function insertPendingImageNode(
     title: null,
     [UPLOAD_TOKEN_ATTR]: token,
   });
-  const $target = state.doc.resolve(target);
   const transaction = state.tr;
   let imagePos: number;
 
-  if (
-    at.kind === "inline" &&
-    $target.parent.canReplaceWith($target.index(), $target.index(), imageType)
-  ) {
+  if (at.kind === "inline") {
     transaction.insert(target, image);
     imagePos = target;
   } else {
+    const $target = state.doc.resolve(target);
     const seam =
       at.kind === "seam" ? target : $target.depth === 0 ? target : $target.after($target.depth);
     const $seam = state.doc.resolve(seam);

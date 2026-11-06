@@ -23,9 +23,9 @@ import type { Editor } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import type { Child } from "./landing/point-landing";
-import { pressSelection } from "./landing/press";
-import { viewGeometry } from "./landing/view-geometry";
+import { type Child, isTableCell } from "./point-landing";
+import { pressSelection } from "./press";
+import { viewGeometry } from "./view-geometry";
 
 /** The cell node `dom` renders, or null when `dom` is not a cell's own DOM. */
 function cellContainerAtDOM(view: EditorView, dom: Element): Child | null {
@@ -37,8 +37,7 @@ function cellContainerAtDOM(view: EditorView, dom: Element): Child | null {
   }
   if (inside < 1 || inside > view.state.doc.content.size) return null;
   const $inside = view.state.doc.resolve(inside);
-  const role = $inside.parent.type.spec.tableRole;
-  if (role !== "cell" && role !== "header_cell") return null;
+  if (!isTableCell($inside.parent)) return null;
   return { node: $inside.parent, pos: $inside.before($inside.depth) };
 }
 

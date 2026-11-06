@@ -5,9 +5,8 @@ import type { EditorView } from "@tiptap/pm/view";
 
 import type { Geometry } from "./point-landing";
 
-/** Focus reads `editor.isFocused`, the same answer the diagram's node view draws from. */
 /** The box of the node starting at `pos`. */
-export function nodeRect(view: EditorView): Geometry["rectOf"] {
+function nodeRect(view: EditorView): Geometry["rectOf"] {
   return (pos) => {
     const dom = view.nodeDOM(pos);
     if (dom instanceof Element) {
@@ -20,6 +19,7 @@ export function nodeRect(view: EditorView): Geometry["rectOf"] {
   };
 }
 
+/** Focus reads `editor.isFocused`, the same answer the diagram's node view draws from. */
 export function viewGeometry(view: EditorView, editor: Editor): Geometry {
   return {
     rectOf: nodeRect(view),
