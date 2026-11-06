@@ -307,10 +307,12 @@ keyboard, pointer, drop, or draft-recovery answer.
   unselected part of a block the selection reaches into is an ordinary landing.
 - **A move keeps its lines.** Taking a text range out of several textblocks
   never joins them (`landing/range-removal.ts`): a block the range reaches into
-  keeps its unselected text and type, a block it covers whole goes, and so do the
-  containers that would be left empty. A block its parent can't lose (a list
-  item's first paragraph, the last block, or the last paragraph in a table cell)
-  stays, emptied; a fully covered table leaves as one block. A move inside one
+  keeps its unselected text and type, with adjacent prose whitespace trimmed so
+  the remainder does not start or end with the moved line's space. Code keeps
+  its whitespace. A block the range covers whole goes, and so do the containers
+  that would be left empty. A block its parent can't lose (a list item's first
+  paragraph, the last block, or the last paragraph in a table cell) stays,
+  emptied; a fully covered table leaves as one block. A move inside one
   textblock, a node move and a `CellSelection` still use `deleteSelection`.
   Several carried lines land at a gap: before the landing textblock at its start,
   after it at its end, or at a split inside it. The slice closes into blocks and
