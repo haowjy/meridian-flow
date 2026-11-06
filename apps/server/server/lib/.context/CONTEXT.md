@@ -159,11 +159,13 @@ transaction instead of reading "not held" and being refused for an id that send 
 Domain failures go through `contextErrorToHttp`, which types every code;
 `stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401
-final, and app code on other routes branches on the untyped `HttpResponseError`. Identity conflicts may name a renamed or relocated destination;
-URI-only conflicts must still match the requested home. If immutable destination
+final, and app code on other routes branches on the untyped `HttpResponseError`. A move or delete is requested by entry id; a conflict goes straight through
+`contextErrorToHttp`. Deleting an upload through the delete route is refused (400):
+uploads are removed from their chat (`deleteChatUpload`), and the sidebar hides delete for
+them. If immutable destination
 Work/lineage authority retired before intake, the identity move remains
-`destination_missing` even if a folder later relocates. Model tools and `./mf`
-currently do not issue moves.
+`destination_missing` even if a folder later relocates. The model moves a document through the port with its typed destination; `./mf` has no
+move command.
 
 ## Dependency direction
 

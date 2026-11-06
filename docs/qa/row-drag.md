@@ -117,8 +117,8 @@ a resend would show as a second request.
   and set `destinationParent` to `{"kind":"bogus"}`. The server answers 400
   "Destination parent is invalid" as
   `{kind:"error", error:{code:"bad_request", retryable:false, …}}`.
-- **Delete:** on the first `POST …/context/entries/<id>/delete`, drop `expected`.
-  The server answers 400 "Expected entry kind is required" with the same envelope.
+- **Delete:** on the first `POST …/context/entries/<id>/delete`, drop `kind`.
+  The server answers 400 "Entry kind is required" with the same envelope.
 
 One-shot move rewrite (swap the `if` for delete and `delete body.expected`):
 

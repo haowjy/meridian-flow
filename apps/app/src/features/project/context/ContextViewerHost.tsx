@@ -48,7 +48,7 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
       </ViewerError>
     );
   }
-  if (read.status === "disabled" || !read.data) {
+  if (!read.data) {
     return null;
   }
 

@@ -294,7 +294,7 @@ function namespaceEntryIs(
   expected: { kind: string; nodeId: string },
   request: Extract<NamespaceRequest, { kind: "move" | "delete" }>,
 ): boolean {
-  return expected.kind === request.body.expected.kind && expected.nodeId === request.entryId;
+  return expected.kind === request.body.kind && expected.nodeId === request.entryId;
 }
 
 function sameDestinationParent(

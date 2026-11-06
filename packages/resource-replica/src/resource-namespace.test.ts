@@ -939,7 +939,7 @@ it("refuses a move receipt for a different captured destination parent", () => {
       entryId: "document",
       body: {
         operationId: "operation",
-        expected: { kind: "file" },
+        kind: "file",
         destinationParent: { kind: "folder", folderId: "selected" },
       },
     },

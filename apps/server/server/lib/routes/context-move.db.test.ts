@@ -765,7 +765,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ ok: true });
       const body = {
         operationId: crypto.randomUUID(),
-        expected: { kind: "file" },
+        kind: "file",
         destinationParent: { kind: "folder", folderId },
       };
       await expect(
@@ -791,7 +791,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           { projectId, userId: USER_ID, entryId: DOCUMENT_ID, body },
         ),
-      ).resolves.toMatchObject({ status: "moved", scheme: "manuscript", path: "Renamed/loose" });
+      ).resolves.toEqual({ status: "moved" });
       await expect(port.stat("manuscript://Renamed/loose")).resolves.toMatchObject({ ok: true });
     });
     it("creates missing suffix folders beneath an anchor renamed before delivery and replays exactly", async () => {

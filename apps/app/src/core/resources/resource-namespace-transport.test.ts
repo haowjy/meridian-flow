@@ -32,7 +32,7 @@ vi.mock("@/client/api/projects-api", () => api);
 const request: NamespaceRequest = {
   kind: "delete",
   entryId: "document",
-  body: { operationId: "operation", expected: { kind: "file" } },
+  body: { operationId: "operation", kind: "file" },
 };
 const receipt: ContextOperationReceipt = {
   observationVersion: "1",

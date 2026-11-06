@@ -27,7 +27,7 @@ describe("context entry authority-prefix guard", () => {
       "destination name",
       {
         operationId: "12345678-1234-4234-8234-123456789abc",
-        expected: { kind: "file" },
+        kind: "file",
         name: "@notes.md",
       },
     ],
@@ -35,7 +35,7 @@ describe("context entry authority-prefix guard", () => {
       "created destination folder",
       {
         operationId: "12345678-1234-4234-8234-123456789abc",
-        expected: { kind: "file" },
+        kind: "file",
         destinationParent: {
           kind: "root",
           scheme: "manuscript",

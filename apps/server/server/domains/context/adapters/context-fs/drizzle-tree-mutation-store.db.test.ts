@@ -142,7 +142,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             destinationPath: to,
             destinationFilename: { name: to, extension: "" },
             destinationFiletype: "markdown",
-            graduateProvisionalName: false,
             expectedTarget: { state: "absent" },
           }),
         ).toMatchObject({ ok: true });
@@ -300,7 +299,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationPath: "short",
           destinationFilename: { name: "short", extension: "" },
           destinationFiletype: "markdown",
-          graduateProvisionalName: false,
           expectedTarget: { state: "absent" },
         }),
       ).toMatchObject({ ok: true });
@@ -731,7 +729,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expectedTarget: { state: "absent" },
         destinationFiletype: "markdown",
         destinationFilename: { name: "moved-holder", extension: "" },
-        graduateProvisionalName: false,
       });
       const doc = new Y.Doc();
       try {

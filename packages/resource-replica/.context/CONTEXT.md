@@ -73,9 +73,9 @@ Work, `@c<n>` for a lineage or a chat's uploads, none for project schemes. Catal
 projection, receipt matching and identity placement all use it. Tab ownership does
 not: app tabs carry the location's Work row id, No Work's included, or a chat's
 lineage. `sameOwner` compares the Work or lineage id and its handle. Move and delete
-requests carry the owner's id and handle (`moveOwnerFields`), and receipt matching
-spells the handle back, so a receipt under another chat's notes never settles this
-one's intent. No Work link Create and Editor identity rename use the same namespace
+requests name the entry by id and carry no owner; receipt matching compares the
+command (entry id and kind, and what the writer chose), so a receipt settles only
+the intent whose request it answers. No Work link Create and Editor identity rename use the same namespace
 journal as named Works.
 
 `planResourceDeletion` records writer intent without fabricating remote authority.

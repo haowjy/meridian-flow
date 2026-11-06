@@ -172,7 +172,7 @@ export function evidence(
         operationId: request.body.operationId,
         command: {
           kind: "delete",
-          expected: { kind: request.body.expected.kind, nodeId: request.entryId },
+          expected: { kind: request.body.kind, nodeId: request.entryId },
         },
         result: refused
           ? error
@@ -182,7 +182,7 @@ export function evidence(
                 status: "deleted",
                 uri: `manuscript://${request.entryId}`,
                 removed:
-                  request.body.expected.kind === "file"
+                  request.body.kind === "file"
                     ? [
                         {
                           documentId: request.entryId,
@@ -207,7 +207,7 @@ export function evidence(
       command: {
         kind: "move",
         destinationParent: request.body.destinationParent,
-        expected: { kind: request.body.expected.kind, nodeId: request.entryId },
+        expected: { kind: request.body.kind, nodeId: request.entryId },
         ...(request.body.name ? { name: request.body.name } : {}),
         ...(request.body.position ? { position: request.body.position } : {}),
       },

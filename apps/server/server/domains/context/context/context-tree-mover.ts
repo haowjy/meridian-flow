@@ -450,7 +450,6 @@ export class ContextTreeMover {
       ...prepared,
       source: sourceNode,
       ...fileDestination,
-      graduateProvisionalName: true,
     });
   }
 

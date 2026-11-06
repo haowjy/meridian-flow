@@ -14,7 +14,6 @@ import {
   parseDocumentFilename,
   type RetractionCause,
   storedFilename,
-  type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { compareCatalogSiblings } from "@meridian/resource-replica";
@@ -38,7 +37,6 @@ import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
-import { documentMetadataFacts } from "../../document-metadata.js";
 import type {
   AdapterCreatedFolder,
   AdapterDeleteResult,
@@ -933,7 +931,6 @@ export class ContextFS implements ContextSchemeAdapter {
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
         position: prepared.position,
-        graduateProvisionalName: prepared.graduateProvisionalName,
         destinationFiletype: destinationFiletype.value,
         destinationFilename: prepared.destinationFilename,
       });

@@ -196,9 +196,17 @@ folder rename or move that lands on a hidden folder's path absorbs it (never
 refused); a recursive delete, or a move to a source fewer branches may hold,
 first splits hidden contents into hidden twins at their old paths, so a
 writer's live folder operations never disturb a branch's hidden rows. Identity moves resolve a folder
-in the live view, then resolve it again under namespace locks; stale plans
-return `stale_target`, while an occupied destination leaf sends the arrival to
-the next alias-aware free name and returns that actual path. An absent,
+in the live view, then resolve it again under namespace locks. The mover finds the
+moved row by id under the locks and builds the destination there: the leaf is
+`options.name` or the row's own, the folder is the one `destinationUri` names (a
+folder URI; `null` keeps the row's own folder). No path computed before the locks
+reaches the store, so a rename or move by another writer in the gap is neither
+undone nor refused. A row that left the locked Work or area answers a non-final
+`io_error` (`namespace_changed`) and the caller looks it up again; `stale_target`
+from a move now comes from the destination-leaf CAS or a stale sibling anchor. An
+occupied destination leaf sends the arrival to the next alias-aware free name and
+returns that actual path. A delete with `onlyAt` (a model create's retraction) acts
+only on a row still at that path and otherwise answers `stale_target`. An absent,
 terminal, or denied identity destination returns `destination_missing`.
 Location-only CAS tokens fence moves and deletes. A `createFolders` suffix is
 validated beneath the identity anchor in the same transaction; a missing
