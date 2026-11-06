@@ -23,21 +23,14 @@ import {
 import {
   type GatewayConfig,
   type GenerateRequest,
-  type GenerateResult,
   type ModelInfo,
   resolveCall,
   type StreamEvent,
 } from "./domain/index.js";
 import { hasBillableTokenUsage, withMissingUsageMetering } from "./domain/metering.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
-import {
-  isCommittedOutputEvent,
-  isFirstTokenEvent,
-  isPartialOutputEvent,
-} from "./stream-events.js";
+import { isCommittedOutputEvent, isFirstTokenEvent } from "./stream-events.js";
 
-/** Wall-clock bound for post-output cancel drain — providers that ignore abort must not hang forever. */
-const CANCEL_DRAIN_TIMEOUT_MS = 5_000;
 const MAX_BUFFERED_BYTES = 1_048_576;
 
 interface ArrivingEvent {
@@ -179,21 +172,6 @@ export function resolveAttemptTimeouts(
   };
 }
 
-/**
- * What a stop leaves when the provider's own end cannot be waited for: nothing generated and usage
- * unknown. Text streamed before a stop at the drain deadline is not in it.
- */
-function emptyResult(model: ModelInfo): GenerateResult {
-  return {
-    content: [],
-    toolCalls: [],
-    finishReason: null,
-    usage: { inputTokens: 0, outputTokens: 0 },
-    model: model.id,
-    provider: model.provider,
-  };
-}
-
 /** Abort-aware sleep for backoff between retry attempts: resolves early on abort. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -229,7 +207,6 @@ export async function* streamWithRetry(
     // A stop that landed before this attempt started made no call, so it leaves no response.
     if (request.signal?.aborted) return;
     let sawError: StreamEvent | undefined;
-    let emittedOutput = false;
     let emittedCommittedOutput = false;
     const attemptSignal = createModelAttemptSignal(request.signal, timeouts);
     const startedAt = now();
@@ -252,7 +229,6 @@ export async function* streamWithRetry(
           }
           if (!attemptSignal.signal.aborted) attemptSignal.notifyProgress();
           const event = next.value;
-          emittedOutput ||= isPartialOutputEvent(event);
           const arrivedAt = now();
           const arrivedBeforeBackpressure = !backpressured;
           if (firstTokenAt === undefined && isFirstTokenEvent(event)) {
@@ -278,41 +254,20 @@ export async function* streamWithRetry(
     };
     void pump();
 
-    // One subscription and one absolute cancel deadline for the entire attempt.
-    let cancelTimer: ReturnType<typeof setTimeout> | undefined;
-    // A stop ends the stream once: with the error for a timeout, otherwise with a synthetic end.
-    type Stop = { kind: "stop"; error?: unknown };
-    let stop!: (result: Stop) => void;
-    const stopped = new Promise<Stop>((resolve) => {
-      stop = resolve;
+    // A timeout ends the attempt at once with its error; a caller's stop ends in the adapter's `end`.
+    let timedOut!: (error: unknown) => void;
+    const stopped = new Promise<{ kind: "timeout"; error: unknown }>((resolve) => {
+      timedOut = (error) => resolve({ kind: "timeout", error });
     });
     const onAbort = () => {
       const timeout = getModelAttemptTimeout(attemptSignal.signal);
-      if (timeout) {
-        stop({ kind: "stop", error: timeout });
-      } else if (!emittedOutput) {
-        // End at once rather than wait on an SDK that may hang: the call was made, so the
-        // empty result is stamped missing_usage and settled like any cancelled call.
-        stop({ kind: "stop" });
-      } else {
-        cancelTimer = setTimeout(() => stop({ kind: "stop" }), CANCEL_DRAIN_TIMEOUT_MS);
-      }
+      if (timeout) timedOut(timeout);
     };
     attemptSignal.signal.addEventListener("abort", onAbort, { once: true });
-    const stoppedEnd = (): ArrivingEvent => ({
-      event: { type: "end", result: emptyResult(model) },
-      arrivedAt: now(),
-      estimatedBytes: 0,
-      arrivedBeforeBackpressure: !backpressured,
-    });
-    // The caller's stop, as opposed to this attempt's own timeout, which stays an error.
-    const stoppedByCaller = () =>
-      request.signal?.aborted === true && !modelAttemptTimeoutEvent(attemptSignal.signal);
     const read = async (): Promise<IteratorResult<ArrivingEvent>> => {
       const next = await Promise.race([stopped, buffer.next()]);
-      if (!("kind" in next)) return next;
-      if (next.error !== undefined) throw next.error;
-      return { done: false, value: stoppedEnd() };
+      if ("kind" in next) throw next.error;
+      return next;
     };
     const timeTerminalEvent = (arrival: ArrivingEvent): StreamEvent => {
       if (arrival.event.type !== "end" && arrival.event.type !== "error") return arrival.event;
@@ -350,21 +305,21 @@ export async function* streamWithRetry(
     try {
       while (true) {
         const next = await read();
-        if (next.done) {
-          // The adapter ended without a terminal event; after a stop, the stop is that event.
-          if (stoppedByCaller()) yield timeTerminalEvent(stoppedEnd());
-          break;
-        }
+        if (next.done) break;
         if (!attemptSignal.signal.aborted) attemptSignal.notifyProgress();
         const { event } = next.value;
-        if (event.type === "error") {
-          if (stoppedByCaller()) {
-            yield timeTerminalEvent(stoppedEnd());
-            return;
-          }
+        // A timeout aborts the adapter, whose envelope then ends normally; it is still a timeout.
+        const timeoutEvent = modelAttemptTimeoutEvent(attemptSignal.signal);
+        const failure =
+          event.type === "error"
+            ? (timeoutEvent ?? event)
+            : event.type === "end"
+              ? timeoutEvent
+              : undefined;
+        if (failure) {
           // If the attempt was killed by a timer, surface that timeout event
           // (retryable) instead of whatever the SDK emitted.
-          sawError = modelAttemptTimeoutEvent(attemptSignal.signal) ?? event;
+          sawError = failure;
           if (emittedCommittedOutput || !sawError.retryable || attempt >= maxAttempts) {
             yield timeTerminalEvent({ ...next.value, event: sawError });
             return;
@@ -382,10 +337,6 @@ export async function* streamWithRetry(
       const timeoutEvent = modelAttemptTimeoutEvent(attemptSignal.signal);
       if (timeoutEvent) {
         sawError = timeoutEvent;
-      } else if (stoppedByCaller()) {
-        // The adapter rejected because of the stop; the stop still ends the stream with its end.
-        yield timeTerminalEvent(stoppedEnd());
-        return;
       } else {
         sawError = {
           type: "error",
@@ -401,7 +352,6 @@ export async function* streamWithRetry(
     } finally {
       buffer.finish();
       attemptSignal.signal.removeEventListener("abort", onAbort);
-      if (cancelTimer !== undefined) clearTimeout(cancelTimer);
       attemptSignal.cleanup();
       // A stuck next() can prevent return() from ever settling. Observe teardown
       // rejection without letting provider cleanup hold the run or retry hostage.

@@ -5,7 +5,7 @@
  * while refusing retries after committed output.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Retry timing, buffering, and cancellation-drain policy
+ * - Retry timing and buffering
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamWithRetry } from "./attempt-stream.js";
@@ -306,70 +306,6 @@ describe("per-attempt timing", () => {
       latencyMs: null,
       timeToFirstTokenMs: 11,
       generationMs: null,
-    });
-  });
-});
-
-describe("cancel drain", () => {
-  it("uses one deadline even with late chunks and an iterator that ignores return", async () => {
-    vi.useFakeTimers();
-    try {
-      const controller = new AbortController();
-      const { adapter } = scriptedAdapter([
-        async function* () {
-          yield { type: "text.delta", text: "first" };
-          await new Promise((resolve) => setTimeout(resolve, 4_000));
-          yield { type: "text.delta", text: "late" };
-          await new Promise(() => {});
-        },
-      ]);
-      const stream = streamWithRetry(
-        adapter,
-        { ...REQUEST, signal: controller.signal },
-        MODEL,
-        { ...RETRY, maxAttempts: 1 },
-        { stallMs: 60_000, ceilingMs: 60_000 },
-      );
-      await stream.next();
-      const late = stream.next();
-      controller.abort();
-      await vi.advanceTimersByTimeAsync(4_000);
-      expect((await late).value).toEqual({ type: "text.delta", text: "late" });
-      let end: StreamEvent | undefined;
-      const finish = stream.next().then((result) => {
-        end = result.value;
-      });
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(end).toMatchObject({ type: "end", result: { meteringStatus: "missing_usage" } });
-      await finish;
-      expect(vi.getTimerCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("stop before output", () => {
-  it("ends at once with a missing_usage result even when the SDK ignores the abort", async () => {
-    const controller = new AbortController();
-    const { adapter } = scriptedAdapter([
-      async function* () {
-        await new Promise(() => {});
-      },
-    ]);
-    const stream = streamWithRetry(
-      adapter,
-      { ...REQUEST, signal: controller.signal },
-      MODEL,
-      { ...RETRY, maxAttempts: 1 },
-      { stallMs: 60_000, ceilingMs: 60_000 },
-    );
-    const first = stream.next();
-    controller.abort();
-    const event = (await first).value;
-    expect(event).toMatchObject({
-      type: "end",
-      result: { content: [], meteringStatus: "missing_usage", usage: { inputTokens: 0 } },
     });
   });
 });

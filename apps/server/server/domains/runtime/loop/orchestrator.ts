@@ -105,12 +105,7 @@ import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { AskService } from "../asks/ask-service.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
-import {
-  type GenerateRequest,
-  type GenerateResult,
-  type Gateway as LlmGateway,
-  shouldPersistCancelledResult,
-} from "../gateway/index.js";
+import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
@@ -1116,7 +1111,7 @@ async function settleCancelledResponse(input: {
   predictedCacheState: PrefixCacheState;
 }): Promise<Turn> {
   let currentTurn = input.currentTurn;
-  if (input.result && shouldPersistCancelledResult(input.result)) {
+  if (input.result) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
       runInput: input.runInput,
@@ -2108,8 +2103,7 @@ async function executeLoop({
       : cancelTerminal;
   const completeTerminal = (result: GenerateResult): TerminalCause => ({
     kind: "success",
-    // Null only when a stop landed on a finished reply; the run still completed.
-    finishReason: result.finishReason ?? "end_turn",
+    finishReason: result.finishReason,
   });
   // The yield ends A exactly as a steer split would, but releases the claim
   // instead of reserving a successor. Cancellation wins: the local signal is

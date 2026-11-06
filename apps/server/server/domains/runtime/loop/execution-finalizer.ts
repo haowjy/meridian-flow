@@ -8,7 +8,6 @@ import {
   blockPlainText,
   type FinishReason,
   isTerminalTurnStatus,
-  type ModelResponse,
   type OrchestratorEvent,
   type ProviderErrorResponse,
   type Turn,
@@ -29,7 +28,7 @@ import { compactionFailureMeridianError } from "./compaction/decision.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
-  | { kind: "success"; finishReason: FinishReason }
+  | { kind: "success"; finishReason: FinishReason | null }
   | { kind: "asked"; askId: string }
   | {
       kind: "failed";
@@ -47,23 +46,14 @@ export type FinalizedExecution = {
 };
 
 /**
- * Text of the turn's latest response that produced anything: the provider metered it, or it left
- * blocks. A call stopped before output leaves an unmetered, blockless row, which must not blank
- * what an earlier response said. A turn with no such row (crashed mid-stream) keeps its blocks
- * unattached.
+ * A finished run reports its final response, even an empty one. An interrupted run's last response
+ * may have said nothing yet, so it reports the latest text the run wrote.
  */
-function publicText(blocks: Block[], responses: readonly ModelResponse[]): string {
-  const responseId =
-    [...responses]
-      .reverse()
-      .find(
-        (row) =>
-          row.inputTokens > 0 ||
-          row.outputTokens > 0 ||
-          blocks.some((block) => block.responseId === row.id),
-      )?.id ?? null;
-  return blocks
-    .filter((block) => block.responseId === responseId && block.blockType === "text")
+function publicText(blocks: Block[], finalResponseId: string | null, interrupted: boolean): string {
+  const text = blocks.filter((block) => block.blockType === "text");
+  const responseId = interrupted ? (text.at(-1)?.responseId ?? null) : finalResponseId;
+  return text
+    .filter((block) => block.responseId === responseId)
     .map((block) => blockPlainText(block.blockType, block.content) ?? "")
     .join("");
 }
@@ -71,7 +61,8 @@ function publicText(blocks: Block[], responses: readonly ModelResponse[]): strin
 async function resolveReportContent(
   input: {
     turnId: TurnId;
-    responses: readonly ModelResponse[];
+    responseId: string | null;
+    interrupted: boolean;
     capture: SavedExecutionReport["capture"];
     empty: boolean;
   },
@@ -81,7 +72,7 @@ async function resolveReportContent(
 
   const text = input.capture
     ? ""
-    : publicText(await deps.blocks.listByTurn(input.turnId), input.responses);
+    : publicText(await deps.blocks.listByTurn(input.turnId), input.responseId, input.interrupted);
   return {
     source: input.capture
       ? ("return_result" as const)
@@ -305,7 +296,8 @@ export async function finalizeExecution(
         const content = await resolveReportContent(
           {
             turnId: turn.id,
-            responses,
+            responseId: responses.at(-1)?.id ?? null,
+            interrupted: outcome !== "succeeded",
             capture,
             empty: input.reportContent === "empty",
           },
