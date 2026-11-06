@@ -127,8 +127,10 @@ export function createEffectiveDocumentReader(input: {
     readEffectiveHashlines(command) {
       return readEffective(command, async (handle): Promise<HashlineRead> => {
         const doc = unwrapDoc(handle);
-        const scope = await spelling(command, doc);
-        const verbatim = await isCodeDocument(input.resolveFiletype, command.documentId);
+        const [scope, verbatim] = await Promise.all([
+          spelling(command, doc),
+          isCodeDocument(input.resolveFiletype, command.documentId),
+        ]);
         return readHashlines(doc, scope, input.model, input.codec, verbatim);
       });
     },
