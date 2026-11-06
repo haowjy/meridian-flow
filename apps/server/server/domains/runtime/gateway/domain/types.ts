@@ -393,7 +393,7 @@ export interface ProviderConfig {
   id: string;
   adapter: BuiltinAdapter;
   auth?: {
-    apiKey?: string | (() => string);
+    apiKey?: string;
     headers?: Record<string, string>;
   };
   baseUrl?: string;

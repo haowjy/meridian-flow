@@ -18,6 +18,7 @@ import type { GenerateRequest, ModelInfo, ResolvedCall, StreamEvent } from "../d
  * long cache writes, reasoning); the adapter maps them to wire fields.
  */
 export interface ProviderAdapter {
+  /** After the request's signal aborts, `end` carries whatever accumulated, possibly nothing; the caller owns what the stop means. */
   stream(
     request: GenerateRequest,
     model: ModelInfo,

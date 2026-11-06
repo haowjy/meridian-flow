@@ -14,7 +14,12 @@ prefix.
 
 `Gateway.stream()` yields canonical `StreamEvent`s; `generate()` and `listModels()`
 complete the port; the orchestrator persists a cancelled call's result when
-`shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable usage.
+`shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable usage or
+`meteringStatus: "missing_usage"` (`attempt-stream.ts` stamps a stopped call that kept output but
+got no provider usage). Every adapter's `stream()` is the shared envelope in
+`adapters/provider-stream.ts` around its own request map and collector; after an abort it yields `end`
+with whatever accumulated, possibly nothing, and `attempt-stream.ts` decides what a stop or timeout
+means.
 Where the routed model is known, `attempt-stream.ts` calls `resolveCall()`
 (`domain/resolve-call.ts`) once and hands the adapter a `ResolvedCall`:
 `{ cacheTtlSeconds, longCacheWrites, reasoning: "default" | "off" | { effort } }`. Adapters
