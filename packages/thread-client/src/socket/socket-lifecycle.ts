@@ -368,19 +368,16 @@ export class SocketLifecycleController {
     try {
       callback();
     } catch {
-      try {
-        this.failureLog?.record({
-          occurrenceId: `socket-observer:${generation}:${phase}:${++this.observerFailureCount}`,
-          failure: {
-            category: "unavailable",
-            source: "bug",
-            actionable: false,
-            cause: { code: "observer_failed" },
-          },
-          phase: "recorded",
-        });
-        // slop-lint: allow swallowed-error the failure log is a host callback too, and transport must survive it
-      } catch {}
+      this.failureLog?.record({
+        occurrenceId: `socket-observer:${generation}:${phase}:${++this.observerFailureCount}`,
+        failure: {
+          category: "unavailable",
+          source: "bug",
+          actionable: false,
+          cause: { code: "observer_failed" },
+        },
+        phase: "recorded",
+      });
     }
   }
 }
