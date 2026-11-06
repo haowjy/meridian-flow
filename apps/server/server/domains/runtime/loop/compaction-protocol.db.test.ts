@@ -19,7 +19,7 @@ import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
-import { readDocumentText, searchDocumentText, writeDocumentText } from "../tools/document-text.js";
+import { grepDocumentText, readDocumentText, writeDocumentText } from "../tools/document-text.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
@@ -185,7 +185,7 @@ else
       for (const [name, documentText] of [
         ["read", readDocumentText],
         ["write", writeDocumentText],
-        ["search", searchDocumentText],
+        ["grep", grepDocumentText],
       ] as const)
         rig.deps.toolRegistry.register({
           source: "core",
@@ -201,7 +201,7 @@ else
             { id: "fresh-read", command: "read", revision: "new" },
             { id: "stale-write", command: "replace", revision: "old" },
             { id: "fresh-write", command: "replace", revision: "new" },
-            { id: "search", command: "search", revision: "old" },
+            { id: "grep", command: "grep", revision: "old" },
             { id: "failed-write", command: "replace", revision: "old" },
           ]
         : [{ id: "stale-read", command: "read", revision: "old" }];
@@ -209,8 +209,8 @@ else
       const results = [];
       for (const record of records) {
         const uri = "manuscript://chapter";
-        const isSearch = record.command === "search";
-        const toolName = isSearch ? "search" : record.command === "read" ? "read" : "write";
+        const isGrep = record.command === "grep";
+        const toolName = isGrep ? "grep" : record.command === "read" ? "read" : "write";
         const staleText = `${record.id.toUpperCase()} TEXT`;
         await rig.repos.blocks.create({
           turnId: answer.id,
@@ -220,7 +220,7 @@ else
           content: {
             toolCallId: record.id,
             toolName,
-            input: isSearch
+            input: isGrep
               ? { pattern: "dragon" }
               : {
                   ...(record.command === "read" ? {} : { command: record.command }),
@@ -240,19 +240,23 @@ else
             content: {
               toolCallId: record.id,
               toolName,
-              output: isSearch
-                ? [
-                    {
-                      uri,
-                      matches: [{ excerpt: "STALE SEARCH TEXT", blockHash: "b42" }],
-                      matchCount: 7,
-                    },
-                    {
-                      uri: "kb://fresh",
-                      matches: [{ excerpt: "FRESH SEARCH TEXT" }],
-                      matchCount: 1,
-                    },
-                  ]
+              output: isGrep
+                ? {
+                    files: [
+                      {
+                        uri,
+                        matches: [{ excerpt: "STALE SEARCH TEXT", blockHash: "b42" }],
+                        matchCount: 7,
+                      },
+                      {
+                        uri: "kb://fresh",
+                        matches: [{ excerpt: "FRESH SEARCH TEXT" }],
+                        matchCount: 1,
+                      },
+                    ],
+                    totalFiles: 2,
+                    exact: true,
+                  }
                 : record.id === "failed-write"
                   ? "Write did not land"
                   : staleText,
@@ -264,9 +268,7 @@ else
                     uri,
                     revision: record.revision,
                   },
-                  ...(isSearch
-                    ? [{ documentId: "fresh", uri: "kb://fresh", revision: "new" }]
-                    : []),
+                  ...(isGrep ? [{ documentId: "fresh", uri: "kb://fresh", revision: "new" }] : []),
                 ],
               },
             },

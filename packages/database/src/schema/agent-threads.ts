@@ -76,6 +76,11 @@ export const threads = pgTable(
     turnCount: integer("turn_count").notNull().default(0),
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
     inboxBlockedReason: text("inbox_blocked_reason").$type<"credits_exhausted">(),
+    /**
+     * Set when a lineage cancellation stopped this thread: a machine wake (agent message,
+     * spawn admission) from an execution admitted before it is refused. Writer actions pass.
+     */
+    wakeFenceAt: timestamp("wake_fence_at", { withTimezone: true }),
     nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
     // The chat's write mode: copied at creation, changed only by an applied switch.
     aiWriteMode: text("ai_write_mode").$type<AiWriteMode>().notNull().default("direct"),
@@ -613,6 +618,8 @@ export const threadExecutionReports = pgTable(
     costMillicredits: bigint("cost_millicredits", { mode: "number" }),
     terminalAt: timestamp("terminal_at", { withTimezone: true }),
     publication: text("publication").notNull().default("none"),
+    /** A lineage cancellation ended this run: publication projects the card but enqueues no notice. */
+    noticeWithdrawn: boolean("notice_withdrawn").notNull().default(false),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: createdAt(),
   },

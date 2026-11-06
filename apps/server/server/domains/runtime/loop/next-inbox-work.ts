@@ -10,12 +10,12 @@
  */
 
 import type { ControlBody } from "@meridian/contracts/threads";
-import type { InboxMessage } from "./ports.js";
+import type { AskResolvedBody, InboxMessage } from "./ports.js";
 
 export type ControlMessage = InboxMessage & { intent: "control"; body: ControlBody };
 export type AskResolvedMessage = InboxMessage & {
   intent: "control";
-  body: { kind: "ask_resolved"; askId: string };
+  body: AskResolvedBody;
 };
 export type WriteModeSwitchMessage = InboxMessage & {
   intent: "control";
@@ -78,7 +78,12 @@ function isControl(row: InboxMessage): row is ControlMessage {
   return row.intent === "control" && row.body.kind !== "ask_resolved";
 }
 
-function isAskResolved(row: InboxMessage): row is AskResolvedMessage {
+/**
+ * A resolved ask's continuation obligation. The row is pending exactly while the
+ * obligation is outstanding: until its continuation is admitted, or until a
+ * cancellation drops it.
+ */
+export function isAskResolved(row: InboxMessage): row is AskResolvedMessage {
   return row.intent === "control" && row.body.kind === "ask_resolved";
 }
 

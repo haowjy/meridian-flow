@@ -12,13 +12,13 @@ import { FailureCard } from "@/components/app/FailureCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { permissionRequestText } from "./permission-request";
 
 type QuestionAsk = Extract<ThreadAsk, { kind: "question" }>;
 type PermissionAsk = Extract<ThreadAsk, { kind: "permission" }>;
 
 export type AskTakeoverProps = {
   open: OpenAsk;
-  agentName: string;
   /** The own-answer field's text. The host holds it, so it outlives the takeover. */
   text: string;
   onTextChange: (text: string) => void;
@@ -27,14 +27,7 @@ export type AskTakeoverProps = {
   onSettle: () => void;
 };
 
-export function AskTakeover({
-  open,
-  agentName,
-  text,
-  onTextChange,
-  onAnswer,
-  onSettle,
-}: AskTakeoverProps) {
+export function AskTakeover({ open, text, onTextChange, onAnswer, onSettle }: AskTakeoverProps) {
   const { ask, attempt } = open;
   if (attempt?.state === "unsettled") {
     // The ask is closed; only how it ended is unknown. Nothing here may answer it again.
@@ -48,7 +41,7 @@ export function AskTakeover({
             </Button>
           </FailureCard>
         </div>
-        <ClosedTakeover ask={ask} agentName={agentName} />
+        <ClosedTakeover ask={ask} />
       </>
     );
   }
@@ -73,7 +66,7 @@ export function AskTakeover({
           onAnswer={onAnswer}
         />
       ) : (
-        <PermissionTakeover ask={ask} agentName={agentName} onAnswer={onAnswer} />
+        <PermissionTakeover ask={ask} onAnswer={onAnswer} />
       )}
     </>
   );
@@ -103,14 +96,12 @@ function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children:
 }
 
 /** The ask's title alone: it can no longer be answered here. */
-function ClosedTakeover({ ask, agentName }: { ask: ThreadAsk; agentName: string }) {
+function ClosedTakeover({ ask }: { ask: ThreadAsk }) {
   const titleId = useId();
   return (
     <TakeoverFrame labelledBy={titleId}>
       <TakeoverTitle id={titleId}>
-        {ask.kind === "question"
-          ? ask.payload.question
-          : t`${agentName} wants to ${ask.payload.summary}?`}
+        {ask.kind === "question" ? ask.payload.question : permissionRequestText(ask.payload).title}
       </TakeoverTitle>
     </TakeoverFrame>
   );
@@ -243,18 +234,23 @@ function Countdown({ deadlineAt }: { deadlineAt: string }) {
 
 function PermissionTakeover({
   ask,
-  agentName,
   onAnswer,
 }: {
   ask: PermissionAsk;
-  agentName: string;
   onAnswer: (answer: AskAnswer) => void;
 }) {
   const titleId = useId();
-  const { summary } = ask.payload;
+  const { title, details } = permissionRequestText(ask.payload);
   return (
     <TakeoverFrame labelledBy={titleId}>
-      <TakeoverTitle id={titleId}>{t`${agentName} wants to ${summary}?`}</TakeoverTitle>
+      <TakeoverTitle id={titleId}>{title}</TakeoverTitle>
+      {details.length > 0 ? (
+        <ul className="flex flex-col px-[var(--chat-space-inline)] text-compact text-muted-foreground">
+          {details.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
       <div className="flex flex-wrap items-center gap-[var(--chat-space-inline)]">
         <Button type="button" variant="quiet" size="sm" onClick={() => onAnswer({ kind: "deny" })}>
           {t`Deny`}

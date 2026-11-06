@@ -11,12 +11,11 @@ import {
   agentEditWidCounters,
   applyCommandEffects,
   changeTrailDocumentDetails,
-  documentDerivations,
+  documentBlockRooms,
   documentDrafts,
   documentEdits,
   documentForwards,
   documentLinks,
-  documentMarkdownProjections,
   documentPreviousLocations,
   documents,
   documentYjsCheckpoints,
@@ -55,7 +54,7 @@ export async function lockDocuments(db: Database, ids: readonly string[]): Promi
 export function documentRowValues(
   slot: DocumentSlot,
   node: TrackedNode | BinaryNode,
-  options: { hidden: boolean; id?: DocumentId; markdown?: string; provisionalName?: boolean },
+  options: { hidden: boolean; id?: DocumentId; provisionalName?: boolean },
 ) {
   return {
     ...(options.id ? { id: options.id } : {}),
@@ -65,7 +64,7 @@ export function documentRowValues(
     extension: slot.extension,
     hidden: options.hidden,
     ...(node.kind === "tracked"
-      ? { fileType: node.filetype, sizeBytes: Buffer.byteLength(options.markdown ?? "", "utf8") }
+      ? { fileType: node.filetype, sizeBytes: 0 }
       : {
           fileType: node.fileType,
           storageUrl: node.storageUrl,
@@ -79,28 +78,23 @@ export function documentRowValues(
 }
 
 /**
- * A document row at `slot`: a text row with its Markdown projection (`markdown`, empty by
- * default; a hidden row's is always empty), or a storage-backed row. A visible row claims
- * its location. Null when any unique key already holds the row (the caller-minted id; the
+ * A document row at `slot`: a text row (its size comes from its first derivation) or a
+ * storage-backed row. A visible row claims its location. Null when any unique key already holds the row (the caller-minted id; the
  * live location only if the caller skipped its namespace lock and occupancy check).
  */
 export async function insertDocumentRow(
   db: Database,
   slot: DocumentSlot,
   node: TrackedNode | BinaryNode,
-  options: { hidden: boolean; id?: DocumentId; markdown?: string; provisionalName?: boolean },
+  options: { hidden: boolean; id?: DocumentId; provisionalName?: boolean },
 ): Promise<DocumentId | null> {
   const tx = currentDrizzleDb(db);
-  const markdown = options.markdown ?? "";
   const [row] = await tx
     .insert(documents)
     .values(documentRowValues(slot, node, options))
     .onConflictDoNothing()
     .returning({ id: documents.id });
   if (!row) return null;
-  if (node.kind === "tracked") {
-    await tx.insert(documentMarkdownProjections).values({ documentId: row.id, markdown });
-  }
   if (!options.hidden) {
     await claimDocumentLocation(
       db,
@@ -193,10 +187,7 @@ export async function releaseDocumentStorage(
     .select({ draftId: documentDrafts.id, status: documentDrafts.status })
     .from(documentDrafts)
     .where(inArray(documentDrafts.documentId, list));
-  await tx.delete(documentDerivations).where(inArray(documentDerivations.documentId, list));
-  await tx
-    .delete(documentMarkdownProjections)
-    .where(inArray(documentMarkdownProjections.documentId, list));
+  await tx.delete(documentBlockRooms).where(inArray(documentBlockRooms.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
   if (options.retainHistory !== false) {
     const closedDraftIds = drafts

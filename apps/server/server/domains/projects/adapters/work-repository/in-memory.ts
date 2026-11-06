@@ -252,7 +252,6 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
           return {
             before: row ? { ...row } : null,
             after: row ? { ...row } : null,
-            threadIds: [],
           };
         }
         if (row.isNoWork) throw new WorkLockedError();
@@ -262,7 +261,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
         row.updatedAt = row.deletedAt;
         row.lastActivityAt = row.updatedAt;
         advance(row);
-        return { before, after: { ...row }, threadIds: [] };
+        return { before, after: { ...row } };
       });
     },
 

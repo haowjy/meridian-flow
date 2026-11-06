@@ -33,8 +33,6 @@ export function askToolResult(ask: Pick<StoredAsk, "resolution">): JsonObject {
       return { answer: resolution.label, timed_out: true };
     case "cancelled":
       return { cancelled: true };
-    case "parent":
-      return { answer: resolution.text, from: "@parent" };
     case "allow":
     case "allow_always":
     case "deny":

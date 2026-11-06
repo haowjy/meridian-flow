@@ -294,14 +294,37 @@ msgstr "{0} tok/s"
 msgid "{0} will be renamed {1}"
 msgstr "{0} will be renamed {1}"
 
-#. placeholder {0}: ask.payload.summary
-#: src/features/chat/ask/AskTakeover.tsx
-msgid "{agentName} wants to {0}?"
-msgstr "{agentName} wants to {0}?"
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to archive {work}?"
+msgstr "{agent} wants to archive {work}?"
 
-#: src/features/chat/ask/AskTakeover.tsx
-msgid "{agentName} wants to {summary}?"
-msgstr "{agentName} wants to {summary}?"
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to create the Work “{name}”?"
+msgstr "{agent} wants to create the Work “{name}”?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to move this chat to {work}?"
+msgstr "{agent} wants to move this chat to {work}?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to rename {work} to “{name}”?"
+msgstr "{agent} wants to rename {work} to “{name}”?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to switch this chat to auto-apply?"
+msgstr "{agent} wants to switch this chat to auto-apply?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to switch this chat to draft mode?"
+msgstr "{agent} wants to switch this chat to draft mode?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to unarchive {work}?"
+msgstr "{agent} wants to unarchive {work}?"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{agent} wants to update {work}?"
+msgstr "{agent} wants to update {work}?"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -395,6 +418,10 @@ msgstr "{days}d"
 msgid "{documents, plural, one {# document} other {# documents}}"
 msgstr "{documents, plural, one {# document} other {# documents}}"
 
+#: src/features/chat/tool-result-preview.ts
+msgid "{documents, plural, one {At least # document} other {At least # documents}}"
+msgstr "{documents, plural, one {At least # document} other {At least # documents}}"
+
 #: src/core/editor/images/image-imports.ts
 msgid "{filename} could not be read from that site. It stayed a link."
 msgstr "{filename} could not be read from that site. It stayed a link."
@@ -454,6 +481,10 @@ msgstr "{minutes}m"
 #: src/features/chat/document-display-name.ts
 msgid "{name} ({skill})"
 msgstr "{name} ({skill})"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "{name} (@{handle})"
+msgstr "{name} (@{handle})"
 
 #: src/features/chat/derivation/SourceChatLink.tsx
 msgid "{name} (in the trash)"
@@ -556,6 +587,10 @@ msgstr "{seconds, plural, one {Continues in # second} other {Continues in # seco
 #: src/features/chat/tool-result-preview.ts
 msgid "{shown} of {total}"
 msgstr "{shown} of {total}"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "{shown} of at least {total}"
+msgstr "{shown} of at least {total}"
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is a folder. Only documents can be moved or deleted."
@@ -695,6 +730,10 @@ msgstr "A chat is renaming this to {place}."
 #: src/features/draft-review/tree-line.ts
 msgid "A chat is reordering this."
 msgstr "A chat is reordering this."
+
+#: src/features/chat/tool-failure.tsx
+msgid "A chat was stopped, so this wasn't sent."
+msgstr "A chat was stopped, so this wasn't sent."
 
 #: src/features/chat/DeletedChatCard.tsx
 msgid "A chat you had open was deleted."
@@ -1070,6 +1109,14 @@ msgstr "Archived Work {name}"
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
+
+#: src/features/chat/tool-result-preview.ts
+#~ msgid "At least {found}"
+#~ msgstr "At least {found}"
+
+#: src/features/chat/tool-result-preview.ts
+msgid "At least {matches} results in {inDocuments}"
+msgstr "At least {matches} results in {inDocuments}"
 
 #: src/components/app/composer/Composer.tsx
 msgid "Attach file"
@@ -1523,6 +1570,15 @@ msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
 #: src/components/app/ToastRegion.tsx
 #: src/components/ui/persistent-toast.tsx
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Clear the goal"
+msgstr "Clear the goal"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Clear the status"
+msgstr "Clear the status"
+
 #: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Close"
@@ -2820,6 +2876,11 @@ msgstr "Exporting {project}."
 msgid "Extra usage"
 msgstr "Extra usage"
 
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/subagent/SubagentMark.tsx
+msgid "Failed"
+msgstr "Failed"
+
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
 msgstr "Failed to load image"
@@ -3845,6 +3906,10 @@ msgstr "No image has been uploaded to {path} yet."
 msgid "No longer available"
 msgstr "No longer available"
 
+#: src/features/chat/tool-result-preview.ts
+msgid "No matches found before the search stopped"
+msgstr "No matches found before the search stopped"
+
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No matching chats"
 msgstr "No matching chats"
@@ -3885,6 +3950,7 @@ msgid "No scratch notes yet."
 msgstr "No scratch notes yet."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/ask/permission-request.ts
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "No Work"
 msgstr "No Work"
@@ -3996,6 +4062,14 @@ msgstr "ol"
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr "Only on this device"
+
+#: src/features/chat/tool-failure.tsx
+#~ msgid "Only one question can wait for an answer at a time, so this one wasn't asked."
+#~ msgstr "Only one question can wait for an answer at a time, so this one wasn't asked."
+
+#: src/features/chat/tool-failure.tsx
+msgid "Only one question or request can wait for an answer at a time, so this one wasn't asked."
+msgstr "Only one question or request can wait for an answer at a time, so this one wasn't asked."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Only part of this change could be reversed."
@@ -4147,11 +4221,6 @@ msgstr "Over your monthly usage"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr "Paragraph"
-
-#. placeholder {0}: resolution.text
-#: src/features/chat/ask/AskReceipt.tsx
-msgid "Parent Agent: {0}"
-msgstr "Parent Agent: {0}"
 
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"
@@ -4460,6 +4529,10 @@ msgstr "Rename project"
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename project: {title}"
 msgstr "Rename project: {title}"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Rename to “{name}”"
+msgstr "Rename to “{name}”"
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work"
@@ -4829,6 +4902,14 @@ msgstr "Sent a message to {line}"
 #~ msgid "Session expired. Please refresh."
 #~ msgstr "Session expired. Please refresh."
 
+#: src/features/chat/ask/permission-request.ts
+msgid "Set the goal to “{goal}”"
+msgstr "Set the goal to “{goal}”"
+
+#: src/features/chat/ask/permission-request.ts
+msgid "Set the status to “{status}”"
+msgstr "Set the status to “{status}”"
+
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
@@ -4975,6 +5056,10 @@ msgstr "Something went wrong while reading {name}."
 msgid "Something went wrong while reading that document."
 msgstr "Something went wrong while reading that document."
 
+#: src/features/chat/tool-failure.tsx
+msgid "Something went wrong while running this."
+msgstr "Something went wrong while running this."
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Split cell"
 msgstr "Split cell"
@@ -5027,6 +5112,10 @@ msgstr "Stop and discard"
 msgid "Stop and discard this import?"
 msgstr "Stop and discard this import?"
 
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Stop \"{name}\""
+msgstr "Stop \"{name}\""
+
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Stop compaction"
@@ -5056,6 +5145,7 @@ msgstr "Stop the reply and send now"
 msgid "stopped"
 msgstr "stopped"
 
+#: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
@@ -5063,9 +5153,14 @@ msgstr "Stopped"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/subagent/useSubagentStop.ts
 #: src/features/chat/useChatStop.ts
 msgid "Stopping"
 msgstr "Stopping"
+
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Stopping \"{name}\""
+msgstr "Stopping \"{name}\""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Stopping compaction"
@@ -5344,8 +5439,8 @@ msgid "That's more than one import can hold. Import less at a time."
 msgstr "That's more than one import can hold. Import less at a time."
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "The AI asked you a question"
-msgstr "The AI asked you a question"
+#~ msgid "The AI asked you a question"
+#~ msgstr "The AI asked you a question"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {count} documents ({names})."
@@ -5395,9 +5490,21 @@ msgstr "The AI in a chat deleted this document before this reply saved its chang
 msgid "The AI in a chat deleted this document."
 msgstr "The AI in a chat deleted this document."
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "The AI is waiting for you"
+msgstr "The AI is waiting for you"
+
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
 msgstr "The AI provider turned this request down."
+
+#: src/features/chat/tool-failure.tsx
+msgid "The assistant called this tool with arguments it couldn't use."
+msgstr "The assistant called this tool with arguments it couldn't use."
+
+#: src/features/chat/tool-failure.tsx
+msgid "The assistant can't use this tool here."
+msgstr "The assistant can't use this tool here."
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "The browser blocked the clipboard. Check this site's permissions."
@@ -5549,6 +5656,10 @@ msgstr "Thinking"
 #: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "Thinking out loud?"
+
+#: src/features/chat/tool-failure.tsx
+msgid "This assistant isn't allowed to make this change, so it wasn't done."
+msgstr "This assistant isn't allowed to make this change, so it wasn't done."
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 #~ msgid "This browser cannot display the PDF inline."
@@ -5891,6 +6002,10 @@ msgstr "This stored figure needs a project before it can be rendered."
 msgid "This switch already happened."
 msgstr "This switch already happened."
 
+#: src/features/chat/tool-failure.tsx
+msgid "This took too long, so it was stopped."
+msgstr "This took too long, so it was stopped."
+
 #: src/features/editor/SchemaNotices.tsx
 msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
@@ -5972,6 +6087,7 @@ msgid "Trash"
 msgstr "Trash"
 
 #: src/features/chat/ChatCards.tsx
+#: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/import/ImportToasts.tsx
 #: src/features/links/FollowOutcomeContent.tsx

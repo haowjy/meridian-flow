@@ -32,7 +32,8 @@ import type {
   ContextWriteOptions,
   ContextWriteResult,
   FileRef,
-  SearchResult,
+  GrepFile,
+  GrepQuery,
 } from "./context-port.js";
 import type {
   ContextLocationToken,
@@ -108,8 +109,14 @@ export type AdapterFileRef = FileRef extends infer T
     : never
   : never;
 
-/** A search hit as produced by an adapter: `uri` is a scheme-relative path. */
-export type AdapterSearchHit = Omit<SearchResult, "uri"> & { path: string };
+/** A grep hit as produced by an adapter: `uri` is a scheme-relative path. */
+export type AdapterGrepFile = Omit<GrepFile, "uri"> & { path: string };
+export type AdapterGrepResult = {
+  files: AdapterGrepFile[];
+  totalFiles: number;
+  exact: boolean;
+  stopped?: true;
+};
 export type AdapterContextReadResult = Omit<ContextReadResult, "uri">;
 export type AdapterContextWriteResult = Omit<ContextWriteResult, "uri">;
 
@@ -262,5 +269,5 @@ export interface ContextSchemeAdapter {
     path: string,
     options: AdapterCreateFolderOptions,
   ): Promise<Result<AdapterCreatedFolder, AdapterFault>>;
-  search(query: string, pathPrefix?: string): Promise<Result<AdapterSearchHit[], AdapterFault>>;
+  grep(query: GrepQuery): Promise<Result<AdapterGrepResult, AdapterFault>>;
 }

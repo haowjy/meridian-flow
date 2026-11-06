@@ -7,10 +7,10 @@
 ## `ls` chevron decision still parses eagerly
 
 `listingOrNothing` normalizes listing rows at render time to decide the
-chevron, unlike `search` (whose affordance is a cheap check on the validated
+chevron, unlike `grep` (whose affordance is a cheap check on the validated
 contract with normalization inside the expand thunk). Bounded cost (cap 8, no
 totals scan), but it is the same closed-rows-do-no-work contract. Fixing it
-needs the same boundary-validation treatment the search payload got, so the
+needs the same boundary-validation treatment the grep payload got, so the
 cheap check and the parser cannot disagree. See
 `activity-row-anatomy.md` for the two ways to keep chevron and parser
 agreeing.

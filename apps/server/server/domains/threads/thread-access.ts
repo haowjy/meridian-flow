@@ -76,7 +76,8 @@ export interface SetOwnedThreadTrashStateDeps {
   workContextNotices: Pick<WorkContextNotices, "threadChanged" | "materializeIdle">;
   workAuthorityResolver: import("../projects/index.js").ProjectWorkAuthorityResolver;
   works: Pick<import("../projects/index.js").WorkRepository, "findById" | "findNoWork">;
-  cancelAsks(threadId: import("@meridian/contracts/runtime").ThreadId): Promise<void>;
+  /** `threadIds` must be parents first (`parentsFirst`). */
+  stopThreads(threadIds: readonly import("@meridian/contracts/runtime").ThreadId[]): Promise<void>;
 }
 
 /** Authenticated adapter for the serialized trash command and restore wake. */

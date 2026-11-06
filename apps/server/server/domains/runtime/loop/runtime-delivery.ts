@@ -213,20 +213,25 @@ export interface RuntimeDelivery
   adoptBatch<T>(
     lease: Lease,
     /**
-     * Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation.
+     * Pure preparation; writes belong in `persist`. Null starts nothing; `retire` acknowledges
+     * stale controls (a hint whose ask owes nothing) and starts nothing.
      * A queued write-mode switch that is due has already applied: the selection never offers it.
      */
-    prepare: (selection: DeliverySelection) => Promise<{
-      value: T;
-      completedControlIds?: string[];
-      turnId: TurnId;
-      turnKind: "assistant" | "compaction";
-      messageIds: readonly string[];
-      /** Preparation failures still adopt messages and reserve a failed assistant turn. */
-      preparationFailure?: unknown;
-      /** Turn-start writes run under the lock, after external context is prepared. */
-      persist?: () => Promise<void>;
-    } | null>,
+    prepare: (selection: DeliverySelection) => Promise<
+      | {
+          value: T;
+          completedControlIds?: string[];
+          turnId: TurnId;
+          turnKind: "assistant" | "compaction";
+          messageIds: readonly string[];
+          /** Preparation failures still adopt messages and reserve a failed assistant turn. */
+          preparationFailure?: unknown;
+          /** Turn-start writes run under the lock, after external context is prepared. */
+          persist?: () => Promise<void>;
+        }
+      | { retire: readonly string[] }
+      | null
+    >,
     options?: {
       signal?: AbortSignal;
       /**

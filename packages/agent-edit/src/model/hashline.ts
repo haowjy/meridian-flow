@@ -7,7 +7,7 @@
  * a human strips it first.
  *
  * {@link splitHashline} is the exact inverse of {@link toHashline}, including
- * the empty hash `serializeBlocks` can emit. It splits at the first `|` because
+ * an empty hash. It splits at the first `|` because
  * that is where the writer put it.
  */
 

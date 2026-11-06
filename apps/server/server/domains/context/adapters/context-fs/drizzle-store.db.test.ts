@@ -5,14 +5,7 @@
  * - rename-as-name-change rejection and alias-only rename no-ops (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import {
-  contextSources,
-  documentMarkdownProjections,
-  documents,
-  folders,
-  projects,
-  users,
-} from "@meridian/database/schema";
+import { contextSources, documents, folders, projects, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Ok } from "../../../../shared/result.js";
@@ -76,7 +69,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
         fileType: "markdown",
       });
-      await db.insert(documentMarkdownProjections).values({ documentId: id, markdown: name });
     }
 
     function createContextHarness() {
@@ -114,13 +106,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 updatedAt: new Date(),
               })
               .where(eq(documents.id, documentId));
-            await db
-              .insert(documentMarkdownProjections)
-              .values({ documentId, markdown })
-              .onConflictDoUpdate({
-                target: documentMarkdownProjections.documentId,
-                set: { markdown },
-              });
             return Ok({ updateSeq: 1 });
           },
         } as never,
@@ -261,20 +246,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             id: documents.id,
             name: documents.name,
             extension: documents.extension,
-            markdown: documentMarkdownProjections.markdown,
             filetype: documents.fileType,
           })
-          .from(documents)
-          .leftJoin(
-            documentMarkdownProjections,
-            eq(documentMarkdownProjections.documentId, documents.id),
-          ),
+          .from(documents),
       ).resolves.toEqual([
         {
           id: initial.value.documentId,
           name: "chapter",
           extension: "",
-          markdown: "Revised chapter",
           filetype: "markdown",
         },
       ]);

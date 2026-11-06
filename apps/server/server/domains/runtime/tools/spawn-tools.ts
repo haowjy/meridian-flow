@@ -26,9 +26,9 @@ import type {
 } from "./types.js";
 
 const SPAWN_DESCRIPTION =
-  "Run a subagent in its own thread. Prefer a named subagent from your roster; use the generic one sparingly. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.";
+  "Run a subagent in its own thread. Prefer a named subagent from your roster; use the generic one sparingly. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait. A child that stops says what it was missing: carry on yourself, send it what it needs, or ask the writer.";
 const SPAWN_DESCRIPTION_EMPTY_ROSTER =
-  "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.";
+  "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait. A child that stops says what it was missing: carry on yourself, send it what it needs, or ask the writer.";
 
 const { "disallowed-tools": _authoringToolList, ...invocationPatchShape } =
   invocationPatchSchema.shape;

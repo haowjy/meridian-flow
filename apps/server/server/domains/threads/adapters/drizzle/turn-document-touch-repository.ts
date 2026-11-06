@@ -1,9 +1,10 @@
 /** Drizzle TurnDocumentTouchRepository: SQL for turn_document_touches record/list. */
 import * as schema from "@meridian/database/schema";
 import { desc, eq } from "drizzle-orm";
+import { runIsolatedFromAmbientTransaction } from "../../../../shared/drizzle-transaction.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import type { TurnDocumentTouch, TurnDocumentTouchRepository } from "../../ports/repositories.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
+import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
 function mapTurnDocumentTouch(
   row: typeof schema.turnDocumentTouches.$inferSelect & { threadId: string },
@@ -18,28 +19,30 @@ function mapTurnDocumentTouch(
 }
 
 export function createDrizzleTurnDocumentTouchRepository(
-  db: DrizzleDb,
+  db: DrizzleDatabase,
 ): TurnDocumentTouchRepository {
   return {
-    async recordTouch(turnId, documentId) {
-      const [turn] = await currentDrizzleDb(db)
-        .select({ threadId: schema.turns.threadId })
-        .from(schema.turns)
-        .where(eq(schema.turns.id, turnId))
-        .limit(1);
-      if (!turn) throw new Error(`Turn not found: ${turnId}`);
-      const now = new Date();
-      const [row] = await currentDrizzleDb(db)
-        .insert(schema.turnDocumentTouches)
-        .values({ turnId, documentId, threadId: turn.threadId, touchedAt: now })
-        .onConflictDoUpdate({
-          target: [schema.turnDocumentTouches.turnId, schema.turnDocumentTouches.documentId],
-          set: { touchedAt: now },
-        })
-        .returning();
-      if (!row) throw new Error("Failed to record document touch");
-      return mapTurnDocumentTouch({ ...row, threadId: turn.threadId });
-    },
+    // A touch is best-effort: inside a commit its failure rolls back only its savepoint.
+    recordTouch: (turnId, documentId) =>
+      runIsolatedFromAmbientTransaction(db, async () => {
+        const [turn] = await currentDrizzleDb(db)
+          .select({ threadId: schema.turns.threadId })
+          .from(schema.turns)
+          .where(eq(schema.turns.id, turnId))
+          .limit(1);
+        if (!turn) throw new Error(`Turn not found: ${turnId}`);
+        const now = new Date();
+        const [row] = await currentDrizzleDb(db)
+          .insert(schema.turnDocumentTouches)
+          .values({ turnId, documentId, threadId: turn.threadId, touchedAt: now })
+          .onConflictDoUpdate({
+            target: [schema.turnDocumentTouches.turnId, schema.turnDocumentTouches.documentId],
+            set: { touchedAt: now },
+          })
+          .returning();
+        if (!row) throw new Error("Failed to record document touch");
+        return mapTurnDocumentTouch({ ...row, threadId: turn.threadId });
+      }),
     async listByThread(threadId, limit) {
       const rows = await currentDrizzleDb(db)
         .selectDistinctOn([schema.turnDocumentTouches.documentId], {

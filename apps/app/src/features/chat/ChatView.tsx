@@ -171,7 +171,8 @@ export function ChatView({
   const composerRef = useRef<ComposerHandle>(null);
   useRegisterChatComposer(threadId, composerRef);
   // The transcript takes desktop files for the composer, so the whole chat is one drop zone.
-  // An open ask hides the composer, so a drop would land in a draft the writer can't see.
+  // An open ask (a question or a permission request) hides the composer, so a drop would land in a
+  // draft the writer can't see.
   const askOpen = useOpenAsk(threadId) !== null;
   const fileDrop = useFileDrop({
     enabled: active && !askOpen,
@@ -704,7 +705,11 @@ export function ChatView({
                         className="relative flex min-h-0 flex-1 flex-col"
                         {...fileDrop.dropProps}
                       >
-                        <RunningSubagentsStrip threadId={threadId} />
+                        <RunningSubagentsStrip
+                          threadId={threadId}
+                          accountId={accountId}
+                          scope={stopScope}
+                        />
                         <TurnList
                           threadId={threadId}
                           uploadsChat={topChat.chatRef ?? undefined}

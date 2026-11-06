@@ -68,10 +68,7 @@ export function createDrizzleContextStagedCreation(deps: {
               projectId,
               storageUrl: content.kind === "binary" ? content.storageUrl : null,
               mimeType: content.kind === "binary" ? content.mimeType : null,
-              sizeBytes:
-                content.kind === "binary"
-                  ? content.sizeBytes
-                  : Buffer.byteLength(content.seed.markdown, "utf8"),
+              sizeBytes: content.kind === "binary" ? content.sizeBytes : 0,
               hasPreview: content.kind === "binary" && content.hasPreview,
               aheadMints: content.kind === "tracked" ? content.aheadMints : [],
             };
@@ -296,9 +293,6 @@ export function createDrizzleContextStagedCreation(deps: {
         arrivals.set(key, batch);
       }
       for (const batch of arrivals.values()) await placeArrivedBatch(db, batch);
-      await tx.execute(sql`insert into document_markdown_projections (document_id, markdown)
-        select s.document_id, s.markdown from collab_staged_states s
-        where s.staging_id = ${stagingId}`);
       await tx.execute(sql`
         with recursive nodes as (
           select id, parent_id, area, name as filename from context_staged_folders where staging_id = ${stagingId}

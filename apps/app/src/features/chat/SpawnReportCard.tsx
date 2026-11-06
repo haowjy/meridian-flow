@@ -3,6 +3,7 @@
  * finished, the row expands to the report. Only the chat icon opens the child.
  */
 
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseThreadReportResult, toReportContentValue } from "@meridian/contracts/spawn";
 import type { DirectInvocationResult } from "@meridian/thread-client";
@@ -23,7 +24,7 @@ export type SpawnSource = { threadId: string; title: string | null };
 type Props = {
   agentName: string;
   title: string | null;
-  status: "running" | "completed" | "failed";
+  /** The card's own saved outcome; live activity and a direct result can know it first. */
   outcome?: "succeeded" | "failed" | "cancelled";
   deliveryMode: "direct" | "background_notification";
   startedAt?: string;
@@ -44,7 +45,6 @@ type Props = {
 export function SpawnReportCard({
   agentName,
   title,
-  status,
   outcome,
   deliveryMode,
   startedAt,
@@ -60,8 +60,25 @@ export function SpawnReportCard({
   const [expanded, setExpanded] = useSubagentDisclosure(
     childThreadId ? `run:${childThreadId}` : `execution:${savedReport?.execution ?? "unknown"}`,
   );
-  const resolvedOutcome = directResult?.outcome ?? outcome;
-  const running = status === "running" && resolvedOutcome == null;
+  // One outcome for the whole card: the direct result, the saved card, then live activity.
+  const activityOutcome =
+    suppliedRun?.status === "done"
+      ? "succeeded"
+      : suppliedRun?.status === "failed" || suppliedRun?.status === "cancelled"
+        ? suppliedRun.status
+        : undefined;
+  const resolvedOutcome = directResult?.outcome ?? outcome ?? activityOutcome;
+  const running =
+    resolvedOutcome == null &&
+    (suppliedRun ? suppliedRun.status === "running" : terminalAt === null);
+  const statusText = running
+    ? null
+    : (reason ??
+      (resolvedOutcome === "failed"
+        ? t`Failed`
+        : resolvedOutcome === "cancelled"
+          ? t`Stopped`
+          : null));
   const run: SubagentRun = suppliedRun ?? {
     threadId: childThreadId,
     ref: null,
@@ -71,8 +88,8 @@ export function SpawnReportCard({
     status:
       resolvedOutcome === "succeeded"
         ? "done"
-        : resolvedOutcome === "failed" || resolvedOutcome === "cancelled" || status === "failed"
-          ? "stopped"
+        : resolvedOutcome === "failed" || resolvedOutcome === "cancelled"
+          ? resolvedOutcome
           : running
             ? "running"
             : "unknown",
@@ -102,8 +119,8 @@ export function SpawnReportCard({
         detail={
           running ? (
             <SubagentToolLine run={run} fallback={<Trans>Working</Trans>} />
-          ) : reason ? (
-            <p className="text-xs text-muted-foreground">{reason}</p>
+          ) : statusText ? (
+            <p className="text-xs text-muted-foreground">{statusText}</p>
           ) : undefined
         }
       />

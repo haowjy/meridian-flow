@@ -20,7 +20,6 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import { testHook } from "../../../shared/test-hooks.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
@@ -52,8 +51,14 @@ export interface ToolDispatchDeps {
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
   shownLinks: Pick<ShownLinkStore, "record">;
   observationFrontiers: ObservationFrontiers;
-  asks: import("../../threads/ports/ask-repository.js").AskRepository;
+  askRequests: Pick<import("../asks/ask-service.js").AskService, "request">;
 }
+
+/**
+ * One provider batch's request rule, keyed on what a call asks for, not on which tool:
+ * the first request defers the batch and a later one is refused.
+ */
+export type RequestBatch = { deferred: string | null };
 
 export interface ToolDispatchContext {
   thread: Thread;
@@ -71,6 +76,7 @@ export interface ToolDispatchContext {
   allTurns: Turn[];
   /** The ids that credited the request that produced this call (C4's planning cut). */
   planningBlockIds: readonly string[];
+  batch: RequestBatch;
   /** The provider reply's own accepted mutations, replayed after the planning cut. */
   replyMutations: ReplyMutations;
   /** The run's credited ids, live: a sibling call's result counts as seen. */
@@ -225,6 +231,7 @@ export async function dispatchToolCall(
             kind: "spawn",
             parentThread: ctx.thread,
             parentTurnId: ctx.currentTurn.id,
+            parentExecutionId: ctx.lease.executionId,
             agentSlug: spawnInput.agent,
             prompt: spawnInput.prompt,
             from: spawnInput.from,
@@ -259,6 +266,7 @@ export async function dispatchToolCall(
             kind: "message",
             parentThread: ctx.thread,
             parentTurnId: ctx.currentTurn.id,
+            parentExecutionId: ctx.lease.executionId,
             ref: messageInput.ref,
             prompt: messageInput.message,
             toolCallId: call.id,
@@ -299,6 +307,32 @@ export async function dispatchToolCall(
           })
       : undefined;
 
+  let deferredAskId: string | null = null;
+  const request = async (
+    asked: import("../asks/ask-service.js").AskRequest,
+  ): Promise<import("../asks/ask-service.js").AskRequestOutcome> => {
+    const refused = ctx.batch.deferred
+      ? {
+          code: "one_request_at_a_time",
+          message: "One request at a time: make this one after the answer arrives.",
+        }
+      : null;
+    const outcome: import("../asks/ask-service.js").AskRequestOutcome = refused
+      ? { kind: "refused", refusal: refused }
+      : await deps.askRequests.request({
+          threadId: ctx.threadId,
+          askingTurnId: ctx.currentTurn.id,
+          executionId: ctx.lease.executionId,
+          toolCallId: call.id,
+          request: asked,
+        });
+    if (outcome.kind === "deferred") {
+      ctx.batch.deferred = outcome.askId;
+      deferredAskId = outcome.askId;
+    }
+    return outcome;
+  };
+
   let returnResultCapture: ReturnResultCapture | undefined;
   const returnResult = async (capture: ReturnResultCapture) => {
     if (ctx.thread.kind !== "subagent") {
@@ -330,6 +364,7 @@ export async function dispatchToolCall(
       threadMessage,
       threadReport,
       returnResult,
+      request,
       frontiers: {
         recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
@@ -343,22 +378,8 @@ export async function dispatchToolCall(
     return { kind: "cancelled" };
   }
 
-  if (call.name === "ask_user" && execResult.isError !== true) {
-    const ask = await deps.asks.create({
-      threadId: ctx.threadId,
-      askingTurnId: ctx.currentTurn.id,
-      executionId: ctx.lease.executionId,
-      toolCallId: call.id,
-      kind: "question",
-      payload: execResult.result as import("@meridian/contracts/threads").QuestionAskPayload,
-      deadlineAt: null,
-      status: "pending",
-      resolution: null,
-      submissionId: null,
-    });
-    await testHook("ask.pending");
-    return { kind: "deferred", askId: ask.id };
-  }
+  // A created ask settles the execution, whatever the tool did after asking.
+  if (deferredAskId) return { kind: "deferred", askId: deferredAskId };
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
   if (execResult.returnResult) {
