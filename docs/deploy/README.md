@@ -89,7 +89,7 @@ Required baseline:
 | `WORKOS_COOKIE_PASSWORD` | Sealed session cookie encryption (≥32 chars) |
 | `WORKOS_REDIRECT_URI` | AuthKit callback URL registered in WorkOS |
 | `MERIDIAN_API_ORIGIN` | Public server/API origin used by app SSR when the app and server are not same-process |
-| `APP_ENV` | Set to `production` for production deploys |
+| `APP_ENV` | Set to `production` for production deploys and `staging` for staging; with `NODE_ENV=production` and `APP_ENV` unset, the server counts as production |
 
 Provider-conditioned model variables:
 
@@ -97,8 +97,11 @@ Provider-conditioned model variables:
 |---|---|
 | `FLOW_ANTHROPIC_API_KEY` | Anthropic model provider |
 | `FLOW_OPENAI_API_KEY` | OpenAI model provider |
-| `FLOW_DEEPSEEK_API_KEY` | DeepSeek/OpenAI-compatible provider |
-| `FLOW_OPENROUTER_API_KEY` | OpenRouter model provider |
-| `FLOW_OPENROUTER_BASE_URL` | Optional OpenRouter base URL override |
+| `FLOW_DEEPSEEK_API_KEY` | DeepSeek provider (Anthropic-compatible endpoint) |
+| `FLOW_GEMINI_API_KEY` | Google Gemini provider |
+
+`LIVE_TEST_MODEL=<registry model id>` sends every model call to that model. Production
+refuses it and staging allows it. Startup fails if it is set in production, names an unknown
+model, or names a model whose provider has no key. Leave it unset in production.
 
 No external package-execution provider is part of the Meridian Flow v3 deployment contract.

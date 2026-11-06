@@ -20,7 +20,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { z } from "zod";
-import type { FunctionTool } from "../gateway/index.js";
+import type { Tool } from "../gateway/index.js";
 import type { FrontierLookups } from "../ports/observation-frontiers.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
 import type { DocumentTextPolicy } from "./document-text.js";
@@ -143,7 +143,7 @@ export interface ResultEvidence {
  */
 export interface ToolExecutor {
   executeTool(call: ToolCallInput, ctx: ToolExecutionContext): Promise<ToolExecutionResult>;
-  getDefinitions?(): FunctionTool[];
+  getDefinitions?(): Tool[];
 }
 
 /**
@@ -271,7 +271,7 @@ export interface ToolRegistration {
    * resolution must never bind a package skill slug to a non-skill tool.
    */
   source: "core" | "spawn" | "skill";
-  definition: FunctionTool;
+  definition: Tool;
   /**
    * The tool's one input contract. `definition.inputSchema` is its
    * `modelToolSchema` projection, and the executor parses every call with it
@@ -317,16 +317,14 @@ export interface ToolExecutionError {
  * `register` is additive — registering a tool with the same name a second
  * time overwrites the previous registration.
  *
- * `getDefinitions` returns the `FunctionTool[]` array consumed by the
- * gateway as the `tools` field of a model request. Only server-executable
- * tools with `definition.type === "function"` are included (hosted tools are
- * handled separately by the gateway's provider adapters).
+ * `getDefinitions` returns the `Tool[]` array consumed by the
+ * gateway as the `tools` field of a model request.
  *
  * `getRegistration` is the lookup used by the executor to find a handler
  * and its constraints (`timeoutMs`, `sequential`) at dispatch time.
  */
 export interface ToolRegistry {
   register(registration: ToolRegistration): void;
-  getDefinitions(): FunctionTool[];
+  getDefinitions(): Tool[];
   getRegistration(name: string): ToolRegistration | undefined;
 }

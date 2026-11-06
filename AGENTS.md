@@ -81,8 +81,9 @@ changes included, ends with a prober's `agent-browser` run of the final code, wi
 screenshots in the PR. `./mf` output never stands in for it.
 
 **Live model calls go to `deepseek-flash`,** or the mock provider when the model's
-output doesn't matter. Don't call other providers to confirm a model exists. Model
-facts come from [models.dev](https://models.dev).
+output doesn't matter. For a live run set `LIVE_TEST_MODEL=deepseek-flash`: every
+model call goes there, whatever an Agent or chat names. Don't call other providers
+to confirm a model exists. Model facts come from [models.dev](https://models.dev).
 
 ## Build and test
 

@@ -58,7 +58,7 @@ async function fixture(
   });
   const agentCatalog = createBoundAgentCatalog({
     store: agentRevisions,
-    defaultModel: () => "gpt-4.1-mini",
+    defaultModel: () => "gpt-5.6-luna",
     unavailableReasons: () => [],
   });
   const original = await agentCatalog.save("user-1", {
@@ -164,13 +164,14 @@ describe("frozen prompt provider requests", () => {
         >,
     );
     const model: ModelInfo = {
-      id: "gpt-4.1-mini",
+      id: "gpt-5.6-luna",
       provider: "openai",
       tokenizer: "o200k" as const,
       displayName: "Fixture",
       contextWindow: 100_000,
       maxOutputTokens: 4_096,
-      promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1_000 },
+      promptCache: { kind: "explicit", shortTtlMs: 60 * 60 * 1_000, longTtlMs: 60 * 60 * 1_000 },
+      reasoning: { efforts: ["low", "medium", "high", "max"] },
       capabilities: new Set(),
     };
     const tools: Tool[] = [
@@ -192,7 +193,7 @@ describe("frozen prompt provider requests", () => {
     );
     try {
       // Use the exact same runtime path as production, with a cache-capable
-      // model so the snapshot also captures canonical cacheBreakpoint marks.
+      // model so the request goes through the explicit-cache path.
       const rig = await fixture(undefined, "00000000-0000-4000-8000-000000000010", gateway);
       const plain = await rig.run(rig.thread.id, tools);
       const { thread: fork } = await forkThreadAgent(rig.derive, {
@@ -227,13 +228,13 @@ describe("frozen prompt provider requests", () => {
       {
         listModels: () => [
           {
-            id: "gpt-4.1-mini",
+            id: "gpt-5.6-luna",
             provider: "openai" as const,
             tokenizer: "o200k" as const,
             displayName: "Fixture",
             contextWindow: 100_000,
             maxOutputTokens: 4_096,
-            promptCache: { kind: "none" as const, ttlMs: null },
+            promptCache: { kind: "automatic" as const, shortTtlMs: null, longTtlMs: null },
             capabilities: new Set(["image_input" as const]),
           },
         ],
@@ -294,13 +295,14 @@ describe("frozen prompt provider requests", () => {
 
   it("isolates image inclusion and eviction decisions between fork and source", async () => {
     const model: ModelInfo = {
-      id: "gpt-4.1-mini",
+      id: "gpt-5.6-luna",
       provider: "openai",
       tokenizer: "o200k" as const,
       displayName: "Fixture",
       contextWindow: 100_000,
       maxOutputTokens: 4_096,
-      promptCache: { kind: "none", ttlMs: null },
+      promptCache: { kind: "automatic", shortTtlMs: null, longTtlMs: null },
+      reasoning: { efforts: ["low", "medium", "high", "max"] },
       capabilities: new Set(["image_input"]),
     };
     const gateway = Object.assign(
@@ -657,7 +659,7 @@ describe("frozen prompt provider requests", () => {
       child.id,
       agent.selection.definitionRevisionId,
       {
-        model: "gpt-4.1-mini",
+        model: "gpt-5.6-luna",
         skills: { load: [], available: [] },
         namedTargets: [],
         permission: "edit",

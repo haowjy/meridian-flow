@@ -176,8 +176,7 @@ function messagesTokens(messages: GenerateRequest["messages"], tokenizer: Tokeni
  */
 export function estimateRequestTokens(input: {
   tokenizer: TokenizerFamily;
-  request: Pick<GenerateRequest, "messages"> &
-    Partial<Pick<GenerateRequest, "tools" | "responseFormat">>;
+  request: Pick<GenerateRequest, "messages"> & Partial<Pick<GenerateRequest, "tools">>;
   baseline: { inputTokens: number; messageCount: number } | null;
 }): number {
   if (input.baseline) {
@@ -190,12 +189,6 @@ export function estimateRequestTokens(input: {
 
   return (
     messagesTokens(input.request.messages, input.tokenizer) +
-    estimateModelJsonTokens(
-      {
-        tools: input.request.tools ?? [],
-        responseFormat: input.request.responseFormat ?? null,
-      },
-      input.tokenizer,
-    )
+    estimateModelJsonTokens({ tools: input.request.tools ?? [] }, input.tokenizer)
   );
 }

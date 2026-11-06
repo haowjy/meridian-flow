@@ -28,8 +28,6 @@
  *   reasoning from `completion_tokens_details.reasoning_tokens`.
  *
  * Optional fields: only set when the provider reports a positive (>0) value.
- * Billing ignores Usage for provider-reported cost — OpenRouter carries
- * `reportedCostUsd` on GenerateResult.providerData instead.
  */
 export interface Usage {
   inputTokens: number;
@@ -37,6 +35,8 @@ export interface Usage {
   reasoningTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  /** Subset of `cacheWriteTokens` written with the model's long TTL (Anthropic 1h, OpenAI 12h); the rest use the short TTL. Set only by providers that bill writes by TTL. */
+  cacheWriteLongTokens?: number;
 }
 
 /** Throws when a Usage value violates the canonical inclusive-total contract. */
@@ -47,6 +47,7 @@ export function assertValidUsage(usage: Usage): void {
     ["reasoningTokens", usage.reasoningTokens],
     ["cacheReadTokens", usage.cacheReadTokens],
     ["cacheWriteTokens", usage.cacheWriteTokens],
+    ["cacheWriteLongTokens", usage.cacheWriteLongTokens],
   ] as const;
 
   for (const [field, count] of counts) {
@@ -56,6 +57,11 @@ export function assertValidUsage(usage: Usage): void {
   }
 
   const cacheTokens = (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+  if ((usage.cacheWriteLongTokens ?? 0) > (usage.cacheWriteTokens ?? 0)) {
+    throw new Error(
+      "Usage invariant violated: cacheWriteLongTokens must not exceed cacheWriteTokens",
+    );
+  }
   if (cacheTokens > usage.inputTokens) {
     throw new Error(
       "Usage invariant violated: cacheReadTokens + cacheWriteTokens must not exceed inputTokens",
