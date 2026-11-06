@@ -88,6 +88,9 @@ class ScenarioThreadTransport implements ThreadTransport {
   async answerAsk(): Promise<AskAnswerOutcome> {
     return { type: "unconfirmed" };
   }
+  sendAskPresence(): boolean {
+    return false;
+  }
   async cancel(threadId: string, turnId: string): Promise<CancelTurnResponse> {
     this.cancelRequests.push({ threadId, turnId });
     return { threadId, turnId, status: this.cancelStatus };
