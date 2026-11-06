@@ -237,7 +237,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(move("chapter", "archive/chapter.txt")).resolves.toMatchObject({
         ok: true,
-        value: { destinationPath: "archive/chapter" },
+        value: { destinationUri: "kb://archive/chapter" },
       });
 
       expect(concurrentWrite).toMatchObject({
