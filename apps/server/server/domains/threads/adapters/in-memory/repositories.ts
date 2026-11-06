@@ -1171,7 +1171,6 @@ export function createInMemoryRepositories(
         sequence: input.sequence,
         provider: input.provider,
         model: input.model,
-        providerRequestId: input.providerRequestId ?? null,
         inputTokens: input.inputTokens ?? 0,
         outputTokens: input.outputTokens ?? 0,
         reasoningTokens: input.reasoningTokens ?? null,
