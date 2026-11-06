@@ -349,10 +349,6 @@ export type FinishReason = "end_turn" | "tool_use" | "max_tokens" | "stop_sequen
  *
  * `toolCalls` is a flat list of every parsed ToolCall in the response; the
  * orchestrator uses this to dispatch tool execution.
- *
- * `providerData` is a raw fallback for provider-specific metadata that doesn't
- * fit any canonical field; adapters should prefer providerOptions on individual
- * ContentParts when the metadata is per-part.
  */
 export interface GenerateResult {
   content: ContentPart[];
@@ -363,7 +359,8 @@ export interface GenerateResult {
   provider: string;
   /** Provider request/generation identifier when an adapter can expose one generically. */
   providerRequestId?: string;
-  providerData?: unknown;
+  /** Set on a cancelled stream that reported no usage: the call is unmetered, not free. */
+  meteringStatus?: "missing_usage";
   /** Populated by the per-attempt gateway loop on a successful terminal event. */
   timing?: ModelCallTiming;
 }
