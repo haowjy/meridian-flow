@@ -198,7 +198,10 @@ export const ImageIngressExtension = Extension.create({
               decision.kind === "snap"
                 ? decision.pos
                 : view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-            insertImageFile(editor, intent.file, pos);
+            insertImageFile(editor, intent.file, {
+              kind: "inline",
+              pos: pos ?? view.state.selection.from,
+            });
             return true;
           },
 
