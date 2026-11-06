@@ -16,7 +16,9 @@
  * 5. gateway.generate() is the convenience wrapper: consumeStream(gateway.stream()).
  */
 import { createAnthropicAdapter } from "./adapters/anthropic/adapter.js";
+import { assertCacheTtlsOnWire as assertAnthropicCacheTtlsOnWire } from "./adapters/anthropic/request-map.js";
 import { createOpenAIResponsesAdapter } from "./adapters/openai/adapter.js";
+import { assertCacheTtlsOnWire as assertOpenAICacheTtlsOnWire } from "./adapters/openai/request-map.js";
 import { createOpenAICompatibleAdapter } from "./adapters/openai-compatible/adapter.js";
 import {
   type ModelAttemptTimeoutOverrides,
@@ -29,6 +31,7 @@ import type {
   GenerateRequest,
   GenerateResult,
   ModelInfo,
+  ProviderConfig,
   StreamEvent,
 } from "./domain/index.js";
 import type { Gateway } from "./ports/gateway.js";
@@ -49,7 +52,20 @@ function createAdapter(config: GatewayConfig["providers"][number]): ProviderAdap
   }
 }
 
+/**
+ * Reject a provider whose models ask for cache lifetimes its wire cannot express.
+ * Separate from adapter construction so the env factory can check every registry
+ * row, including providers whose key is not set in this deployment.
+ */
+export function assertModelsOnWire(config: Pick<ProviderConfig, "adapter" | "models">): void {
+  for (const model of config.models) {
+    if (config.adapter === "anthropic") assertAnthropicCacheTtlsOnWire(model);
+    else if (config.adapter === "openai") assertOpenAICacheTtlsOnWire(model);
+  }
+}
+
 export function createGateway(config: GatewayConfig): Gateway {
+  for (const provider of config.providers) assertModelsOnWire(provider);
   const adapters = new Map<string, ProviderAdapter>();
   for (const provider of config.providers) {
     adapters.set(provider.id, createAdapter(provider));

@@ -10,7 +10,7 @@
 import { mockModelDefaultResponseSchema } from "@meridian/contracts/protocol";
 import { createMockScriptQueue, type MockScriptQueue } from "../adapters/mock/script-queue.js";
 import { createMockOpenAICompatibleServer } from "../adapters/mock/server.js";
-import { createGateway } from "../create-gateway.js";
+import { assertModelsOnWire, createGateway } from "../create-gateway.js";
 import type { ProviderConfig, TraceSpan } from "../domain/index.js";
 import type { Gateway } from "../ports/gateway.js";
 import { withLiveTestModel } from "./live-test-model.js";
@@ -21,7 +21,7 @@ import {
   mockProviderConfig,
   parseEnvMs,
 } from "./providers.js";
-import { MODEL_REGISTRY } from "./registry.js";
+import { MODEL_REGISTRY, registryProviderConfigs } from "./registry.js";
 
 export interface GatewayFromEnv {
   gateway: Gateway;
@@ -99,6 +99,8 @@ export async function createGatewayFromEnv(
     onInfo?: (info: GatewayStartupInfo) => void;
   },
 ): Promise<GatewayFromEnv> {
+  // A bad row must fail here, not in the deployment that happens to hold that provider's key.
+  for (const provider of registryProviderConfigs(MODEL_REGISTRY)) assertModelsOnWire(provider);
   let cleanup: (() => Promise<void>) | undefined;
   let mockScript: MockScriptQueue | undefined;
   const { providers, defaultModel: registryDefaultModel } = buildProviderConfigs(env);

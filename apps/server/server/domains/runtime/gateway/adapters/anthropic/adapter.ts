@@ -27,7 +27,7 @@ import {
   type ProviderErrorPatterns,
   providerFetch,
 } from "../provider-http-error.js";
-import { assertCacheTtlsOnWire, toAnthropicMessageParams } from "./request-map.js";
+import { toAnthropicMessageParams } from "./request-map.js";
 import {
   accumulatorHasPartialResult,
   buildGenerateResult,
@@ -49,7 +49,6 @@ export const ANTHROPIC_ERROR_PATTERNS: Partial<ProviderErrorPatterns> = {
 };
 
 export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter {
-  for (const model of config.models) assertCacheTtlsOnWire(model);
   const apiKey = resolveApiKey(config.auth);
   const client = new Anthropic({
     apiKey: apiKey ?? "not-needed",

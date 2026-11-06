@@ -5,7 +5,7 @@
  * provider's apiKeyEnv. A provider lists offerings: a model plus what that
  * provider charges for it and how it caches it, since the same model can cache
  * and bill differently per provider. Adapter-specific wire checks (cache lifetimes) live in
- * the adapters and run when a gateway is created.
+ * the adapters (`assertModelsOnWire`) and run over every row when a gateway is created from env.
  */
 import type {
   BuiltinAdapter,
@@ -422,6 +422,20 @@ function toModelInfo(
   };
 }
 
+function toProviderConfig(entry: RegisteredProvider): ProviderConfig {
+  return {
+    id: entry.id,
+    adapter: entry.adapter,
+    baseUrl: entry.baseUrl,
+    models: entry.offerings.map((offering) => toModelInfo(entry, offering)),
+  };
+}
+
+/** Every registry provider as a keyless config, for checks that must not depend on which keys are set. */
+export function registryProviderConfigs(registry: ModelRegistry): ProviderConfig[] {
+  return registry.providers.map(toProviderConfig);
+}
+
 export function buildFromRegistry(
   registry: ModelRegistry,
   env: Readonly<Record<string, string | number | undefined>>,
@@ -432,14 +446,7 @@ export function buildFromRegistry(
   for (const entry of registry.providers) {
     const apiKey = env[entry.apiKeyEnv];
     if (typeof apiKey !== "string" || !hasRealApiKey(apiKey)) continue;
-
-    providers.push({
-      id: entry.id,
-      adapter: entry.adapter,
-      auth: { apiKey },
-      baseUrl: entry.baseUrl,
-      models: entry.offerings.map((offering) => toModelInfo(entry, offering)),
-    });
+    providers.push({ ...toProviderConfig(entry), auth: { apiKey } });
   }
 
   const enabledModelIds = new Set(
