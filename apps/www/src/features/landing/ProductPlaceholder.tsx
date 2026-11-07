@@ -64,7 +64,7 @@ export function ProductPlaceholder() {
             <figure className="s-fig">
               <i id="s-dragon" />
             </figure>
-            <p>The beast in the Greenlands. The Cold Fire is its breath.</p>
+            <p>The beast in the Greenlands. Nobody who went north was told what it was.</p>
           </article>
         </div>
       </div>
