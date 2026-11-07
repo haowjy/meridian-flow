@@ -227,6 +227,11 @@ msgstr "{0, plural, other {# 个工作中的草稿修改了此文档}}"
 msgid "{0}"
 msgstr "{0}"
 
+#. placeholder {0}: upload.name
+#: src/components/app/composer/composer-document.ts
+msgid "{0} ({message} Click to retry, or remove it to send.)"
+msgstr ""
+
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
 msgid "{0} additional balance"

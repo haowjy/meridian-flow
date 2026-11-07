@@ -34,7 +34,10 @@ function url(target: Omit<ContextUploadTarget, "intakeId" | "file">, step = "") 
 }
 
 /** Reserves the upload, or resumes it. A refusal (a name, a size) rejects with the writer's words. */
-export function startContextUpload(target: ContextUploadTarget): Promise<UploadStart> {
+export function startContextUpload(
+  target: ContextUploadTarget,
+  signal?: AbortSignal,
+): Promise<UploadStart> {
   const { file, intakeId } = target;
   if (file.size > MAX_UPLOAD_BYTES)
     return Promise.reject(new UploadRefusedError(fileTooLargeMessage(file.name)));
@@ -45,7 +48,7 @@ export function startContextUpload(target: ContextUploadTarget): Promise<UploadS
     // The signed PUT carries the type exactly; the server answers with the header to send.
     mimeType: file.type || "application/octet-stream",
   };
-  return uploadResponse<UploadStart>(fetch(url(target), jsonPost(body)));
+  return uploadResponse<UploadStart>(fetch(url(target), { ...jsonPost(body), signal }));
 }
 
 export function uploadContextFile(
@@ -59,10 +62,10 @@ export function uploadContextFile(
     file: target.file,
     signal: target.signal,
     onProgress: target.onProgress,
-    start: () => startContextUpload(target),
-    finish: () =>
+    start: (signal) => startContextUpload(target, signal),
+    finish: (signal) =>
       uploadResponse<UploadIntakeResult>(
-        fetch(url(target, "/finish"), jsonPost({ intakeId: target.intakeId })),
+        fetch(url(target, "/finish"), { ...jsonPost({ intakeId: target.intakeId }), signal }),
       ),
   });
 }

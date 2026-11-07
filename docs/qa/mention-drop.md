@@ -134,10 +134,16 @@ own file drag adds nothing to what the door reads. Read the rows from `upload_in
    past ten seconds and redo: the chip reads **Upload failed. Click to retry** (described as
    **The upload was stopped.**), and a click sends it again. Undo and close the document within
    ten seconds: the upload stops then, and nothing lands in `assets/`; the intake row stays
-   `reserved` until the sweep. Cut the chip and paste it back within a few seconds: the upload
-   keeps going. Paste it into another document: it reads gone there until the file lands. The
-   composer follows the same rule for an attach: remove its chip and undo within ten seconds and
-   it keeps uploading; later, it reads stopped and a click retries.
+   `reserved` until the sweep. The one exception is a take-back after the bytes are up and the
+   finish has reached the server (the chip has read 100%): that cannot be called back, and the
+   file lands with nothing linking to it. Cut the chip and paste it back within a few seconds: the
+   upload keeps going. Cut it and paste it into another document open in the same tab: it keeps
+   uploading there and lands; one pasted after it stopped retries there on a click and lands. In
+   another tab's other document it reads gone until the file lands. The composer follows the same
+   rule for an attach: remove its chip and undo within ten seconds and it keeps uploading; later,
+   it reads stopped and a click retries. While a composer chip reads failed or stopped, Send and
+   Enter do nothing and the chip says to retry or remove it. Closing the chat discards the
+   composer's uploads.
 6. While one uploads, rename `assets/`. The file lands in a fresh `assets/` and the chip follows
    it by id. Rename or move a finished file, then read the document through `./mf doc read`: the
    link shows the file's current path. Trash a finished file and click its chip: Trash opens at it.

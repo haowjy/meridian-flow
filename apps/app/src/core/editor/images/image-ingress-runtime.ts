@@ -14,7 +14,7 @@ import type { Editor } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
 
-import type { UploadWatch } from "@/core/uploads/upload-store";
+import { type UploadWatch, uploads } from "@/core/uploads/upload-store";
 
 import { type AnchorRange, carryAnchor } from "../anchors";
 import type { ImageIngressHost } from "./image-ingress-ports";
@@ -112,13 +112,16 @@ export function registerImageIngressHost(
   };
 }
 
-/** What this client is filling, which is what it announces to peers. */
+/**
+ * The pictures this editor is sending, which it announces to peers: the store says which (a failed
+ * or stopped one is not), the slot's record says its shape.
+ */
 export function uploadsOwnedHere(editor: Editor | null): readonly AnnouncedUpload[] {
-  const owned: AnnouncedUpload[] = [];
-  for (const entry of ingressState(editor).pending.values()) {
-    if (entry.kind === "upload") owned.push({ token: entry.id, frame: entry.frame });
-  }
-  return owned;
+  const storage = imageIngressStorage(editor);
+  if (!editor || !storage) return [];
+  return uploads
+    .sending(storage.holder)
+    .map((token) => ({ token, frame: uploadEntry(editor, token)?.frame ?? null }));
 }
 
 export function uploadEntry(editor: Editor, id: string): PendingImageUpload | null {

@@ -23,7 +23,7 @@
  * leave the browser that has them, and a peer could do nothing with either.
  *
  * It mounts with collaboration, because a document with no shared room has no
- * elsewhere. Presence reaches only this document's room: a chip copied into
+ * elsewhere. Presence reaches only this document's room: to other clients, a chip copied into
  * another document before its file lands reads gone there until it does.
  */
 

@@ -51,6 +51,10 @@ dropped the same way and its chip reads gone. A bucket lifecycle rule on `incomi
 expire stray objects (late PUTs, crashes).
 
 Known limits, accepted:
+- A take-back (an undo, a delete, closing the Composer) aborts the browser's PUT and keeps it
+  from calling finish, but a finish the server has already received cannot be called back: the
+  file lands, and nothing in the text links to it. The client stops waiting; the server does not
+  stop finishing.
 - Two overlapping finishes can copy different bytes over the final key after the first read
   it, and a late PUT plus a slow finish can rewrite the final object of a `finalized` row. The
   signed length still holds and a project has one owner, so only the writer's own file is
