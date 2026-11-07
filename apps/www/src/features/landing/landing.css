@@ -588,6 +588,8 @@ header.sect-head {
   justify-content: center;
   padding: 80px 20px 96px;
   text-align: center;
+  /* The question's glow runs past a phone's edges; body's clip doesn't stop iOS zooming out to it. */
+  overflow-x: clip;
 }
 
 .sys-skill {
