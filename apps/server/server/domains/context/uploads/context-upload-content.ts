@@ -1,6 +1,6 @@
 /** ContextFS-backed upload content adapter. */
 import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
-import { classifyFiletype, firstFreeName } from "@meridian/contracts/protocol";
+import { classifyFiletype, firstFreeName, renderFilename } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
 import { keptFileName } from "../../file-intake/index.js";
 import { contextAreaOf } from "../context/uri.js";
@@ -79,7 +79,7 @@ export function createContextUploadContentPort(
               mimeType: input.mimeType,
               sizeBytes: input.sizeBytes,
               hasPreview: input.hasPreview,
-              ...(input.keptAsFile ? { filename: keptFileName(keptName) } : {}),
+              ...(input.keptAsFile || source ? { filename: keptFileName(keptName) } : {}),
               origin,
             });
       if (!source) {
@@ -93,9 +93,16 @@ export function createContextUploadContentPort(
       }
       // A source upload takes its name now, not when it reserved: the same file dropped twice
       // keeps both ("map.pdf", then "map (2).pdf"), and a folder renamed meanwhile is no obstacle.
+      // A file's own extension stays its extension, so a second "notes.zip" is "notes (2).zip".
+      const desired =
+        classification.kind === "tracked"
+          ? input.documentFilename
+          : keptFileName(
+              renderFilename(input.documentFilename.name, input.documentFilename.extension),
+            );
       const taken = new Set<string>();
       for (let attempt = 0; attempt < MAX_NAME_COPIES; attempt += 1) {
-        const filename = firstFreeName(input.documentFilename, taken).filename;
+        const filename = firstFreeName(desired, taken).filename;
         const path = `${ASSETS_FOLDER}/${filename}`;
         const result = await write(addressOf(source.scheme, path), filename);
         if (result.ok)

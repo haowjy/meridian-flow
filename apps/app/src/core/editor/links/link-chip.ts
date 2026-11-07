@@ -17,10 +17,15 @@
  * hover and no follow.
  */
 
+import { t } from "@lingui/core/macro";
 import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
+
+import { fileTypeLabel } from "@/lib/file-type-label";
+import { formatBytes } from "@/lib/format-size";
 
 import type { LinkResolutionEntry } from "./link-resolution";
 import type { LinkTarget } from "./link-target";
+import type { FileUploadState } from "./link-uploads";
 
 /**
  * A document family by scheme. Every internal link knows its family from its
@@ -96,4 +101,30 @@ const SCHEMES: ReadonlySet<string> = new Set(CONTEXT_URI_SCHEMES);
 function uriFamily(uri: string): ContextUriScheme | null {
   const scheme = /^([a-z][a-z\d+.-]*):\/\//i.exec(uri.trim())?.[1]?.toLowerCase();
   return scheme && SCHEMES.has(scheme) ? (scheme as ContextUriScheme) : null;
+}
+
+/**
+ * What a chip for a stored file says after its name: its type and size, or
+ * how its upload stands. Null for a link that names no file. The local upload
+ * is the uploader's own view and wins; another tab or a reload hears the
+ * server's `uploading`.
+ */
+export function linkChipDetail(
+  entry: LinkResolutionEntry | null,
+  upload: FileUploadState | null,
+): string | null {
+  if (upload?.kind === "failed") return t`Upload failed`;
+  if (upload?.kind === "uploading")
+    return upload.percent === null ? t`Uploading` : t`Uploading ${upload.percent}%`;
+  if (entry?.state === "uploading") return t`Uploading`;
+  if (entry?.state !== "document") return null;
+  const { file, title } = entry.document;
+  // A picture's size is never drawn: its chip is the picture.
+  if (!file || file.fileType === "image") return null;
+  const facts = [
+    fileTypeLabel(title, file.mimeType ?? ""),
+    file.sizeBytes === null ? "" : formatBytes(file.sizeBytes),
+  ].filter(Boolean);
+  // slop-lint: allow middle-dot file-detail row
+  return facts.length > 0 ? facts.join(" · ") : null;
 }

@@ -54,7 +54,8 @@ import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./exte
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
-import { ImageIngressExtension, ImageUploadPresenceExtension, imageDropDoor } from "./images";
+import { FileDropExtension, fileDropDoor } from "./file-drop";
+import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
 import { LandingExtension } from "./landing/LandingExtension";
 import { LinkSurfaceExtension, WikilinkPasteExtension, type WikilinkPasteOptions } from "./links";
 import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
@@ -410,12 +411,14 @@ export function createStandaloneEditorExtensions({
     // which is why the markdown text parser is its prop rather than a
     // view-level default here (a view prop would shadow the plugin's).
     ImageIngressExtension,
+    // Where a dropped file that is not a picture goes, and who takes its upload back.
+    FileDropExtension,
     // Where dragged content lands, and the caret that promises it. The lanes
     // that know a payload (rows, files) hand it their doors here, so the
     // landing imports neither.
     LandingExtension.configure({
       entries: referenceDrop && referenceDropDoor(referenceDrop),
-      files: imageDropDoor,
+      files: fileDropDoor,
     }),
     // Chrome mounts only on the document schema: a code file is one code
     // block with no objects and no surfaces to own.

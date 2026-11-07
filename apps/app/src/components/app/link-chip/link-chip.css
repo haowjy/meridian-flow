@@ -100,6 +100,32 @@
   background-color: var(--link-chip-fill, var(--color-muted));
 }
 
+/* A stored file says its type and size after its name, and how its upload stands
+   while it travels. Only the Editor's chip carries these attributes. */
+[data-link-detail]::after {
+  margin-left: 0.5em;
+  color: var(--color-muted-foreground);
+  content: attr(data-link-detail);
+  font-size: 0.85em;
+}
+
+/* The fill grows left to right with the bytes sent. */
+[data-link-upload="uploading"] {
+  background-image: linear-gradient(
+    to right,
+    var(--color-sidebar-accent) var(--link-upload-progress, 0%),
+    transparent var(--link-upload-progress, 0%)
+  );
+}
+
+[data-link-upload="failed"] {
+  border-color: var(--color-destructive);
+}
+
+[data-link-upload="failed"]::after {
+  color: var(--color-destructive);
+}
+
 /* The outline replaces prose links' focus glow, which would ring the box twice. */
 [data-link-chip]:focus-visible {
   outline: 2px solid var(--color-border-focus);
