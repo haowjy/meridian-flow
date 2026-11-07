@@ -151,6 +151,8 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
     flare(beats.fight, FIGHT.breath) * 0.7;
   const toTwist = smooth(beats.twist, 0, 0.5);
   let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
+  // The veil keeps the chapter readable; once its text fades the fight is the picture, so it lifts.
+  veil = lerp(veil, 0.06, smooth(beats.fight, 0.02, 0.14));
   veil = lerp(veil, 0.2, toTwist);
   veil = lerp(veil, 0, dawn);
   return {
