@@ -358,8 +358,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     skill.classList.toggle("on", beats.skill > 0.04 && leave < 0.5);
 
     // The box opens the way the System's windows do: from a bright line, all at once.
-    const opened = smooth(twistP, 0.03, 0.1);
-    show(twist, smooth(twistP, 0.02, 0.04) * (1 - smooth(twistP, 0.95, 1)));
+    const opened = smooth(twistP, 0.0225, 0.075);
+    show(twist, smooth(twistP, 0.015, 0.03) * (1 - smooth(twistP, 0.9625, 1)));
     twist.style.transform =
       opened < 1 ? `scale(${lerp(0.03, 1, opened)},${lerp(0.4, 1, opened)})` : "";
     twist.style.filter = opened < 1 ? `brightness(${lerp(2.4, 1, opened)})` : "";
@@ -410,7 +410,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const beats = beatProgress(current, layout.spans);
     // Before the night is kept: its still takes the trees from where they stand now.
     const party = forest.update(current, beats);
-    if (!nightKept && beats.twist > 0.2) {
+    if (!nightKept && beats.twist > 0.4) {
       const [start, end] = layout.spans.twist;
       const lastNight = lerp(start, end, TWIST.reveals) - 1;
       sky.draw(

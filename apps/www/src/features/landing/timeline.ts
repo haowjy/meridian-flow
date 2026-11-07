@@ -28,7 +28,7 @@ const BEATS = [
   ["camp", 1.4, 6],
   ["turn", 1.8, 9],
   ["fight", 3, 12],
-  ["twist", 3, 9],
+  ["twist", 4, 12],
   ["dawn", 1.5, 6],
   ["lore", 1.5, 5],
   ["ask", 3, 12],
@@ -62,19 +62,20 @@ export const TURN = {
 } as const;
 
 /** Where the fire starts uncovering the dawn and the product behind the night. */
-const REVEALS = 0.6;
+const REVEALS = 0.7;
 /**
- * The twist: the last one standing goes, the box opens, the dragon takes off, loops once small in
- * the far sky, and comes back across to burn the box away.
+ * The twist: the last one standing goes and the box opens over the place, and for a while nothing
+ * moves. Then the dragon takes off, loops once small in the far sky, and comes back across to burn
+ * the box away.
  */
 export const TWIST = {
-  partyGone: [0.12, 0.26],
-  takesOff: 0.22,
+  partyGone: [0.09, 0.195],
+  takesOff: 0.445,
   /** The Cold Fire it sent up dies down as the box burns. */
-  coldFireFades: [0, 0.3],
+  coldFireFades: [0, 0.475],
   reveals: REVEALS,
   /** Out at the left, back in, and across the stage pushing the burn. */
-  pass: { leaves: 0.55, enters: REVEALS, exits: 0.92 },
+  pass: { leaves: 0.6625, enters: REVEALS, exits: 0.94 },
 } as const;
 
 /** It comes back into the dawn, and reaches the knowledge base early in the lore. */

@@ -239,7 +239,7 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
     smooth(beats.fight, 0, 0.08) * 0.2 +
     envelope(beats.fight, FIGHT.ward, 0.04, 0.06) * 0.45 +
     envelope(beats.fight, FIGHT.breath, 0.04, 0.06) * 0.7;
-  const toTwist = smooth(beats.twist, 0, 0.5);
+  const toTwist = smooth(beats.twist, 0, 0.625);
   let veil = lerp(0, 0.36, smooth(beats.sky, 0.88, 1));
   // The veil keeps the chapter readable; once its text fades the perch and the fight are the
   // picture, so it lifts.
@@ -255,14 +255,14 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
       scrolled * 0.4 +
       ease(beats.push) * 2 +
       ease(beats.sky) * 1.5 +
-      smooth(beats.twist, 0, 0.8) * 5 +
+      smooth(beats.twist, 0, 0.85) * 5 +
       ease(beats.fight) * 4 +
       dawn * 1.5,
     dawn,
     veil,
     aurora:
       lerp(0.72, 0.6, smooth(beats.sky, 0.7, 1)) +
-      smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
+      smooth(beats.twist, 0.0375, 0.5875) * (1 - smooth(beats.twist, 0.85, 1)) * 0.5 +
       breathing * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
     // Low in the north over the dragon's peak every night; what it sends up from the perch stays
     // there, brighter, until the box burns.
@@ -271,7 +271,7 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
     pulse: Math.max(
       1 - smooth(beats.push, 0, 0.35),
       smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),
-      revealed ? 0 : smooth(beats.twist, 0.3, 0.55),
+      revealed ? 0 : smooth(beats.twist, 0.475, 0.6625),
     ),
   };
 }

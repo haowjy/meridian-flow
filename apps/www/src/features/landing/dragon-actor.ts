@@ -163,9 +163,9 @@ export function createDragonActor(root: HTMLElement) {
       mark(along(spans, "fight", FIGHT.breath[0]), fightX(0.69), onShore(standing), standing, -1),
       mark(along(spans, "twist", TWIST.takesOff), fightX(0.69), onShore(standing), standing, -1),
       // Up behind the box, one loop small in the far sky, and out at the left to turn.
-      mark(along(spans, "twist", 0.31), 0.72, 0.4, 0.2, -1, true),
-      mark(along(spans, "twist", 0.39), 0.5, 0.17, 0.1, -1, true),
-      mark(along(spans, "twist", 0.46), 0.26, 0.2, 0.11, -1, true),
+      mark(along(spans, "twist", 0.4825), 0.72, 0.4, 0.2, -1, true),
+      mark(along(spans, "twist", 0.5425), 0.5, 0.17, 0.1, -1, true),
+      mark(along(spans, "twist", 0.595), 0.26, 0.2, 0.11, -1, true),
       mark(along(spans, "twist", TWIST.pass.leaves), -0.18, 0.42, 0.3, -1, true),
       mark(along(spans, "twist", TWIST.pass.enters), -0.35, 0.58, 0.66),
       mark(along(spans, "twist", TWIST.pass.exits), 1.4, 0.46, 0.8),
