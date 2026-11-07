@@ -240,7 +240,7 @@ export async function writeBackBranchFacts(
       facts = { ...facts, moved };
     }
     // A hidden folder is gone once tombstoned; a live folder deleted since still shows in the
-    // branch above the document, as a draft that outlived a delete does (D79).
+    // branch above the document, as a draft that outlived a delete does.
     const [folder] = await loadFolderIdentityRows(currentDrizzleDb(db), [folderId]);
     if (!folder || (folder.hidden && folder.deleted)) return Err("folder_missing");
   }

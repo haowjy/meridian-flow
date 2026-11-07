@@ -535,8 +535,8 @@ export function createHocuspocusPersistenceService(
 
     async reconcileHocuspocusDraftRoom(input) {
       // Before Hocuspocus answers the tab's step 1 from the room, the room catches up on
-      // whatever committed that it missed: another process's commits, a dropped delivery
-      // (decision D27). The tab's own exchange then brings the tab current, read-only or not.
+      // whatever committed that it missed: another process's commits, a dropped delivery.
+      // The tab's own exchange then brings the tab current, read-only or not.
       const base = await requireDraftCoordinator().reconcileRegisteredRoom({
         draftId: input.draftId,
         room: input.room,

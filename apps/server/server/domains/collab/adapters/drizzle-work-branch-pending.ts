@@ -67,7 +67,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
     },
     async listTreeActors(branchId, documentIds) {
       // A creation counts only while its document lives; a move or delete stays the chat's
-      // while the row holds it, whatever live did to the document since (D79).
+      // while the row holds it, whatever live did to the document since.
       const uses = livingDocumentUses(currentDrizzleDb(db));
       const scope = (table: typeof uses | typeof branchTreeChanges) =>
         and(
