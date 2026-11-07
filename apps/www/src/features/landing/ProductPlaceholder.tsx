@@ -12,7 +12,7 @@ import {
   PLACE_PAGES,
   PROLOGUE,
   QUESTION,
-  SERIES_BIBLE,
+  SPOILERS_PAGE,
   SURVIVED,
   SYSTEM,
   type WikiPage,
@@ -68,7 +68,7 @@ export function ProductPlaceholder() {
               </RailDocument>
             ))}
           </RailFolder>
-          <RailDocument id="dbible">{BIBLE_NAME}</RailDocument>
+          <RailDocument id="dspoilers">{SPOILERS_NAME}</RailDocument>
         </RailSection>
       </aside>
       <div className="s-pane">
@@ -125,9 +125,9 @@ export function ProductPlaceholder() {
               <PageBody page={page} />
             </article>
           ))}
-          <article className="s-doc" id="dbible" data-folder="Knowledge Base" hidden>
-            <div className="name">{BIBLE_NAME}</div>
-            <PageBody page={SERIES_BIBLE} />
+          <article className="s-doc" id="dspoilers" data-folder="Knowledge Base" hidden>
+            <div className="name">{SPOILERS_NAME}</div>
+            <PageBody page={SPOILERS_PAGE} />
           </article>
           {PLACE_PAGES.map(({ key, name, page }) => (
             <article className="s-doc" id={`d${key}`} data-folder={PLACES_PATH} hidden key={key}>
@@ -217,7 +217,7 @@ const CHARACTERS_FOLDER = "Characters";
 const WORLD_FOLDER = "World";
 const WORLD_PATH = `Knowledge Base › ${WORLD_FOLDER}`;
 const PLACES_FOLDER = "Places";
-const BIBLE_NAME = "Series Bible";
+const SPOILERS_NAME = "Spoilers";
 const PLACES_PATH = `Knowledge Base › ${PLACES_FOLDER}`;
 
 const CHARACTER_NAME = new RegExp(`\\b(${CHARACTERS.map(({ name }) => name).join("|")})\\b`);
