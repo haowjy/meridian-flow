@@ -204,7 +204,7 @@ export function createWriteCommands(deps: {
 
   /**
    * `create`, and `copy`, which is a create whose content is the source's
-   * blocks as nodes (D24): same write handle, rollback, undo and drafting.
+   * blocks as nodes: same write handle, rollback, undo and drafting.
    */
   async function create(
     command: Extract<WriteCommand, { command: "create" | "copy" }>,

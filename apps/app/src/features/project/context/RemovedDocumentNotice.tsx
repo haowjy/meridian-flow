@@ -148,7 +148,7 @@ export function removalSentence(documents: readonly Removal[]): string {
 }
 
 /**
- * A draft that outlived its document's delete (D79), in the draft's own editor: who deleted it,
+ * A draft that outlived its document's delete, in the draft's own editor: who deleted it,
  * in the removal notice's voice, and what Apply does about it.
  */
 export function deletedFromManuscriptSentence(

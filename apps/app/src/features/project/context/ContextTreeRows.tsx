@@ -205,7 +205,7 @@ function DirRow({
   return (
     <DropRegion state={drop.dropState}>
       <EntryInteractionShell interaction={interaction}>
-        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
+        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
         <div
           role="button"
           tabIndex={0}

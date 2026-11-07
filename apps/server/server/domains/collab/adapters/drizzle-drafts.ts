@@ -182,7 +182,7 @@ export function createDrizzleDraftStore(
       }
       await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
       // An active Work draft is returned whatever became of the live document: it outlives a
-      // live delete (D79). Only a new draft needs a living document.
+      // live delete. Only a new draft needs a living document.
       const existing = await activeDocumentDraft(input.documentId, input.branchId);
       if (existing) return existing;
       await requireLivingDocument(currentDrizzleDb(db), input.documentId);
@@ -284,7 +284,7 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * Callers route scratch and uploads live (D9), and pick a branch that may hold the
+   * Callers route scratch and uploads live, and pick a branch that may hold the
    * document (`branchMayHold`); reaching here otherwise is a routing or authorization bug.
    * Every document draft is created here, so no entry point can pair a document with a
    * branch that may not hold it.
@@ -402,8 +402,8 @@ export function createDrizzleDraftStore(
           });
     const current = await underThread(currentPeer);
     if (current) return current;
-    // The Work draft first, in its own Work-first transaction when it creates one (decision
-    // D12), so no step holds the branch row or a draft row before the Work; the peer follows.
+    // The Work draft first, in its own Work-first transaction when it creates one,
+    // so no step holds the branch row or a draft row before the Work; the peer follows.
     if (!(await activeDocumentDraft(input.documentId, input.branchId))) {
       // Taken before the root transaction: the snapshot holds its own connection.
       const live = await input.liveDoc();
