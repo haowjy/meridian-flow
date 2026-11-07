@@ -45,6 +45,19 @@
   );
 }
 
+/* The trees left behind the page once the film's stage scrolls away; forest.ts draws them. */
+#treeline {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cine #treeline {
+  display: block;
+}
+
 main {
   position: relative;
   z-index: 1;

@@ -243,6 +243,8 @@ function partySheet() {
 export function createForest(root: HTMLElement) {
   const forest = root.querySelector("#forest") as HTMLElement;
   const near = forest.querySelector("canvas") as HTMLCanvasElement;
+  const treeline = root.querySelector("#treeline") as HTMLCanvasElement;
+  let treelineDrawn = false;
   const walkers = root.querySelector("#walkers") as HTMLElement;
   const figures = [...walkers.querySelectorAll("i")];
   const camp = walkers.querySelector(".camp") as HTMLElement;
@@ -257,6 +259,9 @@ export function createForest(root: HTMLElement) {
     const { width: W, height: H } = next;
     forest.style.width = `${GROUND.wide * 100}%`;
     forest.style.height = `${GROUND.tall * 100}%`;
+    treeline.width = W;
+    treeline.height = H;
+    treelineDrawn = false;
     near.width = Math.ceil(W * GROUND.wide);
     near.height = Math.ceil(H * GROUND.tall);
     const pen = near.getContext("2d") as CanvasRenderingContext2D;
@@ -351,9 +356,18 @@ export function createForest(root: HTMLElement) {
       const { spans, width: W, height: H } = layout;
       const shown = 1 - smooth(beats.twist, ...TWIST.partyGone);
       walkers.style.opacity = String(shown);
-      // Gone before the film's stage scrolls away; the sky behind it stays.
-      forest.style.opacity = String(1 - smooth(beats.leave, 0, 0.6));
       const drift = W * walked(at, layout);
+      // As the stage starts to scroll away, the trees hand over to a fixed copy behind the page
+      // at the same pixels, and stay there under the end of the page.
+      const behind = beats.leave > 0;
+      if (behind && !treelineDrawn) {
+        const pen = treeline.getContext("2d") as CanvasRenderingContext2D;
+        pen.clearRect(0, 0, W, H);
+        pen.drawImage(near, -drift, H - near.height);
+        treelineDrawn = true;
+      }
+      forest.style.visibility = behind ? "hidden" : "";
+      treeline.style.visibility = behind ? "" : "hidden";
       const walkOut = smooth(beats.turn, ...TURN.walksOut);
       const road = W * lerp(0.3, 0.62, progress(at, spans.world[0], spans.write[1]));
       forest.style.transform = `translate3d(${-drift}px,0,0)`;
