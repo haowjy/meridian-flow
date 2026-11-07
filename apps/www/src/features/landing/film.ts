@@ -177,7 +177,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const actor = createDragonActor(root);
   const forest = createForest(root);
   const fight = createFight(root);
-  const fire = createFire(one<HTMLCanvasElement>("#flame"));
+  const flame = one<HTMLCanvasElement>("#flame");
+  const fire = createFire(flame);
   const skyCanvas = one<HTMLCanvasElement>("#sky");
   const sky = createSky(skyCanvas, signal);
   const typers = [
@@ -205,7 +206,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     layout = measureLayout(parts);
     nightKept = false;
     measureLayers();
-    sky.resize();
+    sky.resize(layout.height);
     needsPaint = true;
     // The film's length follows the window's height: keep the visitor's place in the story.
     const nextEnd = layout.documentHeight - layout.height;
@@ -417,7 +418,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
         skyFrame(beatProgress(lastNight, layout.spans), lastNight / layout.height),
         now / 1000,
       );
-      fire?.keepNight(forest.withTrees(skyCanvas));
+      fire?.keepNight(forest.withTrees(skyCanvas, flame.getBoundingClientRect()));
       fire?.keepWords(actor.wordsStill());
       nightKept = true;
       needsPaint = true;
@@ -443,18 +444,21 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     frameRequest = requestAnimationFrame(frame);
   }
 
-  // A phone's address bar resizes the window but not the stage, which is `100svh`.
+  // A phone's address bar resizes the window but not the stage, which is `100lvh`.
   addEventListener(
     "resize",
     () => {
-      if (html.clientWidth !== layout.windowWidth || parts.stage.clientHeight !== layout.height) {
+      if (
+        html.clientWidth !== layout.windowWidth ||
+        parts.stage.clientHeight !== layout.stageHeight
+      ) {
         measure();
       }
     },
     { signal },
   );
 
-  sky.resize();
+  sky.resize(layout.height);
   document.fonts.ready.then(() => {
     if (!signal.aborted) measure();
   });

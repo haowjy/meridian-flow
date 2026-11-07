@@ -267,9 +267,9 @@ export function createForest(root: HTMLElement) {
     layout = next;
     const { width: W, height: H } = next;
     forest.style.width = `${GROUND.wide * 100}%`;
-    forest.style.height = `${GROUND.tall * 100}%`;
+    forest.style.height = `${H * GROUND.tall}px`;
     treeline.width = W;
-    treeline.height = H;
+    treeline.height = Math.max(H, treeline.clientHeight);
     treelineDrawn = false;
     near.width = Math.ceil(W * GROUND.wide);
     near.height = Math.ceil(H * GROUND.tall);
@@ -343,15 +343,16 @@ export function createForest(root: HTMLElement) {
   return {
     measure,
     /** The night sky with the trees in front, for the burn to take away: its still has no DOM. */
-    withTrees(sky: HTMLCanvasElement) {
-      still.width = sky.width;
-      still.height = sky.height;
+    /** The sky with the trees over it, cut to `frame`, the box the still will be drawn in. */
+    withTrees(sky: HTMLCanvasElement, frame: DOMRect) {
+      const box = sky.getBoundingClientRect();
+      const kx = sky.width / box.width;
+      const ky = sky.height / box.height;
+      still.width = Math.round(frame.width * kx);
+      still.height = Math.round(frame.height * ky);
       const pen = still.getContext("2d") as CanvasRenderingContext2D;
-      pen.drawImage(sky, 0, 0);
-      const frame = sky.getBoundingClientRect();
+      pen.drawImage(sky, (box.left - frame.left) * kx, (box.top - frame.top) * ky);
       const trees = near.getBoundingClientRect();
-      const kx = sky.width / frame.width;
-      const ky = sky.height / frame.height;
       pen.drawImage(
         near,
         (trees.left - frame.left) * kx,
@@ -371,8 +372,11 @@ export function createForest(root: HTMLElement) {
       const behind = beats.leave > 0;
       if (behind && !treelineDrawn) {
         const pen = treeline.getContext("2d") as CanvasRenderingContext2D;
-        pen.clearRect(0, 0, W, H);
+        pen.clearRect(0, 0, W, treeline.height);
         pen.drawImage(near, -drift, H - near.height);
+        // On under the frame, as the forest's ground does on the stage.
+        pen.fillStyle = getComputedStyle(root).getPropertyValue("--mkt-night");
+        pen.fillRect(0, H, W, treeline.height - H);
         treelineDrawn = true;
       }
       forest.style.visibility = behind ? "hidden" : "";
@@ -380,7 +384,7 @@ export function createForest(root: HTMLElement) {
       const walkOut = smooth(beats.turn, ...TURN.walksOut);
       const road = W * lerp(0.3, 0.62, progress(at, spans.world[0], spans.write[1]));
       // Looking straight up there is no ground in view: the trees rise as the view tips to the horizon.
-      const sunk = (1 - tilt(beats)) * near.height;
+      const sunk = (1 - tilt(beats)) * (near.height + layout.stageHeight - H);
       forest.style.transform = `translate3d(${-drift}px,${sunk}px,0)`;
       walkers.style.transform = sunk ? `translate3d(0,${sunk}px,0)` : "";
       if (shown === 0) return null;

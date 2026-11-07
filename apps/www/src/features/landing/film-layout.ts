@@ -23,7 +23,10 @@ export type FilmParts = {
 export type Layout = {
   windowWidth: number;
   width: number;
+  /** The frame the film is laid out in: the small viewport on a phone. */
   height: number;
+  /** The whole stage, the frame and the strip below it. */
+  stageHeight: number;
   isPhone: boolean;
   /** The product block at rest on the first screen, where CSS put it. */
   home: Rect;
@@ -104,7 +107,10 @@ export function measureLayout(parts: FilmParts): Layout {
   // The hub and its curves exist only where the team spreads around the chapter.
   const isPhone = parts.hub.offsetParent === null;
   const width = stage.clientWidth;
-  const height = stage.clientHeight;
+  // The stage reaches the bottom of the large viewport, so the scenery fills the screen once a
+  // phone's address bar collapses; the film is laid out in its content box, the small viewport.
+  const below = Number.parseFloat(getComputedStyle(stage).paddingBottom) || 0;
+  const height = stage.clientHeight - below;
 
   parts.teamLines.replaceChildren();
   parts.worldLines.replaceChildren();
@@ -120,12 +126,13 @@ export function measureLayout(parts: FilmParts): Layout {
   const anchor = height * 0.44;
 
   const { spans, stops, subtitles, length } = spanBeats(height);
-  html.style.setProperty("--filmh", `${length + height}px`);
+  html.style.setProperty("--filmh", `${length + height + below}px`);
   const documentHeight = html.scrollHeight;
   return {
     windowWidth: html.clientWidth,
     width,
     height,
+    stageHeight: stage.clientHeight,
     isPhone,
     home: rectOf(blockHome),
     workspace: rectOf(workspaceSpot),
