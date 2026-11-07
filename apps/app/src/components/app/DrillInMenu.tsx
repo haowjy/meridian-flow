@@ -9,7 +9,6 @@
  * owns only drill state; picking an entry and running an action belong to the caller.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import {
   type ComponentPropsWithoutRef,
@@ -260,32 +259,26 @@ export function DrillInMenuBody({
           <span className="min-w-0 flex-1 truncate font-medium">{folder.title ?? folder.name}</span>
         </DropdownMenuItem>
       ) : null}
-      {entries.length === 0 && !foldersOnly ? (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">
-          <Trans>Nothing here yet.</Trans>
-        </p>
-      ) : (
-        <div className="min-h-0 overflow-y-auto">
-          {entries.map((node) => (
-            <DropdownMenuItem
-              key={node.id}
-              disabled={isDisabled?.(node)}
-              aria-current={isHere(node.id) ? "true" : undefined}
-              className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
-              onSelect={(event) => {
-                if (node.folder) {
-                  event.preventDefault();
-                  drill([...trail, node]);
-                } else onPick(node);
-              }}
-            >
-              <node.icon aria-hidden />
-              <span className="min-w-0 flex-1 truncate">{node.name}</span>
-              {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
-            </DropdownMenuItem>
-          ))}
-        </div>
-      )}
+      <div className="min-h-0 overflow-y-auto">
+        {entries.map((node) => (
+          <DropdownMenuItem
+            key={node.id}
+            disabled={isDisabled?.(node)}
+            aria-current={isHere(node.id) ? "true" : undefined}
+            className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
+            onSelect={(event) => {
+              if (node.folder) {
+                event.preventDefault();
+                drill([...trail, node]);
+              } else onPick(node);
+            }}
+          >
+            <node.icon aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
+          </DropdownMenuItem>
+        ))}
+      </div>
       {status ? (
         <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
           {status}
