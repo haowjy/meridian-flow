@@ -1,5 +1,6 @@
 import { MARKETING_SKY } from "@meridian/design-tokens/marketing-sky";
 import type { Layout } from "./film-layout";
+import { GROUND, walked } from "./ground";
 import { rgb } from "./sky";
 import {
   type BeatProgress,
@@ -22,19 +23,8 @@ const COLUMNS = WALK_FRAMES + 3;
 const WOLF_ROW = 4;
 const ROWS = 5;
 const FIGURE = 256;
-/** Where the walkers stand, in shares of the stage. */
-const GROUND = 0.93;
 const CLIFF_TOP = 0.64;
 const CLIFF_X = 0.11;
-/**
- * The strip of ground, in stage widths: the forest, then the clearing on the lake shore where they
- * meet the dragon, then a stand of trees behind it. The turn walks them out of the woods onto it.
- */
-const STRIP = 2.5;
-/** The beach's surface in the clearing, in shares of the stage. */
-export const SHORE_LINE = 0.915;
-const SHORE = [1.5, 2.3] as const;
-const TO_SHORE = 1.1;
 /** Stage shares of the world beat at which the other three catch Tam up. */
 const JOINS = [0, 0.22, 0.4, 0.58];
 
@@ -266,17 +256,19 @@ export function createForest(root: HTMLElement) {
   const measure = (next: Layout) => {
     layout = next;
     const { width: W, height: H } = next;
-    near.width = Math.ceil(W * STRIP);
-    near.height = Math.ceil(H * 0.5);
+    forest.style.width = `${GROUND.wide * 100}%`;
+    forest.style.height = `${GROUND.tall * 100}%`;
+    near.width = Math.ceil(W * GROUND.wide);
+    near.height = Math.ceil(H * GROUND.tall);
     const pen = near.getContext("2d") as CanvasRenderingContext2D;
     pen.fillStyle = getComputedStyle(root).getPropertyValue("--mkt-night");
-    const ground = near.height * 0.9;
-    const [shoreFrom, shoreTo] = [SHORE[0] * W, SHORE[1] * W];
+    const top = H * (1 - GROUND.tall);
+    const ground = H * GROUND.floor - top;
+    const [shoreFrom, shoreTo] = [GROUND.shore[0] * W, GROUND.shore[1] * W];
     // The woods' floor, then the beach dropping to the water's edge and rising again at the trees.
     const sand = (x: number) => {
       const into = Math.min(1, Math.max(0, Math.min(x - shoreFrom, shoreTo - x) / (W * 0.12)));
-      // The strip's ground sits at 0.95 of the stage.
-      return ground - H * lerp(0.08, 0.95 - SHORE_LINE, into * into * (3 - 2 * into));
+      return ground - H * lerp(0.08, GROUND.floor - GROUND.beach, into * into * (3 - 2 * into));
     };
     pen.beginPath();
     pen.moveTo(0, near.height);
@@ -307,13 +299,13 @@ export function createForest(root: HTMLElement) {
       const x = shoreTo + noise(i + 200) * (near.width - shoreTo);
       spruce(pen, x, sand(x), H * (0.2 + noise(i + 240) * 0.2));
     }
-    const top = (CLIFF_TOP - 0.5) * H;
+    const cliff = H * CLIFF_TOP - top;
     pen.beginPath();
     pen.moveTo(0, ground);
-    pen.lineTo(0, top - H * 0.02);
-    pen.lineTo(W * (CLIFF_X + 0.05), top);
-    pen.lineTo(W * (CLIFF_X + 0.09), top + H * 0.06);
-    pen.lineTo(W * (CLIFF_X + 0.12), top + H * 0.09);
+    pen.lineTo(0, cliff - H * 0.02);
+    pen.lineTo(W * (CLIFF_X + 0.05), cliff);
+    pen.lineTo(W * (CLIFF_X + 0.09), cliff + H * 0.06);
+    pen.lineTo(W * (CLIFF_X + 0.12), cliff + H * 0.09);
     pen.lineTo(W * (CLIFF_X + 0.2), ground);
     pen.closePath();
     pen.fill();
@@ -362,23 +354,20 @@ export function createForest(root: HTMLElement) {
       walkers.style.opacity = String(shown);
       // Gone before the film's stage scrolls away; the sky behind it stays.
       forest.style.opacity = String(1 - smooth(beats.leave, 0, 0.6));
+      const drift = W * walked(at, layout);
       const walkOut = smooth(beats.turn, ...TURN.walksOut);
-      // The ground moves only while they walk: along the road, then out of the woods onto the
-      // shore. Camped, perched over or fighting, it holds still.
-      const walked = progress(at, spans.world[0], spans.write[1]);
-      const drift = W * (0.075 + walked * 0.12 + walkOut * TO_SHORE);
+      const road = W * lerp(0.3, 0.62, progress(at, spans.world[0], spans.write[1]));
       forest.style.transform = `translate3d(${-drift}px,0,0)`;
       if (shown === 0) return null;
 
       const size = H * 0.16;
       const gap = size * 0.5;
       const down = smooth(beats.world, 0, 0.14);
-      const road = W * lerp(0.3, 0.62, walked);
       const leader = lerp(W * CLIFF_X - drift, road, down);
-      const feet = lerp(H * CLIFF_TOP, H * GROUND, down);
+      const feet = lerp(H * CLIFF_TOP, H * GROUND.feet, down);
       // The camp is in the middle of the stage, and its fire stays on the ground as they leave.
       const campX = W * 0.5;
-      const fireX = campX - walkOut * W * TO_SHORE;
+      const fireX = campX - (drift - W * walked(spans.camp[1], layout));
       const seated = smooth(beats.camp, ...CAMP.sits);
       const ring = [1.6, 0.6, -0.6, -1.6];
       const fight = beats.fight;
@@ -409,7 +398,7 @@ export function createForest(root: HTMLElement) {
         if (fight <= 0) {
           heads.push(x);
           figure.style.filter = "";
-          place(figure, x, row === 0 ? feet : H * GROUND, size, column, row);
+          place(figure, x, row === 0 ? feet : H * GROUND.feet, size, column, row);
           return;
         }
         const fate = FIGHT.fates[row];
@@ -422,7 +411,7 @@ export function createForest(root: HTMLElement) {
         // The breath chars them as it passes; the one left standing is too dark to tell who.
         const charred = smooth(fight, FIGHT.breath[0], FIGHT.breath[1]);
         let angle = 0;
-        let feetY = H * GROUND;
+        let feetY = H * GROUND.feet;
         heads.push(x);
         let fx = x;
         column = hit > 0 ? 1 : FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
@@ -449,7 +438,7 @@ export function createForest(root: HTMLElement) {
       // Flares to full the instant the breath lands, then shudders under it.
       const flare = Math.min(1, glare * 2.5);
       ward.style.opacity = String(flare * (0.85 + Math.sin(at / 5) * 0.15));
-      ward.style.transform = `translate3d(${front + size * 0.12}px,${H * GROUND - size * 0.55}px,0) scale(${(size / 100) * (0.9 + flare * 0.5)}) rotate(${at / 60}rad) translate(-50%,-50%)`;
+      ward.style.transform = `translate3d(${front + size * 0.12}px,${H * GROUND.feet - size * 0.55}px,0) scale(${(size / 100) * (0.9 + flare * 0.5)}) rotate(${at / 60}rad) translate(-50%,-50%)`;
 
       const wolfIn = smooth(beats.out, 0, 0.35);
       const wolfGone = smooth(beats.out, 0.7, 0.95);
@@ -458,7 +447,7 @@ export function createForest(root: HTMLElement) {
       place(
         wolf,
         lerp(W * 1.1, leader + gap * 2.6, wolfIn),
-        H * GROUND,
+        H * GROUND.feet,
         size * 0.95,
         Math.floor(at / 30) % WALK_FRAMES,
         WOLF_ROW,
@@ -467,11 +456,13 @@ export function createForest(root: HTMLElement) {
       // Still burning as they walk away from it, until the ground carries it off.
       const glow = seated * (1 - smooth(beats.turn, 0.45, 0.55));
       camp.style.opacity = String(clamp(glow * (0.9 + Math.sin(at / 17) * 0.1)));
-      camp.style.transform = `translate3d(${fireX - size * 0.6}px,${H * GROUND - size * 0.86}px,0) scale(${size / 100})`;
+      camp.style.transform = `translate3d(${fireX - size * 0.6}px,${H * GROUND.feet - size * 0.86}px,0) scale(${size / 100})`;
       const sheetsUp = envelope(beats.camp, CAMP.sheets, 0.04, 0.05);
       sheets.style.opacity = String(sheetsUp);
-      sheets.style.transform = `translate3d(${campX}px,${H * GROUND - size * 1.15 + (1 - sheetsUp) * H * 0.03}px,0) translate(-50%,-100%)`;
-      return { rows: heads.map((head) => [head + size * 0.1, H * GROUND - size * 0.6] as const) };
+      sheets.style.transform = `translate3d(${campX}px,${H * GROUND.feet - size * 1.15 + (1 - sheetsUp) * H * 0.03}px,0) translate(-50%,-100%)`;
+      return {
+        rows: heads.map((head) => [head + size * 0.1, H * GROUND.feet - size * 0.6] as const),
+      };
     },
   };
 }
