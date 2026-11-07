@@ -718,12 +718,26 @@
 }
 
 /* Sigrun's rune: the first breath splits around it. */
+/* Sigrun's rune going off: a hard white core, a ring and spinning rays. */
 .cine .walkers .ward {
-  background: radial-gradient(
-    var(--walk-ward) 8%,
-    color-mix(in oklab, var(--walk-ward) 55%, transparent) 26%,
-    transparent 64%
-  );
+  background:
+    radial-gradient(circle, var(--walk-ward) 0 10%, transparent 12%),
+    radial-gradient(circle, transparent 0 29%, var(--walk-ward) 30% 32%, transparent 34%),
+    radial-gradient(
+      circle,
+      color-mix(in oklab, var(--walk-ward) 75%, transparent) 0,
+      color-mix(in oklab, var(--walk-ward) 22%, transparent) 26%,
+      transparent 52%
+    );
+  mix-blend-mode: plus-lighter;
+}
+
+.cine .walkers .ward::before {
+  content: "";
+  position: absolute;
+  inset: -70%;
+  background: repeating-conic-gradient(var(--walk-ward) 0 1.6deg, transparent 1.6deg 20deg);
+  mask: radial-gradient(circle, black 0 6%, transparent 58%);
 }
 
 .cine .walkers .spark {

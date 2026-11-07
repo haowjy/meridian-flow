@@ -352,8 +352,10 @@ export function createForest(root: HTMLElement) {
 
       const front = heads[0];
       const glare = flash(fight, FIGHT.ward);
-      ward.style.opacity = String(glare * (0.8 + Math.sin(at / 9) * 0.2));
-      ward.style.transform = `translate3d(${front + size * 0.12}px,${H * GROUND - size * 0.55}px,0) scale(${(size / 100) * (0.7 + glare * 0.6)}) translate(-50%,-50%)`;
+      // Flares to full the instant the breath lands, then shudders under it.
+      const flare = Math.min(1, glare * 2.5);
+      ward.style.opacity = String(flare * (0.85 + Math.sin(at / 5) * 0.15));
+      ward.style.transform = `translate3d(${front + size * 0.12}px,${H * GROUND - size * 0.55}px,0) scale(${(size / 100) * (0.9 + flare * 0.5)}) rotate(${at / 60}rad) translate(-50%,-50%)`;
 
       const wolfIn = smooth(beats.out, 0, 0.35);
       const wolfGone = smooth(beats.out, 0.7, 0.95);
