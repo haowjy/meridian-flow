@@ -39,9 +39,8 @@ export function FileDropRuntime({
     return registerFileDropHost(editor, {
       hostDocumentId: documentId,
       scheme,
-      reserve: async ({ documentId: intakeId, file }) => {
-        await startContextUpload(target(intakeId, file));
-      },
+      reserve: async ({ documentId: intakeId, file }) =>
+        (await startContextUpload(target(intakeId, file))).name,
       send: ({ documentId: intakeId, file, signal, onProgress }) =>
         uploadContextFile({ ...target(intakeId, file), signal, onProgress }),
     });

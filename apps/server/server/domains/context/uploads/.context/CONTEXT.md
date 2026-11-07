@@ -97,7 +97,16 @@ adds the name to the taken set and goes again, at most 100 times, so a text file
 always matches the one it lands at. The chat port reports a taken `uploads://` name as a conflict
 like any other, for text and stored files alike, which is why no name is reserved earlier. `finish.failed` logs a fixed `reason`, never
 writer text. A file's own extension stays its extension (`notes (2).zip`). `finalize` records the name
-it took. `assets/` is created by that write wherever it has gone missing. Chat-only paths
+it took.
+
+`start` also answers `name`: the name finish would give the file if it ran now, by the same rule
+(one list, the first free name, the type guessed from the name and declared type). The door labels
+a dropped file's chip with it, so a second `notes.zip` reads `notes (2).zip`. Finish still names
+the file itself, so two uploads of one name started before either finishes both hear `notes.zip`,
+and the one that finishes second lands as `notes (2).zip` under a chip labelled `notes.zip` (its
+link still finds it). A guess that the bytes overrule (text past the text cap kept as a file) can
+differ the same way. The label is never rewritten after the file lands: a chip's words are the
+writer's once it stands (link identity decision). `assets/` is created by that write wherever it has gone missing. Chat-only paths
 (`lockForDelete`, `consume`, `lookupUpload`) skip these rows.
 
 The server does not say whether a source upload is still being sent: a `doc:` ref that names

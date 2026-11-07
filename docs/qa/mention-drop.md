@@ -117,8 +117,9 @@ own file drag adds nothing to what the door reads. Read the rows from `upload_in
 1. Drop a PDF at a word, in a heading, in a list item and in a table cell. Each lands a chip at
    the caret reading the name, then `PDF · 2 KB` once it finalizes. The file is a row in
    `<source>://assets/` of the document's own source (Knowledge Base: `kb://assets/`), and the chip
-   opens it the way the tree's row does. Drop the same name again: `name (2).pdf`; a `.zip` keeps its
-   extension (`notes (2).zip`).
+   opens it the way the tree's row does. Drop the same name again: the file lands as `name (2).pdf`
+   and the chip reads `name (2).pdf` from the moment it appears; a `.zip` keeps its extension
+   (`notes (2).zip`).
 2. Drop a PDF, a picture and a second PDF together. They land in that order, the picture in its own
    lane (`manuscript://assets/`). The two PDFs and any run of chips between pictures are one edit:
    one Undo.
@@ -141,7 +142,8 @@ own file drag adds nothing to what the door reads. Read the rows from `upload_in
    it by id. Rename or move a finished file, then read the document through `./mf doc read`: the
    link shows the file's current path. Trash a finished file and click its chip: Trash opens at it.
    Drop a text file (`.md`): it becomes a document in `assets/`, and a notice says so and that the
-   chip links to it. Several of one name dropped at once get `name`, `name (2)`, `name (3)`.
+   chip links to it. Several of one name dropped at once land as `name`, `name (2)`, `name (3)`,
+   but every chip reads `name`: each was named before any had landed (see the uploads CONTEXT).
 7. A read-only editor (`setEditable(false)`) takes no file and starts no upload.
 8. Export the project: the files sit under their folders and the document's link points at the
    current path.
