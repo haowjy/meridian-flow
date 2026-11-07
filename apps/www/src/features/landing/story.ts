@@ -57,7 +57,7 @@ export const PROLOGUE = {
     "Nobody said what the beast was. I don’t think they knew.",
     "Every night the Cold Fire burned above us. We thought it was beautiful.",
   ],
-  turn: "On the ninth night, the Cold Fire came down.",
+  turn: "On the ninth night, it found us.",
 } as const;
 
 export const QUESTION =
