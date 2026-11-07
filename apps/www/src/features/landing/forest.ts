@@ -325,17 +325,40 @@ export function createForest(root: HTMLElement) {
     figure.style.maskPosition = `${(column / (COLUMNS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
   };
 
+  const still = document.createElement("canvas");
+
   return {
     measure,
+    /** The night sky with the trees in front, for the burn to take away: its still has no DOM. */
+    withTrees(sky: HTMLCanvasElement) {
+      still.width = sky.width;
+      still.height = sky.height;
+      const pen = still.getContext("2d") as CanvasRenderingContext2D;
+      pen.drawImage(sky, 0, 0);
+      const frame = sky.getBoundingClientRect();
+      const trees = near.getBoundingClientRect();
+      const kx = sky.width / frame.width;
+      const ky = sky.height / frame.height;
+      pen.drawImage(
+        near,
+        (trees.left - frame.left) * kx,
+        (trees.top - frame.top) * ky,
+        trees.width * kx,
+        trees.height * ky,
+      );
+      return still;
+    },
     update(at: number, beats: BeatProgress): Party | null {
       const { spans, width: W, height: H } = layout;
       const shown = 1 - smooth(beats.twist, 0.12, 0.26);
-      forest.style.opacity = String(1 - smooth(beats.lore, 0, 0.3));
       walkers.style.opacity = String(shown);
-      if (shown === 0) return null;
       const walkOut = smooth(beats.turn, 0.02, 0.5);
-      const drift = (at / H) * W * 0.025 + walkOut * W * TO_SHORE;
+      // The ground moves only while they walk: along the road, then out of the woods onto the
+      // shore. Camped, perched over or fighting, it holds still.
+      const walked = progress(at, spans.world[0], spans.write[1]);
+      const drift = W * (0.075 + walked * 0.12 + walkOut * TO_SHORE);
       forest.style.transform = `translate3d(${-drift}px,0,0)`;
+      if (shown === 0) return null;
 
       const size = H * 0.16;
       const gap = size * 0.5;
