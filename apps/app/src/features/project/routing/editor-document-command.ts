@@ -24,7 +24,7 @@ import type { ProjectAddress, ProjectDestination } from "./project-address";
 import { workSelectionFor } from "./project-address-resolution";
 import { resolveLocalDocumentSelection } from "./project-local-selection";
 import type { createProjectNavigation } from "./project-navigation";
-import type { ContextRouteRequest } from "./project-route";
+import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
 
 type Navigation = ReturnType<typeof createProjectNavigation>;
 export type EditorCommandSnapshot = {
@@ -41,12 +41,15 @@ export function createEditorDocumentCommand({
   read,
   lookup,
   admitDraftReview,
+  enterRoute,
 }: {
   projectId: string;
   accountId: string;
   read: () => EditorCommandSnapshot;
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
   admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, workId: string) => void;
+  /** Binds the route about to be shown to the document the navigation named. */
+  enterRoute: (locator: ContextRouteTarget, documentId: string) => void;
 }): OpenContextRoute {
   return async (request, options) => {
     const current = read();
@@ -133,6 +136,18 @@ export function createEditorDocumentCommand({
               selected.documentId,
               selected,
             );
+        // The writer opened this document: the route is its own from the first frame, whatever
+        // another document holds at its cached path. A pasted or reloaded URL names none.
+        if (target.documentId && target.path && resolvedWorkId && !next.state)
+          enterRoute(
+            {
+              scheme: target.scheme,
+              path: `/${canonicalDocumentPath(target.path)}`,
+              workId: resolvedWorkId,
+              ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
+            },
+            target.documentId,
+          );
       };
       if (
         options?.replace === undefined &&
@@ -252,10 +267,6 @@ export function prepareEditorDestination(
     if (resolved && resolved.kind !== "resolved") throw new Error("Local document is unavailable");
     state = { meridianProjectSelection: pointer };
   }
-  // The id the navigation knew rides this entry, so the route finds the document by it and
-  // not by the path, which another document may hold by the time the route reads it.
-  if (target.documentId && target.path)
-    state = { ...state, meridianNavigatedDocument: target.documentId };
   const destination: ProjectDestination = target.path
     ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
     : { kind: "editor" };
@@ -284,7 +295,10 @@ function openDraftOnlyTabFor(
   if (!request.workId) return undefined;
   const workId = request.workId;
   return editorTabsForWork(tabs, workId).find(
-    (tab) => isDraftOnly(tab) && contextTabMatchesRoute(tab, { ...request, workId }),
+    (tab) =>
+      isDraftOnly(tab) &&
+      (request.documentId === undefined || tab.documentId === request.documentId) &&
+      contextTabMatchesRoute(tab, { ...request, workId }),
   );
 }
 function reviewItemKeyOf(tab: ContextTab, workId: string | undefined): string | undefined {

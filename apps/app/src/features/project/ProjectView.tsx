@@ -178,8 +178,6 @@ export type ProjectViewProps = {
   rememberedWork: AddressableWork | null;
   editorRouteWork: Exclude<RouteWorkResolution, { status: "new" | "absent" }>;
   activeLocalDocumentId?: string;
-  /** The document the navigation that reached this route named; absent for a pasted or traversed URL. */
-  activeNavigatedDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
   routeIssues?: {
@@ -404,7 +402,6 @@ export function ProjectView(props: ProjectViewProps) {
                 activeContextChat={props.activeContextChat}
                 editorWorkId={editorScope.workId}
                 localDocumentId={props.activeLocalDocumentId}
-                navigatedDocumentId={props.activeNavigatedDocumentId}
                 route={props.contextRemovalRoute}
               />
             ) : null}
@@ -839,6 +836,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               projectId={props.projectId}
               {...frameEditorRoute}
               mask={editorMask}
+              reviewItemKey={props.reviewItemKey}
               resolvedEditor={editorPresentation.resolved}
               editorWork={
                 props.activeScreen === "context"

@@ -14,7 +14,7 @@ import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-ad
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref } from "./project-address";
-import type { createProjectNavigation, NavigationSettlement } from "./project-navigation";
+import type { createProjectNavigation } from "./project-navigation";
 
 export type AddressAdmission = {
   key: string;
@@ -34,8 +34,6 @@ export function ProjectAddressDocument({
   workId,
   noWorkId,
   navigation,
-  navigatedDocumentId,
-  relocate,
   onAdmission,
 }: {
   projectId: string;
@@ -49,10 +47,6 @@ export function ProjectAddressDocument({
   workId: string | null;
   noWorkId: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
-  /** The document the navigation that reached this entry named; absent for a pasted or traversed URL. */
-  navigatedDocumentId?: string;
-  /** Moves the entry to where that document is now. */
-  relocate: (documentId: string) => Promise<NavigationSettlement>;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
   const { openTab } = useContextTabsActions();
@@ -69,7 +63,6 @@ export function ProjectAddressDocument({
   const reviewLocatorFingerprint = JSON.stringify(
     reviewTab ? { scheme: reviewTab.scheme, path: reviewTab.path, name: reviewTab.name } : null,
   );
-  const relocated = useRef<string | null>(null);
   const admissionInput = useRef({ address, result, localFile, reviewItemKey });
   admissionInput.current = { address, result, localFile, reviewItemKey };
   // Address/catalog projections are rebuilt from JSON snapshots. Their object
@@ -112,20 +105,6 @@ export function ProjectAddressDocument({
     const isCurrent = () => !controller.signal.aborted && navigation.isCurrent(ticket);
     const publish = (issue: ProjectRouteIssue | undefined) => onAdmission({ ...identity, issue });
     publish("loading");
-    if (navigatedDocumentId && navigatedDocumentId !== result.document.documentId) {
-      // The writer opened a document this answer does not name: the answer is another
-      // document's, or stale. Find the one the writer meant and never open the answer in its
-      // place. Each replacement is a new entry that re-runs this effect, so one attempt per
-      // address and document: a stale answer then waits for its refetch, never a loop.
-      const attempt = `${href}|${navigatedDocumentId}`;
-      if (relocated.current !== attempt) {
-        relocated.current = attempt;
-        void relocate(navigatedDocumentId).then((settlement) => {
-          if (settlement.kind === "failed" && isCurrent()) publish("unavailable");
-        });
-      }
-      return () => controller.abort();
-    }
     const document = result.document.entry;
     const scope = document.scope;
     const tabWorkId = scope.kind === "work" ? scope.workId : undefined;
@@ -170,8 +149,6 @@ export function ProjectAddressDocument({
     workId,
     noWorkId,
     navigation,
-    navigatedDocumentId,
-    relocate,
     openTab,
     onAdmission,
   ]);

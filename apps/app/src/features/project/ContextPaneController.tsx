@@ -25,6 +25,7 @@ import {
 } from "./context/account-feature-context";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
+import { selectionAtRoute } from "./context/context-removal-protocol";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import type { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
@@ -55,6 +56,8 @@ export type ContextViewerSurfaceControllerProps = {
   activeContextPath: string | null;
   /** A chat's Scratch route names its lineage here, in place of a Work. */
   activeContextChat?: string | null;
+  /** The review item the address carries; a review address owns its path. */
+  reviewItemKey?: string;
   onSelectContextPath: (
     path: string,
     scheme?: ProjectContextTreeScheme,
@@ -84,6 +87,7 @@ export function ContextViewerSurfaceController({
   activeContextScheme,
   activeContextPath,
   activeContextChat,
+  reviewItemKey,
   active,
   onShowEditorRecents,
   sidebarToggle,
@@ -120,19 +124,23 @@ export function ContextViewerSurfaceController({
     const selection = removalState.selection;
     if (selection.status === "none") return;
     if (
-      selection.locator.scheme !== activeContextScheme ||
-      selection.locator.path !== activeContextPath ||
-      selection.locator.workId !== routeWorkId ||
-      selection.locator.rootThreadId !== (activeContextChat ?? undefined)
+      routeWorkId === undefined ||
+      !selectionAtRoute(selection, {
+        scheme: activeContextScheme,
+        path: activeContextPath,
+        workId: routeWorkId,
+        rootThreadId: activeContextChat ?? undefined,
+      })
     )
       return;
     const routed = routeCatalog?.findPath(activeContextPath);
     const routedFile = routed?.kind === "file" ? routed : null;
     if (workspaceRoute.kind === "owner" && selection.status === "candidate") {
-      if (workspaceRoute.identity.kind === "server") {
+      // A tab found by its cached path paints but proves nothing: the address answer binds.
+      if (workspaceRoute.identity.kind === "server")
         selectTab(projectId, routeWorkId, workspaceRoute.tab.documentId, workspaceRoute.tab);
-      }
-      contextRemoval.bindRouteSelection(projectId, selection.revision, workspaceRoute.identity);
+      else
+        contextRemoval.bindRouteSelection(projectId, selection.revision, workspaceRoute.identity);
     } else if (workspaceRoute.kind === "materialized-local") {
       contextRemoval.redirectMaterializedLocal(
         projectId,
@@ -298,6 +306,7 @@ export function ContextViewerSurfaceController({
     activeContextScheme,
     activeContextPath,
     activeContextChat,
+    reviewItemKey,
     routeDisplayed,
     onOpenContextTarget,
   });

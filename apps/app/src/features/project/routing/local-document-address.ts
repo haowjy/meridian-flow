@@ -7,10 +7,6 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import {
-  type ContextRouteSelection,
-  routeSelectionDocumentId,
-} from "../context/context-removal-protocol";
 import { resolveLiveRouteDocument } from "../context/route-document-owner";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
 import { workSelectionFor } from "./project-address-resolution";
@@ -79,31 +75,6 @@ function sameDocument(
     destination.scheme === target.scheme &&
     canonicalDocumentPath(destination.path) === canonicalDocumentPath(target.path)
   );
-}
-
-/**
- * The document a route holds by continuity: bound to this route's locator in the Editor's
- * context (its selected Work, named or not, whatever the document's own namespace) and
- * actually admitted by this surface. A binding inferred from a cached tab before the server
- * answered is a guess, not continuity, and must not override a fresh lookup.
- */
-export function routeContinuityDocumentId(input: {
-  selection: ContextRouteSelection;
-  admittedDocumentId: string | null;
-  destination: DocumentDestination | null;
-  editorWorkId: string | null;
-  /** The lineage a Scratch address names. */
-  rootThreadId?: string;
-}): string | null {
-  const { selection, destination } = input;
-  if (!destination || selection.status !== "bound" || input.editorWorkId === null) return null;
-  const documentId = routeSelectionDocumentId(selection, {
-    scheme: destination.scheme,
-    path: destination.path,
-    workId: input.editorWorkId,
-    rootThreadId: input.rootThreadId,
-  });
-  return documentId !== null && documentId === input.admittedDocumentId ? documentId : null;
 }
 
 export function resolveLocalDocumentAddress(

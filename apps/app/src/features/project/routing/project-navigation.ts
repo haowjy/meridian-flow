@@ -70,7 +70,6 @@ export function createProjectNavigation(
   let guard: ProjectLeaveGuard | null = null;
   let cancelDecision: (() => void) | null = null;
   let departureWrite = false;
-  let lastOperationId: string | null = null;
   let pending: {
     id: string;
     commit?: () => void;
@@ -222,7 +221,6 @@ export function createProjectNavigation(
             }
           }
           const id = crypto.randomUUID();
-          lastOperationId = id;
           const operation = {
             id,
             commit: () => {
@@ -312,17 +310,6 @@ export function createProjectNavigation(
       return ticket.key === entryKey ? ticket : null;
     },
     isCurrent,
-    /**
-     * The document the latest navigation of this page load named for its entry. A reload,
-     * a paste and history traversal carry none: the path's occupant decides there.
-     */
-    navigatedDocumentId(state: object): string | undefined {
-      const { meridianNavigatedDocument: documentId, meridianNavigationOperation: operation } =
-        state as Record<string, unknown>;
-      return operation === lastOperationId && typeof documentId === "string"
-        ? documentId
-        : undefined;
-    },
     navigate(
       address: ProjectAddress,
       options: { replace: boolean; state?: Record<string, unknown> } & NavigationEffects,

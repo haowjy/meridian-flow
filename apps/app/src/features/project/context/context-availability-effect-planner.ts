@@ -20,7 +20,7 @@ import type {
   AppliedAvailabilityCommand,
   ContextRemovalProjectSnapshot,
 } from "./context-removal-coordinator";
-import { planContextRemoval, routeTargetForTab } from "./context-removal-planner";
+import { planContextRemoval, routeTargetForTab, tabForTarget } from "./context-removal-planner";
 import {
   beginSelection,
   bindSelection,
@@ -299,9 +299,7 @@ export function planContextAvailabilityBatch(
       } else {
         const candidate = beginSelection(selection, repairTarget).selection;
         const activeWorkId = input.project.activeWorkId;
-        const fallback = activeWorkId
-          ? tabs.find((tab) => sameTarget(routeTargetForTab(tab, activeWorkId), repairTarget))
-          : undefined;
+        const fallback = activeWorkId ? tabForTarget(tabs, repairTarget, activeWorkId) : null;
         const bound = fallback
           ? bindSelection(candidate, candidate.revision, {
               kind: fallback.kind === "new" ? "local" : "server",

@@ -101,7 +101,6 @@ it("preserves a proven local resource handle during readable-route admission", a
 
   await withReactRoot(
     <ProjectAddressDocument
-      relocate={async () => ({ kind: "applied" })}
       projectId="project-id"
       href={href}
       entryKey="entry"
@@ -161,7 +160,6 @@ it.each([
   try {
     await withReactRoot(
       <ProjectAddressDocument
-        relocate={async () => ({ kind: "applied" })}
         projectId="project-id"
         href={href}
         entryKey="entry"
@@ -201,7 +199,6 @@ it("keeps a draft-only document out of the live view and repairs only its review
   const onAdmission = vi.fn();
   await withReactRoot(
     <ProjectAddressDocument
-      relocate={async () => ({ kind: "applied" })}
       projectId={projectId}
       href={href}
       entryKey="entry"

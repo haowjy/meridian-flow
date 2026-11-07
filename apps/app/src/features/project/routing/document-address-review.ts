@@ -8,7 +8,7 @@ import type {
 import { queryOptions } from "@tanstack/react-query";
 import type { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import type { ContextRouteSelection } from "../context/context-removal-protocol";
+import { type ContextRouteSelection, selectionAtRoute } from "../context/context-removal-protocol";
 import type { ProjectDestination } from "./project-address";
 
 export type DocumentAddressBinding =
@@ -38,30 +38,44 @@ export function reviewBoundAddressResult(
   return remote;
 }
 
-/** Server-admitted review identity also owns the pane, not just the address query. */
-export function reviewAddressRouteBinding(
+/**
+ * The one way an address answer binds the route. A review's answer is authoritative for its
+ * item and rebinds a selection bound to another document. A plain answer binds only a candidate:
+ * a bound selection was proven by a navigation that named its document or by an earlier answer.
+ */
+export function addressRouteBinding(
   binding: DocumentAddressBinding,
   result: DocumentAddressResult | undefined,
   selection: ContextRouteSelection,
   destination: Extract<ProjectDestination, { kind: "document" }> | null,
   workId: string | null,
+  rootThreadId: string | undefined,
 ): { revision: number; documentId: string } | null {
   if (
-    binding.kind !== "review" ||
+    binding.kind === "pending" ||
     !result ||
     result.kind === "unavailable" ||
     !destination ||
-    selection.status === "none" ||
-    workId !== binding.review.workId ||
-    selection.locator.workId !== workId ||
-    selection.locator.scheme !== destination.scheme ||
-    selection.locator.path.replace(/^\/+/, "") !== destination.path.replace(/^\/+/, "") ||
-    (selection.status === "bound" &&
-      selection.identity.kind === "server" &&
-      selection.identity.documentId === result.document.documentId)
+    workId === null ||
+    !selectionAtRoute(selection, {
+      scheme: destination.scheme,
+      path: destination.path,
+      workId,
+      rootThreadId,
+    })
   )
     return null;
-  return { revision: selection.revision, documentId: result.document.documentId };
+  const { documentId } = result.document;
+  if (binding.kind === "review") {
+    if (
+      workId !== binding.review.workId ||
+      (selection.status === "bound" &&
+        selection.identity.kind === "server" &&
+        selection.identity.documentId === documentId)
+    )
+      return null;
+  } else if (selection.status !== "candidate") return null;
+  return { revision: selection.revision, documentId };
 }
 
 /** The address read starts independently of list/catalog acquisition; its key owns the selector. */
