@@ -8,7 +8,11 @@ import type {
 import { queryOptions } from "@tanstack/react-query";
 import type { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { type ContextRouteSelection, selectionAtRoute } from "../context/context-removal-protocol";
+import {
+  type ContextRouteSelection,
+  type RouteBindingProof,
+  selectionAtRoute,
+} from "../context/context-removal-protocol";
 import type { ProjectDestination } from "./project-address";
 
 export type DocumentAddressBinding =
@@ -50,7 +54,7 @@ export function addressRouteBinding(
   destination: Extract<ProjectDestination, { kind: "document" }> | null,
   workId: string | null,
   rootThreadId: string | undefined,
-): { revision: number; documentId: string } | null {
+): { revision: number; documentId: string; by: RouteBindingProof } | null {
   if (
     binding.kind === "pending" ||
     !result ||
@@ -75,7 +79,11 @@ export function addressRouteBinding(
     )
       return null;
   } else if (selection.status !== "candidate") return null;
-  return { revision: selection.revision, documentId };
+  return {
+    revision: selection.revision,
+    documentId,
+    by: binding.kind === "review" ? "review" : "answer",
+  };
 }
 
 /** The address read starts independently of list/catalog acquisition; its key owns the selector. */

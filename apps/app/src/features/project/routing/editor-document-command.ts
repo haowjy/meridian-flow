@@ -13,6 +13,7 @@ import {
 } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { routeTargetForTab } from "../context/context-removal-planner";
+import type { RouteBindingProof } from "../context/context-removal-protocol";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { resolveLaunchLocator } from "./launch-locator";
 import {
@@ -49,7 +50,7 @@ export function createEditorDocumentCommand({
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
   admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, workId: string) => void;
   /** Binds the route about to be shown to the document the navigation named. */
-  enterRoute: (locator: ContextRouteTarget, documentId: string) => void;
+  enterRoute: (locator: ContextRouteTarget, documentId: string, by: RouteBindingProof) => void;
 }): OpenContextRoute {
   return async (request, options) => {
     const current = read();
@@ -147,6 +148,8 @@ export function createEditorDocumentCommand({
               ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
             },
             target.documentId,
+            // An address that carries an item is a review: the item owns its path.
+            itemKey ? "review" : "navigation",
           );
       };
       if (

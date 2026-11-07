@@ -25,6 +25,7 @@ it("replaces a cold live path binding only after the selected review identity is
     revision: 2,
     locator: { scheme: "kb" as const, path: "/Withern", workId: "work" },
     identity: { kind: "server" as const, documentId: "live" },
+    by: "navigation" as const,
   };
   const destination = { kind: "document" as const, scheme: "kb" as const, path: "Withern" };
   const result = {
@@ -34,6 +35,7 @@ it("replaces a cold live path binding only after the selected review identity is
   expect(addressRouteBinding(binding, result, selection, destination, "work", undefined)).toEqual({
     revision: 2,
     documentId: "hidden",
+    by: "review",
   });
   expect(
     addressRouteBinding({ kind: "pending" }, result, selection, destination, "work", undefined),
@@ -73,6 +75,7 @@ it("a plain answer binds a candidate at its own route and never rebinds a proven
   expect(addressRouteBinding(plain, result, candidate, destination, "work", undefined)).toEqual({
     revision: 3,
     documentId: "occupant",
+    by: "answer",
   });
   expect(addressRouteBinding(plain, result, candidate, destination, "work", "chat")).toBeNull();
   expect(
@@ -84,6 +87,7 @@ it("a plain answer binds a candidate at its own route and never rebinds a proven
         revision: 4,
         locator: candidate.locator,
         identity: { kind: "server", documentId: "opened" },
+        by: "navigation",
       },
       destination,
       "work",

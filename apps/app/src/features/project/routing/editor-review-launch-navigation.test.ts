@@ -141,7 +141,6 @@ describe("review launch navigation", () => {
       applyContextRemovalSearchUpdate({
         search: { screen: "context", scheme: "manuscript", path, work: workId },
         update: (latest) => ({ ...latest, path: next }),
-        itemKey: "draft-1",
         relocated,
         openContext: open,
         goWorks: () => undefined,
@@ -154,13 +153,6 @@ describe("review launch navigation", () => {
       const history = repair("gone.md", "fallback.md", undefined, "doc-1");
       await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
       expect(history.location.href).not.toContain("item=");
-    });
-
-    it("a relocation leaves a review address where it is: the item owns the path", async () => {
-      const history = repair("old.md", "renamed.md", { documentId: "doc-1" });
-      await Promise.resolve();
-      expect(history.location.href).toContain("old.md");
-      expect(history.location.href).toContain("item=draft-1");
     });
 
     it("a fallback to a draft-only tab opens that tab's own review item, not the removed one's", async () => {

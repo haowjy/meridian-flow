@@ -174,10 +174,15 @@ describe("AccountFeatureTestProvider", () => {
           path: "/a.md",
           workId: "work-1",
         });
-        coordinator.bindRouteSelection("project-1", revision, {
-          kind: "server",
-          documentId: "a",
-        });
+        coordinator.bindRouteSelection(
+          "project-1",
+          revision,
+          {
+            kind: "server",
+            documentId: "a",
+          },
+          "answer",
+        );
         coordinator.activate({
           projectId: "project-1",
           selectionRevision: revision,
