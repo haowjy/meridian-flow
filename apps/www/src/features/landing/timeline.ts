@@ -19,7 +19,7 @@ const BEATS = [
   ["out", 0.7, 3.5],
   ["back", 0.9, 7],
   ["turn", 1.8, 9],
-  ["fight", 2.4, 9],
+  ["fight", 3, 12],
   ["twist", 3, 9],
   ["dawn", 1.5, 6],
   ["lore", 1.5, 5],
@@ -33,19 +33,23 @@ const BEATS = [
 /** The share of the ask where the question lifts out of the chat, 2 swipes in. */
 export const ASK_LIFT = [0.43, 0.55] as const;
 /**
- * The ninth night, as shares of the fight beat. The ward splits the first breath, Tam's spark
- * hits its eye, then one breath kills them: who falls when, and how. The one left is a shadow,
- * because the visitor hasn't said who survives yet.
+ * The ninth night, as shares of the fight beat. The ward splits the first breath, then each of
+ * the four hits it once: the front one's arrow, Maren's song, Oskar's charge at its left foot,
+ * and Tam's spark in its eye. Then one breath kills them: who falls when, and how. The one left
+ * is a shadow, because the visitor hasn't said who survives yet. Rows are the walkers, front first.
  */
 export const FIGHT = {
-  ward: [0.1, 0.27],
-  spark: [0.32, 0.42],
-  breath: [0.5, 0.8],
+  ward: [0.08, 0.22],
+  arrow: { row: 0, at: [0.23, 0.29] },
+  song: { row: 3, at: [0.28, 0.38] },
+  charge: { row: 2, at: [0.36, 0.48] },
+  spark: { row: 1, at: [0.47, 0.54] },
+  breath: [0.6, 0.86],
   fates: [
-    { kind: "fall", at: 0.56 },
-    { kind: "flung", at: 0.63 },
-    { kind: "stand", at: 0.8 },
-    { kind: "fall", at: 0.72 },
+    { kind: "fall", at: 0.65 },
+    { kind: "flung", at: 0.71 },
+    { kind: "stand", at: 0.86 },
+    { kind: "fall", at: 0.79 },
   ],
 } as const;
 

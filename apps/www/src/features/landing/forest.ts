@@ -17,7 +17,7 @@ const CLIFF_X = 0.11;
 const JOINS = [0, 0.22, 0.4, 0.58];
 
 /** Where the party stands in the fight, for the dragon's aim: stage pixels. */
-export type Party = { front: readonly [number, number]; back: readonly [number, number] };
+export type Party = { rows: readonly (readonly [number, number])[] };
 
 /** Up and back down across a window: 0 outside it, 1 in its middle. */
 const flash = (value: number, [from, to]: readonly [number, number]) =>
@@ -305,6 +305,7 @@ export function createForest(root: HTMLElement) {
       const seated = smooth(beats.back, 0, 0.3);
       const ring = [1.6, 0.6, -0.6, -1.6];
       const fight = beats.fight;
+      const backed = smooth(fight, 0.05, FIGHT.breath[0]) * W * (layout.isPhone ? 0.03 : 0.14);
       const heads: number[] = [];
 
       figures.slice(0, WOLF_ROW).forEach((figure, row) => {
@@ -312,7 +313,8 @@ export function createForest(root: HTMLElement) {
         const joined = row === 0 ? 1 : smooth(at, joinsAt, joinsAt + H * 0.5);
         figure.style.opacity = row === 0 || at > joinsAt ? "1" : "0";
         const slot = lerp(leader - gap * row, campX + ring[row] * gap, seated);
-        const x = row === 0 ? slot : lerp(-W * 0.08, slot, joined);
+        // In the fight they give ground step by step, which also brings the fight to the middle.
+        let x = (row === 0 ? slot : lerp(-W * 0.08, slot, joined)) - backed;
         const inFight = beats.out > 0 && beats.back <= 0;
         const walking = Math.floor(x / (size * 0.16) + row * 2) % WALK_FRAMES;
         const moving = down > 0 || row > 0;
@@ -320,18 +322,24 @@ export function createForest(root: HTMLElement) {
         if (inFight) column = FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
         if (seated > 0.5 && beats.turn <= 0) column = SIT_COLUMN;
         if (beats.turn > 0) column = 1;
-        heads.push(x);
         if (fight <= 0) {
+          heads.push(x);
           figure.style.filter = "";
           place(figure, x, row === 0 ? feet : H * GROUND, size, column, row);
           return;
         }
         const fate = FIGHT.fates[row];
+        // Oskar's run at its left foot: out to the dragon and back to the line.
+        if (row === FIGHT.charge.row) {
+          const run = progress(fight, ...FIGHT.charge.at);
+          x += Math.sin(run * Math.PI) * W * 0.16;
+        }
         const hit = progress(fight, fate.at, fate.at + 0.07);
         // The breath chars them as it passes; the one left standing is too dark to tell who.
         const charred = smooth(fight, FIGHT.breath[0], FIGHT.breath[1]);
         let angle = 0;
         let feetY = H * GROUND;
+        heads.push(x);
         let fx = x;
         column = hit > 0 ? 1 : FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
         if (fate.kind === "fall") angle = -smooth(hit, 0, 1) * 1.45;
@@ -343,10 +351,12 @@ export function createForest(root: HTMLElement) {
           figure.style.opacity = String(1 - smooth(flight, 0.6, 1));
         }
         const dark = charred * (fate.kind === "stand" ? 0.55 : 0.3);
+        // Lit by the breaths and the ward, they read brighter than on the walk.
+        const lit = 1.45 - dark * 1.3;
         figure.style.filter =
           fate.kind === "stand"
-            ? `brightness(${1 - dark}) blur(${charred * 1.2}px)`
-            : `brightness(${1 - dark})`;
+            ? `brightness(${lit}) blur(${charred * 1.2}px)`
+            : `brightness(${lit})`;
         place(figure, fx, feetY, size, column, row, angle);
       });
 
@@ -373,10 +383,7 @@ export function createForest(root: HTMLElement) {
       const glow = seated * (1 - smooth(beats.turn, 0.05, 0.3));
       camp.style.opacity = String(clamp(glow * (0.9 + Math.sin(at / 17) * 0.1)));
       camp.style.transform = `translate3d(${campX - size * 0.6}px,${H * GROUND - size * 0.86}px,0) scale(${size / 100})`;
-      return {
-        front: [front + size * 0.12, H * GROUND - size * 0.55],
-        back: [heads[3], H * GROUND - size * 0.6],
-      };
+      return { rows: heads.map((head) => [head + size * 0.1, H * GROUND - size * 0.6] as const) };
     },
   };
 }
