@@ -440,7 +440,7 @@
     "packages/database/src/migrations/0107_grep_tool_rename.db.test.ts": 1,
     "packages/markup/src/codec-hard-break.test.ts": 10,
     "packages/markup/src/codec-image-size.test.ts": 15,
-    "packages/markup/src/codec-markdown.test.ts": 18,
+    "packages/markup/src/codec-markdown.test.ts": 19,
     "packages/markup/src/codec-mdx.test.ts": 21,
     "packages/markup/src/codec-streaming.test.ts": 1,
     "packages/markup/src/codec-tables-layout.test.ts": 38,
