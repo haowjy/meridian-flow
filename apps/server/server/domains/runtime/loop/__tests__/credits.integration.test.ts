@@ -126,9 +126,6 @@ describe("runtime credits", () => {
       async *stream(): AsyncGenerator<StreamEvent> {
         yield { type: "end", result: pricedTextResult() };
       },
-      async generate() {
-        throw new Error("not used");
-      },
     };
     const { thread, creditLedger, orchestrator } = await setup(gateway, "200000");
 

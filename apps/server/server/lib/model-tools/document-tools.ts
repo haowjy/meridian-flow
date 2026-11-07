@@ -342,7 +342,7 @@ export async function readTrackedDocument(
     path,
     address.uri,
   );
-  // Only a draft that outlived a live delete reads a deleted document (D79).
+  // Only a draft that outlived a live delete reads a deleted document.
   const surviving =
     grant.destination.kind === "draft" && grant.facts.deleted
       ? survivingDraftNotice(

@@ -35,7 +35,7 @@ function actorName(actor: DocumentRemovalRecord["actor"]): string | null {
 }
 
 /**
- * A read through a draft that outlived its document's live delete (D79): the draft is ordinary
+ * A read through a draft that outlived its document's live delete: the draft is ordinary
  * and writable, and only the writer's Apply brings the document back to the manuscript.
  */
 export function survivingDraftNotice(removal: DocumentRemovalRecord | null | undefined): string {

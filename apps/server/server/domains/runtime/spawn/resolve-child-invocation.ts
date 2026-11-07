@@ -185,7 +185,7 @@ export async function resolveChildInvocation(
 }
 
 /**
- * `overrides.permission` only lowers (file-access §8 D8): asking for `edit`
+ * `overrides.permission` only lowers (file-access §8): asking for `edit`
  * under a `read` parent or a `read` profile is an argument error, never a
  * silent drop.
  */

@@ -151,7 +151,7 @@ export const branchTreeChanges = pgTable(
       "branch_tree_changes_says_something",
       sql`${table.created} OR ${table.moved} OR ${table.deleted}`,
     ),
-    // No folder moves or deletes in PR 3 (D13).
+    // Only documents carry moves and deletes.
     check(
       "branch_tree_changes_tree_facts_documents",
       sql`NOT (${table.moved} OR ${table.deleted}) OR ${table.nodeKind} = 'document'`,

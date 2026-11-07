@@ -114,6 +114,7 @@ else
       const base = {
         provider: "test-provider",
         model: "test-model",
+        outputTokens: 1,
         priceSource: "unknown" as const,
         requestMessageCount: 1,
         predictedCacheState: "cold" as const,
@@ -122,6 +123,13 @@ else
       await repos.modelResponses.create({ ...base, turnId: firstTurn.id, sequence: 0 });
       await repos.modelResponses.create({ ...base, turnId: cutoffTurn.id, sequence: 0 });
       await repos.modelResponses.create({ ...base, turnId: abandonedSibling.id, sequence: 9 });
+      // A call stopped before output records no usage and is not a response the model gave.
+      await repos.modelResponses.create({
+        ...base,
+        outputTokens: 0,
+        turnId: cutoffTurn.id,
+        sequence: 1,
+      });
 
       await expect(
         repos.modelResponses.findLatestForTurns([firstTurn.id, cutoffTurn.id]),

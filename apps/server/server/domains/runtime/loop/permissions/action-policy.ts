@@ -36,7 +36,7 @@ const ACTIONS: { readonly [A in AgentAction]: PolicyRow<A> } = {
 
 /**
  * Decided on the chain's effective permission (`chainPermission`), so a `read`
- * parent caps a default-`edit` child (D35, D39). Every row is monotone
+ * parent caps a default-`edit` child. Every row is monotone
  * (read ≤ edit), so that equals the lowest decision over the chain.
  */
 export function actionPolicy<A extends AgentAction>(
