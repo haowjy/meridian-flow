@@ -275,7 +275,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
     show(world, smooth(push, 0.6, 1) * (1 - smooth(worldP, 0.84, 1)));
     worldTypers.forEach((typer, index) => {
-      const from = 0.04 + index * 0.2;
+      const from = 0.04 + index * 0.18;
       typer.set(progress(worldP, from, from + 0.22), worldP >= from && worldP < from + 0.22);
       (worldNotes[index].firstElementChild as HTMLElement).style.opacity =
         worldP > from ? "1" : "0";

@@ -70,7 +70,7 @@ export const SECTIONS = [
     hash: "#the-world",
     label: "World",
     startsAt: (spans: BeatSpans, vh: number) => spans.push[1] - vh * 0.1,
-    jumpTo: (spans: BeatSpans) => along(spans, "world", 0.5),
+    jumpTo: (spans: BeatSpans) => along(spans, "world", 0.84),
   },
   {
     hash: "#the-team",

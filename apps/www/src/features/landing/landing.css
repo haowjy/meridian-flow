@@ -678,7 +678,6 @@ html[data-auto]:not([data-auto="idle"]) .play small {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .car,
   .blank:empty::before {
     animation: none;
   }
