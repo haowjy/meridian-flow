@@ -1,0 +1,609 @@
+/**
+ * The film: the pinned stage and every layer on it. Geometry is in container units
+ * of the stage, and `measureLayout` reads it back, so the first paint and the film
+ * can't disagree.
+ */
+.cine .film {
+  height: var(--filmh);
+}
+
+.cine .stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: clip;
+  container-type: size;
+  --hx: clamp(28px, 5cqw, 72px);
+  --hw: clamp(300px, 30cqw, 440px);
+  --cw: clamp(270px, 25cqw, 360px);
+  --bigf: clamp(23px, 2.22cqw, 34px);
+  --bigw: min(100cqw - 160px, var(--bigf) * 29);
+  --home-w: min(100cqw - var(--hx) - var(--hw) - 64px, max(620px, (100cqh - 120px) / 0.625), 940px);
+}
+
+.cine .hero {
+  position: absolute;
+  z-index: 5;
+  padding: 0;
+}
+
+.cine .cap {
+  padding: 0;
+}
+
+.cine .hero {
+  left: var(--hx);
+  top: calc(var(--bar) + 24px);
+  bottom: 24px;
+  height: fit-content;
+  margin-block: auto;
+  width: var(--hw);
+  max-width: none;
+}
+
+.cine .hero::before {
+  content: "";
+  position: absolute;
+  inset: -14% -20% -14% -30%;
+  z-index: -1;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--mkt-scrim) 72%, transparent),
+    color-mix(in oklab, var(--mkt-scrim) 50%, transparent) 62%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+/* The workspace beat. The spacers centre the caption and stop it sinking past 71% of the screen. */
+.cine .dawn {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--bar);
+  pointer-events: none;
+}
+
+.cine .dawn::before,
+.cine .dawn::after {
+  content: "";
+  flex: 1 1 0;
+  min-height: 24px;
+}
+
+.cine .dawn::after {
+  min-height: 29cqh;
+}
+
+.cine .cap {
+  position: relative;
+  flex: none;
+  margin-left: var(--hx);
+  width: var(--cw);
+  max-width: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: auto;
+}
+
+/* Where the product block lands at dawn. Empty: the film reads its box. */
+.workspot {
+  display: none;
+}
+
+.cine .workspot {
+  --work-w: min(
+    100cqw -
+    var(--hx) -
+    var(--cw) -
+    72px,
+    (100cqh - var(--bar) - 48px) /
+    0.625,
+    1020px
+  );
+  display: block;
+  position: absolute;
+  right: 36px;
+  top: max(calc(var(--bar) + 20px), calc((100cqh + var(--bar) - var(--work-w) * 0.625) / 2));
+  width: var(--work-w);
+  height: 0;
+}
+
+.cine .capshade {
+  display: block;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(68vw, 960px);
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--mkt-shade) 82%, transparent),
+    color-mix(in oklab, var(--mkt-shade) 72%, transparent) 52%,
+    transparent
+  );
+}
+
+/* The product block's home on the first screen. A container, so the block scales to it. */
+.cine .slotwrap {
+  position: absolute;
+  right: 36px;
+  top: max(calc(var(--bar) + 24px), calc((100cqh + var(--bar) - var(--home-w) * 0.625) / 2));
+  width: var(--home-w);
+  height: calc(var(--home-w) * 0.625);
+  padding: 0;
+  z-index: 4;
+  pointer-events: none;
+  container-type: size;
+}
+
+.cine .slot {
+  --home-scale: tan(atan2(100cqw, var(--lw)));
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--lw);
+  max-width: none;
+  height: calc(100cqh / var(--home-scale));
+  margin: 0;
+  transform-origin: 0 0;
+  transform: scale(var(--home-scale));
+  filter: brightness(0.84) saturate(0.92);
+  pointer-events: auto;
+  box-shadow:
+    0 0 90px color-mix(in oklab, var(--mkt-glow) 22%, transparent),
+    0 24px 90px var(--mkt-shadow);
+}
+
+.cine .ms {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  margin: 0 0 0 calc(var(--bigw) / -2);
+  width: var(--bigw);
+  padding: 0;
+  z-index: 3;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cine .sub {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: clamp(24px, 8vh, 84px);
+  z-index: 7;
+  margin: 0 auto;
+  padding: 0 20px;
+  max-width: none;
+  display: block;
+  text-align: center;
+  pointer-events: none;
+}
+
+.cine .sub li {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  visibility: hidden;
+  font: 400 clamp(19px, 1.9vw, 27px) / 1.3 var(--mkt-font-story);
+  text-wrap: balance;
+  padding: 0 clamp(20px, 16vw, 260px);
+  text-shadow:
+    0 0 16px var(--mkt-night),
+    0 0 5px var(--mkt-night),
+    0 1px 2px var(--mkt-night);
+}
+
+.cine .sub b {
+  display: block;
+  font: 600 14px / 1.5 var(--mkt-font-plain);
+  margin: 0;
+}
+
+.cine .team {
+  position: absolute;
+  inset: var(--bar) 0 0;
+  display: block;
+  padding: 0;
+  max-width: none;
+  z-index: 6;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cine .lines {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.cine .lines path {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 1.2;
+  opacity: 0.6;
+}
+
+.cine .lines circle {
+  fill: var(--color-primary);
+}
+
+.cine .hub {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: 176px;
+  margin-left: -88px;
+  transform: translateY(-50%);
+  background: var(--color-foreground);
+  color: var(--mkt-paper-ink);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font: 400 9.5px / 1.4 var(--mkt-font-story);
+  box-shadow: 0 0 70px color-mix(in oklab, var(--mkt-glow) 40%, transparent);
+}
+
+.cine .hub b {
+  display: block;
+  font: 400 15px / 1.15 var(--mkt-font-title);
+  margin-bottom: 5px;
+}
+
+.cine .ag {
+  position: absolute;
+  width: min(25cqw, 340px);
+  min-height: 96px;
+}
+
+.cine .ag:where(:nth-child(odd)) {
+  left: 4.5cqw;
+}
+
+.cine .ag:where(:nth-child(even)) {
+  right: 4.5cqw;
+}
+
+.cine .ag:where(:nth-child(-n + 4)) {
+  top: 8%;
+}
+
+/* Leaves the subtitle's space under the lower cards. */
+.cine .ag:where(:nth-child(n + 5)) {
+  top: min(52%, 100% - 270px);
+}
+
+.cine .ag .live {
+  display: block;
+}
+
+.cine .ag .rep,
+.cine .ag.back .live {
+  display: none;
+}
+
+.cine .ag.back .rep {
+  display: block;
+}
+
+.cine .ag .ring {
+  border-color: var(--color-sidebar-accent);
+  border-top-color: var(--color-primary);
+  animation: spin 1.3s linear infinite;
+}
+
+.cine .ag .ring span {
+  display: block;
+  animation: spin 1.3s linear infinite reverse;
+}
+
+.cine .ag.back .ring,
+.cine .ag.back .ring span {
+  animation: none;
+  border-color: var(--color-primary);
+}
+
+.cine .ag.key {
+  border-color: var(--color-primary);
+}
+
+.cine .world {
+  --world-left: clamp(28px, 6cqw, 90px);
+  --world-span: min(100cqw - 2 * var(--world-left), 1240px);
+  --world-top: max(var(--bar) + 44px, 20cqh);
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  max-width: none;
+  z-index: 5;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cine .wlines {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.cine .wlines path {
+  fill: none;
+  stroke: var(--color-foreground);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+.cine .wlines circle {
+  fill: var(--color-foreground);
+}
+
+.cine .wn {
+  position: absolute;
+  width: min(27cqw, 350px);
+}
+
+.cine .wn:where(:nth-of-type(1)) {
+  left: calc(var(--world-left) + 30px);
+  top: var(--world-top);
+}
+
+.cine .wn:where(:nth-of-type(2)) {
+  left: calc(var(--world-left) + var(--world-span) * 0.56);
+  top: calc(var(--world-top) - 3cqh);
+}
+
+.cine .wn:where(:nth-of-type(3)) {
+  left: calc(var(--world-left) + var(--world-span) * 0.62);
+  top: 60cqh;
+}
+
+.cine .wn:where(:nth-of-type(4)) {
+  left: calc(var(--world-left) + var(--world-span) * 0.08);
+  top: 58cqh;
+}
+
+.cine .ask {
+  position: absolute;
+  inset: var(--bar) 0 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  z-index: 8;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cine .twist {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  z-index: 6;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  padding: 0 clamp(20px, 6vw, 100px);
+}
+
+.cine .twist::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(1100px, 112vw);
+  height: min(520px, 60vh);
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--mkt-scrim) 86%, transparent),
+    color-mix(in oklab, var(--mkt-scrim) 66%, transparent) 60%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+.car {
+  display: inline-block;
+  width: 0.07em;
+  height: 1em;
+  margin: 0 -0.035em;
+  vertical-align: -0.14em;
+  animation: blink 1.1s steps(1) infinite;
+}
+
+.car.me {
+  background: var(--color-foreground);
+}
+
+.car.ai {
+  background: var(--color-primary);
+}
+
+@media (max-width: 819px), (max-height: 499px) {
+  .cine .cap::before {
+    content: "";
+    position: absolute;
+    inset: -12%;
+    z-index: -1;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in oklab, var(--mkt-shade) 84%, transparent),
+      color-mix(in oklab, var(--mkt-shade) 62%, transparent) 66%,
+      transparent
+    );
+    pointer-events: none;
+  }
+
+  .cine .capshade {
+    display: none;
+  }
+
+  /* The hero stays in flow, and the product block takes what's left of the screen. */
+  .cine .stage {
+    display: flex;
+    flex-direction: column;
+    --hx: 20px;
+    --cw: calc(100cqw - 40px);
+    --bigf: min(22px, 5.7cqw);
+    --bigw: calc(100cqw - 40px);
+  }
+
+  .cine .hero {
+    position: relative;
+    inset: auto;
+    width: auto;
+    height: auto;
+    flex: none;
+    margin: calc(var(--bar) + 18px) 20px 0;
+  }
+
+  .cine .slotwrap {
+    position: relative;
+    inset: auto;
+    flex: 1;
+    min-height: 0;
+    width: auto;
+    height: auto;
+    margin: 16px 12px 12px;
+  }
+
+  .cine .ag {
+    position: relative;
+    inset: auto;
+    width: auto;
+    min-height: 0;
+    padding: 10px 12px;
+  }
+
+  .cine .ag p {
+    font-size: 15px;
+  }
+
+  .cine .team {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 12px 0;
+  }
+
+  .cine .lines,
+  .cine .hub,
+  .cine .wlines {
+    display: none;
+  }
+
+  .cine .world {
+    padding: calc(var(--bar) + 26px) 22px 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    align-content: start;
+  }
+
+  .cine .wn {
+    position: static;
+    width: auto;
+  }
+
+  .cine .sub {
+    bottom: clamp(20px, 5vh, 44px);
+  }
+
+  .cine .sub li {
+    padding: 0 12px;
+    font-size: 19px;
+  }
+
+  .cine .dawn {
+    padding: calc(var(--bar) + 16px) 12px 0;
+    gap: 14px;
+  }
+
+  .cine .dawn::before,
+  .cine .dawn::after {
+    display: none;
+  }
+
+  .cine .cap {
+    margin-inline: 8px;
+    width: auto;
+  }
+
+  .cine .workspot {
+    position: static;
+    width: 100%;
+  }
+}
+
+@media (min-width: 2000px) {
+  .cine .stage {
+    max-width: 1600px;
+  }
+}
+
+/* A phone on its side, or any short window: side by side, and the card loses its extras. */
+@media (max-height: 499px) {
+  .cine .stage {
+    --cw: 46cqw;
+  }
+
+  .cine .hero {
+    position: absolute;
+    left: 20px;
+    top: calc(var(--bar) + 18px);
+    width: 46cqw;
+    margin: 0;
+  }
+
+  .cine .slotwrap {
+    position: absolute;
+    right: 12px;
+    top: calc(var(--bar) + 10px);
+    bottom: 12px;
+    width: calc(50cqw - 12px);
+    margin: 0;
+  }
+
+  .cine .cap {
+    width: var(--cw);
+  }
+
+  .cine .workspot {
+    position: absolute;
+    right: 12px;
+    top: calc(var(--bar) + 10px);
+    width: calc(50cqw - 12px);
+  }
+
+  .cine .team {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+  }
+
+  .cine .c-o small,
+  .cine .c-f {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .car {
+    animation: none;
+  }
+}

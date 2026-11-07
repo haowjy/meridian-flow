@@ -1,14 +1,24 @@
 /**
- * Marketing app stylesheet — imports Tailwind plus the shared Earthen Value Ladder
- * theme and applies the public-site base chrome. This surface consumes shared
- * tokens directly and does not define project-only utilities.
+ * Marketing app stylesheet: Tailwind, the shared tokens, the landing page's three
+ * self-hosted typefaces, and the page's own styles.
  */
 @import 'tailwindcss' source('../');
 @import '@meridian/design-tokens/ink-jade.css';
+@import '@meridian/design-tokens/themes.css';
+@import '@meridian/design-tokens/marketing.css';
+@import '@fontsource/im-fell-french-canon/400.css';
+@import '@fontsource/im-fell-french-canon/400-italic.css';
+@import '@fontsource/im-fell-double-pica/400.css';
+@import '@fontsource/im-fell-double-pica/400-italic.css';
+@import '@fontsource-variable/hanken-grotesk/wght.css';
+@import '../features/landing/landing.css';
+@import '../features/landing/film.css';
+@import '../features/landing/product-placeholder.css';
 
 @layer base {
   :root {
-    color-scheme: light;
+    color-scheme: dark;
+    background: var(--mkt-night);
   }
 
   *,
@@ -16,58 +26,34 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
+    border-color: var(--color-border, currentcolor);
   }
 
   body {
     margin: 0;
-    height: 100dvh;
-    overflow: hidden;
-    font-family: var(--font-sans);
-    color: var(--color-foreground);
-    background-color: var(--color-background);
-    background-image: radial-gradient(
-      circle,
-      color-mix(in srgb, var(--color-mark-to) 8%, transparent) 0 1px,
-      transparent 1.2px
-    );
-    background-size: 22px 22px;
+    overflow-x: clip;
+    font: 400 17px/1.5 var(--mkt-font-plain);
+    background: var(--mkt-night);
   }
 }
 
-@layer components {
-  .mesh-blob-primary {
-    animation: drift-main 32s ease-in-out infinite alternate;
-  }
-
-  .mesh-blob-secondary {
-    animation: drift-secondary 38s ease-in-out infinite alternate;
-  }
+.notice {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  padding: 20px;
+  text-align: center;
+  color: var(--color-foreground);
 }
 
-@keyframes drift-main {
-  from {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-
-  to {
-    transform: translate3d(-44px, -34px, 0) rotate(-3deg);
-  }
+.notice h1 {
+  font: 400 40px/1.1 var(--mkt-font-title);
 }
 
-@keyframes drift-secondary {
-  from {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-
-  to {
-    transform: translate3d(34px, 28px, 0) rotate(2.5deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mesh-blob-primary,
-  .mesh-blob-secondary {
-    animation: none;
-  }
+.notice a,
+.notice button {
+  color: var(--color-jade-text);
+  font-weight: 500;
 }
