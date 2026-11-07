@@ -235,7 +235,13 @@ export function createProjectExport(deps: {
     }
     let storedBytes = 0;
     for (const id of paths.keys()) storedBytes += byId.get(id)?.sizeBytes ?? 0;
-    return { paths, read, stream, summarize, storedBytes };
+    /** The one definition of "too big for a ZIP": the preview shows it, the download enforces it. */
+    function refusal() {
+      return storedBytes > ZIP_LIMIT_BYTES - ZIP_HEADROOM_BYTES
+        ? "This project's files add up to more than 4 GiB, which is more than one export can hold. Turn off scratch or uploads in the export options, or export in parts."
+        : undefined;
+    }
+    return { paths, read, stream, summarize, refusal };
   }
   return {
     createScope,
@@ -251,7 +257,7 @@ export function createProjectExport(deps: {
         scope.summarize(signal),
         deps.pendingDrafts.count(projectId),
       ]);
-      return { outsideLinks, pendingDrafts };
+      return { outsideLinks, pendingDrafts, refusal: scope.refusal() };
     },
     async download(
       projectId: string,
@@ -260,11 +266,8 @@ export function createProjectExport(deps: {
       options: ProjectExportOptions,
     ) {
       const scope = await createScope(projectId, accountId, options);
-      if (scope.storedBytes > ZIP_LIMIT_BYTES - ZIP_HEADROOM_BYTES)
-        throw new ExportReadError(
-          "too_large",
-          "This project's files add up to more than 4 GiB, which is more than one export can hold. Turn off scratch or uploads in the export options, or export in parts.",
-        );
+      const refusal = scope.refusal();
+      if (refusal) throw new ExportReadError("too_large", refusal);
       return scope.stream(projectName);
     },
   };
