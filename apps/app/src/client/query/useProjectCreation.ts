@@ -3,7 +3,7 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { CreateProjectRequest } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import { createProject, getProject } from "@/client/api/projects-api";
 import {
@@ -58,7 +58,6 @@ export function readPendingProjectCreation(projectId: string): ProjectCreationRe
 function useProjectCreationMutation(userId: string, accountSignal: AbortSignal) {
   const client = useQueryClient();
   const { ensureProject } = useProjectActions();
-  const router = useRouter();
 
   return useMutation<Project, Error, CreateProjectVariables>({
     mutationKey: ["projects", "create"],
@@ -80,10 +79,6 @@ function useProjectCreationMutation(userId: string, accountSignal: AbortSignal) 
         result: project,
         error: null,
       });
-      // The confirmed record stands in for the project until the route has
-      // loaded its own data, then goes.
-      await router.invalidate();
-      removeCreationRecord(key, userId);
     },
     onError: (error, variables) => {
       const record = readCreationRecord<ProjectCreationPayload, Project>(
@@ -172,6 +167,24 @@ export function useProjectCreationState(
     retry,
     discard,
   };
+}
+
+/**
+ * A confirmed record stands in for the project until the route has loaded its
+ * own data, then goes. The reload runs from the rendered route, never from the
+ * mutation: an invalidate that lands while the first navigation is still
+ * loading is absorbed by it, and the record would go with no data behind it.
+ */
+export function useSettleConfirmedCreation(projectId: string, hasRouteData: boolean): void {
+  const accountId = useAccountId();
+  const router = useRouter();
+  const confirmed =
+    useCreationRecord(accountId, projectCreationKey(projectId))?.status === "confirmed";
+  useEffect(() => {
+    if (!confirmed) return;
+    if (hasRouteData) removeCreationRecord(projectCreationKey(projectId), accountId);
+    else void router.invalidate();
+  }, [accountId, confirmed, hasRouteData, projectId, router]);
 }
 
 /** Dependent project reads pause for unresolved or failed creates. */
