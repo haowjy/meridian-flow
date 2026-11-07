@@ -3009,6 +3009,11 @@ msgstr "Failed"
 msgid "Failed to load image"
 msgstr "Failed to load image"
 
+#. placeholder {0}: upload.name
+#: src/components/app/composer/composer-document.ts
+msgid "Failed upload: {0}"
+msgstr "Failed upload: {0}"
+
 #: src/components/app/failure-toast.tsx
 msgid "Failures"
 msgstr "Failures"
@@ -3073,9 +3078,13 @@ msgstr "Files can’t be added to this document."
 msgid "Files move or copy out of Uploads; they can't be dropped into it"
 msgstr "Files move or copy out of Uploads; they can't be dropped into it"
 
+#: src/lib/upload-limit.ts
+msgid "Files over {LIMIT_MB} MB can't be added."
+msgstr "Files over {LIMIT_MB} MB can't be added."
+
 #: src/client/api/upload-intake-api.ts
-msgid "Files over {LIMIT_MB} MB can't be attached."
-msgstr "Files over {LIMIT_MB} MB can't be attached."
+#~ msgid "Files over {LIMIT_MB} MB can't be attached."
+#~ msgstr "Files over {LIMIT_MB} MB can't be attached."
 
 #: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
@@ -5475,8 +5484,8 @@ msgid "That image could not be read."
 msgstr "That image could not be read."
 
 #: src/core/editor/images/image-uploads.ts
-msgid "That image did not upload."
-msgstr "That image did not upload."
+#~ msgid "That image did not upload."
+#~ msgstr "That image did not upload."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "That link could not be checked"
@@ -5701,11 +5710,18 @@ msgstr "The text it edited was undone, so the change wasn't kept. The AI will re
 msgid "The upload didn’t start."
 msgstr "The upload didn’t start."
 
+#: src/core/uploads/upload-store.ts
+msgid "The upload failed."
+msgstr "The upload failed."
+
 #: src/client/api/direct-upload.ts
 msgid "The upload to storage failed."
 msgstr "The upload to storage failed."
 
+#: src/components/app/composer/composer-document.ts
 #: src/components/app/composer/Composer.tsx
+#: src/core/editor/images/image-uploads.ts
+#: src/core/uploads/upload-store.ts
 msgid "The upload was stopped."
 msgstr "The upload was stopped."
 
@@ -6386,6 +6402,11 @@ msgstr "Upload paused"
 #: src/core/editor/links/link-chip.ts
 msgid "Uploading"
 msgstr "Uploading"
+
+#. placeholder {0}: upload.name
+#: src/components/app/composer/composer-document.ts
+msgid "Uploading {0}"
+msgstr "Uploading {0}"
 
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/ImageNodeView.tsx
