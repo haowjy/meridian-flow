@@ -126,6 +126,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
   private readonly signingSecret: string;
   private readonly signedUrlTtlSeconds: number;
   private readonly now: () => Date;
+  private tempCleared = false;
 
   constructor(options: LocalObjectStoreOptions) {
     this.rootDir = path.resolve(options.rootDir);
@@ -133,7 +134,6 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     this.signingSecret = options.signingSecret;
     this.signedUrlTtlSeconds = options.signedUrlTtlSeconds;
     this.now = options.now ?? (() => new Date());
-    void this.clearStaleTemp();
   }
 
   async put(
@@ -491,6 +491,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
   private async tempPath(): Promise<string> {
     const dir = path.join(this.rootDir, TEMP_DIR);
     await mkdir(dir, { recursive: true });
+    if (!this.tempCleared) {
+      this.tempCleared = true;
+      await this.clearStaleTemp(dir);
+    }
     return path.join(dir, `${crypto.randomUUID()}.part`);
   }
 
@@ -515,17 +519,17 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     }
   }
 
-  private async clearStaleTemp(): Promise<void> {
-    const dir = path.join(this.rootDir, TEMP_DIR);
+  /** Crash leftovers, cleared once per process before the first write that makes a temp file. */
+  private async clearStaleTemp(dir: string): Promise<void> {
     const cutoff = this.now().getTime() - STALE_TEMP_MS;
-    try {
-      for (const entry of await readdir(dir)) {
-        const file = path.join(dir, entry);
+    for (const entry of await readdir(dir)) {
+      const file = path.join(dir, entry);
+      try {
         if ((await stat(file)).mtimeMs < cutoff) await rm(file, { force: true });
+      } catch (error) {
+        // Another process finished with the file between the listing and now.
+        if (!isMissingFile(error)) throw error;
       }
-    } catch {
-      // Best effort and off the request path: a missing temp dir, or a file another process just
-      // finished with, leaves nothing to clear, and a stale file costs only disk until next start.
     }
   }
 
