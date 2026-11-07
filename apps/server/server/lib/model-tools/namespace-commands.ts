@@ -312,8 +312,8 @@ async function commitDrafted(
 
 /**
  * `move` needs edit on the document and on the folder it lands in; `delete`, edit on the
- * document. Agents only read uploads (D11, D15). A move touching a drafted namespace lands as
- * one drafted move, including moves to or from live Scratch (D45). No frontier check (D78).
+ * document. Agents only read uploads. A move touching a drafted namespace lands as
+ * one drafted move, including moves to or from live Scratch. No frontier check.
  */
 export async function runNamespaceCommand(
   deps: ToolWiringDeps,

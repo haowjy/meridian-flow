@@ -401,7 +401,7 @@ export function createThreadPeerCorePool(input: {
     const pinned = documentId ? record?.documents.get(documentId) : undefined;
     // A document keeps its first destination for the rest of the reply, so a
     // mid-reply rebind or branch regeneration never splits it across two saves.
-    // The chat's mode can't change mid-reply: it changes only between replies (D62).
+    // The chat's mode can't change mid-reply: it changes only between replies.
     const destination = pinned?.grant.destination ?? grant.destination;
     const core = pinned?.core ?? coreForDestination(destination, context.threadId);
     // Lookup and enrollment are synchronous: close must see the first owner
@@ -523,7 +523,7 @@ export function createThreadPeerCorePool(input: {
    * Lock once per reply (file-access §5.2): every grant the reply wrote under,
    * confirmed together (its Works locked in id order), then its live
    * documents' mutation locks in id order, before any participant commits. A
-   * refused document leaves the reply; the rest saves (D29, D42).
+   * refused document leaves the reply; the rest saves.
    */
   /** Every participant's save attempt, prepared in order; none survives a failure to prepare. */
   async function prepareAttempts(
@@ -678,7 +678,7 @@ export function createThreadPeerCorePool(input: {
           let failing: Map<AgentEditCore, ResponseCommitAttempt> | undefined;
           // One scope per attempt, before its first draft-store lock: a miss on any
           // document unwinds every document's rows, receipts and placements, and the
-          // attempts' process-local state is dropped with them (decision D7: `confirm`
+          // attempts' process-local state is dropped with them (`confirm`
           // ran once above and is not replayed; a retry recomputes under its locks).
           try {
             await runBoundedAttempts({

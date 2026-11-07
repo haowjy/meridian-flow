@@ -169,7 +169,7 @@ export function ResizeHandle({
 
   return (
     <>
-      {/* biome-ignore lint/a11y/useSemanticElements: this is an interactive adjustable separator; a static <hr> cannot own the drag and keyboard handlers. */}
+      {/* biome-ignore lint/a11y/useSemanticElements: this is an interactive adjustable separator; a static <hr> cannot own the drag and keyboard handlers. slop-lint: allow suppression the reason is stated in this comment */}
       <div
         ref={handleRef}
         role="separator"
