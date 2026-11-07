@@ -133,12 +133,16 @@ export function ProductPlaceholder() {
           </div>
         </div>
         <div className="s-comp">
-          <span className="s-pill">Muse</span>
-          <span className="s-pill">Auto-apply</span>
-          <u />
-          <span className="s-send" aria-hidden="true">
-            ↑
-          </span>
+          <span className="s-ph s-only-team">Chime in</span>
+          <span className="s-ph s-only-start s-only-hints">What’s next?</span>
+          <div className="s-tools">
+            <span className="s-pill">Muse</span>
+            <span className="s-pill">Auto-apply</span>
+            <u />
+            <span className="s-send" aria-hidden="true">
+              ↑
+            </span>
+          </div>
         </div>
       </aside>
       <nav className="s-tabs" aria-label="Workspace views">

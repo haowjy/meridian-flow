@@ -267,15 +267,23 @@
 }
 
 .s-comp {
+  padding: 9px 10px;
+  background: var(--color-composer-surface);
+  border: 1px solid var(--color-composer-border);
+  border-radius: var(--radius-composer-pinned);
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.s-ph {
+  display: block;
+  padding: 1px 2px 13px;
+}
+
+.s-tools {
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 9px 10px;
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
 }
 
 .s-pill {
@@ -307,7 +315,6 @@
 .slot[data-state="start"] .s-only-team,
 .slot[data-state="start"] .s-draft,
 .slot[data-state="start"] .s-notes,
-.slot:not([data-state="start"], [data-state="hints"]) .s-comp,
 .slot[data-state="hints"] .s-only-team {
   display: none;
 }
