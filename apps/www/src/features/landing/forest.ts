@@ -1,6 +1,16 @@
 import { MARKETING_SKY } from "@meridian/design-tokens/marketing-sky";
 import type { Layout } from "./film-layout";
-import { type BeatProgress, clamp, ease, FIGHT, lerp, PERCH, progress, smooth } from "./timeline";
+import {
+  type BeatProgress,
+  CAMP,
+  clamp,
+  ease,
+  FIGHT,
+  lerp,
+  PERCH,
+  progress,
+  smooth,
+} from "./timeline";
 
 const WALK_FRAMES = 6;
 const FIGHT_COLUMN = WALK_FRAMES;
@@ -249,6 +259,7 @@ export function createForest(root: HTMLElement) {
   const walkers = root.querySelector("#walkers") as HTMLElement;
   const figures = [...walkers.querySelectorAll("i")];
   const camp = walkers.querySelector(".camp") as HTMLElement;
+  const sheets = root.querySelector("#sheets") as HTMLElement;
   const ward = walkers.querySelector(".ward") as HTMLElement;
   root.style.setProperty("--walk-sheet", `url(${partySheet().toDataURL()})`);
   root.style.setProperty("--walk-lantern", rgb(MARKETING_SKY.sun));
@@ -368,8 +379,10 @@ export function createForest(root: HTMLElement) {
       const road = W * lerp(0.3, 0.62, progress(at, spans.world[0], spans.write[1]));
       const leader = lerp(W * CLIFF_X - drift, road, down);
       const feet = lerp(H * CLIFF_TOP, H * GROUND, down);
-      const campX = leader - gap * 1.5;
-      const seated = smooth(beats.back, 0, 0.3);
+      // The camp is in the middle of the stage, and its fire stays on the ground as they leave.
+      const campX = W * 0.5;
+      const fireX = campX - walkOut * W * TO_SHORE;
+      const seated = smooth(beats.camp, ...CAMP.sits);
       const ring = [1.6, 0.6, -0.6, -1.6];
       const fight = beats.fight;
       const backed =
@@ -455,9 +468,13 @@ export function createForest(root: HTMLElement) {
         WOLF_ROW,
       );
 
-      const glow = seated * (1 - smooth(beats.turn, 0.05, 0.3));
+      // Still burning as they walk away from it, until the ground carries it off.
+      const glow = seated * (1 - smooth(beats.turn, 0.45, 0.55));
       camp.style.opacity = String(clamp(glow * (0.9 + Math.sin(at / 17) * 0.1)));
-      camp.style.transform = `translate3d(${campX - size * 0.6}px,${H * GROUND - size * 0.86}px,0) scale(${size / 100})`;
+      camp.style.transform = `translate3d(${fireX - size * 0.6}px,${H * GROUND - size * 0.86}px,0) scale(${size / 100})`;
+      const sheetsUp = flash(beats.camp, CAMP.sheets);
+      sheets.style.opacity = String(sheetsUp);
+      sheets.style.transform = `translate3d(${campX}px,${H * GROUND - size * 1.15 + (1 - sheetsUp) * H * 0.03}px,0) translate(-50%,-100%)`;
       return { rows: heads.map((head) => [head + size * 0.1, H * GROUND - size * 0.6] as const) };
     },
   };

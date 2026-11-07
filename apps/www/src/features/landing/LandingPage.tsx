@@ -3,10 +3,13 @@ import { createCardStore } from "./card-store";
 import { startFilm } from "./film";
 import { createProductSlot, ProductPlaceholder } from "./ProductPlaceholder";
 import { QuestionCard } from "./QuestionCard";
-import { CHARACTERS, END, PROLOGUE, SYSTEM } from "./story";
+import { CHARACTERS, type CharacterKey, END, PROLOGUE, SHEETS, SYSTEM } from "./story";
 import { SECTIONS } from "./timeline";
 
 const NIGHT = { "data-ui-theme": "dark" } as const;
+
+/** Left to right as they sit round the fire: the ring in `forest.ts` puts Sigrun's row rightmost. */
+const SEATED: readonly CharacterKey[] = ["maren", "oskar", "tam", "sigrun"];
 
 export function LandingPage({ appOrigin }: { appOrigin: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -35,6 +38,15 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             <div className="capshade" id="capshade" />
             <div className="forest" id="forest" aria-hidden="true">
               <canvas />
+            </div>
+            <div className="sheets" id="sheets">
+              {SEATED.map((key) => (
+                <div className="sys sheet" key={key}>
+                  {SHEETS[key].map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
+              ))}
             </div>
             <div className="walkers" id="walkers" aria-hidden="true">
               <b className="camp" />
