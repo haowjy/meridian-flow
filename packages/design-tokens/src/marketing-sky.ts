@@ -2,11 +2,11 @@
 export type LinearRgb = readonly [number, number, number];
 
 export const MARKETING_SKY = {
-  skyTop: [0.0015, 0.004, 0.012],
-  skyHorizon: [0.006, 0.02, 0.028],
+  skyTop: [0.003, 0.004, 0.022],
+  skyHorizon: [0.008, 0.018, 0.045],
   auroraLow: [0.04, 1, 0.32],
   auroraMid: [0.02, 0.8, 0.62],
-  auroraHigh: [0.32, 0.14, 0.75],
+  auroraHigh: [0.5, 0.1, 0.62],
   auroraBlue: [0.04, 0.42, 0.95],
   auroraCore: [0.55, 0.5, 0.1],
   mountain: [0.012, 0.024, 0.03],
