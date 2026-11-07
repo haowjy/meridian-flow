@@ -1,4 +1,7 @@
 /// <reference types="vite/client" />
+
+import heroFont from "@fontsource/im-fell-french-canon/files/im-fell-french-canon-latin-400-normal.woff2?url";
+import { MARKETING_THEME_COLOR } from "@meridian/design-tokens/marketing-sky";
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import type * as React from "react";
@@ -11,23 +14,19 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      { name: "theme-color", content: MARKETING_THEME_COLOR },
       ...seo({
-        title: "Meridian",
+        title: "Meridian Flow: AI writing app for serial storytellers",
         description:
-          "Meridian Flow is the AI-native writing workspace for long-running web serials, built for continuity, chapters, and high-output fiction workflows.",
+          "Build a world. Bring it to life with a team of agents. AI writing app for serial storytellers.",
+        image: "https://www.meridian-flow.com/og.jpg",
       }),
     ],
     links: [
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600..800&family=Inter:wght@400;500;650;700&display=swap",
-      },
-      { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32x32.png" },
-      { rel: "icon", type: "image/png", sizes: "16x16", href: "/favicon-16x16.png" },
-      { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png" },
+      { rel: "preload", as: "font", type: "font/woff2", href: heroFont, crossOrigin: "" },
+      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      { rel: "apple-touch-icon", href: "/icon-192.png" },
       { rel: "manifest", href: "/site.webmanifest" },
       { rel: "stylesheet", href: appCss },
     ],
@@ -39,7 +38,7 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>

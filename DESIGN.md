@@ -80,8 +80,11 @@ Long-form text must prioritize readability and stable rhythm (~68ch measure,
 generous leading). Markdown and streaming answers share the same prose token
 layer so final and in-progress text do not visually jump.
 
-The marketing site (`apps/www`) keeps a **Fraunces** landing hero as a
-deliberate, isolated branding exception.
+The landing page (`apps/www`) is a deliberate, isolated branding exception. It
+self-hosts IM Fell French Canon for titles, IM Fell Double Pica for story text and
+Hanken Grotesk for plain text. Its UI colours are the normal roles (night regions set
+`data-ui-theme="dark"`); only the sky and its scrims have their own tokens, in
+`packages/design-tokens/src/marketing.css` and `marketing-sky.ts`.
 
 ## Login
 

@@ -7,6 +7,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HealthzRouteImport } from './routes/healthz'
@@ -19,6 +20,11 @@ import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenti
 import { Route as AuthenticatedPProjectIdRouteImport } from './routes/_authenticated/p/$projectId'
 import { Route as AuthenticatedPProjectIdSplatRouteImport } from './routes/_authenticated/p/$projectId/$'
 
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
   path: '/logout',
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/signup': typeof SignupRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/p/$projectId': typeof AuthenticatedPProjectIdRouteWithChildren
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/signup': typeof SignupRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/': typeof AuthenticatedIndexRoute
@@ -106,6 +114,7 @@ export interface FileRoutesById {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
+  '/signup': typeof SignupRoute
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/logout'
+    | '/signup'
     | '/auth-check'
     | '/billing'
     | '/p/$projectId'
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/logout'
+    | '/signup'
     | '/auth-check'
     | '/billing'
     | '/'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/logout'
+    | '/signup'
     | '/_authenticated/auth-check'
     | '/_authenticated/billing'
     | '/_authenticated/'
@@ -159,11 +171,19 @@ export interface RootRouteChildren {
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
+  SignupRoute: typeof SignupRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/logout': {
       id: '/logout'
       path: '/logout'
@@ -283,6 +303,7 @@ const rootRouteChildren: RootRouteChildren = {
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
+  SignupRoute: SignupRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
 }
 export const routeTree = rootRouteImport

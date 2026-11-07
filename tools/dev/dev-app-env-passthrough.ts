@@ -1,6 +1,6 @@
 /**
  * Keys `pnpm dev` exports into the stack's tmux pane: what it computes
- * (`MERIDIAN_API_ORIGIN`, `APP_DEBUG`) and the non-secret overrides a caller
+ * (the `MERIDIAN_*_ORIGIN` keys, `APP_DEBUG`) and the non-secret overrides a caller
  * sets on the command line (`MODEL_PROVIDER=mock pnpm dev`) — a pane does not
  * inherit the caller's environment when a tmux server is already running.
  * Everything else, secrets included, reaches a service through
@@ -13,6 +13,8 @@ const PASSTHROUGH_KEYS = [
   "DEV_AUTH_BYPASS",
   "DEV_AUTH_USER_ID",
   "MERIDIAN_API_ORIGIN",
+  "MERIDIAN_APP_ORIGIN",
+  "MERIDIAN_WWW_ORIGIN",
   "MODEL_PROVIDER",
   "MOCK_MODEL_RESPONSE",
   "LIVE_TEST_MODEL",

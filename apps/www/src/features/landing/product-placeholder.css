@@ -1,0 +1,629 @@
+/**
+ * A drawing of the app, disposable with `ProductPlaceholder.tsx`. Real footage
+ * replaces this file; the block's box and motion are in `film.css`.
+ */
+.slot {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 1240px;
+  height: 640px;
+  margin: auto;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--color-sidebar);
+  color: var(--color-foreground);
+  font: 400 14px / 1.4 var(--mkt-font-plain);
+}
+
+.slot button {
+  cursor: pointer;
+}
+
+.s-rail {
+  flex: 0 0 200px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden auto;
+  scrollbar-width: none;
+}
+
+.s-rail > * {
+  flex: none;
+}
+
+.s-proj {
+  font-weight: 600;
+  font-size: 15px;
+  padding: 2px 8px 10px;
+}
+
+.s-n {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.s-n.on {
+  background: var(--color-sidebar-accent);
+}
+
+@media (hover: hover) {
+  .s-n:not(.on):hover {
+    background: color-mix(in oklab, var(--color-sidebar-accent) 50%, transparent);
+  }
+}
+
+.s-n.on {
+  font-weight: 500;
+}
+
+/* The tree rows mirror the app's context tree: a 16px twistie slot, a 16px
+   icon slot, 16px of indent per depth, and a guide line under each open group. */
+.s-n.in,
+.s-f,
+.s-h {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 4px 0 16px;
+  white-space: nowrap;
+}
+
+.s-h {
+  padding-left: 0;
+  margin-top: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.s-tw,
+.s-ic {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--color-muted-foreground);
+}
+
+.s-tw svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+}
+
+.s-ic svg {
+  width: 14px;
+  height: 14px;
+}
+
+.s-f {
+  width: 100%;
+  border-radius: 6px;
+}
+
+@media (hover: hover) {
+  .s-f:hover {
+    background: color-mix(in oklab, var(--color-sidebar-accent) 50%, transparent);
+  }
+}
+
+.s-f[aria-expanded="false"] .s-tw svg {
+  transform: none;
+}
+
+.s-f[aria-expanded="true"] .s-ic.shut,
+.s-f[aria-expanded="false"] .s-ic:not(.shut) {
+  display: none;
+}
+
+.s-tw svg,
+.s-ic svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.s-nm {
+  min-width: 0;
+  margin-left: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.s-g {
+  position: relative;
+}
+
+.s-g::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: 8px;
+  border-left: 1px solid var(--color-border-subtle);
+  pointer-events: none;
+}
+
+.s-g .s-g::before {
+  left: 24px;
+}
+
+.s-g .s-g .s-g::before {
+  left: 40px;
+}
+
+.s-d {
+  padding: 3px 8px;
+  color: var(--color-muted-foreground);
+}
+
+.s-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background);
+  border-radius: 10px 10px 0 0;
+  margin-top: 6px;
+}
+
+.s-top {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.s-top b {
+  color: var(--color-foreground);
+  font-weight: 500;
+}
+
+.s-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px clamp(16px, 6%, 44px);
+}
+
+.s-doc {
+  font: 400 17px / 1.55 var(--mkt-font-plain);
+  max-width: 34em;
+  margin: auto;
+}
+
+.s-doc .name {
+  font: 600 26px / 1.2 var(--mkt-font-plain);
+  margin-bottom: 12px;
+}
+
+.s-doc p {
+  text-wrap: pretty;
+  margin-bottom: 12px;
+}
+
+.s-chat {
+  flex: 0 0 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px 12px 12px;
+  min-width: 0;
+}
+
+.s-ct {
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.s-ct span {
+  font-weight: 400;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.s-msgs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.s-me {
+  align-self: flex-end;
+  max-width: 90%;
+  padding: 7px 10px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.s-first {
+  order: 1;
+}
+
+#s-reply {
+  order: 2;
+}
+
+.s-ai {
+  padding: 0 2px;
+}
+
+.s-card {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 0 8px;
+  align-items: center;
+  padding: 7px 10px;
+  width: 100%;
+  text-align: left;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.s-card b {
+  font-weight: 600;
+}
+
+.s-card b + span {
+  color: var(--color-muted-foreground);
+}
+
+.s-card p {
+  grid-column: 2;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.s-ring {
+  grid-row: span 2;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  border-top-color: var(--color-jade-text);
+  animation: spin 1.3s linear infinite;
+}
+
+.s-ring i {
+  font-style: normal;
+  display: block;
+  animation: spin 1.3s linear infinite reverse;
+}
+
+.s-ring.ok {
+  border-color: var(--color-jade-text);
+  animation: none;
+}
+
+.s-ring.ok i {
+  animation: none;
+}
+
+.s-ed {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.s-ed button {
+  color: var(--color-jade-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.s-ed.big {
+  flex-wrap: wrap;
+}
+
+.s-ed small {
+  flex-basis: 100%;
+  font-weight: 400;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.s-comp {
+  padding: 9px 10px;
+  background: var(--color-composer-surface);
+  border: 1px solid var(--color-composer-border);
+  border-radius: var(--radius-composer-pinned);
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.s-ph {
+  display: block;
+  padding: 1px 2px 13px;
+}
+
+.s-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.s-pill {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  color: var(--color-foreground);
+  font-weight: 500;
+}
+
+.s-comp u {
+  flex: 1;
+  text-decoration: none;
+}
+
+.s-send {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--color-primary) 55%, transparent);
+  color: var(--color-card);
+}
+
+.s-take {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.s-lifted .s-take {
+  visibility: hidden;
+}
+
+.s-take > b {
+  font-weight: 600;
+}
+
+.s-opt {
+  display: grid;
+  gap: 0 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.s-opt small {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.s-foot {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  padding: 0 3px;
+}
+
+/* The death's System window, as the manuscript records it. */
+.s-sys {
+  width: fit-content;
+  padding: 4px 14px 5px;
+  font-size: 1em;
+}
+
+.s-tabs,
+.s-only-hints,
+.s-only-start,
+.s-only-ask,
+.slot[data-state="ask"] .s-comp,
+.slot[data-state="start"] .s-only-team,
+.slot[data-state="start"] .s-draft,
+.slot[data-state="start"] .s-notes,
+.slot[data-state="hints"] .s-only-team {
+  display: none;
+}
+
+.slot[data-state="start"] .s-only-start {
+  display: block;
+}
+
+.slot[data-state="ask"] .s-only-ask {
+  display: grid;
+}
+
+.slot[data-state="hints"] .s-only-hints {
+  display: block;
+}
+
+.slot[data-state="hints"] .s-ed.s-only-hints {
+  display: flex;
+}
+
+.slot[data-state="hints"] .s-card.s-done {
+  display: grid;
+  order: 3;
+}
+
+.slot[data-state="hints"] .s-ed {
+  order: 4;
+}
+
+.s-car {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  vertical-align: -0.15em;
+  background: var(--color-foreground);
+  animation: blink 1.1s steps(1) infinite;
+}
+
+@media (max-width: 819px), (max-height: 499px) {
+  .s-rail,
+  .s-chat {
+    display: none;
+  }
+
+  .slot {
+    flex-direction: column;
+    height: 600px;
+  }
+
+  .s-pane {
+    margin-top: 0;
+    min-height: 0;
+    border-radius: 0;
+  }
+
+  .slot[data-view="chat"] .s-pane,
+  .slot[data-view="project"] .s-pane {
+    display: none;
+  }
+
+  .slot[data-view="chat"] .s-chat,
+  .slot[data-view="project"] .s-rail {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .s-rail {
+    gap: 2px;
+    padding: 16px 12px;
+    overflow-y: auto;
+  }
+
+  .s-rail > * {
+    flex: none;
+  }
+
+  .s-rail > .s-n:not(.in),
+  .s-d {
+    display: none;
+  }
+
+  .s-proj {
+    font-size: 17px;
+    padding: 0 10px 14px;
+  }
+
+  .s-n.in,
+  .s-f,
+  .s-h {
+    height: 44px;
+    font-size: 15px;
+  }
+
+  .s-h {
+    margin-top: 4px;
+  }
+
+  .s-tabs {
+    display: flex;
+    background: var(--color-card);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .s-tabs button {
+    flex: 1;
+    padding: 9px 0;
+    color: var(--color-muted-foreground);
+    font-weight: 500;
+  }
+
+  .s-tabs button[aria-pressed="true"] {
+    color: var(--color-foreground);
+    box-shadow: inset 0 2px 0 var(--color-jade-text);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .s-ring,
+  .s-ring i,
+  .s-car {
+    animation: none;
+  }
+}
+
+.s-n.s-landed {
+  outline: 2px solid var(--mkt-glow);
+  outline-offset: 1px;
+}
+
+.s-facts {
+  list-style: disc;
+  margin: 0 0 14px;
+  padding-left: 20px;
+}
+
+/* Not a heading element: the drawing's wiki pages would become the landing page's outline. */
+.s-doc .s-heading {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 16px 0 3px;
+}
+
+.s-doc section:last-of-type {
+  border-top: 1px solid var(--color-border);
+  margin-top: 18px;
+}
+
+.s-link {
+  color: var(--color-jade-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.s-fig {
+  height: 200px;
+  margin: 12px 0 18px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(var(--mkt-sky-fallback-high), var(--mkt-glow));
+}
+
+.s-fig i {
+  display: block;
+  height: 176px;
+  aspect-ratio: 1;
+  background: var(--mkt-night);
+  rotate: -0.38rad;
+  mask: var(--dragon-sheet) 40% 0 / 600% 100% no-repeat;
+}

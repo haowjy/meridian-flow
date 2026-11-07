@@ -2,8 +2,9 @@
  * UI themes — alternate palettes for the Ink & Jade token surface.
  *
  * Contract: `ink-jade.css` defines the token vocabulary (the `--color-*`
- * names); a theme is a `:root[data-ui-theme="<name>"]` block that re-points
- * those same names. The default Ink & Jade light palette is the ABSENCE of
+ * names); a theme is a `[data-ui-theme="<name>"]` block that re-points those
+ * same names. The app sets the attribute on the root; apps/www sets it on the
+ * night regions of the landing page, whose paper surfaces keep the light root. The default Ink & Jade light palette is the ABSENCE of
  * the attribute — never define an `[data-ui-theme="ink-jade"]` block, so the
  * default path stays the plain `@theme` values.
  *
@@ -18,7 +19,8 @@
  * darken; jade brightens to keep its voice on dark ground. The dock atmosphere
  * thins to moonlight (~×0.25 alpha) per the light-file's note.
  */
-:root[data-ui-theme="dark"] {
+:root[data-ui-theme="dark"],
+[data-ui-theme="dark"] {
   /* Surface ladder (dark): shelf .215 < dock-surface .235 < chrome .25 <
      page .285 — page brightest, one warm family. */
   --color-background: oklch(0.285 0.012 84);
@@ -33,6 +35,10 @@
   --color-diff-removed: oklch(0.72 0.12 27);
 
   --color-border: oklch(0.38 0.014 84);
+  /* Aliases resolve where they're declared: a nested night region must re-point them, or it
+     inherits the light root's values. */
+  --color-composer-surface: var(--color-chat-interactive, var(--color-background));
+  --color-composer-border: var(--color-border);
   --color-border-subtle: oklch(0.335 0.012 84);
   --color-border-focus: oklch(0.55 0.07 175);
   --color-dropdown-focus-indicator: oklch(0.75 0.08 176);
