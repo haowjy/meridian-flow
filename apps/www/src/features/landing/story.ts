@@ -349,7 +349,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
     key: "system",
     name: "The System",
     page: {
-      lead: "Levels, titles, skills, tags and cores, and nothing else. Everyone has had them for as long as anyone remembers.",
+      lead: "Levels, skills, tags and cores, and nothing else. Everyone has had them for as long as anyone remembers.",
       facts: [
         ["Who has it", "Everyone"],
         ["Tags", "Every living thing, except the beast"],
@@ -558,7 +558,7 @@ export const VOCAB_PAGE: WikiPage = {
       [
         [
           "The System:",
-          "Levels, titles, skills, tags, boxes and cores. Harl’s clerks call it the Count and the dwarves the Ledger, but the narration says the System.",
+          "Levels, skills, tags, boxes and cores. Harl’s clerks call it the Count and the dwarves the Ledger, but the narration says the System.",
         ],
         ["Tag:", "The name and level over every living thing, as in [Frost Wolf, Lv 41]."],
         ["Box:", "A blue System window, private to one person."],
@@ -613,13 +613,13 @@ export const END = {
 
 /**
  * The System's status windows at the campfire, one over each of the four, before the turn. Rows:
- * name, race and level, title, skill, what the skill does, status.
+ * name, race and level, who they are, skill, what the skill does, status.
  */
 export const SHEETS: Record<CharacterKey, readonly string[]> = {
   tam: [
     "Tam",
     "Human · Level 58",
-    "Title: Prodigy of Harl",
+    "A farm boy from Harl, sent north by the king. The strongest human his age ever recorded.",
     "[Spark]",
     "Sets fire to what you touch or throw. Will not catch in deep cold.",
     "Status: Alive",
@@ -627,7 +627,7 @@ export const SHEETS: Record<CharacterKey, readonly string[]> = {
   sigrun: [
     "Sigrun",
     "Dwarf · Level 74",
-    "Title: Champion of the Holds",
+    "Champion of the dwarven holds for forty years. She cuts her wards into her own arms.",
     "[Ward Rune]",
     "Each rune cut into your skin turns one blow, then goes dark.",
     "Status: Alive",
@@ -635,7 +635,7 @@ export const SHEETS: Record<CharacterKey, readonly string[]> = {
   maren: [
     "Maren",
     "Elf · Level 70",
-    "Title: Healer to the Queen of Vell",
+    "Healer to the queen of Vell for nine hundred years. Blind since she was six.",
     "[Mending Hymn]",
     "While you sing, wounds near you close.",
     "Status: Alive",
@@ -643,7 +643,7 @@ export const SHEETS: Record<CharacterKey, readonly string[]> = {
   oskar: [
     "Oskar",
     "Beastkin · Level 66",
-    "Title: Returned from the Ice",
+    "A bear-blooded guide from the Kessa steppe, and the only one who has walked into the ice and back.",
     "[Sense Fear]",
     "Hear a creature’s fear a breath before it moves.",
     "Status: Alive",
