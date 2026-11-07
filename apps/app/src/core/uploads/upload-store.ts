@@ -173,6 +173,14 @@ export const uploads = {
     return undefined;
   },
 
+  /** This tab's upload of the file, else another client's as presence reports it. */
+  of(id: string): UploadState | null {
+    return (
+      uploads.read(id) ??
+      (uploads.peerSending(id) === undefined ? null : { kind: "uploading", percent: null })
+    );
+  },
+
   /** Whether any peer is sending anything, so a text with no upload of its own need not be read. */
   anyPeerSending: (): boolean => peers.size > 0,
 

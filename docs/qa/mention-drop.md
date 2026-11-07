@@ -125,13 +125,18 @@ own file drag adds nothing to what the door reads. Read the rows from `upload_in
 3. Include a file over 200 MB with others. Only that one is refused, with
    **name is over 200 MB, so it can't be added.**; nothing is inserted or sent for it.
 4. Drop a 200 MB file and watch the chip: it fills left to right and reads `Uploading n%`, and
-   settles to `BIN · 200 MB`. In a second tab, the chip reads `Uploading` while the bytes arrive
-   and flips with no reload when the file finalizes. A reload mid-upload reads `Uploading` for as
-   long as the server holds the intake, then `gone` if the page took the upload with it.
-5. Undo while it uploads. The chip leaves, and about ten seconds later the request is aborted: no
-   object stays and the intake row stays `reserved` until the sweep, reading `gone` after three
-   minutes. Cut the chip and paste it back within a few seconds: the upload
-   keeps going. Paste it into another document after the abort: it reads gone.
+   settles to `BIN · 200 MB`. Its hint names only the destination while it uploads. In a second
+   tab on the same document, the chip reads `Uploading` (from the sender's presence, not the
+   server) and flips with no reload when the file finalizes. Close the sending tab mid-upload: the
+   other tab's chip reads gone at once. A reload of the sending tab is the same close.
+5. Undo while it uploads, then redo within ten seconds: the same upload keeps going. Undo, wait
+   past ten seconds and redo: the chip reads **Upload failed. Click to retry** (described as
+   **The upload was stopped.**), and a click sends it again. Undo and close the document within
+   ten seconds: the upload stops then, and nothing lands in `assets/`; the intake row stays
+   `reserved` until the sweep. Cut the chip and paste it back within a few seconds: the upload
+   keeps going. Paste it into another document: it reads gone there until the file lands. The
+   composer follows the same rule for an attach: remove its chip and undo within ten seconds and
+   it keeps uploading; later, it reads stopped and a click retries.
 6. While one uploads, rename `assets/`. The file lands in a fresh `assets/` and the chip follows
    it by id. Rename or move a finished file, then read the document through `./mf doc read`: the
    link shows the file's current path. Trash a finished file and click its chip: Trash opens at it.
