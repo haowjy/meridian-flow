@@ -81,9 +81,8 @@ export function setObjectField(
   if (!node) return false;
   const next = field !== "caption" && value.trim() === "" ? null : value;
   if (node.attrs[field] === next) return true;
-  editor.view.dispatch(
-    editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, [field]: next }),
-  );
+  // Not `setNodeMarkup`: it replaces a leaf, and the object would lose its selection.
+  editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, field, next));
   return true;
 }
 

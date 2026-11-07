@@ -11,6 +11,7 @@
 
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle } from "lucide-react";
+import { documentDownloadUrl } from "@/client/api/figures-api";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
@@ -81,11 +82,11 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
       return binary ? (
         <ReadOnlyViewerFrame
           className={className}
-          footer={imageViewerFooter({ url: binary.url, name: tab.name })}
+          footer={imageViewerFooter({ url: documentDownloadUrl(tab.documentId), name: tab.name })}
         >
           <ImageViewer
             key={tab.documentId}
-            url={binary.url}
+            url={documentDownloadUrl(tab.documentId)}
             drawUrl={binary.drawUrl}
             name={tab.name}
             mimeType={binary.mimeType}
@@ -100,14 +101,19 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
     case "pdf":
       return binary ? (
         <ReadOnlyViewerFrame className={className}>
-          <PdfViewer url={binary.url} name={tab.name} sizeBytes={binary.sizeBytes} />
+          <PdfViewer
+            url={binary.url}
+            downloadUrl={documentDownloadUrl(tab.documentId)}
+            name={tab.name}
+            sizeBytes={binary.sizeBytes}
+          />
         </ReadOnlyViewerFrame>
       ) : null;
     case "binary":
       return binary ? (
         <ReadOnlyViewerFrame className={className}>
           <BinaryFallbackViewer
-            url={binary.url}
+            url={documentDownloadUrl(tab.documentId)}
             mimeType={binary.mimeType}
             name={tab.name}
             sizeBytes={binary.sizeBytes}

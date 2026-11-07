@@ -32,4 +32,5 @@ patchedDependencies:
   '@tiptap/core@3.27.1': patches/@tiptap__core@3.27.1.patch
   '@tiptap/y-tiptap@3.0.5': patches/@tiptap__y-tiptap@3.0.5.patch
   'decode-named-character-reference@1.3.0': patches/decode-named-character-reference@1.3.0.patch
+  micromark@4.0.2: patches/micromark@4.0.2.patch
   yjs@13.6.31: patches/yjs@13.6.31.patch

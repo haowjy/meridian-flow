@@ -26,9 +26,20 @@ slot aborts it.
   target. Resolve and schema-check it when the file returns; never fall back to
   the current selection or another location.
 - `width` is the sole persistent display-size answer, capped by the prose
-  column. Resize previews write DOM only and release one `setNodeMarkup` using a
-  `NodeHold`. A table-cell paragraph needs size containment before the picture
-  can be capped by its column.
+  column. Resize previews write DOM only and release one attribute step using a
+  `NodeHold` (`setNodeMarkup` replaces a leaf and drops the selection); a drag that changes nothing on screen writes nothing, and a grip
+  stops at the height cap. A table-cell paragraph needs size containment before
+  the picture can be capped by its column.
+- A very tall picture pushes the writer's text out of view, so the view caps
+  every picture at about 60% of the pane (`--meridian-picture-cap`), ratio kept.
+  The cap depends on the viewer's pane and the stored picture doesn't, so it is
+  never written: not to `width`, not to the wire, not to export or copied
+  Markdown. Clicking a picture the cap is holding back opens the viewer, and the
+  object row's Open full screen does the same. A phone keyboard shrinks the
+  pane, so on touch screens the cap holds through a height drop at the same
+  width while the editor has focus (`holdPictureCapThroughKeyboard`). Because the box has to narrow to
+  keep the ratio, the node view needs the shape: an upload's frame, or the
+  natural size once the picture draws.
 - Inline images use the same baseline/line-box behavior in prose and cells.
   Measured upload frames reserve intrinsic size; failed or abandoned slots
   return to the fallback frame.
@@ -36,9 +47,8 @@ slot aborts it.
   lifecycle prop. A picture drop lands where `landing/` says, and a structural drop never
   manufactures a table column.
 - A picture is one object at one size wherever it stands, as in Docs or Word.
-  A big picture mid-sentence makes a tall line; that is the answer, not a bug
-  to cap. Never reintroduce a mid-sentence-only
-  decoration, class, or cap, or a size only one writer can see.
+  A big picture mid-sentence makes a tall line, up to the height cap above. Never
+  reintroduce a mid-sentence-only decoration, class, or cap.
 - An empty-`src` slot with no live owner (a reload or redo left it) offers
   Remove, never Retry; a token with a live owner is a collaborator's upload and
   never offers Remove. An unresolved stored source draws unavailable without

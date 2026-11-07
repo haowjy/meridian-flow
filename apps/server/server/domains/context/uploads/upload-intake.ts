@@ -149,7 +149,7 @@ function fingerprint(input: {
 export function createUploadIntake<Bound>(deps: {
   repository: UploadIntakeRepository;
   content: UploadContentPort<Bound>;
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "put" | "delete">;
   /** Deletes an object (and its preview) the intake stored but could not finish committing. */
   release: ObjectRelease;
   eventSink: EventSink;

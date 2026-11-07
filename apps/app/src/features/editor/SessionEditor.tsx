@@ -8,7 +8,7 @@ import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
   type ReactNode,
-  type Ref,
+  type RefObject,
   type UIEventHandler,
   useCallback,
   useEffect,
@@ -28,6 +28,7 @@ import {
   registerLiveRangeEditor,
 } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
+import { holdPictureCapThroughKeyboard } from "@/core/editor/objects";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useLinkableDocuments } from "@/features/links";
@@ -38,6 +39,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -500,9 +502,18 @@ function EditorCanvas({
   editor: Editor | null;
   notices?: ReactNode;
   toolbar?: ReactNode;
-  scrollRef?: Ref<HTMLDivElement>;
+  scrollRef?: RefObject<HTMLDivElement | null>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
+  const touch = useCoarsePointer();
+  useEffect(
+    () =>
+      editor && touch && scrollRef?.current
+        ? holdPictureCapThroughKeyboard(editor.view, scrollRef.current)
+        : undefined,
+    [editor, touch, scrollRef],
+  );
+
   return (
     <EditorSurfaceFrame
       notices={notices}

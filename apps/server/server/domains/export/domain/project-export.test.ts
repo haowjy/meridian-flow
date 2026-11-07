@@ -1,6 +1,7 @@
 /** Export contract: a portable, frozen vault whose Markdown links resolve to ZIP entries. */
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
+import { Readable } from "node:stream";
 import { type CatalogDocument, documentRef } from "@meridian/contracts";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { splitFrontmatter } from "@meridian/markup/frontmatter";
@@ -37,6 +38,7 @@ function document(id: string, uri: string, extra: Partial<ExportDocument> = {}):
     chatTitle: null,
     metadata: {},
     storageUrl: null,
+    sizeBytes: null,
     ...extra,
   };
 }
@@ -199,8 +201,11 @@ function fixture() {
       },
     },
     objects: {
-      async get() {
-        return { ok: true, value: { bytes, mimeType: "image/png" } };
+      async getStream() {
+        return {
+          ok: true,
+          value: { stream: Readable.from([bytes]), mimeType: "image/png", sizeBytes: bytes.length },
+        };
       },
     },
   };
@@ -344,7 +349,7 @@ describe("project exports", () => {
     expect(chapter.filename).toBe("Chapter.md");
     expect(chapter.excludedLinks).toBe(2);
     expect((await snapshot.read(uuid("x"))).filename).toBe("x (2).md");
-    const text = strFromU8(chapter.bytes);
+    const text = strFromU8(Buffer.concat(chapter.chunks as Uint8Array[]));
     expect(text).toContain("---\naliases: [Gate]\n# kept\n---\n");
     expect(text).toContain("[lore](../Knowledge%20Base/Lore/Sects.md)");
     expect(text).toContain("[[Not a link]] ![[Not an embed]]");
