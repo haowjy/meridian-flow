@@ -82,6 +82,7 @@ export {
   mountedLinks,
 } from "./link-storage";
 export {
+  type LinkDragSource,
   type LinkFolderRequest,
   type LinkFollowOutcome,
   type LinkFormRequest,

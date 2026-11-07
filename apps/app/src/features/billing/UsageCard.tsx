@@ -17,6 +17,7 @@ import { Trans } from "@lingui/react/macro";
 import type { BillingBalanceResponse } from "@meridian/contracts/protocol";
 
 import { useBillingBalance } from "@/client/query/useBilling";
+import { Progress } from "@/components/ui/progress";
 import { formatUsd, isPositiveUsd } from "./format";
 
 export type UsageCardVariant = "compact" | "full";
@@ -78,7 +79,6 @@ function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: U
   }
 
   const { remainingPercent, overBudget } = data.includedUsage;
-  const barWidth = `${remainingPercent}%`;
   const hasExtra = isPositiveUsd(data.purchasedBalanceUsd);
 
   return (
@@ -94,22 +94,10 @@ function UsageBody({ data, variant }: { data: BillingBalanceResponse; variant: U
           <Trans>{remainingPercent}% remaining</Trans>
         </span>
       </div>
-      <div
-        className={
-          variant === "full"
-            ? "mt-3 h-2 overflow-hidden rounded-full bg-muted"
-            : "mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
-        }
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={remainingPercent}
-      >
-        <div
-          className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
-          style={{ width: barWidth }}
-        />
-      </div>
+      <Progress
+        value={remainingPercent}
+        className={variant === "full" ? "mt-3 h-2" : "mt-2 h-1.5"}
+      />
       {overBudget ? (
         <p className="mt-2 text-sm text-muted-foreground">
           <Trans>Over your monthly usage</Trans>

@@ -48,6 +48,8 @@ interface WriteOutcomeBase {
   result: AgentEditResultV1;
   /** Host-only: the blocks a read selected, when the read asked for `includeNodes`. */
   nodes?: readonly Block[];
+  /** Host-only: where each settled `ahead:` ref in `nodes` points, read with `nodes` (`includeNodes`). */
+  aheadSettlements?: ReadonlyMap<string, string>;
   /**
    * Host-only showing evidence: each link the rendered result showed the
    * model, with the address shown (truncated blocks count only links ending

@@ -11,6 +11,7 @@ export {
   type HolderCatalog,
   type HolderLinkScope,
   qualifyWrittenHref,
+  settledAheads,
   UNSPELLED_UPLOAD,
   type WrittenGrammar,
   writtenAddresses,

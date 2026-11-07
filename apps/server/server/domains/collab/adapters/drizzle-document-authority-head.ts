@@ -38,6 +38,40 @@ export async function initializeHead(db: AuthorityHeadDb, documentId: DocumentId
     .onConflictDoNothing({ target: documentYjsHeads.documentId });
 }
 
+/** The generation a head is born with (the column's default). */
+export const FIRST_AUTHORITY_GENERATION = 1n;
+/** Rows per statement: bounds the parameter count, not the atomic operation. */
+const FRESH_HEAD_BATCH = 500;
+
+/**
+ * Heads for documents created in this transaction, each born already naming its first
+ * checkpoint, in one statement per batch. The caller wrote the checkpoints under the
+ * authority ids passed here, so nothing reads a head before it points at its state.
+ */
+export async function insertFreshHeads(
+  db: AuthorityHeadDb,
+  heads: readonly {
+    documentId: DocumentId;
+    authorityId: DocumentAuthorityId;
+    checkpointId: number;
+    stateVector: Uint8Array;
+  }[],
+): Promise<void> {
+  for (let offset = 0; offset < heads.length; offset += FRESH_HEAD_BATCH) {
+    await db.insert(documentYjsHeads).values(
+      heads.slice(offset, offset + FRESH_HEAD_BATCH).map((head) => ({
+        documentId: head.documentId,
+        authorityId: head.authorityId,
+        authorityGeneration: FIRST_AUTHORITY_GENERATION,
+        schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+        latestUpdateSeq: 0,
+        latestStateVector: Buffer.from(head.stateVector),
+        latestCheckpointId: head.checkpointId,
+      })),
+    );
+  }
+}
+
 /** The one allocation every live write passes (the journal and settlement's direct writer). */
 export async function allocateAdmission(
   db: AuthorityHeadDb,

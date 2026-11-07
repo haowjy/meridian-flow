@@ -41,6 +41,7 @@ import {
 import { createUntitledContextDocument } from "../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
 import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
+import { deleteAt, entryAt, moveTo } from "./entry-ref.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
@@ -222,6 +223,7 @@ export function branchTreeCommands(
         fileAccess: app.fileAccess,
         branches: app.documentSync.branches,
         documentTrash: app.documentTrash,
+        files: app.uploadIdentity,
       },
       {
         projectId,
@@ -398,17 +400,21 @@ export function branchTreeCommands(
       });
     },
     async move(from, to) {
-      return (await livePort()).commitWriterLocation(uri(from), uri(to), { origin: human() });
+      const port = await livePort();
+      return moveTo(port, uri(from), uri(to), {
+        origin: human(),
+        expected: await entryAt(port, uri(from)),
+      });
     },
     async delete(path, operationId) {
       const port = await livePort();
       // stat answers files only; anything else at the path is the folder being deleted.
       const stat = await port.stat(uri(path));
       if (stat.ok) {
-        return port.delete(uri(path), {
+        return deleteAt(port, uri(path), {
           origin: human(),
           ...(operationId ? { operationId } : {}),
-          expected: { kind: "file", documentId: stat.value.documentId ?? "" },
+          expected: { kind: "file", nodeId: stat.value.documentId ?? "" },
         });
       }
       const { scheme, rel } = sourceOf(path);
@@ -416,7 +422,7 @@ export function branchTreeCommands(
         contextSourceId: world.project.sources[scheme],
         path: rel,
       });
-      return port.delete(uri(path), {
+      return deleteAt(port, uri(path), {
         origin: human(),
         ...(operationId ? { operationId } : {}),
         expected: {

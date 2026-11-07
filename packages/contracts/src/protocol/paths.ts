@@ -201,47 +201,40 @@ export function apiProjectContextCreateUntitledPath(
   return `${apiProjectPath(projectId)}/context/${scheme}/create-untitled${projectContextQuery(scheme, opts)}`;
 }
 
-export function apiProjectContextReadPath(
+export function apiProjectContextCreateFolderPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  path: string,
   opts?: ProjectContextRequestOptions,
 ): string {
-  const search = new URLSearchParams({ path });
-  setOwnerQuery(search, scheme, opts);
-  return `${apiProjectPath(projectId)}/context/${scheme}/read?${search.toString()}`;
+  return `${apiProjectPath(projectId)}/context/${scheme}/create-folder${projectContextQuery(scheme, opts)}`;
 }
 
-export function apiProjectContextMovePath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/move`;
+export function apiProjectDocumentReadPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/read`;
+}
+
+/** Move or rename one entry (file or folder) by id. */
+export function apiProjectContextEntryMovePath(projectId: string, entryId: string): string {
+  return `${apiProjectPath(projectId)}/context/entries/${encodeURIComponent(entryId)}/move`;
+}
+
+/** One Copy command: many sources, one destination, one receipt. */
+export function apiProjectContextCopyPath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/copy`;
 }
 
 export function apiProjectContextOperationPath(projectId: string, operationId: string): string {
   return `${apiProjectPath(projectId)}/context/operations/${encodeURIComponent(operationId)}`;
 }
 
-export function apiProjectContextDeletePath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
-): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/delete${projectContextQuery(scheme, opts)}`;
+/** Delete one entry (file or folder) by id. */
+export function apiProjectContextEntryDeletePath(projectId: string, entryId: string): string {
+  return `${apiProjectPath(projectId)}/context/entries/${encodeURIComponent(entryId)}/delete`;
 }
 
 /** Internal document-link resolution: three spellings in, one document or none. */
 export function apiProjectLinksResolvePath(projectId: string): string {
   return `${apiProjectPath(projectId)}/links/resolve`;
-}
-
-export function apiProjectContextKbImportPath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/context/kb/import`;
-}
-
-export function apiProjectContextKbImportDriveFixturePath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/context/kb/import-drive-fixture`;
 }
 
 export function apiThreadPath(threadId: string): string {

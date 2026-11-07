@@ -47,13 +47,13 @@ function deleted(
     operationId: request.body.operationId,
     command: {
       kind: "delete",
-      uri: `manuscript://${request.body.path}`,
-      expected: request.body.expected,
+      expected: { kind: request.body.kind, nodeId: request.entryId },
     },
     result: {
       ok: true,
       value: {
         status: "deleted",
+        uri: `manuscript://${request.entryId}`,
         removed: removedDocumentIds.map((documentId) => ({
           documentId,
           removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
@@ -283,6 +283,7 @@ describe("evidence at or below the deletion's version never resurrects it", () =
       content: { kind: "unacquired" },
       canonical: { scheme: "manuscript", path: "/doc", name: "doc", workId: null },
       observationVersion: "99",
+      serverHold: "held",
       lifecycle: { kind: "acknowledged", availabilityGeneration: null },
       revivedFrom: { generation: "9", transitionId: "editor-purge" },
     };

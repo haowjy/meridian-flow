@@ -4,7 +4,6 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - separate availability and namespace clocks with transaction-scoped publisher fencing
  */
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb, type Database } from "@meridian/database";
 import {
   assertThrowawayDatabaseForRunDbTests,
@@ -738,12 +737,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const id = "00000000-0000-4000-8000-000000000942";
       const foreign = "00000000-0000-4000-8000-000000000943";
       await db.insert(folders).values([
-        { id, contextSourceId: PROJECT_SOURCE, name: "A", documentAlias: folderDocumentName("A") },
+        { id, contextSourceId: PROJECT_SOURCE, name: "A" },
         {
           id: foreign,
           contextSourceId: FOREIGN_SOURCE,
           name: "Foreign",
-          documentAlias: folderDocumentName("Foreign"),
         },
       ]);
       const lookup = async () =>
@@ -828,7 +826,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: foreignFolder,
         contextSourceId: FOREIGN_SOURCE,
         name: "foreign-parent",
-        documentAlias: folderDocumentName("foreign-parent"),
       });
       await db.update(documents).set({ folderId: foreignFolder }).where(eq(documents.id, DOCS[0]));
       await assertIndeterminate(DOCS[0]);

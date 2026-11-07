@@ -5,6 +5,8 @@ import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
+import { type UploadFrame, type UploadState, uploads } from "@/core/uploads/upload-store";
+
 import { type AnchorRange, carryAnchor, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { pastedImageLinkRange } from "./image-workflow";
 
@@ -25,27 +27,23 @@ export function uploadTokenOf(node: PMNode): string | null {
 }
 
 /** The picture's own size, measured locally so its slot is the right shape. */
-export type PendingImageFrame = { width: number; height: number };
+export type PendingImageFrame = UploadFrame;
 
-export type PendingUploadStatus =
-  | { kind: "uploading"; percent: number | null }
-  | { kind: "failed"; message: string };
-
-/** A picture whose bytes are on their way to the project. */
+/**
+ * A picture whose bytes are on their way to the project: what only this editor knows of it. How
+ * the upload stands, its abort and its file are the upload store's, under the same id.
+ */
 export type PendingImageUpload = {
   kind: "upload";
-  /** The upload's identity, and the `uploadToken` written on its slot. */
+  /** The upload's intake id, and the `uploadToken` written on its slot. */
   id: string;
   filename: string;
   /** The pending node's `alt`, unchanged when the upload lands. */
   alt: string;
-  file: File;
   /** Null until the browser has decoded enough to say, or refuses to. */
   frame: PendingImageFrame | null;
   /** How this upload got its slot, and therefore what the writer undoes when the bytes land (`image-uploads.ts`). */
   landing: "insert" | "replace";
-  status: PendingUploadStatus;
-  abort: () => void;
 };
 
 /** A picture the clipboard only pointed at, being fetched into the project. */
@@ -65,14 +63,6 @@ export type PendingImage = PendingImageUpload | PendingImageImport;
 export type PendingImageState = ReadonlyMap<string, PendingImage>;
 
 export const NO_PENDING_IMAGES: PendingImageState = new Map();
-
-/**
- * What another client is filling right now, as awareness reports it: its token,
- * and the shape that slot should hold until the bytes land.
- */
-export type UploadOwnersElsewhere = ReadonlyMap<string, PendingImageFrame | null>;
-
-export const NO_UPLOAD_OWNERS: UploadOwnersElsewhere = new Map();
 
 /** A pending node's source: the one `src` that names nothing. */
 export const PENDING_IMAGE_SRC = "";
@@ -132,25 +122,22 @@ export function pendingImageAt(
   return null;
 }
 
-/** Entries whose place in the document is gone: their upload has no landing. */
-export function orphanedPendingImages(
+/**
+ * Entries with nothing left to wait for: an import whose link is gone, and an upload the store
+ * has let go of. An upload whose slot left the text stays: the store decides when the writer took
+ * it back, and an undo inside that time brings the slot back still sending.
+ */
+export function finishedPendingImages(
   pending: PendingImageState,
   state: EditorState,
 ): PendingImage[] {
-  const orphaned: PendingImage[] = [];
-  const held = uploadTokensIn(state.doc);
-  for (const entry of pending.values()) {
-    if (entry.kind === "upload") {
-      if (!held.has(entry.id)) orphaned.push(entry);
-      continue;
-    }
-    if (!resolvePendingImage(state, entry)) orphaned.push(entry);
-  }
-  return orphaned;
+  return [...pending.values()].filter((entry) =>
+    entry.kind === "upload" ? uploads.read(entry.id) === null : !resolvePendingImage(state, entry),
+  );
 }
 
 /** Every token this document currently carries, in one pass. */
-function uploadTokensIn(doc: PMNode): ReadonlySet<string> {
+export function uploadTokensIn(doc: PMNode): ReadonlySet<string> {
   const tokens = new Set<string>();
   doc.descendants((node) => {
     const token = uploadTokenOf(node);
@@ -162,27 +149,32 @@ function uploadTokensIn(doc: PMNode): ReadonlySet<string> {
 
 /** Who is filling a slot, as the node view is told it. */
 export type PendingUploadOwner =
-  | { owner: "mine"; entry: PendingImageUpload }
+  | { owner: "mine"; entry: PendingImageUpload; status: UploadState }
   | { owner: "elsewhere"; frame: PendingImageFrame | null };
 
-/** What the manuscript shows for every picture in flight, mine and theirs. */
+/**
+ * What the manuscript shows for every picture in flight, mine and theirs. `slots` says whether
+ * the text may hold a slot at all, so a document with none is never walked.
+ */
 export function pendingImageDecorations(
   pending: PendingImageState,
-  elsewhere: UploadOwnersElsewhere,
   state: EditorState,
+  slots: boolean,
 ): DecorationSet | null {
   const decorations: Decoration[] = [];
 
-  if (pending.size > 0 || elsewhere.size > 0) {
+  if (slots) {
     state.doc.descendants((node, pos) => {
       const token = uploadTokenOf(node);
       if (token === null) return true;
       const mine = pending.get(token);
+      const status = mine?.kind === "upload" ? uploads.read(token) : null;
+      const elsewhere = status ? undefined : uploads.peerSending(token);
       const owner: PendingUploadOwner | null =
-        mine?.kind === "upload"
-          ? { owner: "mine", entry: mine }
-          : elsewhere.has(token)
-            ? { owner: "elsewhere", frame: elsewhere.get(token) ?? null }
+        mine?.kind === "upload" && status
+          ? { owner: "mine", entry: mine, status }
+          : elsewhere !== undefined
+            ? { owner: "elsewhere", frame: elsewhere }
             : null;
       if (owner) decorations.push(uploadDecoration(pos, pos + node.nodeSize, owner));
       return true;
@@ -199,7 +191,7 @@ export function pendingImageDecorations(
 }
 
 function uploadDecoration(from: number, to: number, pending: PendingUploadOwner): Decoration {
-  const status = pending.owner === "mine" ? pending.entry.status : null;
+  const status = pending.owner === "mine" ? pending.status : null;
   const percent = status?.kind === "uploading" ? status.percent : null;
   const frame = pending.owner === "mine" ? pending.entry.frame : pending.frame;
   return Decoration.node(
@@ -234,9 +226,9 @@ export function pendingImageSignature(decorations: readonly { spec?: unknown }[]
   const pending = pendingUploadFromDecorations(decorations);
   if (!pending) return "";
   if (pending.owner === "elsewhere") return `elsewhere|${frameSignature(pending.frame)}`;
-  const { entry } = pending;
-  const progress = entry.status.kind === "uploading" ? (entry.status.percent ?? "") : "";
-  return `${entry.id}|${entry.status.kind}|${progress}|${frameSignature(entry.frame)}`;
+  const { entry, status } = pending;
+  const progress = status.kind === "uploading" ? (status.percent ?? "") : "";
+  return `${entry.id}|${status.kind}|${progress}|${frameSignature(entry.frame)}`;
 }
 
 function frameSignature(frame: PendingImageFrame | null): string {

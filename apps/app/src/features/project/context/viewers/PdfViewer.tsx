@@ -6,22 +6,24 @@
  * small for a feature that's mostly "open this file". Frame/header chrome
  * belongs to hosts.
  */
-import { Trans } from "@lingui/react/macro";
-
-import { DownloadFallback } from "./DownloadFallback";
+import { BinaryFallbackViewer } from "./BinaryFallbackViewer";
 
 export type PdfViewerProps = {
   url: string;
+  /** What the fallback card's Download serves. */
+  downloadUrl: string;
   name: string;
+  sizeBytes: number | null;
 };
 
-export function PdfViewer({ url, name }: PdfViewerProps) {
+export function PdfViewer({ url, downloadUrl, name, sizeBytes }: PdfViewerProps) {
   return (
     <object data={url} type="application/pdf" aria-label={name} className="h-full w-full">
-      <DownloadFallback
-        url={url}
+      <BinaryFallbackViewer
+        url={downloadUrl}
+        mimeType="application/pdf"
         name={name}
-        body={<Trans>This browser cannot display the PDF inline.</Trans>}
+        sizeBytes={sizeBytes}
       />
     </object>
   );

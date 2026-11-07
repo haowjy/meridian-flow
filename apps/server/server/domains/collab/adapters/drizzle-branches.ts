@@ -90,7 +90,7 @@ export function createDrizzleBranchStore(db: Database): BranchStore {
 
 export function createDrizzleBranchWriteBoundary(
   db: Database,
-  /** Work-first order's one owner (decision D17). */
+  /** Work-first order's one owner. */
   works: Pick<WorkProjectionMutation, "lockWorks">,
 ): BranchWriteBoundary {
   return {

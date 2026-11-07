@@ -1,39 +1,27 @@
 /**
- * figures-api — HTTP client for figure asset upload and signed-URL retrieval.
+ * figures-api — HTTP client for a picture's signed read URLs.
  *
- * Wraps the project/document figure endpoints, seeds and reads a signed-URL
- * cache, and computes refresh timing. Owns the figure network surface; consumed
- * by the editor's figure node view and upload flow.
+ * Reads a signed-URL cache and fetches a fresh URL when it has expired. Pictures arrive by the
+ * direct upload in `context-upload-api.ts`; this is what draws them.
  */
-import {
-  deserializeTransport,
-  type GetFigureSignedUrlResponse,
-  type UploadFigureAssetResponse,
-} from "@meridian/contracts/protocol";
+import type { GetFigureSignedUrlResponse } from "@meridian/contracts/protocol";
 
 import { signedUrlRefreshDelayMs } from "@/core/editor/images";
 
-import { errorMessageFromPayload, getJson } from "./http-client";
+import { getJson } from "./http-client";
 
 type AssetRouteInput = {
   projectId: string;
   assetDocumentId: string;
 };
 
-export type UploadFigureInput = {
-  projectId: string;
-  hostDocumentId: string;
-  file: File;
-  alt?: string | null;
-  label?: string | null;
-  caption?: string | null;
-  onProgress?: (progress: { loaded: number; total: number | null; percent: number | null }) => void;
-  /**
-   * Stops the request. A writer who deletes a picture mid-upload has cancelled
-   * it, and the bytes still going up would be paid for by their connection.
-   */
-  signal?: AbortSignal;
-};
+/**
+ * The server route that saves a stored file under its own name. A store's signed URL can't be
+ * relied on for that: browsers ignore `download=` on another origin.
+ */
+export function documentDownloadUrl(documentId: string): string {
+  return `/api/documents/${encodeURIComponent(documentId)}/download`;
+}
 
 export type GetFigureSignedUrlInput = AssetRouteInput & {
   /**
@@ -45,15 +33,7 @@ export type GetFigureSignedUrlInput = AssetRouteInput & {
   skipCache?: boolean;
 };
 
-type CachedSignedUrl = {
-  projectId: string;
-  assetDocumentId: string;
-  storageUrl: string;
-  signedUrl: string;
-  signedUrlExpiresAt: string;
-};
-
-const signedUrlCache = new Map<string, CachedSignedUrl>();
+const signedUrlCache = new Map<string, GetFigureSignedUrlResponse>();
 const inFlightSignedUrls = new Map<string, Promise<GetFigureSignedUrlResponse>>();
 
 function figurePath(projectId: string, documentId: string): string {
@@ -71,25 +51,13 @@ function cacheKey(input: AssetRouteInput & { workId?: string }): string {
 }
 
 function cacheSignedUrl(
-  input: AssetRouteInput & { workId?: string } & GetFigureSignedUrlResponse,
+  input: AssetRouteInput & { workId?: string },
+  value: GetFigureSignedUrlResponse,
 ): void {
-  signedUrlCache.set(
-    cacheKey({
-      projectId: input.projectId,
-      assetDocumentId: input.assetDocumentId,
-      workId: input.workId,
-    }),
-    {
-      projectId: input.projectId,
-      assetDocumentId: input.assetDocumentId,
-      storageUrl: input.storageUrl,
-      signedUrl: input.signedUrl,
-      signedUrlExpiresAt: input.signedUrlExpiresAt,
-    },
-  );
+  signedUrlCache.set(cacheKey(input), value);
 }
 
-function getCachedSignedUrl(input: GetFigureSignedUrlInput): CachedSignedUrl | null {
+function getCachedSignedUrl(input: GetFigureSignedUrlInput): GetFigureSignedUrlResponse | null {
   const cached = signedUrlCache.get(
     cacheKey({
       projectId: input.projectId,
@@ -101,35 +69,11 @@ function getCachedSignedUrl(input: GetFigureSignedUrlInput): CachedSignedUrl | n
   return signedUrlRefreshDelayMs(cached.signedUrlExpiresAt) > 0 ? cached : null;
 }
 
-export function seedFigureSignedUrlCache(input: {
-  projectId: string;
-  reference: UploadFigureAssetResponse;
-}): void {
-  cacheSignedUrl({
-    projectId: input.projectId,
-    assetDocumentId: input.reference.assetDocumentId,
-    storageUrl: input.reference.storageUrl,
-    mimeType: input.reference.mimeType,
-    fileType: input.reference.fileType,
-    signedUrl: input.reference.signedUrl,
-    signedUrlExpiresAt: input.reference.signedUrlExpiresAt,
-  });
-}
-
 export async function getFigureSignedUrl(
   input: GetFigureSignedUrlInput,
 ): Promise<GetFigureSignedUrlResponse> {
   const cached = input.skipCache ? null : getCachedSignedUrl(input);
-  if (cached) {
-    return {
-      assetDocumentId: cached.assetDocumentId,
-      storageUrl: cached.storageUrl,
-      mimeType: "image/*",
-      fileType: "image",
-      signedUrl: cached.signedUrl,
-      signedUrlExpiresAt: cached.signedUrlExpiresAt,
-    };
-  }
+  if (cached) return cached;
 
   const key = cacheKey(input);
   const pending = inFlightSignedUrls.get(key);
@@ -140,7 +84,7 @@ export async function getFigureSignedUrl(
     // gone (or unreadable, which it does not tell apart), not a failure.
     const query = input.workId ? `?workId=${encodeURIComponent(input.workId)}` : "";
     const value = await getJson<GetFigureSignedUrlResponse>(`${signedUrlPath(input)}${query}`);
-    cacheSignedUrl({ ...input, ...value });
+    cacheSignedUrl(input, value);
     return value;
   })();
   inFlightSignedUrls.set(key, request);
@@ -149,73 +93,4 @@ export async function getFigureSignedUrl(
   } finally {
     if (inFlightSignedUrls.get(key) === request) inFlightSignedUrls.delete(key);
   }
-}
-
-function appendOptionalText(form: FormData, name: string, value: string | null | undefined): void {
-  const trimmed = value?.trim();
-  if (trimmed) form.append(name, trimmed);
-}
-
-function parseXhrPayload(xhr: XMLHttpRequest): unknown {
-  if (!xhr.responseText) return null;
-  try {
-    return JSON.parse(xhr.responseText) as unknown;
-  } catch {
-    return xhr.responseText;
-  }
-}
-
-export function uploadFigure(input: UploadFigureInput): Promise<UploadFigureAssetResponse> {
-  const form = new FormData();
-  form.append("file", input.file);
-  appendOptionalText(form, "alt", input.alt);
-  appendOptionalText(form, "label", input.label);
-  appendOptionalText(form, "caption", input.caption);
-
-  // XMLHttpRequest instead of fetch: the Fetch API has no upload-progress
-  // event, so there's no way to report bytes-sent to the caller without
-  // falling back to XHR. This is a known web-platform limitation.
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", figurePath(input.projectId, input.hostDocumentId));
-
-    if (input.signal) {
-      if (input.signal.aborted) {
-        reject(new DOMException("Figure upload was cancelled.", "AbortError"));
-        return;
-      }
-      input.signal.addEventListener("abort", () => xhr.abort(), { once: true });
-    }
-
-    xhr.upload.onprogress = (event) => {
-      const total = event.lengthComputable ? event.total : null;
-      input.onProgress?.({
-        loaded: event.loaded,
-        total,
-        percent: total && total > 0 ? Math.round((event.loaded / total) * 100) : null,
-      });
-    };
-
-    xhr.onerror = () =>
-      reject(new Error("Figure upload failed. Check your connection and try again."));
-    xhr.onabort = () => reject(new DOMException("Figure upload was cancelled.", "AbortError"));
-    xhr.onload = () => {
-      const payload = parseXhrPayload(xhr);
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(errorMessageFromPayload(payload, xhr.status)));
-        return;
-      }
-
-      const reference = deserializeTransport<UploadFigureAssetResponse>(
-        payload as UploadFigureAssetResponse,
-      );
-      seedFigureSignedUrlCache({
-        projectId: input.projectId,
-        reference,
-      });
-      resolve(reference);
-    };
-
-    xhr.send(form);
-  });
 }

@@ -176,17 +176,20 @@ const scope = z.discriminatedUnion("kind", [
 ]);
 const fileClassification = z.union([
   z.object({
+    extension: z.string(),
     editable: z.literal(true),
     filetype: filetypeSchema,
     schemaType: z.enum(["document", "code"]),
   }),
   z.object({
+    extension: z.string(),
     editable: z.literal(false),
     disposition: z.literal("binary"),
     fileType: z.enum(["docx", "image", "pdf", "binary"]),
     mimeType: z.string().nullable(),
   }),
   z.object({
+    extension: z.string(),
     editable: z.literal(false),
     disposition: z.literal("custom"),
     fileType: z.enum(["docx", "image", "pdf", "binary"]),

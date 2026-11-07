@@ -40,6 +40,7 @@ import {
   linkTargetHref,
   referenceChip,
 } from "@/core/editor/links";
+import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { FolderMenu, useFolderMenuHost } from "@/features/project/context/FolderMenu";
 
 /**
@@ -156,6 +157,15 @@ export function TranscriptReference({
         ? () => navigation.follow(syntax)
         : undefined;
   const label = authoredLabel !== "true" && resolution?.available ? resolution.label : children;
+  // Only an exact reference the host still resolves names an entry; syntax and gone ones are not draggable.
+  const drag = useReferenceDrag(
+    exact && resolution?.available
+      ? {
+          ref: { kind: exact.kind === "document" ? "file" : "folder", id: exact.id },
+          name: resolution.label,
+        }
+      : null,
+  );
   // A syntax link this surface can never follow (a relative path with nothing
   // to be relative to) is text. A link control that can never work is a dead
   // control; the href stays reachable as a tooltip.
@@ -177,6 +187,7 @@ export function TranscriptReference({
       type="button"
       aria-haspopup="menu"
       {...(chip ? linkChipAttributes(chip) : {})}
+      {...drag}
     >
       {label}
     </button>
@@ -190,6 +201,7 @@ export function TranscriptReference({
       aria-description={missing}
       title={chip?.state === "draft" ? missing : undefined}
       {...(chip ? linkChipAttributes(chip) : {})}
+      {...drag}
       onClick={follow}
       onKeyDown={(event) => {
         if (event.key === "Enter") {

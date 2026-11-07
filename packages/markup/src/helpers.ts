@@ -549,11 +549,25 @@ function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeConte
     if (!codec) throw new Error(`pm->mdast: missing mark codec "${mark.type.name}"`);
 
     // Inline code protects literal text; other marks wrap already-serialized child syntax.
-    const inner = mark.type.name === "code" ? plainText(group) : inlineMdastToMarkdown(group, ctx);
-    out.push(...inlineMarkdownToMdast(codec.serialize(inner, mark.attrs, ctx), ctx));
+    const inner =
+      mark.type.name === "code"
+        ? plainText(group)
+        : encodeLineEndings(inlineMdastToMarkdown(group, ctx));
+    // Nothing to wrap (text that is only a line ending): bare delimiters would read as a rule.
+    if (inner === "") out.push(...inlineTokensToMdast(group, ctx));
+    else out.push(...inlineMarkdownToMdast(codec.serialize(inner, mark.attrs, ctx), ctx));
   }
 
   return out;
+}
+
+/**
+ * A line ending at the start of a mark's text stops the delimiter opening, and
+ * a blank line ends the paragraph; both lose or break the mark. A character
+ * reference reads back as the same text.
+ */
+function encodeLineEndings(markdown: string): string {
+  return markdown.replace(/^\n+|\n(?=\n)/g, (run) => "&#xA;".repeat(run.length));
 }
 
 function firstMark(marks: readonly Mark[]): Mark | null {

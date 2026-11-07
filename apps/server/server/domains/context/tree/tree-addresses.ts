@@ -21,8 +21,8 @@ import {
   isContextUriScheme,
   isProjectScopedScheme,
 } from "@meridian/contracts/context-uri";
-import { contextSources, projects, works } from "@meridian/database/schema";
-import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
+import { contextSources, folders, projects, works } from "@meridian/database/schema";
+import { and, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { catalogSourceAuthority } from "../adapters/catalog-file-mapper.js";
@@ -291,6 +291,60 @@ export async function loadFolderChains(
     chains.set(row.start_id as FolderId, chain);
   }
   return chains;
+}
+
+export type FolderAddress = Omit<NodeAddress, "documentId" | "image"> & {
+  folderId: FolderId;
+  deleted: boolean;
+};
+
+/** Canonical live-tree locations for folders, including deleted ancestry. */
+export async function loadFolderAddresses(
+  db: DrizzleDb,
+  folderIds: readonly string[],
+): Promise<FolderAddress[]> {
+  const ids = [...new Set(folderIds.filter(isUuid))];
+  if (ids.length === 0) return [];
+  const rows = await currentDrizzleDb(db)
+    .select({
+      id: folders.id,
+      parentId: folders.parentId,
+      contextSourceId: folders.contextSourceId,
+      name: folders.name,
+      deletedAt: folders.deletedAt,
+    })
+    .from(folders)
+    .where(inArray(folders.id, ids as FolderId[]));
+  const chains = await loadFolderChains(
+    db,
+    rows.map((row) => row.parentId),
+  );
+  const spelled = await spellNodeAddresses(
+    db,
+    rows.map((row) => ({
+      documentId: row.id as unknown as DocumentId,
+      contextSourceId: row.contextSourceId,
+      folderId: row.parentId,
+      name: row.name,
+      extension: "",
+      fileType: "folder",
+    })),
+    chains,
+  );
+  return rows.flatMap((row, index): FolderAddress[] => {
+    const address = spelled[index];
+    if (!address) return [];
+    const ancestors = row.parentId ? chains.get(row.parentId) : [];
+    return [
+      {
+        ...address,
+        folderId: row.id,
+        path: `${address.path}/`,
+        uri: `${address.uri}/`,
+        deleted: row.deletedAt !== null || Boolean(ancestors?.some((folder) => folder.deleted)),
+      },
+    ];
+  });
 }
 
 /** Source-relative path of a folder chain (nearest first), with a trailing slash unless empty. */

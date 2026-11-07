@@ -1,6 +1,6 @@
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { aheadAddress } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
@@ -19,14 +19,16 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
+import { entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
-import { createInMemoryObjectStore } from "../storage/index.js";
+import { createInMemoryObjectStore, createObjectRelease } from "../storage/index.js";
 import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 import { createContextUploadContentPort } from "./uploads/context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./uploads/drizzle-upload-intake.js";
 import { createUploadIntake } from "./uploads/upload-intake.js";
+import { uploadBytes } from "./uploads/upload-test-support.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {
@@ -160,8 +162,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         },
       });
       const binary = { fileType: "image", mimeType: "image/png", sizeBytes: 1 } as const;
+      const raceId = crypto.randomUUID();
       const uploading = racing.createBinaryDocument({
         ...binary,
+        id: raceId,
         folderId: null,
         name: "race",
         extension: "png",
@@ -169,7 +173,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       });
       await publication;
       let moveDone = false;
-      const moving = port.move("manuscript://race.png", "manuscript://raced.png").finally(() => {
+      const moving = moveTo(port, "manuscript://race.png", "manuscript://raced.png", {
+        expected: { kind: "file", nodeId: raceId },
+      }).finally(() => {
         moveDone = true;
       });
       // The move either finishes in the gap (the defect) or queues behind the upload.
@@ -211,10 +217,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
 
       // Deleting a finalized upload keeps the identity it settled; a new upload at the same
       // address never captures the ref.
+      const intakeStore = createInMemoryObjectStore();
       const intake = createUploadIntake({
         repository: createDrizzleUploadIntakeRepository(db),
         content: createContextUploadContentPort(app.contextPorts),
-        objectStore: createInMemoryObjectStore(),
+        objectStore: intakeStore,
+        release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
         catalog: { refreshSources: async () => "1" },
       });
@@ -225,13 +233,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         const deletedRef = await register(`uploads://@c1/${filename}`);
         const bytes = new TextEncoder().encode(`Upload ${filename}`);
         const uploadOnce = async () => {
-          const uploaded = await intake.intake({
-            intakeId: randomUUID(),
+          const uploaded = await uploadBytes(intake, intakeStore, {
             actorUserId: userId,
-            owner: { kind: "chat", projectId, chatId },
+            projectId,
+            chatId,
             filename,
             mimeType,
-            byteDigest: createHash("sha256").update(bytes).digest("hex"),
             bytes,
           });
           if (!uploaded.ok) throw new Error(uploaded.error.code);
@@ -253,6 +260,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
                 expectedRevision: firstUpload.locationRevision,
               },
               userId,
+              { kind: "chat", projectId, chatId },
             ),
             filename,
           )
@@ -267,7 +275,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       // the ref waiting at the destination settles on it.
       const castRef = await register("kb://cast.toml");
       const cast = await create("user://cast.toml");
-      expect(await port.move("user://cast.toml", "kb://cast.toml")).toMatchObject({ ok: true });
+      expect(
+        await moveTo(port, "user://cast.toml", "kb://cast.toml", {
+          expected: await entryAt(port, "user://cast.toml"),
+        }),
+      ).toMatchObject({
+        ok: true,
+      });
       expect(await settlement(castRef)).toBe(cast);
 
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
@@ -275,7 +289,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       const vacated = await register("manuscript://branches/ch2.toml");
       expect(await settlement(vacated)).toBe(moved);
       const destination = await register("manuscript://part-two/ch2.toml");
-      expect(await port.move("manuscript://branches", "manuscript://part-two")).toMatchObject({
+      expect(
+        await moveTo(port, "manuscript://branches", "manuscript://part-two", {
+          expected: await entryAt(port, "manuscript://branches"),
+        }),
+      ).toMatchObject({
         ok: true,
       });
       expect(await settlement(destination)).toBe(moved);

@@ -357,7 +357,8 @@ export type FinishReason = "end_turn" | "tool_use" | "max_tokens" | "stop_sequen
 export interface GenerateResult {
   content: ContentPart[];
   toolCalls: ToolCall[];
-  finishReason: FinishReason;
+  /** Null when the call was stopped: the adapter's finish reason then says nothing true. */
+  finishReason: FinishReason | null;
   usage: Usage;
   model: string;
   provider: string;

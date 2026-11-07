@@ -25,7 +25,7 @@ import {
   useState,
 } from "react";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
-import { type DragEntry, entryKey } from "./entry";
+import { type DragEntry, type EntryRef, entryKey } from "./entry";
 
 export type EntrySelection = {
   /** Rows drag on the desktop shell only; the phone has no drag (owner, 2026-10-11). */
@@ -201,6 +201,16 @@ export function useEntrySelection(): EntrySelection {
 
 const SelectionContext = createContext<EntrySelection | null>(null);
 
+/** Selects the rows an operation made or moved, where the list that holds them is mounted. */
+export function selectRows(selection: EntrySelection | null, rows: readonly EntryRef[]) {
+  if (rows.length > 0) selection?.replace(rows.map(entryKey));
+}
+
+/** The enclosing list's selection; none outside a list (phone browsing). */
+export function useOptionalEntrySelection(): EntrySelection | null {
+  return useContext(SelectionContext);
+}
+
 /** Gives the list's rows its selection; Escape inside returns to the open row. */
 export function EntrySelectionProvider({
   selection,
@@ -214,7 +224,7 @@ export function EntrySelectionProvider({
   };
   return (
     <SelectionContext.Provider value={selection}>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape clears the selection made by the rows inside. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape clears the selection made by the rows inside. slop-lint: allow suppression the reason is stated in this comment */}
       <div ref={selection.root} className="contents" onKeyDown={onKeyDown}>
         {children}
       </div>

@@ -53,9 +53,21 @@ export class BoundWrites {
   }
 
   /** Whether `bound` was bound for what occupies its path now (`null`: nothing). */
-  boundFor(path: string, bound: BoundWrite, occupant: ContextDocument | null): boolean {
+  boundFor(
+    path: string,
+    bound: BoundWrite,
+    occupant: ContextDocument | null,
+    plannedId?: string,
+  ): boolean {
     const { holder } = bound;
-    if (holder.kind === "document") return occupant?.id === holder.documentId;
+    if (holder.kind === "document")
+      return (
+        occupant?.id === holder.documentId ||
+        (occupant === null &&
+          bound.fresh &&
+          bound.schemaType === "code" &&
+          plannedId === holder.documentId)
+      );
     if (holder.kind === "new") return occupant === null && holder.uri === this.deps.holderUri(path);
     return false;
   }

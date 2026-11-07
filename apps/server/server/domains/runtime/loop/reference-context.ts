@@ -171,7 +171,7 @@ export async function loadReferenceReads(input: {
   return { blocks: updated, evidence };
 }
 
-/** A reference read reaches the model as the same text a `read` call returns (D43). */
+/** A reference read reaches the model as the same text a `read` call returns. */
 export function referenceReadText(result: JsonValue): string {
   if (typeof result === "string") return result;
   return isAgentEditResultEnvelope(result)

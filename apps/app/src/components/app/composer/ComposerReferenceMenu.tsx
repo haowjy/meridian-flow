@@ -28,6 +28,7 @@ import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-refere
 import { linkChipAttributes, referenceChip } from "@/core/editor/links";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { ReferenceSuggestionMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
+import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { FolderMenu, useFolderMenuHost } from "@/features/project/context/FolderMenu";
 import {
   type ComposerReferenceAttrs,
@@ -60,6 +61,15 @@ export function ComposerReferenceMenu({
       ? () => readRuntime().onOpen?.(reference)
       : undefined;
   const folderHost = useFolderMenuHost();
+  // The chip is the entry it names, draggable as one. TipTap's node view tells ProseMirror to leave a
+  // drag that starts inside it alone, so the atom is never moved: dragging a chip outward leaves it here.
+  const drag = useReferenceDrag({
+    ref:
+      reference.kind === "folder"
+        ? { kind: "folder", id: reference.folderId }
+        : { kind: "file", id: reference.documentId },
+    name: label,
+  });
   const focus = () => trigger.current?.focus();
   const replace = (next: ComposerReferenceAttrs | null) => {
     const position = getPos();
@@ -99,6 +109,7 @@ export function ComposerReferenceMenu({
         aria-haspopup="menu"
         aria-disabled={!folderHost}
         aria-label={label}
+        {...drag}
       >
         {label}
       </button>
@@ -112,6 +123,7 @@ export function ComposerReferenceMenu({
         role="link"
         aria-disabled={!follow}
         aria-label={label}
+        {...drag}
         onClick={(event) => {
           event.preventDefault();
           follow?.();

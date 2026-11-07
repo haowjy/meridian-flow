@@ -5,7 +5,6 @@
  * - archive-frozen destinations, ordered multi-Work locking, and cross-destination inverse selection (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
  */
 
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -476,13 +475,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: ASSETS_ID,
           contextSourceId: MANUSCRIPT_ID,
           name: "assets",
-          documentAlias: folderDocumentName("assets"),
         },
         {
           id: ART_ID,
           contextSourceId: MANUSCRIPT_ID,
           name: "art",
-          documentAlias: folderDocumentName("art"),
         },
       ]);
       await db.insert(schema.documents).values({

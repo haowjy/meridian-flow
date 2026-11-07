@@ -13,7 +13,7 @@
  * locks of every source involved (current and final) and the row locks §14 names.
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
-import { allocateFilename, type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
+import { type Filetype, firstFreeName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, folders } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -180,7 +180,7 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
     });
   }
 
-  const free = await checkFinalPath(db, { ...move, to }, path);
+  const free = await checkAncestors(db, { ...move, to }, path);
   if (!free.ok) return free;
 
   // The split, from the snapshot: original names and coordinates.
@@ -200,52 +200,34 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
 }
 
 async function freeTarget(db: Database, move: NodeMove): Promise<MoveTarget> {
-  const desired =
-    move.node.kind === "document"
-      ? ({ kind: "document", name: move.to.name, extension: move.to.extension ?? "" } as const)
-      : ({ kind: "folder", name: move.to.name } as const);
-  const filename = await allocateFilename(desired, async ({ filename }) => {
-    const found = await createTreeReader(db).resolvePath(LIVE_TREE, {
-      contextSourceId: move.to.contextSourceId,
-      path: [...move.to.dir, filename].join("/"),
-      as: move.node.kind,
-    });
-    if (found.kind === "not_found") return false;
-    if (found.kind === "ambiguous") return true;
-    return (
-      (found.node.kind === "document" ? found.node.document.id : found.node.folder.id) !==
-      move.node.id
-    );
-  });
-  if (move.node.kind === "folder") return { ...move.to, name: filename };
-  const extension = move.to.extension ?? "";
-  return {
-    ...move.to,
-    name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
-    extension,
-  };
+  const extension = move.node.kind === "document" ? (move.to.extension ?? "") : "";
+  const free = firstFreeName(
+    { name: move.to.name, extension },
+    await createTreeReader(db).namesAt(
+      LIVE_TREE,
+      { contextSourceId: move.to.contextSourceId, dir: move.to.dir },
+      move.node,
+    ),
+  );
+  return move.node.kind === "folder"
+    ? { ...move.to, name: free.filename }
+    : { ...move.to, name: free.name, extension };
 }
 
-/**
- * The final path and each ancestor it needs against the live tree: a claim of the node's
- * kind at the end (a document and a folder meet through the shared namespace), a folder at
- * every prefix. The node itself, at its own path, is no conflict.
- */
-async function checkFinalPath(
+/** Each ancestor of the final path must be a folder (or absent): a document there clashes. */
+async function checkAncestors(
   db: Database,
   move: NodeMove,
   path: string,
 ): Promise<Result<void, MoveFault>> {
   const tree = createTreeReader(db);
   const segments = path.split("/");
-  for (let length = 1; length <= segments.length; length += 1) {
-    const isFinal = length === segments.length;
+  for (let length = 1; length < segments.length; length += 1) {
     const found = await tree.resolvePath(LIVE_TREE, {
       contextSourceId: move.to.contextSourceId,
       path: segments.slice(0, length).join("/"),
-      as: isFinal ? move.node.kind : "folder",
     });
-    if (found.kind === "not_found" || isFinal) break;
+    if (found.kind === "not_found") break;
     if (found.kind === "ambiguous" || found.node.kind === "document")
       return Err({ code: "conflict", node: move.node });
   }
@@ -292,7 +274,6 @@ async function installMove(
       contextSourceId: to.contextSourceId,
       parentId,
       name: to.name,
-      documentAlias: folderDocumentName(to.name),
       updatedAt: now,
     })
     .where(eq(folders.id, node.id));

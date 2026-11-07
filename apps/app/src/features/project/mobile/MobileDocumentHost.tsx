@@ -1,8 +1,7 @@
 /**
  * MobileDocumentHost — phone document/viewer host with route-owned binding.
  *
- * The live document is read-only on a phone, but its TipTap/Yjs binding stays
- * alive so AI edits stream into it. While the document is under inline review
+ * The writer types in the live document on a phone as on desktop. While the document is under inline review
  * `MobileDocumentReview` wraps the editor with the review's header, bar and
  * change list. This
  * host is the mobile binding owner: entering a document opens and binds exactly
@@ -24,13 +23,15 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextDocumentHost, type EditableContextTab } from "../context/ContextDocumentHost";
-import { ContextViewerBareHost } from "../context/ContextViewerHost";
+import { ContextViewerHost } from "../context/ContextViewerHost";
+import { selectionAtRoute } from "../context/context-removal-protocol";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useDockArchivedWork } from "../dock/DockDocumentIdentity";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { MobileDocumentReview } from "./MobileDocumentReview";
+import { MobileRefusalNotice } from "./MobileRefusalNotice";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
@@ -115,13 +116,9 @@ function MobileLocalDocumentHost({
   const state = useContextRemovalProject(projectId);
   useLayoutEffect(() => {
     const selected = state.selection;
-    if (
-      selected.status === "none" ||
-      selected.locator.scheme !== "unfiled" ||
-      selected.locator.path !== "" ||
-      selected.locator.workId !== workId
-    )
-      return;
+    // The pointer route (`unfiled`, no path) and a path route the pointer holds: both bind to
+    // the local document, so a move of it carries the route instead of rejecting its old path.
+    if (selected.status === "none" || selected.locator.workId !== workId) return;
     const workspace = resolveWorkspaceRoute({
       tabs: [tab],
       selectedDocumentId: tab.documentId,
@@ -136,7 +133,7 @@ function MobileLocalDocumentHost({
       );
     } else if (workspace.kind === "owner") {
       if (selected.status === "candidate")
-        removal.bindRouteSelection(projectId, selected.revision, workspace.identity);
+        removal.bindRouteSelection(projectId, selected.revision, workspace.identity, "answer");
       else if (selected.status === "bound" && selected.identity.documentId === tab.documentId)
         removal.activate({
           projectId,
@@ -184,6 +181,8 @@ function PhoneDocument({
       {archived ? (
         <ArchivedWorkNotice projectId={projectId} work={archived} className="shrink-0 px-2 pt-2" />
       ) : null}
+      {/* There is no identity bar on a phone: a refused create or move is said here. */}
+      <MobileRefusalNotice projectId={projectId} tab={tab} className="shrink-0 px-4" />
       <div className="relative min-h-0 flex-1">
         {children}
         <ContextDocumentHost
@@ -227,20 +226,28 @@ function useMobileRouteBinding({
     const selection = removalState.selection;
     if (selection.status === "none") return;
     if (
-      selection.locator.scheme !== activeContextScheme ||
-      selection.locator.path !== activeContextPath ||
-      selection.locator.workId !== workId ||
-      selection.locator.rootThreadId !== (route.rootThreadId ?? undefined)
+      !selectionAtRoute(selection, {
+        scheme: activeContextScheme,
+        path: activeContextPath,
+        workId,
+        rootThreadId: route.rootThreadId ?? undefined,
+      })
     )
       return;
-    // The live catalog says nothing about a pending draft: its tab is the identity.
+    // A draft-only tab is never live at its cached path, so the path doesn't identify it: a
+    // review binds on arrival, and a plain URL there waits for the address answer.
     const catalogSettled = !isFetching && !isError;
     const draftOnly = activeTab !== null && isDraftOnly(activeTab);
-    if (activeTab && (draftOnly || catalogSettled)) {
-      contextRemoval.bindRouteSelection(projectId, selection.revision, {
-        kind: "server",
-        documentId: activeTab.documentId,
-      });
+    if (activeTab && !draftOnly && catalogSettled) {
+      contextRemoval.bindRouteSelection(
+        projectId,
+        selection.revision,
+        {
+          kind: "server",
+          documentId: activeTab.documentId,
+        },
+        "answer",
+      );
     } else if (
       selection.status === "candidate" &&
       catalogResolved &&
@@ -338,7 +345,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     return (
       <>
         {capture}
-        <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
+        <ContextViewerHost projectId={projectId} tab={activeTab} />
       </>
     );
   }

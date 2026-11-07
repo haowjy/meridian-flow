@@ -1,8 +1,5 @@
 /** Shared helpers for uploaded editor images and asset-backed rendering. */
-import {
-  parseDocumentFilename,
-  type UploadFigureAssetResponse,
-} from "@meridian/contracts/protocol";
+import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 
@@ -30,38 +27,6 @@ export function acceptsInlineImage(doc: PMNode, pos: number): boolean {
   return $pos.parent.canReplaceWith($pos.index(), $pos.index(), imageType);
 }
 
-/**
- * What a drop carrying files means.
- *
- * The editor answers for every file dropped on it, including the ones it
- * cannot use: the browser's own answer to an unclaimed file is to LEAVE the
- * page and open it, which takes the writer out of the manuscript
- * mid-sentence. Null is the only case the editor has nothing to say about —
- * a drop carrying no files at all, which is ProseMirror's own business.
- */
-export type FileDropIntent =
-  | { kind: "insert"; file: File }
-  /** Named, because a refusal that does not say what it refused is a shrug. */
-  | { kind: "refuse"; filename: string };
-
-export function fileDropIntent(files: readonly File[]): FileDropIntent | null {
-  if (files.length === 0) return null;
-  const image = files.find(isImageFile);
-  return image ? { kind: "insert", file: image } : { kind: "refuse", filename: files[0].name };
-}
-
-/**
- * True while a drag carries files.
- *
- * `dataTransfer.files` is empty until the drop itself, so the approach cannot
- * ask what KIND of file is coming — only that one is. That is enough for what
- * the approach has to do: claim the drop, so the browser does not navigate to
- * the file the moment it lands.
- */
-export function draggingFiles(event: DragEvent): boolean {
-  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
-}
-
 /** The picture a paste carried as its own file item, rather than as an address. */
 export function imageFileFromClipboard(event: ClipboardEvent): File | null {
   const item = Array.from(event.clipboardData?.items ?? []).find(
@@ -76,14 +41,6 @@ export function imageAltFromFilename(filename: string): string {
     .replace(/[_-]+/g, " ")
     .trim();
   return stem || filename || "Image";
-}
-
-export function imageAttrsFromUpload(response: UploadFigureAssetResponse) {
-  return {
-    src: `asset:${response.assetDocumentId}`,
-    alt: response.figure.alt || null,
-    title: null,
-  };
 }
 
 /**

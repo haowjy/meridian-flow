@@ -20,10 +20,11 @@ import {
   type TurnId,
   type UserId,
 } from "@meridian/contracts";
-import { allocateFilename } from "@meridian/contracts/protocol";
+import { firstFreeName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { placeBranchSibling, syncBranchSiblingFacts } from "./branch-sibling-order.js";
 import {
   readBranchTreeFacts,
   settleBranchEntries,
@@ -32,7 +33,6 @@ import {
 import { resolveAbsorbedFolders } from "./folder-normalization.js";
 import { filePath, insertFolder, lockDocuments } from "./node-rows.js";
 import { walkFolders } from "./placement.js";
-import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
 import { createTreeReader, type TreeView } from "./tree-view.js";
 import {
   findHiddenFolder,
@@ -89,42 +89,41 @@ export async function moveInBranch(
       name: string;
       extension: string;
     };
+    position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
     changedBy: ChangedBy;
   },
 ): Promise<Result<BranchTreeChange, BranchTreeFault>> {
   const view: TreeView = { kind: "branch", branchId: input.branchId };
   const tree = createTreeReader(db);
   await lockDocuments(db, [input.documentId]);
-  if ((await tree.findById(view, input.documentId)).kind !== "found")
-    return Err({ code: "not_found" });
+  const current = await tree.findById(view, input.documentId);
+  if (current.kind !== "found") return Err({ code: "not_found" });
   const { contextSourceId } = input.to;
   const desiredPath = filePath(input.to.dir, input.to.name, input.to.extension);
   const occupant = await tree.resolvePath(view, {
     contextSourceId,
     path: desiredPath,
-    as: "document",
   });
   if (occupant.kind === "ambiguous") return Err({ code: "ambiguous" });
   if (occupant.kind === "found") {
-    if (occupant.node.kind === "document" && occupant.node.document.id === input.documentId)
+    if (
+      occupant.node.kind === "document" &&
+      occupant.node.document.id === input.documentId &&
+      !input.position
+    )
       return Err({ code: "already_there" });
   }
-  const filename = await allocateFilename(
-    { kind: "document", name: input.to.name, extension: input.to.extension },
-    async ({ filename }) => {
-      const found = await tree.resolvePath(view, {
-        contextSourceId,
-        path: filePath(input.to.dir, filename, ""),
-        as: "document",
-      });
-      if (found.kind === "not_found") return false;
-      if (found.kind === "ambiguous") return true;
-      return !(found.node.kind === "document" && found.node.document.id === input.documentId);
-    },
+  const free = firstFreeName(
+    { name: input.to.name, extension: input.to.extension },
+    await tree.namesAt(
+      view,
+      { contextSourceId, dir: input.to.dir },
+      {
+        kind: "document",
+        id: input.documentId,
+      },
+    ),
   );
-  const landedName = input.to.extension
-    ? filename.slice(0, -(input.to.extension.length + 1))
-    : filename;
   const walk = await walkFolders(db, view, contextSourceId, input.to.dir, async (gap) => {
     const at = { contextSourceId, ...gap };
     return (await findHiddenFolder(db, at)) ?? (await insertFolder(db, at, { hidden: true }));
@@ -132,6 +131,18 @@ export async function moveInBranch(
   if (walk.kind === "occupied")
     return Err(walk.occupant.kind === "ambiguous" ? { code: "ambiguous" } : conflictWithFile);
   if (walk.kind !== "walked") throw new Error("A branch's folder walk fills every gap");
+  const rank = await placeBranchSibling(db, {
+    branchId: input.branchId,
+    documentId: input.documentId,
+    sourceId: contextSourceId,
+    parentId: walk.folderId,
+    name: free.filename,
+    ...(input.position ? { position: input.position } : {}),
+    arrived:
+      current.document.contextSourceId !== contextSourceId ||
+      current.document.folderId !== walk.folderId,
+  });
+  if (rank === "stale-anchor") return Err({ code: "not_found" });
   const before = await factsOf(db, input.branchId, input.documentId);
   const after: BranchTreeFacts = {
     row: true,
@@ -139,8 +150,9 @@ export async function moveInBranch(
     moved: {
       folderId: walk.folderId,
       rootSourceId: walk.folderId === null ? contextSourceId : null,
-      name: landedName,
+      name: free.name,
       extension: input.to.extension,
+      rank,
     },
     deleted: false,
   };
@@ -150,6 +162,15 @@ export async function moveInBranch(
     facts: after,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
+  });
+  await syncBranchSiblingFacts(db, {
+    branchId: input.branchId,
+    documentId: input.documentId,
+    facts: after,
+    previousParent: {
+      sourceId: current.document.contextSourceId,
+      folderId: current.document.folderId,
+    },
   });
   return Ok({ before, after });
 }
@@ -194,13 +215,15 @@ export async function discardBranchTreeFacts(
   await lockDocuments(db, [input.documentId]);
   const facts = await factsOf(db, input.branchId, input.documentId);
   if (!facts.moved && !facts.deleted) return { discarded: false };
+  const after = { ...facts, moved: null, deleted: false };
   await writeBranchTreeFacts(db, {
     branchId: input.branchId,
     documentId: input.documentId,
-    facts: { ...facts, moved: null, deleted: false },
+    facts: after,
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: null,
   });
+  await syncBranchSiblingFacts(db, { ...input, facts: after });
   await settleBranchEntries(db, {
     branchId: input.branchId,
     documentIds: [input.documentId],
@@ -240,7 +263,7 @@ export async function writeBackBranchFacts(
       facts = { ...facts, moved };
     }
     // A hidden folder is gone once tombstoned; a live folder deleted since still shows in the
-    // branch above the document, as a draft that outlived a delete does (D79).
+    // branch above the document, as a draft that outlived a delete does.
     const [folder] = await loadFolderIdentityRows(currentDrizzleDb(db), [folderId]);
     if (!folder || (folder.hidden && folder.deleted)) return Err("folder_missing");
   }
@@ -252,6 +275,11 @@ export async function writeBackBranchFacts(
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
     ...(!current.row && facts.created ? { createdBy: input.changedBy } : {}),
+  });
+  await syncBranchSiblingFacts(db, {
+    branchId: input.branchId,
+    documentId: input.documentId,
+    facts,
   });
   return Ok(facts);
 }
@@ -273,23 +301,15 @@ async function freeFactsInBranch(
   const [folder] = folderId ? await loadFolderIdentityRows(currentDrizzleDb(db), [folderId]) : [];
   const contextSourceId = (folder?.contextSourceId ?? at.rootSourceId) as ContextSourceId | null;
   if (!contextSourceId) return input.facts;
-  const chain = folderId
-    ? ((await loadFolderChains(currentDrizzleDb(db), [folderId])).get(folderId) ?? [])
-    : [];
-  const prefix = chainPrefix(chain);
   const view = { kind: "branch", branchId: input.branchId } as const;
-  const filename = await allocateFilename(
-    { kind: "document", name: at.name, extension: at.extension },
-    async ({ filename }) => {
-      const [here] = await createTreeReader(db).occupancy(view, [
-        { contextSourceId, path: prefix + filename, as: "document" },
-      ]);
-      return (
-        !!here && (here.documents.some((id) => id !== input.documentId) || here.folders.length > 0)
-      );
-    },
+  const { name } = firstFreeName(
+    at,
+    await createTreeReader(db).namesAt(
+      view,
+      { contextSourceId, parentId: folderId },
+      { kind: "document", id: input.documentId },
+    ),
   );
-  const name = at.extension ? filename.slice(0, -(at.extension.length + 1)) : filename;
   if (name === at.name) return input.facts;
   return {
     ...input.facts,

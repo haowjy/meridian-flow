@@ -32,14 +32,22 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.readVersionedMarkdown(documentId)),
     restoreFromYDoc: (documentId, snapshot, origin) =>
       scopes.within(by(documentId), () => engine.restoreFromYDoc(documentId, snapshot, origin)),
+    readForExport: (documentId, scope) =>
+      scopes.within(by(documentId), () => engine.readForExport(documentId, scope)),
     readAsMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readAsMarkdown(documentId)),
     setMarkdown: (input) => scopes.within(by(input.documentId), () => engine.setMarkdown(input)),
     seedFromMarkdown: (documentId, content, origin) =>
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
+    prepareSeed: (input) =>
+      scopes.within({ projectId: input.projectId }, () => engine.prepareSeed(input)),
+    announceSeeds: engine.announceSeeds,
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
-    // Spells no link: it seeds an empty document.
+    // None spells a link: a seed is encoded from bound blocks, and authority repair seeds an
+    // empty document.
+    encodeSeed: engine.encodeSeed,
+    installSeeds: engine.installSeeds,
     ensureDocumentAuthority: engine.ensureDocumentAuthority,
     // The lease spells nothing; the held write spells as the document it admits.
     withLiveDocument: engine.withLiveDocument,
@@ -123,6 +131,8 @@ export function scopeDraftPeer(
     readStoredWordCounts: access.readStoredWordCounts,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
+    readEffectiveBlocks: (command) =>
+      scopes.within(by(command), () => access.readEffectiveBlocks(command)),
     ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,
     retractCreatedDocumentDraft: access.retractCreatedDocumentDraft,
     readEffectiveHashlines: (command) =>

@@ -33,7 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const ASSET_KEY_ID = "00000000-0000-4000-8000-000000000a05";
     const db = createDb(DATABASE_URL, { max: 4 });
     const storedObjects = new Map<string, { bytes: Uint8Array; mimeType: string }>();
-    const objectStore: ObjectStorePort = {
+    const objectStore: Pick<ObjectStorePort, "put" | "get" | "getSignedUrl" | "delete"> = {
       async put(key, bytes, mimeType) {
         storedObjects.set(key, { bytes, mimeType });
         return { ok: true, value: { storageUrl: createObjectStorageUrl(key) } };
@@ -43,9 +43,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return stored
           ? { ok: true, value: stored }
           : { ok: false, error: { code: "not_found", message: "not found" } };
-      },
-      async list() {
-        return { ok: true, value: { keys: [] } };
       },
       async getSignedUrl(key) {
         return storedObjects.has(key)
@@ -102,14 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const service = createFigureAssetService({
         objectStore,
         documents: createDrizzleFigureDocumentRepository({ db }),
-        contextPorts,
-        generateId: () => ASSET_KEY_ID,
         signedUrlExpiresAt: () => "2030-01-01T00:00:00.000Z",
-        eventSink: {
-          emit() {},
-          emitBatch() {},
-          async flush() {},
-        },
       });
       const [before] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
       const hostBefore = {
@@ -119,20 +109,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sizeBytes: before?.sizeBytes,
       };
 
-      const uploaded = await service.uploadFigure({
-        projectId: PROJECT_ID,
-        userId: USER_ID,
-        hostDocumentId: HOST_DOCUMENT_ID,
-        bytes: Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]),
-        mimeType: "image/png",
-        filename: "map.png",
-      });
+      const bytes = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
+      const stored = await objectStore.put(`figures/${ASSET_KEY_ID}`, bytes, "image/png");
+      if (!stored.ok) throw new Error(stored.error.message);
+      const written = await contextPorts
+        .forProject(PROJECT_ID, USER_ID, new Map())
+        .writeBinary("manuscript://assets/map.png", {
+          storageUrl: stored.value.storageUrl,
+          mimeType: "image/png",
+          fileType: "image",
+          sizeBytes: bytes.byteLength,
+          hasPreview: false,
+          origin: { type: "human", userId: USER_ID },
+        });
+      if (!written.ok) throw new Error(written.error.code);
+      const uploaded = { ok: true as const, value: { assetDocumentId: written.value.documentId } };
 
-      expect(uploaded.ok).toBe(true);
-      if (!uploaded.ok) throw new Error(uploaded.error.message);
       expect(uploaded.value.assetDocumentId).not.toBe(HOST_DOCUMENT_ID);
-      expect(uploaded.value.figure.src).toBe(`asset:${uploaded.value.assetDocumentId}`);
-      expect(uploaded.value.assetPath).toBe(`assets/${ASSET_KEY_ID}-map.png`);
 
       const [after] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
       expect(after).toEqual(before);
@@ -148,9 +141,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: { kind: "tracked" },
       });
-      await expect(
-        context.stat(`manuscript://assets/${ASSET_KEY_ID}-map.png`),
-      ).resolves.toMatchObject({ ok: true, value: { kind: "binary" } });
+      await expect(context.stat("manuscript://assets/map.png")).resolves.toMatchObject({
+        ok: true,
+        value: { kind: "binary" },
+      });
 
       const signed = await service.getSignedFigureUrl({
         projectId: PROJECT_ID,

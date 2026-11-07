@@ -17,12 +17,9 @@ import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import { type ContextMoveResult, renderFilename } from "@meridian/contracts/protocol";
 import { contextPortForThread } from "../../domains/context/context-port-resolution.js";
+import { contextAreaOf } from "../../domains/context/index.js";
 import type { RecordedBranchTreeChange } from "../../domains/context/ports/branch-tree.js";
-import type {
-  ContextError,
-  ContextPort,
-  FileRef,
-} from "../../domains/context/ports/context-port.js";
+import type { ContextError, FileRef } from "../../domains/context/ports/context-port.js";
 import {
   type FileGrant,
   isFileAccessDenied,
@@ -47,6 +44,30 @@ type MoveInput = Extract<WriteToolInput, { command: "move" }>;
 type DeleteInput = Extract<WriteToolInput, { command: "delete" }>;
 export type NamespaceInput = MoveInput | DeleteInput;
 
+async function siblingPosition(
+  call: ToolCall,
+  input: MoveInput,
+): Promise<
+  import("@meridian/contracts/protocol").ContextSiblingPosition | WriteToolErrorOutput | undefined
+> {
+  if (!input.position) return undefined;
+  if (input.position.kind === "start" || input.position.kind === "end")
+    return { kind: input.position.kind };
+  const trimmed = input.position.sibling.replace(/\/+$/, "");
+  const folder = await folderAt(call, trimmed);
+  if (!folder.ok)
+    return namespaceContextRefusal("move", folder.error, { path: input.position.sibling });
+  if (folder.value?.folderId)
+    return { kind: input.position.kind, siblingId: folder.value.folderId };
+  const sibling = await call.context.port.stat(input.position.sibling);
+  if (!sibling.ok && sibling.error.code !== "not_found")
+    return namespaceContextRefusal("move", sibling.error, { path: input.position.sibling });
+  const documentId = sibling.ok ? sibling.value.documentId : undefined;
+  if (!documentId)
+    return namespaceRefusal("move", "document_unresolved", { path: input.position.sibling });
+  return { kind: input.position.kind, siblingId: documentId };
+}
+
 /** The document a move or delete acts on, as the model named it. */
 function sourcePath(input: NamespaceInput): string {
   return input.command === "move" ? input.from.path : input.path;
@@ -57,18 +78,23 @@ function committedLanding(landedAt: string | undefined, operation: string): stri
   return landedAt;
 }
 
-/** Whether `uri` names a folder: its parent lists a folder by that name. */
-async function isFolder(port: ContextPort, uri: string): Promise<boolean> {
+/** The folder literally named by `path`, if its parent lists one; the written leaf wins over a document alias. */
+async function folderAt(call: ToolCall, path: string) {
+  const uri = path.includes("://") ? path : `manuscript://${path}`;
   const trimmed = uri.replace(/\/+$/, "");
-  const name = trimmed.slice(trimmed.lastIndexOf("/") + 1);
-  if (!name || trimmed.endsWith(":/")) return false;
-  const listing = await port.list(trimmed.slice(0, trimmed.length - name.length));
-  return (
-    listing.ok &&
-    listing.value.entries.some(
-      (entry) => entry.kind === "directory" && entry.uri.replace(/\/+$/, "").endsWith(`/${name}`),
-    )
-  );
+  const slash = trimmed.lastIndexOf("/");
+  const leaf = (value: string) => value.slice(value.lastIndexOf("/") + 1);
+  const name = leaf(trimmed);
+  if (!name || trimmed.endsWith(":")) return { ok: true as const, value: null };
+  const listing = await call.context.port.list(trimmed.slice(0, slash + 1));
+  if (!listing.ok) return listing;
+  return {
+    ok: true as const,
+    value:
+      listing.value.entries.find(
+        (entry) => entry.kind === "directory" && leaf(entry.uri.replace(/\/+$/, "")) === name,
+      ) ?? null,
+  };
 }
 
 /** The document at the source path, in the version this chat's writes change. */
@@ -78,10 +104,11 @@ async function resolveSource(
 ): Promise<(FileRef & { documentId: DocumentId }) | WriteToolErrorOutput> {
   const path = sourcePath(input);
   const filePath = splitDocumentFile(path).filePath;
+  const folder = await folderAt(call, filePath);
+  if (folder.ok && folder.value)
+    return namespaceRefusal(input.command, "source_is_folder", { path: filePath });
   const ref = await call.context.port.stat(filePath);
   if (!ref.ok) {
-    if (ref.error.code === "not_found" && (await isFolder(call.context.port, filePath)))
-      return namespaceRefusal(input.command, "source_is_folder", { path: filePath });
     if (ref.error.code === "not_found")
       return writeToolError(
         input.command,
@@ -112,8 +139,9 @@ async function containerGrant(
 
 /**
  * The live move or delete, its tree entry recorded inside the mutation's own transaction. The
- * placement before is read just ahead of it: the port's own check (the document still at the
- * source path) fails the command if it moved in between.
+ * placement before is read just ahead of it. The port acts on the document by id, so a rename or
+ * move by the writer in between does not fail the command: the document lands where the model
+ * typed.
  */
 async function commitLive(
   deps: ToolWiringDeps,
@@ -128,7 +156,8 @@ async function commitLive(
   });
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
-  const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
+  const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
+  if (position && "output" in position) return position;
   if (!before?.living)
     return namespaceRefusal(input.command, "stale_location", { path: source.uri });
   const origin = {
@@ -164,32 +193,32 @@ async function commitLive(
       ...(input.command === "move" ? { destination: input.path } : {}),
     });
   if (input.command === "delete") {
-    const deleted = await port.delete(source.uri, {
-      expected: { kind: "file", documentId: source.documentId },
-      origin,
-      inTransaction: () => record(),
-    });
+    const deleted = await port.delete(
+      { kind: "file", nodeId: source.documentId },
+      contextAreaOf(source.uri),
+      {
+        origin,
+        inTransaction: () => record(),
+      },
+    );
     if (!deleted.ok) return refuse(deleted.error);
     if (!recorded) throw new Error("A delete committed without its tree entry");
     return { handle: recorded, uri: source.uri };
   }
-  const moved = await port.commitWriterLocation(source.uri, input.path, {
-    expected: { kind: "file", nodeId: source.documentId },
-    origin,
-    inTransaction: async (result: ContextMoveResult) => {
-      const wanted = wantedAt ? parseContextUri(wantedAt) : null;
-      const landedAt = result.destinationUri
-        ? result.destinationUri
-        : wanted?.ok
-          ? formatParsedContextUri(
-              wanted.value.scheme,
-              result.destinationPath,
-              wanted.value.authority,
-            )
-          : input.path;
-      await record(landedAt);
+  // The port takes the folder and the leaf apart; the leaf is what the model typed.
+  const typed = await canonicalPath(call, input.path);
+  const slash = typed.lastIndexOf("/");
+  const moved = await port.commitWriterLocation(
+    { kind: "file", nodeId: source.documentId },
+    contextAreaOf(source.uri),
+    {
+      destination: { kind: "at", folderUri: typed.slice(0, slash + 1) },
+      name: typed.slice(slash + 1),
+      origin,
+      ...(position ? { position } : {}),
+      inTransaction: (result: ContextMoveResult) => record(result.destinationUri),
     },
-  });
+  );
   if (!moved.ok) return refuse(moved.error);
   // A destination naming the document where it already is moves nothing and records nothing.
   if (!recorded)
@@ -197,17 +226,7 @@ async function commitLive(
       path: source.uri,
       destination: input.path,
     });
-  const wanted = wantedAt ? parseContextUri(wantedAt) : null;
-  const uri = moved.value.destinationUri
-    ? moved.value.destinationUri
-    : wanted?.ok
-      ? formatParsedContextUri(
-          wanted.value.scheme,
-          moved.value.destinationPath,
-          wanted.value.authority,
-        )
-      : input.path;
-  return { handle: recorded, uri };
+  return { handle: recorded, uri: moved.value.destinationUri };
 }
 
 /**
@@ -225,6 +244,8 @@ async function commitDrafted(
   const threadId = ctx.threadId as ThreadId;
   const turnId = ctx.turnId ? (ctx.turnId as TurnId) : undefined;
   const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
+  const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
+  if (position && "output" in position) return position;
   let recorded: string | undefined;
   const record = async (change: RecordedBranchTreeChange) => {
     const moved = change.after.moved;
@@ -261,13 +282,19 @@ async function commitDrafted(
   };
   const command = {
     documentId: source.documentId,
+    area: contextAreaOf(source.uri),
     changedBy: { threadId, ...(turnId ? { turnId } : {}) },
     record,
   };
   const changed = await call.context.port.changeInBranch(
     input.command === "move"
-      ? { ...command, op: "move", sourceUri: source.uri, destinationUri: input.path }
-      : { ...command, op: "delete", uri: source.uri },
+      ? {
+          ...command,
+          op: "move",
+          destinationUri: input.path,
+          ...(position ? { position } : {}),
+        }
+      : { ...command, op: "delete" },
   );
   if (!changed.ok)
     return namespaceContextRefusal(input.command, changed.error, {
@@ -280,13 +307,13 @@ async function commitDrafted(
       destination: input.path,
     });
   if (!recorded) throw new Error(`A drafted ${input.command} committed without its tree entry`);
-  return { handle: recorded, uri: changed.value.uri };
+  return { handle: recorded, uri: input.command === "move" ? changed.value.uri : source.uri };
 }
 
 /**
  * `move` needs edit on the document and on the folder it lands in; `delete`, edit on the
- * document. Agents only read uploads (D11, D15). A move touching a drafted namespace lands as
- * one drafted move, including moves to or from live Scratch (D45). No frontier check (D78).
+ * document. Agents only read uploads. A move touching a drafted namespace lands as
+ * one drafted move, including moves to or from live Scratch. No frontier check.
  */
 export async function runNamespaceCommand(
   deps: ToolWiringDeps,

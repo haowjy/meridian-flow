@@ -25,20 +25,14 @@ export type MenuArea = {
   earlier?: { catalog: CatalogContextView | null; rootThreadId: string };
 };
 
-function sortNodes(nodes: DrillNode[]): DrillNode[] {
-  return nodes.sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name));
-}
-
 function listChildren(catalog: CatalogContextView, parentId: string | null): DrillNode[] {
-  return sortNodes(
-    catalog.children(parentId ?? catalog.root.entryId).map((node) => ({
-      id: node.entryId,
-      documentId: node.kind === "dir" ? undefined : node.documentId,
-      name: node.name,
-      folder: node.kind === "dir",
-      icon: node.kind === "dir" ? Folder : fileKindIcon(node),
-    })),
-  );
+  return catalog.children(parentId ?? catalog.root.entryId).map((node) => ({
+    id: node.entryId,
+    documentId: node.kind === "dir" ? undefined : node.documentId,
+    name: node.name,
+    folder: node.kind === "dir",
+    icon: node.kind === "dir" ? Folder : fileKindIcon(node),
+  }));
 }
 
 const earlierId = (area: MenuArea) => `earlier:${area.id}`;

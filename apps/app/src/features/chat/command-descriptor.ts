@@ -30,9 +30,9 @@ import {
   Wrench,
 } from "lucide-react";
 import {
+  describeModelMove,
   documentDisplayName,
   folderDisplayName,
-  moveDestinationName,
   type OwnerNames,
 } from "./document-display-name";
 import { workReceiptLine } from "./work-receipt-copy";
@@ -310,7 +310,9 @@ function moveTenses(tool: ToolView, names?: OwnerNames): ToolActivityVocabulary 
   const active = t`Moving ${source} to`;
   const complete = t`Moved ${source} to`;
   if (!destination) return tenses(`${active}…`, complete);
-  const place = moveDestinationName(from, destination, names);
+  const { kind, place } = describeModelMove(from, destination, names);
+  if (kind === "reorder")
+    return tenses(t`Changing the position of ${source}…`, t`Changed the position of ${source}`);
   return {
     active: { verb: active, parameter: `${place}…` },
     complete: { verb: complete, parameter: place },

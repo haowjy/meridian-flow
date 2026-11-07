@@ -140,10 +140,15 @@ describe("draft tab settlement", () => {
       path: "/chapter.md",
       workId: "work-b",
     });
-    coordinator.bindRouteSelection("project-a", revision, {
-      kind: "server",
-      documentId: "document-a",
-    });
+    coordinator.bindRouteSelection(
+      "project-a",
+      revision,
+      {
+        kind: "server",
+        documentId: "document-a",
+      },
+      "answer",
+    );
 
     // Discard in A leaves B's entry, tab and routed screen; A no longer shows it.
     coordinator.discardDraft("project-a", "work-a", "draft-a");
@@ -207,10 +212,15 @@ describe("draft tab settlement", () => {
     const target = { scheme: "manuscript" as const, path: "/chapter.md", workId: "work-a" };
     const select = () => {
       const revision = coordinator.beginRouteSelection("project-a", target);
-      coordinator.bindRouteSelection("project-a", revision, {
-        kind: "server",
-        documentId: "document-a",
-      });
+      coordinator.bindRouteSelection(
+        "project-a",
+        revision,
+        {
+          kind: "server",
+          documentId: "document-a",
+        },
+        "answer",
+      );
     };
     select();
     coordinator.discardDraft("project-a", "work-a", "draft-a");

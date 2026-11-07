@@ -28,6 +28,7 @@ import type { NodeViewProps } from "@tiptap/core";
 import { NodeViewWrapper } from "@tiptap/react";
 import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
 
+import { FileCard } from "@/components/app/FileCard";
 import { Button } from "@/components/ui/button";
 
 import { useAssetImageRenderState } from "./asset-image-render-state";
@@ -71,7 +72,15 @@ export function FigureNodeView(props: NodeViewProps) {
       draggable={false}
     >
       <div className="meridian-figure-node__media">
-        {renderUrl ? (
+        {renderState.kind === "file" ? (
+          <FileCard
+            name={renderState.file.name}
+            mimeType={renderState.file.mimeType}
+            sizeBytes={renderState.file.sizeBytes}
+            url={renderState.file.downloadUrl}
+            className="m-3"
+          />
+        ) : renderUrl ? (
           <img
             src={renderUrl}
             alt={alt ?? ""}

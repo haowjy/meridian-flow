@@ -3,6 +3,7 @@
 import { type Editor, Extension } from "@tiptap/core";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
+import { isRemoteDocumentRebuild } from "../anchors";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
 import { selectedSourceBlock } from "../chrome/chrome-context";
 import type { KeymapBinding } from "../chrome/keymap";
@@ -17,6 +18,7 @@ import {
   typeBesideObjectTransaction,
 } from "./object-selection";
 import { isEditorObject, objectBody, objectTypeSpec } from "./object-types";
+import { pictureCapped } from "./picture-cap";
 
 const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
 
@@ -167,6 +169,20 @@ export const ObjectPhysicsExtension = Extension.create({
       new Plugin({
         key: objectPhysicsPluginKey,
 
+        /**
+         * A rebuild restores a node selection by position alone, so when the
+         * selected object goes (undo, a peer, an AI write) it lands on whatever
+         * followed, and the next keystroke would replace that text.
+         */
+        appendTransaction(transactions, oldState, newState) {
+          const before = oldState.selection;
+          const after = newState.selection;
+          if (!(before instanceof NodeSelection) || !(after instanceof NodeSelection)) return null;
+          if (after.node.type === before.node.type) return null;
+          if (!transactions.some(isRemoteDocumentRebuild)) return null;
+          return newState.tr.setSelection(TextSelection.near(after.$from));
+        },
+
         /** Registration rides the view's lifetime rather than TipTap's `create` event, which is emitted a macrotask late — long enough for a first keystroke to miss it. */
         view(editorView) {
           const chrome = getEditorChrome(editor);
@@ -241,14 +257,28 @@ export const ObjectPhysicsExtension = Extension.create({
             return true;
           },
 
-          /**: a click reads. */
-          handleClickOn(view, _pos, node, nodePos, _event, direct) {
+          /** A click reads: it selects, and on a picture the cap is holding back it opens the rest. */
+          handleClickOn(view, _pos, node, nodePos, event, direct) {
             if (!direct || !isEditorObject(node)) return false;
             const transaction = selectObjectTransaction(view.state, nodePos);
             if (!transaction) return false;
             view.dispatch(transaction);
             view.focus();
+            // Selected first, as for a double-click: closing the surface lands here.
+            if (objectTypeSpec(node)?.clickEngages?.(event.target)) {
+              engage(editor, view.state, view.dispatch.bind(view));
+            }
             return true;
+          },
+
+          handleDOMEvents: {
+            /** Whether a picture is capped depends on the pane, so it is asked on approach. */
+            mouseover(_view, event) {
+              if (event.target instanceof HTMLImageElement) {
+                event.target.style.cursor = pictureCapped(event.target) ? "zoom-in" : "";
+              }
+              return false;
+            },
           },
 
           /** The pointer's twin of Enter: a double-click on an object engages it, with no click-to-select step in between. */

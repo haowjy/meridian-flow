@@ -10,7 +10,11 @@
 
 import { t } from "@lingui/core/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
+import {
+  type NamedRow,
+  type ProjectContextTreeScheme,
+  storedFilename,
+} from "@meridian/contracts/protocol";
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
@@ -22,9 +26,9 @@ import type { ContextEntrySibling } from "./context-entry-name";
 import {
   allocateContextEntryArrivalName,
   entryNameStemEnd,
-  nameOccupancy,
   validateContextEntryName,
 } from "./context-entry-name";
+import { describeRenames } from "./entry-drag/drop-choice";
 import { destinationOwner } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
@@ -35,6 +39,8 @@ export type UseRenameEntryFormOptions = {
   scheme: ProjectContextTreeScheme;
   /** Stored name of the entry (pre-populates the input). */
   currentName: string;
+  /** The renamed file's own naming facts; absent for a folder. */
+  row?: NamedRow;
   /** Failed durable destination restored after asynchronous namespace repair. */
   repairName?: string;
   /** Sibling names for collision detection (should include all siblings). */
@@ -54,6 +60,7 @@ export function useRenameEntryForm({
   owner,
   scheme,
   currentName,
+  row,
   repairName,
   siblings,
   kind,
@@ -63,7 +70,7 @@ export function useRenameEntryForm({
   const resources = useAccountResourceReplica();
   const { works, noWork } = useWorks(projectId);
   const storedName = (typed: string) => {
-    const stored = storedFilename(typed, currentName);
+    const stored = storedFilename(typed, row);
     return stored.ok ? stored.name : typed;
   };
   const mutation = useMutation({
@@ -83,12 +90,7 @@ export function useRenameEntryForm({
       if (!authority) throw unavailable();
       const destination = {
         parent: await resources.parentForEntry(projectId, entryId),
-        name: allocateContextEntryArrivalName(
-          name,
-          nameOccupancy(filteredSiblings),
-          kind,
-          currentName,
-        ),
+        name: allocateContextEntryArrivalName(name, occupancy, kind, row),
       };
       if (kind === "folder") {
         return resources
@@ -110,14 +112,19 @@ export function useRenameEntryForm({
     [siblings, entryId],
   );
 
+  const occupancy = useMemo(
+    () => new Set(filteredSiblings.map((sibling) => sibling.name)),
+    [filteredSiblings],
+  );
+
   // Select the name sans a visible extension on focus ("outline" in
   // "outline.json"); a prose name has none, so all of it.
   const select = useCallback(
     (input: HTMLInputElement) => {
       const initialName = repairName ?? currentName;
-      input.setSelectionRange(0, entryNameStemEnd(initialName, kind));
+      input.setSelectionRange(0, entryNameStemEnd(initialName, row));
     },
-    [currentName, repairName, kind],
+    [currentName, repairName, row],
   );
 
   return useInlineEdit({
@@ -126,7 +133,14 @@ export function useRenameEntryForm({
     initialError: repairName
       ? t`That rename couldn't be completed. Choose another name or try again.`
       : undefined,
-    validate: (draft) => validateContextEntryName(draft, [], kind, currentName),
+    validate: (draft) => {
+      const invalid = validateContextEntryName(draft, [], kind, row);
+      if (invalid || !draft.trim()) return invalid;
+      const as = allocateContextEntryArrivalName(draft, occupancy, kind, row);
+      const name = allocateContextEntryArrivalName(draft, new Set<string>(), kind, row);
+      const message = as === name ? null : describeRenames([{ name, as }]);
+      return message ? { level: "warning", message } : null;
+    },
     onCommit: async (typed) => {
       // Typing the name it already has, another way (`Chapter 13.md`), is no change.
       if (kind === "file" && storedName(typed) === currentName) return onDone();

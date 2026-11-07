@@ -27,6 +27,7 @@ import type {
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
@@ -96,7 +97,7 @@ export function ContextDocumentHost({
       : null;
   const treeOnlyReview =
     selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
-    selectedReviewFile.draft.tree?.deleted === true;
+    reviewHasNoRoom(selectedReviewFile.draft);
   const reviewItemKey = reviewRoomName || treeOnlyReview ? selectedReviewItemKey : null;
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft room alone.
@@ -206,10 +207,10 @@ export function ContextDocumentHost({
                 active={active && shown}
                 editable={editable}
                 showToolbar={editable}
+                reviewReadOnly={presentation.reviewReadOnly}
                 detached={tab.kind === "new"}
                 localContentReady={localContentReady}
                 schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
-                ariaLabel={presentation.ariaLabel?.()}
                 showCollaborationDecorations={presentation.collaborationDecorations}
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
@@ -244,7 +245,7 @@ function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]
 
 /**
  * A room's scope follows its Work: an archived Work's drafts and scratch are
- * read-only (D33). The front editor already follows its room; when the server
+ * read-only. The front editor already follows its room; when the server
  * names a scope that `readOnly` doesn't show, this tab's Works catalog is
  * behind (another tab archived or unarchived the Work), and the archived
  * notice, its Unarchive and `readOnly` all come from it. Asked on activation

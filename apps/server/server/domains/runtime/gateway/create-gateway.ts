@@ -13,7 +13,6 @@
  *    non-retryable invalid_request errors; there is no cross-provider fallback.
  * 4. Per-attempt timeout policy is resolved through
  *    resolveAttemptTimeouts (gateway config, then the process default) and handed to streamWithRetry.
- * 5. gateway.generate() is the convenience wrapper: consumeStream(gateway.stream()).
  */
 import { createAnthropicAdapter } from "./adapters/anthropic/adapter.js";
 import { assertCacheTtlsOnWire as assertAnthropicCacheTtlsOnWire } from "./adapters/anthropic/request-map.js";
@@ -25,11 +24,9 @@ import {
   resolveAttemptTimeouts,
   streamWithRetry,
 } from "./attempt-stream.js";
-import { consumeStream } from "./consume-stream.js";
 import type {
   GatewayConfig,
   GenerateRequest,
-  GenerateResult,
   ModelInfo,
   ProviderConfig,
   StreamEvent,
@@ -96,10 +93,6 @@ export function createGateway(config: GatewayConfig): Gateway {
           retryable: false,
         };
       }
-    },
-
-    async generate(request: GenerateRequest): Promise<GenerateResult> {
-      return consumeStream(gateway.stream(request));
     },
 
     listModels(): ModelInfo[] {

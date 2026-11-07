@@ -2,7 +2,7 @@
 import type { Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { memo, type ReactNode, type Ref, useCallback, useRef } from "react";
-import { uploadIntakePort } from "@/client/api/upload-intake-api";
+import { chatUploadPort } from "@/client/api/context-upload-api";
 import type { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import {
   Composer,
@@ -39,6 +39,8 @@ type ChatComposerProps = {
   writeMode: AiWriteMode;
   onWriteModeChange: (mode: AiWriteMode) => void;
   composerStrip?: ReactNode;
+  /** A desktop file drag is over the transcript; the composer is where the files will go. */
+  fileDropActive: boolean;
   availableSkills: ReturnType<typeof useThreadAvailableSkills>["skills"];
   referenceCatalog: ReturnType<typeof useReferenceBrowserCatalog>;
   chatCommands: readonly ComposerChatCommand[];
@@ -62,6 +64,7 @@ function ChatComposerComponent({
   writeMode,
   onWriteModeChange,
   composerStrip,
+  fileDropActive,
   availableSkills,
   referenceCatalog,
   chatCommands,
@@ -100,6 +103,7 @@ function ChatComposerComponent({
         ref={composerRef}
         takeover={takeover}
         variant="pinned"
+        fileDropActive={fileDropActive}
         attached={
           <>
             {composerStrip ? (
@@ -115,7 +119,7 @@ function ChatComposerComponent({
         referenceCatalog={referenceCatalog}
         availableSkills={availableSkills}
         commands={chatCommands}
-        uploadPort={uploadIntakePort}
+        uploadPort={chatUploadPort}
         uploadScope={{ kind: "chat", projectId, chatId }}
         onSubmit={onSubmit}
         onStop={onStop}

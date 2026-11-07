@@ -22,11 +22,12 @@ export type UploadedImage = {
 /**
  * Send one image's bytes to the project.
  *
- * `signal` aborts, because the writer deleting a pending picture is a
- * cancellation and not a failure. `onProgress` reports whole percents, or null
- * where the browser cannot say how much there is to send.
+ * `id` is the upload's intake id, minted by the editor: sending again with it resumes. `signal`
+ * aborts, because the writer taking a pending picture back is a cancellation and not a failure.
+ * `onProgress` reports whole percents, or null where the browser cannot say how much there is.
  */
 export type ImageUploadPort = (input: {
+  id: string;
   file: File;
   alt: string;
   signal: AbortSignal;

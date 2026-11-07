@@ -96,13 +96,12 @@ export function createLsHandler(deps: ToolWiringDeps) {
       }),
     );
     const listing = entries.flat();
-    // Storage returns rows unordered; the model reads a sorted listing.
-    if (path) return { uri: result.value.uri, entries: sortLsEntries(listing) };
+    if (path) return { uri: result.value.uri, entries: listing };
     return { uri: null, entries: [...listing, ...(await skillsRootEntries(deps, ctx.threadId))] };
   };
 }
 
-/** A file row's model-facing fields; IDs and schema details stay behind (D61). */
+/** A file row's model-facing fields; IDs and schema details stay behind. */
 function lsFile(entry: ContextFileEntry, verbose: boolean): Omit<LsEntry, "readonly"> {
   const text = entry.editable;
   return {

@@ -239,7 +239,7 @@ async function askUser(input: unknown, ctx: RequestToolHandlerContext) {
 
 /**
  * The document tools' handlers and error formatter return agent-edit results,
- * except a `skills://` read, whose text is already the model's (D52).
+ * except a `skills://` read, whose text is already the model's.
  */
 /** A handler's own `invalid_arguments` refusal (a `skills://` read, D60) reads like the executor's. */
 function renderDocumentResult(tool: "read" | "write") {

@@ -30,8 +30,8 @@ including after reload and deletion. This recipe is not a current pass claim.
    document ID in `$DOCUMENT`:
 
    ```bash
-   ./mf api POST "/api/projects/$PROJECT/context/manuscript/move" --data \
-     "{\"operationId\":\"$(cat /proc/sys/kernel/random/uuid)\",\"path\":\"a.md\",\"destinationScheme\":\"manuscript\",\"destinationFolderPath\":\"\",\"newName\":\"b.md\",\"expected\":{\"kind\":\"file\",\"nodeId\":\"$DOCUMENT\"}}" --json
+   ./mf api POST "/api/projects/$PROJECT/context/entries/$DOCUMENT/move" --data \
+     "{\"operationId\":\"$(cat /proc/sys/kernel/random/uuid)\",\"name\":\"b.md\",\"expected\":{\"kind\":\"file\"}}" --json
    ```
 
 3. Without reloading, check `b.md` appears and `a.md` disappears. Follow the
@@ -118,7 +118,7 @@ refusal opens a name-only field; move retry loses a queued rename.
 3. Repeat with a refused Rename. The list may offer its inline name repair;
    the path bar only directs retry to Rename in the file list.
 4. Restore native fetch. Reopen Move…: it must start at the refused destination
-   with an enabled Move to button, not Already in the current parent. Submit
+   with an enabled Move here button, not Already in the current parent. Submit
    without drilling again. If the destination was removed, it instead opens at
    the current parent and retains the refusal message. Retry through the list. For a cancelled rename/move
    chain, check the request's name is the retained destination name, not the
@@ -137,18 +137,17 @@ In an owned project, seed two Manuscript folders and an editable Work's Scratch
 with two folders and a note. Open a chat bound to that Work (for example Beats).
 
 1. In Files tree, chat Scratch, and Work Files, rename a file in place, move it
-   to another folder, then delete it. The file leaves the list at once and that
-   surface ends with `Deleted <name>` and Undo. Choose Undo. The file returns at
-   its prior path, and `./mf doc read` returns its content. Keep all operations
+   to another folder, then delete it. The file leaves the list at once, with no toast,
+   and waits in Trash. Restore it there: the file returns at its prior path, and
+   `./mf doc read` returns its content. Keep all operations
    in the isolated project.
-2. In Work Files, repeat Rename, Delete, and Undo on a populated folder. Its menu
-   must also offer Move…. Delete removes the folder and descendants at once;
-   Undo restores them. Archived Work folders and files must expose no actions.
+2. In Work Files, repeat Rename and Delete on a populated folder. Its menu
+   must also offer Move…. Delete removes the folder and descendants at once.
+   Archived Work folders and files must expose no actions.
 3. Scratch's menus offer only Rename, Move… and Delete (no create commands).
    When Earlier notes are present, delete a lineage entry and a Work entry in
-   turn. Each removal appears at the end of the surface that owned the entry;
-   choose Undo and confirm the entry returns to that same surface.
-4. At phone width, repeat file and folder Rename, Move…, Delete, and Undo from
+   turn. Each leaves the surface that owned it.
+4. At phone width, repeat file and folder Rename, Move… and Delete from
    Files. The folder tap target must still drill in independently.
 5. A new Work note must still open its naming field when it arrives. Cancelling
    the field keeps the note; renaming it clears the pending naming request.
@@ -166,30 +165,27 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    fresh one. Repeat with Work trash/restore cascading over the lineage's chats.
 4. Seed a `zz-probe` folder with nested documents. Keep descendants open in
    Editor tabs and the document dock. Delete the folder from its list: the rows
-   disappear after local admission, without waiting for HTTP, and the list ends
-   with `Deleted zz-probe` and Undo. Descendant tabs and dock close through
-   resource projection. Choose Undo after the receipt lands; the folder and its
-   descendants return. Repeat offline, reload, then reconnect: the same journal
-   attempt settles from its receipt and Undo restores it. Switch accounts during
+   disappear after local admission, without waiting for HTTP. Descendant tabs and
+   dock close through resource projection. Repeat offline, reload, then reconnect:
+   the same journal attempt settles from its receipt. Switch accounts during
    dispatch and return: only the original account settles. Inject a typed
    nonretryable refusal for one delete: the folder and descendants return, with
-   a delete failure mark, no rename field, and no stale Undo row.
+   a delete failure mark, no rename field, and a "Couldn't delete zz-probe." toast with Retry.
 5. Delete another open folder through `./mf api` using its catalog folder node
    ID. Availability reconciliation closes its tabs and dock (wake/focus/poll),
    without a general durable deletion intake (session authority retains its adopted
-   local-origin exception). A delayed delete naming an old folder
-   ID at a replacement folder's path must return `stale_target`.
+   local-origin exception). A delayed delete naming the deleted
+   folder's ID must answer 404 `not_found` and leave a replacement folder at the same
+   path untouched.
 6. Delete a Scratch note independently, then trash and restore its No Work chat
    and its Work. Availability must still say `deleted`, including while its lineage
    is hidden; the independently deleted note never returns.
 7. Open a folder descendant and confirm it appears in Recently opened. Go
    offline in the browser and delete the parent. The tree, tab, and dock close
    after local persistence; Recently opened loses the link before the server
-   deletion runs, and the Files list ends with an Undo row. Reconnect: the
+   deletion runs. Reconnect: the
    accepted deletion refetches `/api/projects/$PROJECT/recent-documents`; its
    response and the reloaded Recently opened list omit the deleted document.
-   Choose Undo after the delete settles. The parent and descendant return and
-   the Undo row closes.
 8. A deleted file disappears from Chat Recent despite a cached touches response.
    A live renamed file uses its current catalog name; a not-yet-loaded identity
    may still use its touch-row name.
@@ -207,7 +203,7 @@ Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder s
 1. Seed `P/A/doc.md` and `B/anchor.md` in an isolated project. Open the first
    document in the Editor and expand both folders. Neither P nor B should have
    a local namespace journal.
-2. In an isolated browser session, abort `**/context/manuscript/move` requests.
+2. In an isolated browser session, abort `**/context/entries/*/move` requests.
    Move A into B through its Actions menu. Before reconnecting, A and doc.md
    must appear under B and the open document path must read B / A / doc.md.
    Prose stays mounted. Rename A in place and repeat under an unjournaled parent.

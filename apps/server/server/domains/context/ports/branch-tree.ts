@@ -6,7 +6,7 @@
  */
 
 import type { BranchId, DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts";
-import type { RetractionCause } from "@meridian/contracts/protocol";
+import type { ContextSiblingPosition, RetractionCause } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BranchTreeChange, BranchTreeFault } from "../tree/branch-tree-changes.js";
 import type {
@@ -49,6 +49,7 @@ export interface BranchTreePort {
     dir: readonly string[];
     name: string;
     extension: string;
+    position?: ContextSiblingPosition;
     changedBy: BranchChangeAuthor;
   }): Promise<Result<BranchTreeChange, BranchTreeFault>>;
   /** The branch deletes a document it shows in this source. */

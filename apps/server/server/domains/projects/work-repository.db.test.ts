@@ -7,7 +7,6 @@
 
 import { setTimeout as delay } from "node:timers/promises";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -503,7 +502,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({
           contextSourceId: source.id,
           name: "Notes",
-          documentAlias: folderDocumentName("Notes"),
         })
         .returning();
       const [alreadyDeletedFolder] = await db
@@ -511,7 +509,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({
           contextSourceId: source.id,
           name: "separately-deleted",
-          documentAlias: folderDocumentName("separately-deleted"),
           deletedAt: new Date("2025-01-01T00:00:00.000Z"),
         })
         .returning();
@@ -596,7 +593,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await db.insert(schema.folders).values({
             contextSourceId: source.id,
             name: "Lore",
-            documentAlias: folderDocumentName("Lore"),
           });
         } else {
           await db.insert(schema.documents).values({ contextSourceId: source.id, name: "Lore" });
@@ -610,7 +606,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await db.insert(schema.folders).values({
             contextSourceId: source.id,
             name: "Lore",
-            documentAlias: folderDocumentName("Lore"),
           });
         }
         await expect(works.restore(work.id)).rejects.toEqual(
@@ -1100,9 +1095,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let deleteObservedCommittedPurge = false;
       const objectStore = {
         put: backingStore.put.bind(backingStore),
+        readHead: backingStore.readHead.bind(backingStore),
+        signPut: backingStore.signPut.bind(backingStore),
         get: backingStore.get.bind(backingStore),
-        list: backingStore.list.bind(backingStore),
-        getSignedUrl: backingStore.getSignedUrl.bind(backingStore),
         async delete() {
           deleteObservedCommittedPurge = (await works.findById(work.id)) === null;
           return {
@@ -1295,16 +1290,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ownerThreadId: THREAD_ID,
         contextSourceId: source.id,
         documentId: document.id,
-        fingerprint: "fingerprint",
-        byteDigest: "a".repeat(64),
         filename: "reference.png",
         mimeType: "image/png",
+        sizeBytes: 1,
         finalPath: "reference.png",
         objectKey,
         fileType: "png",
         locationRevision: crypto.randomUUID(),
         state: "finalized",
-        storageUrl: stored.value.storageUrl,
       });
       const [lineageSource] = await db
         .insert(schema.contextSources)

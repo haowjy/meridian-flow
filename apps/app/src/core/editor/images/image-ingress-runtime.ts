@@ -14,18 +14,18 @@ import type { Editor } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
 
+import { type UploadWatch, uploads } from "@/core/uploads/upload-store";
+
 import { type AnchorRange, carryAnchor } from "../anchors";
 import type { ImageIngressHost } from "./image-ingress-ports";
 import type { ImageIngressStore } from "./image-ingress-store";
-import type { AnnouncedUpload } from "./image-upload-presence";
 import type { PastedImageImport } from "./image-workflow";
 import {
   NO_PENDING_IMAGES,
-  NO_UPLOAD_OWNERS,
   type PendingImage,
+  type PendingImageFrame,
   type PendingImageState,
   type PendingImageUpload,
-  type UploadOwnersElsewhere,
 } from "./pending-images";
 
 export const IMAGE_INGRESS_NAME = "meridianImageIngress";
@@ -34,6 +34,12 @@ export type ImageIngressStorage = {
   /** Drag state and refusals — the two facts no document node can hold. */
   status: ImageIngressStore;
   host: ImageIngressHost | null;
+  /**
+   * This editor, as the upload store's holder: a picture lands through the editor that sent it,
+   * so its uploads are this editor's alone.
+   */
+  holder: string;
+  watch: UploadWatch | null;
 };
 
 declare module "@tiptap/core" {
@@ -55,47 +61,24 @@ export type LandingImports = { imports: readonly PastedImageImport[]; range: Anc
 export type ImageIngressPluginState = {
   pending: PendingImageState;
   landing: LandingImports | null;
-  /**
-   * Upload tokens another client is filling right now
-   * (`image-upload-presence.ts` puts them here).
-   *
-   * Beside `pending` rather than merged into it: these have no bytes, no
-   * percent, and nothing this browser could retry — only the fact that an
-   * owner is live, which is what stops a peer calling an active upload
-   * abandoned.
-   */
-  elsewhere: UploadOwnersElsewhere;
 };
 
 export type ImageIngressMessage =
   | { set: PendingImage }
   | { drop: string }
   | { landing: LandingImports | null }
-  | { elsewhere: UploadOwnersElsewhere };
+  /** The upload store changed under a slot: draw it again. */
+  | { redraw: true };
 
 export const imageIngressPluginKey = new PluginKey<ImageIngressPluginState>(IMAGE_INGRESS_NAME);
 
 export const EMPTY_INGRESS_STATE: ImageIngressPluginState = {
   pending: NO_PENDING_IMAGES,
   landing: null,
-  elsewhere: NO_UPLOAD_OWNERS,
 };
 
-let ingressSequence = 0;
-/**
- * This tab's share of every id, so no two clients can mint the same one.
- *
- * An upload's id is written into the shared document as its slot's
- * `uploadToken` (`pending-images.ts`), so a counter alone would have two writers
- * claiming each other's slots after both opened the document.
- */
-const ingressOrigin = Math.random().toString(36).slice(2, 10);
-
-/** A new id for one arrival. Ids never repeat, here or on any other client. */
-export function nextIngressId(prefix: string): string {
-  ingressSequence += 1;
-  return `${prefix}:${ingressOrigin}:${ingressSequence}`;
-}
+/** One slot in flight as presence carries it: the join, and the shape to reserve. */
+export type AnnouncedUpload = { token: string; frame: PendingImageFrame | null };
 
 export function imageIngressStorage(editor: Editor | null | undefined): ImageIngressStorage | null {
   if (!editor || editor.isDestroyed) return null;
@@ -129,13 +112,16 @@ export function registerImageIngressHost(
   };
 }
 
-/** What this client is filling, which is what it announces to peers. */
+/**
+ * The pictures this editor is sending, which it announces to peers: the store says which (a failed
+ * or stopped one is not), the slot's record says its shape.
+ */
 export function uploadsOwnedHere(editor: Editor | null): readonly AnnouncedUpload[] {
-  const owned: AnnouncedUpload[] = [];
-  for (const entry of ingressState(editor).pending.values()) {
-    if (entry.kind === "upload") owned.push({ token: entry.id, frame: entry.frame });
-  }
-  return owned;
+  const storage = imageIngressStorage(editor);
+  if (!editor || !storage) return [];
+  return uploads
+    .sending(storage.holder)
+    .map((token) => ({ token, frame: uploadEntry(editor, token)?.frame ?? null }));
 }
 
 export function uploadEntry(editor: Editor, id: string): PendingImageUpload | null {
@@ -188,8 +174,8 @@ export function applyIngressMessage(
   current: ImageIngressPluginState,
   message: ImageIngressMessage,
 ): ImageIngressPluginState {
+  if ("redraw" in message) return current;
   if ("landing" in message) return { ...current, landing: message.landing };
-  if ("elsewhere" in message) return { ...current, elsewhere: message.elsewhere };
   const pending = new Map(current.pending);
   if ("drop" in message) pending.delete(message.drop);
   else pending.set(message.set.id, message.set);

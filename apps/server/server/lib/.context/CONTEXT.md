@@ -98,13 +98,41 @@ transaction. The hidden system update is appended after the next writer message
 and makes the new Work context authoritative on later requests; choosing the
 previous Work is an ordinary reverse rebind.
 
-Move requests carry `destinationParent` when they use destination identity.
-The route passes that identity into the domain command and receipt, maps typed
-`destination_missing` to non-retryable repair, and rechecks edit authority on
-the resolved destination under the move transaction. URI-only callers retain
-path semantics.
+A Copy request (`/context/copy`, not per scheme) carries ordered sources, each with the
+identity it expects and an optional read view, plus one destination. `lib/context-copy-route.ts`
+resolves the locators, requires read on every source root and edit on the destination (a
+folder-identity destination is rechecked under the command's locks), and hands the port
+canonical addresses; `domains/context/copy/` owns everything that writes. Like move, the route
+runs inside `withDurableIntentInterruptBoundary`, because the app's durable queue replays a
+copy under its operation ID and must settle a deterministic refusal from the typed envelope.
 
-The app's durable namespace queue resends any move, delete or create-untitled it
+The viewer read (`lib/context-read-route.ts`, `GET /documents/:documentId/read`) takes an id and
+nothing else. It checks, in order: the project is the user's, `availability.held` finds the row in
+this project (any owner; hidden and deleted rows are absent; a User-area file reads from any of
+the user's projects), and the user holds a read grant on the row `held` names, which follows a
+join's forward. It answers from that row (`fileRefOfVisible`, the mapping `ContextFS.stat`
+shares), so it never resolves a path and never sees a draft.
+
+Move and delete are `POST /api/projects/:projectId/context/entries/:entryId/{move,delete}`
+(`context-move-route.ts`, `context-delete-route.ts`, with `context-entry-route.ts`). Neither
+request names a path or an owner. After the project check, a recorded outcome for the same
+operation and command answers first, so a resend of a committed move or delete is not refused for
+the row having moved on. `locateEntry` then finds the row through `availability.held` (another
+project's row, hidden and deleted rows are 404; a User-area file is reachable from any of the
+user's projects). Edit is granted on the row `held` names, never on the id the request carried (a
+join forwards), and for a folder on its area's container; uploads are refused. A move also needs
+edit on the destination area unless the destination is a folder, which is rechecked under the move
+locks (`canEditContextUri`, passed as the folder destination's `authorize`). The two routes share
+`runEntryCommand` (`context-entry-route.ts`); owner resolution and the edit recheck are
+`context-locator.ts`'s `resolveLocator` and `canEditContextUri`, shared with Copy and create, and the
+destination parsers are in `context-destination.ts`. `destination_missing` stays non-retryable repair. The request
+sends `name` and `destinationParent` only when the writer chose them (see
+`MoveContextEntryRequest`); `locateEntry` supplies the rest. The model goes through the port with the
+same node and an `at` destination: the folder it typed, validated by the mover with the reasons
+`resolveMutation` gives, and `onlyAt` for a create's retraction, which records the address the create
+landed at (`address.uri`), not what the model typed.
+
+The app's durable namespace queue resends any move, delete, create-untitled or create-folder it
 has not settled, and it settles a refusal only from a typed non-retryable 4xx (the
 interrupt envelope, `retryable: false`) or a receipt. Those routes must therefore
 answer a deterministic refusal typed. Each route body runs inside
@@ -113,14 +141,36 @@ any bare Nitro `HTTPError` 4xx (one thrown without the envelope, such as a parse
 ownership `createError`) into a typed, non-retryable envelope with the same status,
 message and `data`. It leaves 401, 408 and 429 bare, so they stay
 uncertain and the client retries. A new route that queue replays needs the same wrapper.
+A request parser must refuse a malformed identifier itself: a non-UUID Work id, No Work's
+id as a Scratch owner, or a chat owner on a scheme that has none is a 400 (`parseWorkId`,
+`destinationRootUri`), because a value that reaches the domain or the database fails as an
+untyped 500, which the queue retries forever.
+
+A create has no operation receipt: the id the device minted is its receipt. The
+create-untitled and create-folder routes read it first (`answerHeldCreate` /
+`answerHeldFolder` query `ProjectContextAvailabilityPort.held`), before the route resolves
+its Work authority or checks lifecycle on the destination, so a replay of a create the
+server took is answered from what it holds, and a final refusal means the server holds no
+such id and the device may place the same id again. That lookup is an authority-free read
+of the project's documents or folders table by id, and of `document_forwards` for a joined
+document, so it also finds a tree under a deleted Work that the route itself can no longer
+resolve. An id held where the writer can no longer edit (an archived or deleted Work, a
+hidden or deleted row, a lost grant) answers `409 {status:"conflict"}`: the id is spent, and
+the device replaces it with a new one, for a document or a folder alike
+(`packages/resource-replica` `ServerHold`). The read and the refusals that follow it run under
+`ProjectContextAvailabilityPort.serializeCreate`, one transaction holding a per-id advisory lock
+until the claim commits or rolls back: a replay queues behind a first send still in its
+transaction instead of reading "not held" and being refused for an id that send then commits.
 Domain failures go through `contextErrorToHttp`, which types every code;
 `stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401
-final, and app code on other routes branches on the untyped `HttpResponseError`. Identity conflicts may name a renamed or relocated destination;
-URI-only conflicts must still match the requested home. If immutable destination
+final, and app code on other routes branches on the untyped `HttpResponseError`. A move or delete is requested by entry id; a conflict goes straight through
+`contextErrorToHttp`. Deleting an upload through the delete route is refused (400):
+uploads are removed from their chat (`deleteChatUpload`), and the sidebar hides delete for
+them. If immutable destination
 Work/lineage authority retired before intake, the identity move remains
-`destination_missing` even if a folder later relocates. Model tools and `./mf`
-currently do not issue moves.
+`destination_missing` even if a folder later relocates. The model moves a document through the port with its typed destination; `./mf` has no
+move command.
 
 ## Dependency direction
 

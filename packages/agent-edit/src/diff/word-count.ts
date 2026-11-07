@@ -8,12 +8,16 @@ import type { Tok } from "./tokens.js";
 
 export type WordDelta = { wordsAdded: number; wordsRemoved: number };
 
+/** Han and kana have no spaces, so each character counts as a word, as word processors do. */
+const WORD =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|(?:(?![\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])[\p{L}\p{N}])+(?:['’](?:(?![\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])[\p{L}\p{N}])+)*/gu;
+
 export function countWords(text: string): number {
   return wordTokens(text).length;
 }
 
 function wordTokens(text: string): string[] {
-  return text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? [];
+  return text.match(WORD) ?? [];
 }
 
 /**

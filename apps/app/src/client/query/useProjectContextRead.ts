@@ -1,7 +1,7 @@
 /**
  * useProjectContextRead — read-route projection for non-tracked context files.
  *
- * Backed by `GET /api/projects/:projectId/context/:scheme/read?path=`, which
+ * Backed by `GET /api/projects/:projectId/documents/:documentId/read`, which
  * returns either:
  *   - `{ kind: "tracked", ... }` — markdown projection (not used by the
  *     collaborative editor surface; that still binds the Yjs WS), or
@@ -11,82 +11,41 @@
  * The signed URL has a TTL; we treat the response as stale-fast (`staleTime:
  * 0`) and keep it in cache only briefly. UI state is honest via
  * `ContextReadStatus` instead of `array.length`.
+ *
+ * The query is keyed and fetched by document identity: a rename or move is the
+ * same file at a new path, so the bytes on screen stay and the read never asks
+ * the server about a path.
  */
 
-import { isOwnedContextScheme } from "@meridian/contracts/context-uri";
-import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ContextReadResponse } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 
-import { getProjectContextRead } from "@/client/api/projects-api";
-
-import { type ContextOwner, contextRequestOptionsForScheme } from "./context-request-options";
+import { getProjectDocumentRead } from "@/client/api/projects-api";
 
 export type ContextReadStatus = {
   data: ContextReadResponse | null;
-  status: "loading" | "ready" | "error" | "disabled";
+  status: "loading" | "ready" | "error";
   isError: boolean;
   isFetching: boolean;
-  refetch: () => void;
+  /** Re-reads, resolving to the fresh answer (null when failed). */
+  refetch: () => Promise<ContextReadResponse | null>;
 };
 
-export function contextReadQueryKey(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  owner: ContextOwner = {},
-) {
-  if (!isOwnedContextScheme(scheme)) {
-    return ["projects", projectId, "context", scheme, "read", path] as const;
-  }
-  const ownerId = owner.chatThreadId ?? owner.rootThreadId ?? owner.workId;
-  return ownerId
-    ? (["projects", projectId, "context", scheme, ownerId, "read", path] as const)
-    : (["projects", projectId, "context", scheme, "read", path] as const);
-}
-
-export function useProjectContextRead(
-  projectId: string,
-  scheme: ProjectContextTreeScheme | null,
-  path: string | null,
-  options: { enabled?: boolean } & ContextOwner,
-): ContextReadStatus {
-  const callerEnabled = options.enabled ?? true;
-  const resolvedScheme = scheme ?? "kb";
-  const enabled = callerEnabled && Boolean(scheme) && Boolean(path);
-  const contextOpts = scheme ? contextRequestOptionsForScheme(scheme, options) : undefined;
+export function useProjectContextRead(projectId: string, documentId: string): ContextReadStatus {
   const result = useQuery({
-    queryKey: contextReadQueryKey(projectId, resolvedScheme, path ?? "", options),
-    queryFn: () =>
-      getProjectContextRead(
-        projectId,
-        scheme as ProjectContextTreeScheme,
-        path as string,
-        contextOpts,
-      ),
-    enabled,
+    queryKey: ["projects", projectId, "context", "read", documentId] as const,
+    queryFn: () => getProjectDocumentRead(projectId, documentId),
     // Signed URLs are short-lived. Re-fetch on focus / remount, never cache hot.
     staleTime: 0,
     gcTime: 60_000,
     retry: 0,
   });
 
-  if (!enabled) {
-    return {
-      data: null,
-      status: "disabled",
-      isError: false,
-      isFetching: false,
-      refetch: () => {},
-    };
-  }
-
   return {
     data: result.data ?? null,
     status: result.isError ? "error" : result.data ? "ready" : "loading",
     isError: result.isError,
     isFetching: result.isFetching,
-    refetch: () => {
-      void result.refetch();
-    },
+    refetch: async () => (await result.refetch()).data ?? null,
   };
 }

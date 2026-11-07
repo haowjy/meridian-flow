@@ -24,6 +24,7 @@ it("follows a reviewed identity through a rename or cross-source move", () => {
     name: "Withern",
     aliases: [],
     provisionalName: false,
+    extension: "",
     editable: true,
     filetype: "markdown",
     schemaType: "document",

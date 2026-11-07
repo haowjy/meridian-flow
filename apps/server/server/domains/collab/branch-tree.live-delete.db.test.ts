@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { itemFor } from "../../test-support/branch-tree-scenario.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
+import { entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { isFileAccessDenied } from "../file-policy/index.js";
 
 describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", (start, db) => {
@@ -113,10 +114,11 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
       deletedLive: true,
     });
 
+    expect((await s.writer.delete("ch4")).ok).toBe(true);
     const live = runtime.ports.contextPorts.forProject(s.project.id, s.project.userId, new Map());
-    const moved = await live.move("manuscript://ch5", "manuscript://ch4", {
-      overwrite: true,
+    const moved = await moveTo(live, "manuscript://ch5", "manuscript://ch4", {
       origin: { type: "human", userId: s.project.userId },
+      expected: await entryAt(live, "manuscript://ch5"),
     });
     expect(moved.ok).toBe(true);
     expect

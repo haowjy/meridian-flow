@@ -5,7 +5,6 @@
  * - lifecycle-aware file access projection and target resolution before refusal (kb/decisions/documents/access/file-access-policy.md)
  */
 
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -151,7 +150,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.folders).values({
         contextSourceId: MANUSCRIPT_ID,
         name: "scenes",
-        documentAlias: folderDocumentName("scenes"),
       });
       await db.insert(schema.documents).values({
         id: data,
@@ -164,8 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
       expect(manuscriptCall.output).not.toContain(".md");
       const missing = await call("read", { path: "manuscript://missing.md" });
-      expect(missing.output).toContain("path: manuscript://missing");
-      expect(missing.output).not.toContain(".md");
+      expect(missing.output).toContain("path: manuscript://missing.md");
     });
 
     // D51: a switch that couldn't happen says why before action policy or mutation.

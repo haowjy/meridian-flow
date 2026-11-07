@@ -10,7 +10,8 @@
  * and a picture (the ordinary case, a signed read URL for the document its
  * `asset:` source or its `ref` names).
  *
- * A picture whose ref names nothing it can draw says which: an address nothing
+ * A stored picture this browser can't draw (no preview could be made) is a file
+ * card with Download, never Retry. A picture whose ref names nothing it can draw says which: an address nothing
  * has been uploaded to yet (it draws itself when a file lands there), or a
  * document that is gone. Neither offers Retry, because nothing a press could
  * do would change the answer.
@@ -23,7 +24,9 @@
  * the writer handed over, measured locally before the upload started, and it is
  * REMEMBERED here for the rest of the node view's life: the picture's own bytes
  * arrive a moment after its `src` does, and a frame that collapsed in that gap
- * would reflow the manuscript twice for one picture.
+ * would reflow the manuscript twice for one picture. A picture that arrived some
+ * other way is measured when it draws, because the height cap needs its ratio to
+ * narrow a stored width rather than stretch it.
  *
  * What is in flight arrives as a decoration rather than an attribute
  * (`pending-images.ts`): progress is the document's to show and nobody's to
@@ -34,9 +37,11 @@ import { Trans } from "@lingui/react/macro";
 import type { NodeViewProps } from "@tiptap/core";
 import { NodeViewWrapper } from "@tiptap/react";
 import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
-import { type CSSProperties, useRef } from "react";
+import { type CSSProperties, type SyntheticEvent, useRef, useState } from "react";
 
+import { FileCard } from "@/components/app/FileCard";
 import { Button } from "@/components/ui/button";
+import type { UploadState } from "@/core/uploads/upload-store";
 import { cn } from "@/lib/utils";
 
 import { useAssetImageRenderState } from "../asset-image-render-state";
@@ -67,25 +72,35 @@ export function ImageNodeView(props: NodeViewProps) {
     links: mountedLinks(props.editor),
   });
   const pending = pendingUploadFromDecorations(props.decorations);
-  const mine = pending?.owner === "mine" ? pending.entry : null;
+  const mine = pending?.owner === "mine" ? pending : null;
 
   // The measured shape outlives the entry that carried it: the entry is dropped
   // the moment `src` is written, and the picture is not on screen yet. A
   // collaborator's upload announces the same shape, so the slot they are watching
   // is the picture's box before it is the picture.
-  const frameRef = useRef<PendingImageFrame | null>(null);
+  const [shape, setShape] = useState<PendingImageFrame | null>(null);
   const announcedFrame = pending?.owner === "mine" ? pending.entry.frame : (pending?.frame ?? null);
-  if (announcedFrame) frameRef.current = announcedFrame;
+  if (announcedFrame && !sameShape(announcedFrame, shape)) setShape(announcedFrame);
+  const pictureDrawn = (event: SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth: width, naturalHeight: height } = event.currentTarget;
+    // An SVG with no size of its own reports zero, and has no ratio to keep.
+    if (width > 0 && height > 0 && !sameShape({ width, height }, shape)) {
+      setShape({ width, height });
+    }
+    actions.imageDisplayed();
+  };
 
   // The frame is held for a picture still on its way, and let go by a slot that
   // is asking something instead: an upload that failed, one nobody can finish,
   // a picture whose address would not resolve. Those say what happened and offer
   // a verb, and neither fits inside a measured 32px square (law 5 wants both
   // read and pressed). Nothing lands out of them either, so there is no line
-  // left to keep still.
+  // left to keep still. A stored width goes with it: that size is the picture's,
+  // and a card or a note would be crushed into it.
   const asking =
     mine?.status.kind === "failed" || (!pending && !state.url && state.kind !== "loading");
-  const frame = asking ? null : frameRef.current;
+  const frame = asking ? null : shape;
+  const drawnWidth = asking ? null : width;
 
   // The grips live on the selected state and nowhere else (§5.2's jade ring),
   // and only over something with a box to drag: a picture, or the measured slot
@@ -108,24 +123,37 @@ export function ImageNodeView(props: NodeViewProps) {
       className={cn(
         "meridian-image-node",
         frame && "meridian-image-node--framed",
-        width !== null && "meridian-image-node--sized",
+        drawnWidth !== null && "meridian-image-node--sized",
       )}
       data-type="image"
       data-drag-handle
-      style={imageBoxStyle(frame, width)}
+      style={imageBoxStyle(frame, drawnWidth)}
     >
       {mine ? (
-        <PendingImage entry={mine} editor={props.editor} getPos={props.getPos} />
+        <PendingImage
+          entry={mine.entry}
+          status={mine.status}
+          editor={props.editor}
+          getPos={props.getPos}
+        />
       ) : pending ? (
         <UploadingElsewhere />
       ) : src === "" ? (
         <AbandonedImage editor={props.editor} getPos={props.getPos} />
+      ) : state.kind === "file" ? (
+        <FileCard
+          name={state.file.name}
+          mimeType={state.file.mimeType}
+          sizeBytes={state.file.sizeBytes}
+          url={state.file.downloadUrl}
+          className="meridian-image-node__card"
+        />
       ) : state.url ? (
         <img
           src={state.url}
           alt={alt}
           draggable={false}
-          onLoad={actions.imageDisplayed}
+          onLoad={pictureDrawn}
           onError={actions.imageLoadFailed}
         />
       ) : (
@@ -169,15 +197,17 @@ export function ImageNodeView(props: NodeViewProps) {
  */
 function PendingImage({
   entry,
+  status,
   editor,
   getPos,
 }: {
   entry: PendingImageUpload;
+  status: UploadState;
   editor: NodeViewProps["editor"];
   getPos: NodeViewProps["getPos"];
 }) {
-  const failure = entry.status.kind === "failed" ? entry.status.message : null;
-  const percent = entry.status.kind === "uploading" ? entry.status.percent : null;
+  const failure = status.kind === "failed" ? status.message : null;
+  const percent = status.kind === "uploading" ? status.percent : null;
   const failed = failure !== null;
   const label =
     failure ??
@@ -321,17 +351,25 @@ function AbandonedImage({
  * what keeps the landing from moving a line.
  *
  * `max-width` still belongs to the CSS: a picture wider than the prose column
- * is the column's business, at any size and from any source.
+ * is the column's business, at any size and from any source. Height is the
+ * pane's business, and the box narrows to meet it so the ratio holds. Nothing
+ * here reaches the document: the cap depends on the writer's pane, and the
+ * stored width does not.
  */
 function imageBoxStyle(
   frame: PendingImageFrame | null,
   width: number | null,
 ): CSSProperties | undefined {
   if (!frame) return width === null ? undefined : { width: `${width}px` };
+  const ratio = frame.width / frame.height;
   return {
-    width: `${width ?? frame.width}px`,
+    width: `min(${width ?? frame.width}px, calc(var(--meridian-picture-cap) * ${ratio}))`,
     aspectRatio: `${frame.width} / ${frame.height}`,
   };
+}
+
+function sameShape(a: PendingImageFrame, b: PendingImageFrame | null): boolean {
+  return a.width === b?.width && a.height === b.height;
 }
 
 function progressStyle(percent: number | null): CSSProperties {

@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -127,6 +126,35 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow("Context entry already exists");
     });
 
+    it("moves a file into a folder whose name is the alias of a sibling document", async () => {
+      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
+      await store.createDocumentRecordIfAbsent({
+        folderId: null,
+        name: "Lore",
+        extension: "",
+        filetype: "markdown",
+      });
+      await store.ensureFolderPath(["Lore.md"]);
+      await insertDocument(DOC_DELETE_ID, "Chapter");
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
+      const source = await tree.inspect(SOURCE_ID, "Chapter");
+      const folder = await tree.inspect(SOURCE_ID, "Lore.md");
+      if (source?.kind !== "file" || folder?.kind !== "directory") throw new Error("missing node");
+      expect(
+        await tree.commitMove({
+          source,
+          destinationSourceId: SOURCE_ID,
+          destinationPath: "Lore.md/Chapter",
+          destinationParentToken: folder,
+          destinationFilename: { name: "Chapter", extension: "" },
+          destinationFiletype: "markdown",
+          expectedTarget: { state: "absent" },
+        }),
+      ).toMatchObject({ ok: true });
+    });
+
     it("records direct identity history and permanently consumes reused file and folder paths", async () => {
       await insertDocument(DOC_DELETE_ID, "alpha");
       const tree = new DrizzleContextTreeMutationStore(db, {
@@ -140,10 +168,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             source,
             destinationSourceId: SOURCE_ID,
             destinationPath: to,
+            destinationFilename: { name: to, extension: "" },
             destinationFiletype: "markdown",
-            graduateProvisionalName: false,
             expectedTarget: { state: "absent" },
-            overwrite: false,
           }),
         ).toMatchObject({ ok: true });
       }
@@ -231,7 +258,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationSourceId: SOURCE_ID,
           destinationPath: "after",
           expectedTarget: { state: "absent" },
-          overwrite: false,
         }),
       ).toMatchObject({ ok: true });
       expect(
@@ -264,7 +290,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         parentId: string | null;
         contextSourceId: string;
         name: string;
-        documentAlias: string;
       }> = [];
       for (let i = 0; i < 150; i++) {
         const name = randomUUID();
@@ -274,7 +299,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           parentId,
           contextSourceId: SOURCE_ID,
           name,
-          documentAlias: folderDocumentName(name),
         });
         names.push(name);
         parentId = id;
@@ -299,10 +323,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           source,
           destinationSourceId: SOURCE_ID,
           destinationPath: "short",
+          destinationFilename: { name: "short", extension: "" },
           destinationFiletype: "markdown",
-          graduateProvisionalName: false,
           expectedTarget: { state: "absent" },
-          overwrite: false,
         }),
       ).toMatchObject({ ok: true });
       expect(
@@ -320,20 +343,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: EMPTY_FOLDER_ID,
           contextSourceId: SOURCE_ID,
           name: "empty",
-          documentAlias: folderDocumentName("empty"),
         },
         {
           id: NON_EMPTY_FOLDER_ID,
           contextSourceId: SOURCE_ID,
           name: "occupied",
-          documentAlias: folderDocumentName("occupied"),
         },
         {
           id: nestedFolderId,
           contextSourceId: SOURCE_ID,
           parentId: NON_EMPTY_FOLDER_ID,
           name: "nested",
-          documentAlias: folderDocumentName("nested"),
         },
       ]);
       await db.insert(documents).values([
@@ -457,7 +477,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: folderId,
         contextSourceId: SOURCE_ID,
         name: folderId,
-        documentAlias: folderDocumentName(folderId),
       });
       await db.insert(documents).values({
         id: documentId,
@@ -556,7 +575,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: parentId,
           contextSourceId: sourceId,
           name: "parent",
-          documentAlias: folderDocumentName("parent"),
         });
         await committed.insert(documents).values({
           id: childId,
@@ -680,8 +698,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             extension: "",
             filetype: "markdown",
           });
-        const folderName = index < 2 ? name : `${name}.md`;
-        const folder = () => right.ensureFolderPath([folderName]);
+        const folder = () => right.ensureFolderPath([name]);
         const results = await Promise.allSettled(
           fileFirst ? [file(), folder()] : [folder(), file()],
         );
@@ -692,8 +709,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
         expect(
           (await left.listDocuments(LIVE_TREE, null)).filter((row) => row.name === name).length +
-            (await left.listFolders(LIVE_TREE, null)).filter((row) => row.name === folderName)
-              .length,
+            (await left.listFolders(LIVE_TREE, null)).filter((row) => row.name === name).length,
         ).toBe(1);
       }
     });
@@ -730,9 +746,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destinationSourceId: sourceId,
         destinationPath: "moved-holder",
         expectedTarget: { state: "absent" },
-        overwrite: false,
         destinationFiletype: "markdown",
-        graduateProvisionalName: false,
+        destinationFilename: { name: "moved-holder", extension: "" },
       });
       const doc = new Y.Doc();
       try {
