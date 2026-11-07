@@ -7,6 +7,7 @@ export const MARKETING_SKY = {
   auroraLow: [0.2, 1, 0.45],
   auroraMid: [0.08, 0.7, 0.55],
   auroraHigh: [0.32, 0.14, 0.75],
+  auroraBlue: [0.04, 0.42, 0.95],
   auroraCore: [0.55, 0.5, 0.1],
   mountain: [0.012, 0.024, 0.03],
   sea: [0.004, 0.012, 0.016],
