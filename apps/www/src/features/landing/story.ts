@@ -162,7 +162,7 @@ export const CHARACTERS: readonly Character[] = [
       ],
       [
         "Personality",
-        "Patient, exact and hard to surprise. Listens a long time before she speaks.",
+        "Listens a long time before she speaks. Laughs at Tam’s jokes a beat late, once she has decided they were funny.",
       ],
       [
         "Abilities",
@@ -218,7 +218,10 @@ export const CHARACTERS: readonly Character[] = [
     ],
     sections: [
       ["Appearance", "Twice Sigrun’s height. Half his left ear is gone."],
-      ["Personality", "Quiet, dry, patient with Tam. Changes the subject with food."],
+      [
+        "Personality",
+        "Answers about one of Tam’s questions in three. Changes the subject with food.",
+      ],
       [
         "Abilities",
         "[Sense Fear]: he hears an animal’s fear a breath before it moves, and the choice right behind it. He calls the fights.",
@@ -342,7 +345,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
     key: "system",
     name: "The System",
     page: {
-      lead: "Levels, skills and tags. Everyone has had them for as long as anyone remembers.",
+      lead: "Levels, skills, tags and cores, and nothing else. Everyone has had them for as long as anyone remembers.",
       facts: [
         ["Who has it", "Everyone"],
         ["Tags", "Every living thing, except the beast"],
@@ -358,10 +361,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
           "Skills",
           "A first skill comes at a moment of need. Every skill box names where it came from: [Source: practice], [Source: bloodline], [Source: rune]. No box in recorded history has said [Source: unknown].",
         ],
-        [
-          "What it says",
-          "Levels, skills, tags and cores, and nothing else. It has never told anyone what to do, or talked like a game.",
-        ],
+        ["What it never does", "It has never told anyone what to do, or talked like a game."],
         [
           NOTES,
           [
