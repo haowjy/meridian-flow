@@ -14,22 +14,32 @@ export async function downloadApiFile(
   path: string,
   output: string,
 ): Promise<void> {
-  const url = new URL(path, session.serverUrl);
+  const origin = new URL(path, session.serverUrl);
   const temporary = `${output}.${randomUUID()}.part`;
-  try {
-    await new Promise<void>((resolve, reject) => {
+  // A stored file answers with one redirect to a signed store URL. The cookie goes only to the
+  // server's own origin, never to the store.
+  const fetchInto = (url: URL, redirected: boolean) =>
+    new Promise<void>((resolve, reject) => {
+      const sameOrigin = url.origin === origin.origin;
       const request = (url.protocol === "https:" ? https : http).get(
         url,
         {
-          headers: { cookie: session.cookie },
-          ...(url.protocol === "https:" && session.ca ? { ca: session.ca } : {}),
+          headers: sameOrigin ? { cookie: session.cookie } : {},
+          ...(url.protocol === "https:" && sameOrigin && session.ca ? { ca: session.ca } : {}),
         },
         (response) => {
-          if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+          const status = response.statusCode ?? 0;
+          const location = response.headers.location;
+          if (status >= 300 && status < 400 && location && !redirected) {
+            response.resume();
+            fetchInto(new URL(location, url), true).then(resolve, reject);
+            return;
+          }
+          if (status < 200 || status >= 300) {
             response.resume();
             reject(
               httpError("GET", path, {
-                status: response.statusCode ?? 0,
+                status,
                 headers: response.headers,
                 body: "Download failed",
               }),
@@ -44,6 +54,8 @@ export async function downloadApiFile(
       );
       request.on("error", reject);
     });
+  try {
+    await fetchInto(origin, false);
     await rename(temporary, output);
   } finally {
     await rm(temporary, { force: true });

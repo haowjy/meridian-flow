@@ -42,7 +42,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import { getFigureSignedUrl } from "@/client/api/figures-api";
+import { documentDownloadUrl, getFigureSignedUrl } from "@/client/api/figures-api";
 import { httpErrorStatus } from "@/client/api/http-client";
 
 import { assetDocumentIdFromSrc, browserPictureSource, signedUrlRefreshDelayMs } from "./images";
@@ -384,7 +384,8 @@ export function useAssetImageRenderState(input: {
           name: signed.name,
           mimeType: signed.mimeType,
           sizeBytes: signed.sizeBytes,
-          downloadUrl: signed.signedUrl,
+          // A picture still in a Work's branch is not in the live tree the download route reads.
+          downloadUrl: workId ? signed.signedUrl : documentDownloadUrl(routeAssetDocumentId),
         };
         fileFactsRef.current = file;
         if (signed.drawUrl && signed.drawUrl === failedUrlRef.current)

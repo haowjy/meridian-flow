@@ -24,7 +24,12 @@ import { ExportLinkScope } from "./export-link-scope.js";
 
 export class ExportReadError extends Error {
   constructor(
-    readonly code: "not_found" | "storage_invalid" | "storage_unavailable" | "document_unavailable",
+    readonly code:
+      | "not_found"
+      | "storage_invalid"
+      | "storage_unavailable"
+      | "document_unavailable"
+      | "too_large",
     message: string,
   ) {
     super(message);
@@ -32,12 +37,17 @@ export class ExportReadError extends Error {
   }
 }
 
+/** fflate writes 32-bit ZIP offsets and sizes (no ZIP64); past 4 GiB an archive is corrupt. */
+const ZIP_LIMIT_BYTES = 4 * 1024 ** 3;
+/** Headroom under the limit for prose documents, headers and the marker. */
+const ZIP_HEADROOM_BYTES = 64 * 1024 ** 2;
+
 export function createProjectExport(deps: {
   snapshot: ExportSnapshotStore;
   pendingDrafts: { count(projectId: string): Promise<number> };
   documents: ExportDocumentReader;
   files: Pick<FileAccess, "listAccess">;
-  objects: Pick<ObjectStorePort, "get">;
+  objects: Pick<ObjectStorePort, "getStream">;
 }) {
   async function createScope(projectId: string, accountId: string, options: ProjectExportOptions) {
     const { documents: inventory, sources, settlements } = await deps.snapshot.read(projectId);
@@ -92,9 +102,9 @@ export function createProjectExport(deps: {
         throw new ExportReadError("document_unavailable", "Document could not be read for export");
       return { text: result.value, excludedLinks, outsideCounts };
     }
+    /** A document's bytes as chunks, so a large stored file is never held whole. */
     async function read(documentId: string): Promise<{
-      bytes: Uint8Array;
-      mimeType: string;
+      chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>;
       filename: string;
       excludedLinks: number;
     }> {
@@ -105,13 +115,13 @@ export function createProjectExport(deps: {
       if (document.storageUrl) {
         const key = objectStoreKeyFromStorageUrl(document.storageUrl);
         if (!key) throw new ExportReadError("storage_invalid", "Invalid document storage URL");
-        const result = await deps.objects.get(key);
+        const result = await deps.objects.getStream(key);
         if (!result.ok)
           throw new ExportReadError(
             result.error.code === "not_found" ? "not_found" : "storage_unavailable",
             result.error.message,
           );
-        return { ...result.value, filename, excludedLinks: 0 };
+        return { chunks: result.value.stream, filename, excludedLinks: 0 };
       }
       const { text, excludedLinks } = await spell(document);
       const properties = readStoredDocumentProperties(document.metadata);
@@ -122,8 +132,7 @@ export function createProjectExport(deps: {
       return {
         filename,
         excludedLinks,
-        bytes: new TextEncoder().encode(frontmatter + text),
-        mimeType: "text/markdown; charset=utf-8",
+        chunks: [new TextEncoder().encode(frontmatter + text)],
       };
     }
     function stream(projectName: string): Readable {
@@ -142,17 +151,43 @@ export function createProjectExport(deps: {
             while (chunks.length) yield chunks.shift() as Uint8Array;
           };
           try {
+            const missing: string[] = [];
             for (const [id, path] of paths) {
+              // Opened before the entry is added, so a file the store lost can be left out
+              // instead of cutting the whole export short at every attempt.
+              let opened: Awaited<ReturnType<typeof read>>;
+              try {
+                opened = await read(id);
+              } catch (error) {
+                if (!(error instanceof ExportReadError && error.code === "not_found")) throw error;
+                missing.push(path);
+                continue;
+              }
               const entry = new ZipPassThrough(`${root}/${path}`);
               zip.add(entry);
               yield* drain();
-              const { bytes, excludedLinks: excluded } = await read(id);
+              const { chunks: content, excludedLinks: excluded } = opened;
               excludedLinks += excluded;
-              for (let offset = 0; offset < bytes.length; offset += 65536) {
-                entry.push(bytes.subarray(offset, offset + 65536), false);
-                yield* drain();
+              // Leaving this loop early destroys a stored file's stream, so an abandoned
+              // export stops reading the object.
+              for await (const chunk of content) {
+                for (let offset = 0; offset < chunk.length; offset += 65536) {
+                  entry.push(chunk.subarray(offset, offset + 65536), false);
+                  yield* drain();
+                }
               }
               entry.push(new Uint8Array(), true);
+              yield* drain();
+            }
+            if (missing.length) {
+              const note = new ZipPassThrough(`${root}/Missing files.txt`);
+              zip.add(note);
+              note.push(
+                new TextEncoder().encode(
+                  `These files could not be read from storage and are not in this export:\n\n${missing.join("\n")}\n`,
+                ),
+                true,
+              );
               yield* drain();
             }
             const marker = new ZipPassThrough(`${root}/${EXPORT_MARKER_FILENAME}`);
@@ -198,7 +233,15 @@ export function createProjectExport(deps: {
       }
       return { count, byArea };
     }
-    return { paths, read, stream, summarize };
+    let storedBytes = 0;
+    for (const id of paths.keys()) storedBytes += byId.get(id)?.sizeBytes ?? 0;
+    /** The one definition of "too big for a ZIP": the preview shows it, the download enforces it. */
+    function refusal() {
+      return storedBytes > ZIP_LIMIT_BYTES - ZIP_HEADROOM_BYTES
+        ? "This project's files add up to more than 4 GiB, which is more than one export can hold. Turn off scratch or uploads in the export options, or export in parts."
+        : undefined;
+    }
+    return { paths, read, stream, summarize, refusal };
   }
   return {
     createScope,
@@ -214,7 +257,7 @@ export function createProjectExport(deps: {
         scope.summarize(signal),
         deps.pendingDrafts.count(projectId),
       ]);
-      return { outsideLinks, pendingDrafts };
+      return { outsideLinks, pendingDrafts, refusal: scope.refusal() };
     },
     async download(
       projectId: string,
@@ -223,6 +266,8 @@ export function createProjectExport(deps: {
       options: ProjectExportOptions,
     ) {
       const scope = await createScope(projectId, accountId, options);
+      const refusal = scope.refusal();
+      if (refusal) throw new ExportReadError("too_large", refusal);
       return scope.stream(projectName);
     },
   };

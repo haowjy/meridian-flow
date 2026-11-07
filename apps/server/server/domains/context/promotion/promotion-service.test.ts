@@ -42,9 +42,6 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
     const objectStore = {
       put,
       delete: remove,
-      get: vi.fn() as never,
-      list: vi.fn() as never,
-      getSignedUrl: vi.fn() as never,
     };
     const service = createPromotionService({
       objectStore,
@@ -102,9 +99,6 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
       const objectStore = {
         put: test.put,
         delete: test.remove,
-        get: vi.fn() as never,
-        list: vi.fn() as never,
-        getSignedUrl: vi.fn() as never,
       };
       test.service = createPromotionService({
         objectStore,

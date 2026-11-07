@@ -13,8 +13,13 @@ files move while it streams.
   repeatable-read snapshot, not a transaction spanning a download.
 - The service filters through file policy and live manifest membership.
   Archived Work files remain readable and are included when selected.
-- ZIP output is incremental, with browser/network backpressure. Object storage
-  currently supplies one binary's bytes at a time; never gather project bytes.
+- ZIP output is incremental, with browser/network backpressure. A stored binary is
+  piped from `ObjectStorePort.getStream` into its zip entry, so a 200 MiB file costs
+  a chunk, not its size; never gather a file's or the project's bytes.
+- A stored file is opened before its zip entry is added. One the store reports `not_found`
+  is left out and named in `Missing files.txt` at the zip's root; any other failure cuts
+  the connection. fflate has no ZIP64, so `download` refuses (413, plain message) when the
+  stored sizes in the snapshot add up to near 4 GiB, rather than send a corrupt zip.
 - Ordinary/model serialization must never use the export codec. Export owns
   `ExportLinkScope` (archive spelling, beside `export-layout`) and reads
   through its `ExportDocumentReader` port, adapted from Collab's explicit
