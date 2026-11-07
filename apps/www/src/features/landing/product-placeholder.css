@@ -31,6 +31,10 @@
   scrollbar-width: none;
 }
 
+.s-rail > * {
+  flex: none;
+}
+
 .s-proj {
   font-weight: 600;
   font-size: 15px;
@@ -72,10 +76,6 @@
   height: 30px;
   padding: 0 4px 0 16px;
   white-space: nowrap;
-}
-
-.s-n.deep {
-  padding-left: 32px;
 }
 
 .s-h {
@@ -159,6 +159,10 @@
 
 .s-g .s-g::before {
   left: 24px;
+}
+
+.s-g .s-g .s-g::before {
+  left: 40px;
 }
 
 .s-d {

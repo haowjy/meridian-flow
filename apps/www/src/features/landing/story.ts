@@ -365,8 +365,15 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
         [
           NOTES,
           [
-            ["Secret", "Something has taken hold of it. It wrote “Tutorial complete.”"],
-            ["Undecided", "What took hold, and what it wants."],
+            [
+              "Secret",
+              "Something has taken hold of it. It wrote the box over the last one standing, and it wants the beast dead.",
+            ],
+            [
+              "Rekindle",
+              "The survivor wakes on the first night of the Cold Fire, forty days back, remembering everything. Levels reset, and everyone else, the beast included, forgets. It ends when the beast dies: [Tutorial cleared].",
+            ],
+            ["Undecided", "What took hold, and why it needs the beast dead."],
           ],
         ],
       ],
@@ -539,83 +546,35 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
   },
 ];
 
-/** The writer's page of everything the reader doesn't know yet, at the Knowledge Base's root. */
-export const SPOILERS_PAGE: WikiPage = {
-  lead: "What the reader doesn’t know yet, what the characters don’t, and what isn’t decided.",
-  facts: [
-    ["Series", "The Long Reckoning"],
-    ["Genre", "LitRPG, time loop"],
-    ["Arc 1", "Nine Days"],
-    ["Drafting", "Prologue"],
-  ],
+/** The story's terms, at the Knowledge Base's root: one name for each thing. */
+export const VOCAB_PAGE: WikiPage = {
+  lead: "The story’s terms, each spelled one way.",
+  facts: [],
   sections: [
-    [
-      "The loop",
-      [
-        [
-          "Trigger:",
-          "The last one standing wakes on the first night of the Cold Fire with [Rekindle], forty days before the ninth night.",
-        ],
-        ["What carries over:", "Memory, and what they’ve learned to do. Levels reset."],
-        [
-          "Everyone else:",
-          "Alive again, and has never met them. The beast doesn’t remember either.",
-        ],
-        ["When it ends:", "When the beast dies. [Tutorial cleared]"],
-      ],
-    ],
-    [
-      "Who took hold of the System",
-      "Something wrote “Tutorial complete.” and gave the survivor Rekindle, and it wants the beast dead. It is the serial’s long mystery. Undecided: something from outside the world, or the System waking to what it was built for.",
-    ],
-    [
-      "The beast",
-      [
-        [
-          "The Cold Fire:",
-          "Its breath, but it isn’t what spreads it. Something is drawing the light north through it. Arc 1’s midpoint.",
-        ],
-        [
-          "The Greenlands:",
-          "The green under the ice is its breath, asleep. It has been there the whole time.",
-        ],
-        ["Undecided:", "Why the System can’t see it, and whether it has woken before."],
-      ],
-    ],
-    [
-      "What each of the four hides",
-      [
-        [
-          "Tam:",
-          "If the beast dies, he is the strongest person in Harl after the king, and the court has argued about whether to allow it.",
-        ],
-        [
-          "Sigrun:",
-          "The Moot’s sealed letter orders her to bring back the beast’s heart, whatever it costs the others.",
-        ],
-        [
-          "Maren:",
-          "The queen sang her the Kessa song’s last verse a thousand years ago. Vell knew.",
-        ],
-        ["Oskar:", "He has seen the beast before, asleep in the ice. That is what took his ear."],
-      ],
-    ],
     [
       "The world",
       [
         [
           "The System:",
-          "Has never given a quest, a tutorial or an instruction. “Tutorial complete.” is the first box in history to talk about a game, and Rekindle the first skill with [Source: unknown].",
+          "Levels, skills, tags, boxes and cores. Harl’s clerks call it the Count and the dwarves the Ledger, but the narration says the System.",
         ],
-        [
-          "Cores:",
-          "A beast with no tag has a core nobody has ever priced. That is why Ansgard wants the heart.",
-        ],
+        ["Tag:", "The name and level over every living thing, as in [Frost Wolf, Lv 41]."],
+        ["Box:", "A blue System window, private to one person."],
+        ["Core:", "The stone the System leaves in a tagged creature when it dies."],
+        ["Missing:", "A System status. The first armies are Missing, never lost or dead."],
+        ["The Cold Fire:", "The green light over the north. Never the aurora."],
+        ["The Greenlands:", "The ice north of the Kessa steppe."],
+        ["The beast:", "What everyone calls it until the ninth night. After that, the dragon."],
       ],
     ],
     [
-      "After the kill",
-      "Arc 2, The Game. The morning after, the System changes for everyone: new boxes, new rules, quests nobody understands. The world thinks the four saved it. The survivor knows the beast was the tutorial.",
+      NOTES,
+      [
+        [
+          "Rekindle:",
+          "The survivor’s skill. Never revive or respawn: nobody comes back to life, time goes back.",
+        ],
+      ],
     ],
   ],
 };
