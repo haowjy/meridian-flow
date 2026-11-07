@@ -296,10 +296,7 @@ export async function queryOpenImports(repo: ImportRepository, userId: string) {
   return Promise.all((await repo.listOpen(userId)).map((record) => importSummary(repo, record)));
 }
 
-export async function importSummary(
-  repo: ImportRepository,
-  record: ImportRecord,
-): Promise<ImportSummary> {
+async function importSummary(repo: ImportRepository, record: ImportRecord): Promise<ImportSummary> {
   const root = record.roots.length === 1 ? record.roots[0] : null;
   const selected = parseContextUri(record.destinationUri);
   const effective = selected.ok
