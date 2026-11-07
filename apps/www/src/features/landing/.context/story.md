@@ -97,7 +97,8 @@ The beats are in [`timeline.ts`](../timeline.ts). In story order:
 
 1. The turn line: "On the ninth night, we found it. It was a dragon."
 2. The fight: the ward splits the first breath, they hurt it, three fall, and
-   one stands as a shadow, because the visitor hasn't said who survives.
+   one stands as a shadow, because the visitor hasn't said who survives. Who
+   does what, and when, is `FIGHT` in `timeline.ts`; nobody carries a bow.
 3. The death box opens as the last breath comes down, and the beast's fire
    burns it away, revealing the app. In the Knowledge Base, The Beast becomes The Dragon once
    the scene says what it is.
