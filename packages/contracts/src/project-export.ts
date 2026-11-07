@@ -4,4 +4,6 @@ export type ExportOutsideArea = "scratch" | "uploads" | "user" | "deleted";
 export type ProjectExportPreview = {
   outsideLinks: { count: number; byArea: Record<ExportOutsideArea, number> };
   pendingDrafts: number;
+  /** Set when the download would be refused; the dialog shows it and disables Export. */
+  refusal?: string;
 };
