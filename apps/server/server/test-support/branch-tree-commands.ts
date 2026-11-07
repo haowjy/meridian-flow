@@ -223,6 +223,8 @@ export function branchTreeCommands(
         fileAccess: app.fileAccess,
         branches: app.documentSync.branches,
         documentTrash: app.documentTrash,
+        uploads: app.uploadIntake,
+        files: app.uploadIdentity,
       },
       {
         projectId,

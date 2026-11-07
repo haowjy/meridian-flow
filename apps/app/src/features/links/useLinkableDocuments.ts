@@ -42,6 +42,8 @@ export type LinkableDocument = {
   workId: string | null;
   /** A chat's Scratch note is held by its lineage instead of a Work. */
   rootThreadId?: string;
+  /** Set for a stored file (anything that is not a tracked document); its size only the server knows. */
+  file?: { fileType: string; mimeType: string | null };
 };
 
 /** A folder a link can name: by entry id, at its current canonical address. */
@@ -163,5 +165,8 @@ function linkableDocuments(
     uri: node.uri,
     workId,
     ...(rootThreadId ? { rootThreadId } : {}),
+    ...(node.editable
+      ? {}
+      : { file: { fileType: node.fileType, mimeType: node.mimeType ?? null } }),
   }));
 }

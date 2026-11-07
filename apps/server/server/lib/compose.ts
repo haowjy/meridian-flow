@@ -1894,6 +1894,9 @@ export function createInMemoryAppServices(): AppServices {
         return { kind: "identity_mismatch" };
       },
       async consume() {},
+      async inFlight() {
+        return new Set();
+      },
     },
     uploadIdentity: {
       async lookupUpload() {

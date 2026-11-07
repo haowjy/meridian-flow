@@ -414,10 +414,11 @@ export const uploadIntakes = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     // The owning chat's thread id. No FK: the chat's row may not exist yet at attach time, and
     // trashing or purging it must not cascade (the same as lineage Scratch's root id).
-    ownerThreadId: uuid("owner_thread_id").$type<ThreadId>().notNull(),
+    // Null with `contextSourceId` for a source upload (a file dropped into a document): it
+    // belongs to no chat and takes its name in `assets/` when it finalizes.
+    ownerThreadId: uuid("owner_thread_id").$type<ThreadId>(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
-      .notNull()
       .references(() => contextSources.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
     fingerprint: text("fingerprint").notNull(),

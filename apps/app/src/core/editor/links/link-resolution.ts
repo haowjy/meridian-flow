@@ -125,6 +125,8 @@ export type LinkResolutionEntry =
   /** A folder: drawn with the folder icon, and a click opens its menu instead of following. */
   | { state: "folder"; document: null; folder: ResolvedFolderLink }
   | { state: "missing"; document: null }
+  /** A `doc:` ref whose file is still being uploaded: not gone, not there yet. */
+  | { state: "uploading"; document: null }
   /** A document the reader cannot read live. A retained Trash identity remains followable. */
   | { state: "gone"; document: null; trashedDocumentId?: string };
 
@@ -249,8 +251,13 @@ function settledOver(
 ): LinkResolutionEntry | null {
   if (!provisional) return entry;
   if (entry?.state === "gone") return entry;
-  if (entry?.state === "document" && entry.document.documentId !== provisional.document.documentId)
-    return entry;
+  if (entry?.state === "document") {
+    if (entry.document.documentId !== provisional.document.documentId) return entry;
+    // The same document: the local index's location stays, and the server adds what it alone knows.
+    return entry.document.file
+      ? { ...provisional, document: { ...provisional.document, file: entry.document.file } }
+      : provisional;
+  }
   return provisional;
 }
 

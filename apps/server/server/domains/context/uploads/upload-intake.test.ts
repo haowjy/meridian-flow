@@ -39,7 +39,11 @@ function harness() {
         state: "reserved",
         storageUrl: null,
         consumed: false,
-        owner: { kind: "chat", chatId: input.owner.chatId, chatRef: null },
+        owner: {
+          kind: "chat",
+          chatId: input.owner.kind === "chat" ? input.owner.chatId : "",
+          chatRef: null,
+        },
       };
       return { kind: "reserved", reservation: row };
     },
@@ -75,6 +79,9 @@ function harness() {
     },
     async markDeleted() {
       if (row) row = { ...row, state: "deleted" };
+    },
+    async inFlight() {
+      return new Set();
     },
     async consume() {
       if (row) row = { ...row, consumed: true };
@@ -244,6 +251,7 @@ it("rejects a committed address different from the reservation", async () => {
       storageUrl: null,
       hasPreview: false,
       keptAsFile: false,
+      documentFilename: { name: "upload", extension: "", filetype: "markdown" },
     }),
   ).toEqual({ ok: false, definite: true });
 });
