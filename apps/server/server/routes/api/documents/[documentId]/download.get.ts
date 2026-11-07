@@ -5,8 +5,6 @@ import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { downloadDocument } from "../../../../lib/document-download-route.js";
 import { documentTarget, requireFileGrant } from "../../../../lib/file-access-http.js";
 
-export { attachmentDisposition } from "../../../../lib/document-download-route.js";
-
 type DocumentDownloadRouteServices = {
   liveDocuments: AppServices["liveDocuments"];
   fileAccess: AppServices["fileAccess"];

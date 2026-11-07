@@ -39,7 +39,7 @@ function projectTrashMember() {
 
 export function createDrizzleDocumentTrash(deps: {
   db: Database;
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   drafts: DocumentPurgeDraftDisposal;
   /** The document's stored Yjs as markdown; the trash keeps no text of its own. */

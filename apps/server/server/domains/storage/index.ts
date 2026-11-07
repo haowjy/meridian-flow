@@ -20,8 +20,10 @@ export {
   previewObjectKey,
 } from "./object-storage-url.js";
 export type {
+  ObjectStoreCopyOutput,
   ObjectStoreError,
   ObjectStoreErrorCode,
+  ObjectStoreGetOptions,
   ObjectStoreGetOutput,
   ObjectStoreListEntry,
   ObjectStoreListOptions,
@@ -29,4 +31,6 @@ export type {
   ObjectStorePort,
   ObjectStorePutOutput,
   ObjectStoreResult,
+  ObjectStoreSignedUrlOptions,
+  ObjectStoreStreamOutput,
 } from "./ports/object-store.js";
