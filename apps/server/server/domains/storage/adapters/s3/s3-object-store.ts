@@ -3,6 +3,8 @@
  * and presigned URLs for signed reads. Owns the S3-specific wiring (bucket,
  * client, presigning); depends inward on the port and URL helper.
  */
+
+import type { Readable } from "node:stream";
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
@@ -18,6 +20,7 @@ import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreErrorCode,
   ObjectStorePort,
+  ObjectStorePutStreamOptions,
   ObjectStoreResult,
 } from "../../ports/object-store.js";
 
@@ -63,6 +66,9 @@ function isNotFound(error: unknown): boolean {
 function clientConfig(opts: S3ObjectStoreOptions, endpoint?: string) {
   return {
     region: opts.region,
+    // SDK v3 defaults add a CRC32 trailer to every PUT, which R2 rejects.
+    requestChecksumCalculation: "WHEN_REQUIRED" as const,
+    responseChecksumValidation: "WHEN_REQUIRED" as const,
     ...(endpoint ? { endpoint } : {}),
     ...(opts.forcePathStyle ? { forcePathStyle: true } : {}),
     ...(opts.accessKeyId && opts.secretAccessKey
@@ -112,6 +118,42 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
       );
       return ok({ storageUrl: createObjectStorageUrl(key) });
     } catch (error) {
+      return err("io_error", error instanceof Error ? error.message : "Failed to write object");
+    }
+  }
+
+  async putStream(
+    key: string,
+    body: Readable,
+    options: ObjectStorePutStreamOptions,
+  ): Promise<ObjectStoreResult<{ storageUrl: string }>> {
+    if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
+
+    const ensured = await this.ensureBucket();
+    if (!ensured.ok) return ensured;
+
+    // The SDK doesn't notice a body that errors or closes early: the request sits open until the
+    // store times it out (30s on MinIO), so the abort has to come from here.
+    const abort = new AbortController();
+    const stop = () => abort.abort();
+    body.once("error", stop);
+    body.once("close", () => {
+      if (!body.readableEnded) stop();
+    });
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: body,
+          ContentLength: options.sizeBytes,
+          ContentType: options.mimeType,
+        }),
+        { abortSignal: abort.signal },
+      );
+      return ok({ storageUrl: createObjectStorageUrl(key) });
+    } catch (error) {
+      body.destroy();
       return err("io_error", error instanceof Error ? error.message : "Failed to write object");
     }
   }

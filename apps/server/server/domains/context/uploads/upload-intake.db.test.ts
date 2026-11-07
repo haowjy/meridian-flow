@@ -364,6 +364,9 @@ if (!RUN) {
         async put() {
           return { ok: true, value: { storageUrl: "object://unused" } };
         },
+        async putStream() {
+          return { ok: true, value: { storageUrl: "object://unused" } };
+        },
         async delete() {
           return { ok: true, value: undefined };
         },

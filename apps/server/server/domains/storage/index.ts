@@ -28,5 +28,6 @@ export type {
   ObjectStoreListOutput,
   ObjectStorePort,
   ObjectStorePutOutput,
+  ObjectStorePutStreamOptions,
   ObjectStoreResult,
 } from "./ports/object-store.js";

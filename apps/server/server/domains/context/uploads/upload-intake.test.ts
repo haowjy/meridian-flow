@@ -89,6 +89,7 @@ function harness() {
   const objectStore = {
     put: vi.fn(async () => ({ ok: true as const, value: { storageUrl: "object://upload" } })),
     delete: vi.fn(async () => ({ ok: true as const, value: undefined })),
+    putStream: vi.fn(async () => ({ ok: true as const, value: { storageUrl: "object://upload" } })),
     get: vi.fn(),
     list: vi.fn(),
     getSignedUrl: vi.fn(),
