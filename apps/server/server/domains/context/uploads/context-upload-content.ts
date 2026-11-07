@@ -1,8 +1,9 @@
 /** ContextFS-backed upload content adapter. */
-import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
 import { keptFileName } from "../../file-intake/index.js";
+import { projectBrowseContextUri } from "../browse-layer-scheme.js";
 import { contextAreaOf } from "../context/uri.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
@@ -33,13 +34,9 @@ export function createContextUploadContentPort(
   }
 
   const writeUri = (reservation: PlacedUpload, source?: UploadSourceDestination) =>
-    canonicalContextUri(
-      source?.scheme ?? ("uploads" satisfies ContextUriScheme),
-      reservation.finalPath,
-      {
-        kind: "contextual",
-      },
-    );
+    source
+      ? projectBrowseContextUri(source.scheme, reservation.finalPath, source.authority)
+      : canonicalContextUri("uploads", reservation.finalPath, { kind: "contextual" });
 
   const isTracked = (reservation: PlacedUpload) =>
     classifyFiletype(reservation.fileType).kind === "tracked";
@@ -79,7 +76,9 @@ export function createContextUploadContentPort(
               mimeType: input.mimeType,
               sizeBytes: input.sizeBytes,
               hasPreview: input.hasPreview,
-              ...(input.keptAsFile ? { filename: keptFileName(input.reservation.finalPath) } : {}),
+              ...(input.keptAsFile || source
+                ? { filename: keptFileName(input.reservation.finalPath.split("/").pop() ?? "") }
+                : {}),
               origin,
             });
       if (result.ok)

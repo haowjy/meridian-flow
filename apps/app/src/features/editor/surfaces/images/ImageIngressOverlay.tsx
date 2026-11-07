@@ -62,7 +62,7 @@ export function ImageIngressOverlay({ editor }: { editor: Editor }) {
       ) : null}
       {status.notice ? (
         <div className="meridian-image-refusal">
-          <EditorNoticePill notice={{ tone: "failed", message: status.notice.message }} />
+          <EditorNoticePill notice={{ tone: status.notice.tone, message: status.notice.message }} />
         </div>
       ) : null}
     </>,

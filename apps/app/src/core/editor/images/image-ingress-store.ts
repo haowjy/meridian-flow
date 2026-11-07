@@ -21,7 +21,7 @@
 /** Long enough to read one sentence while looking back at the manuscript. */
 const NOTICE_LIFETIME_MS = 6_000;
 
-export type ImageIngressNotice = { message: string; token: number };
+export type ImageIngressNotice = { message: string; token: number; tone: "done" | "failed" };
 
 export type ImageIngressStatus = {
   /** True while a drag carrying files is over the manuscript. */
@@ -35,6 +35,8 @@ export type ImageIngressStore = {
   setDropActive: (active: boolean) => void;
   /** Say what could not be done, in the writer's terms. */
   refuse: (message: string) => void;
+  /** Say what a drop became, when it is not what the writer would assume. */
+  tell: (message: string) => void;
   dismiss: () => void;
   destroy: () => void;
 };
@@ -58,6 +60,19 @@ export function createImageIngressStore(): ImageIngressStore {
     expiry = null;
   };
 
+  const announce = (message: string, tone: ImageIngressNotice["tone"]) => {
+    cancelExpiry();
+    issued += 1;
+    const token = issued;
+    publish({ ...status, notice: { message, token, tone } });
+    expiry = setTimeout(() => {
+      expiry = null;
+      // Only this notice: a later one has replaced it and must not be silenced by an expiry
+      // queued for the one before.
+      if (status.notice?.token === token) publish({ ...status, notice: null });
+    }, NOTICE_LIFETIME_MS);
+  };
+
   return {
     subscribe(listener) {
       listeners.add(listener);
@@ -68,18 +83,8 @@ export function createImageIngressStore(): ImageIngressStore {
       if (status.dropActive === active) return;
       publish({ ...status, dropActive: active });
     },
-    refuse(message) {
-      cancelExpiry();
-      issued += 1;
-      const token = issued;
-      publish({ ...status, notice: { message, token } });
-      expiry = setTimeout(() => {
-        expiry = null;
-        // Only this notice: a later refusal has replaced it and must not be
-        // silenced by an expiry queued for the one before.
-        if (status.notice?.token === token) publish({ ...status, notice: null });
-      }, NOTICE_LIFETIME_MS);
-    },
+    refuse: (message) => announce(message, "failed"),
+    tell: (message) => announce(message, "done"),
     dismiss() {
       cancelExpiry();
       if (status.notice) publish({ ...status, notice: null });

@@ -13,21 +13,23 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
+import { classifyFiletype, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import type { Transaction } from "@tiptap/pm/state";
 
 import { fileTooLargeMessage } from "@/lib/upload-limit";
 
 import { documentReferenceNode } from "../extensions/at-reference/document-link-insertion";
 import { placeNodes } from "../extensions/reference-drop";
 import { imageIngressStorage } from "../images/image-ingress-runtime";
+import type { ImageIngressStore } from "../images/image-ingress-store";
 import { insertImageFile } from "../images/image-uploads";
 import { acceptsInlineImage, isImageFile } from "../images/image-workflow";
 import type { DropDoor } from "../landing/drop-plan";
 import { snapOutOfCode } from "../landing/inline-snap";
 import type { Landing } from "../landing/point-landing";
-import { linkUploads } from "../links/link-uploads";
+import { linkUploads, type UploadRun } from "../links/link-uploads";
 import { fileDropHost } from "./FileDropExtension";
 
 type FileLike = Pick<File, "type" | "name">;
@@ -67,14 +69,22 @@ export const fileDropDoor: DropDoor = {
     if (picturesOnly) {
       if (at.kind === "inline" && !acceptsInlineImage(editor.state.doc, at.pos))
         return { kind: "refuse", hint: t`A picture cannot go there.` };
-      return { kind: "accept", pos: at.pos, commit: () => dropFiles(editor, dropped ?? [], at) };
+      return {
+        kind: "accept",
+        pos: at.pos,
+        commit: () => void dropFiles(editor, dropped ?? [], at),
+      };
     }
 
     // A chip's slot is the same wherever it is: probed with a stand-in, committed with the files.
     const probe = chipFor(editor, "file", crypto.randomUUID(), "unfiled");
     const placed = probe && placeNodes(editor.view, at, [probe]);
     if (!placed) return { kind: "refuse", hint: t`A file can’t go there.` };
-    return { kind: "accept", pos: placed.pos, commit: () => dropFiles(editor, dropped ?? [], at) };
+    return {
+      kind: "accept",
+      pos: placed.pos,
+      commit: () => void dropFiles(editor, dropped ?? [], at),
+    };
   },
 };
 
@@ -86,55 +96,110 @@ function chipFor(editor: Editor, name: string, documentId: string, scheme: strin
   });
 }
 
-/** Each file in the order the drop lists them: pictures through their lane, the rest as chips. */
-function dropFiles(editor: Editor, files: readonly File[], landing: Landing): void {
+/**
+ * Text up to the text cap becomes an editable document, not a stored file, and the chip links to
+ * it. The writer dropped a file and may expect a file: say what it became once the server has read
+ * the bytes and decided.
+ */
+function tellWhenText(
+  file: File,
+  send: UploadRun,
+  status: ImageIngressStore | undefined,
+): UploadRun {
+  return async (signal, onProgress) => {
+    const result = await send(signal, onProgress);
+    if (classifyFiletype(result.fileType).kind === "tracked")
+      status?.tell(
+        t`${file.name} is text, so it was added as a document in assets. The chip links to it.`,
+      );
+    return result;
+  };
+}
+
+/**
+ * Each file in the order the drop lists them: pictures through their lane, the rest as chips.
+ *
+ * A chip is inserted only after the server holds its upload (`host.start`): a second tab that
+ * learns of the chip through the document must find the file already reserved, or it would be
+ * told the file does not exist. The drop point is carried through whatever the writer types
+ * meanwhile.
+ */
+async function dropFiles(editor: Editor, files: readonly File[], landing: Landing): Promise<void> {
   const status = imageIngressStorage(editor)?.status;
   const host = fileDropHost(editor);
   if (!editor.isEditable || landing.kind === "source") return;
 
   let at: Exclude<Landing, { kind: "source" }> = landing;
-  /** Chips waiting for the next picture or the end of the drop, so a run of them is one edit. */
-  let run: Array<{ node: PMNode; file: File; documentId: string }> = [];
+  const follow = ({ transaction }: { transaction: Transaction }) => {
+    at = { ...at, pos: transaction.mapping.map(at.pos) };
+  };
+  editor.on("transaction", follow);
 
-  const flush = () => {
-    if (run.length === 0 || !host) return;
+  /** Chips waiting for the next picture or the end of the drop, so a run of them is one edit. */
+  let run: Array<{ file: File; documentId: string; sending: Promise<UploadRun> }> = [];
+
+  const flush = async () => {
+    const entries = run;
+    run = [];
+    if (entries.length === 0 || !host) return;
+    const outcomes = await Promise.allSettled(entries.map(({ sending }) => sending));
+    if (editor.isDestroyed) return;
+    const ready: Array<{ node: PMNode; documentId: string; send: UploadRun; file: File }> = [];
+    outcomes.forEach((outcome, index) => {
+      const entry = entries[index];
+      if (!entry) return;
+      if (outcome.status === "rejected") {
+        status?.refuse(
+          outcome.reason instanceof Error ? outcome.reason.message : t`The upload didn’t start.`,
+        );
+        return;
+      }
+      const node = chipFor(editor, entry.file.name, entry.documentId, host.scheme);
+      if (node)
+        ready.push({ node, documentId: entry.documentId, send: outcome.value, file: entry.file });
+    });
+    if (ready.length === 0) return;
     const placed = placeNodes(
       editor.view,
       at,
-      run.map(({ node }) => node),
+      ready.map(({ node }) => node),
     );
     if (!placed) {
       status?.refuse(t`A file can’t go there.`);
     } else {
       // The entries exist before the chips do, so no chip ever draws a gap.
-      for (const { file, documentId } of run)
-        linkUploads.begin(documentId, host.hostDocumentId, (signal, onProgress) =>
-          host.upload({ documentId, file, signal, onProgress }),
-        );
+      for (const { documentId, send, file } of ready)
+        linkUploads.begin(documentId, host.hostDocumentId, tellWhenText(file, send, status));
       placed.commit(editor.view);
     }
-    run = [];
     at = { kind: "inline", pos: editor.state.selection.from };
   };
 
-  for (const file of files) {
-    if (isImageFile(file)) {
-      flush();
-      insertImageFile(editor, file, at);
-      at = { kind: "inline", pos: editor.state.selection.from };
-      continue;
+  try {
+    for (const file of files) {
+      if (isImageFile(file)) {
+        await flush();
+        if (editor.isDestroyed) return;
+        insertImageFile(editor, file, at);
+        at = { kind: "inline", pos: editor.state.selection.from };
+        continue;
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        status?.refuse(fileTooLargeMessage(file.name));
+        continue;
+      }
+      if (!host) {
+        status?.refuse(t`Files can’t be added to this document.`);
+        continue;
+      }
+      const documentId = crypto.randomUUID();
+      const sending = host.start({ documentId, file });
+      // Handled when the run is flushed; until then a refusal is not an unhandled rejection.
+      sending.catch(() => {});
+      run.push({ file, documentId, sending });
     }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      status?.refuse(fileTooLargeMessage(file.name));
-      continue;
-    }
-    if (!host) {
-      status?.refuse(t`Files can’t be added to this document.`);
-      continue;
-    }
-    const documentId = crypto.randomUUID();
-    const node = chipFor(editor, file.name, documentId, host.scheme);
-    if (node) run.push({ node, file, documentId });
+    await flush();
+  } finally {
+    editor.off("transaction", follow);
   }
-  flush();
 }
