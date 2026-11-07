@@ -5,17 +5,32 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Stats } from "node:fs";
-import { createReadStream } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import {
+  copyFile,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
-import type { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreCopyOutput,
   ObjectStoreErrorCode,
   ObjectStoreGetOptions,
+  ObjectStoreHead,
   ObjectStorePort,
   ObjectStoreResult,
+  ObjectStoreSignedPut,
+  ObjectStoreSignedPutOptions,
   ObjectStoreSignedUrlOptions,
   ObjectStoreStreamOutput,
 } from "../../ports/object-store.js";
@@ -44,12 +59,21 @@ export interface LocalSignedObject {
   stream: Readable;
 }
 
+/** A signed URL names one operation. A token with no `op` is a read. */
 interface SignedPayload {
   key: string;
   exp: number;
   /** `Content-Disposition` signed with the URL, so a link can't be re-pointed at another name. */
   cd?: string;
+  op?: "put";
+  /** The length and type a PUT must carry, as on an S3 signature. */
+  size?: number;
+  mime?: string;
 }
+
+/** Local stand-in for a bucket lifecycle rule: temp files older than this are crash leftovers. */
+const STALE_TEMP_MS = 24 * 60 * 60 * 1000;
+const TEMP_DIR = ".tmp";
 
 function ok<T>(value: T): ObjectStoreResult<T> {
   return { ok: true, value };
@@ -87,6 +111,9 @@ function decodePayload(encoded: string): SignedPayload | null {
       key: parsed.key,
       exp: parsed.exp,
       ...(typeof parsed.cd === "string" ? { cd: parsed.cd } : {}),
+      ...(parsed.op === "put" && typeof parsed.size === "number" && typeof parsed.mime === "string"
+        ? { op: "put" as const, size: parsed.size, mime: parsed.mime }
+        : {}),
     };
   } catch {
     return null;
@@ -106,6 +133,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     this.signingSecret = options.signingSecret;
     this.signedUrlTtlSeconds = options.signedUrlTtlSeconds;
     this.now = options.now ?? (() => new Date());
+    void this.clearStaleTemp();
   }
 
   async put(
@@ -193,26 +221,116 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       const metadata = JSON.parse(
         await readFile(this.metadataPath(source.value), "utf8"),
       ) as LocalObjectMetadata;
-      await mkdir(path.dirname(target.value), { recursive: true });
-      await copyFile(source.value, target.value);
-      await writeFile(
-        this.metadataPath(target.value),
-        JSON.stringify({
+      const tempData = await this.tempPath();
+      try {
+        await copyFile(source.value, tempData);
+        await this.commit(tempData, target.value, {
           ...metadata,
           key: toKey,
           updatedAt: this.now().toISOString(),
-        } satisfies LocalObjectMetadata),
-      );
+        });
+      } catch (error) {
+        await rm(tempData, { force: true });
+        throw error;
+      }
       return ok({
         storageUrl: createObjectStorageUrl(toKey),
         mimeType: metadata.mimeType,
         sizeBytes: metadata.sizeBytes,
       });
     } catch (error) {
-      await this.delete(toKey);
       return isMissingFile(error)
         ? err("not_found", "Object not found")
         : ioError(error, "Failed to copy object");
+    }
+  }
+
+  async readHead(key: string, headBytes: number): Promise<ObjectStoreResult<ObjectStoreHead>> {
+    const target = this.objectPath(key);
+    if (!target.ok) return target;
+
+    try {
+      const file = await open(target.value, "r");
+      try {
+        const { size } = await file.stat();
+        const head = Buffer.alloc(Math.min(headBytes, size));
+        const { bytesRead } = await file.read(head, 0, head.length, 0);
+        return ok({ head: new Uint8Array(head.subarray(0, bytesRead)), sizeBytes: size });
+      } finally {
+        await file.close();
+      }
+    } catch (error) {
+      return isMissingFile(error)
+        ? err("not_found", "Object not found")
+        : ioError(error, "Failed to read object");
+    }
+  }
+
+  async signPut(
+    key: string,
+    options: ObjectStoreSignedPutOptions,
+  ): Promise<ObjectStoreResult<ObjectStoreSignedPut>> {
+    const target = this.objectPath(key);
+    if (!target.ok) return target;
+
+    const exp = Math.floor(this.now().getTime() / 1000) + this.signedUrlTtlSeconds;
+    const payload = encodePayload({
+      key,
+      exp,
+      op: "put",
+      size: options.sizeBytes,
+      mime: options.mimeType,
+    });
+    return ok({
+      url: `${this.signedUrlBasePath}/${payload}.${this.sign(payload)}`,
+      headers: { "Content-Type": options.mimeType },
+    });
+  }
+
+  /**
+   * Stores the body of a PUT to a `signPut` URL. The body is destroyed on every outcome, so the
+   * caller owes it nothing. A wrong length or type, an expired token or a token that is not a PUT
+   * stores nothing; a right one replaces any object at the key, as an S3 PUT does.
+   */
+  async writeSignedToken(
+    token: string,
+    request: { body: Readable; contentLength: number | null; contentType: string | null },
+  ): Promise<ObjectStoreResult<void>> {
+    const refuse = (error: ObjectStoreResult<never>) => {
+      request.body.destroy();
+      return error;
+    };
+    const payload = this.verify(token);
+    if (!payload.ok) return refuse(payload);
+    const { key, op, size, mime } = payload.value;
+    if (op !== "put" || size === undefined) return refuse(err("invalid_key", "Not a PUT URL"));
+    if (request.contentLength !== size || request.contentType !== mime)
+      return refuse(err("invalid_key", "The PUT's length or type is not the one signed"));
+    const target = this.objectPath(key);
+    if (!target.ok) return refuse(target);
+
+    const tempData = await this.tempPath();
+    try {
+      let received = 0;
+      const counter = new Transform({
+        transform(chunk: Buffer, _encoding, done) {
+          received += chunk.length;
+          done(received > size ? new Error("body is longer than signed") : null, chunk);
+        },
+      });
+      await pipeline(request.body, counter, createWriteStream(tempData));
+      if (received !== size) throw new Error("body is shorter than signed");
+      await this.commit(tempData, target.value, {
+        key,
+        mimeType: mime ?? "application/octet-stream",
+        sizeBytes: size,
+        updatedAt: this.now().toISOString(),
+      });
+      return ok(undefined);
+    } catch (error) {
+      request.body.destroy();
+      await rm(tempData, { force: true });
+      return ioError(error, "Failed to write object");
     }
   }
 
@@ -324,6 +442,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
   async readSignedToken(token: string): Promise<ObjectStoreResult<LocalSignedObject>> {
     const payload = this.verify(token);
     if (!payload.ok) return payload;
+    if (payload.value.op) return err("invalid_key", "Signed URL is not a read URL");
 
     const target = this.objectPath(payload.value.key);
     if (!target.ok) return target;
@@ -369,6 +488,43 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     return ok(target);
   }
 
+  private async tempPath(): Promise<string> {
+    const dir = path.join(this.rootDir, TEMP_DIR);
+    await mkdir(dir, { recursive: true });
+    return path.join(dir, `${crypto.randomUUID()}.part`);
+  }
+
+  /**
+   * Moves a finished temp file to `target` with its metadata. The metadata is written to a temp
+   * file first, so a failure to write it leaves an existing object as it was.
+   */
+  private async commit(
+    tempData: string,
+    target: string,
+    metadata: LocalObjectMetadata,
+  ): Promise<void> {
+    const tempMetadata = `${tempData}.metadata`;
+    try {
+      await writeFile(tempMetadata, JSON.stringify(metadata, null, 2));
+      await mkdir(path.dirname(target), { recursive: true });
+      await rename(tempData, target);
+      await rename(tempMetadata, this.metadataPath(target));
+    } catch (error) {
+      await rm(tempMetadata, { force: true });
+      throw error;
+    }
+  }
+
+  private async clearStaleTemp(): Promise<void> {
+    const dir = path.join(this.rootDir, TEMP_DIR);
+    const cutoff = this.now().getTime() - STALE_TEMP_MS;
+    for (const entry of await readdir(dir).catch(() => [])) {
+      const file = path.join(dir, entry);
+      const info = await stat(file).catch(() => null);
+      if (info && info.mtimeMs < cutoff) await rm(file, { force: true });
+    }
+  }
+
   private metadataPath(objectPath: string): string {
     return `${objectPath}.metadata.json`;
   }
@@ -388,7 +544,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
             : ioError(error, "Failed to enumerate object store");
       }
       for (const entry of entries) {
-        if (entry.endsWith(".metadata.json")) continue;
+        if (entry.endsWith(".metadata.json") || (!relativeDir && entry === TEMP_DIR)) continue;
         const relativePath = relativeDir ? path.join(relativeDir, entry) : entry;
         const absolutePath = path.join(absoluteDir, entry);
         let fileStat: Stats;

@@ -42,6 +42,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       async getStream() {
         throw new Error("not used");
       },
+      async readHead() {
+        throw new Error("not used");
+      },
+      async signPut() {
+        throw new Error("not used");
+      },
       async copy() {
         throw new Error("not used");
       },

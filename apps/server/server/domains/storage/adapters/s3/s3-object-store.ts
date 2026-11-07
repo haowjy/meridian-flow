@@ -21,8 +21,11 @@ import type {
   ObjectStoreCopyOutput,
   ObjectStoreErrorCode,
   ObjectStoreGetOptions,
+  ObjectStoreHead,
   ObjectStorePort,
   ObjectStoreResult,
+  ObjectStoreSignedPut,
+  ObjectStoreSignedPutOptions,
   ObjectStoreSignedUrlOptions,
   ObjectStoreStreamOutput,
 } from "../../ports/object-store.js";
@@ -198,6 +201,58 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     } catch (error) {
       if (isNotFound(error)) return err("not_found", "Object not found");
       return err("io_error", error instanceof Error ? error.message : "Failed to copy object");
+    }
+  }
+
+  async readHead(key: string, headBytes: number): Promise<ObjectStoreResult<ObjectStoreHead>> {
+    if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
+
+    try {
+      const { ContentLength: sizeBytes = 0 } = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      // A range read of an empty object is a 416.
+      if (sizeBytes === 0 || headBytes === 0) return ok({ head: new Uint8Array(), sizeBytes });
+      const response = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Range: `bytes=0-${Math.min(headBytes, sizeBytes) - 1}`,
+        }),
+      );
+      if (!response.Body) return err("not_found", "Object not found");
+      return ok({ head: await response.Body.transformToByteArray(), sizeBytes });
+    } catch (error) {
+      if (isNotFound(error)) return err("not_found", "Object not found");
+      return err("io_error", error instanceof Error ? error.message : "Failed to read object");
+    }
+  }
+
+  async signPut(
+    key: string,
+    options: ObjectStoreSignedPutOptions,
+  ): Promise<ObjectStoreResult<ObjectStoreSignedPut>> {
+    if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
+
+    // No HEAD first: the object does not exist yet. The length and type are signed headers, so
+    // the store refuses any other.
+    try {
+      const url = await getSignedUrl(
+        this.presignClient,
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ContentType: options.mimeType,
+          ContentLength: options.sizeBytes,
+        }),
+        {
+          expiresIn: this.signedUrlTtlSeconds,
+          signableHeaders: new Set(["content-type", "content-length"]),
+        },
+      );
+      return ok({ url, headers: { "Content-Type": options.mimeType } });
+    } catch (error) {
+      return err("io_error", error instanceof Error ? error.message : "Failed to sign URL");
     }
   }
 
