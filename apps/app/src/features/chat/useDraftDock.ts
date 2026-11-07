@@ -113,7 +113,7 @@ export function useDraftDock({
     (file: DockFile, change?: ReviewChange) => {
       controller.dismissNotice();
       // A draft-only picture has no review room: it opens as a preview.
-      if (!file.row.draft.hasDraft && file.row.draft.tree?.deleted !== true) {
+      if (!file.row.draft.hasDraft && !hasTreeLine(file.row.draft)) {
         if (file.row.draft.binary)
           setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
         return;
