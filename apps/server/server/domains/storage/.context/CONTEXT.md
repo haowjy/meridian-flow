@@ -20,7 +20,7 @@ A file can reach 200 MiB, so nothing outside a bounded read holds an object whol
 - `copy(from, to)` duplicates inside the store (`CopyObject`, `copyFile`) and returns
   the copy's size and type. A failed copy leaves no object at `to`. Local copy and PUT write a temp file under
   `.tmp/` and rename it with its metadata, so a failed write leaves an existing object as
-  it was; temp files older than a day (crash leftovers) are cleared when the adapter starts.
+  it was; temp files older than a day (crash leftovers) are cleared before the first write after a start.
 - `readHead(key, n)` answers the object's size and first `n` bytes without reading the
   rest; an empty object answers size 0 (S3 refuses a range read of one).
 - `signPut(key, { sizeBytes, mimeType })` is a short-lived URL for a browser PUT of
