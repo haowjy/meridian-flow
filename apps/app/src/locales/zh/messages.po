@@ -5672,6 +5672,10 @@ msgstr ""
 msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 msgstr ""
 
+#: src/client/api/direct-upload.ts
+msgid "The upload to storage failed."
+msgstr ""
+
 #: src/features/import/reason-copy.ts
 msgid "The uploaded file is no longer available."
 msgstr ""
