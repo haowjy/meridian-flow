@@ -87,6 +87,7 @@ if (!RUN) {
       const intake = createUploadIntake({
         repository,
         content: {
+          names: async () => new Set(),
           bind: async () => ({ ok: true, bound: null }),
           persist: async () => ({ ok: true }),
           async remove({ reservation }) {
@@ -111,12 +112,37 @@ if (!RUN) {
       sizeBytes: 10,
     });
 
-    const claimInput = (intakeId: string, filename = "chapter") => ({
+    const claimInput = (intakeId: string) => ({
       projectId: PROJECT,
       intakeId,
-      documentFilename: { name: filename, extension: "", filetype: "markdown" as const },
       fileType: "markdown" as const,
     });
+
+    /** The intake as production composes it, over `db`. */
+    function productionIntake(
+      db: Database,
+      objectStore: ObjectStorePort,
+      collab = createInMemoryCollabDomain(),
+    ) {
+      const catalog = createDrizzleContextCatalog(db);
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(db),
+        links: createTestDocumentLinkScopes(db),
+        db,
+        removal: createTestDocumentRemoval(db),
+        documentSync: collab,
+        branches: collab.branches,
+        catalogMutations: catalog,
+      });
+      return createUploadIntake({
+        repository: createDrizzleUploadIntakeRepository(db),
+        content: createContextUploadContentPort(contextPorts),
+        objectStore,
+        release: createObjectRelease({ objectStore, onFailure() {} }),
+        eventSink: createNoopEventSink(),
+        catalog: { refreshSources: async () => "1" },
+      });
+    }
 
     it("converges concurrent production service calls on the authoritative trio", async () => {
       const firstDb = createDb(DATABASE_URL);
@@ -125,26 +151,7 @@ if (!RUN) {
         await seed(firstDb);
         const collab = createInMemoryCollabDomain();
         const objectStore = createInMemoryObjectStore();
-        const service = (db: Database) => {
-          const catalog = createDrizzleContextCatalog(db);
-          const contextPorts = createProductionUnifiedContextPortFactory({
-            pendingBranch: createTestWorkProjectionMutation(db),
-            links: createTestDocumentLinkScopes(db),
-            db,
-            removal: createTestDocumentRemoval(db),
-            documentSync: collab,
-            branches: collab.branches,
-            catalogMutations: catalog,
-          });
-          return createUploadIntake({
-            repository: createDrizzleUploadIntakeRepository(db),
-            content: createContextUploadContentPort(contextPorts),
-            objectStore,
-            release: createObjectRelease({ objectStore, onFailure() {} }),
-            eventSink: createNoopEventSink(),
-            catalog: { refreshSources: async () => "1" },
-          });
-        };
+        const service = (db: Database) => productionIntake(db, objectStore, collab);
         const content = new TextEncoder().encode("# Concurrent\n");
         const request = () => ({
           intakeId: "concurrent-service",
@@ -172,21 +179,42 @@ if (!RUN) {
           ok: true,
           value: { uri: "uploads://chapter", fileType: "markdown" },
         });
+
+        // Two uploads of one name at once: both read the folder before either lands, so the
+        // second learns the name is taken from the port's conflict and takes the next.
+        const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0, 0, 0, 0]);
+        const twin = (db: Database) =>
+          uploadBytes(service(db), objectStore, {
+            actorUserId: USER,
+            projectId: PROJECT,
+            chatId: NEW_CHAT,
+            filename: "notes.zip",
+            mimeType: "application/zip",
+            bytes: zip,
+          });
+        const twins = await Promise.allSettled([twin(firstDb), twin(waiterDb)]);
+        expect(
+          twins
+            .map((outcome) =>
+              outcome.status === "fulfilled" && outcome.value.ok
+                ? outcome.value.value.uri
+                : outcome,
+            )
+            .sort(),
+        ).toEqual(["uploads://notes (2).zip", "uploads://notes.zip"]);
       } finally {
         await firstDb.delete(users).where(eq(users.id, USER));
         await Promise.all([firstDb.close(), waiterDb.close()]);
       }
     });
 
-    it("converges idempotency, picks the name at claim, derives the address from the chat's handle, and suffixes active collisions", async () => {
+    it("converges idempotency, names the file where it lands, derives the address from the chat's handle, and numbers a taken name", async () => {
       const repo = await seed();
       const first = await repo.reserve(reservation("one", NEW_CHAT));
       const replay = await repo.reserve(reservation("one", NEW_CHAT));
       const conflict = await repo.reserve(reservation("one", NEW_CHAT, "other.md"));
-      await repo.reserve(reservation("two", NEW_CHAT));
-      await repo.reserve(reservation("three", CHAT));
       if (first.kind !== "reserved") throw new Error(first.kind);
-      // A reservation holds no name: nothing is taken until finish reads the bytes.
+      // Neither a reservation nor a claim holds a name: the upload is named where it lands.
       expect(first.reservation).toMatchObject({
         finalPath: null,
         fileType: null,
@@ -196,19 +224,41 @@ if (!RUN) {
         first.reservation.documentId,
       );
       expect(conflict).toEqual({ kind: "conflict" });
-      const claimedOne = await repo.claim(claimInput("one"));
-      const claimedTwo = await repo.claim(claimInput("two"));
-      const claimedThree = await repo.claim(claimInput("three"));
-      expect(claimedOne.kind === "claimed" && claimedOne.reservation.canonicalUri).toBe(
+      const claimed = await repo.claim(claimInput("one"));
+      expect(claimed.kind === "claimed" && claimed.reservation.finalPath).toBe(null);
+
+      // Through the chat's own port: the folder is read before the write.
+      const objectStore = createInMemoryObjectStore();
+      const intake = productionIntake(database.current, objectStore);
+      const send = (chatId: string, filename: string, mimeType: string, bytes: Uint8Array) =>
+        uploadBytes(intake, objectStore, {
+          actorUserId: USER,
+          projectId: PROJECT,
+          chatId,
+          filename,
+          mimeType,
+          bytes,
+        });
+      const text = new TextEncoder().encode("# Hello\n");
+      const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0, 0, 0, 0]);
+      const uris = async (sends: Promise<Awaited<ReturnType<typeof send>>>[]) =>
+        (await Promise.all(sends)).map((sent) => (sent.ok ? sent.value.uri : sent.error.code));
+      expect(await uris([send(NEW_CHAT, "chapter.md", "text/markdown", text)])).toEqual([
         "uploads://chapter",
-      );
-      expect(claimedTwo.kind === "claimed" && claimedTwo.reservation.finalPath).toBe("chapter (2)");
-      expect(claimedThree.kind === "claimed" && claimedThree.reservation.canonicalUri).toBe(
-        "uploads://@c1/chapter",
-      );
-      // A second claim of the same intake changes nothing.
-      expect((await repo.claim(claimInput("one", "other"))).kind).toBe("existing");
+      ]);
+      expect(await uris([send(NEW_CHAT, "chapter.md", "text/markdown", text)])).toEqual([
+        "uploads://chapter (2)",
+      ]);
+      expect(await uris([send(CHAT, "notes.zip", "application/zip", zip)])).toEqual([
+        "uploads://@c1/notes.zip",
+      ]);
+      expect(await uris([send(CHAT, "notes.zip", "application/zip", zip)])).toEqual([
+        "uploads://@c1/notes (2).zip",
+      ]);
+
       // The New chat gets its row, and so its handle, at Send: the same upload now reads there.
+      const finalized = await repo.finalize(PROJECT, "one", "draft");
+      expect(finalized.canonicalUri).toBe("uploads://draft");
       await database.current.insert(threads).values({
         id: NEW_CHAT,
         projectId: PROJECT,
@@ -218,7 +268,7 @@ if (!RUN) {
       });
       const afterSend = await repo.reserve(reservation("one", NEW_CHAT));
       expect(afterSend.kind === "existing" && afterSend.reservation.canonicalUri).toBe(
-        "uploads://@c2/chapter",
+        "uploads://@c2/draft",
       );
     });
 
@@ -230,25 +280,21 @@ if (!RUN) {
       }
       const claimed = await repo.claim(claimInput("delete"));
       if (claimed.kind !== "claimed") throw new Error(claimed.kind);
-      const identity = { ...claimed.reservation, canonicalUri: claimed.reservation.canonicalUri };
+      const { documentId } = claimed.reservation;
       const [intake] = await database.current
         .select()
         .from(uploadIntakes)
-        .where(eq(uploadIntakes.documentId, identity.documentId as never));
+        .where(eq(uploadIntakes.documentId, documentId as never));
       if (!intake) throw new Error("intake missing");
       await database.current.insert(documents).values({
-        id: identity.documentId as never,
+        id: documentId as never,
         contextSourceId: intake.contextSourceId as never,
         name: "chapter",
         extension: "",
         fileType: "markdown",
       });
-      await repo.finalize(PROJECT, "delete");
-      const base = {
-        intakeId: "delete",
-        documentId: identity.documentId,
-        uri: identity.canonicalUri ?? "",
-      };
+      const identity = await repo.finalize(PROJECT, "delete", "chapter");
+      const base = { intakeId: "delete", documentId, uri: identity.canonicalUri ?? "" };
       const { removed, deleteDraft } = deletion(repo);
       expect(await deleteDraft({ ...base, expectedRevision: "wrong" }, USER, NEW_OWNER)).toEqual({
         kind: "identity_mismatch",
@@ -268,12 +314,12 @@ if (!RUN) {
         ),
       ).toEqual({ kind: "already_deleted" });
       // An arrived upload leaves through the canonical soft delete, never a hard delete.
-      expect(removed).toEqual([identity.documentId]);
+      expect(removed).toEqual([documentId]);
       expect(
         await database.current
           .select({ id: documents.id })
           .from(documents)
-          .where(eq(documents.id, identity.documentId as never)),
+          .where(eq(documents.id, documentId as never)),
       ).toHaveLength(1);
     });
 
@@ -463,6 +509,7 @@ if (!RUN) {
         };
         const bound: string[] = [];
         const content: Content = {
+          names: async () => new Set(),
           bind: async ({ text }) => {
             bound.push(text);
             return { ok: true, bound: null };

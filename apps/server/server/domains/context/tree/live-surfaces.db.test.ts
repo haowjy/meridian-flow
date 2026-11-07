@@ -34,6 +34,7 @@ import { RecentDocumentUnavailableError } from "../../recent-documents/ports/rec
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
 import { createDocumentRevisions } from "../document-revisions.js";
 import { countIncomingLinks } from "../links/move-link-count.js";
+import { createContextUploadContentPort } from "../uploads/context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "../uploads/drizzle-upload-intake.js";
 import { LIVE_TREE } from "./tree-view.js";
 
@@ -776,6 +777,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .update(documents)
         .set({ contextSourceId: source.id })
         .where(eq(documents.id, hidden));
+      // The upload's folder as finish reads it before naming the file.
       const reserved = await createDrizzleUploadIntakeRepository(db).reserve({
         intakeId: "reader-matrix",
         actorUserId: s.userId,
@@ -785,15 +787,11 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         sizeBytes: 1,
       });
       if (reserved.kind !== "reserved") throw new Error(reserved.kind);
-      const claimed = await createDrizzleUploadIntakeRepository(db).claim({
-        projectId: s.projectId,
-        intakeId: "reader-matrix",
-        documentFilename: { name: "upload", extension: "", filetype: "markdown" },
-        fileType: "markdown",
+      const names = await createContextUploadContentPort(s.runtime.ports.contextPorts).names({
+        reservation: { ...reserved.reservation, fileType: "markdown" },
+        actorUserId: s.userId,
       });
-      expect(claimed.kind === "claimed" ? claimed.reservation.finalPath : claimed.kind).toBe(
-        "upload",
-      );
+      expect(names.has("upload")).toBe(false);
     });
 
     it("never bootstraps a hidden chapter as the writer's first chapter (C-1a)", async () => {

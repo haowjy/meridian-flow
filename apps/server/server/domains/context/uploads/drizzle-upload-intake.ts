@@ -250,38 +250,11 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         if (!row) return { kind: "gone" };
         if (row.state !== "reserved")
           return { kind: "existing", reservation: mapRow(row, await chatRefOf(row.ownerThreadId)) };
-        // A chat's name is taken now, after the bytes are read: serialised per source against
-        // every other writer of that source's names. A source upload (no `contextSourceId`) is
-        // named when it is placed, by trying names against the host's own source.
-        let finalPath: string | undefined;
-        if (row.contextSourceId) {
-          await activeDb.execute(
-            sql`select pg_advisory_xact_lock(hashtextextended(${row.contextSourceId}, 0))`,
-          );
-          const [liveNames, reservedNames] = await Promise.all([
-            createTreeReader(db).namesAt(LIVE_TREE, {
-              contextSourceId: row.contextSourceId as ContextSourceId,
-              parentId: null,
-            }),
-            activeDb
-              .select({ path: uploadIntakes.finalPath })
-              .from(uploadIntakes)
-              .where(
-                and(
-                  eq(uploadIntakes.contextSourceId, row.contextSourceId),
-                  sql`${uploadIntakes.state} <> 'deleted'`,
-                ),
-              ),
-          ]);
-          const used = new Set([...liveNames, ...reservedNames.flatMap((r) => r.path ?? [])]);
-          finalPath = firstFreeName(input.documentFilename, used).filename;
-        }
         const [claimed] = await activeDb
           .update(uploadIntakes)
           .set({
             state: "object_stored",
             fileType: input.fileType,
-            ...(finalPath ? { finalPath } : {}),
             updatedAt: new Date(),
           })
           .where(
@@ -313,11 +286,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
     async finalize(projectId, intakeId, finalPath): Promise<PlacedUpload> {
       const [row] = await currentDrizzleDb(db)
         .update(uploadIntakes)
-        .set({
-          state: "finalized",
-          updatedAt: new Date(),
-          ...(finalPath ? { finalPath } : {}),
-        })
+        .set({ state: "finalized", updatedAt: new Date(), finalPath })
         .where(
           and(
             eq(uploadIntakes.projectId, projectId as never),

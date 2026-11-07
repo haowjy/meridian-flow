@@ -17,7 +17,6 @@ import {
   classifyFiletype,
   firstFreeName,
   MAX_UPLOAD_BYTES,
-  type ParsedDocumentFilename,
 } from "@meridian/contracts/protocol";
 import {
   needsPreviewConversion,
@@ -92,7 +91,7 @@ export interface UploadReservation {
   state: "reserved" | "object_stored" | "finalized" | "deleted";
   /** Null while `reserved`: the name and type are chosen when the stored bytes are read. */
   fileType: Filetype | null;
-  /** A chat upload's name is chosen at the claim; a source upload's when it is placed in `assets/`. */
+  /** Null until the upload is placed: its name is chosen against the folder it lands in. */
   finalPath: string | null;
   /** A chat upload's address, from the chat's current handle; a source upload's depends on the scope its caller resolved. */
   canonicalUri: string | null;
@@ -157,21 +156,16 @@ export interface UploadIntakeRepository {
     intakeId: string,
     actorUserId: string,
   ): Promise<UploadReservation | null>;
-  /**
-   * Records the type, `reserved` to `object_stored`. A chat upload also picks its name, in the
-   * same step under the source's name lock; a source upload is named when it is placed. Anything
-   * but `reserved` is returned as it stands.
-   */
+  /** Records the type, `reserved` to `object_stored`. Anything else is returned as it stands. */
   claim(input: {
     projectId: string;
     intakeId: string;
-    documentFilename: ParsedDocumentFilename;
     fileType: Filetype;
   }): Promise<ClaimUploadResult>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
-  /** `finalPath` is the name a source upload took. */
-  finalize(projectId: string, intakeId: string, finalPath?: string): Promise<PlacedUpload>;
+  /** `finalPath` is the name the upload took. */
+  finalize(projectId: string, intakeId: string, finalPath: string): Promise<PlacedUpload>;
   /** Locks and validates the exact unused identity a writer asked to delete, in the chat they name. */
   lockForDelete(
     input: DeleteDraftUploadInput,
@@ -203,6 +197,15 @@ export interface UploadIntakeRepository {
  * locks finalize holds (contract §6.2). `persist` applies what it bound.
  */
 export interface UploadContentPort<Bound = unknown> {
+  /**
+   * The names the upload's folder holds now: a chat's `uploads`, or `assets/` of the source. None
+   * when the folder does not exist yet.
+   */
+  names(input: {
+    reservation: ClaimedUpload;
+    actorUserId: string;
+    source?: UploadSourceDestination;
+  }): Promise<Set<string>>;
   bind(input: {
     reservation: PlacedUpload;
     actorUserId: string;
@@ -222,7 +225,6 @@ export interface UploadContentPort<Bound = unknown> {
     /** Text stored as a binary row: its name keeps the extension the port would otherwise strip. */
     keptAsFile: boolean;
     source?: UploadSourceDestination;
-    /** Another writer holds the name: a source upload picks the next one. */
   }): Promise<{ ok: true } | { ok: false; conflict: boolean }>;
   /** Soft-deletes an arrived chat upload; `stale` when its identity no longer stands at its URI. */
   remove(input: {
@@ -337,15 +339,6 @@ async function classifyStored(
 
 /** A finish failure whose message is safe to log: it names a step, never writer text. */
 class FinishFault extends Error {}
-
-/** The names `assets/` already holds in the source; none when the folder does not exist yet. */
-async function assetNames(source: UploadSourceDestination): Promise<Set<string>> {
-  const listing = await source.port.list(
-    projectBrowseContextUri(source.scheme, ASSETS_FOLDER, source.authority),
-  );
-  if (!listing.ok) return new Set();
-  return new Set(listing.value.entries.map((entry) => entry.uri.split("/").pop() ?? ""));
-}
 
 const invalidFilename = {
   ok: false,
@@ -489,12 +482,7 @@ export function createUploadIntake<Bound>(deps: {
 
       let claimed: ClaimedUpload;
       if (current.state === "reserved") {
-        const claim = await deps.repository.claim({
-          projectId,
-          intakeId: raw.intakeId,
-          documentFilename: parsed.value,
-          fileType,
-        });
+        const claim = await deps.repository.claim({ projectId, intakeId: raw.intakeId, fileType });
         if (claim.kind === "gone") {
           await releaseAll(current);
           return conflict;
@@ -563,31 +551,29 @@ export function createUploadIntake<Bound>(deps: {
           }
           return {
             kind: "finalized" as const,
-            reservation: await deps.repository.finalize(
-              projectId,
-              raw.intakeId,
-              source ? placed.finalPath : undefined,
-            ),
+            reservation: await deps.repository.finalize(projectId, raw.intakeId, placed.finalPath),
           };
         });
       };
 
       try {
-        // A chat's name is fixed by the claim. A source upload is named in `assets/` now, not
-        // when it started: the same file dropped twice keeps both ("map.pdf", then "map (2).pdf").
-        // The folder is read once, so the first try already skips every name it holds; the loop
-        // only covers another writer taking the name between that read and the bind.
-        const taken = source ? await assetNames(source) : new Set<string>();
-        const nextPath = () =>
-          source ? `${ASSETS_FOLDER}/${firstFreeName(parsed.value, taken).filename}` : undefined;
-        let path = nextPath();
-        let outcome = await place(placedOf(claimed, path));
+        // An upload is named where it lands, now, not when it started: the same file sent twice
+        // keeps both ("map.pdf", then "map (2).pdf"). The folder is read once, so the first try
+        // already skips every name it holds; the loop only covers another writer taking the name
+        // between that read and the write, which the port reports as a conflict.
+        const taken = await deps.content.names({
+          reservation: claimed,
+          actorUserId: raw.actorUserId,
+          ...(source ? { source } : {}),
+        });
+        const folder = source ? `${ASSETS_FOLDER}/` : "";
+        let name = firstFreeName(parsed.value, taken).filename;
+        let outcome = await place(placedOf(claimed, folder + name));
         for (let copy = 1; outcome.kind === "taken"; copy += 1) {
-          if (!path || copy >= MAX_NAME_COPIES)
-            throw new FinishFault("no free name for the upload");
-          taken.add(path.slice(ASSETS_FOLDER.length + 1));
-          path = nextPath();
-          outcome = await place(placedOf(claimed, path));
+          if (copy >= MAX_NAME_COPIES) throw new FinishFault("no free name for the upload");
+          taken.add(name);
+          name = firstFreeName(parsed.value, taken).filename;
+          outcome = await place(placedOf(claimed, folder + name));
         }
         if (outcome.kind === "deleted") {
           await releaseAll(claimed);

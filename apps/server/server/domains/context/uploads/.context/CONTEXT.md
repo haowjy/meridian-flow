@@ -27,8 +27,8 @@ dropped into a document (see Source uploads) share the routes' flow.
    preview cap. Type and text come from the stored bytes alone: the declared name and type
    decide nothing. Text is decoded strictly: UTF-8, or UTF-16 with a byte-order mark. Bytes
    that decode as neither (GBK, Latin-1) stay a stored file through `keptAsFile`, whole. A
-   tracked file with bytes but no text read from them is a failure, never an empty document. Then `claim` picks the name under the source lock
-   (`reserved → object_stored`, guarded on `reserved`), then preview, bind, and one
+   tracked file with bytes but no text read from them is a failure, never an empty document. Then `claim` records the type
+   (`reserved → object_stored`, guarded on `reserved`), then preview, the name, bind, and one
    transaction of persist and `finalized`. Afterwards the incoming object goes, and a
    tracked document's final object too (its text lives in the document).
 
@@ -89,11 +89,13 @@ the document id and sends it as the intake id (a UUID that no `documents` row ho
 `idempotency_conflict`), so the link to the file stands in the document before the file exists, and
 the door starts the upload before it inserts the chip.
 
-`claim` only records the type. Finish places the file in `<scheme>://assets/<name>`: it lists
-`assets/` once and picks the first free name against that, so the number of copies costs nothing
-per finish; it binds and persists, and on a `conflict` from either (another writer took the name
-since the list) adds the name to the taken set and goes again, at most 100 times, so a text file's
-bound path always matches the one it lands at. `finish.failed` logs a fixed `reason`, never
+Every upload is named where it lands, when finish places it: a chat's in its flat `uploads`, a
+source upload in `<scheme>://assets/<name>`. Finish lists the folder once (`UploadContentPort.names`)
+and picks the first free name against that, so the number of copies costs nothing per finish; it
+binds and persists, and on a `conflict` from either (another writer took the name since the list)
+adds the name to the taken set and goes again, at most 100 times, so a text file's bound path
+always matches the one it lands at. The chat port reports a taken `uploads://` name as a conflict
+like any other, for text and stored files alike, which is why no name is reserved earlier. `finish.failed` logs a fixed `reason`, never
 writer text. A file's own extension stays its extension (`notes (2).zip`). `finalize` records the name
 it took. `assets/` is created by that write wherever it has gone missing. Chat-only paths
 (`lockForDelete`, `consume`, `lookupUpload`) skip these rows.
