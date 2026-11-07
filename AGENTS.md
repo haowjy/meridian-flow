@@ -81,9 +81,11 @@ patching a package, run `pnpm dev:restart`: the dev server doesn't watch `node_m
 session that started it.
 
 **Debug with `./mf`; verify in the browser.** Use `./mf` to reproduce and read
-state. Every PR that changes anything a writer sees or relies on, server-only
-changes included, ends with a prober's `agent-browser` run of the final code, with
-screenshots in the PR. `./mf` output never stands in for it.
+state. Every change a writer sees or relies on, server-only changes included, gets
+a prober's `agent-browser` run of the final code before it reaches `main`, with
+screenshots in its PR. A feature built as part PRs into a release branch gets that
+run once, on the whole feature after review, not one per part; each part's coder
+checks its own screens in the browser. `./mf` output never stands in for it.
 
 **Live model calls go to `deepseek-flash`,** or the mock provider when the model's
 output doesn't matter. For a live run set `LIVE_TEST_MODEL=deepseek-flash`: every
