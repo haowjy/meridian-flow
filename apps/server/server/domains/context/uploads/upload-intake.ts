@@ -202,7 +202,7 @@ export interface UploadContentPort<Bound = unknown> {
    * when the folder does not exist yet.
    */
   names(input: {
-    reservation: ClaimedUpload;
+    reservation: UploadReservation;
     actorUserId: string;
     source?: UploadSourceDestination;
   }): Promise<Set<string>>;
@@ -325,16 +325,30 @@ async function classifyStored(
     whole = await readWhole();
   }
   const keptAsFile = headWasText && classifyFiletype(fileType).kind !== "tracked";
+  return {
+    fileType,
+    whole,
+    text,
+    keptAsFile,
+    parsed: uploadName({ filename, mimeType }, fileType, keptAsFile),
+  };
+}
+
+/** The name a file of this type takes, before any copy number. */
+function uploadName(
+  upload: Pick<UploadReservation, "filename" | "mimeType">,
+  fileType: Filetype,
+  keptAsFile: boolean,
+) {
+  const { filename, mimeType } = upload;
   const named = keptAsFile
     ? { ok: true as const, value: { ...keptFileName(filename), filetype: "binary" as const } }
     : intakeFilename(filename, fileType, mimeType);
   // A name whose extension no file type claims ("notes.zip") stays whole in the parse; a copy
   // must number the stem ("notes (2).zip"), so the extension is split off here.
-  const parsed =
-    named.ok && classifyFiletype(fileType).kind !== "tracked" && named.value.extension === ""
-      ? { ok: true as const, value: { ...named.value, ...keptFileName(named.value.name) } }
-      : named;
-  return { fileType, whole, text, keptAsFile, parsed };
+  return named.ok && classifyFiletype(fileType).kind !== "tracked" && named.value.extension === ""
+    ? { ok: true as const, value: { ...named.value, ...keptFileName(named.value.name) } }
+    : named;
 }
 
 /** A finish failure whose message is safe to log: it names a step, never writer text. */
@@ -387,7 +401,8 @@ export function createUploadIntake<Bound>(deps: {
       // A name finish would refuse is refused here, before the bytes are sent. The type is a
       // guess from the name and the declared type; finish reads the bytes.
       const guess = await classifyUpload({ filename, mimeType, bytes: new Uint8Array() });
-      if (!intakeFilename(filename, guess, mimeType).ok) return invalidFilename;
+      const named = uploadName({ filename, mimeType }, guess, false);
+      if (!named.ok) return invalidFilename;
       const reserved = await deps.repository.reserve({
         intakeId: raw.intakeId,
         actorUserId: raw.actorUserId,
@@ -401,16 +416,36 @@ export function createUploadIntake<Bound>(deps: {
         return { ok: false, error: { code: "owner_unavailable" } };
       const { reservation } = reserved;
       const { documentId, locationRevision } = reservation;
+      // The name finish would give the file now, by finish's own rule, so a chip can be labelled
+      // before the bytes are sent. Finish names it again: another upload finishing first between
+      // the two can take this name, and the file lands one number on.
+      const freeName = async () => {
+        const taken = await deps.content.names({
+          reservation,
+          actorUserId: raw.actorUserId,
+          ...(source ? { source } : {}),
+        });
+        return firstFreeName(named.value, taken).filename;
+      };
       switch (reservation.state) {
         case "deleted":
           return conflict;
-        case "finalized":
+        case "finalized": {
+          const placed = placedOf(claimedOf(reservation));
           return {
             ok: true,
-            value: { state: "finalized", result: resultOf(claimedOf(reservation), source) },
+            value: {
+              state: "finalized",
+              name: placed.finalPath.split("/").pop() ?? placed.finalPath,
+              result: resultOf(placed, source),
+            },
           };
+        }
         case "object_stored":
-          return { ok: true, value: { state: "stored", documentId, locationRevision } };
+          return {
+            ok: true,
+            value: { state: "stored", name: await freeName(), documentId, locationRevision },
+          };
         case "reserved": {
           const put = await deps.objectStore.signPut(
             incomingObjectKey(reservation.projectId, documentId),
@@ -419,7 +454,13 @@ export function createUploadIntake<Bound>(deps: {
           if (!put.ok) return storageFailed;
           return {
             ok: true,
-            value: { state: "reserved", documentId, locationRevision, put: put.value },
+            value: {
+              state: "reserved",
+              name: await freeName(),
+              documentId,
+              locationRevision,
+              put: put.value,
+            },
           };
         }
       }

@@ -93,7 +93,7 @@ function chipFor(editor: Editor, name: string, documentId: string, scheme: strin
   });
 }
 
-type Started = { ok: true } | { ok: false; reason: unknown };
+type Reserved = { ok: true; name: string } | { ok: false; reason: unknown };
 
 /**
  * Sends the file. Text up to the text cap becomes an editable document, not a stored file, and
@@ -120,7 +120,7 @@ function sendRun(
  *
  * A chip is inserted only after the server holds its upload (`host.reserve`): a second tab that
  * learns of the chip through the document must find the file already reserved, or it would be
- * told the file does not exist. The drop point is carried through whatever the writer types
+ * told the file does not exist. The reserve also names the chip: the name the file takes now. The drop point is carried through whatever the writer types
  * meanwhile.
  */
 async function dropFiles(editor: Editor, files: readonly File[], landing: Landing): Promise<void> {
@@ -142,13 +142,13 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
   };
 
   /** Chips waiting for the next picture or the end of the drop, so a run of them is one edit. */
-  let run: Array<{ file: File; documentId: string; started: Promise<Started> }> = [];
+  let run: Array<{ file: File; documentId: string; reserved: Promise<Reserved> }> = [];
 
   const flush = async () => {
     const entries = run;
     run = [];
     if (entries.length === 0 || !host) return;
-    const outcomes = await Promise.all(entries.map(({ started }) => started));
+    const outcomes = await Promise.all(entries.map(({ reserved }) => reserved));
     if (editor.isDestroyed) return;
     const ready: Array<{ node: PMNode; documentId: string; file: File }> = [];
     outcomes.forEach((outcome, index) => {
@@ -160,7 +160,8 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
         );
         return;
       }
-      const node = chipFor(editor, entry.file.name, entry.documentId, host.scheme);
+      // The app's own first label: the name the file takes, which the writer's words then own.
+      const node = chipFor(editor, outcome.name, entry.documentId, host.scheme);
       if (node) ready.push({ node, documentId: entry.documentId, file: entry.file });
     });
     if (ready.length === 0) return;
@@ -207,11 +208,11 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
     const documentId = crypto.randomUUID();
     // Settled either way, so a refusal that lands while an earlier run is flushing is no
     // unhandled rejection.
-    const started = host.reserve({ documentId, file }).then(
-      (): Started => ({ ok: true }),
-      (reason: unknown): Started => ({ ok: false, reason }),
+    const reserved = host.reserve({ documentId, file }).then(
+      (name): Reserved => ({ ok: true, name }),
+      (reason: unknown): Reserved => ({ ok: false, reason }),
     );
-    run.push({ file, documentId, started });
+    run.push({ file, documentId, reserved });
   }
   await flush();
 }

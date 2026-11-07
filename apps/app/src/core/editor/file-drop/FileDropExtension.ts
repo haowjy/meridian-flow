@@ -25,10 +25,11 @@ export type FileDropHost = {
   scheme: ContextUriScheme;
   /**
    * Reserves the upload on the server. It resolves before the chip is inserted, so no tab can ask
-   * about a file the server has not heard of; a refusal (a name, a size) rejects with the message
-   * to show, and no chip stands.
+   * about a file the server has not heard of, with the name the file would take in `assets/` now
+   * (`notes (2).zip` beside a `notes.zip`); a refusal (a name, a size) rejects with the message to
+   * show, and no chip stands.
    */
-  reserve(input: { documentId: string; file: File }): Promise<void>;
+  reserve(input: { documentId: string; file: File }): Promise<string>;
   /** Sends the bytes and finishes; calling again resumes. */
   send(input: {
     documentId: string;

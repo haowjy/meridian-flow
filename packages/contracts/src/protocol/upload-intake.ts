@@ -32,12 +32,17 @@ export interface UploadSignedPut {
   headers: Record<string, string>;
 }
 
-/** Where an upload stands when it is started or started again. */
-export type UploadStart =
+/**
+ * Where an upload stands when it is started or started again. `name` is the name the file takes
+ * if it finished now (the first free one where it lands), or the one it took. Finish names the
+ * file again, so an upload that finishes in between can take it and leave this one off by a number.
+ */
+export type UploadStart = { name: string } & (
   | { state: "reserved"; documentId: string; locationRevision: string; put: UploadSignedPut }
   /** The bytes are in the store and checked: finish, with no PUT. */
   | { state: "stored"; documentId: string; locationRevision: string }
-  | { state: "finalized"; result: UploadIntakeResult };
+  | { state: "finalized"; result: UploadIntakeResult }
+);
 
 export interface UploadIntakeResult {
   documentId: string;

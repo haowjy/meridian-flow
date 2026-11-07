@@ -8,9 +8,9 @@ import { contextAreaOf } from "../context/uri.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type {
-  ClaimedUpload,
   PlacedUpload,
   UploadContentPort,
+  UploadReservation,
   UploadSourceDestination,
 } from "./upload-intake.js";
 
@@ -26,7 +26,7 @@ export function createContextUploadContentPort(
    * upload has no handle yet, and the write must not depend on one.
    */
   function portFor(
-    reservation: ClaimedUpload,
+    reservation: Pick<UploadReservation, "projectId" | "owner">,
     actorUserId: string,
     source?: UploadSourceDestination,
   ): ContextPort {
