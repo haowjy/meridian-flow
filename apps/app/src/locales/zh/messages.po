@@ -2813,8 +2813,12 @@ msgid "Drafts ({waiting})"
 msgstr "草稿（{waiting}）"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
-msgid "Drop image to insert it"
-msgstr ""
+#~ msgid "Drop image to insert it"
+#~ msgstr ""
+
+#: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
+msgid "Drop to insert"
+msgstr "拖放以插入"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
