@@ -28,7 +28,7 @@ At the border fort under the mountains, Sigrun was waiting on the wall. She came
 
 Maren was waiting at the edge of the forest, alone, with a staff, a pack, and the queen of Vell's ring on a cord around her neck. She was a thousand and forty years old and had been blind since she was six. Elves level slowly; it had taken her nine hundred years as the queen's healer to reach seventy. The System read her boxes to her aloud, in a voice she said sounded like her mother's. Nobody answered that. Nobody could think how.
 
-The steppe was where they lost the road. The first snow came down sideways, and by noon Tam, Sigrun and Maren could not tell the track from the plain. Oskar rode out of it leading two spare horses. Nobody had told him they were lost. He was Kessa and bear-blooded, twice Sigrun's height, with half his left ear gone, and the clan mothers had sent him because he had walked to the edge of the ice and come back, which nobody else alive had done. When Tam asked about the ear, he said, "The ice." When Tam asked what in the ice, he said, "Eat your food." He believed the songs.
+The steppe was where they lost the road. The first snow came down sideways, and by noon Tam, Sigrun and Maren could not tell the track from the plain. Oskar rode out of it leading two spare horses. Nobody had told him they were lost. He was Kessa and bear-blooded, twice Sigrun's height, with half his left ear gone, and the clan mothers had sent him because he had walked into the ice and come back, which nobody else alive had done. When Tam asked about the ear, he said, "The ice." When Tam asked what in the ice, he said, "Eat your food." He believed the songs.
 
 ---
 
@@ -78,7 +78,7 @@ It almost worked.
 
 The first breath it turned on us, Sigrun took on her left arm. The rune flared white and the green fire split around us like water around a stone, and for a moment we stood in a pocket of warm air in the middle of all that cold, and Tam laughed out loud. Then the rune went dark, and Sigrun was already cutting the next one.
 
-"Tail," Oskar called. "Down. Now." We went down, and the tail went over us with a sound like a ship's keel on gravel. "Left foot. It's afraid of its left foot." None of it made sense until Tam put a spark into the scales above its left foot and the beast flinched, the whole hill of it, and swung its head round. For one long breath its eye was in front of them, as big as a door and green inside, like the sky.
+"Tail," Oskar called. "Down. Now." We went down, and the tail went over us with a sound like a ship's keel on gravel. "Left foot. It's afraid for its left foot." None of it made sense until Tam put a spark into the scales above its left foot and the beast flinched, the whole hill of it, and swung its head round. For one long breath its eye was in front of them, as big as a door and green inside, like the sky.
 
 Tam put his spark into it.
 
