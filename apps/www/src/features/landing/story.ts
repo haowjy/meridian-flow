@@ -103,7 +103,7 @@ export const CHARACTERS: readonly Character[] = [
       ["Level", "74"],
       ["Skill", "[Ward Rune]"],
       ["Homeland", "The Ninth Hold, Ansgard"],
-      ["Sent by", "The council of the holds"],
+      ["Sent by", "The Moot of Ansgard"],
       ["First appears", "Prologue"],
     ],
     sections: [
@@ -142,7 +142,7 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "maren",
     name: "Maren",
-    note: "The queen of Vell’s healer. Blind for a thousand years.",
+    note: "The queen of Vell’s healer, blind since she was six.",
     pitch: "She has never seen anything. Not even a box.",
     lastLine: "So that’s what fire looks like.",
     lead: "Maren has been the queen of Vell’s healer for nine hundred years, and blind since she was six.",
@@ -203,10 +203,10 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "oskar",
     name: "Oskar",
-    note: "Kessa guide. The only one who has walked to the ice and back.",
+    note: "Kessa guide. The only one who has walked into the ice and back.",
     pitch: "He believed the songs.",
     lastLine: "The song was true, and there’s no one left to sing it.",
-    lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked to the edge of the ice and come back.",
+    lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked into the ice and come back.",
     facts: [
       ["Race", "Beastkin, bear-blooded"],
       ["Age", "38"],
@@ -225,7 +225,7 @@ export const CHARACTERS: readonly Character[] = [
       ],
       [
         "History",
-        "Guided hunters to the edge of the Greenlands for twenty years. He came back from the last trip alone, without half his ear, and won’t say what took it.",
+        "Guided hunters to the edge of the Greenlands for twenty years. Once he went on alone into the ice, and came back without half his ear. He won’t say what took it.",
       ],
       [
         "Relationships",
@@ -275,7 +275,7 @@ export const DRAGON_PAGE: WikiPage = {
     ],
     [
       "Abilities",
-      "Breathes the Cold Fire into the sky. Where the breath goes, the light goes out of the air. Afraid of its left foot.",
+      "Breathes the Cold Fire into the sky. Where the breath goes, the light goes out of the air. It guards its left foot.",
     ],
     ["Wounds", "Lost an eye to Tam’s spark on the ninth night."],
     [
@@ -303,7 +303,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
     page: {
       lead: "The green light that came over the north on a clear night in spring, seen in every country at once.",
       facts: [
-        ["First seen", "The first night of spring"],
+        ["First seen", "A clear night in spring"],
         ["Spreads", "South, a little further each night"],
         ["Effect", "The sun rises colder"],
         ["First appears", "Prologue"],
@@ -334,7 +334,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
           "Found",
           "Harl’s army sits in the snow five days north of the last Kessa camp, in ranks, spears across their knees, frosted over like fur. They didn’t fight anything. The System still hasn’t decided they’re dead.",
         ],
-        [NOTES, [["Undecided", "Whether someone could stop them leaving."]]],
+        [NOTES, [["Undecided", "Whether the armies can be stopped before they march."]]],
       ],
     },
   },
@@ -352,14 +352,14 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
       sections: [
         [
           "Levels",
-          "The strongest means the highest level alive. Elves level slowly; a seventeen-year-old at 58 is a record.",
+          "“The strongest” means the highest level alive. Humans level fastest and elves slowest. Tam’s 58 at seventeen is a record.",
         ],
         [
           "Skills",
           "A first skill comes at a moment of need. Every skill box names where it came from: [Source: practice], [Source: bloodline], [Source: rune]. No box in recorded history has said [Source: unknown].",
         ],
         [
-          "What it never says",
+          "What it says",
           "Levels, skills, tags and cores, and nothing else. It has never told anyone what to do, or talked like a game.",
         ],
         [
@@ -367,7 +367,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
           [
             [
               "Secret",
-              "Something has taken hold of it. It wrote the box over the last one standing, and it wants the beast dead.",
+              "Something has taken hold of it. It opened the “You died.” box over the last one standing, and it wants the beast dead.",
             ],
             [
               "Rekindle",
@@ -393,7 +393,6 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
           "The last verse",
           "It sleeps in the ice and wakes when the sky burns, and breathes the sky cold, and eats the sun.",
         ],
-        [NOTES, [["Note", "There is no verse about boxes."]]],
       ],
     },
   },
@@ -440,7 +439,7 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
       lead: "The dwarven holds, twelve of them, cut into the mountains between Harl and the north.",
       facts: [
         ["People", "Dwarves"],
-        ["Ruled by", "The Moot of hold-masters"],
+        ["Ruled by", "The Moot, the council of hold-masters"],
         ["Known for", "Runes, cores, the bone-halls"],
         ["Sent north", "Sigrun, of the Ninth Hold"],
       ],
@@ -490,7 +489,7 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
           [
             [
               "Secret",
-              "The queen sang Maren the Kessa song’s last verse a thousand years ago, the year Maren went blind.",
+              "The queen believed the Kessa song a thousand years ago, and was laughed at.",
             ],
           ],
         ],
@@ -531,7 +530,10 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
         ["Furthest anyone has gone", "Oskar, once"],
       ],
       sections: [
-        ["The edge", "Guides take hunters as far as the edge. Nobody goes further."],
+        [
+          "The edge",
+          "Guides take hunters as far as the edge. Only Oskar has gone further and come back.",
+        ],
         [
           NOTES,
           [
@@ -600,7 +602,7 @@ export const SURVIVED = "Alive, protagonist";
 export const FELL = "Died in the prologue";
 
 export const museReply = (key: CharacterKey) =>
-  `The prologue ends with ${characterName(key)} now, and all four pages are up to date.`;
+  `${characterName(key)} survives the prologue now, and all four pages are up to date.`;
 
 /** The end, after the Rekindle window. */
 export const END = {
@@ -612,7 +614,7 @@ export const END = {
 /** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
 export const SYSTEM = {
   death: "You died.",
-  assigned: (key: CharacterKey) => `[No selection. Survivor assigned: ${characterName(key)}.]`,
+  assigned: (key: CharacterKey) => `[No selection. Survivor assigned: ${characterName(key)}]`,
   skill: ["[Unique skill acquired: Rekindle]", "[Source: unknown]"],
   rekindle: "Rekindle",
 } as const;
