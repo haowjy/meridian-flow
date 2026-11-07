@@ -18,4 +18,6 @@ export interface ResolvedDocumentLink {
   path: string;
   uri: string;
   workId: string | null;
+  /** A stored file (not a tracked document): what a chip says of it. */
+  file?: { fileType: string; mimeType: string | null; sizeBytes: number | null };
 }

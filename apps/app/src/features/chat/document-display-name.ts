@@ -102,26 +102,29 @@ function skillFileDisplayName(uriOrPath: string): string | null {
 }
 
 /**
- * Where a move took a document, as little as tells it apart: its new name for a rename in
- * place; the folder path for a move between folders; the area too ("Manuscript/part2/ch4",
- * "Scratch for Ascension/notes") for a move between sections or owners.
+ * What a model's move did, as little as tells it apart: for a move, where the document went (its
+ * new name for a rename in place; the folder path between folders; the area too between sections
+ * or owners); for a reorder, only that its position changed.
  */
-export function moveDestinationName(from: string, to: string, names?: OwnerNames): string {
+export function describeModelMove(from: string, to: string, names?: OwnerNames) {
   return describeMove(
     parseContextLocation(from),
     parseContextLocation(to),
     documentDisplayName(to),
     names,
-  ).place;
+  );
 }
 
-/** A move between two locations: `rename` when only the name changes, and where it lands. */
+/**
+ * A move between two locations: `rename` when only the name changes, `reorder` when nothing the
+ * path shows changes (a position among siblings), and where it lands.
+ */
 export function describeMove(
   source: ParsedContextLocation,
   destination: ParsedContextLocation,
   name = documentTitleFromUri(destination.path) ?? t`Untitled document`,
   names: OwnerNames = noOwnerNames,
-): { kind: "rename" | "move"; place: string } {
+): { kind: "rename" | "move" | "reorder"; place: string } {
   const path = `${folderOf(destination.path)}${name}`;
   const otherArea =
     destination.scheme !== null &&
@@ -132,9 +135,10 @@ export function describeMove(
       kind: "move",
       place: `${areaName(destination.scheme, destination.owner, names)}/${path}`,
     };
-  return folderOf(source.path) === folderOf(destination.path)
-    ? { kind: "rename", place: name }
-    : { kind: "move", place: path };
+  if (folderOf(source.path) !== folderOf(destination.path)) return { kind: "move", place: path };
+  return source.path === destination.path
+    ? { kind: "reorder", place: name }
+    : { kind: "rename", place: name };
 }
 
 /**

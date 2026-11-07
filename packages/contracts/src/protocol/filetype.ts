@@ -116,6 +116,7 @@ const extToFiletype: Record<string, Filetype> = {
   xml: "text",
   ipynb: "notebook",
   pdf: "pdf",
+  docx: "docx",
   png: "png",
   jpg: "jpg",
   jpeg: "jpg",
@@ -224,7 +225,7 @@ const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordproces
  *
  * When `filetype` is `null` (non-Yjs-tracked uploads), MIME is the only
  * evidence: any `image/*` → `"image"`, `application/pdf` → `"pdf"`, DOCX MIME
- * → `"docx"`, otherwise `"binary"`. DOCX has no `Filetype` because it has no
+ * → `"docx"`, otherwise `"binary"`. A DOCX is a binary `Filetype` with no
  * Meridian viewer/editor surface.
  *
  * When `filetype` is set, tracked text/code types return `null`; known binary

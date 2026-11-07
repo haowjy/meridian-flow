@@ -9,7 +9,15 @@
  * failure is placed against the nearest `relative` element, so the owning
  * header can give it room beyond the title itself.
  */
-import { type ReactNode, type RefObject, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type Ref,
+  type RefObject,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
 import { TabTitleField } from "./TabTitleField";
 
@@ -20,7 +28,10 @@ import { TabTitleField } from "./TabTitleField";
 const latestRename = new Map<string, number>();
 let renames = 0;
 
+export type TitleEditHandle = { start(initial: string): void };
+
 export function TitleEditSlot({
+  editRef,
   titleKey,
   label,
   failure,
@@ -30,6 +41,7 @@ export function TitleEditSlot({
   failureClassName = "left-0 w-max max-w-72",
   children,
 }: {
+  editRef?: Ref<TitleEditHandle>;
   /** What is titled, e.g. `work:<id>`; a newer rename of it supersedes an older one. */
   titleKey: string;
   /** The field's accessible name. */
@@ -56,6 +68,11 @@ export function TitleEditSlot({
     unchanged: string;
     focus: boolean;
   } | null>(null);
+  useImperativeHandle(
+    editRef,
+    () => ({ start: (initial) => setEditing({ initial, unchanged: initial, focus: true }) }),
+    [],
+  );
   const [refusal, setRefusal] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const failureId = useId();

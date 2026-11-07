@@ -15,9 +15,11 @@ import {
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
-import { documentPathKey } from "@meridian/contracts";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
-import type { CopiedFrom } from "../../domains/context/document-metadata.js";
+import type {
+  CopiedFrom,
+  DocumentCreationMetadata,
+} from "../../domains/context/document-metadata.js";
 import type { BinaryFileRef, FileRef } from "../../domains/context/ports/context-port.js";
 import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -42,7 +44,18 @@ type CopySource = { path: string; in?: ReadSelection["in"]; version?: DocumentVe
 /** A tracked source read for a copy: its blocks and what `metadata.copiedFrom` records. */
 export interface CopiedSource {
   nodes: NonNullable<WriteOutcome["nodes"]>;
+  /** The source's identity, so a whole-document copy can point its own links at the copy. */
+  sourceDocumentId: string;
+  /**
+   * Whether the read took the whole document (no `in`, no `#fragment`). Only then is the
+   * source part of "the copied set"; a part of it leaves a link to the whole outside it.
+   */
+  wholeDocument: boolean;
+  /** Where each `ahead:` ref in the source now settles; the remap reads it like a writer's Copy. */
+  aheadSettlements: ReadonlyMap<string, string>;
   copiedFrom: CopiedFrom;
+  /** A `copy` also carries the source's imported properties and aliases to the new document. */
+  inherited?: Pick<DocumentCreationMetadata, "properties" | "aliases">;
 }
 
 /**
@@ -150,6 +163,10 @@ export async function readTrackedCopySource(
   const version = outcome.result.read?.version ?? grant.destination.kind;
   return {
     nodes: [...(outcome.nodes ?? [])],
+    sourceDocumentId: address.documentId,
+    wholeDocument: source.in === undefined && address.fragment === undefined,
+    // The read's own scope settled these, so they describe the cut `nodes` came from.
+    aheadSettlements: outcome.aheadSettlements ?? new Map(),
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }
@@ -168,12 +185,11 @@ export function binaryCopySelectionMessage(
 
 /** Errors about the source say so, since `path` names the destination. */
 export function fromMessage(source: CopySource, message: string): string {
-  const { filePath, fragment } = splitDocumentFile(source.path);
-  return `from ${formatDocumentFile({ filePath: documentPathKey(filePath), fragment })}: ${message}`;
+  return `from ${source.path}: ${message}`;
 }
 
 /**
- * A binary copy duplicates the stored object at once (D24). It isn't a Yjs
+ * A binary copy duplicates the stored object at once. It isn't a Yjs
  * write, so it has no write handle and isn't part of the reply's save. In a
  * draft-mode chat it lands in the branch as its own hidden row (12b-Q2).
  */
@@ -190,6 +206,7 @@ export async function copyBinary(
   const copied = await copyBinaryDocument({
     port: context.port,
     objectStore: deps.objectStore,
+    release: deps.release,
     source,
     sourceGrant,
     origin: { type: "agent", agentSlug: ctx.agentSlug, threadId: ctx.threadId, turnId: ctx.turnId },

@@ -7,7 +7,6 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ContextRouteSelection } from "../context/context-removal-protocol";
 import { resolveLiveRouteDocument } from "../context/route-document-owner";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
 import { workSelectionFor } from "./project-address-resolution";
@@ -78,35 +77,6 @@ function sameDocument(
   );
 }
 
-/**
- * The document a route holds by continuity: bound to this route's locator in the Editor's
- * context (its selected Work, named or not, whatever the document's own namespace) and
- * actually admitted by this surface. A binding inferred from a cached tab before the server
- * answered is a guess, not continuity, and must not override a fresh lookup.
- */
-export function routeContinuityDocumentId(input: {
-  selection: ContextRouteSelection;
-  admittedDocumentId: string | null;
-  destination: DocumentDestination | null;
-  editorWorkId: string | null;
-  /** The lineage a Scratch address names. */
-  rootThreadId?: string;
-}): string | null {
-  const { selection, destination } = input;
-  if (
-    !destination ||
-    selection.status !== "bound" ||
-    selection.identity.kind !== "server" ||
-    selection.identity.documentId !== input.admittedDocumentId ||
-    selection.locator.scheme !== destination.scheme ||
-    canonicalDocumentPath(selection.locator.path) !== canonicalDocumentPath(destination.path) ||
-    selection.locator.workId !== input.editorWorkId ||
-    selection.locator.rootThreadId !== input.rootThreadId
-  )
-    return null;
-  return selection.identity.documentId;
-}
-
 export function resolveLocalDocumentAddress(
   projectId: string,
   destination: DocumentDestination,
@@ -130,11 +100,9 @@ export function resolveLocalDocumentAddress(
   const { file } = owner;
   const bound = owner.byIdentity ? file : null;
   // A document under the writer's own unconfirmed move is likewise a known server document.
-  if (
-    file.kind !== "file" ||
-    !file.editable ||
-    !(file.localContent || file.placementPending || bound)
-  )
+  // Editable or not: a kept `.md` card under its writer's unconfirmed rename is as known as a
+  // document, and the server, which has not seen the new path yet, must not reject its route.
+  if (file.kind !== "file" || !(file.localContent || file.placementPending || bound))
     return undefined;
   const entry = catalog.normalized.entries.get(file.documentId);
   if (entry?.kind !== "file") return undefined;
@@ -182,6 +150,23 @@ export function resolveLocalDocumentAddress(
       },
     },
   };
+}
+
+/**
+ * The route waits when it is bound to a document the catalog does not list: an answer naming
+ * another document (or none) is the path's occupant, never the route's document, and opening it
+ * would add a stray tab. Reached by a tab clicked after a move this device missed.
+ */
+export function holdsBoundDocument(
+  boundDocumentId: string | null,
+  catalog: CatalogContextView | null,
+  remote: DocumentAddressResult | undefined,
+): boolean {
+  return (
+    boundDocumentId !== null &&
+    resolveLiveRouteDocument({ path: "", boundDocumentId, catalog }).kind === "pending" &&
+    !(remote && remote.kind !== "unavailable" && remote.document.documentId === boundDocumentId)
+  );
 }
 
 /** Local content masks failure, but a successful server address owns canonical repair. */

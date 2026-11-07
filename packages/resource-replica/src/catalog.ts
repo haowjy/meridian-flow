@@ -7,6 +7,7 @@ import type {
   CatalogScope,
   CatalogSnapshot,
 } from "@meridian/contracts/protocol";
+import { compareCatalogSiblings, isManualParent } from "./sibling-order";
 
 export type CatalogCacheView = {
   scope: CatalogScope;
@@ -94,12 +95,24 @@ export function indexCatalogView(
     childIdsByParentId.set(entry.parentId, ids);
   }
   for (const ids of childIdsByParentId.values()) {
+    const first = ids[0];
+    const firstEntry = first ? view.entries.get(first) : undefined;
+    const parentId =
+      firstEntry?.kind === "folder" || firstEntry?.kind === "file"
+        ? firstEntry.parentId
+        : undefined;
+    const parent = parentId ? view.entries.get(parentId) : undefined;
+    const manual = isManualParent(parent);
     ids.sort((leftId, rightId) => {
       const left = view.entries.get(leftId);
       const right = view.entries.get(rightId);
-      if (!left || !right) return leftId.localeCompare(rightId);
-      if (left.kind !== right.kind) return left.kind === "folder" ? -1 : 1;
-      return left.name.localeCompare(right.name) || left.entryId.localeCompare(right.entryId);
+      if (!left || !right) return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+      if (
+        (left.kind !== "folder" && left.kind !== "file") ||
+        (right.kind !== "folder" && right.kind !== "file")
+      )
+        return 0;
+      return compareCatalogSiblings(manual, left, right);
     });
   }
   return { ...view, childIdsByParentId, sourceIdsByScheme };

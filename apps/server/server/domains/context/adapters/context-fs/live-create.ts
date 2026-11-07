@@ -12,11 +12,9 @@
  */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import {
-  allocateFilename,
+  type ContextSiblingPosition,
   type Filetype,
-  type NamespaceNameClaim,
-  namespaceName,
-  sameNamespaceName,
+  firstFreeName,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { testHook } from "../../../../shared/test-hooks.js";
@@ -29,7 +27,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { writeCollabMarkdownHeld } from "../../context/collab-document-sync.js";
-import { joinPath, renderFilename } from "../../context/paths.js";
+import { renderFilename } from "../../context/paths.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import {
@@ -184,64 +182,6 @@ export class LiveCreate {
         });
   }
 
-  /**
-   * Allocate a free document name and seed its content as one command. Batch claims are
-   * caller reservations; live occupancy and races stay inside this operation.
-   */
-  async createAtFreeName(
-    path: string,
-    markdown: string,
-    reserved: readonly NamespaceNameClaim[],
-    options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
-    const target = resolveCreateTarget(path);
-    if (!target.ok) return target;
-    let startSuffix = 1;
-    for (;;) {
-      let found: Exclude<Discovery, { kind: "conflict" }> | null = null;
-      let checks = 0;
-      const filename = await allocateFilename(
-        { kind: "document", name: target.value.name, extension: target.value.extension },
-        async (candidate) => {
-          checks += 1;
-          if (reserved.some((claim) => sameNamespaceName(candidate, claim))) return true;
-          const candidatePath = joinPath(target.value.dir.join("/"), candidate.filename);
-          const candidateTarget = resolveCreateTarget(candidatePath);
-          if (!candidateTarget.ok) {
-            throw new Error(`Allocator produced an invalid context path: ${candidatePath}`);
-          }
-          const discovery = await this.deps.executor.exclusive(() =>
-            this.discover(candidateTarget.value),
-          );
-          if (discovery.kind === "conflict") return true;
-          found = discovery;
-          return false;
-        },
-        startSuffix,
-      );
-      const candidatePath = joinPath(target.value.dir.join("/"), filename);
-      if (!found) throw new Error(`Free-name allocation did not inspect ${candidatePath}`);
-      const binding =
-        markdown.length > 0
-          ? await this.deps.boundWrites.bind(candidatePath, null, markdown)
-          : null;
-      if (binding && !binding.ok) return binding;
-      const attempted = await this.createAttempt(
-        candidatePath,
-        binding?.value ?? null,
-        options,
-        found,
-      );
-      if (!attempted.ok) return attempted;
-      if (attempted.value.kind === "created") {
-        return Ok({ documentId: attempted.value.documentId, path: candidatePath });
-      }
-      // Only admission can invalidate the accepted candidate. Continue after it rather than
-      // replaying every occupied prefix through discovery.
-      startSuffix += checks;
-    }
-  }
-
   private async createAttempt(
     path: string,
     content: BoundWrite | null,
@@ -368,6 +308,8 @@ export class LiveCreate {
     documentId: DocumentId;
     /** The folder identity the destination named; a different folder here is stale. */
     expectFolderId?: string;
+    /** Where among the folder's children a new document goes; a reveal keeps its place. */
+    position?: ContextSiblingPosition;
     options: ContextWriteOptions;
   }): Promise<Result<OptimisticOutcome, AdapterFault>> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -418,25 +360,14 @@ export class LiveCreate {
       return Err({ code: "stale_target" });
     }
     const extra = { options: input.options };
-    const live = [
-      ...(await store.listDocuments(LIVE_TREE, folderId)).map(
-        (document) =>
-          ({
-            kind: "document",
-            filename: renderFilename(document.name, document.extension),
-          }) as const,
-      ),
-      ...(await store.listFolders(LIVE_TREE, folderId)).map(
-        (folder) => ({ kind: "folder", filename: folder.name }) as const,
-      ),
-    ];
+    const live = await store.namesAt(LIVE_TREE, folderId);
     let target: { name: string; extension: string; filetype: Filetype };
     let plan: LiveCreatePlan;
     let joinFrom: DocumentId | undefined;
     if (input.leaf === null) {
       // Untitled names skip what hidden documents hold: a scratch never joins an AI document.
       const hiddenNames = await store.listHiddenNames(folderId);
-      const taken = new Set([...live.map(namespaceName), ...hiddenNames]);
+      const taken = new Set([...live, ...hiddenNames]);
       target = {
         name: `Untitled ${highestUntitled(taken) + 1}`,
         extension: "",
@@ -444,14 +375,9 @@ export class LiveCreate {
       };
       plan = { kind: "mint", id: input.documentId };
     } else {
-      const free = await allocateFilename({ kind: "document", ...input.leaf }, (candidate) =>
-        live.some((claim) => sameNamespaceName(candidate, claim)),
-      );
-      const parsedFree = input.leaf.extension
-        ? free.slice(0, -(input.leaf.extension.length + 1))
-        : free;
-      target = { ...input.leaf, name: parsedFree };
-      const atTypedName = parsedFree === input.leaf.name;
+      const free = firstFreeName(input.leaf, live);
+      target = { ...input.leaf, name: free.name };
+      const atTypedName = free.name === input.leaf.name;
       if (atTypedName && found.kind === "candidate") {
         plan = {
           kind: "reveal",
@@ -463,6 +389,7 @@ export class LiveCreate {
     const created = await this.atomically({ ...target, folderId }, plan, {
       ...extra,
       provisionalName: input.leaf === null,
+      ...(input.position ? { position: input.position } : {}),
       ...(joinFrom ? { joinFrom } : {}),
     });
     if (created.ok) {
@@ -494,6 +421,7 @@ export class LiveCreate {
       options?: ContextWriteOptions;
       /** The device's create id a reveal forwards to the revealed document. */
       joinFrom?: DocumentId;
+      position?: ContextSiblingPosition;
     } = {},
   ): Promise<
     Result<{ document: ContextDocument; markdown: string; revealed: boolean }, AdapterFault>
@@ -512,6 +440,7 @@ export class LiveCreate {
               extension: target.extension,
               filetype: target.filetype,
               provisionalName: extra.provisionalName,
+              ...(extra.position ? { position: extra.position } : {}),
               ...(extra.joinFrom
                 ? { joinFrom: { fromId: extra.joinFrom, projectId: this.deps.projectId } }
                 : {}),

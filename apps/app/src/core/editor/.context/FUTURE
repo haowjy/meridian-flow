@@ -1,0 +1,28 @@
+# Deferred, editor core
+
+- **Block moves read every block on each pointer move.** `seamIndexAtPointer`
+  in `surfaces/blocks` walks the top-level blocks per `pointermove`, so a
+  100-chapter-length document pays O(blocks) in a hot path. `findByY` in
+  `landing/point-landing.ts` already does this with a binary search over boxes;
+  the block move can read the same way.
+- **`referenceDrop` crosses too many files on its way to the plugin.** The
+  option passes through `config.ts`, `mounted-editor.ts` and each host. Passing
+  doors as one host port would shorten that path, but it reaches every host and
+  this code gained no port when `LandingExtension` arrived, so it waits for the
+  next door.
+- **The session files could move into `core/editor/session/`.** The directory
+  mixes session code with extensions. `document-session-authority-store.ts` is
+  near 1,000 lines; a move is the moment to split it.
+- **`EditorView.tsx` churns on review state.** It rerenders on review changes
+  it doesn't read.
+- **The app schema and `packages/prosemirror-schema` are kept in step by hand.**
+  Nothing fails when they drift; `.context/TODO.md` only asks that they stay
+  mirrored.
+- **Two press edges.** A press exactly on a cell border can land in the
+  neighbouring cell, and the first sweep started in the margin can catch the
+  block handle.
+- **A highlighted row of cells drags only one word.** The browser drags the word under its own selection, not the cells' text, so the row can't move or copy as one.
+- **ArrowDown stops at a closing diagram.** A caret can't go down past a document's last rendered diagram; a click below it opens a new line instead.
+- **Press handling has no single owner.** One listener per feature (ProseMirror, the selection drag, cell interiors, object physics, links, inline review, peer markers, the chrome kernel, the block gesture's body door), and registration order decides which wins. Drops solved the same shape with one plugin and doors. Copy that the next time two press handlers conflict. `trackPress` (`chrome/track-press.ts`) now follows a press for the selection drag and the block gesture; the chrome sweep shares only its slop, because it decides nothing between click and drag and a late lift would race `beginDrag`. Two routes were tried on paper and cut. Taking the highlight press in `handleDOMEvents.mousedown` removes the `claimRepress`/`thirdPresses` order dependency, but `handleClick` then stops firing on a highlight click (so `pressOnInertTarget`'s caret goes), a press in a cell's padding skips `cell-interior-press`, and ProseMirror's click count misses these presses; it swaps one order dependency for another. A router for all press listeners would start from the selection press, its smallest case, and that already costs behaviour; peer marks also claim on `pointerdown`, which suppresses `mousedown`.
+- **The Yjs undo patch is temporary.** `patches/yjs@13.6.31.patch` carries yjs/yjs#836. Remove it when that lands. yjs/yjs#810 stays out: a native-shape move can undo one step too far, restoring valid text.
+- **Stray list blanks.** Dropping a list at the start of a list item can leave an empty line, and undoing then redoing a multi-line move can leave a sliver selection at the old seam.

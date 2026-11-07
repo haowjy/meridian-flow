@@ -337,7 +337,10 @@ it("carries what a copied link names across the clipboard", async () => {
     upload: async () => ({ src: `asset:${UPLOAD}`, alt: null }),
     fetchBytes: async () => null,
   });
-  insertImageFile(early, new File(["png"], "new.png", { type: "image/png" }), 1);
+  insertImageFile(early, new File(["png"], "new.png", { type: "image/png" }), {
+    kind: "inline",
+    pos: 1,
+  });
   await new Promise((resolve) => setTimeout(resolve, 0));
   const earlyCopied = {
     html: early.view.serializeForClipboard(early.state.doc.slice(0)).dom.innerHTML,

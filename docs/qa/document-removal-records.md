@@ -64,8 +64,6 @@ writer data. No additional unit case is needed for these recipe-covered risks.
 - Create Scratch in a named Work. Delete that Work: reason `deleted`, Work
   marker set. Availability must say `authority-unavailable`, not independent
   deletion. Restore the Work: all removal fields are null.
-- Move a file over another with overwrite: the victim records `deleted` and
-  the writer; the moved document remains living.
 - Retract a create after a failed write and after reply rollback: reason
   `discarded`, system causes `create_failed` and `reply_rolled_back`.
   A prior completed tool response followed by Stop is **not** this scenario:
@@ -226,7 +224,7 @@ otherwise, A's tabs are live tabs.
   sentence; the Recently opened list does not move.
 - B deletes a folder holding three of A's open tabs: one chip, "<name> deleted 3
   documents (one, two, and three).", the names in its tooltip.
-- Hold B's delete (route `**/context/*/delete*` to abort in both tabs, delete,
+- Hold B's delete (route `**/context/entries/*/delete` to abort in both tabs, delete,
   wait 15 s, unroute, toggle B offline and online): A's tab closes at once with
   no chip, and the chip appears once the delete commits and A is focused, as
   long as A did not navigate meanwhile.
@@ -258,11 +256,9 @@ otherwise, A's tabs are live tabs.
 - The app's surfaces for a Work with pending changes to a deleted document
   (seed with `./mf`: a draft-mode chat's reply edits the document, then delete
   it from the tree). There is no confirmation dialog. The live row leaves at
-  once, and its Files surface ends with `Deleted <title>` and Undo; no Work
-  explanation appears there. The chat dock row and the Work page's Changes to
+  once, with no toast and no Work explanation. The chat dock row and the Work page's Changes to
   review row keep the file with "Deleted from the manuscript" on its status
-  line; an open draft tab stays open. Choose Undo and confirm the exact document
-  returns, then delete it again for the Apply checks below. A dock with
+  line; an open draft tab stays open. A dock with
   several files, or Work Files' "Apply all changes", asks first: "Applying
   brings back <title>, which was deleted from the manuscript." with Cancel and
   Apply, in the footer below the rows (as Discard all's question does): no row

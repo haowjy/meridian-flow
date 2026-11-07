@@ -65,7 +65,7 @@ export function linkedDocumentName(name: string): string | null {
  * Where a link to a not-yet-written document a writer named goes: beside its
  * holder, so Create later makes it in the same folder. A name with `folders`
  * (a pasted `[[Arc 1/Kael]]`) goes at that path from the holder's area root
- * instead, where Obsidian makes a note for a path link. A holder with no
+ * instead, where note apps make a note for a path link. A holder with no
  * address yet, or in an area Create refuses (Scratch, Uploads, Unfiled), puts it under
  * the manuscript's root. Null when a segment cannot be a folder name or the
  * name cannot be a document filename.

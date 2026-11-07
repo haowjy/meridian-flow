@@ -202,7 +202,7 @@ const toolState = (
 ): Extract<HistoryItem, { kind: "tool" }>["state"] =>
   described.isError ? "error" : described.open ? (live ? "running" : "cancelled") : "done";
 
-/** A call's one-line form (D48): its shortened arguments, state and summary. */
+/** A call's one-line form: its shortened arguments, state and summary. */
 const callItem = (described: Tool, live: boolean) => ({
   kind: "tool" as const,
   tool: described.tool,

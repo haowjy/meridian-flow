@@ -5,7 +5,7 @@ import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import { imageCapable } from "@meridian/thread-client";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
+import { type Editor, EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip } from "lucide-react";
 import {
@@ -29,11 +29,12 @@ import type {
 import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
-import { ReferenceDropExtension } from "@/core/editor/extensions/reference-drop";
+import { referenceDropDoor } from "@/core/editor/extensions/reference-drop";
+import { LandingExtension } from "@/core/editor/landing/LandingExtension";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
+import { uploads } from "@/core/uploads/upload-store";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
-import { activeEntryDrag } from "@/features/project/context/entry-drag/drag-session";
-import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
+import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
@@ -63,6 +64,7 @@ import {
   serializeComposerDraft,
 } from "./composer-document";
 import { useComposerPlaceholder } from "./placeholders";
+import { type DroppedEntry, useFileDrop } from "./use-file-drop";
 import { useRestoredReferences } from "./useRestoredReferences";
 
 export type {
@@ -100,6 +102,16 @@ function composerReferenceNode(schema: Schema, row: ReferenceTerminalRow): PMNod
   );
 }
 
+/** Every upload chip in the Composer's text, by intake id, at its position. */
+function uploadChips(editor: Editor): Map<string, number> {
+  const chips = new Map<string, number>();
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "composerUpload")
+      chips.set((node.attrs.upload as ComposerPendingUploadAttrs).intakeId, pos);
+  });
+  return chips;
+}
+
 /** Intake may allocate a free leaf name; the chip must spell the authoritative URI it received. */
 function uploadLabel(uri: UploadIntakeResult["uri"], fallback: string): string {
   const parsed = parseContextUri(uri);
@@ -112,6 +124,8 @@ export type ComposerUploadPort = Readonly<{
     file: File;
     intakeId: string;
     scope: ComposerUploadScope;
+    /** Aborts when the writer takes the chip back, so a 200 MB PUT stops with it. */
+    signal: AbortSignal;
   }) => Promise<UploadIntakeResult>;
 }>;
 
@@ -151,6 +165,8 @@ export type ComposerProps = {
   cards?: ReactNode;
   /** Strips joined to the box's top edge (the draft dock); the notes sit above them. */
   attached?: ReactNode;
+  /** A desktop file drag is over another part of the chat that attaches here; the box lights as its target. */
+  fileDropActive?: boolean;
   /**
    * Drawn in the box's place (an open ask). The editor stays mounted and hidden, so the draft,
    * its atoms and its uploads come back as they were when this clears.
@@ -161,6 +177,8 @@ export type ComposerHandle = {
   focus: () => void;
   /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
   insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
+  /** Attaches files to this chat's Uploads, as the paperclip does: one chip each at the caret. */
+  attachFiles: (entries: readonly DroppedEntry[]) => void;
   /** Drops every chip that references the document (a file the writer deleted elsewhere). */
   removeReferences: (documentId: string) => void;
   getDraft: () => string;
@@ -197,6 +215,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     commands = null,
     cards,
     attached,
+    fileDropActive = false,
     takeover,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(running);
@@ -216,7 +235,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   commandsRef.current = commands;
   const resolvedUploadPort = uploadPort;
   const suppressDraftChangeRef = useRef(false);
-  const [pending, setPending] = useState(0);
+  /** This Composer, as the upload store's holder of its chips. */
+  const [holder] = useState(() => crypto.randomUUID());
   const [submitFailure, setSubmitFailure] = useState(false);
   const [hasContent, setHasContent] = useState(() => {
     if (!initialDraft) return false;
@@ -225,10 +245,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   });
   const disabledReasonId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
-  const intakeFilesRef = useRef(new Map<string, File>());
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ hardBreak: {} }),
+      StarterKit.configure({ hardBreak: {}, dropcursor: false }),
       ChromeKernelExtension,
       ComposerReferenceNode.extend({
         addNodeView: () =>
@@ -263,25 +282,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
       }),
-      ReferenceDropExtension.configure({
-        activeDrag: activeEntryDrag,
-        content: (schema, entries) => {
-          const catalog = referenceCatalogRef.current;
-          if (!catalog) return null;
-          const nodes = entries.map((entry) => {
-            const row = catalog.resolveReference(entry.ref);
-            return row ? composerReferenceNode(schema, row) : null;
-          });
-          return nodes.every((node) => node !== null) ? nodes : null;
-        },
-        label: (kind) =>
-          kind === "accept"
-            ? t`Mention`
-            : kind === "unavailable"
-              ? t`Not available in this chat`
-              : t`This part of the message can’t hold mentions`,
-        showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
-        clearHint: clearDragHint,
+      // Rows and text only: desktop files are `useFileDrop`'s, below.
+      LandingExtension.configure({
+        entries: referenceDropDoor(
+          referenceDropOptions({
+            catalog: () => {
+              const catalog = referenceCatalogRef.current;
+              return catalog && { ...catalog, referenceNode: composerReferenceNode };
+            },
+            labels: {
+              accept: t`Mention`,
+              unavailable: t`Can’t mention that here`,
+              code: t`This part of the message can’t hold mentions`,
+            },
+          }),
+        ),
       }),
       ComposerCommandExtension.configure({
         catalog: () => {
@@ -319,24 +334,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           target.click();
           return true;
         },
-        click: (view, event) => {
+        click: (_view, event) => {
           const target =
             event.target instanceof Element
               ? event.target.closest("[data-composer-upload=failed]")
               : null;
           if (!target) return false;
           const intakeId = target.getAttribute("data-intake-id");
-          const file = intakeId ? intakeFilesRef.current.get(intakeId) : null;
-          if (!file || !intakeId) return false;
-          let position = -1;
-          view.state.doc.descendants((node, pos) => {
-            if (
-              node.type.name === "composerUpload" &&
-              (node.attrs.upload as ComposerPendingUploadAttrs).intakeId === intakeId
-            )
-              position = pos;
-          });
-          if (position >= 0) void attach(file, intakeId, position);
+          if (!intakeId) return false;
+          uploads.retry(intakeId);
           return true;
         },
       },
@@ -421,6 +427,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .insertContent(composerReferenceContent(pickedReferenceAttrs(reference, fileKind)))
           .run();
       },
+      attachFiles: (entries) => attachFilesRef.current(entries),
       removeReferences: (documentId) => {
         if (!editor || editor.isDestroyed) return;
         const ranges: { from: number; to: number }[] = [];
@@ -453,6 +460,36 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
+  // The store takes back an upload whose chip has left the text, so an undo brings back one that
+  // is still sending or ready to retry. Send waits while any chip here is sending, and refuses
+  // while one has failed: a message would go without that file, and the chip says why.
+  const [uploadsHeld, setUploadsHeld] = useState<"sending" | "failed" | null>(null);
+  useEffect(() => {
+    if (!editor) return;
+    const watch = uploads.watch(holder, () => new Set(uploadChips(editor).keys()));
+    const sync = () => {
+      // A chip nothing here is sending reads stopped (`chipState`), so it blocks as a failure does.
+      const states = [...uploadChips(editor).keys()].map(
+        (id) => uploads.read(id)?.kind ?? "failed",
+      );
+      setUploadsHeld(
+        states.includes("uploading") ? "sending" : states.includes("failed") ? "failed" : null,
+      );
+    };
+    const changed = () => {
+      watch.changed();
+      sync();
+    };
+    editor.on("update", changed);
+    const unsubscribe = uploads.subscribe(sync);
+    return () => {
+      editor.off("update", changed);
+      unsubscribe();
+      watch.release();
+      // Its chips go with it (a restored draft has none), so nothing could ever show these files.
+      uploads.discardHeld(holder);
+    };
+  }, [editor, holder]);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -461,7 +498,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, []);
 
   async function submit() {
-    if (!editor || submitDisabled || pending || inFlight.current || editor.isEmpty) return;
+    if (!editor || submitDisabled || uploadsHeld || inFlight.current || !hasContent) return;
     const envelope = serializeComposerDraft(
       editor.getJSON(),
       revision.current,
@@ -490,83 +527,64 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     editor.commands.focus(undefined, { scrollIntoView: false });
   }
 
-  async function attach(file: File, retryIntakeId?: string, retryPosition?: number) {
-    if (!editor || !resolvedUploadPort || !scopeRef.current) return;
-    const intakeId = retryIntakeId ?? crypto.randomUUID();
-    intakeFilesRef.current.set(intakeId, file);
-    const attrs: ComposerPendingUploadAttrs = {
-      intakeId,
-      name: file.name,
-      state: "pending",
-      error: null,
-    };
-    if (retryPosition === undefined) {
-      editor
-        .chain()
-        .focus()
-        .insertContent({ type: "composerUpload", attrs: { upload: attrs } })
-        .run();
-    } else {
-      editor
-        .chain()
-        .setNodeSelection(retryPosition)
-        .updateAttributes("composerUpload", { upload: attrs })
-        .run();
-    }
-    setPending((n) => n + 1);
+  function attach(file: File) {
+    const port = resolvedUploadPort;
     const scope = scopeRef.current;
-    try {
-      const ready = await resolvedUploadPort.intake({ file, intakeId, scope });
-      let position = -1;
-      editor.state.doc.descendants((node, pos) => {
-        if (
-          node.type.name === "composerUpload" &&
-          (node.attrs.upload as ComposerPendingUploadAttrs).intakeId === intakeId
+    if (!editor || !port || !scope) return;
+    const intakeId = crypto.randomUUID();
+    // The chip becomes the reference when the file has arrived; one the writer took back meanwhile
+    // stays a stopped upload, and its retry resumes the finished one and lands at once.
+    uploads.begin(intakeId, holder, async (signal) => {
+      const ready = await port.intake({ file, intakeId, scope, signal });
+      const position = editor.isDestroyed ? undefined : uploadChips(editor).get(intakeId);
+      if (position === undefined) throw new Error(t`The upload was stopped.`);
+      editor
+        .chain()
+        .setNodeSelection(position)
+        .insertContent(
+          composerReferenceContent({
+            kind: "document",
+            ...ready,
+            authority: authorityForUpload(scope, ready.uri),
+            label: uploadLabel(ready.uri, file.name),
+            imageCapable: imageCapable(ready.fileType),
+            upload: {
+              intakeId,
+              documentId: ready.documentId,
+              uri: ready.uri,
+              locationRevision: ready.locationRevision,
+            },
+          }),
         )
-          position = pos;
-      });
-      if (position >= 0)
-        editor
-          .chain()
-          .setNodeSelection(position)
-          .insertContent(
-            composerReferenceContent({
-              kind: "document",
-              ...ready,
-              authority: authorityForUpload(scope, ready.uri),
-              label: uploadLabel(ready.uri, file.name),
-              imageCapable: imageCapable(ready.fileType),
-              upload: {
-                intakeId,
-                documentId: ready.documentId,
-                uri: ready.uri,
-                locationRevision: ready.locationRevision,
-              },
-            }),
-          )
-          .run();
-    } catch (error) {
-      editor.state.doc.descendants((node, pos) => {
-        if (
-          node.type.name === "composerUpload" &&
-          (node.attrs.upload as ComposerPendingUploadAttrs).intakeId === intakeId
-        )
-          editor
-            .chain()
-            .setNodeSelection(pos)
-            .updateAttributes("composerUpload", {
-              upload: {
-                ...attrs,
-                state: "failed",
-                error: error instanceof Error ? error.message : "Upload failed",
-              },
-            })
-            .run();
-      });
-    } finally {
-      setPending((n) => Math.max(0, n - 1));
-    }
+        .run();
+    });
+    insertChip({ intakeId, name: file.name });
   }
+  function insertChip(upload: ComposerPendingUploadAttrs) {
+    editor?.chain().focus().insertContent({ type: "composerUpload", attrs: { upload } }).run();
+  }
+  /** The intake takes files only, so a folder is a failed chip that says so, where the writer dropped it. */
+  function refuseFolder(name: string) {
+    const intakeId = crypto.randomUUID();
+    uploads.refuse(intakeId, holder, t`Folders can't be attached`);
+    insertChip({ intakeId, name });
+  }
+
+  /** The one door for the paperclip and for drops: chips go in at the caret, in order, one space apart. */
+  function attachFiles(entries: readonly DroppedEntry[]) {
+    if (!editor || !resolvedUploadPort || !scopeRef.current) return;
+    entries.forEach((entry, index) => {
+      if (index > 0) editor.commands.insertContent(" ");
+      if (entry.kind === "folder") refuseFolder(entry.name);
+      else attach(entry.file);
+    });
+  }
+  const attachFilesRef = useRef(attachFiles);
+  attachFilesRef.current = attachFiles;
+  const fileDrop = useFileDrop({
+    enabled: Boolean(resolvedUploadPort && uploadScope),
+    onDrop: attachFiles,
+  });
   const submitRef = useRef(submit);
   submitRef.current = submit;
   useEffect(() => {
@@ -629,12 +647,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       {takeover}
       <div
         data-composer=""
+        {...fileDrop.dropProps}
         hidden={takeover ? true : undefined}
         className={cn(
           "border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-border-focus",
           variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
+          (fileDrop.over || fileDropActive) && "border-border-focus bg-sidebar-accent",
         )}
-        aria-busy={busy || pending > 0 || undefined}
+        aria-busy={busy || uploadsHeld === "sending" || undefined}
       >
         <EditorContent
           editor={editor}
@@ -651,9 +671,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 ref={fileRef}
                 className="sr-only"
                 type="file"
+                multiple
                 onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void attach(file);
+                  attachFiles(
+                    Array.from(event.target.files ?? [], (file) => ({ kind: "file", file })),
+                  );
                   event.target.value = "";
                 }}
               />
@@ -699,7 +721,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               type="button"
               size="icon-sm"
               onClick={() => void submit()}
-              disabled={!hasContent || submitDisabled || pending > 0}
+              disabled={!hasContent || submitDisabled || uploadsHeld !== null}
               aria-label={t`Send message`}
               aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
               className={running ? "relative rounded-full" : "rounded-field"}

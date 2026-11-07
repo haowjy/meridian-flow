@@ -1,4 +1,5 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
+import { matchDocumentAddress } from "@meridian/contracts";
 import {
   type CatalogScope,
   type CatalogWakeHint,
@@ -30,6 +31,7 @@ import {
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import { getContextCatalogLookup } from "@/client/api/projects-api";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import {
   type CatalogContextView,
@@ -47,7 +49,6 @@ import {
 import type { ContextOwner } from "./context-request-options";
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
-import { useIsProjectPendingCreation } from "./useProjectCreation";
 
 /** Who a catalog request is for: a Work or lineage holds Scratch, and a chat holds its uploads. */
 export type CatalogOwner = {
@@ -182,10 +183,12 @@ export function projectCatalogFile(
     parentId: entry.parentId,
     documentId: entry.entryId,
     name: entry.name,
+    extension: entry.extension,
     aliases: entry.aliases,
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
     provisionalName: entry.provisionalName,
+    hasProperties: entry.hasProperties ?? false,
   };
   if (entry.editable) {
     return {
@@ -293,17 +296,16 @@ export function projectCatalogView(
                 ...(record.resource.content.initialization === "reserved"
                   ? {}
                   : { localContent: true as const }),
-                ...(record.intents.some((intent) => intent.desired.kind === "create")
-                  ? { resourceOrigin: "local" as const }
-                  : {}),
+                ...(record.resource.materialization ? { resourceOrigin: "local" as const } : {}),
               }
             : {}),
           ...(repair?.kind === "delete"
             ? { namespaceFailure: "delete" as const }
-            : repair?.kind === "set-location"
+            : repair
               ? {
                   namespaceFailure: repair.kind,
-                  namespaceRepairName: repair.name,
+                  // A nameless create has no name of the writer's to offer back.
+                  ...(repair.name ? { namespaceRepairName: repair.name } : {}),
                   namespaceRepairMove: effective
                     ? refusedMoveDestination(
                         repair.destination,
@@ -342,16 +344,20 @@ export function projectCatalogView(
         return child ? [child] : [];
       }),
     files,
-    findPath: (path) =>
-      files().find((file) => file.path === path) ??
-      [...view.entries.values()].flatMap((entry) =>
-        entry.kind === "folder" &&
-        entry.sourceId === sourceId &&
-        `/${entry.path.join("/")}` === path
-          ? [projectCatalogDirectory(entry, foldersById.get(entry.entryId), placement)]
-          : [],
-      )[0] ??
-      null,
+    findPath: (path) => {
+      const all = files();
+      const literal =
+        all.find((file) => file.path === path) ??
+        [...view.entries.values()].flatMap((entry) =>
+          entry.kind === "folder" &&
+          entry.sourceId === sourceId &&
+          `/${entry.path.join("/")}` === path
+            ? [projectCatalogDirectory(entry, foldersById.get(entry.entryId), placement)]
+            : [],
+        )[0];
+      // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
+      return literal ?? matchDocumentAddress(all, path, (file) => file.path);
+    },
     findDocument: (documentId) => {
       const found = node(documentId);
       return found?.kind === "file" ? found : null;
@@ -400,14 +406,13 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
     enabled?: boolean;
   } & CatalogOwner,
 ): Record<S, CatalogViewResult> {
-  const projectPending = useIsProjectPendingCreation(projectId);
   const { workId, rootThreadId, chatId } = options;
   // A first send's chat is not on the server yet; its lineage and chat scopes would answer 404.
   const pending = {
     lineage: useIsThreadPendingCreation(rootThreadId),
     chat: useIsThreadPendingCreation(chatId),
   };
-  const enabled = (options.enabled ?? true) && !projectPending;
+  const enabled = options.enabled ?? true;
   const scopeFor = useCallback(
     (scheme: ProjectContextTreeScheme) =>
       aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, chatId }),
@@ -475,14 +480,13 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   return useQueries({
     queries: scopes.map((scope) => ({
       ...contextCatalogQueryOptions(resources, projectId, scope),
-      enabled: catalogScopeReady(scope, enabled, pending),
+      enabled: projectReadEnabled(catalogScopeReady(scope, enabled, pending)),
     })),
     combine,
   });
 }
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
-  const projectPending = useIsProjectPendingCreation(projectId);
   const pending = {
     lineage: useIsThreadPendingCreation(scope.kind === "lineage" ? scope.rootThreadId : null),
     chat: useIsThreadPendingCreation(scope.kind === "chat" ? scope.chatId : null),
@@ -522,7 +526,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled: catalogScopeReady(stableScope, enabled && !projectPending, pending),
+    enabled: projectReadEnabled(catalogScopeReady(stableScope, enabled, pending)),
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(

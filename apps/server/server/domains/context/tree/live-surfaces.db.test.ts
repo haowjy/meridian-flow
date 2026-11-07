@@ -34,6 +34,7 @@ import { RecentDocumentUnavailableError } from "../../recent-documents/ports/rec
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
 import { createDocumentRevisions } from "../document-revisions.js";
 import { countIncomingLinks } from "../links/move-link-count.js";
+import { createContextUploadContentPort } from "../uploads/context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "../uploads/drizzle-upload-intake.js";
 import { LIVE_TREE } from "./tree-view.js";
 
@@ -655,7 +656,10 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
                 storageUrl: s.mapStorageUrl,
                 mimeType: "image/png",
                 fileType: "image",
+                name: "map.png",
+                sizeBytes: 4,
                 signedUrl: expect.any(String),
+                drawUrl: expect.any(String),
                 signedUrlExpiresAt: expect.any(String),
               },
             },
@@ -773,20 +777,21 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .update(documents)
         .set({ contextSourceId: source.id })
         .where(eq(documents.id, hidden));
+      // The upload's folder as finish reads it before naming the file.
       const reserved = await createDrizzleUploadIntakeRepository(db).reserve({
         intakeId: "reader-matrix",
         actorUserId: s.userId,
         owner: { kind: "chat", projectId: s.projectId, chatId },
         filename: "upload.md",
-        documentFilename: { name: "upload", extension: "", filetype: "markdown" },
         mimeType: "text/markdown",
-        byteDigest: "a".repeat(64),
-        fingerprint: "reader-matrix",
-        fileType: "markdown",
+        sizeBytes: 1,
       });
-      expect(reserved.kind === "reserved" ? reserved.reservation.finalPath : reserved.kind).toBe(
-        "upload",
-      );
+      if (reserved.kind !== "reserved") throw new Error(reserved.kind);
+      const names = await createContextUploadContentPort(s.runtime.ports.contextPorts).names({
+        reservation: { ...reserved.reservation, fileType: "markdown" },
+        actorUserId: s.userId,
+      });
+      expect(names.has("upload")).toBe(false);
     });
 
     it("never bootstraps a hidden chapter as the writer's first chapter (C-1a)", async () => {

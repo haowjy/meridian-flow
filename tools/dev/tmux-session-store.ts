@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { devTmuxArgs, legacyDefaultServerArgs } from "./lib/dev-tmux-socket";
 
@@ -71,7 +72,9 @@ export class TmuxSessionStore {
   }
 
   private tmux(args: string[]): CommandResult {
-    return this.run("tmux", devTmuxArgs(args));
+    // Run from $HOME: a tmux server keeps its first client's cwd, and a checkout
+    // that cleanup later removes would leave the shared server with a deleted one.
+    return run("tmux", devTmuxArgs(args), os.homedir(), tmuxEnv());
   }
 
   sessionExists(sessionName: string): boolean {

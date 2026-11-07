@@ -32,6 +32,7 @@ if (typeof globalThis.ClipboardEvent === "undefined") {
   Object.defineProperty(globalThis, "ClipboardEvent", { value: StubClipboardEvent });
 }
 
+import { uploads } from "@/core/uploads/upload-store";
 import type { ImageUploadPort, UploadedImage } from "./image-ingress-ports";
 import {
   imageIngressStatus,
@@ -57,6 +58,14 @@ import type { PendingImage } from "./pending-images";
  */
 function pendingImages(editor: Editor | null): readonly PendingImage[] {
   return Array.from(ingressState(editor).pending.values());
+}
+
+/** Each pending picture with how its upload stands, which the upload store holds. */
+function pendingUploads(editor: Editor | null) {
+  return pendingImages(editor).map((entry) => ({
+    filename: entry.filename,
+    status: uploads.read(entry.id),
+  }));
 }
 
 type HeldUpload = {
@@ -202,7 +211,7 @@ function slotStatus(editor: Editor, pos: number): string | null {
 
 /** What this client is announcing on the ephemeral channel: tokens and shapes. */
 function announced(awareness: { getLocalState: () => Record<string, unknown> | null }) {
-  return (awareness.getLocalState()?.imageUploads ?? []) as readonly {
+  return (awareness.getLocalState()?.uploads ?? []) as readonly {
     token: string;
     frame: { width: number; height: number } | null;
   }[];
@@ -211,39 +220,39 @@ function announced(awareness: { getLocalState: () => Record<string, unknown> | n
 describe("a picture in flight occupies its final slot", () => {
   it("reports progress against that node without touching the document", async () => {
     const { editor, held } = mount();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
     const beforeProgress = editor.state.doc.toJSON();
 
     held[0].progress(42);
     await settle();
 
-    expect(pendingImages(editor)).toMatchObject([{ status: { kind: "uploading", percent: 42 } }]);
+    expect(pendingUploads(editor)).toMatchObject([{ status: { kind: "uploading", percent: 42 } }]);
     expect(editor.state.doc.toJSON()).toEqual(beforeProgress);
   });
 
   it("keeps the slot and offers Retry after a failure", async () => {
     const { editor, held } = mount();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
 
     held[0].fail(new Error("The connection dropped."));
     await settle();
 
     expect(imageNodes(editor)).toEqual([{ pos: 5, src: "", alt: "cover art" }]);
-    expect(pendingImages(editor)).toMatchObject([
+    expect(pendingUploads(editor)).toMatchObject([
       { status: { kind: "failed", message: "The connection dropped." } },
     ]);
 
     retryPendingImage(editor, 5);
     await settle();
     expect(held).toHaveLength(2);
-    expect(pendingImages(editor)).toMatchObject([{ status: { kind: "uploading" } }]);
+    expect(pendingUploads(editor)).toMatchObject([{ status: { kind: "uploading" } }]);
   });
 
   it("survives a peer's write, which replaces the whole document", async () => {
     const { editor, peer, sync, held } = mountPair();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
     sync();
 
@@ -267,7 +276,7 @@ describe("a picture in flight occupies its final slot", () => {
 describe("the writer owns a picture in flight", () => {
   it("does not write a picture into a slot the writer took back", async () => {
     const { editor, held } = mount();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
     editor.view.dispatch(editor.state.tr.delete(5, 6));
     await settle();
@@ -282,9 +291,9 @@ describe("the writer owns a picture in flight", () => {
 describe("two pictures arriving together are two lifecycles", () => {
   it("tracks concurrent uploads independently", async () => {
     const { editor, held } = mount();
-    insertImageFile(editor, imageFile("first.png"), 5);
+    insertImageFile(editor, imageFile("first.png"), { kind: "inline", pos: 5 });
     await settle();
-    insertImageFile(editor, imageFile("second.png"), 1);
+    insertImageFile(editor, imageFile("second.png"), { kind: "inline", pos: 1 });
     await settle();
 
     expect(pendingImages(editor).map((entry: PendingImage) => entry.filename)).toEqual([
@@ -296,7 +305,7 @@ describe("two pictures arriving together are two lifecycles", () => {
     held[1].fail(new Error("second.png was refused."));
     await settle();
 
-    expect(pendingImages(editor)).toMatchObject([
+    expect(pendingUploads(editor)).toMatchObject([
       { filename: "first.png", status: { kind: "uploading", percent: 70 } },
       { filename: "second.png", status: { kind: "failed", message: "second.png was refused." } },
     ]);
@@ -320,7 +329,7 @@ describe("a peer sees an upload it does not own as an upload", () => {
 describe("a pending picture can be moved while its bytes travel", () => {
   it("lands the bytes in the slot the writer moved it to", async () => {
     const { editor, held } = mount();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
 
     // One transaction, delete plus insert: the move y-prosemirror reconciles as
@@ -350,7 +359,7 @@ describe("a pending picture can be moved while its bytes travel", () => {
 describe("closing the editor closes what it was carrying", () => {
   it("aborts every upload and releases its owner signal on destroy", async () => {
     const { editor, awareness, held } = mountPair();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
     // The token this client owns, and nothing a peer could not act on: no
     // filename, no percent, no bytes.
@@ -552,7 +561,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
     // Undo on a shared document is the Yjs UndoManager, so the shared document
     // is what these two cases are for — not a peer.
     const { editor, held } = mountPair();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
     held[0].settle(asset("old"));
     await settle();
@@ -578,7 +587,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
 
   it("still undoes an inserted picture away, bytes and all", async () => {
     const { editor, held } = mountPair();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
     held[0].settle(asset("only"));
     await settle();
@@ -594,7 +603,7 @@ describe("Replace aims at the picture the writer pointed at", () => {
 describe("an announcement made while the writer is hidden is still true after", () => {
   it("releases the slot it filled during a suspension, rather than resurrecting it", async () => {
     const { editor, presence, awareness, held } = mountPair();
-    insertImageFile(editor, imageFile(), 5);
+    insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
     const token = pendingImages(editor)[0].id;
     expect(announced(awareness.local)).toEqual([{ token, frame: null }]);

@@ -21,12 +21,14 @@ import {
   ThreadStoreProvider,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { FailureToaster } from "@/components/app/failure-toast";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
+import { ImportsProvider } from "@/features/import/ImportsProvider";
 import {
   AccountFeatureComposition,
   useOptionalAccountResourceReplica,
@@ -193,19 +195,22 @@ function AuthenticatedProviderTree({
           <TransportProvider>
             <MeridianCopilotProvider>
               <DensityPopoverCollisionProvider>
-                <div className="app-frame flex flex-col">
-                  <ConnectionBanner />
-                  <div className="min-h-0 flex-1 overflow-hidden">
-                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                    <Outlet />
+                <ImportsProvider key={user.userId}>
+                  <div className="app-frame flex flex-col">
+                    <ConnectionBanner />
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                      <Outlet />
+                    </div>
                   </div>
-                </div>
-                <SettingsDialog />
-                {DebugOverlay ? (
-                  <Suspense fallback={null}>
-                    <DebugOverlay />
-                  </Suspense>
-                ) : null}
+                  <SettingsDialog />
+                  <FailureToaster />
+                  {DebugOverlay ? (
+                    <Suspense fallback={null}>
+                      <DebugOverlay />
+                    </Suspense>
+                  ) : null}
+                </ImportsProvider>
               </DensityPopoverCollisionProvider>
             </MeridianCopilotProvider>
           </TransportProvider>

@@ -10,6 +10,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { Archive } from "lucide-react";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
+import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
@@ -37,31 +38,41 @@ export function ArchivedWorkNotice({
   const strip = variant === "strip";
   return (
     <div className={cn("min-w-0", className)}>
-      <div
-        role="status"
-        className={cn(
-          "flex min-w-0 items-center",
-          strip
-            ? "min-h-8 gap-[var(--chat-space-inline)] py-0.5 pr-1 pl-[var(--chat-card-pad-x)] text-caption"
-            : "gap-3 rounded-lg border border-border-subtle bg-card py-1.5 pr-1.5 pl-3 text-sm",
-        )}
-      >
-        <Archive
-          className={cn("shrink-0 text-muted-foreground", strip ? "size-3.5" : "size-4")}
-          aria-hidden
-        />
-        <p className="min-w-0 flex-1 text-muted-foreground">
-          <Trans>This Work is archived.</Trans>
-        </p>
-        <Button
-          size={strip ? "xs" : "sm"}
-          variant={strip ? "quiet" : "outline"}
-          onClick={() => void toggleArchive(work)}
-          className="shrink-0 [@media(pointer:coarse)]:min-h-11"
+      {strip ? (
+        <div
+          role="status"
+          className="flex min-h-8 min-w-0 items-center gap-[var(--chat-space-inline)] py-0.5 pr-1 pl-[var(--chat-card-pad-x)] text-caption"
         >
-          <Trans>Unarchive</Trans>
-        </Button>
-      </div>
+          <Archive className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <p className="min-w-0 flex-1 text-muted-foreground">
+            <Trans>This Work is archived.</Trans>
+          </p>
+          <Button
+            size="xs"
+            variant="quiet"
+            onClick={() => void toggleArchive(work)}
+            className="shrink-0 [@media(pointer:coarse)]:min-h-11"
+          >
+            <Trans>Unarchive</Trans>
+          </Button>
+        </div>
+      ) : (
+        <DocumentNotice
+          icon={<Archive className="size-4" aria-hidden />}
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void toggleArchive(work)}
+              className="[@media(pointer:coarse)]:min-h-11"
+            >
+              <Trans>Unarchive</Trans>
+            </Button>
+          }
+        >
+          <Trans>This Work is archived.</Trans>
+        </DocumentNotice>
+      )}
       {showFailure && failure ? (
         <div className={strip ? "px-[var(--chat-card-pad-x)] pb-2" : "pt-2"}>
           <WorkCommandFailureRow failure={failure} />

@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./links": "./src/links.ts",
-    "./stored-links": "./src/stored-links.ts"
+    "./stored-links": "./src/stored-links.ts",
+    "./wikilinks": "./src/wikilinks/index.ts",
+    "./frontmatter": "./src/frontmatter.ts"
   },
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",

@@ -18,6 +18,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useRef } from "react";
 
 import { holdNode, type NodeHold } from "../anchors";
+import { pictureCapHeight } from "../objects";
 import {
   IMAGE_RESIZE_CORNERS,
   type ImageResizeCorner,
@@ -66,13 +67,17 @@ export function ImageResizeHandles({
     event.preventDefault();
     event.stopPropagation();
 
+    const ratio = bounds.height / bounds.width;
+    // Past the cap the box stops growing and the release would land somewhere
+    // other than where the grip was let go.
+    const capWidth = pictureCapHeight(element) / ratio;
     const resize: ActiveResize = {
       gesture: {
         corner,
         startWidth: bounds.width,
-        ratio: bounds.height / bounds.width,
+        ratio,
         minimum: proseLineHeight(element),
-        maximum: visibleBoundWidth(element) ?? bounds.width,
+        maximum: Math.min(visibleBoundWidth(element) ?? bounds.width, capWidth),
       },
       hold,
       pointerId: event.pointerId,
@@ -90,9 +95,12 @@ export function ImageResizeHandles({
       resize.listeners.abort();
       // A committed width is already on the box; putting the old one back first
       // would flash the picture at its old size for the frame before the
-      // re-render. A cancelled gesture leaves nothing behind at all.
-      if (commit) setImageWidth(editor, resize.hold, resize.width);
-      else resize.box.style.width = resize.restore;
+      // re-render. A drag that changed nothing on screen writes nothing: a capped
+      // picture's rendered width is the pane's answer, and storing it would
+      // replace the writer's width with one they never chose.
+      const changed = resize.width !== Math.round(resize.gesture.startWidth);
+      const wrote = commit && changed && setImageWidth(editor, resize.hold, resize.width);
+      if (!wrote) resize.box.style.width = resize.restore;
     };
 
     const mine = (moved: PointerEvent) => moved.pointerId === resize.pointerId;
@@ -122,7 +130,7 @@ export function ImageResizeHandles({
   return (
     <span className="meridian-image-resize" aria-hidden>
       {IMAGE_RESIZE_CORNERS.map((corner) => (
-        // biome-ignore lint/a11y/noStaticElementInteractions: a grip is a pointer affordance with no keyboard equivalent yet, and a role it cannot honour reads worse than being hidden; the keyboard path is in this directory's .context/FUTURE
+        // biome-ignore lint/a11y/noStaticElementInteractions: a grip is a pointer affordance with no keyboard equivalent yet, and a role it cannot honour reads worse than being hidden; the keyboard path is in this directory's .context/FUTURE. slop-lint: allow suppression the reason is stated in this comment
         <span
           key={corner}
           className={`meridian-image-resize__grip meridian-image-resize__grip--${corner}`}

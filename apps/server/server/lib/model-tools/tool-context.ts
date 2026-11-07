@@ -55,7 +55,7 @@ import {
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery.js";
-import type { ObjectStorePort } from "../../domains/storage/index.js";
+import type { ObjectRelease, ObjectStorePort } from "../../domains/storage/index.js";
 import type {
   ThreadRepository,
   ThreadWorksRepository,
@@ -86,6 +86,8 @@ export interface ToolWiringDeps {
   eventSink: EventSink;
   /** Binary copies duplicate the stored object (D24). */
   objectStore: ObjectStorePort;
+  /** Deletes the duplicate when the copy's destination write fails. */
+  release: ObjectRelease;
   /** Every model read and write asks the file policy first (file-access §1). */
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "historyAccess">;
   /** The removal record behind a missing file the model already addresses by id. */
@@ -211,7 +213,7 @@ export function contextToolError(error: ContextError): ToolErrorOutput {
   return toolError({ code: error.code, message: contextErrorMessage(error), details: error });
 }
 
-// skills:// is model-only, so the shared context parser doesn't name it (D52).
+// skills:// is model-only, so the shared context parser doesn't name it.
 const MODEL_SCHEMES = [...CONTEXT_URI_SCHEMES, SKILLS_URI_ROOT.slice(0, -"://".length)];
 
 export function contextErrorMessage(error: ContextError): string {

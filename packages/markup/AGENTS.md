@@ -40,3 +40,7 @@ outside this package.
 
 Public API contract: [`.context/CONTEXT.md`](.context/CONTEXT.md). Image wire
 format: [`.context/image-wire-format.md`](.context/image-wire-format.md).
+
+## Import/export text seams
+
+Wiki-style link parsing uses the shared scanner for editor ingress, import conversion, and export spelling; do not add a second grammar in an adapter. Frontmatter splitting preserves the raw body and property text so an import/export round trip does not normalize writer-authored YAML.

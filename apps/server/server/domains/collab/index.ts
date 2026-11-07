@@ -8,14 +8,23 @@ export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js"
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export type { Branches } from "./domain/branches.js";
+export {
+  type CopyIdentityMap,
+  createCopyIdentityMap,
+  remapCopiedBlocks,
+} from "./domain/copied-blocks.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
 export { DraftPrefixMissingError, DraftStaleUpdateError } from "./domain/draft-store.js";
 export {
   type BindHolder,
   type BindMarkdownInput,
   type BoundWrite,
+  createImportLinkBinder,
+  type ImportLinkBinder,
+  type ImportLinkBinderDeps,
   type LinkBinder,
   LinkBindingInsideTransactionError,
+  type PlannedMarkdownInput,
 } from "./domain/link-binding.js";
 export type { Branch, BranchStatus } from "./domain/ports/branch-store.js";
 export {
@@ -25,6 +34,7 @@ export {
   type LinkScopeKey,
   type ScopePrepareRequest,
 } from "./domain/ports/document-link-scope.js";
+export type { PreparedSeed } from "./domain/ports/initial-document-seeds.js";
 export {
   DocumentSchemaMajorMismatchError,
   isDocumentSchemaMajorMismatchError,

@@ -4,7 +4,7 @@
  * Four doors (the toolbar and slash picker, a drop, a pasted file, a pasted
  * address), one lifecycle, and this file is only the wiring: the storage the
  * app registers its ports into, the plugin that holds what is in flight, the
- * clipboard and drop props, and the decorations the manuscript draws from.
+ * clipboard prop (a drop lands through `file-drop/file-drop-door.ts`), and the decorations the manuscript draws from.
  *
  * The lifecycle itself is next door — [`image-uploads.ts`](image-uploads.ts) for
  * a picture from this machine, [`image-imports.ts`](image-imports.ts) for one the
@@ -16,15 +16,15 @@
  * and undo it like any other node, and completion never reflows the manuscript.
  */
 
-import { t } from "@lingui/core/macro";
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
 
+import { uploads } from "@/core/uploads/upload-store";
+
 import { resolveAnchorIn } from "../anchors";
 import { wikilinkPasteParsePlugins } from "../links";
 import { markdownClipboardParser, markdownClipboardSerializer } from "../markdown-paste";
-import { tableDropDecision } from "../table-drop";
 import { startImageImport } from "./image-imports";
 import {
   applyIngressMessage,
@@ -35,14 +35,13 @@ import {
   type ImageIngressPluginState,
   type ImageIngressStorage,
   imageIngressPluginKey,
+  imageIngressStorage,
   ingressState,
   sendIngressMessage,
 } from "./image-ingress-runtime";
 import { createImageIngressStore } from "./image-ingress-store";
-import { insertImageFile, pasteImageFile } from "./image-uploads";
+import { pasteImageFile } from "./image-uploads";
 import {
-  draggingFiles,
-  fileDropIntent,
   imageFileFromClipboard,
   linkExternalPastedImages,
   type PastedImageImport,
@@ -50,24 +49,24 @@ import {
 } from "./image-workflow";
 import {
   carryPendingImages,
-  orphanedPendingImages,
+  finishedPendingImages,
   pendingImageDecorations,
+  uploadTokensIn,
 } from "./pending-images";
 
 /**
  * What every settled document state has to answer for the pictures in flight:
- * which of them the writer has taken back, and which paste is ready to have its
- * links read.
+ * which of them are over, and which paste is ready to have its links read.
  */
 function settlePendingImages(editor: Editor): void {
   if (editor.isDestroyed) return;
   const state = ingressState(editor);
 
-  // A picture the writer moved on from: deleted, or its insert undone. The
-  // upload stops, because it has nowhere to land.
-  for (const orphan of orphanedPendingImages(state.pending, editor.state)) {
-    orphan.abort();
-    sendIngressMessage(editor, { drop: orphan.id });
+  // An import whose link the writer moved on from stops, because it has nowhere to land. An
+  // upload is the store's to stop (`upload-store.ts`); its record here goes when the store's does.
+  for (const done of finishedPendingImages(state.pending, editor.state)) {
+    if (done.kind === "import") done.abort();
+    sendIngressMessage(editor, { drop: done.id });
   }
 
   if (!state.landing) return;
@@ -85,27 +84,40 @@ export const ImageIngressExtension = Extension.create({
     return {
       status: createImageIngressStore(),
       host: null,
+      holder: crypto.randomUUID(),
+      watch: null,
     };
+  },
+
+  onCreate() {
+    const { editor, storage } = this;
+    storage.watch = uploads.watch(storage.holder, () =>
+      editor.isDestroyed ? new Set() : uploadTokensIn(editor.state.doc),
+    );
   },
 
   /**
    * The editor is going, so everything it was carrying goes with it.
    *
-   * An upload with no editor has nowhere to land: it would finish, write nothing,
-   * and leave a project asset no document mentions. The presence plugin releases
-   * this client's owner signal on the same teardown
-   * (`image-upload-presence.ts`), so peers stop being told a dead tab is still
+   * A picture lands through the editor that sent it: with no editor it would
+   * finish, write nothing, and leave a project asset no document mentions. The
+   * presence plugin releases this client's owner signal on the same teardown
+   * (`upload-presence.ts`), so peers stop being told a dead tab is still
    * uploading.
    */
   onDestroy() {
-    for (const entry of ingressState(this.editor).pending.values()) entry.abort();
+    for (const entry of ingressState(this.editor).pending.values()) {
+      if (entry.kind === "upload") uploads.discard(entry.id);
+      else entry.abort();
+    }
+    this.storage.watch?.release();
+    this.storage.watch = null;
     this.storage.status.destroy();
     this.storage.host = null;
   },
 
   addProseMirrorPlugins() {
     const editor = this.editor;
-    const { status } = this.storage;
     /** Imports a paste asked for, between the transform and its transaction. */
     let pasted: readonly PastedImageImport[] | null = null;
     let settleScheduled = false;
@@ -123,9 +135,6 @@ export const ImageIngressExtension = Extension.create({
             const carried: ImageIngressPluginState = {
               pending: carryPendingImages(current.pending, transaction.mapping),
               landing: carryLanding(current.landing, transaction.mapping),
-              // Nothing to carry: an owner elsewhere names a token, and the token
-              // travels on the node.
-              elsewhere: current.elsewhere,
             };
             return message ? applyIngressMessage(carried, message) : carried;
           },
@@ -154,7 +163,11 @@ export const ImageIngressExtension = Extension.create({
           decorations(state): DecorationSet | null {
             const ingress = imageIngressPluginKey.getState(state);
             return ingress
-              ? pendingImageDecorations(ingress.pending, ingress.elsewhere, state)
+              ? pendingImageDecorations(
+                  ingress.pending,
+                  state,
+                  ingress.pending.size > 0 || uploads.anyPeerSending(),
+                )
               : null;
           },
 
@@ -168,37 +181,6 @@ export const ImageIngressExtension = Extension.create({
             // sweep through the sweep module's own replace, a caret inline.
             event.preventDefault();
             pasteImageFile(editor, file);
-            return true;
-          },
-
-          handleDrop(view, event) {
-            const intent = fileDropIntent(Array.from(event.dataTransfer?.files ?? []));
-            if (!intent) return false;
-            // Claimed before anything else is decided, including whether the
-            // editor can take it: the browser's own answer to a file nobody
-            // claimed is to navigate to it, and the manuscript would be gone.
-            event.preventDefault();
-            status.setDropActive(false);
-            if (!view.editable) return true;
-            if (intent.kind === "refuse") {
-              status.refuse(
-                t`${intent.filename} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG.`,
-              );
-              return true;
-            }
-            // The same resolution the dropcursor promised during the drag
-            // (`../table-drop.ts`): near a cell border the file lands inside
-            // the nearest cell's paragraph, never as a manufactured column.
-            const decision = tableDropDecision(view, { x: event.clientX, y: event.clientY });
-            if (decision.kind === "refuse") {
-              status.refuse(t`A picture cannot go there.`);
-              return true;
-            }
-            const pos =
-              decision.kind === "snap"
-                ? decision.pos
-                : view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-            insertImageFile(editor, intent.file, pos);
             return true;
           },
 
@@ -216,28 +198,6 @@ export const ImageIngressExtension = Extension.create({
             pasted = linked.imports.length > 0 ? linked.imports : null;
             return linked.slice;
           },
-
-          handleDOMEvents: {
-            dragenter(view, event) {
-              if (view.editable && draggingFiles(event)) status.setDropActive(true);
-              return false;
-            },
-            dragover(view, event) {
-              if (!draggingFiles(event)) return false;
-              // The drop is claimed here, before the file's name is knowable:
-              // a dragover nobody claims is a drop the browser navigates to.
-              // Handed on rather than consumed, so the drop cursor still gets
-              // to show where the picture will land.
-              event.preventDefault();
-              if (view.editable) status.setDropActive(true);
-              return false;
-            },
-            dragleave(_view, event) {
-              const leaving = event.currentTarget as HTMLElement | null;
-              if (!leaving?.contains(event.relatedTarget as Node)) status.setDropActive(false);
-              return false;
-            },
-          },
         },
 
         /**
@@ -247,16 +207,36 @@ export const ImageIngressExtension = Extension.create({
          * binding has finished describing the document this transaction
          * produced (`anchors.ts`).
          */
-        view: () => ({
-          update() {
+        view: () => {
+          let redraw = false;
+          const scheduleSettle = () => {
             if (settleScheduled) return;
             settleScheduled = true;
             queueMicrotask(() => {
               settleScheduled = false;
               settlePendingImages(editor);
+              if (!redraw || editor.isDestroyed) return;
+              redraw = false;
+              sendIngressMessage(editor, { redraw: true });
             });
-          },
-        }),
+          };
+          // A slot's status is the upload store's: when it moves, the slot is drawn again.
+          const unsubscribe = uploads.subscribe((changed) => {
+            if (editor.isDestroyed) return;
+            const { pending } = ingressState(editor);
+            if (![...changed].some((id) => pending.has(id))) return;
+            redraw = true;
+            scheduleSettle();
+          });
+          return {
+            update(view, previous) {
+              if (view.state.doc !== previous.doc) imageIngressStorage(editor)?.watch?.changed();
+              const { pending, landing } = ingressState(editor);
+              if (pending.size > 0 || landing) scheduleSettle();
+            },
+            destroy: unsubscribe,
+          };
+        },
       }),
     ];
   },

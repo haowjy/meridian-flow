@@ -31,18 +31,65 @@ Chromium's hidden drag payload or ProseMirror's event order.
    would subsume its selected children. Send the message and open its folder
    chip: the menu lists the folder's children.
 4. Drop at a table-cell seam. The caret and insertion both resolve inside the
-   nearest cell; the table keeps its row and column counts. Drop over a code
-   block: no caret appears, the hint reads **Can’t mention inside code**, and
-   content does not change.
+   nearest cell; the table keeps its row and column counts. Drop over a fenced
+   code block: no caret appears, the hint reads **Can’t mention inside code**,
+   and content does not change.
 5. Drag a row the surface's `@` catalog cannot name, including an area root.
-   The hint reads **Not available in this chat** over the composer and **Not
-   available in this document** over the manuscript; content does not change.
+   The hint reads **Can’t mention that here** over the composer and the
+   manuscript alike; content does not change.
 6. Insert a multiword reference with `@`, then drop a row over the middle of
    its label. The caret snaps to the nearer outside edge and the whole original
    reference remains one chip after the drop. Repeat over a composer reference
    atom.
 7. In the composer, type one character immediately after a drop. The first Undo
    removes only that character; the second removes every chip from the drop.
+
+## Every point has a landing
+
+Drag one row each time and read the caret during the drag, then the document
+after the drop. Move the pointer once more and wait before reading the caret:
+it trails the last move by one `dragover`.
+
+8. **Gap between blocks.** Over the strip between two paragraphs: the caret
+   draws there, and the drop makes a new paragraph holding the chip. If the
+   gap borders an empty paragraph, the chip goes into it and no second blank
+   line appears.
+9. **Past the end.** Below the last block, in the reserve space: the drop makes
+   a new last paragraph with the chip. (A press there never makes one; see
+   [Presses](../../apps/app/src/core/editor/.context/qa/presses.md).)
+10. **Margin.** In the left or right margin beside a paragraph: the chip lands
+    on that paragraph's nearest line, never at the document start or end.
+11. **Bullets.** Between two bullets, and in the gap above a list: the chip
+    goes into the nearest bullet's line, not between items.
+12. **Inline code.** Over the middle of a code span: the caret draws at the
+    span's nearer edge and the chip lands there, outside the span. The hint
+    reads **Mention**, not a refusal.
+13. **Rendered diagram and component block.** Over a rendered diagram with the
+    caret elsewhere: the caret draws at the seam before or after it by the
+    pointer's half, and the chip gets its own paragraph. With the caret inside
+    the diagram's source before the drag, the result is the same. A component
+    block behaves the same way: the caret draws beside it, never inside, and
+    the hint reads **Mention**.
+14. **Empty document.** Over any point of a blank document: the chip lands in
+    the one empty paragraph and no second paragraph appears.
+15. **Files.** Drag a PNG over each of 8-14: it lands at the same place as the
+    chip would, and the dashed **Drop to insert** overlay shows. A PDF lands
+    there too, as a chip (see [Files dropped on a document](#files-dropped-on-a-document)).
+    Over a fenced code block no caret draws and the hint reads **Can’t put a
+    file inside code**.
+
+## Text dropped in a table cell
+
+16. Tables keep their grid. Drag a selection that runs from a paragraph into a
+    second table onto a cell of the first table (a move, not a copy): the hint reads **Can’t move
+    part of a table** and nothing changes, because deleting the selection would
+    cut the second table. Drag the same selection onto a paragraph: the same
+    hint. Hold Ctrl (Option on Mac) to copy onto a paragraph: it takes it. Drag a paragraph, a picture
+    or a chip, with other text, onto a cell: it lands in the cell and both
+    grids keep their row and column counts. Drag a selection onto its own
+    range: nothing changes and no hint shows. A highlighted row of cells drags
+    only the word under the browser's selection; that word lands in the
+    cell like any text.
 
 ## Ownership and recovery
 
@@ -60,3 +107,52 @@ Chromium's hidden drag payload or ProseMirror's event order.
 Record the commit, date, app URL, screenshots of the composer caret/result,
 editor caret/result, and both refusal states, plus browser errors, in the active
 work directory or the PR asset directory.
+
+## Files dropped on a document
+
+Use a prose document in each of Manuscript and Knowledge Base, one with a heading, a list and a
+table. A synthetic `DragEvent` carrying a `DataTransfer` with `File`s works for these: the browser's
+own file drag adds nothing to what the door reads. Read the rows from `upload_intakes` or the tree.
+
+1. Drop a PDF at a word, in a heading, in a list item and in a table cell. Each lands a chip at
+   the caret reading the name, then `PDF · 2 KB` once it finalizes. The file is a row in
+   `<source>://assets/` of the document's own source (Knowledge Base: `kb://assets/`), and the chip
+   opens it the way the tree's row does. Drop the same name again: the file lands as `name (2).pdf`
+   and the chip reads `name (2).pdf` from the moment it appears; a `.zip` keeps its extension
+   (`notes (2).zip`).
+2. Drop a PDF, a picture and a second PDF together. They land in that order, the picture in its own
+   lane (`manuscript://assets/`). The two PDFs and any run of chips between pictures are one edit:
+   one Undo.
+3. Include a file over 200 MB with others. Only that one is refused, with
+   **name is over 200 MB, so it can't be added.**; nothing is inserted or sent for it.
+4. Drop a 200 MB file and watch the chip: it fills left to right and reads `Uploading n%`, and
+   settles to `BIN · 200 MB`. Its hint names only the destination while it uploads. In a second
+   tab on the same document, the chip reads `Uploading` (from the sender's presence, not the
+   server) and flips with no reload when the file finalizes. Close the sending tab mid-upload: the
+   other tab's chip reads gone at once. A reload of the sending tab is the same close.
+5. Undo while it uploads, then redo within ten seconds: the same upload keeps going. Undo, wait
+   past ten seconds and redo: the chip reads **Upload failed. Click to retry** (described as
+   **The upload was stopped.**), and a click sends it again. Undo and close the document within
+   ten seconds: the upload stops then, and nothing lands in `assets/`; the intake row stays
+   `reserved` until the sweep. The one exception is a take-back after the bytes are up and the
+   finish has reached the server (the chip has read 100%): that cannot be called back, and the
+   file lands with nothing linking to it. Cut the chip and paste it back within a few seconds: the
+   upload keeps going. Cut it and paste it into another document open in the same tab: it keeps
+   uploading there and lands; one pasted after it stopped retries there on a click and lands. In
+   another tab's other document it reads gone until the file lands. The composer follows the same
+   rule for an attach: remove its chip and undo within ten seconds and it keeps uploading; later,
+   it reads stopped and a click retries. While a composer chip reads failed or stopped, Send and
+   Enter do nothing and the chip says to retry or remove it. Closing the chat discards the
+   composer's uploads.
+6. While one uploads, rename `assets/`. The file lands in a fresh `assets/` and the chip follows
+   it by id. Rename or move a finished file, then read the document through `./mf doc read`: the
+   link shows the file's current path. Trash a finished file and click its chip: Trash opens at it.
+   Drop a text file (`.md`): it becomes a document in `assets/`, and a notice says so and that the
+   chip links to it. Several of one name dropped at once land as `name`, `name (2)`, `name (3)`,
+   but every chip reads `name`: each was named before any had landed (see the uploads CONTEXT).
+7. A read-only editor (`setEditable(false)`) takes no file and starts no upload.
+8. Export the project: the files sit under their folders and the document's link points at the
+   current path.
+
+Not covered by a live run: Scratch of a chat's lineage (the route builds the lineage container the
+create route uses, but no chat in the probe project had a lineage to write to).

@@ -9,8 +9,8 @@
  * the resource projection so a rename elsewhere keeps the document's name and
  * path current, and a removed document closes the slot.
  *
- * The editor shell takes the dock's material (transparent), because the dock
- * slot paints the background.
+ * The editor shell and the file viewer take the dock's material (transparent),
+ * because the dock slot paints the background.
  */
 
 import { t } from "@lingui/core/macro";
@@ -22,7 +22,7 @@ import {
 } from "@/features/draft-review/DraftReviewProvider";
 import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
-import { ContextViewerBareHost } from "../context/ContextViewerHost";
+import { ContextViewerHost } from "../context/ContextViewerHost";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useDockArchivedWork } from "./DockDocumentIdentity";
@@ -111,11 +111,7 @@ function DockDocumentBody({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <ContextViewerBareHost
-            projectId={projectId}
-            editorWorkId={tab.workId ?? null}
-            tab={tab}
-          />
+          <ContextViewerHost projectId={projectId} tab={tab} className="bg-transparent" />
         </div>
       )}
     </div>

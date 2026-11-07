@@ -52,6 +52,7 @@ import {
   createWorkContextDocumentStore,
   findNoWorkId,
 } from "./context-source-provisioning.js";
+import type { ContextCopyCommandDeps } from "./copy/copy-command.js";
 import { bindOwners, emptyOwnerLookup, type OwnerLookup } from "./owner-lookup.js";
 import type { BranchTreePort } from "./ports/branch-tree.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
@@ -79,7 +80,6 @@ import {
   getInMemoryWorkContextStore,
   type InMemoryUnifiedContextStoreRegistry,
 } from "./support/in-memory-unified-context-stores.js";
-import { findForward } from "./tree/forwards.js";
 import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 
 const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
@@ -269,11 +269,12 @@ function buildUnifiedContextPort(input: {
   commandTransaction?: ContextCommandTransaction;
   placements: AdapterAssembly["placements"];
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
-  resolveForward?: (documentId: string) => Promise<string | null>;
   operationReceipts?: ContextOperationReceipts;
   moveLinks?: ConstructorParameters<
     typeof import("./context/context-tree-mover.js").ContextTreeMover
   >[2];
+  copy?: ContextCopyCommandDeps;
+  eventSink?: EventSink;
 }): ContextPort {
   const { scope, storeResolvers, commandTransaction } = input;
   const assembly: AdapterAssembly = {
@@ -389,9 +390,10 @@ function buildUnifiedContextPort(input: {
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
     resolveDestinationFolder: input.resolveDestinationFolder,
-    ...(input.resolveForward ? { resolveForward: input.resolveForward } : {}),
     operationReceipts: input.operationReceipts,
     moveLinks: input.moveLinks,
+    ...(input.eventSink ? { eventSink: input.eventSink } : {}),
+    ...(input.copy ? { copy: input.copy } : {}),
   });
 }
 
@@ -617,8 +619,10 @@ export function createProductionUnifiedContextPortFactory(options: {
   hiddenNodeRepair?: HiddenNodeRepair;
   /** The one branches resolver: draft placements read and write through it (§2.3). */
   branches: Branches;
+  /** Copy's collab cut/bind and the object store its binaries duplicate into. */
+  copy?: ContextCopyCommandDeps;
   /**
-   * The Work mutation boundary (decision D17): a branch command locks its branch's Work first
+   * The Work mutation boundary: a branch command locks its branch's Work first
    * and touches the Work's projection after it (§13.2, S3).
    */
   pendingBranch: {
@@ -728,12 +732,13 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
-        resolveForward: (id) => findForward(options.db, id, projectId as ProjectId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
         commandTransaction: commandTransaction(projectId, userId),
         placements,
+        ...(options.copy ? { copy: options.copy } : {}),
+        ...(options.eventSink ? { eventSink: options.eventSink } : {}),
       });
     },
     forWork(authority, projectId, userId, workAuthorities, thread) {
@@ -745,12 +750,13 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
-        resolveForward: (id) => findForward(options.db, id, projectId as ProjectId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
         commandTransaction: commandTransaction(projectId, userId),
         placements,
+        ...(options.copy ? { copy: options.copy } : {}),
+        ...(options.eventSink ? { eventSink: options.eventSink } : {}),
       });
     },
   };

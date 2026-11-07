@@ -7,6 +7,7 @@ import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
+import { lockProjectLifecycleExclusive } from "../../../../shared/project-lifecycle-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type { ContextCatalogLifecyclePort } from "../../ports/context-catalog-lifecycle.js";
 import type {
@@ -135,6 +136,7 @@ export function createDrizzleProjectRepository(
     async softDelete(id: ProjectId): Promise<Project> {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
+        await lockProjectLifecycleExclusive(db, id);
         const [existing] = await activeDb
           .select()
           .from(projects)
@@ -155,6 +157,7 @@ export function createDrizzleProjectRepository(
     },
     async restore(id: ProjectId): Promise<Project> {
       return runInDrizzleTransaction(db, async () => {
+        await lockProjectLifecycleExclusive(db, id);
         const [row] = await currentDrizzleDb(db)
           .update(projects)
           .set({ deletedAt: null, updatedAt: new Date() })

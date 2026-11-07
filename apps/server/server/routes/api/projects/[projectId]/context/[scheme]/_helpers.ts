@@ -42,14 +42,17 @@ export function parseScheme(value: string): ProjectContextTreeScheme {
 
 export const toUri = projectBrowseContextUri;
 
-/** Common preamble: auth → project ownership → scheme → workId → context port. */
-export async function resolveContextRoute(
-  event: H3Event,
-  options: { recoverAcrossProject?: boolean } = {},
-): Promise<{
-  app: AppServices;
-  userId: string;
-  projectId: string;
+/** Auth and project ownership, before anything that depends on the route's Work authority. */
+export type ProjectRouteContext = { app: AppServices; userId: string; projectId: string };
+
+export async function requireProjectRouteContext(event: H3Event): Promise<ProjectRouteContext> {
+  const { app, user } = await requireAppUser(event);
+  const projectId = getRouterParam(event, "projectId") ?? "";
+  await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
+  return { app, userId: user.userId, projectId };
+}
+
+export type ResolvedContextRoute = ProjectRouteContext & {
   scheme: ProjectContextTreeScheme;
   workId: string | null;
   authority: CanonicalContextAuthority;
@@ -58,9 +61,26 @@ export async function resolveContextRoute(
   container: FileTarget;
   /** Runs a write under the writer's edit grants on these targets; refusals become 404 or 403. */
   edit<T>(targets: readonly FileTarget[], operation: () => Promise<T>): Promise<T>;
-}> {
-  const { app, user } = await requireAppUser(event);
-  const projectId = getRouterParam(event, "projectId") ?? "";
+};
+
+/** Common preamble: auth → project ownership → scheme → workId → context port. */
+export async function resolveContextRoute(
+  event: H3Event,
+  options: { recoverAcrossProject?: boolean } = {},
+): Promise<ResolvedContextRoute> {
+  return resolveContextRouteFor(event, await requireProjectRouteContext(event), options);
+}
+
+/**
+ * The rest of a route for a caller that already authenticated: a create reads its held id first,
+ * because a destination in a deleted Work refuses the route while a replay must still answer.
+ */
+export async function resolveContextRouteFor(
+  event: H3Event,
+  context: ProjectRouteContext,
+  options: { recoverAcrossProject?: boolean } = {},
+): Promise<ResolvedContextRoute> {
+  const { app, userId: authenticatedUserId, projectId } = context;
   const scheme = parseScheme(getRouterParam(event, "scheme") ?? "");
   const query = getQuery(event);
   const rootThreadId = typeof query.rootThreadId === "string" ? query.rootThreadId : null;
@@ -70,7 +90,7 @@ export async function resolveContextRoute(
   if (chatId && (scheme !== "uploads" || query.workId || rootThreadId))
     throw createError({ statusCode: 400, message: "Choose one uploads owner" });
   const workId = typeof query.workId === "string" ? query.workId : null;
-  await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
+  const userId = authenticatedUserId;
   const deps = {
     contextPorts: app.contextPorts,
     works: app.workRepo,
@@ -80,13 +100,13 @@ export async function resolveContextRoute(
     ? await contextPortForProjectRecovery({
         deps,
         projectId,
-        userId: user.userId,
+        userId,
         requestedWorkId: workId,
       })
     : await contextPortForProjectBrowse({
         deps,
         projectId,
-        userId: user.userId,
+        userId,
         workId,
         rootThreadId,
         chatId,
@@ -126,13 +146,13 @@ export async function resolveContextRoute(
   const edit = async <T>(targets: readonly FileTarget[], operation: () => Promise<T>) => {
     const grants = [];
     for (const target of targets) {
-      grants.push(await requireFileGrant(app.fileAccess, user.userId, target, "edit"));
+      grants.push(await requireFileGrant(app.fileAccess, userId, target, "edit"));
     }
     return withEditGrants(app.fileAccess, grants, operation);
   };
   return {
     app,
-    userId: user.userId,
+    userId,
     projectId,
     scheme,
     workId,

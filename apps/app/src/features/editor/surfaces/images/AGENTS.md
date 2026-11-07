@@ -10,5 +10,5 @@ Radix root of its own would be a surface the kernel couldn't subordinate.
   drawn by its node view from a decoration.
 - A refusal is about an event, not content. Anything that produced a document change is labelled
   on that node instead.
-- The ports are the only knowledge crossing: `uploadFigure`, `fetch` and the project context tree
+- The ports are the only knowledge crossing: the direct upload calls, `fetch` and the project context tree
   stay on this side.

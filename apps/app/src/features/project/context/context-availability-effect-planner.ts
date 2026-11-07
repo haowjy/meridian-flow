@@ -20,7 +20,7 @@ import type {
   AppliedAvailabilityCommand,
   ContextRemovalProjectSnapshot,
 } from "./context-removal-coordinator";
-import { planContextRemoval, routeTargetForTab } from "./context-removal-planner";
+import { planContextRemoval, routeTargetForTab, tabForTarget } from "./context-removal-planner";
 import {
   beginSelection,
   bindSelection,
@@ -185,15 +185,19 @@ export function planContextAvailabilityBatch(
         selection.identity.kind === "server" &&
         selection.identity.documentId === id
       ) {
-        const previous = selection.locator;
-        selection = { ...selection, locator: target };
         admitted = target;
-        if (
-          routeSearch &&
-          contextRouteMatchesSearch(routeSearch, previous, input.project.activeWorkId)
-        ) {
-          routeSearch = openContextRouteSearch(routeSearch, target);
-          relocatedRouteDocumentId = id;
+        // A review address owns its path: the item names where the draft puts the document,
+        // which the live move is not.
+        if (selection.by !== "review") {
+          const previous = selection.locator;
+          selection = { ...selection, locator: target };
+          if (
+            routeSearch &&
+            contextRouteMatchesSearch(routeSearch, previous, input.project.activeWorkId)
+          ) {
+            routeSearch = openContextRouteSearch(routeSearch, target);
+            relocatedRouteDocumentId = id;
+          }
         }
       } else if (target && priorTargets.some((prior) => sameTarget(admitted, prior))) {
         admitted = target;
@@ -299,14 +303,17 @@ export function planContextAvailabilityBatch(
       } else {
         const candidate = beginSelection(selection, repairTarget).selection;
         const activeWorkId = input.project.activeWorkId;
-        const fallback = activeWorkId
-          ? tabs.find((tab) => sameTarget(routeTargetForTab(tab, activeWorkId), repairTarget))
-          : undefined;
+        const fallback = activeWorkId ? tabForTarget(tabs, repairTarget, activeWorkId) : null;
         const bound = fallback
-          ? bindSelection(candidate, candidate.revision, {
-              kind: fallback.kind === "new" ? "local" : "server",
-              documentId: fallback.documentId,
-            })
+          ? bindSelection(
+              candidate,
+              candidate.revision,
+              {
+                kind: fallback.kind === "new" ? "local" : "server",
+                documentId: fallback.documentId,
+              },
+              "answer",
+            )
           : null;
         selection = bound?.selection ?? candidate;
       }

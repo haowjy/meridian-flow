@@ -55,6 +55,8 @@ import {
 } from "@meridian/contracts";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
+import { uploads } from "@/core/uploads/upload-store";
+
 import type { LinkAssignmentIndex, LinkAssignmentScope } from "./link-assignment";
 import {
   classifyLinkTarget,
@@ -181,7 +183,11 @@ export type InternalLinkResolver = {
 };
 
 export type LinkAnswerCache = {
-  subscribe: (listener: () => void) => () => void;
+  /**
+   * Calls back on every change. An upload's change passes the ids it touched, so a chip that
+   * stands for one upload can ignore the others' progress; any other change passes nothing.
+   */
+  subscribe: (listener: (uploadsChanged?: ReadonlySet<string>) => void) => () => void;
   /** False while no port is registered, which is a real state and not a bug. */
   readonly available: boolean;
   /**
@@ -198,8 +204,9 @@ export type LinkAnswerCache = {
   readonly assignment: LinkAssignmentScope | null;
   /**
    * The answer for this link as it stands, or null when there is nothing to
-   * say: an external link, an unclassifiable one, a failed request, or no port
-   * yet. Pure — a renderer may call it as often as it likes.
+   * say: an external link, an unclassifiable one, a failed request, no port
+   * yet, or a file still on its way up, which the server calls gone until it
+   * lands. Pure — a renderer may call it as often as it likes.
    */
   read: (link: LinkKey) => LinkResolutionEntry | null;
   /**
@@ -249,8 +256,13 @@ function settledOver(
 ): LinkResolutionEntry | null {
   if (!provisional) return entry;
   if (entry?.state === "gone") return entry;
-  if (entry?.state === "document" && entry.document.documentId !== provisional.document.documentId)
-    return entry;
+  if (entry?.state === "document") {
+    if (entry.document.documentId !== provisional.document.documentId) return entry;
+    // The same document: the local index's location stays, and the server adds what it alone knows.
+    return entry.document.file
+      ? { ...provisional, document: { ...provisional.document, file: entry.document.file } }
+      : provisional;
+  }
   return provisional;
 }
 
@@ -443,7 +455,12 @@ export function createLinkAnswerCache(): LinkAnswerCache {
   return {
     subscribe(listener) {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      // What `read` says of a link also turns on whether its file is still sending.
+      const unsubscribeUploads = uploads.subscribe((changed) => listener(changed));
+      return () => {
+        listeners.delete(listener);
+        unsubscribeUploads();
+      };
     },
 
     get available() {
@@ -461,7 +478,10 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     read(link) {
       if (!current) return null;
       const internal = internalLink(link);
-      return internal ? (current.answers.get(internal.key) ?? null) : null;
+      if (!internal) return null;
+      const ref = parseLinkRef(link.ref);
+      if (ref?.kind === "doc" && uploads.of(ref.documentId)) return null;
+      return current.answers.get(internal.key) ?? null;
     },
 
     failed(link) {

@@ -6,8 +6,8 @@
  * the chat's Scratch as tree rows, with folders opening in place. It always
  * means the chat on screen, and lists the chat's Scratch: the lineage's notes
  * for a No Work chat, the Work's for a chat on a named Work, with any lineage
- * notes left behind by a rebind under "Earlier notes". Picking a note opens it
- * beside the chat (`useOpenScratchNote`) and the section stays open. Rows offer
+ * notes left behind by a rebind under "Earlier notes". Picking a note goes to the
+ * Editor, as a pick in the left tree does, and the section stays open. Rows offer
  * Rename, Move… and Delete like any list's, while the owner can still be edited;
  * the AI makes the notes, so there is no New note. The section shows
  * for every chat, empty or not, so the rail never shifts when the first note
@@ -27,20 +27,19 @@ import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
-import { useDeleteContextEntry } from "../context/document-delete-undo";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
+import { useDeleteContextEntry } from "../context/use-delete-context-entry";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useDockDocument } from "../dock/dock-document-store";
-import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
+import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { DockedRailSection } from "../shell/DockedRailSection";
 import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
-import type { NoticeSurface } from "../shell/SurfaceNotice";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
 /** The document open beside the writer, if any: the dock's on the Chat screen, the selected tab in the Editor. */
@@ -73,7 +72,7 @@ export function RailScratchSection({
   resizeAgainst?: RefObject<HTMLElement | null>;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
-  const { list, primary } = useChatScratchList(projectId, scratch, "sidebar");
+  const { list, primary } = useChatScratchList(projectId, scratch);
   if (!scratch) return null;
   return (
     <DockedRailSection id="scratch" resizeAgainst={resizeAgainst}>
@@ -114,11 +113,7 @@ export function RailScratchSection({
 }
 
 /** One list over a chat's Scratch: its current catalog and its Earlier notes. */
-function useChatScratchList(
-  projectId: string,
-  scratch: ReturnType<typeof useChatScratchSource>,
-  surface: NoticeSurface,
-) {
+function useChatScratchList(projectId: string, scratch: ReturnType<typeof useChatScratchSource>) {
   const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
   const areas = useMemo(
     () => [
@@ -128,7 +123,7 @@ function useChatScratchList(
               scheme: "scratch" as const,
               owner: scratch.owner,
               catalog: primary.catalog,
-              movable: editable,
+              accepts: editable,
             },
           ]
         : []),
@@ -138,14 +133,14 @@ function useChatScratchList(
               scheme: "scratch" as const,
               owner: { rootThreadId: scratch.earlierRootThreadId },
               catalog: earlier.catalog,
-              movable: true,
+              accepts: true,
             },
           ]
         : []),
     ],
     [primary.catalog, earlier.catalog, scratch, editable],
   );
-  return { list: useEntryList({ projectId, surface, areas }), primary };
+  return { list: useEntryList({ projectId, areas }), primary };
 }
 
 /**
@@ -162,18 +157,13 @@ export function MenuScratchSection({
   onPicked?: () => void;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
-  const { list } = useChatScratchList(projectId, scratch, "chat-files");
+  const { list } = useChatScratchList(projectId, scratch);
   if (!scratch) return null;
   return (
     <section aria-label={scratch.heading}>
       <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">{scratch.heading}</h3>
       <EntryList list={list}>
-        <ChatScratchTree
-          projectId={projectId}
-          threadId={threadId}
-          onPicked={onPicked}
-          surface="chat-files"
-        />
+        <ChatScratchTree projectId={projectId} threadId={threadId} onPicked={onPicked} />
       </EntryList>
     </section>
   );
@@ -203,18 +193,16 @@ function ChatScratchTree({
   threadId,
   editorWorkId = null,
   onPicked,
-  surface = "sidebar",
 }: {
   projectId: string;
   threadId: string | null;
   editorWorkId?: string | null;
   onPicked?: () => void;
-  surface?: NoticeSurface;
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
   const { primary, earlier, editable } = useChatScratchCatalogs(projectId, scratch);
   const openId = useOpenDocumentId(projectId, editorWorkId);
-  const deletion = useDeleteContextEntry(surface);
+  const deletion = useDeleteContextEntry(projectId);
   const hasEarlier = Boolean(scratch?.earlierRootThreadId && earlier.catalog?.files().length);
   const ready = primary.isComplete && (!scratch?.earlierRootThreadId || earlier.isComplete);
   const isError = primary.isError || (Boolean(scratch?.earlierRootThreadId) && earlier.isError);
@@ -301,8 +289,9 @@ function ChatScratchTree({
 }
 
 const EARLIER_NOTES_ID = "earlier:scratch";
-const SCRATCH_ACTIONS: EntryCapabilities = ["rename", "move", "delete"];
-const READ_ONLY: EntryCapabilities = [];
+const SCRATCH_ACTIONS: EntryCapabilities = ["rename", "move", "copy", "delete"];
+// An archived Work's Scratch can be copied from, not changed.
+const READ_ONLY: EntryCapabilities = ["copy"];
 
 /** One real owner per tree; the Earlier notes disclosure is outside both catalogs. */
 function ScratchCatalog({
@@ -326,7 +315,7 @@ function ScratchCatalog({
   onPicked?: () => void;
   onRequestDelete: (target: DeleteTarget) => void;
 }) {
-  const openNote = useOpenScratchNote();
+  const openNote = useOpenDocumentInEditor();
   const { isExpanded, toggleEntry } = expansion;
   const env = useMemo(
     () => ({

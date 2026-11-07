@@ -19,6 +19,12 @@ generation even when the changed catalog isn't one this surface loads. That is h
 folder in another Work turns dashed without a reload. Focus and network return recheck after
 15 seconds as a missed-wake fallback.
 
+The address answers apply one rule (`matchDocumentPath` from
+`@meridian/contracts`, beside `resolveDocumentHref`, through
+`indexedDocumentAt`): the first of `addressCandidates` that names a document (the
+exact path, then its alias), else the path with its final extension omitted when exactly one
+document fits. Only links omit the extension; the catalog's `findPath` does not. Addresses are unique, so there is no "several documents" answer.
+
 **A settlement is a fact the client keeps.** The resolve endpoint marks an ahead ref's answer
 `settled: true` when it came through the ref's settlement. The resolver records it in the
 account's memo (`AccountFeatureLifetime.linkSettlements`), outside every generation and shared

@@ -31,11 +31,16 @@ ownership.
 
 The finalizer covers commit, cancel, refusal, pointer loss, suppression, and
 unmount. It releases the hold and kernel token exactly once. Suppression is
-kernel-owned, and this surface adds no timer or independent pointer state. Touch
-uses the same identity and seam calculation after its movement threshold.
+kernel-owned, and this surface adds no timer or independent pointer state. A
+press is followed by `trackPress` (`core/editor/chrome`), which owns the slop,
+the pointer's identity (a second finger's `pointerup` is not this press's), and
+the release: a flick that releases before any move still lifts, and drops where
+the button came up. A left release heard only as a `pointermove` with the left
+bit clear ends the drag the same way. Touch uses the same identity and seam
+calculation after its movement threshold.
 
-A picture travels by ProseMirror's own drag, landing between two words with
-the dropcursor; its paragraph's margin handle still moves the whole line to a
+A picture travels by ProseMirror's own drag, landing between two words at the
+caret `core/editor/landing` draws; its paragraph's margin handle still moves the whole line to a
 block seam. ProseMirror's HTML5 drag is refused for block objects because
 re-parsing the dropped HTML turns a figure into a bare paragraph.
 

@@ -7,18 +7,20 @@ import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import { draftCopyView } from "@/features/draft-review/copy-view";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
-import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
+import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import {
   type DraftChangesView,
   isWholeDocumentChange,
 } from "@/features/draft-review/draft-changes";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
-import { hasTreeLine } from "@/features/draft-review/tree-line";
+import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
+import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 
 export function WorkChangeFile({
@@ -39,8 +41,7 @@ export function WorkChangeFile({
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
-  const draftedDelete = file.draft.tree?.deleted === true;
-  const treeOnly = draftedDelete || (!file.draft.hasDraft && hasTreeLine(file.draft));
+  const treeOnly = reviewHasNoRoom(file.draft);
   const shown = expanded || treeOnly;
   const view = useDraftView(draft, { controller, enabled: shown, item: file.draft });
   if (
@@ -50,12 +51,16 @@ export function WorkChangeFile({
   )
     return null;
   const wholeDocument = shown && isWholeDocumentChange(view);
-  const imageOpenable = isDraftImagePath(file.contextLocation?.path);
+  const imageOpenable = file.draft.binary;
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
+  const copyView = draftCopyView(file, workId);
+  const drag = useReferenceDrag(
+    copyView ? { ref: { kind: "file", id: file.documentId }, name, view: copyView } : null,
+  );
 
   const review = (focus?: ReviewFocus) => {
     controller.dismissNotice();
-    return file.draft.hasDraft || draftedDelete
+    return file.draft.hasDraft || treeOnly
       ? openReviewFile(file, workId, focus)
       : imageOpenable && setPreviewing(true);
   };
@@ -95,6 +100,7 @@ export function WorkChangeFile({
         ) : (
           <button
             type="button"
+            {...drag}
             className={cn(
               "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-dropdown-hover",
               "w-auto flex-1 pl-1",
@@ -102,7 +108,7 @@ export function WorkChangeFile({
             )}
             disabled={
               !file.contextLocation ||
-              (file.draft.hasDraft === false && !imageOpenable && !draftedDelete)
+              (file.draft.hasDraft === false && !imageOpenable && !treeOnly)
             }
             onClick={() => review()}
           >

@@ -8,7 +8,11 @@
  */
 import { parseContextUri } from "./context-uri.js";
 import type { FolderId } from "./ids.js";
-import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
+import {
+  canonicalLeaf,
+  parseDocumentFilename,
+  renderFilename,
+} from "./protocol/document-filename.js";
 import { parseRequestId } from "./request-id.js";
 
 export type DocumentRef = `doc:${string}`;
@@ -69,12 +73,11 @@ export function mintAheadRef(): AheadRef {
 
 /** A canonical codec name with a non-dot stem, admissible in the ahead registry. */
 export function isAheadFilename(filename: string): boolean {
-  const parsed = parseDocumentFilename(filename);
   return (
     !filename.includes("/") &&
     /[^.\s]/u.test(filename) &&
-    parsed.ok &&
-    renderFilename(parsed.value.name, parsed.value.extension) === filename
+    parseDocumentFilename(filename).ok &&
+    canonicalLeaf(filename) === filename
   );
 }
 

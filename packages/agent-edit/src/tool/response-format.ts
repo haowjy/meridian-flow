@@ -95,6 +95,7 @@ export function toOutcome(
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(result.nodes ? { nodes: result.nodes } : {}),
+    ...(result.aheadSettlements ? { aheadSettlements: result.aheadSettlements } : {}),
     ...(result.showing ? { showing: result.showing } : {}),
     ...(result.frontier ? { frontier: result.frontier } : {}),
     result: model,

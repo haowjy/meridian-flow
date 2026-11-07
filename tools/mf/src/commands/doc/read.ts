@@ -1,15 +1,18 @@
-import { apiProjectContextReadPath, contextReadResponseSchema } from "@meridian/contracts/protocol";
+import {
+  apiProjectDocumentReadPath,
+  contextReadResponseSchema,
+} from "@meridian/contracts/protocol";
 import { type CommandSpec, flag, requirePositional, stringOption } from "../../core/command";
 import { truncate } from "../../core/output";
 import { jsonResponse } from "../../core/session";
 import { resolveProjectId } from "../project/resolve";
-import { ownerOf, PROJECT_OPTION, resolveUri } from "./uri";
+import { PROJECT_OPTION, resolveDocumentId, resolveUri } from "./uri";
 
 export const docReadCommand: CommandSpec = {
   path: ["doc", "read"],
   summary: "Print a document's markdown projection",
   args: "<uri>",
-  route: "GET /api/projects/:projectId/context/:scheme/read",
+  route: "GET /api/projects/:projectId/documents/:documentId/read",
   options: { ...PROJECT_OPTION, full: { type: "boolean", description: "No truncation" } },
   examples: ['./mf doc read "manuscript://Chapter 1"', "./mf doc read scratch://@w3/notes --json"],
   async run(ctx) {
@@ -22,9 +25,10 @@ export const docReadCommand: CommandSpec = {
       stringOption(ctx, "work"),
       stringOption(ctx, "chat"),
     );
+    const documentId = await resolveDocumentId(session, projectId, target);
     const response = await session.request(
       "GET",
-      apiProjectContextReadPath(projectId, target.scheme, target.path, ownerOf(target)),
+      apiProjectDocumentReadPath(projectId, documentId),
       undefined,
       { decode: jsonResponse(contextReadResponseSchema) },
     );

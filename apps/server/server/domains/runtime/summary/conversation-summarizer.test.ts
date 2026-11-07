@@ -77,9 +77,6 @@ function setup(
       if (options.events) yield* options.events(request, requests.length);
       else yield { type: "end", result: reply() };
     },
-    async generate() {
-      throw new Error("Use stream");
-    },
   };
   const prefixCacheStateFor = vi.fn(async () =>
     options.warm

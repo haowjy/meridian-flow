@@ -9,12 +9,9 @@ Prompt content loads only when the user opens a call with both `threadId` and
 `turnId`. The endpoint returns the selected request and its immediate predecessor so
 the inspector can compare adjacent tool-loop prefixes.
 
-A stop before any output reaches the gateway as `error` with `invalid_request`, the
-same as a real bad request, and no gateway record tells them apart. The view joins the
-thread snapshot: an `invalid_request` on the last call of a `cancelled` turn shows as
-`cancelled`, with the error code still printed beside the badge. `missing_usage` comes
-from the paired response's `pricingSnapshot`, so a stop before output (no response row)
-can't show it. First output and duration read the close record's
+A stop before any output closes as `cancelled` and leaves a `missing_usage` response row,
+like any stopped call. `missing_usage` comes from the paired response's `pricingSnapshot`.
+First output and duration read the close record's
 `providerFirstOutputMs` and `gatewayObservationDurationMs`.
 
 A prediction mismatch is a predicted-warm call with an observed reset, or a

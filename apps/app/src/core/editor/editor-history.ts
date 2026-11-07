@@ -1,9 +1,15 @@
 /** One mounted editor's chronological history across Yjs edits and editor Apply commands. */
 import type { Editor } from "@tiptap/core";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
-import type { UndoManager } from "yjs";
+import { TextSelection, type Transaction } from "@tiptap/pm/state";
+import {
+  getRelativeSelection,
+  relativePositionToAbsolutePosition,
+  ySyncPluginKey,
+  yUndoPluginKey,
+} from "@tiptap/y-tiptap";
+import * as Y from "yjs";
 
-type StackItem = UndoManager["undoStack"][number];
+type StackItem = Y.UndoManager["undoStack"][number];
 
 type EditorHistoryAction = {
   undo(): void;
@@ -19,19 +25,49 @@ type Entry =
 
 const histories = new WeakMap<Editor, MountedEditorHistory>();
 const HISTORY_META = "meridian-editor-history";
+/** On a stack item: the range selection from just before the change it holds ran. */
+const RANGE_META = "meridian-editor-range";
+
+type RelativeSelection = ReturnType<typeof getRelativeSelection>;
 
 function insert(entries: Entry[], entry: Entry): void {
   const index = entries.findIndex((candidate) => candidate.sequence > entry.sequence);
   entries.splice(index < 0 ? entries.length : index, 0, entry);
 }
 
+/**
+ * A relative position as a document position, or null when it no longer
+ * stands for live text. `relativePositionToAbsolutePosition` resolves a
+ * position inside a deleted paragraph to wherever the walk ends up, often the
+ * end of the document, so any deleted ancestor counts as unresolved.
+ */
+export function liveAbsolutePosition(
+  binding: {
+    doc: Y.Doc;
+    type: Y.XmlFragment;
+    mapping: Parameters<typeof relativePositionToAbsolutePosition>[3];
+  },
+  relative: RelativeSelection["anchor"],
+): number | null {
+  const decoded = Y.createAbsolutePositionFromRelativePosition(relative, binding.doc);
+  if (!decoded) return null;
+  for (let type: Y.AbstractType<unknown> | null = decoded.type; type; ) {
+    const item: Y.Item | null = type._item;
+    if (item?.deleted) return null;
+    type = (item?.parent as Y.AbstractType<unknown> | null | undefined) ?? null;
+  }
+  return relativePositionToAbsolutePosition(binding.doc, binding.type, relative, binding.mapping);
+}
+
 class MountedEditorHistory implements EditorHistoryHandle {
-  private readonly manager: UndoManager;
+  private readonly manager: Y.UndoManager;
   private readonly undo: Entry[] = [];
   private readonly redo: Entry[] = [];
   private sequence = 0;
   private suppressManagerEvents = false;
   private managerGenerated: StackItem | null = null;
+  /** The range selected when the dispatch now running began, for the stack item that dispatch adds. */
+  private rangeBeforeDispatch: RelativeSelection | null = null;
   private active = true;
 
   constructor(private readonly editor: Editor) {
@@ -40,12 +76,14 @@ class MountedEditorHistory implements EditorHistoryHandle {
     this.manager = manager;
     manager.on("stack-item-added", this.managerAdded);
     manager.on("stack-cleared", this.managerCleared);
+    editor.on("beforeTransaction", this.rememberRange);
   }
 
   destroy(): void {
     this.active = false;
     this.manager.off("stack-item-added", this.managerAdded);
     this.manager.off("stack-cleared", this.managerCleared);
+    this.editor.off("beforeTransaction", this.rememberRange);
     this.undo.length = 0;
     this.redo.length = 0;
   }
@@ -112,9 +150,11 @@ class MountedEditorHistory implements EditorHistoryHandle {
     }
 
     this.reconcileNativeSegment(source, stack, original, allowed);
-
     const generated = this.managerGenerated as StackItem | null;
+    if (popped && direction === "undo") this.restoreRange(popped);
     if (popped && generated) {
+      const range = popped.meta.get(RANGE_META) as RelativeSelection | undefined;
+      if (range) generated.meta.set(RANGE_META, range);
       const known = popped.meta.get(HISTORY_META) as Entry | undefined;
       const moved: Entry = {
         kind: "yjs",
@@ -125,6 +165,60 @@ class MountedEditorHistory implements EditorHistoryHandle {
       insert(direction === "undo" ? this.redo : this.undo, moved);
     }
   }
+
+  /**
+   * Gives back the range a change started from. Yjs undo maps the selection
+   * the document has now, and a range that was moved or replaced has just been
+   * removed, so it collapses into a caret. Every stack item that holds a change
+   * from a range carries it in `RANGE_META`: taken by `rememberRange` before
+   * the dispatch that made the item, then carried through the items UndoManager
+   * generates for later redo and undo runs. Redo leaves y-tiptap's mapped
+   * selection alone. (y-tiptap saves its own copy on each item, but reads
+   * it from the last transaction of a dispatch, which is the wrong range when a
+   * plugin appends one.) Carets keep the mapped result, and so do node
+   * selections, unless their object has gone, which `ObjectPhysicsExtension`
+   * turns into a caret.
+   */
+  private restoreRange(popped: StackItem): void {
+    const binding = ySyncPluginKey.getState(this.editor.state)?.binding;
+    const before = popped.meta.get(RANGE_META) as RelativeSelection | undefined;
+    if (!binding || before?.type !== "text") return;
+    const anchor = liveAbsolutePosition(binding, before.anchor);
+    const head = liveAbsolutePosition(binding, before.head);
+    if (anchor === null || head === null || anchor === head) return;
+    const { state, view } = this.editor;
+    view.dispatch(
+      state.tr
+        .setSelection(TextSelection.between(state.doc.resolve(anchor), state.doc.resolve(head)))
+        .scrollIntoView(),
+    );
+  }
+
+  /**
+   * Remembers the range an editor change started from. `beforeTransaction`
+   * still sees the state the change applies to; the stack item it adds is
+   * created within that dispatch, so the microtask drops the memory once the
+   * dispatch is done (a transaction a filter rejects never reaches
+   * `transaction`, and a later write that didn't come from the editor must not
+   * inherit the range).
+   */
+  private readonly rememberRange = ({ transaction }: { transaction: Transaction }) => {
+    const { selection } = this.editor.state;
+    const binding = ySyncPluginKey.getState(this.editor.state)?.binding;
+    if (
+      !binding ||
+      !transaction.docChanged ||
+      transaction.getMeta(ySyncPluginKey) ||
+      !(selection instanceof TextSelection) ||
+      selection.empty
+    ) {
+      return;
+    }
+    this.rangeBeforeDispatch = getRelativeSelection(binding, this.editor.state);
+    queueMicrotask(() => {
+      this.rangeBeforeDispatch = null;
+    });
+  };
 
   /** Remove only items Yjs consumed from the segment it was allowed to traverse. */
   private reconcileNativeSegment(
@@ -154,6 +248,7 @@ class MountedEditorHistory implements EditorHistoryHandle {
     if (known) return;
     const entry: Entry = { kind: "yjs", sequence: ++this.sequence, item: stackItem };
     stackItem.meta.set(HISTORY_META, entry);
+    if (this.rangeBeforeDispatch) stackItem.meta.set(RANGE_META, this.rangeBeforeDispatch);
     this.undo.push(entry);
     this.clearRedo();
   };

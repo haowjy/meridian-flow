@@ -30,9 +30,17 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
   Only a new mount restores, without taking focus; an explicit destination
   always beats mount-time memory, so every new jump path claims through
   `reading-position-navigation.ts`.
-- `pointer-boundary.ts` is the one answer for presses outside prose. It keeps
-  caret placement, opaque-object refusal, seam precedence, and keyboard parity
-  out of layout components; see the editor context for the geometry policy.
+- `landing/` is the one answer for where a press with no text under it, and
+  every drop except a block move, lands: one walk over the document's boxes,
+  one plan per drag event for the caret, hint and drop. (A block moved by its
+  handle draws and lands its own top-level seam.) It keeps caret placement, seam
+  precedence and keyboard parity out of layout components; layout code and
+  lanes never place a drop themselves. A drop makes a paragraph at a seam
+  where a press never does, except past a closing diagram, where a press makes
+  the one line that lets a writer type after it. A press on a text selection's
+  highlight is the exception to "a press with no text under it": `landing/selection-drag.ts`
+  lifts it (no browser text drag, so no pause and no third-click refusal). See the
+  editor context for the policy.
 - Peer marks are projections: never persisted, draft-projected, or locally
   authored. Awareness cursor colors are concrete RGB hex before publication;
   only `local-presence.ts` may call `setLocalState*`.
@@ -48,10 +56,10 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
 - Draft sessions persist locally under their room name. Review projection reads
   the mounted document and its server-owned review base; it never replays a
   retired snapshot or transfers selection to a replacement draft.
-- Editor-owned keys remain consumed on refusals, and table drops have one
-  landing authority. The Tab ladder, cell Enter behavior, dropcursor policy,
-  reference-drop word snapping, diagram faces, and `@` delimiter rule are in
-  the editor context.
+- Editor-owned keys remain consumed on refusals, and drops have one landing
+  authority (`landing/`). The Tab ladder, cell Enter behavior, dropcursor
+  policy, drop snapping and refusals, diagram faces, and `@` delimiter rule
+  are in the editor context.
 - Remote writes can move or replace anything while a menu, picker, drag, or
   review operation is open. Hold identity with `EditorAnchor`/`NodeHold`, then
   resolve and validate at use time. Never trust a raw position or DOM element.

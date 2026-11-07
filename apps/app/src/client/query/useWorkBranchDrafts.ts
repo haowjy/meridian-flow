@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import { listWorkBranchDrafts } from "@/client/api/branches-api";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { useContextCatalogViews } from "./useContextCatalog";
@@ -39,7 +40,7 @@ export function useWorkBranchDrafts(
   const result = unwrapListQuery(
     useQuery({
       ...workBranchDraftsQueryOptions(projectId ?? "", workId ?? ""),
-      enabled,
+      enabled: projectReadEnabled(enabled),
     }),
   );
 

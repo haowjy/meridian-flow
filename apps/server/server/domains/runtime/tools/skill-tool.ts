@@ -102,7 +102,7 @@ function invalidArguments(issues: InvalidArgumentIssue[]) {
 
 /**
  * `read` of a `skills://` file: the whole file, one `#heading` section, or an
- * outline of its headings (D60), under the shared header. Sections and slugs
+ * outline of its headings, under the shared header. Sections and slugs
  * follow documents; skill files have no block hashes, so `in` and `around`
  * are refused.
  */
