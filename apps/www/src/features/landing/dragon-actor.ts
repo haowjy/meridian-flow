@@ -13,8 +13,19 @@ import {
 import type { Layout } from "./film-layout";
 import { createFire } from "./fire";
 import { type Party, SHORE_LINE } from "./forest";
-import { GULP_RISE, gulpPhase } from "./sky";
-import { type BeatProgress, clamp, ease, FIGHT, lerp, PERCH, progress, smooth } from "./timeline";
+import { GULP_RISE, gulpPhase, rgb } from "./sky";
+import {
+  along,
+  type BeatProgress,
+  clamp,
+  ease,
+  envelope,
+  FIGHT,
+  lerp,
+  PERCH,
+  progress,
+  smooth,
+} from "./timeline";
 
 type Point = readonly [number, number, number];
 /**
@@ -70,12 +81,6 @@ const ENTERS_PRODUCT = 0.93;
 /** How far through its beat the dragon reaches the knowledge base. */
 export const LORE_ARRIVES = 0.05;
 
-const span = (spans: Layout["spans"], name: keyof Layout["spans"], share: number) =>
-  spans[name][0] + (spans[name][1] - spans[name][0]) * share;
-
-const fightWindow = (value: number, [from, to]: readonly [number, number]) =>
-  smooth(value, from, from + 0.03) * (1 - smooth(value, to - 0.04, to));
-
 /** The film's dragon: a speck in the background that grows, burns the page away, then flies on. */
 export function createDragonActor(root: HTMLElement) {
   const flyer = root.querySelector("#flyer") as HTMLElement;
@@ -94,7 +99,6 @@ export function createDragonActor(root: HTMLElement) {
   const gulp = updraft.firstElementChild as HTMLElement;
   root.style.setProperty("--dragon-sheet", `url(${dragonSheet().toDataURL()})`);
   root.style.setProperty("--dragon-ground", `url(${dragonGroundSheet().toDataURL()})`);
-  const rgb = ([r, g, b]: readonly number[]) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
   root.style.setProperty("--cold-fire", rgb(MARKETING_SKY.fireBody));
   root.style.setProperty("--cold-fire-core", rgb(MARKETING_SKY.fireCore));
 
@@ -137,40 +141,40 @@ export function createDragonActor(root: HTMLElement) {
     });
     marks = [
       mark(0, 0.37, 0.13, 0.01, -1),
-      mark(span(spans, "hold", 1), 0.37, 0.13, 0.01, -1),
+      mark(along(spans, "hold", 1), 0.37, 0.13, 0.01, -1),
       // Out left along the aurora while the product fades, then back right across the open sky,
       // in view the whole way.
-      mark(span(spans, "push", 0.45), 0.16, 0.17, 0.016, -1, true),
-      mark(span(spans, "push", 1), 0.36, 0.27, 0.024, 1, true),
-      mark(span(spans, "sky", 0.5), 0.62, 0.3, 0.04, 1, true),
-      mark(span(spans, "sky", 1), 0.75, 0.26, 0.05, -1),
-      mark(span(spans, "world", 0.5), 0.5, 0.2, 0.055, -1),
-      mark(span(spans, "world", 1), 0.25, 0.24, 0.065),
-      mark(span(spans, "write", 0.5), 0.55, 0.18, 0.075),
-      mark(span(spans, "write", 1), 0.8, 0.24, 0.085, -1),
-      mark(span(spans, "out", 1), 0.4, 0.2, 0.1, -1),
-      mark(span(spans, "back", 1), 0.7, 0.26, 0.13),
-      mark(span(spans, "turn", 0.3), 0.9, 0.34, 0.2, -1),
-      mark(span(spans, "turn", LANDED), 0.84, onShore(standing), standing, -1),
+      mark(along(spans, "push", 0.45), 0.16, 0.17, 0.016, -1, true),
+      mark(along(spans, "push", 1), 0.36, 0.27, 0.024, 1, true),
+      mark(along(spans, "sky", 0.5), 0.62, 0.3, 0.04, 1, true),
+      mark(along(spans, "sky", 1), 0.75, 0.26, 0.05, -1),
+      mark(along(spans, "world", 0.5), 0.5, 0.2, 0.055, -1),
+      mark(along(spans, "world", 1), 0.25, 0.24, 0.065),
+      mark(along(spans, "write", 0.5), 0.55, 0.18, 0.075),
+      mark(along(spans, "write", 1), 0.8, 0.24, 0.085, -1),
+      mark(along(spans, "out", 1), 0.4, 0.2, 0.1, -1),
+      mark(along(spans, "back", 1), 0.7, 0.26, 0.13),
+      mark(along(spans, "turn", 0.3), 0.9, 0.34, 0.2, -1),
+      mark(along(spans, "turn", LANDED), 0.84, onShore(standing), standing, -1),
       // It presses in as they give ground, rears back when the spark lands, then comes down
       // again for the breath that kills them.
-      mark(span(spans, "fight", FIGHT.spark.eye[1]), fightX(0.8), onShore(standing), standing, -1),
+      mark(along(spans, "fight", FIGHT.spark.eye[1]), fightX(0.8), onShore(standing), standing, -1),
       mark(
-        span(spans, "fight", FIGHT.spark.eye[1] + 0.05),
+        along(spans, "fight", FIGHT.spark.eye[1] + 0.05),
         fightX(0.86),
         onShore(standing) - 0.1,
         standing * 1.08,
         -1,
       ),
-      mark(span(spans, "fight", FIGHT.breath[0]), fightX(0.76), onShore(standing), standing, -1),
-      mark(span(spans, "twist", 0.22), fightX(0.76), onShore(standing), standing, -1),
+      mark(along(spans, "fight", FIGHT.breath[0]), fightX(0.76), onShore(standing), standing, -1),
+      mark(along(spans, "twist", 0.22), fightX(0.76), onShore(standing), standing, -1),
       // Up behind the box, one loop small in the far sky, and out at the left to turn.
-      mark(span(spans, "twist", 0.31), 0.72, 0.4, 0.2, -1, true),
-      mark(span(spans, "twist", 0.39), 0.5, 0.17, 0.1, -1, true),
-      mark(span(spans, "twist", 0.46), 0.26, 0.2, 0.11, -1, true),
-      mark(span(spans, "twist", PASS.leaves), -0.18, 0.42, 0.3, -1, true),
-      mark(span(spans, "twist", PASS.enters), -0.35, 0.58, 0.66),
-      mark(span(spans, "twist", PASS.exits), 1.4, 0.46, 0.8),
+      mark(along(spans, "twist", 0.31), 0.72, 0.4, 0.2, -1, true),
+      mark(along(spans, "twist", 0.39), 0.5, 0.17, 0.1, -1, true),
+      mark(along(spans, "twist", 0.46), 0.26, 0.2, 0.11, -1, true),
+      mark(along(spans, "twist", PASS.leaves), -0.18, 0.42, 0.3, -1, true),
+      mark(along(spans, "twist", PASS.enters), -0.35, 0.58, 0.66),
+      mark(along(spans, "twist", PASS.exits), 1.4, 0.46, 0.8),
     ];
     way = wayBack(next);
   };
@@ -325,8 +329,8 @@ export function createDragonActor(root: HTMLElement) {
   const pose = (at: number) => {
     const placed = place(at);
     const { spans } = layout;
-    if (at < span(spans, "twist", PASS.exits)) return { ...placed, onTop: false, settled: 0 };
-    const t = progress(at, span(spans, "dawn", RETURN_STARTS), span(spans, "lore", LORE_ARRIVES));
+    if (at < along(spans, "twist", PASS.exits)) return { ...placed, onTop: false, settled: 0 };
+    const t = progress(at, along(spans, "dawn", RETURN_STARTS), along(spans, "lore", LORE_ARRIVES));
     return {
       ...placed,
       ...returning(t),
@@ -342,22 +346,22 @@ export function createDragonActor(root: HTMLElement) {
     const dy = ahead.y - now.y;
     const moving = Math.hypot(dx, dy) > 0.6;
     const { spans } = layout;
-    const circled = at >= span(spans, "twist", PASS.exits);
-    const passing = at >= span(spans, "twist", PASS.enters) && !circled;
-    const landing = at >= span(spans, "turn", 0.45);
+    const circled = at >= along(spans, "twist", PASS.exits);
+    const passing = at >= along(spans, "twist", PASS.enters) && !circled;
+    const landing = at >= along(spans, "turn", 0.45);
     flyer.style.zIndex = passing ? "11" : now.onTop ? "6" : circled || landing ? "3" : "1";
     // It faces where it flies, except in the face-off, where it keeps its eyes on the party even
     // as it rears back.
-    const facingThem = landing && at < span(spans, "twist", 0.22);
+    const facingThem = landing && at < along(spans, "twist", 0.22);
     const wanted = !facingThem && moving && Math.abs(dx) > 0.3 ? Math.sign(dx) : now.facing;
     facing += (wanted - facing) * TURN_RATE;
     const tilt = moving ? clamp(Math.atan2(dy, Math.abs(dx) + 1), -MAX_LEAN, MAX_LEAN) : 0;
     // On the ground it stands still with its wings folded; perched, its head rises to the sky.
     const grounded =
-      at >= span(spans, "turn", LANDED) &&
-      at < span(spans, "twist", 0.22) &&
-      (at < span(spans, "fight", FIGHT.spark.eye[1]) ||
-        at >= span(spans, "fight", FIGHT.breath[0]));
+      at >= along(spans, "turn", LANDED) &&
+      at < along(spans, "twist", 0.22) &&
+      (at < along(spans, "fight", FIGHT.spark.eye[1]) ||
+        at >= along(spans, "fight", FIGHT.breath[0]));
     flyer.classList.toggle("grounded", grounded);
     const wantedLean = grounded
       ? 0
@@ -371,7 +375,7 @@ export function createDragonActor(root: HTMLElement) {
     const shown = Math.abs(facing) < 0.12 ? 0.12 * (facing < 0 ? -1 : 1) : facing;
     const stretch = grounded ? 1 : 1 + (wave - 0.5) * 0.06;
     flyer.style.transform = `translate3d(${now.x - BOX / 2}px,${now.y + bob - BOX / 2}px,0) rotate(${lean}rad) scale(${shown * scale},${scale * stretch})`;
-    const raised = Math.round(fightWindow(beats.turn, PERCH) * (GROUND_POSES - 1));
+    const raised = Math.round(envelope(beats.turn, PERCH, 0.03, 0.04) * (GROUND_POSES - 1));
     const poses = grounded ? GROUND_POSES : DRAGON_POSES;
     const cell = grounded ? raised : Math.round(wave * (DRAGON_POSES - 1));
     const frame = cell / (poses - 1);
@@ -476,11 +480,11 @@ export function createDragonActor(root: HTMLElement) {
   const fightBreath = (fight: number, party: Party) => {
     const reach = (target: readonly [number, number], share: number) =>
       [lerp(mouth[0], target[0], share), lerp(mouth[1], target[1], share)] as const;
-    const ward = fightWindow(fight, FIGHT.ward);
+    const ward = envelope(fight, FIGHT.ward, 0.03, 0.04);
     const front = party.rows[0];
     const back = party.rows[party.rows.length - 1];
     if (ward > 0) return { aim: reach(front, 1), breath: ward * FIGHT_BREATH };
-    const killing = fightWindow(fight, FIGHT.breath);
+    const killing = envelope(fight, FIGHT.breath, 0.03, 0.04);
     if (killing <= 0) return null;
     const along = progress(fight, ...FIGHT.breath);
     const target = [lerp(front[0], back[0], along), lerp(front[1], back[1], along)] as const;
@@ -522,7 +526,7 @@ export function createDragonActor(root: HTMLElement) {
       attacks(fight, party, placed);
 
       const angle = lean + DRAGON_HEAD_ANGLE;
-      rise(seconds, shown ? smooth(headUp, 0.6, 1) * fightWindow(beats.turn, PERCH) : 0);
+      rise(seconds, shown ? smooth(headUp, 0.6, 1) * envelope(beats.turn, PERCH, 0.03, 0.04) : 0);
       const fighting = party ? fightBreath(fight, party) : null;
       fire?.draw(
         fighting

@@ -4,6 +4,13 @@ export const ease = (t: number) => t * t * (3 - 2 * t);
 export const progress = (value: number, from: number, to: number) =>
   clamp((value - from) / (to - from));
 export const smooth = (value: number, from: number, to: number) => ease(progress(value, from, to));
+/** Up across `rise` from the window's start and back down across `fall` to its end: 0 outside. */
+export const envelope = (
+  value: number,
+  [from, to]: readonly [number, number],
+  rise: number,
+  fall: number,
+) => smooth(value, from, from + rise) * (1 - smooth(value, to - fall, to));
 
 /**
  * Beat name, then its scroll length in viewport heights and its autoplay seconds.
@@ -81,7 +88,8 @@ const BEAT_SECONDS = BEATS.reduce((total, beat) => total + beat[2], 0);
 
 export const AUTOPLAY_SECONDS = BEAT_SECONDS + AUTOPLAY_TAIL_SECONDS;
 
-const along = (spans: BeatSpans, name: Beat, share: number) =>
+/** The scroll position `share` of the way through a beat. */
+export const along = (spans: BeatSpans, name: Beat, share: number) =>
   spans[name][0] + (spans[name][1] - spans[name][0]) * share;
 
 export function spanBeats(viewportHeight: number) {

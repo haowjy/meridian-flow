@@ -152,7 +152,6 @@ export function createTransport(options: {
   else if (place !== null) scrollTo(0, place * scrollEnd());
 
   return {
-    isPlaying: () => state === "playing",
     /** One frame of whatever is moving the page. */
     advance(elapsedMs: number) {
       if (state === "playing") {
