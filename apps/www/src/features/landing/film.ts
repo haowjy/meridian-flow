@@ -1,9 +1,11 @@
 import type { CardStore } from "./card-store";
 import { createDragonActor } from "./dragon-actor";
+import { createFight } from "./fight";
 import { type FilmParts, type Layout, measureLayout } from "./film-layout";
+import { createFire } from "./fire";
 import { createForest } from "./forest";
 import type { ProductSlot } from "./ProductPlaceholder";
-import { createSky, type SkyFrame } from "./sky";
+import { createSky, STILL_SKY, skyFrame } from "./sky";
 import {
   ASK,
   type BeatProgress,
@@ -11,8 +13,6 @@ import {
   CAMP,
   clamp,
   ease,
-  envelope,
-  FIGHT,
   lerp,
   progress,
   SECTIONS,
@@ -107,21 +107,9 @@ function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
     );
   }
   const sky = createSky(root.querySelector("#sky") as HTMLCanvasElement, signal);
-  const frame: SkyFrame = {
-    pitch: HORIZON_PITCH,
-    yaw: HORIZON_YAW,
-    focal: 0.9,
-    flow: 3,
-    dawn: 0,
-    veil: 0.12,
-    aurora: 1,
-    pulse: 0,
-    surge: 0,
-    plume: 0.5,
-  };
   const render = () => {
     sky.resize();
-    sky.draw(frame, 0);
+    sky.draw(STILL_SKY, 0);
   };
   render();
   addEventListener("resize", render, { signal });
@@ -131,64 +119,6 @@ function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
 const BLOCK_ASPECT = 0.62;
 /** Just under the phone header, where the fire reveals the product. */
 const PHONE_REVEAL_TOP = 62;
-const OVERHEAD_PITCH = 0.8;
-const HORIZON_PITCH = 0.1;
-const HORIZON_YAW = 0.34;
-
-/** The sky is a function of the scroll position, so it holds still when the page does. */
-function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
-  const tilt = smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
-  // The fire uncovers a finished dawn, so the sky is already there behind it.
-  const revealed = beats.twist >= TWIST.reveals;
-  // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
-  const hurt = envelope(beats.fight, [FIGHT.spark.eye[1], FIGHT.spark.eye[1] + 0.09], 0.02, 0.06);
-  const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
-  // From the perch on, the Cold Fire it sent up stays in the sky and pulses until the box burns.
-  const stirred =
-    smooth(beats.turn, TURN.perch[0], TURN.perch[0] + 0.06) *
-    (1 - smooth(beats.twist, ...TWIST.coldFireFades));
-  // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
-  const breathing =
-    stirred * 0.5 +
-    smooth(beats.fight, 0, 0.08) * 0.2 +
-    envelope(beats.fight, FIGHT.ward, 0.04, 0.06) * 0.45 +
-    envelope(beats.fight, FIGHT.breath, 0.04, 0.06) * 0.7;
-  const toTwist = smooth(beats.twist, 0, 0.5);
-  let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
-  // The veil keeps the chapter readable; once its text fades the perch and the fight are the
-  // picture, so it lifts.
-  const lifted = smooth(beats.turn, TURN.perch[0] - 0.08, TURN.perch[0] + 0.04);
-  veil = lerp(veil, 0.06, lifted);
-  veil = lerp(veil, 0.2, toTwist);
-  veil = lerp(veil, 0, dawn);
-  return {
-    pitch: lerp(OVERHEAD_PITCH, HORIZON_PITCH, tilt),
-    yaw: HORIZON_YAW * tilt * tilt,
-    focal: lerp(0.62, 0.9, tilt),
-    flow:
-      (raw / layout.height) * 0.4 +
-      ease(beats.push) * 2 +
-      ease(beats.sky) * 1.5 +
-      smooth(beats.twist, 0, 0.8) * 5 +
-      ease(beats.fight) * 4 +
-      dawn * 1.5,
-    dawn,
-    veil,
-    aurora:
-      lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
-      smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
-      breathing * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
-    // Low in the north behind the mountains, the same every night until the box burns.
-    plume: 0.9 * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
-    surge: stirred,
-    pulse: Math.max(
-      1 - smooth(beats.push, 0, 0.35),
-      smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),
-      revealed ? 0 : smooth(beats.twist, 0.3, 0.55),
-    ),
-  };
-}
-
 /**
  * The scroll film. The stage is pinned while the page scrolls through it, and
  * `paint` maps the scroll position to every layer. It writes the DOM directly
@@ -245,6 +175,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
   const actor = createDragonActor(root);
   const forest = createForest(root);
+  const fight = createFight(root);
+  const fire = createFire(one<HTMLCanvasElement>("#flame"));
   const skyCanvas = one<HTMLCanvasElement>("#sky");
   const sky = createSky(skyCanvas, signal);
   const typers = [
@@ -259,15 +191,19 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   let layout: Layout = measureLayout(parts);
   let current = 0;
   let needsPaint = true;
-  actor.measure(layout);
-  forest.measure(layout);
+  const measureLayers = () => {
+    actor.measure(layout);
+    forest.measure(layout);
+    fight.measure(layout);
+    fire?.resize(layout.width, layout.height);
+  };
+  measureLayers();
   const measure = () => {
     const scrollEnd = layout.documentHeight - layout.height;
     const share = scrollY / scrollEnd;
     layout = measureLayout(parts);
     nightKept = false;
-    actor.measure(layout);
-    forest.measure(layout);
+    measureLayers();
     sky.resize();
     needsPaint = true;
     // The film's length follows the window's height: keep the visitor's place in the story.
@@ -477,18 +413,23 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     if (!nightKept && beats.twist > 0.2) {
       const [start, end] = layout.spans.twist;
       const lastNight = lerp(start, end, TWIST.reveals) - 1;
-      sky.draw(skyFrame(beatProgress(lastNight, layout.spans), lastNight, layout), now / 1000);
-      actor.keepNight(forest.withTrees(skyCanvas));
+      sky.draw(
+        skyFrame(beatProgress(lastNight, layout.spans), lastNight / layout.height),
+        now / 1000,
+      );
+      fire?.keepNight(forest.withTrees(skyCanvas));
+      fire?.keepWords(actor.wordsStill());
       nightKept = true;
       needsPaint = true;
     }
-    actor.update(now / 1000, current, beats, party);
+    const dragon = actor.update(now / 1000, current, beats);
+    fire?.draw(fight.update(now / 1000, current, beats, party, dragon) ?? dragon.burn);
     if (beats.ask >= ASK.assigns) store.assignIfUnanswered();
     else store.withdrawPass();
     if (current !== previous || needsPaint) {
       needsPaint = false;
       paint(current, beats);
-      sky.draw(skyFrame(beats, current, layout), now / 1000);
+      sky.draw(skyFrame(beats, current / layout.height), now / 1000);
       slowTime += step;
       slowFrames += 1;
       if (slowFrames === 40) {

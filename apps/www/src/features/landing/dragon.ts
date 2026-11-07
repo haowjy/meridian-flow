@@ -165,7 +165,7 @@ function kit(pen: CanvasRenderingContext2D) {
 }
 
 function drawPose(pen: CanvasRenderingContext2D, stroke: number) {
-  const { limb, shape, spines, head, tailTip } = kit(pen);
+  const { limb, spines, head, tailTip } = kit(pen);
   const wing = (
     shoulder: Point,
     raisedElbow: Point,

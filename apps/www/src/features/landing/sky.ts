@@ -1,4 +1,5 @@
 import { MARKETING_SKY as C, type LinearRgb } from "@meridian/design-tokens/marketing-sky";
+import { type BeatProgress, ease, envelope, FIGHT, lerp, smooth, TURN, TWIST } from "./timeline";
 
 /** A sky colour as a GLSL literal, and as a CSS colour for the layers drawn over the sky. */
 export const vec3 = ([r, g, b]: LinearRgb) =>
@@ -167,6 +168,81 @@ export const gulpPhase = (seconds: number) => (seconds / GULP_SECONDS) % 1;
 const gulpSwell = (seconds: number) => {
   const since = (gulpPhase(seconds) - GULP_RISE + 1) % 1;
   return Math.exp(-since * 3);
+};
+
+const OVERHEAD_PITCH = 0.8;
+const HORIZON_PITCH = 0.1;
+const HORIZON_YAW = 0.34;
+
+/**
+ * The sky at a scroll position, `scrolled` in stage heights. It is a function of the scroll
+ * position, so it holds still when the page does.
+ */
+export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
+  const tilt = smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
+  // The fire uncovers a finished dawn, so the sky is already there behind it.
+  const revealed = beats.twist >= TWIST.reveals;
+  // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
+  const hurt = envelope(beats.fight, [FIGHT.spark.eye[1], FIGHT.spark.eye[1] + 0.09], 0.02, 0.06);
+  const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
+  // From the perch on, the Cold Fire it sent up stays in the sky and pulses until the box burns.
+  const stirred =
+    smooth(beats.turn, TURN.perch[0], TURN.perch[0] + 0.06) *
+    (1 - smooth(beats.twist, ...TWIST.coldFireFades));
+  // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
+  const breathing =
+    stirred * 0.5 +
+    smooth(beats.fight, 0, 0.08) * 0.2 +
+    envelope(beats.fight, FIGHT.ward, 0.04, 0.06) * 0.45 +
+    envelope(beats.fight, FIGHT.breath, 0.04, 0.06) * 0.7;
+  const toTwist = smooth(beats.twist, 0, 0.5);
+  let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
+  // The veil keeps the chapter readable; once its text fades the perch and the fight are the
+  // picture, so it lifts.
+  const lifted = smooth(beats.turn, TURN.perch[0] - 0.08, TURN.perch[0] + 0.04);
+  veil = lerp(veil, 0.06, lifted);
+  veil = lerp(veil, 0.2, toTwist);
+  veil = lerp(veil, 0, dawn);
+  return {
+    pitch: lerp(OVERHEAD_PITCH, HORIZON_PITCH, tilt),
+    yaw: HORIZON_YAW * tilt * tilt,
+    focal: lerp(0.62, 0.9, tilt),
+    flow:
+      scrolled * 0.4 +
+      ease(beats.push) * 2 +
+      ease(beats.sky) * 1.5 +
+      smooth(beats.twist, 0, 0.8) * 5 +
+      ease(beats.fight) * 4 +
+      dawn * 1.5,
+    dawn,
+    veil,
+    aurora:
+      lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
+      smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
+      breathing * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
+    // Low in the north behind the mountains, the same every night until the box burns.
+    plume: 0.9 * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
+    surge: stirred,
+    pulse: Math.max(
+      1 - smooth(beats.push, 0, 0.35),
+      smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),
+      revealed ? 0 : smooth(beats.twist, 0.3, 0.55),
+    ),
+  };
+}
+
+/** Reduced motion: one still night over the stacked page. */
+export const STILL_SKY: SkyFrame = {
+  pitch: HORIZON_PITCH,
+  yaw: HORIZON_YAW,
+  focal: 0.9,
+  flow: 3,
+  dawn: 0,
+  veil: 0.12,
+  aurora: 1,
+  pulse: 0,
+  surge: 0,
+  plume: 0.5,
 };
 
 const CAMERA_UNIFORMS = { PITCH: "pitch", YAW: "yaw", FOCAL: "focal", FLOW: "flow" } as const;

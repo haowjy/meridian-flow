@@ -29,7 +29,7 @@ const CLIFF_X = 0.11;
 const JOINS = [0, 0.22, 0.4, 0.58];
 
 /** Where the party stands in the fight, for the dragon's aim: stage pixels. */
-export type Party = { rows: readonly (readonly [number, number])[] };
+export type Party = { rows: readonly (readonly [number, number])[]; size: number };
 
 const noise = (seed: number) => {
   const value = Math.sin(seed * 12.9898) * 43758.5453;
@@ -247,7 +247,6 @@ export function createForest(root: HTMLElement) {
   const figures = [...walkers.querySelectorAll("i")];
   const camp = walkers.querySelector(".camp") as HTMLElement;
   const sheets = root.querySelector("#sheets") as HTMLElement;
-  const ward = walkers.querySelector(".ward") as HTMLElement;
   root.style.setProperty("--walk-sheet", `url(${partySheet().toDataURL()})`);
   root.style.setProperty("--walk-lantern", rgb(MARKETING_SKY.sun));
   root.style.setProperty("--walk-ward", rgb(MARKETING_SKY.fireCore));
@@ -433,13 +432,6 @@ export function createForest(root: HTMLElement) {
         place(figure, fx, feetY, size, column, row, angle);
       });
 
-      const front = heads[0];
-      const glare = envelope(fight, FIGHT.ward, 0.04, 0.05);
-      // Flares to full the instant the breath lands, then shudders under it.
-      const flare = Math.min(1, glare * 2.5);
-      ward.style.opacity = String(flare * (0.85 + Math.sin(at / 5) * 0.15));
-      ward.style.transform = `translate3d(${front + size * 0.12}px,${H * GROUND.feet - size * 0.55}px,0) scale(${(size / 100) * (0.9 + flare * 0.5)}) rotate(${at / 60}rad) translate(-50%,-50%)`;
-
       const wolfIn = smooth(beats.out, 0, 0.35);
       const wolfGone = smooth(beats.out, 0.7, 0.95);
       const wolf = figures[WOLF_ROW];
@@ -462,6 +454,7 @@ export function createForest(root: HTMLElement) {
       sheets.style.transform = `translate3d(${campX}px,${H * GROUND.feet - size * 1.15 + (1 - sheetsUp) * H * 0.03}px,0) translate(-50%,-100%)`;
       return {
         rows: heads.map((head) => [head + size * 0.1, H * GROUND.feet - size * 0.6] as const),
+        size,
       };
     },
   };

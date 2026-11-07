@@ -11,8 +11,7 @@ import {
   groundMouth,
 } from "./dragon";
 import type { Layout } from "./film-layout";
-import { createFire } from "./fire";
-import type { Party } from "./forest";
+import type { FireFrame } from "./fire";
 import { GROUND, onTheShore } from "./ground";
 import { GULP_RISE, gulpPhase, rgb } from "./sky";
 import {
@@ -49,14 +48,6 @@ const PHONE_STANDING = 1;
 /** How far the burn runs ahead of the mouth, and how far its breath reaches, in stage heights. */
 const FRONT_AHEAD = 0.42;
 const BREATH_REACH = 0.5;
-/** A wall past the right edge of the stage: the fire draws only the breath. */
-const NO_WALL = 100;
-/** The fight's breaths: how hard, and what share of the way to the party they reach. */
-const FIGHT_BREATH = 0.85;
-/** How long a hit's flash lasts, in shares of the fight beat. */
-const HIT_LASTS = 0.035;
-/** How high the spark arcs, in stage heights. */
-const SPARK_ARC = 0.14;
 /** Where the page's picture sits on a phone, in shares of the stage. */
 const PHONE_PICTURE_Y = 0.312;
 /** Share of the return where the phone dragon settles into the picture's pose (`.s-fig i`). */
@@ -77,20 +68,21 @@ const LEAST_BOB = 0.018;
 /** The share of the way back after which it comes in front of the product. */
 const ENTERS_PRODUCT = 0.93;
 
+/** Where the dragon is this frame, for the fight to aim at and the fire to start from. */
+export type Dragon = {
+  mouth: readonly [number, number];
+  body: { x: number; y: number; size: number };
+  burn: FireFrame | null;
+};
+
 /** The film's dragon: a speck in the background that grows, burns the page away, then flies on. */
 export function createDragonActor(root: HTMLElement) {
   const flyer = root.querySelector("#flyer") as HTMLElement;
   const wings = flyer.firstElementChild as HTMLElement;
-  const fire = createFire(root.querySelector("#flame") as HTMLCanvasElement);
   const caption = root.querySelector("#knowledge-base") as HTMLElement;
   const text = document.createRange();
   const words = root.querySelector("#the-twist") as HTMLElement;
   const row = root.querySelector("#s-beast-row") as HTMLElement;
-  const shot = (name: string) => root.querySelector(`#walkers .${name}`) as HTMLElement;
-  const spark = shot("spark");
-  const rune = shot("rune");
-  const song = shot("song");
-  const hit = shot("hit");
   const updraft = root.querySelector("#updraft") as HTMLElement;
   const gulp = updraft.firstElementChild as HTMLElement;
   root.style.setProperty("--dragon-sheet", `url(${dragonSheet().toDataURL()})`);
@@ -113,7 +105,6 @@ export function createDragonActor(root: HTMLElement) {
     layout = next;
     const { spans, width: W, height: H } = next;
     unit = Math.min(H, W * 0.62);
-    fire?.resize(W, H);
     // Where it stands on the shore; phones have no room for the party to give ground, so it holds
     // its place there.
     const fightX = (share: number) => (next.isPhone ? 0.84 : onTheShore(share));
@@ -408,97 +399,15 @@ export function createDragonActor(root: HTMLElement) {
     gulp.style.transform = `translate3d(0,${mouth[1] * (1 - up)}px,0) translate(0,-50%) scale(${0.7 + up * 0.6})`;
   };
 
-  /** Moves a shot from `from` to `to` across its window, arcing up by `arc` stage heights. */
-  const fling = (
-    element: HTMLElement,
-    window: readonly [number, number],
-    fight: number,
-    from: readonly [number, number],
-    to: readonly [number, number],
-    arc: number,
-    pointed = false,
-  ) => {
-    const t = progress(fight, ...window);
-    const flying = t > 0 && t < 1;
-    element.style.opacity = flying ? "1" : "0";
-    if (!flying) return;
-    const x = lerp(from[0], to[0], t);
-    const y = lerp(from[1], to[1], t) - Math.sin(t * Math.PI) * layout.height * arc;
-    const turn = pointed ? Math.atan2(to[1] - from[1], to[0] - from[0]) : 0;
-    const grow = pointed ? 1 : 0.6 + t;
-    element.style.transform = `translate3d(${x}px,${y}px,0) rotate(${turn}rad) scale(${grow}) translate(-50%,-50%)`;
-  };
-
-  /** Each of the four hits it once, and every hit flashes where it lands. */
-  const attacks = (
-    fight: number,
-    party: Party | null,
-    body: { x: number; y: number; size: number },
-  ) => {
-    if (!party) {
-      for (const element of [rune, song, spark, hit]) element.style.opacity = "0";
-      return;
-    }
-    const chest = [
-      lerp(mouth[0], body.x, 0.45),
-      lerp(mouth[1], body.y, 0.45) + body.size * 0.05,
-    ] as const;
-    const foot = [body.x - body.size * 0.12, body.y + body.size * 0.22] as const;
-    const flank = [body.x + body.size * 0.05, body.y + body.size * 0.12] as const;
-    const from = (row: number) => party.rows[row];
-    fling(rune, FIGHT.rune.at, fight, from(FIGHT.rune.row), chest, 0.03, true);
-    fling(song, FIGHT.song.at, fight, from(FIGHT.song.row), chest, 0.02);
-    // Tam's two sparks: the scales above its left foot, then its eye.
-    const toEye = fight >= FIGHT.spark.foot[1];
-    const [sparkAt, sparkTo] = toEye ? [FIGHT.spark.eye, mouth] : [FIGHT.spark.foot, foot];
-    fling(
-      spark,
-      sparkAt,
-      fight,
-      from(FIGHT.spark.row),
-      sparkTo,
-      toEye ? SPARK_ARC : SPARK_ARC * 0.4,
-    );
-    const landings = [
-      [FIGHT.rune.at[1], chest],
-      [FIGHT.song.at[1], chest],
-      [lerp(FIGHT.charge.at[0], FIGHT.charge.at[1], 0.5), flank],
-      [FIGHT.spark.foot[1], foot],
-      [FIGHT.spark.eye[1], mouth],
-    ] as const;
-    const landed = landings.find(([at]) => fight >= at && fight < at + HIT_LASTS);
-    hit.style.opacity = landed ? String(1 - (fight - landed[0]) / HIT_LASTS) : "0";
-    if (landed) {
-      const [x, y] = landed[1];
-      const grow = 0.6 + ((fight - landed[0]) / HIT_LASTS) * 0.8;
-      hit.style.transform = `translate3d(${x}px,${y}px,0) scale(${grow}) translate(-50%,-50%)`;
-    }
-  };
-
-  /** The ward breath stops at the front of the party; the killing one sweeps it front to back. */
-  const fightBreath = (fight: number, party: Party) => {
-    const reach = (target: readonly [number, number], share: number) =>
-      [lerp(mouth[0], target[0], share), lerp(mouth[1], target[1], share)] as const;
-    const ward = envelope(fight, FIGHT.ward, 0.03, 0.04);
-    const front = party.rows[0];
-    const back = party.rows[party.rows.length - 1];
-    if (ward > 0) return { aim: reach(front, 1), breath: ward * FIGHT_BREATH };
-    const killing = envelope(fight, FIGHT.breath, 0.03, 0.04);
-    if (killing <= 0) return null;
-    const along = progress(fight, ...FIGHT.breath);
-    const target = [lerp(front[0], back[0], along), lerp(front[1], back[1], along)] as const;
-    return { aim: reach(target, 1.1), breath: killing * FIGHT_BREATH };
-  };
-
   return {
     measure,
-    keepNight: (sky: HTMLCanvasElement) => {
-      fire?.keepNight(sky);
-      fire?.keepWords(wordsStill());
-    },
-    /** Runs every frame: the scroll position picks the scene, the clock animates it. */
-    update(seconds: number, at: number, beats: BeatProgress, party: Party | null) {
-      const { twist, lore, fight } = beats;
+    wordsStill,
+    /**
+     * Runs every frame: the scroll position picks the scene, the clock animates it. Returns where
+     * its mouth and body are, and the burn's fire while it crosses the box.
+     */
+    update(seconds: number, at: number, beats: BeatProgress): Dragon {
+      const { twist, lore } = beats;
       const { height: H } = layout;
       const shown = lore < LORE.arrives;
       flyer.style.opacity = shown ? "1" : "0";
@@ -522,30 +431,24 @@ export function createDragonActor(root: HTMLElement) {
           ? `linear-gradient(90deg,transparent ${edge * 106 - 3}%,black ${edge * 106 + 3}%)`
           : "none";
 
-      attacks(fight, party, placed);
-
       const angle = lean + DRAGON_HEAD_ANGLE;
       rise(
         seconds,
         shown ? smooth(headUp, 0.6, 1) * envelope(beats.turn, TURN.perch, 0.03, 0.04) : 0,
       );
-      const fighting = party ? fightBreath(fight, party) : null;
-      fire?.draw(
-        fighting
-          ? { mouth, ...fighting, char: NO_WALL, time: at / H + seconds * 0.5 }
-          : passing
-            ? {
-                mouth,
-                aim: [
-                  mouth[0] + unit * BREATH_REACH * Math.cos(angle),
-                  mouth[1] + unit * BREATH_REACH * Math.sin(angle),
-                ],
-                breath,
-                char,
-                time: at / H + seconds * 0.5,
-              }
-            : null,
-      );
+      const burn: FireFrame | null = passing
+        ? {
+            mouth,
+            aim: [
+              mouth[0] + unit * BREATH_REACH * Math.cos(angle),
+              mouth[1] + unit * BREATH_REACH * Math.sin(angle),
+            ],
+            breath,
+            char,
+            time: at / H + seconds * 0.5,
+          }
+        : null;
+      return { mouth, body: placed, burn };
     },
   };
 }
