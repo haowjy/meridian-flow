@@ -201,6 +201,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const caption = one("#knowledge-base");
   const captionShade = one("#capshade");
   const ask = one("#your-decisions");
+  const skill = one("#skill");
   const question = one(".s-take");
   const card = one("#card");
   const world = one("#the-world");
@@ -397,6 +398,9 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       line.dot.setAttribute("cy", String(point.y));
       line.dot.style.opacity = out > 0 && (returned < 1 || out < 1) ? "1" : "0";
     });
+
+    // The System window doesn't fade in: it opens all at once, the way a status window does.
+    skill.classList.toggle("on", beats.skill > 0.04 && leave < 0.5);
 
     const twistShown = smooth(twistP, 0.07, 0.27) * (1 - smooth(twistP, 0.95, 1));
     show(twist, twistShown);

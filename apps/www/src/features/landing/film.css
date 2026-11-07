@@ -705,3 +705,57 @@
   transform-origin: 0 0;
   background: radial-gradient(var(--walk-lantern), transparent 62%);
 }
+
+.cine .skill {
+  position: absolute;
+  inset: var(--bar) 0 0;
+  z-index: 9;
+  padding: 20px;
+  visibility: hidden;
+}
+
+.cine .skill.on {
+  visibility: visible;
+  background: color-mix(in oklab, var(--mkt-scrim) 82%, transparent);
+  animation: sys-dim 0.2s ease-out both;
+}
+
+.cine .skill .sys-skill {
+  padding: 26px 40px 28px;
+  font-size: 17px;
+}
+
+@keyframes sys-dim {
+  from {
+    background: transparent;
+  }
+}
+
+.cine .skill.on .sys-skill {
+  animation: sys-open 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+/* A status window opens from a bright line, then settles. */
+@keyframes sys-open {
+  0% {
+    opacity: 0;
+    transform: scale(0.04, 0.5);
+    filter: brightness(2.6);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.03, 0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cine .skill.on,
+  .cine .skill.on .sys-skill {
+    animation: none;
+  }
+}
