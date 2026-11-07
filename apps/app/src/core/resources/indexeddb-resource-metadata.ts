@@ -360,7 +360,9 @@ export class IndexedDbResourceMetadata
     if (this.closing) return Promise.reject(new Error("Resource metadata is closing"));
     const promise = Promise.resolve().then(operation);
     this.inFlight.add(promise);
-    void promise.finally(() => this.inFlight.delete(promise)).catch(() => undefined);
+    // Untrack on either outcome; the caller gets the rejection through `promise`.
+    const untrack = () => this.inFlight.delete(promise);
+    promise.then(untrack, untrack);
     return promise;
   }
 

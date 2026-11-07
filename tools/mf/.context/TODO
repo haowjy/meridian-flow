@@ -2,7 +2,7 @@
 
 - Card display text and failure copy are not in the
   view model yet (`packages/thread-client/src/view/`), so `./mf thread view`
-  carries raw card props only. Until they move into the view model, `docs/qa/chat-session.md` says not to compare
+  carries raw card props only. Until they move into the view model, `apps/app/src/features/chat/.context/qa/chat-session.md` says not to compare
   them with the screen. Removal trigger: card display moves into the view model.
 
 - Plain `tail` (no `--until-idle`) and `events` don't draw queued rows. The package's

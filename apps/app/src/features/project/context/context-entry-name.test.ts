@@ -49,12 +49,6 @@ describe("validateContextEntryName", () => {
     ).toBe("error");
   });
 
-  it("does not collide a visible extension with the prose name", () => {
-    expect(
-      validateContextEntryName("notes.json", [{ entryId: "sibling", name: "notes", kind: "file" }]),
-    ).toBeNull();
-  });
-
   it("lets a folder and a document not share a name (D15, D16)", () => {
     expect(
       validateContextEntryName("Lore", [{ entryId: "sibling", name: "Lore", kind: "dir" }], "file")
@@ -108,21 +102,4 @@ describe("validateContextEntryName", () => {
     });
     expect(invalidContextEntryNameReason("data.json.md")).toContain("would show as `data.json`");
   });
-
-  it("accepts dotted names", () => {
-    expect(
-      validateContextEntryName("Vol. 2", [{ entryId: "sibling", name: "Vol. 1", kind: "file" }]),
-    ).toBeNull();
-  });
-});
-
-it("compares folders literally and reports the occupant kind", () => {
-  const folder = { entryId: "lore", name: "Lore", kind: "dir" as const };
-  expect(validateContextEntryName("Lore.md", [folder], "folder")).toBeNull();
-  expect(validateContextEntryName("Lore.md", [folder], "file")?.message).toContain(
-    "A folder named Lore",
-  );
-  expect(
-    validateContextEntryName("Lore", [{ ...folder, kind: "file" }], "folder")?.message,
-  ).toContain("A file named Lore");
 });

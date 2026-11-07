@@ -17,7 +17,7 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
-import { projectActiveHistoryWithBakes } from "./compaction/index.js";
+import { outputReserveTokens, projectActiveHistoryWithBakes } from "./compaction/index.js";
 import {
   MAX_SCRATCH_CALLS,
   type NotesContinuation,
@@ -182,7 +182,9 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
   // Keep one output's room for tool results and the summary instruction. Oversized results
   // still take the existing overflow/rolling-summary path, never another optional call.
   const updateLimit =
-    usable === null ? null : usable - (assembled.resolvedModel?.maxOutputTokens ?? 0);
+    usable === null
+      ? null
+      : usable - (assembled.resolvedModel ? outputReserveTokens(assembled.resolvedModel) : 0);
   const continuing =
     current.kind === "notes" &&
     current.remaining > 0 &&

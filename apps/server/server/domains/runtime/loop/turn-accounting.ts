@@ -38,7 +38,7 @@ export interface TurnAccounting {
   recordIterationSpend(treeBudget: TreeBudget): void;
   /** Compute cost for a model response and debit credits. */
   computeAndDebit(
-    response: Pick<GenerateResult, "provider" | "model" | "usage" | "providerData">,
+    response: Pick<GenerateResult, "provider" | "model" | "usage" | "meteringStatus">,
     thread: Thread,
     threadId: ThreadId,
     turnId: TurnId,
@@ -83,7 +83,7 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
     },
 
     async computeAndDebit(
-      response: Pick<GenerateResult, "provider" | "model" | "usage" | "providerData">,
+      response: Pick<GenerateResult, "provider" | "model" | "usage" | "meteringStatus">,
       thread: Thread,
       threadId: ThreadId,
       turnId: TurnId,
@@ -94,7 +94,7 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
         provider: response.provider,
         model: response.model,
         usage: response.usage,
-        providerData: response.providerData,
+        meteringStatus: response.meteringStatus,
       });
 
       if (BigInt(computedCost.millicredits) > 0n) {

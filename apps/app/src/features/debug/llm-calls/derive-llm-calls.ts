@@ -5,7 +5,7 @@ import type {
   EventRecord,
   TraceStreamRef,
 } from "@meridian/contracts/observability";
-import type { ModelResponse } from "@meridian/contracts/threads";
+import type { ModelResponse, TurnStatus } from "@meridian/contracts/threads";
 import { cacheHitPercent } from "@meridian/thread-client";
 
 export type LlmCallOutcome = "in-flight" | "ok" | "cancelled" | "error";
@@ -22,6 +22,8 @@ export type LlmCallSummary = {
   provider?: string;
   model?: string;
   outcome: LlmCallOutcome;
+  /** Gateway error code from the close record, kept when a stop is shown as cancelled. */
+  errorCode?: string;
   firstOutputMs?: number;
   durationMs?: number;
   inputTokens?: number;
@@ -43,10 +45,40 @@ export type LlmCallCacheComparison = {
   mismatch: boolean;
 };
 
-/** Pair successful gateway calls with persisted responses and compare prediction to observation. */
+export type LlmCallTurn = { status: TurnStatus; responses: readonly ModelResponse[] };
+
+/**
+ * A stop before any output reaches the gateway as an `invalid_request` error, the same
+ * code a real bad request gets, and the gateway records carry nothing else to tell them
+ * apart. The turn does: a rejected request ends its turn as `error`, so an
+ * `invalid_request` on the last call of a `cancelled` turn is the writer's stop.
+ */
+export function settleStoppedCalls(
+  calls: readonly LlmCallSummary[],
+  turns: Readonly<Record<string, LlmCallTurn>>,
+): LlmCallSummary[] {
+  const lastStartByTurn = new Map<string, string>();
+  for (const call of calls) {
+    if (!call.turnId) continue;
+    const last = lastStartByTurn.get(call.turnId);
+    if (last === undefined || call.startedAt > last)
+      lastStartByTurn.set(call.turnId, call.startedAt);
+  }
+  return calls.map((call) =>
+    call.outcome === "error" &&
+    call.errorCode === "invalid_request" &&
+    call.turnId &&
+    turns[call.turnId]?.status === "cancelled" &&
+    lastStartByTurn.get(call.turnId) === call.startedAt
+      ? { ...call, outcome: "cancelled" }
+      : call,
+  );
+}
+
+/** Pair finished gateway calls with persisted responses and compare prediction to observation. */
 export function pairLlmCallResponses(
   calls: readonly LlmCallSummary[],
-  responsesByTurn: Readonly<Record<string, readonly ModelResponse[]>>,
+  turns: Readonly<Record<string, LlmCallTurn>>,
 ): Map<string, LlmCallCacheComparison> {
   const result = new Map<string, LlmCallCacheComparison>();
   const byTurn = new Map<string, LlmCallSummary[]>();
@@ -59,9 +91,9 @@ export function pairLlmCallResponses(
 
   for (const [turnId, turnCalls] of byTurn) {
     const orderedCalls = turnCalls
-      .filter((call) => call.outcome === "ok")
+      .filter((call) => call.outcome === "ok" || call.outcome === "cancelled")
       .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-    const available = [...(responsesByTurn[turnId] ?? [])].sort((a, b) => a.sequence - b.sequence);
+    const available = [...(turns[turnId]?.responses ?? [])].sort((a, b) => a.sequence - b.sequence);
     for (const call of orderedCalls) {
       const responseIndex = available.findIndex((response) => response.model === call.model);
       if (responseIndex < 0) continue;
@@ -73,7 +105,10 @@ export function pairLlmCallResponses(
           : cacheHitPercent(response.cacheReadTokens, response.inputTokens);
       const mismatch =
         (response.predictedCacheState === "warm" && response.cacheReset) ||
-        (response.predictedCacheState === "cold" && hitPercent !== null && hitPercent >= 50);
+        (response.predictedCacheState === "cold" &&
+          response.predictedCacheReason !== "ttl_unknown" &&
+          hitPercent !== null &&
+          hitPercent >= 50);
       result.set(call.gatewayCallId, {
         response,
         predictedState: response.predictedCacheState,
@@ -289,7 +324,6 @@ function deriveCall(gatewayCallId: string, records: readonly EventRecord[]): Llm
     });
   const terminal = terminalRecords[0];
   const outcome = terminal ? (terminalOutcome(terminal) ?? "in-flight") : "in-flight";
-  const firstOutputRecord = events.find((record) => record.name === "stream.first_output");
   const chunksByClass = terminalChunkCounts(terminal) ?? new Map<string, number>();
 
   if (chunksByClass.size === 0) {
@@ -316,10 +350,13 @@ function deriveCall(gatewayCallId: string, records: readonly EventRecord[]): Llm
     provider: valueFromLastCorrelation(events, "provider"),
     model: valueFromLastCorrelation(events, "model"),
     outcome,
-    firstOutputMs:
-      optionalNumber(terminal?.payload.firstOutputMs) ??
-      optionalNumber(firstOutputRecord?.payload.latencyMs),
-    durationMs: optionalNumber(terminal?.payload.durationMs),
+    ...(typeof terminal?.payload.errorCode === "string"
+      ? { errorCode: terminal.payload.errorCode }
+      : {}),
+    // Close-record names are the gateway's: provider timing is null when no result arrived,
+    // while the observation duration is always present.
+    firstOutputMs: optionalNumber(terminal?.payload.providerFirstOutputMs),
+    durationMs: optionalNumber(terminal?.payload.gatewayObservationDurationMs),
     inputTokens: optionalNumber(terminal?.payload.inputTokens),
     outputTokens: optionalNumber(terminal?.payload.outputTokens),
     threadId: valueFromLastCorrelation(events, "threadId"),

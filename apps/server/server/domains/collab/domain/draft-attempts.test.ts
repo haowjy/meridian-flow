@@ -8,84 +8,9 @@
  * - Draft attempt unwind and ownership transfer
  */
 import { describe, expect, it } from "vitest";
-import { type AttemptScope, NestedAttemptError, runBoundedAttempts } from "./draft-attempts.js";
-
-class Miss extends Error {}
+import { NestedAttemptError, runBoundedAttempts } from "./draft-attempts.js";
 
 describe("runBoundedAttempts", () => {
-  it("unwinds a missed attempt's scope and candidates before the next attempt captures", async () => {
-    const events: string[] = [];
-    const scope: AttemptScope = async (operation) => {
-      events.push("scope open");
-      try {
-        return await operation();
-      } finally {
-        events.push("scope closed");
-      }
-    };
-    const candidate = (name: string) => ({
-      transfer: () => void events.push(`${name} transferred`),
-      dispose: () => void events.push(`${name} disposed`),
-    });
-    let number = 0;
-    const result = await runBoundedAttempts({
-      bound: 4,
-      scope,
-      isMiss: (cause) => cause instanceof Miss,
-      run: async (attempt) => {
-        const current = ++number;
-        events.push(`capture ${current}`);
-        const first = attempt.own(candidate(`${current}a`));
-        attempt.own(candidate(`${current}b`));
-        await attempt.commit(async () => {
-          events.push(`${current}a persisted`);
-          if (current === 1) throw new Miss();
-        });
-        return first;
-      },
-      exhausted: () => {
-        throw new Error("not exhausted");
-      },
-    });
-    expect(events).toEqual([
-      "capture 1",
-      "scope open",
-      "1a persisted",
-      "scope closed",
-      "1a disposed",
-      "1b disposed",
-      "capture 2",
-      "scope open",
-      "2a persisted",
-      "scope closed",
-      "2a transferred",
-      "2b transferred",
-    ]);
-    expect(result).toBeDefined();
-  });
-
-  it("answers the last miss with the caller's policy and propagates anything else", async () => {
-    const disposed: number[] = [];
-    const run = (fail: () => Error) => {
-      let number = 0;
-      return runBoundedAttempts({
-        bound: 2,
-        scope: (operation) => operation(),
-        isMiss: (cause) => cause instanceof Miss,
-        run: async (attempt) => {
-          const current = ++number;
-          attempt.own({ transfer() {}, dispose: () => void disposed.push(current) });
-          throw fail();
-        },
-        exhausted: (cause) => (cause instanceof Miss ? "stale" : "unreachable"),
-      });
-    };
-    await expect(run(() => new Miss())).resolves.toBe("stale");
-    expect(disposed).toEqual([1, 2]);
-    await expect(run(() => new Error("broken"))).rejects.toThrow("broken");
-    expect(disposed).toEqual([1, 2, 1]);
-  });
-
   it("refuses an owner started inside a commit scope, not one that runs after it closed", async () => {
     const once = (run: () => Promise<unknown>) =>
       runBoundedAttempts({

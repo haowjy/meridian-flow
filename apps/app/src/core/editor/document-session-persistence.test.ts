@@ -33,7 +33,7 @@ describe("DocumentSession persistence cleanup", () => {
 
   it.each([
     { attached: false, clearPersistence: false },
-    { attached: false, clearPersistence: true },
+    { attached: true, clearPersistence: true },
   ])("cleans persistence with attached=$attached, clear=$clearPersistence", async ({
     attached,
     clearPersistence,

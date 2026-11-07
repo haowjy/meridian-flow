@@ -3,10 +3,11 @@ import type { GenerateRequest, GenerateResult, StreamEvent } from "../../gateway
 import type { Gateway } from "../../gateway/ports/gateway.js";
 
 export const gatewayStubDefaults = {
+  listModels: () => [],
   getDefaultModel(): string | undefined {
     return undefined;
   },
-} satisfies Pick<Gateway, "getDefaultModel">;
+} satisfies Pick<Gateway, "listModels" | "getDefaultModel">;
 
 /** Minimal Gateway satisfying the port with inert stream/generate implementations. */
 export function createInertGateway(defaultModel?: string): Gateway {
@@ -59,7 +60,8 @@ export function scriptedGateway(
     requests,
     untilGatewayBoundary: (call = 1) => boundary(arrivals, call).promise,
     release: (call = 1) => boundary(releases, call).open(),
-    getDefaultModel: () => "gpt-4.1-mini",
+    listModels: () => [],
+    getDefaultModel: () => "gpt-5.6-luna",
     async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
       requests.push(request);
       const call = requests.length;
@@ -82,7 +84,7 @@ export function scriptedGateway(
           toolCalls: [],
           finishReason: "end_turn",
           usage: options.usage ?? { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-          model: "gpt-4.1-mini",
+          model: "gpt-5.6-luna",
           provider: "openai",
         },
       };

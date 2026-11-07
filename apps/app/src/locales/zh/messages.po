@@ -84,6 +84,10 @@ msgstr ""
 msgid "{agentName} deleted a passage"
 msgstr ""
 
+#: src/features/chat/ask/AskReceipt.tsx
+msgid ", "
+msgstr "，"
+
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
 msgstr ""
@@ -343,6 +347,10 @@ msgstr "{agent} 想要取消归档 {work}，是否允许？"
 msgid "{agent} wants to update {work}?"
 msgstr "{agent} 想要更新 {work}，是否允许？"
 
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "{answered, plural, one {# answered} other {# answered}}"
+msgstr "{answered, plural, other {# 个已回答}}"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr ""
@@ -374,6 +382,10 @@ msgstr ""
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 msgstr ""
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "{count, plural, one {# question:} other {# questions:}}"
+msgstr "{count, plural, other {# 个问题：}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
@@ -593,9 +605,10 @@ msgstr ""
 msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
 msgstr ""
 
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
-msgstr ""
+msgstr "{position} / {count}"
 
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
@@ -612,6 +625,10 @@ msgstr ""
 #: src/features/chat/tool-result-preview.ts
 msgid "{shown} of at least {total}"
 msgstr ""
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "{skipped, plural, one {# skipped} other {# skipped}}"
+msgstr "{skipped, plural, other {# 个已跳过}}"
 
 #: src/features/chat/namespace-refusal-copy.ts
 msgid "{source} is a folder. Only documents can be moved or deleted."
@@ -660,6 +677,10 @@ msgstr ""
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was removed when the reply that created it didn't finish."
 msgstr ""
+
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
+msgstr "{unanswered, plural, other {# 个未回答}}"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
@@ -1065,10 +1086,6 @@ msgstr ""
 msgid "Another Work now has this name. Rename that Work, then restore this one."
 msgstr ""
 
-#: src/features/chat/TextBlock.tsx
-#~ msgid "Answer the question"
-#~ msgstr ""
-
 #: src/features/account/SettingsDialog.tsx
 msgid "Appearance and behavior settings."
 msgstr ""
@@ -1141,10 +1158,6 @@ msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
 #: src/features/chat/tool-result-preview.ts
-#~ msgid "At least {found}"
-#~ msgstr ""
-
-#: src/features/chat/tool-result-preview.ts
 msgid "At least {matches} results in {inDocuments}"
 msgstr ""
 
@@ -1160,16 +1173,11 @@ msgstr ""
 msgid "Auto-apply"
 msgstr ""
 
-#: src/features/chat/ChoiceBlock.tsx
-#: src/features/chat/FormBlock.tsx
-#: src/features/chat/TextBlock.tsx
-#~ msgid "auto-selected"
-#~ msgstr ""
-
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
+#: src/features/chat/ask/AskTakeover.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Back"
-msgstr ""
+msgstr "返回"
 
 #. placeholder {0}: choosing.label
 #. placeholder {0}: folder.title ?? folder.name
@@ -1589,10 +1597,6 @@ msgstr "我来说两句"
 msgid "Choose a document or enter a web address or document path."
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Choose a listed option"
-#~ msgstr ""
-
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
 msgstr ""
@@ -1601,10 +1605,6 @@ msgstr ""
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent, currently {0}"
 msgstr ""
-
-#: src/features/chat/ChoiceBlock.tsx
-#~ msgid "Choose an option"
-#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Choose what to do before continuing."
@@ -1787,10 +1787,6 @@ msgstr ""
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Composer controls"
 msgstr ""
-
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Confirm"
-#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Confirming your purchase…"
@@ -2680,14 +2676,6 @@ msgstr ""
 msgid "Details about removed text"
 msgstr ""
 
-#: src/routes/dev-login.tsx
-msgid "Dev login"
-msgstr ""
-
-#: src/routes/dev-login.tsx
-msgid "Dev-login failed"
-msgstr ""
-
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Diagram"
@@ -3109,10 +3097,6 @@ msgstr ""
 msgid "Fork from here"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Form payload is malformed."
-#~ msgstr ""
-
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
 msgstr "来自 {senderName}："
@@ -3233,10 +3217,6 @@ msgstr ""
 #: src/features/account/SettingsDialog.tsx
 msgid "Id"
 msgstr "ID"
-
-#: src/routes/dev-login.tsx
-msgid "Identity"
-msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -3883,22 +3863,6 @@ msgstr ""
 msgid "Moving {source} to"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Must be a number"
-#~ msgstr ""
-
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Must be a whole number"
-#~ msgstr ""
-
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Must be at least {value}"
-#~ msgstr ""
-
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Must be at most {value}"
-#~ msgstr ""
-
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
@@ -3972,6 +3936,10 @@ msgstr ""
 msgid "New Work"
 msgstr ""
 
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Next"
+msgstr "下一题"
+
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "Next change"
 msgstr ""
@@ -3992,7 +3960,7 @@ msgstr ""
 msgid "No answer"
 msgstr "未回答"
 
-#. placeholder {0}: resolution.label
+#. placeholder {0}: answer.label
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "No answer, went with {0}"
 msgstr "未回答，已采用 {0}"
@@ -4029,10 +3997,6 @@ msgstr ""
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "No favorite chats yet."
 msgstr ""
-
-#: src/features/chat/FormBlock.tsx
-#~ msgid "No fields required; confirm to continue."
-#~ msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "No files attached in this chat yet."
@@ -4150,6 +4114,11 @@ msgstr "未报告"
 msgid "Not run before compaction"
 msgstr ""
 
+#. placeholder {0}: answer.text
+#: src/features/chat/ask/AskReceipt.tsx
+msgid "Not sent: {0}"
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 msgid "Notebook"
 msgstr ""
@@ -4211,10 +4180,6 @@ msgstr ""
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr ""
-
-#: src/features/chat/tool-failure.tsx
-#~ msgid "Only one question can wait for an answer at a time, so this one wasn't asked."
-#~ msgstr "一次只能有一个问题等待回答，因此这个问题没有发出。"
 
 #: src/features/chat/tool-failure.tsx
 msgid "Only one question or request can wait for an answer at a time, so this one wasn't asked."
@@ -4569,10 +4534,6 @@ msgstr ""
 msgid "Recommended"
 msgstr "推荐"
 
-#: src/features/chat/ChoiceBlock.tsx
-#~ msgid "Recommended option is highlighted."
-#~ msgstr ""
-
 #: src/components/app/ConnectionBanner.tsx
 msgid "Reconnect now"
 msgstr ""
@@ -4725,10 +4686,6 @@ msgstr ""
 msgid "Report is unavailable"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Required"
-#~ msgstr ""
-
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Reset column widths"
 msgstr ""
@@ -4833,10 +4790,6 @@ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
-msgstr ""
-
-#: src/routes/dev-login.tsx
-msgid "Retry sign-in"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -5017,12 +4970,12 @@ msgstr ""
 msgid "Select the merged cell on its own to split it."
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Select…"
-#~ msgstr ""
-
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Send answer"
+msgstr "发送回答"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "Send answers"
 msgstr "发送回答"
 
 #: src/components/app/composer/Composer.tsx
@@ -5042,17 +4995,9 @@ msgstr "正在发送"
 msgid "Sending now"
 msgstr ""
 
-#: src/features/chat/InterruptResponseFeedback.tsx
-#~ msgid "Sending your answer…"
-#~ msgstr ""
-
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Sent a message to {line}"
 msgstr ""
-
-#: src/components/app/ConnectionBanner.tsx
-#~ msgid "Session expired. Please refresh."
-#~ msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
 msgid "Set the goal to “{goal}”"
@@ -5132,21 +5077,9 @@ msgstr ""
 msgid "Shows token counts and the model on each reply and compaction"
 msgstr ""
 
-#: src/routes/dev-login.tsx
-msgid "Sign in as dev user"
-msgstr ""
-
-#: src/routes/dev-login.tsx
-msgid "Sign in as the development user"
-msgstr ""
-
 #: src/features/account/AccountMenu.tsx
 msgid "Signed in"
 msgstr "已登录"
-
-#: src/routes/dev-login.tsx
-msgid "Signing in…"
-msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Skills"
@@ -5273,10 +5206,6 @@ msgstr ""
 msgid "Stop compaction"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Stop run"
-#~ msgstr ""
-
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Stop switch to auto-apply"
 msgstr ""
@@ -5336,10 +5265,6 @@ msgstr "子代理对话路径"
 msgid "Subagents, {0}"
 msgstr "子代理，{0}"
 
-#: src/features/chat/TextBlock.tsx
-#~ msgid "Submit"
-#~ msgstr ""
-
 #: src/features/billing/BillingPage.tsx
 msgid "Subscribe"
 msgstr ""
@@ -5347,15 +5272,6 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "subsection"
 msgstr ""
-
-#: src/features/chat/TextBlock.tsx
-#~ msgid "Suggested text is prefilled; edit it before submitting if needed."
-#~ msgstr ""
-
-#. placeholder {0}: String(field.defaultValue)
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Suggested: {0}"
-#~ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 msgid "Summarize earlier messages so the model has room to keep going"
@@ -5692,8 +5608,8 @@ msgid "The document could not be created. Try again."
 msgstr ""
 
 #: src/routes/dev-login.tsx
-msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
-msgstr ""
+#~ msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
+#~ msgstr ""
 
 #: src/features/import/reason-copy.ts
 msgid "The folder you chose isn't there anymore."
@@ -5808,6 +5724,10 @@ msgstr "思考"
 #: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "边想边说？"
+
+#: src/features/chat/ask/AskTakeover.tsx
+msgid "This answer couldn't be used. Choose again."
+msgstr ""
 
 #: src/features/chat/tool-failure.tsx
 msgid "This assistant isn't allowed to make this change, so it wasn't done."
@@ -6106,10 +6026,6 @@ msgstr ""
 msgid "This note is empty. Open it in the Editor to write."
 msgstr ""
 
-#: src/routes/dev-login.tsx
-msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
-msgstr ""
-
 #: src/components/app/composer/Composer.tsx
 msgid "This part of the message can’t hold mentions"
 msgstr ""
@@ -6283,10 +6199,6 @@ msgstr "此工作中的两个草稿使用了相同路径 {name}。请查看草�
 #: src/features/chat/tool-renderers.tsx
 msgid "Two of this Work's drafts share this path. Review the drafts to keep one."
 msgstr "此工作中的两个草稿使用了相同路径。请查看草稿并保留其中一个。"
-
-#: src/features/chat/TextBlock.tsx
-#~ msgid "Type your answer…"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ul"

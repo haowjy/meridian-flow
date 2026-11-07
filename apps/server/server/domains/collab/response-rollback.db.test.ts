@@ -49,6 +49,104 @@ async function fixture() {
   };
   return { harness, view, responseId, context };
 }
+
+it("stores live model and writer updates with separate authorship", async () => {
+  const { harness, view, responseId, context } = await fixture();
+  try {
+    const agent = {
+      ...context,
+      responseIdentity: undefined,
+      grant: testFileGrant({ kind: "live" }, ALPHA_ID),
+      actor: {
+        kind: "agent" as const,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+        editScopeId: responseId,
+      },
+    };
+    await view.collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, agent);
+    await expect(
+      view.collab.agentEdit().write(
+        {
+          command: "replace",
+          documentId: ALPHA_ID,
+          file: "alpha.md",
+          find: "Beta",
+          content: "Gamma",
+          tool_use_id: "live-agent",
+        },
+        agent,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "committed" });
+    await writeMarkdown(view.collab, {
+      documentId: ALPHA_ID,
+      markdown: "Alpha Gild.\n\nBlue.",
+      origin: { type: "user", actorUserId: USER_ID as never },
+      threadId: THREAD_ID,
+    });
+
+    const updates = await db
+      .select({
+        originType: schema.documentYjsUpdates.originType,
+        actorUserId: schema.documentYjsUpdates.actorUserId,
+        actorTurnId: schema.documentYjsUpdates.actorTurnId,
+        authoringResponseId: schema.documentYjsUpdates.authoringResponseId,
+      })
+      .from(schema.documentYjsUpdates)
+      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID));
+    expect(updates.filter((row) => row.originType === "agent")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorUserId: null,
+          actorTurnId: TURN_ID,
+          authoringResponseId: responseId,
+        }),
+      ]),
+    );
+    expect(updates.filter((row) => row.originType === "human")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorUserId: USER_ID,
+          actorTurnId: null,
+          authoringResponseId: null,
+        }),
+      ]),
+    );
+
+    const edits = await db
+      .select({
+        actor: schema.documentEdits.actor,
+        actorUserId: schema.documentEdits.actorUserId,
+        threadId: schema.documentEdits.threadId,
+        turnId: schema.documentEdits.turnId,
+        responseId: schema.documentEdits.responseId,
+      })
+      .from(schema.documentEdits)
+      .where(eq(schema.documentEdits.documentId, ALPHA_ID));
+    expect(edits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actor: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId,
+        }),
+        expect.objectContaining({
+          actor: "human",
+          actorUserId: USER_ID,
+          threadId: null,
+          turnId: null,
+          responseId: null,
+        }),
+      ]),
+    );
+  } finally {
+    await harness.dispose();
+  }
+});
+
 it.each(
   ["insert", "delete", "replace"].flatMap((kind) =>
     [false, true].map((edited) => ({ kind, edited })),

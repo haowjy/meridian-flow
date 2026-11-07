@@ -1,52 +1,25 @@
 # TODO — apps/app deferred work
 
-## Optimistic interaction gaps
-
-The `optimistic-updates` work item owns the profiles and verification specification.
-
-- **OPT-005: Correlate a returned Stripe checkout with the ledger.** Per-control pending, visible failure, and Retry are in place; return reconciliation is best-effort (fresh baseline plus transaction fingerprint, otherwise unverified). The client still cannot prove that a specific session produced a ledger row: the success URL carries no session id and there is no session-status endpoint. Keep checkout P0 server-confirmed and add a server-provided session↔ledger correlation before treating a returned `?checkout=success` as proof.
-
-## Editor UX gaps — deferred, tracked
-
-- **Block-level `+` gutter handle.**
-  ([#210](https://github.com/haowjy/meridian-flow/issues/210))
-  "Turn into" / "Insert" menu on the current paragraph. Additive to the docked
-  formatting toolbar, never a replacement; a separate build.
-  `features/editor/`.
-
-- **Fade-on-scroll for the docked toolbar.**
-  ([#211](https://github.com/haowjy/meridian-flow/issues/211))
-  Fade/slide the toolbar row away while writing or scrolling, back on
-  selection/focus. New interaction behavior — placement settled first
-  (tab-direction E). `EditorSurfaceFrame.tsx`.
-
-- **`image` versus `figure`: two nodes, one concept.**
-  ([#91](https://github.com/haowjy/meridian-flow/issues/91))
-  Settled: the verbs are one surface. Alt text, Replace, and the figure's caption
-  and label are all `features/editor/surfaces/objects`, both node views are
-  presentation, and the registration's `surfaceFields` is what differs.
-  Still open, and schema-shaped: whether `figure` should exist at all, or a
-  caption and label should be attributes of `image` in a block context. Also
-  open: `figure`'s `src` is a passthrough that does not run the asset
-  resolver, so it neither resolves `asset:` refs nor enforces the signed-URL
-  exclusion the inline image does. `core/editor/FigureNodeView.tsx`,
-  `packages/prosemirror-schema`.
-
-
-## E2E harness drift
-
-- `e2e/composer-density.spec.ts` seeds a user turn without required `origin`.
-  Set the fixture origin to `writer`; rerun the composer spec.
-- `e2e/image-frame.spec.ts` seeds successfully but its `/project/<id>` navigation
-  never mounts `.ProseMirror`. Update the legacy project/document URL to the
-  current route before treating this visual spec as a working smoke gate.
+- **Prove a Stripe return against the ledger.** `?checkout=success` carries no
+  session id and no status endpoint exists, so reconciliation stays best-effort.
+  Add a server-provided session-to-ledger correlation before treating the return
+  as proof.
+- **Insert from the block handle**
+  ([#210](https://github.com/haowjy/meridian-flow/issues/210)). The handle menu
+  has Turn into but no Insert.
+- **Fade the docked toolbar on scroll**
+  ([#211](https://github.com/haowjy/meridian-flow/issues/211)). Fade or slide the
+  row away while writing or scrolling, back on selection or focus
+  (`EditorSurfaceFrame.tsx`).
+- **`image` versus `figure`**
+  ([#91](https://github.com/haowjy/meridian-flow/issues/91)). Whether `figure`
+  should exist at all, or caption and label should be attributes of `image` in a
+  block context (`packages/prosemirror-schema`).
 - `e2e/support/e2e-db.ts` `resetUserProjects` deletes turns before document Yjs
   updates release their model-response references. With existing authored
-  documents, `phase5.spec.ts` fails on
-  `document_yjs_updates_authoring_response_id_model_responses_id_f` during setup.
-  Reconcile reset ordering with the current document/response FK graph.
-
-- Primary buttons (for example New Work) show their own drop shadow under
-  keyboard focus instead of the `focus-ring` box-shadow, so focus looks absent.
-  The variant's `shadow-*` class overrides the utility's `box-shadow`
-  (`components/ui/button.tsx`). Make the focus ring win for every variant.
+  documents, setup can fail on
+  `document_yjs_updates_authoring_response_id_model_responses_id_f`.
+- Primary buttons show their own drop shadow under keyboard focus instead of the
+  `focus-ring` box-shadow, so focus looks absent. The variant's `shadow-*` class
+  overrides the utility (`components/ui/button.tsx`). Make the focus ring win for
+  every variant.

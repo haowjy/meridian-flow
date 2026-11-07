@@ -5,12 +5,11 @@
  * Deliberately minimal. Everything richer is delegated to a tool that already
  * does it well, so this section owns only the one signal none of them surface:
  *  - per-turn/block records → alt+click inline inspect (`InlineInspector`).
- *  - lifecycle / `actionRequired` / `runningTurnId` → TanStack Query Devtools
- *    (inspect the `["projects", projectId, "threads"]` query).
+ *  - lifecycle / `actionRequired` / `runningTurnId` → `./mf thread view`.
  *  - raw WS frames → Chrome DevTools → Network → WS → Messages.
  *
  * Streaming identity and project route identity remain IDs. Project routes
- * show their readable address; resolve IDs in the existing Query Devtools.
+ * show their readable address.
  *
  * Reads only the thread store + router location — neither notifies during
  * another component's render, so this section needs no query-cache subscription

@@ -22,11 +22,12 @@ const MODEL: ModelInfo = {
   displayName: "Test Model",
   contextWindow: 128_000,
   maxOutputTokens: 4_096,
-  promptCache: { kind: "none", ttlMs: null },
-  capabilities: new Set(["streaming"]),
+  promptCache: { kind: "automatic", shortTtlSeconds: null, longTtlSeconds: null },
+  reasoning: { efforts: ["low", "medium", "high", "max"] },
+  capabilities: new Set(),
 };
 
-const REQUEST: GenerateRequest = { messages: [] };
+const REQUEST: GenerateRequest = { messages: [], promptCacheRetention: "short" };
 
 const END_RESULT: GenerateResult = {
   content: [],
@@ -47,7 +48,6 @@ function scriptedAdapter(scripts: Script[]): {
 } {
   let calls = 0;
   const adapter: ProviderAdapter = {
-    providerId: "test",
     stream(request) {
       const script = scripts[Math.min(calls, scripts.length - 1)];
       calls += 1;
@@ -261,7 +261,6 @@ describe("per-attempt timing", () => {
       releaseConsumer = resolve;
     });
     const adapter: ProviderAdapter = {
-      providerId: "test",
       async *stream() {
         time = 10;
         yield start;

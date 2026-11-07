@@ -14,7 +14,10 @@ import {
   runWithEventCorrelation,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
+import {
+  type SequencedEventInternal,
+  ThreadEventReplayGapError,
+} from "../domains/threads/thread-event-hub.js";
 import { parseRequestId } from "../shared/uuid.js";
 import type { AppServices } from "./app.js";
 
@@ -230,6 +233,8 @@ async function subscribeThread(
           if (lease.phase === "active") flushBuffered();
         });
       },
+      // The client reconnects from its own position and takes the replay gap path.
+      () => peer.close(1011, "frames_lost"),
     );
     if (!currentLease()) {
       unsubscribe();
@@ -259,6 +264,20 @@ async function subscribeThread(
     flushBuffered();
   } catch (error) {
     if (!currentLease()) return;
+    if (error instanceof ThreadEventReplayGapError) {
+      disposeLease(lease);
+      state.subscriptions.delete(threadId);
+      sendFrame(peer, {
+        type: "gap",
+        requestId,
+        threadId,
+        cause: "replay_limit_exceeded",
+        fromSeq: error.fromSeq.toString(),
+        toSeq: error.toSeq.toString(),
+        message: "The thread snapshot is newer than the retained stream history",
+      });
+      return;
+    }
     disposeLease(lease);
     state.subscriptions.delete(threadId);
     // A failed read is the one retryable subscribe failure: the client asks again.
@@ -329,7 +348,10 @@ export function createThreadWebSocketSession(peer: WsPeer) {
         try {
           const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
           const message = parseWsClientMessage(text);
-          requestId = message?.type === "pong" ? undefined : message?.requestId;
+          requestId =
+            message?.type === "pong" || message?.type === "ask.presence"
+              ? undefined
+              : message?.requestId;
           if (!message) {
             sendError(peer, meridianError("bad_request", "Malformed WebSocket message"));
             return;
@@ -371,8 +393,33 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                       threadId,
                       code: result.code,
                       ...(result.ask ? { ask: result.ask } : {}),
+                      ...(result.questionIndex === undefined
+                        ? {}
+                        : { questionIndex: result.questionIndex }),
                     },
               );
+              return;
+            }
+            case "ask.presence": {
+              if (!peer.context) return;
+              const threadId = parseRequestId(message.threadId) as ThreadId | null;
+              const askId = parseRequestId(message.askId);
+              if (!threadId || !askId) return;
+              const refused = await peer.context.app.asks.presence({
+                userId: peer.context.userId,
+                threadId,
+                askId,
+                answers: message.answers,
+              });
+              // No reply goes back, so the log is the only trace of a client reporting a bad draft.
+              if (refused)
+                emitEvent(peer.context.app.eventSink, {
+                  // A presence crossing an answer or the sweep is routine; a misfit or a stranger is a bug.
+                  level: refused === "not_open_question" ? "info" : "warn",
+                  source: "wire.thread_ws",
+                  name: "ask.presence.refused",
+                  payload: { failureReason: refused, threadId },
+                });
               return;
             }
             case "subscribe":

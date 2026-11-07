@@ -62,6 +62,7 @@ const sourcePath = boundedPath(
     segment.trim() !== "" &&
     segment !== "." &&
     segment !== ".." &&
+    // slop-lint: allow suppression the control range is the point of the pattern
     // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it refuses
     !/[\u0000-\u001f]/.test(segment),
 );

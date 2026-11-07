@@ -13,7 +13,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 
 - **Layout.** `src/core/` is the domain-free framework (`CommandSpec`/`CommandGroup`
   parsing, `output.ts`, the `EXIT` contract in `cli-error.ts`, `session.ts` for
-  Portless discovery, the in-memory dev-login cookie and bounded requests) and
+  Portless discovery, the optional `MF_COOKIE` and bounded requests) and
   imports no group. `src/commands/<group>/` holds one group each; a new group is
   listed in `GROUPS` in `src/main.ts`. A group may import another group's helper,
   never `main.ts`. Command tests run the real CLI against `src/test-support/wire.ts`,
@@ -62,7 +62,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   (a lost Retry, a failed Stop, an unadmitted send) are not in that snapshot and cannot
   appear here. `chat-view.ts` decides no row or card and words no visible text. Text mode summarizes (a card's kind only, tool names,
   one `delivery:` line per group) and omits tool inputs and results, card props,
-  Work receipts and occurrences; `--json` is the versioned `chatView: 2` envelope
+  Work receipts and occurrences; `--json` is the versioned `chatView: 3` envelope
   whose `inputs` states what the view was computed from (no local records,
   stand-ins, opening seed or live activity, inherited history omitted, background
   report bodies and change trails not fetched). `--full --json` is the inspectable
@@ -212,7 +212,7 @@ contains. It carries no run identity: `turn.started` has only the turn id.
   `meridian.write_mode.switched` divider installs after its anchor turn. When the anchor is a user
   turn the stream never carried, the sync holds the divider out and asks for a read; it never
   inserts the divider at the tail. `./mf` has no recovery code of its own.
-- `thread answer` uses the shared durable-ask command over the socket and prints the resolved ask.
+- `thread answer` uses the shared durable-ask command over the socket and prints the resolved ask. Its answers are one `--answer option:<label>|text:<words>|skip` per question, in order, or `--answers` JSON. `thread presence` sends the takeover's `ask.presence`: clock-only by default, or with `--answer`/`--answers` as the held answers (`none` for unanswered) over the same socket and waits 300 ms for it to flush, since the server sends no reply.
   `events` on a replay gap is 6 `replay_truncated` after printing. Tool results distinguish staged
   `tool.completed` from committed `tool.settled`.
 - Message admission builds one paragraph with `buildMessageDoc` and

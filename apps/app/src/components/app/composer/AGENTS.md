@@ -28,5 +28,5 @@ is the authoring boundary; admission and server authority live outside it.
   claims `Files` drags only; tree entries stay with the reference drop above). A
   dropped folder is a failed chip: the intake takes files only.
 
-Reference spelling, commands, Stop and Send states and copy, draft restore:
+Reference spelling, commands, draft restore:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

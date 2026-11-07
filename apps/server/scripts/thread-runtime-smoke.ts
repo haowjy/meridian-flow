@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { EventType } from "@meridian/contracts/protocol";
+import { API_AUTH_ME_PATH, type AuthMeResponse, EventType } from "@meridian/contracts/protocol";
 import {
   createDb,
   creditLots,
@@ -21,11 +21,6 @@ import {
   createDrizzleEventJournalWriter,
   createThreadEventHub,
 } from "../server/domains/threads/index.js";
-import {
-  cookieAuthHeaders,
-  mintWorkOsDevSession,
-  resolveDevInternalUserId,
-} from "./workos-dev-session.js";
 
 applyDevEnvToProcess();
 
@@ -96,9 +91,12 @@ function waitForEventTypes(ws: WebSocket, expected: Set<string>): Promise<string
   });
 }
 
-const session = await mintWorkOsDevSession();
-const authHeaders = cookieAuthHeaders(session);
-const userId = await resolveDevInternalUserId(databaseUrl, session.externalUserId);
+// The server runs with DEV_AUTH_BYPASS=1, so requests carry no credentials.
+// Also provisions the dev user on first sign-in.
+const meResponse = await fetch(new URL(API_AUTH_ME_PATH, serverUrl));
+if (!meResponse.ok) throw new Error(`GET ${API_AUTH_ME_PATH} failed: ${meResponse.status}`);
+const { user } = (await meResponse.json()) as AuthMeResponse;
+const userId = user.userId;
 const db = createDb(databaseUrl);
 const projectId = randomUUID();
 const workId = randomUUID();
@@ -151,9 +149,7 @@ await db.insert(creditTransactions).values({
   metadata: { source: "smoke" },
 });
 
-const ws = new WebSocket(wsUrlFor(serverUrl), {
-  headers: authHeaders,
-});
+const ws = new WebSocket(wsUrlFor(serverUrl));
 await waitForOpen(ws);
 
 const eventsPromise = waitForEventTypes(
@@ -172,7 +168,7 @@ await subscribedPromise;
 
 const response = await fetch(new URL(`/api/threads/${threadId}/messages`, serverUrl), {
   method: "POST",
-  headers: { ...authHeaders, "content-type": "application/json" },
+  headers: { "content-type": "application/json" },
   body: JSON.stringify({ text: "hello phase three" }),
 });
 if (response.status !== 202)
@@ -181,9 +177,7 @@ const postBody = (await response.json()) as { userTurnId: string; assistantTurnI
 const seenEvents = await eventsPromise;
 ws.close();
 
-const catchupWs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: authHeaders,
-});
+const catchupWs = new WebSocket(wsUrlFor(serverUrl));
 await waitForOpen(catchupWs);
 const catchupPromise = waitForSubscribed(catchupWs);
 catchupWs.send(JSON.stringify({ type: "subscribe", requestId: "r1", threadId, lastSeq: "0" }));
@@ -195,9 +189,7 @@ const contentSeq = catchupFrame.catchup?.find(
 )?.seq;
 if (!contentSeq) throw new Error("catchup missing content seq");
 
-const resumeWs = new WebSocket(wsUrlFor(serverUrl), {
-  headers: authHeaders,
-});
+const resumeWs = new WebSocket(wsUrlFor(serverUrl));
 await waitForOpen(resumeWs);
 const resumePromise = waitForSubscribed(resumeWs);
 resumeWs.send(

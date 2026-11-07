@@ -1,7 +1,7 @@
 /**
  * Per-attempt model-call timeout: defines ModelAttemptTimeoutError and the
  * AbortSignal helper that surfaces a stall or ceiling timeout as a stream event.
- * Owns the single timeout convention shared by all provider adapters.
+ * Owns the single timeout convention `attempt-stream.ts` applies to every attempt.
  *
  * Design: the gateway guards each attempt with two timers on one derived
  * AbortSignal, not a Promise.race on the full generator:
@@ -13,11 +13,10 @@
  *   self-hosted models.
  * - Either timer aborts the underlying provider HTTP stream (via the SDK's own
  *   signal support), not just the iterator.
- * - If the provider SDK ignores the signal, nextStreamEvent in attempt-stream
+ * - If the provider SDK ignores the signal, attempt-stream
  *   races the iterator against the abort anyway.
  * - The timeout error is surfaced as a retryable `provider_error` StreamEvent,
- *   so the retry/fallback machinery can try the same provider again or fail
- *   over to the next fallback.
+ *   so the retry machinery can try the same provider again.
  */
 const ATTEMPT_TIMEOUT_NAME = "ModelAttemptTimeoutError";
 

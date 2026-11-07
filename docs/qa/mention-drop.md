@@ -56,7 +56,7 @@ it trails the last move by one `dragover`.
    line appears.
 9. **Past the end.** Below the last block, in the reserve space: the drop makes
    a new last paragraph with the chip. (A press there never makes one; see
-   [Presses](presses.md).)
+   [Presses](../../apps/app/src/core/editor/.context/qa/presses.md).)
 10. **Margin.** In the left or right margin beside a paragraph: the chip lands
     on that paragraph's nearest line, never at the document start or end.
 11. **Bullets.** Between two bullets, and in the gap above a list: the chip

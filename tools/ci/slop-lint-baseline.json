@@ -1,0 +1,1779 @@
+{
+  "version": 1,
+  "categories": {
+    "swallowed-error": [
+      {
+        "path": "apps/app/src/client/chat-submissions/deleted-chat.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/client/chat-submissions/store.ts",
+        "line": "} catch {",
+        "count": 3
+      },
+      {
+        "path": "apps/app/src/client/composer-drafts.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/client/creation/creation-registry.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/client/query/useContextCatalog.ts",
+        "line": "void resources",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/client/query/works-projection-acquisition.ts",
+        "line": "void acquisition",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/client/recents/store.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/client/storage/browser-record.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/client/working-set/store.ts",
+        "line": "} catch {",
+        "count": 3
+      },
+      {
+        "path": "apps/app/src/components/app/composer/Composer.tsx",
+        "line": "const recorded = await Promise.resolve(onSubmit(envelope)).catch(() => false);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/components/app/composer/placeholders.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/components/app/composer/useRestoredReferences.ts",
+        "line": "void catalog.port",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/change-trail-navigation.ts",
+        "line": "const opened = await input.openDocument(input.documentId).catch(() => null);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-authority-store.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-cross-context-coordination.ts",
+        "line": "void attempt",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-cross-context-coordination.ts",
+        "line": "void this.close().catch(() => undefined);",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-cross-context-coordination.ts",
+        "line": "void this.readiness.catch(() => this.close()).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-cross-context-coordination.ts",
+        "line": "void this.reconcilePending(\"operation\").catch(() => undefined);",
+        "count": 3
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-recovery.ts",
+        "line": "void completion",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-registry-implementation.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-registry-implementation.ts",
+        "line": "void attempt",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-registry-implementation.ts",
+        "line": "void this.teardownOwner",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-registry-implementation.ts",
+        "line": "void this.teardownOwner.retire({ kind: \"live\", roomKey }, session).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-teardown-owner.ts",
+        "line": "void attempt",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-wakeup.ts",
+        "line": "} catch {",
+        "count": 3
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session-wakeup.ts",
+        "line": "void this.reconcile(reason).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/document-session.ts",
+        "line": "await this.initialization?.catch(() => undefined);",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/core/editor/draft-room-pool.ts",
+        "line": "void this.deps.teardownOwner.retire({ kind: \"draft\", roomKey }, session).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/images/image-workflow.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/images/measure-image.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/local-document-session-transfers.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/passage-navigation.ts",
+        "line": "const opened = await input.openDocument(input.documentId).catch(() => null);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/schema-fence.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/resources/account-resource-reconciler.ts",
+        "line": "const runner = start()",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/resources/account-resource-reconciler.ts",
+        "line": "void this.ports.metadata",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/resources/account-resource-replica.ts",
+        "line": "void this.reconcileOpenedProjectOwnership(projectId, key, opened.handle.session).catch(",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/resources/resource-content-access.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/resources/resource-content-access.ts",
+        "line": "void opening.finally(() => this.openings.delete(id)).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/resources/resource-content-access.ts",
+        "line": "void operation.finally(() => this.operations.delete(operation)).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/resources/resource-content-access.ts",
+        "line": "void this.destroy(id, session).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/transport/tapped-websocket.ts",
+        "line": "} catch {",
+        "count": 4
+      },
+      {
+        "path": "apps/app/src/core/transport/wire-tap.ts",
+        "line": "} catch {",
+        "count": 3
+      },
+      {
+        "path": "apps/app/src/features/account/useAccountSettings.ts",
+        "line": "void getAccountSettings({ signal: capturedEpoch })",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/account/useAccountSettings.ts",
+        "line": "void getAccountSettings({ signal: write.epoch })",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/account/useAccountSettings.ts",
+        "line": "void router.invalidate().catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/billing/useCheckoutReturn.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/chat/derivation/derive-conversation.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/chat/useThreadDurableProjections.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/debug/InlineInspector.tsx",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/debug/llm-calls/LlmCallsViewer.tsx",
+        "line": "threadIds.map((threadId) => getThreadSnapshot({ data: { threadId } }).catch(() => null)),",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/debug/trace/server-feed.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/debug/trace/thread-wire-tap.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/debug/trace/trace-store.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/debug/trace/yjs-wire-tap.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/debug/use-debug-enabled.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/features/draft-review/apply-click-queue.ts",
+        "line": "} catch {",
+        "count": 4
+      },
+      {
+        "path": "apps/app/src/features/draft-review/draft-command-owner.ts",
+        "line": "const reconcile = read()",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/draft-command-owner.ts",
+        "line": "const resolving = (async () => {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/draft-command-owner.ts",
+        "line": "void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
+        "line": "void fetchCurrentDraftMetadata(queryClient, draft)",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
+        "line": "void openReview?.({",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
+        "line": "void resources",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/room-attribution.ts",
+        "line": "void postJson<DraftProvenanceResponse>(",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/editor/clipboard.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/chat/usePassageDoors.ts",
+        "line": "void landing.catch(() => {});",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/account-feature-lifetime.ts",
+        "line": "void attempt",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/account-feature-lifetime.ts",
+        "line": "void this.registry.restartRemovedRoom(session).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/context-tab-session.tsx",
+        "line": "void resources",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/ContextDocumentHost.tsx",
+        "line": "void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/rename-operation-lifecycle.ts",
+        "line": "? await this.replica.readKnownDocument(projectId, subject.id).catch(() => null)",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/layout/surface-prefs-store.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "apps/app/src/features/project/preload-project-workspace.ts",
+        "line": "void import(\"./routing/ReadableProjectRoute\").catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/lib/account-settings-cache.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/lib/text-size.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/agent-edit-observability.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/in-memory/branches.ts",
+        "line": "const tail = run.catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/thread-peer-core-pool.ts",
+        "line": "let early: Map<AgentEditCore, ResponseCommitAttempt> | undefined = await prepareAttempts(",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/hocuspocus-rooms.ts",
+        "line": "matching.map((name) => hocuspocus.loadingDocuments.get(name)?.catch(() => undefined)),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/context-catalog.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/context-catalog-wake-hub.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/observability/adapters/deferred/deferred-event-sink.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/observability/adapters/local/local-event-sink.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/observability/adapters/local/local-event-sink.ts",
+        "line": "await release().catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/observability/adapters/recent/recent-events-buffer.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/observability/adapters/tee/tee-event-sink.ts",
+        "line": "} catch {",
+        "count": 3
+      },
+      {
+        "path": "apps/server/server/domains/observability/causal-context.ts",
+        "line": "} catch {",
+        "count": 3
+      },
+      {
+        "path": "apps/server/server/domains/packages/domain/default-package-seeding.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/adapters/context-image-assets.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/adapters/drizzle-session-lock.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/gateway/adapters/provider-http-error.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/gateway/attempt-stream.ts",
+        "line": "void Promise.resolve()",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/gateway/helpers/serialize.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/gateway/instrumented-gateway.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/orchestrator.ts",
+        "line": "const latest = await deps.runClaim.read(input.threadId).catch(() => null);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/tool-executor.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/observability.ts",
+        "line": "await current.sink.flush().catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/yjs-ws-handler.ts",
+        "line": "const removed = await removedForReader(services, room, userId, cause).catch(",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/shared/keyed-mutex.ts",
+        "line": "void run.catch(() => {});",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/demo/fakes.ts",
+        "line": "const run = previous.catch(() => undefined).then(fn);",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/frontier.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/tool/response-committer.ts",
+        "line": "} catch {",
+        "count": 2
+      },
+      {
+        "path": "packages/agent-edit/src/tool/write.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "packages/markup/src/escape.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "packages/resource-replica/src/catalog-acquisition.ts",
+        "line": "state.followUp ??= running",
+        "count": 1
+      },
+      {
+        "path": "packages/thread-client/src/asks/answer-ask.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "packages/thread-client/src/asks/answer-ask.ts",
+        "line": "void ports.refresh().catch(() => undefined);",
+        "count": 1
+      },
+      {
+        "path": "packages/thread-client/src/socket/socket-lifecycle.ts",
+        "line": "} catch {",
+        "count": 3
+      },
+      {
+        "path": "packages/yjs-inspect/src/frame.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "playwright.config.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "tools/dev/lib/worktree-cleanup-readiness.ts",
+        "line": "} catch {",
+        "count": 3
+      },
+      {
+        "path": "tools/dev/prune-worktrees.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "tools/mf/src/commands/api/api.ts",
+        "line": "} catch {}",
+        "count": 1
+      },
+      {
+        "path": "tools/mf/src/commands/thread/send.ts",
+        "line": "if (mockScriptId) await removeMockScript(session, mockScriptId).catch(() => undefined);",
+        "count": 2
+      },
+      {
+        "path": "tools/mf/src/core/failure-log.ts",
+        "line": "} catch {",
+        "count": 1
+      },
+      {
+        "path": "tools/mf/src/core/session.ts",
+        "line": "} catch {}",
+        "count": 1
+      }
+    ],
+    "suppression": [
+      {
+        "path": "apps/app/src/components/app/composer/ComposerReferenceMenu.tsx",
+        "line": "// biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/components/app/work-composer-controls/WorkPickerPanel.tsx",
+        "line": "// biome-ignore lint/a11y/useSemanticElements: fieldset intrinsic sizing breaks the bounded results scrollport.",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/chat/DraftDock.tsx",
+        "line": "{/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/chat/DraftDock.tsx",
+        "line": "{/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/chat/DraftDock.tsx",
+        "line": "// biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/chat/DraftDock.tsx",
+        "line": "// biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/chat/TurnList.tsx",
+        "line": "// biome-ignore lint/a11y/noNoninteractiveTabindex: transcript is a scroll region — focusable so keyboard users can scroll it (arrows/PageUp/Down).",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/ReviewChangeRow.tsx",
+        "line": "// biome-ignore lint/a11y/useKeyWithClickEvents: see above.",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/editor/surfaces/objects/CodeBlockChips.tsx",
+        "line": "// biome-ignore lint/a11y/noStaticElementInteractions: the mousedown only keeps the caret where it was; every control inside is a button",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/ContextTreeRows.tsx",
+        "line": "{/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/work/WorkMetadata.tsx",
+        "line": "{/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut; the Show more button below is the keyboard path. */}",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/work/WorkMetadata.tsx",
+        "line": "{/* biome-ignore lint/a11y/useKeyWithClickEvents: as above. */}",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/rich-content/SkillToken.tsx",
+        "line": "{/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus opens the tooltip; a button would look like a click-through */}",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/rich-content/TranscriptReference.tsx",
+        "line": "// biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/gateway/adapters/anthropic/request-map.ts",
+        "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Adapter request-map bridges canonical ↔ SDK types; casts are intentional.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/gateway/adapters/anthropic/stream-collect.ts",
+        "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Stream accumulator bridges canonical ↔ SDK types; casts are intentional.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/gateway/adapters/openai/request-map.ts",
+        "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Adapter request-map bridges canonical ↔ SDK types; casts are intentional.",
+        "count": 1
+      }
+    ],
+    "decision-id": [
+      {
+        "path": "apps/app/src/client/query/work-branch-files.ts",
+        "line": "* from the manuscript that this draft still has (`deletedLive`, D79).",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/client/stores/context-tabs-store/context-tabs-store.ts",
+        "line": "* Coordinator-only: live deleted a document whose drafts survive (D79), so its tab stays,",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/client/stores/context-tabs-store/editor-workspace-state.ts",
+        "line": "/** Live deleted the document; the Works whose drafts still have it keep the tab as draft-only (D79). */",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/links/wikilink-paste.ts",
+        "line": "* Pasted `[[Name]]` becomes a standard link (D15). Writers bring notes over",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/core/editor/links/WikilinkPasteExtension.ts",
+        "line": "* The paste policy for `[[Name]]` (D15): which pastes convert, and the",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/chat/DraftDock.tsx",
+        "line": "/** What an Apply of several files deletes or brings back (D79), asked about first. */",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/CommandNotice.tsx",
+        "line": "* manuscript and every one it brings back (D79).",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/deleted-drafts.ts",
+        "line": "* Drafts whose document live deleted (D79): the draft keeps it, and Apply brings it back",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/draft-command-owner.ts",
+        "line": "* them active (D79), so their tabs stay; the review list lags, this does not.",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/draft-command-owner.ts",
+        "line": "/** Whether an Apply brought this document back from a delete (D79). */",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
+        "line": "// not undo the hold that just made the tab draft-only (D79).",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/DraftReviewProvider.tsx",
+        "line": "/** The Work whose drafts this scope reviews; its archived state freezes them (D30). */",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/tree-line.ts",
+        "line": "* is renaming this to ch12-old.\"). Live doesn't show either until Apply (D26). Works are named,",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/draft-review/useDraftReviewController.ts",
+        "line": "* flight, or the Work is archived and its drafts are frozen (D30). Review",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/editor/ManuscriptStateNotice.tsx",
+        "line": "* ManuscriptStateNotice — what live did to the document this draft holds (D79): deleted from",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/editor/ManuscriptStateNotice.tsx",
+        "line": "* of those, it says what a Work's pending move or delete will do to the document (D26), which",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/context-removal-coordinator.ts",
+        "line": "* presented draft-only in that Work (D79); every other tab closes as before. Returns the",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/context-tab-from-file.ts",
+        "line": "* record of a document live deleted while a Work's draft survives is terminal (D79), and",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/context/ContextViewer.tsx",
+        "line": "// Archiving freezes the Editor Work's own files and its drafts (D30). A",
+        "count": 1
+      },
+      {
+        "path": "apps/app/src/features/project/work/WorkChanges.tsx",
+        "line": "* manuscript (D79), naming each, and again for any a newer delete held back.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-apply-click.ts",
+        "line": "* (`restoreDocument`, D79), then the text merges.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts",
+        "line": "// locks (decision D17).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-drafts.ts",
+        "line": "/** The one owner of Work-first order and the Works' projection (decision D17). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-drafts.ts",
+        "line": "// Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-tree-history.ts",
+        "line": "* records in the tree mutation's own transaction (a handle on the per-document, per-chat counter, D76), the",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-tree-history.ts",
+        "line": "* Works whose drafts outlive a delete (D79), and the document a chat's own tree entry moved or",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-turn-edit-targets.ts",
+        "line": "* deleted live, whose drafts may outlive the delete (D79; the inverse decides from the draft",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-turn-edit-targets.ts",
+        "line": "* the card's Undo brings it back (D77). Each draft-scoped target names the Work whose branch",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts",
+        "line": "// outlived it (D79) plan their inverse over the retained live history.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/hocuspocus-coordinator.ts",
+        "line": "* The live agent-edit core's coordinator (D42). A call reads a private copy of the live",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/composition.ts",
+        "line": "// Every bounded draft-store attempt's rollback boundary (decision D13).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/contracts.ts",
+        "line": "* the version the caller's writes change. `live` never touches a draft (D40);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/contracts.ts",
+        "line": "* true while the draft is active (decision D27).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/contracts.ts",
+        "line": "* what committed while it loaded, or closes it when the draft ended (decision D26).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/contracts.ts",
+        "line": "/** Documents the save left out (D29); their writes were not saved. */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/contracts.ts",
+        "line": "/** The Works (`Work \"‹name›\"`) whose active drafts of a document still change it (D79). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/agent-edit-cores.ts",
+        "line": "* A read's context. `liveVersion` marks a `version: \"live\"` read (D3): it reads",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/agent-edit-cores.ts",
+        "line": "/** One reply's save across every destination it wrote (D42). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/agent-edit-cores.ts",
+        "line": "/** Why the save step left a document out of a reply (D29). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/branch-discard.ts",
+        "line": "/** The public command: writer and model. Refuses archived and deleted Works (D30). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/branch-review-items.ts",
+        "line": "* branch's view does while it has pending changes (D79). It authorizes through the",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/branch-review-items.ts",
+        "line": "* predicate feeds the list, the Work counts and the D40 confirmation. A draft with no effect is still addressable",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/draft-attempts.ts",
+        "line": "* The one owner of a bounded draft-store attempt (decision D13): capture and compute off",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/draft-coordinator.ts",
+        "line": "* Brings a registered room up to what is committed on its stable identity (decisions D26, D27):",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/draft-projection.ts",
+        "line": "* (D34): a write guarded by the revision it judged misses whenever a key commits during the run,",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/draft-runtime.ts",
+        "line": "* delivery, behind it is brought up by `reconcileRoom` (D26). It runs when the transaction the replica was",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/draft-runtime.ts",
+        "line": "* reaches this process's registered rooms (decision D25); a room that registers, or misses a",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/draft-runtime.ts",
+        "line": "* The other half of delivery (decision D26): `install` sends each transition to the rooms",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/draft-writer-frames.ts",
+        "line": "* missed a delivery: it is reconciled and the frame goes on (decision D26). Only a closed",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/draft-writer-frames.ts",
+        "line": "/** A room lacked committed content and was brought up to the replica (decision D26). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/inverse-draft-destination.ts",
+        "line": "/** Live removal does not close an active draft that survived it (D79). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/inverse-stream.ts",
+        "line": "* One inverse's ordered steps over one document (D76): each selected original edit becomes one",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/reply-save-fences.ts",
+        "line": "// A denial carries the policy's document-level copy; the writes are dropped (D29, D42).",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/response-write-finalizer.ts",
+        "line": "/** One save step for every reply, live and drafted documents together (D42). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/thread-peer-core-pool.ts",
+        "line": "* (D19). Each call carries the grant the caller got from the file policy: its",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/thread-peer-core-pool.ts",
+        "line": "/** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts (D40). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/tree-inverse.ts",
+        "line": "* Tree entries in a document's edit history (moves, deletes, restores and settlements; D76,",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/turn-live-lineage.ts",
+        "line": "* branch of the Work `workId` names (a drafted entry, D26).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/domain/turn-live-lineage.ts",
+        "line": "* it stays on the turn's receipt after a live delete its draft outlived (D79).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/context-fs/create-placement.ts",
+        "line": "* deletes, which are facts in the Work's branch (D26).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/context-port-resolution.ts",
+        "line": "/** Write live whatever the chat's mode, as a binary copy does (D24). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/document-metadata.ts",
+        "line": "* Where a copied document came from (D24): the source's URI, the version the",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/document-revisions.ts",
+        "line": "// The revision of the version this thread's writes change, per document (D14, D20).",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/ports/branch-tree.ts",
+        "line": "* A branch placement's tree writes in one source (contract §6.2, §12.5; D26): creates, and a",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/ports/branch-tree.ts",
+        "line": "/** A drafted move or delete as it changed the branch's row, for the caller's record (D76). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/ports/context-adapter.ts",
+        "line": "* A draft placement's moves and deletes in its Work's branch (D26): facts on the branch's",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/ports/context-port.ts",
+        "line": "* A draft-mode chat's move or delete (D26, D45): facts in its Work's branch, never the",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/ports/context-port.ts",
+        "line": "* version that thread's writes change, per document (D14, D20), or the",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/ports/context-port.ts",
+        "line": "/** The Work whose branch this thread's drafted writes land in; null outside draft mode (D40). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/ports/document-removal.ts",
+        "line": "* document (D79). A discard also closes every active draft on its documents and names the Works",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/ports/project-context-availability.ts",
+        "line": "* open; D79). Paths and links still follow the listing.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/tree/branch-ownership.ts",
+        "line": "* Which documents a branch may hold (D20 under 12b): its own project's, and the personal",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/tree/branch-tree-changes.ts",
+        "line": "* A branch's drafted moves and deletes (D26, design-v2 §1): facts on its row, never a change",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/tree/removal.ts",
+        "line": "// a branch's pending intent, as it keeps the drafts (D79, D80): Apply brings it back.",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/tree/tree-view-sql.ts",
+        "line": "* carries them); and the deleted documents it still has pending changes to (D79: a draft",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/tree/tree-view.ts",
+        "line": "* live that this branch still has (D79), which a store reports so the fault can say so.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/unified-context-port-factory.ts",
+        "line": "* Works are live (D20).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts",
+        "line": "* lineage (D56); hidden identities outside the caller's branch have no facts.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/file-policy/domain/policy.ts",
+        "line": "* Skill files (`skills://`, D52) have their own rule, `skillLevel`.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/file-policy/domain/policy.ts",
+        "line": "* The file policy (file-access §1, §3, §8; D20): one pure function from a",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/file-policy/domain/types.ts",
+        "line": "* active Work draft of it, which outlived that delete (D79): a draft destination in that",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/file-policy/domain/types.ts",
+        "line": "/** `[calling thread, its parent, …, root]`. Each link caps the result (D8). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/file-policy/domain/types.ts",
+        "line": "/** The skills a thread's binding names (D52) or its user invoked (D64), as the skill rule reads them. */",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/file-policy/domain/types.ts",
+        "line": "/** Where a write lands: the live document, or a Work's branch (D20). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/observability/ports/event-sink.ts",
+        "line": "* Unified emission port (D15). Every observable signal funnels through one sink",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/packages/ports/agent-revision-store.ts",
+        "line": "* pin of the same slug (D64). False when the thread has no binding.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/packages/ports/agent-revision-store.ts",
+        "line": "/** Packaged skills the user invoked in this thread, by slug, pinned as read (D64). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/activated-skills.ts",
+        "line": "/** Whether the model can read the skill's files; if so the body takes `skill`'s header (D58). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/available-skills.ts",
+        "line": "* (D64), so its files are readable for the rest of the thread and its header",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/available-skills.ts",
+        "line": "* `skills://` by (D52, D64).",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/available-skills.ts",
+        "line": "* packaged skill its user invoked (D64), from one binding read (D52). A slug",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/available-skills.ts",
+        "line": "/** Whether a thread can see a skill at all, so it is offered the `skill` tool (D64). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/orchestrator.ts",
+        "line": "/** Documents the save left out; their writes did not land (D29). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/permissions/action-policy.ts",
+        "line": "* The action policy (D39): the one place an agent action beyond files is",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/permissions/tool-policy.ts",
+        "line": "* refuses a call outside it (D53), and a child never has a tool its parent lacks.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/permissions/tool-policy.ts",
+        "line": "* The one tool policy (D13, D34): which tools an agent has. It never narrows a",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/permissions/tool-policy.ts",
+        "line": "/** What the model reads when it calls a tool outside its policy (D53). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/run-session.ts",
+        "line": "// A Retry is a new reply, so it runs in the chat's current mode (D62).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/skill-files.ts",
+        "line": "* activated bodies the model can read (D58).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/skill-files.ts",
+        "line": "* Skill files under `skills://` (D52): the read-only folders of the skills an",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/skill-files.ts",
+        "line": "* thread (D64). `skills://` is model-facing only; it is not a context scheme,",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/turn-context-assembly.ts",
+        "line": "* A `/skill` after the bake offers `skill` (D64), which the frozen list can't",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/history-call-line.ts",
+        "line": "* One tool call as `thread_history` writes it (D48):",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/history-result.ts",
+        "line": "* `thread_history`'s structured result (D8) and the pure text rendering the",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/history-result.ts",
+        "line": "* model reads (D10), each tool call written as the call itself (D48). Code mode would return `HistoryResult` itself.",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/history-result.ts",
+        "line": "* null when history withholds them (`return_result`, D6) or the call is missing.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/history-result.ts",
+        "line": "* The arguments as the model sent them, long strings shortened (D48);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/model-spawn-result.ts",
+        "line": "* The model's text for a `spawn` or `thread_message` result (D8), rendered",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/model-thread-report.ts",
+        "line": "* The model's text for a `thread_report` result (D8): the report as history",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/resolve-child-invocation.ts",
+        "line": "* A child never gets a tool its parent lacks (D13). Naming them in",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/spawn-transcript.ts",
+        "line": "// A refusal reaches the model as its message (D65); `result` keeps the outcome.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/spawn/thread-history-contract.ts",
+        "line": "/** The typed result beside the rendered `output` (D43); absent on older rows. */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/agent-thread-context.ts",
+        "line": "* A thread that can see no skill isn't offered `skill` (D64). It reads only",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/core-tools.ts",
+        "line": "/** A handler's own `invalid_arguments` refusal (a `skills://` read, D60) reads like the executor's. */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/document-text.ts",
+        "line": "/** `output` is what the model read; `result` the typed value beside it (D43), when stored. */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/grep-result.ts",
+        "line": "* The `grep` result (D65): the typed files the handler returns, and the text the model reads of",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/history-summaries.ts",
+        "line": "* from the call's typed result, never its rendered text (D43). The call's",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/history-summaries.ts",
+        "line": "* What follows a finished call's `→` in a `thread_history` line (D48), read",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/invalid-arguments.ts",
+        "line": "* text is rendered from the result (D8).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/ls-result.ts",
+        "line": "* The `ls` result (D61): the typed listing the handler returns, and the plain",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/ls-result.ts",
+        "line": "/** The model's text for an `ls` result; the executor renders refusals (D65). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/refusal.ts",
+        "line": "* A tool refusal as the model reads it (D65): the `MeridianError`'s message,",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/skill-tool.ts",
+        "line": "* `#heading` sections or its outline (D60), `ls` lists folders, and `write`",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/skill-tool.ts",
+        "line": "* branch. Skills are read-only files (D52): `read` returns a file, one of its",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/skill-tool.ts",
+        "line": "* The model `skill` tool (D58) and every other model tool's `skills://`",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/skill-tool.ts",
+        "line": "/** `skill` (D58): `read`'s result for the skill's `SKILL.md`, or the skills it could load instead. */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/tool-executor.ts",
+        "line": "* as JSON (D65); the typed error stays on `result`. Any other result is the",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/types.ts",
+        "line": "* Renders the handler's typed result into the text the model sees (D43, D65),",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/types.ts",
+        "line": "* What follows a finished call's `→` in `thread_history` (D48), from its typed",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/tools/work-result.ts",
+        "line": "* The `work` result (D65): the typed values the handler returns, and the short",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/threads/domain/thread-execution-context.ts",
+        "line": "/** Draft mode writes drafts in the Work the chat is bound to at the time of the call (D62). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/file-access-denial-copy.ts",
+        "line": "* An archived Work's own files are read-only (D29); a draft-mode chat's write",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/file-access-denial-copy.ts",
+        "line": "* Model-facing copy for file-policy refusals (file-access §9, D31, D53, D54).",
+        "count": 3
+      },
+      {
+        "path": "apps/server/server/lib/file-access-denial-copy.ts",
+        "line": "* that would land in this Work's drafts meets frozen drafts (D30, D31), and switching",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/lib/file-access-denial-copy.ts",
+        "line": "* the chat to auto-apply is the writer's way out (D62). Only an agent the",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/file-access-denial-copy.ts",
+        "line": "/** Matches the read agent's permission line (D54). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/copy-source.ts",
+        "line": "* (D14) and the source's own destination (D20).",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/copy-source.ts",
+        "line": "* A write's `from` (D38): resolving and reading a copy's source with `read`'s",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/copy-source.ts",
+        "line": "* copy that duplicates a stored object (D24).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/copy-source.ts",
+        "line": "* version rule (D14) and the source's own destination (D20), and the binary",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/copy-source.ts",
+        "line": "/** A binary file has no blocks, so a copy of one takes no selection (D49). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/document-tools.ts",
+        "line": "* that grant. `skills://` paths go to the skill files (D52).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/document-tools.ts",
+        "line": "* The `read` and `write` tools (D1): a path resolves to its tracked document,",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/file-access.ts",
+        "line": "* kept (a chat switched to auto-apply, or another chat writes drafts there; D62),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/inverse-address.ts",
+        "line": "* The document an `undo`, `redo` or `revert` names by path (D76). A path no visible document",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/listing-tools.ts",
+        "line": "* the model reads as plain text (D61).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/namespace-commands.ts",
+        "line": "* `revert` walk it with the text edits (D76), and a reply's rollback reverses it.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/namespace-commands.ts",
+        "line": "* `write`'s `move` and `delete` (D25, D38): host commands that change where a whole document",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/namespace-commands.ts",
+        "line": "* links follow a move (#694) and a delete keeps every Work's drafts (D79). In a draft-mode",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/namespace-commands.ts",
+        "line": "* lives, not what it says. Each runs when called (D66). Live, through the thread's live port,",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/namespace-commands.ts",
+        "line": "* until the writer applies it (D26, D45). Either way the tree entry commits in the mutation's own",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/read-document.ts",
+        "line": "* a draft (D3, D14).",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/read-document.ts",
+        "line": "* The one server read path (D18): the `read` tool, a copy's source read and",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/response-write-lifecycle.ts",
+        "line": "* The reply's write lifecycle (D42): staged creates to discard, the commit",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/response-write-lifecycle.ts",
+        "line": "/** Documents the save left out, with the copy their writes' results now carry (D29). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/response-write-lifecycle.ts",
+        "line": "/** Why the reply's save left out a document's changes (D29, D42). */",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/tool-context.ts",
+        "line": "/** Binary copies duplicate the stored object (D24). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/tool-context.ts",
+        "line": "/** The calling thread's bound skills, read as files under `skills://` (D52). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/tool-context.ts",
+        "line": "/** The chain's effective permission, for the action policy (D39). */",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/work-tool.ts",
+        "line": "* A `switch`'s target, or why it can't happen. An unknown Work points to `work list` (D51),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/work-tool.ts",
+        "line": "* its own: the chat's mode is in its work context (D62).",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/model-tools/work-tool.ts",
+        "line": "* policy decides each command (D39). A direct call's Work rebinding and queued",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/thread-context-route.ts",
+        "line": "// People write live (D20): a writer's whole-document write never lands in a draft.",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/yjs-ws-handler.ts",
+        "line": "// Not a refusal (D30): the client reconnects and its handshake carries the missing prefix.",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/diff/hunks.ts",
+        "line": "* runs the semantic cleanup (D5) that turns word salad into one replacement. Review uses the cleaned",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/diff/late-peer-recovery.ts",
+        "line": "* - The frame's deletions never apply (log-only, D35), including deletions of typing recovered from earlier",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/diff/late-peer-recovery.ts",
+        "line": "* Late-peer recovery (spec-content-rebase \"Late peers\", D21, D33, D35). A peer update authored before the peer",
+        "count": 3
+      },
+      {
+        "path": "packages/agent-edit/src/diff/late-peer-recovery.ts",
+        "line": "/** Characters of dead text the frame deleted, which stay as they are (log-only, D35). */",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/diff/late-peer.ts",
+        "line": "* Typed text is net of the update's own delete set (D33): characters the same frame also deletes were",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/diff/merge.ts",
+        "line": "* It works on `align`'s uncleaned hunks (D5) for word precision. No Yjs here: the minimal Yjs writer is",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/diff/review.ts",
+        "line": "* D1), across paragraph breaks. A block removed in one place and added in another pairs as a move and",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/resolver/hash-locator.ts",
+        "line": "* draft the write changes (D14). Seeded drafts retain their live block addresses.",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/resolver/heading-sections.ts",
+        "line": "* and the same sections over plain markdown text, for `skills://` files (D60).",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/resolver/resolve.ts",
+        "line": "* Blocks copied from another document (D23). They take the place of",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/tool/command-schema.ts",
+        "line": "* `from`, the source of a block copy (D23) or a document copy (D24, D49): one",
+        "count": 3
+      },
+      {
+        "path": "packages/agent-edit/src/tool/command-schema.ts",
+        "line": "* Which version of a document to read (D3, D14). It has no default: omitted",
+        "count": 2
+      },
+      {
+        "path": "packages/agent-edit/src/tool/command-schema.ts",
+        "line": "/** The host's whole-document commands (D25, D38): `path` is what the command changes. */",
+        "count": 2
+      },
+      {
+        "path": "packages/agent-edit/src/tool/copy-receipt.ts",
+        "line": "// doesn't come back into the model's context (D23, D24).",
+        "count": 2
+      },
+      {
+        "path": "packages/agent-edit/src/tool/copy-rules.ts",
+        "line": "// Cross-field rules for `from`, the source of a block copy or a document copy (D23, D24, D49).",
+        "count": 3
+      },
+      {
+        "path": "packages/agent-edit/src/tool/model-result.ts",
+        "line": "* named it, and the Works whose drafts of a deleted document survive it (D79), by handle.",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/tool/result-text.ts",
+        "line": "// The one renderer from a `read` or `write` result to the text the model sees (D43).",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/tool/types.ts",
+        "line": "* source (D23, D24). They become the command's content as nodes.",
+        "count": 2
+      },
+      {
+        "path": "packages/contracts/src/branches/review.ts",
+        "line": "* `restore`, brought it back before merging (D79). The client words the notice from",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/branches/review.ts",
+        "line": "* Apply brings it back at its prior or next free leaf name before merging (D79).",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/branches/review.ts",
+        "line": "* confirmation named (D79). Without it, a deleted document answers `needs_restore`.",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/branches/review.ts",
+        "line": "* The branch's move or delete of the document, which live doesn't show until Apply (D26):",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/branches/review.ts",
+        "line": "* Vocabulary (D68): `branchId` is a `branches` row (the Work's whole branch), `itemKey`",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/branches/review.ts",
+        "line": "/** A `branches` row id (D68), never a per-document draft id. */",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/context-uri.ts",
+        "line": "/** Sources whose documents receive drafts in a draft-mode Work's branch (D9, D11). */",
+        "count": 2
+      },
+      {
+        "path": "packages/contracts/src/ids.ts",
+        "line": "/** `${branchId}:${documentId}`: the client's one review identity for a document of a branch (D68). */",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/ids.ts",
+        "line": "/** A `branches` row: one Work branch, the unit Discard all closes (D68). */",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/ids.ts",
+        "line": "/** One document's pending `work_draft` version inside a branch (D68). */",
+        "count": 1
+      },
+      {
+        "path": "packages/contracts/src/observability/index.ts",
+        "line": "* Same-kind span overlap is the client/server join rule (design D2).",
+        "count": 1
+      }
+    ],
+    "middle-dot": [],
+    "test-timing": [
+      {
+        "path": "apps/app/src/client/chat-submissions/deleted-chat.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 1));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/draft-journal-reads.db.test.ts",
+        "line": "setTimeout(() => resolve(\"waiting for a connection\"), 1500),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-branches.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 5));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/branch-tree.discard.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/draft-peer-pool.db.test.ts",
+        "line": "new Promise((resolve) => setTimeout(() => resolve(\"pool exhausted\"), 8000)),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/collab/response-save-destinations.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 20));",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
+        "line": "inherited = new Promise((resolve) => setTimeout(resolve, 20)).then(() =>",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
+        "line": "stray = new Promise((resolve) => setTimeout(resolve, 20)).then(() => {",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 20));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/context/link-ahead-arrivals.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 20));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/context/tree/hidden-nodes.db.test.ts",
+        "line": "await new Promise<void>((resolve) => setTimeout(resolve, 10));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/projects/work-repository.db.test.ts",
+        "line": "delay(30, \"blocked\"),",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/domains/runtime/loop/stop-protocol.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 300));",
+        "count": 2
+      },
+      {
+        "path": "apps/server/server/domains/runtime/shown-links.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/lib/observability.test.ts",
+        "line": "expect(Date.now() - signalledAt).toBeGreaterThanOrEqual(75);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/shared/drizzle-transaction.db.test.ts",
+        "line": "await wait(100);",
+        "count": 1
+      },
+      {
+        "path": "apps/server/server/shared/drizzle-transaction.db.test.ts",
+        "line": "late = wait(50).then(() =>",
+        "count": 1
+      },
+      {
+        "path": "packages/agent-edit/src/tool/response-committer.test.ts",
+        "line": "setTimeout(resolve, 20);",
+        "count": 1
+      },
+      {
+        "path": "packages/resource-replica/src/folder-placement-regressions.test.ts",
+        "line": "expect(elapsed).toBeLessThan(boundedMs);",
+        "count": 1
+      },
+      {
+        "path": "packages/resource-replica/src/folder-placement-regressions.test.ts",
+        "line": "expect(performance.now() - start).toBeLessThan(boundedMs);",
+        "count": 2
+      },
+      {
+        "path": "tools/dev/lib/migration-runner.db.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 25));",
+        "count": 1
+      },
+      {
+        "path": "tools/dev/lib/worktree-cleanup-readiness.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 25));",
+        "count": 1
+      },
+      {
+        "path": "tools/mf/src/commands/thread/thread.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 40));",
+        "count": 1
+      },
+      {
+        "path": "tools/mf/src/commands/thread/thread.test.ts",
+        "line": "await new Promise((resolve) => setTimeout(resolve, 50));",
+        "count": 1
+      }
+    ]
+  }
+}

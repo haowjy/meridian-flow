@@ -156,7 +156,6 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     sequence: row.sequence,
     provider: row.provider,
     model: row.model,
-    providerRequestId: row.providerRequestId,
     inputTokens: row.inputTokens ?? 0,
     outputTokens: row.outputTokens ?? 0,
     reasoningTokens: row.reasoningTokens,

@@ -1,14 +1,49 @@
 /** Drizzle EventJournalWriter: append-only SQL writes of orchestrator events with per-thread sequence assignment. Depends inward on the event-journal port; owns the journal append query. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleDatabase,
   type DrizzleDb,
 } from "../../../../shared/drizzle-transaction.js";
 import { deriveJournalTurnId } from "../../domain/journal-turn-id.js";
-import type { EventJournalWriter, JournalEventEnvelope } from "../../ports/event-journal.js";
+import {
+  type EventJournalWriter,
+  JOURNAL_ONLY_EVENT_TYPES,
+  type JournalEventEnvelope,
+  REPLY_FINISHED_EVENT_TYPES,
+} from "../../ports/event-journal.js";
+
+async function pruneFinishedReplyTransportRows(
+  db: DrizzleDb,
+  threadId: ThreadId,
+  firstFinishedSeq: bigint,
+): Promise<void> {
+  const [previousFinished] = await db
+    .select({ seq: schema.eventJournal.seq })
+    .from(schema.eventJournal)
+    .where(
+      and(
+        eq(schema.eventJournal.threadId, threadId),
+        lt(schema.eventJournal.seq, firstFinishedSeq),
+        inArray(schema.eventJournal.eventType, [...REPLY_FINISHED_EVENT_TYPES]),
+      ),
+    )
+    .orderBy(desc(schema.eventJournal.seq))
+    .limit(1);
+  if (!previousFinished) return;
+
+  await db
+    .delete(schema.eventJournal)
+    .where(
+      and(
+        eq(schema.eventJournal.threadId, threadId),
+        lt(schema.eventJournal.seq, previousFinished.seq),
+        inArray(schema.eventJournal.eventType, [...JOURNAL_ONLY_EVENT_TYPES]),
+      ),
+    );
+}
 
 async function appendJournalEvents(
   db: DrizzleDb,
@@ -38,6 +73,13 @@ async function appendJournalEvents(
       payload: event,
     })),
   );
+
+  const firstFinishedIndex = events.findIndex((event) =>
+    REPLY_FINISHED_EVENT_TYPES.includes(event.type as (typeof REPLY_FINISHED_EVENT_TYPES)[number]),
+  );
+  if (firstFinishedIndex !== -1) {
+    await pruneFinishedReplyTransportRows(db, threadId, firstSeq + BigInt(firstFinishedIndex));
+  }
 
   await db.execute(sql`SELECT pg_notify('thread_events', ${`${threadId}:${lastSeq.toString()}`})`);
 

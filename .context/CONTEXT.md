@@ -1,108 +1,17 @@
-# Meridian Flow Repo — Architecture
+# Meridian Flow repo — architecture
 
-This is the repo-local architecture overview for the v3 full-stack rebuild. It
-tracks the code as shipped in this repository; cross-cutting rationale lives in
-the Meridian KB.
+Cross-cutting decisions live in the [KB](https://github.com/haowjy/meridian-flow-docs/tree/main/kb).
+Server composition and transport: [apps/server](../apps/server/.context/CONTEXT.md).
 
-## Module dependency graph
-
-```mermaid
-flowchart TD
-  Projects[Projects + works]
-  Auth[WorkOS AuthKit + public.users]
-  Packages[Agent packages]
-  Runtime[Runtime orchestrator]
-  Gateway[Model gateway]
-  Threads[Threads]
-  Context[Context + documents]
-  Collab[Yjs collab]
-
-  Auth --> Projects
-  Projects --> Packages
-  Runtime --> Threads
-  Runtime --> Packages
-  Runtime --> Gateway
-  Runtime --> Context
-  Context --> Collab
-  Threads --> Projects
-```
-
-Acyclic at the domain level: threads reference project/work ownership, never
-the reverse (the only projects↔threads imports are test fixtures).
-Every live thread has a primary `thread_works` row. Root creation may omit a
-Work or send explicit null: both bind the project's locked No Work row.
-An existing thread may later be explicitly rebound through the composer's
-canonical thread-domain operation; Work management and navigation never invoke
-it implicitly. The model's `work switch` never rebinds ([rule](../apps/server/server/domains/runtime/.context/tools.md#permissions)).
-`apps/server/server/lib/app.ts` is the composition root that wires the runtime,
-thread repositories, gateway, event hub, Agent revision store, preferences,
-billing, projects, collab services, and the shared model/writer safety-notice port.
-
-## Harness composition
-
-"Harness" is a concept, not a package. The harness is the top-layer stack:
-
-```
-domains/runtime + domains/threads + domains/packages + domains/projects + domains/context + domains/collab
-```
-
-| Domain area | Role in harness |
-|---|---|
-| `domains/runtime/loop` | Control loop: receives user messages, drives turns, streams events |
-| `domains/runtime/gateway` | LLM access: provider-neutral generation/streaming |
-| `domains/runtime/tools` | Tool registry/executor for Meridian-owned tools; no external execution runtime |
-| `domains/packages` | Agent/package catalog, retained package sources, and export |
-| `domains/projects` | Project/work ownership, personal-project bootstrap with locked No Work, project CRUD, Work catalogs, and owner gates for project-scoped routes |
-| `domains/context` | ContextPort router/adapters for agent-readable writing context |
-| `domains/collab` | Yjs document sync and the per-block text projection |
-| `domains/file-policy` | The one file-access decision for people and agents (level and live-or-draft destination), the edit grants every write seam confirms under lock, and live-room access changes |
-
-## DI wiring pattern
-
-Infrastructure dependencies are explicit ports. JSON-natural shared DTOs live in
-`@meridian/contracts`; server-local behavioral ports live in their owning domain.
-Concrete adapters live under `apps/server/server/*`. Wiring happens at the
-composition root (`apps/server/server/lib/app.ts`).
-
-**Rules:**
-
-- Domain code depends on ports, never concrete adapters internally.
-- Adapter/provider choice is configuration-driven at composition time.
-- Provider-specific types stay inside adapters.
-- Postgres is the DB; WorkOS AuthKit is the auth boundary. Drizzle owns the app schema.
-- No external package-execution provider/runtime is part of Meridian Flow v3.
-
-## Support packages
-
-| Package | Role | Constraints |
-|---|---|---|
-| `@meridian/contracts` | Shared JSON-natural types, IDs, protocol DTOs | Types only; no server logic |
-| `@meridian/thread-client` | Thread client core shared by the app and `./mf`: the thread socket client and the message serializer; the server imports only `@meridian/thread-client/view` (`replyDrawsNothing`) | Platform-neutral behavior through injected ports; no app/server imports |
-| `@meridian/database` | Drizzle schema, migrations, Postgres functions | Persistence shape only; repos live in `apps/server` |
-| `@meridian/design-tokens` | Ink & Jade design tokens (`ink-jade.css`) | CSS/token primitives only; semantic `@theme`, no raw hex outside package |
-| `@meridian/prosemirror-schema` | Shared ProseMirror node/mark specs | Server and frontend schemas stay structurally identical |
-
-## App layer
-
-| App | Role | Key constraint |
-|---|---|---|
-| `apps/server` | Nitro HTTP + WebSocket server | One `AppServices` singleton; domains wired through ports |
-| `apps/app` | TanStack Start authenticated project | Business logic lives in packages/server domains |
-| `apps/www` | Public marketing site | Presentation shell for Meridian Flow |
-
-## Dev tools
-
-| Tool | Role | Key constraint |
-|---|---|---|
-| `tools/dev` | `pnpm dev`, worktree databases, migrations, worktree cleanup | Not a workspace package; imports no `apps/` or `packages/` code |
-| `tools/mf` | `@meridian/mf`, the `./mf` CLI over the app's own API | Workspace package; imports `@meridian/contracts`, `@meridian/thread-client` and only the Portless route contract from `tools/dev`; never `apps/` |
-
-## Documentation tier model
-
-```
-AGENTS.md            ← prescriptive rules and boundaries
-.context/CONTEXT.md  ← architecture, contracts, invariants, conventions
-KB                   ← cross-cutting decisions, vocabulary, durable product docs
-```
-
-Agents should read `.context/` before raw source files when entering an area.
+- **Domains are acyclic.** Threads reference project and Work ownership, never
+  the reverse; the only projects↔threads imports are test fixtures.
+  `apps/server/server/lib/` is the composition root and may wire every domain;
+  domains do not import `lib/`.
+- **Ports.** JSON-natural shared DTOs live in `@meridian/contracts`; behavioral
+  ports live in the domain that owns them. Provider-specific types stay inside
+  adapters.
+- **"Harness" is a concept, not a package:** the runtime, threads, packages,
+  projects, context and collab domains together.
+- **Billing.** Credits are user-scoped in the schema, but the runtime's billing
+  port still takes project-shaped inputs in places; the Drizzle adapter ignores
+  the project id.
