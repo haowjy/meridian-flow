@@ -16,6 +16,7 @@ import {
   SURVIVED,
   UNDEAD,
   type WikiPage,
+  WORLD_PAGES,
 } from "./story";
 
 /**
@@ -50,6 +51,11 @@ export function ProductPlaceholder() {
         <RailDocument id="dbeast" rowId="s-beast-row">
           The Beast
         </RailDocument>
+        {WORLD_PAGES.map(({ key, name }) => (
+          <RailDocument key={key} id={`d${key}`}>
+            {name}
+          </RailDocument>
+        ))}
       </aside>
       <div className="s-pane">
         <div className="s-top">
@@ -98,6 +104,12 @@ export function ProductPlaceholder() {
             </figure>
             <PageBody page={DRAGON_PAGE} />
           </article>
+          {WORLD_PAGES.map(({ key, name, page }) => (
+            <article className="s-doc" id={`d${key}`} data-folder="Knowledge Base" hidden key={key}>
+              <div className="name">{name}</div>
+              <PageBody page={page} />
+            </article>
+          ))}
         </div>
       </div>
       <aside className="s-chat" aria-label="Chat">
