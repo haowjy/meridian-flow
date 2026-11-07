@@ -21,8 +21,7 @@ turn.
 The Cold Fire came over the north on a clear night in spring. It is the breath
 of a beast in the ice, and it spreads a little further south each night while
 the sun comes up colder. The four peoples sent armies north first; none came
-back. Then each people sent its strongest, and those four are the party. They
-are heroes, the best of four peoples.
+back. Then each people sent its strongest, and those four are the party.
 
 On the ninth night they find the beast, and it is a dragon. They hurt it, and
 it kills three of them. As the breath comes down on the last one standing, a
@@ -56,8 +55,8 @@ game suddenly does, and the real story is the loop.
 
 Any of the four can be the survivor. Each has a reason to live and a different
 book after the Prologue, so the card has no right answer and marks none as
-recommended. The narrator says "we" and is never named, because the visitor
-hasn't picked yet.
+recommended. The shared text is told as "we" and names no narrator, because the visitor
+hasn't picked yet; each ending switches to the survivor's "I".
 
 | | People | Skill | Physical detail |
 |---|---|---|---|
@@ -80,8 +79,8 @@ says who they are.
 - **The System** has always existed. Everyone has a level, skills and a tag;
   blue boxes announce them, read aloud to anyone who can't see. It has never
   told anyone what to do or talked like a game, so the death box is the first
-  of its kind. Something has taken hold of it, wrote that box, and wants the
-  beast dead.
+  of its kind. Something has taken hold of the System: it wrote that box, and it
+  wants the beast dead.
 - **The beast** has no tag and no level: the System doesn't see it. Its breath
   is the Cold Fire. Only the Kessa song says dragons exist, and everyone else
   calls it a myth.
@@ -115,8 +114,7 @@ The beats are in [`timeline.ts`](../timeline.ts). In story order:
 
 The fake Knowledge Base rail follows the app's real folder tree: Manuscript
 with the Prologue, then the Knowledge Base with Characters, World (with Places
-inside it) and Vocab. The Knowledge Base is the series bible, so no page is
-named as one. The Vocab page there spells each story term one way; follow it in
+inside it) and Vocab. The Vocab page there spells each story term one way; follow it in
 any new copy.
 
 ## Rejected
@@ -131,11 +129,14 @@ any new copy.
   uncounted.
 - **Ending on "Chapter 1: ____".** The end asks what book the visitor wants to
   write.
+- **A Series Bible or Spoilers page in the Knowledge Base.** The Knowledge Base
+  is the series bible, and each secret lives in the Writer's notes of the page
+  it is about.
 - **The other full-story concepts:** a world without magic where dragons were
   extinct, a Demon King legend hiding a tithe, a dragon guarding a clutch, a
   dragon whose fire the old heroes stole, and a dragon civilisation carrying a
-  warning. The beast version replaced them, along with a System that is new to
-  the world or new to the survivor.
+  warning. This story replaced them, and with them the versions where the System is new
+  to the world or new to the survivor.
 
 ## Open
 
