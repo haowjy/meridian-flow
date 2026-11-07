@@ -101,8 +101,7 @@ The beats are in [`timeline.ts`](../timeline.ts). In story order:
 
 1. The campfire: the four sit at the fire and the System opens a status window
    over each, `SHEETS` in `story.ts`: who they are, their skill and what it
-   does. It is the visitor's only meeting with them before
-   three die, and it sets up the fight: Tam's spark won't catch in deep cold,
+   does. It is the visitor's only meeting with them before three die, and it sets up the fight: Tam's spark won't catch in deep cold,
    and a ward turns one blow.
 2. The turn line: "On the ninth night, we found it. It was a dragon."
 3. The fight: the ward splits the first breath, they hurt it, and three fall.
@@ -135,6 +134,9 @@ any new copy.
   expected by this audience, so a beat written to surprise them lands flat.
 - **"We had to fight a dragon." as the burning line.** The System box burns
   instead of a headline.
+- **`Status: Alive` on the campfire sheets.** Four Alive lines before the boss
+  read as a promise they will change, so the visitor knows three die screens
+  early.
 - **Everyone rising undead when the visitor skips.** A skip assigns a survivor.
 - **"Tutorial complete." as the death box's text.** Halfway down a landing
   page it reads as the page's own walkthrough ending.
