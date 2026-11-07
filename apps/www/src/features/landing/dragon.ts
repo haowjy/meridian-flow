@@ -13,6 +13,8 @@ export const dragonMouth = (stroke: number) => [0.433, -0.122 - (stroke - 0.5) *
 /** Which way the flying head points, in radians below level. */
 export const DRAGON_HEAD_ANGLE = 0.11;
 
+/** How far below the cell's centre a grounded pose's feet are, in shares of the cell. */
+export const GROUND_FEET = 0.185;
 /** Grounded poses in their own sheet, from head low at the party to raised straight up. */
 export const GROUND_POSES = 4;
 /** The neck's end and which way the head turns there, head low (0) to raised (1). */
