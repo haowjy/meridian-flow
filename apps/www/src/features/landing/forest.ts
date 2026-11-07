@@ -19,7 +19,8 @@ import {
 const WALK_FRAMES = 6;
 const FIGHT_COLUMN = WALK_FRAMES;
 const SIT_COLUMN = WALK_FRAMES + 2;
-const COLUMNS = WALK_FRAMES + 3;
+const SHADOW_COLUMN = WALK_FRAMES + 3;
+const COLUMNS = WALK_FRAMES + 4;
 const WOLF_ROW = 4;
 const ROWS = 5;
 const FIGURE = 256;
@@ -54,11 +55,17 @@ function spruce(pen: CanvasRenderingContext2D, x: number, ground: number, height
   }
 }
 
-type Pose = { kind: "walk"; phase: number } | { kind: "fight"; lunge: number } | { kind: "sit" };
+type Pose =
+  | { kind: "walk"; phase: number }
+  | { kind: "fight"; lunge: number }
+  | { kind: "sit" }
+  | { kind: "shadow" };
 
 /** One of the party, facing right, standing on the bottom of its cell. */
 function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
-  const scale = [0.8, 0.95, 1.12, 0.92][row];
+  // Charred by the breath, any of the four: no build or gear of their own.
+  const who = pose.kind === "shadow" ? -1 : row;
+  const scale = who < 0 ? 0.95 : [0.8, 0.95, 1.12, 0.92][row];
   const x = FIGURE / 2;
   const ground = FIGURE - 6;
   const unit = (FIGURE * scale) / 8;
@@ -81,7 +88,7 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
 
   if (seated) {
     line(unit * 0.5, [x, hip], [x + unit * 1.5, hip - unit * 0.7], [x + unit * 1.9, ground]);
-  } else if (row !== 3) {
+  } else if (who !== 3) {
     for (const side of [1, -1]) {
       const stride = pose.kind === "fight" ? side * (0.9 + lunge * 0.5) : swing * side;
       const knee = x + stride * unit * 0.9;
@@ -95,11 +102,11 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
     }
   }
 
-  const wide = row === 2 ? 1.15 : 0.8;
+  const wide = who === 2 ? 1.15 : 0.8;
   pen.beginPath();
   pen.moveTo(shoulderX - unit * wide, shoulder);
   pen.lineTo(shoulderX + unit * 0.65, shoulder);
-  if (row === 3 && !seated) {
+  if (who === 3 && !seated) {
     pen.lineTo(x + unit * (1.1 + swing * 0.25), ground);
     pen.lineTo(x - unit * (1.4 + swing * 0.25), ground);
   } else {
@@ -115,7 +122,7 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
   pen.arc(headX, headY, unit * 0.62, 0, Math.PI * 2);
   pen.fill();
 
-  if (row === 0) {
+  if (who === 0) {
     pen.beginPath();
     pen.moveTo(headX + unit * 0.4, headY - unit * 0.5);
     pen.lineTo(headX - unit * 0.9, headY - unit * 0.9);
@@ -133,7 +140,7 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
       pen.stroke();
     }
   }
-  if (row === 1 && pose.kind === "fight") {
+  if (who === 1 && pose.kind === "fight") {
     const palm: [number, number] = [shoulderX + unit * 1.8, shoulder - unit * (0.6 + lunge * 1.4)];
     line(unit * 0.22, [shoulderX, shoulder + unit * 0.2], palm);
     pen.beginPath();
@@ -146,7 +153,7 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
     );
     pen.fill();
   }
-  if (row === 2) {
+  if (who === 2) {
     line(unit * 0.26, [headX - unit * 0.4, headY], [x - unit * 1.1, shoulder + unit * 1.3]);
     const grip: [number, number] =
       pose.kind === "fight"
@@ -161,7 +168,7 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
     pen.arc(end[0], end[1], unit * 0.7, 0.3, Math.PI + 1.2);
     pen.fill();
   }
-  if (row === 3) {
+  if (who === 3) {
     const top = seated ? ground - unit * 5 : shoulder - unit * 1.8;
     line(unit * 0.17, [x + unit * 1.2, seated ? ground : ground], [x + unit * 1.1, top]);
     line(unit * 0.14, [x + unit * 1.1, top], [x + unit * 1.7, top + unit * 0.2]);
@@ -232,6 +239,7 @@ function partySheet() {
     cell(FIGHT_COLUMN, row, () => person(pen, row, { kind: "fight", lunge: 0 }));
     cell(FIGHT_COLUMN + 1, row, () => person(pen, row, { kind: "fight", lunge: 1 }));
     cell(SIT_COLUMN, row, () => person(pen, row, { kind: "sit" }));
+    cell(SHADOW_COLUMN, row, () => person(pen, row, { kind: "shadow" }));
   }
   for (let frame = 0; frame < WALK_FRAMES; frame += 1) {
     cell(frame, WOLF_ROW, () => wolves(pen, (frame / WALK_FRAMES) * Math.PI * 2));
@@ -441,6 +449,11 @@ export function createForest(root: HTMLElement) {
           feetY -= Math.sin(flight * Math.PI) * H * 0.1;
           angle = -smooth(flight, 0, 1) * 1.5;
         }
+        // Charred, all four lose their own shapes, and the one left standing comes out of the fire
+        // in the middle of where they stood: nothing says who survives before the card asks.
+        if (charred > 0.12) column = SHADOW_COLUMN;
+        if (fate.kind === "stand")
+          fx = lerp(x, standX - backed, smooth(fight, 0.7, FIGHT.breath[1]));
         const dark = charred * (fate.kind === "stand" ? 0.55 : 0.3);
         // Lit by the breaths and the ward, they read brighter than on the walk.
         const lit = 1.45 - dark * 1.3;
