@@ -1,6 +1,6 @@
 import { MARKETING_SKY } from "@meridian/design-tokens/marketing-sky";
 import type { Layout } from "./film-layout";
-import { type BeatProgress, clamp, FIGHT, lerp, PERCH, progress, smooth } from "./timeline";
+import { type BeatProgress, clamp, ease, FIGHT, lerp, PERCH, progress, smooth } from "./timeline";
 
 const WALK_FRAMES = 6;
 const FIGHT_COLUMN = WALK_FRAMES;
@@ -13,6 +13,15 @@ const FIGURE = 256;
 const GROUND = 0.93;
 const CLIFF_TOP = 0.64;
 const CLIFF_X = 0.11;
+/**
+ * The strip of ground, in stage widths: the forest, then the clearing on the lake shore where they
+ * meet the dragon, then a stand of trees behind it. The turn walks them out of the woods onto it.
+ */
+const STRIP = 2.5;
+/** The beach's surface in the clearing, in shares of the stage. */
+export const SHORE_LINE = 0.915;
+const SHORE = [1.5, 2.3] as const;
+const TO_SHORE = 1.1;
 /** Stage shares of the world beat at which the other three catch Tam up. */
 const JOINS = [0, 0.22, 0.4, 0.58];
 
@@ -22,6 +31,8 @@ export type Party = { rows: readonly (readonly [number, number])[] };
 /** Up and back down across a window: 0 outside it, 1 in its middle. */
 const flash = (value: number, [from, to]: readonly [number, number]) =>
   smooth(value, from, from + 0.04) * (1 - smooth(value, to - 0.05, to));
+
+const rgb = ([r, g, b]: readonly number[]) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
 
 const noise = (seed: number) => {
   const value = Math.sin(seed * 12.9898) * 43758.5453;
@@ -240,7 +251,6 @@ export function createForest(root: HTMLElement) {
   const camp = walkers.querySelector(".camp") as HTMLElement;
   const ward = walkers.querySelector(".ward") as HTMLElement;
   root.style.setProperty("--walk-sheet", `url(${partySheet().toDataURL()})`);
-  const rgb = ([r, g, b]: readonly number[]) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
   root.style.setProperty("--walk-lantern", rgb(MARKETING_SKY.sun));
   root.style.setProperty("--walk-ward", rgb(MARKETING_SKY.fireCore));
   let layout: Layout;
@@ -248,16 +258,46 @@ export function createForest(root: HTMLElement) {
   const measure = (next: Layout) => {
     layout = next;
     const { width: W, height: H } = next;
-    near.width = Math.ceil(W * 1.4);
+    near.width = Math.ceil(W * STRIP);
     near.height = Math.ceil(H * 0.5);
     const pen = near.getContext("2d") as CanvasRenderingContext2D;
     pen.fillStyle = getComputedStyle(root).getPropertyValue("--mkt-night");
     const ground = near.height * 0.9;
-    pen.fillRect(0, ground - H * 0.08, near.width, near.height);
+    const [shoreFrom, shoreTo] = [SHORE[0] * W, SHORE[1] * W];
+    // The woods' floor, then the beach dropping to the water's edge and rising again at the trees.
+    const sand = (x: number) => {
+      const into = Math.min(1, Math.max(0, Math.min(x - shoreFrom, shoreTo - x) / (W * 0.12)));
+      // The strip's ground sits at 0.95 of the stage.
+      return ground - H * lerp(0.08, 0.95 - SHORE_LINE, into * into * (3 - 2 * into));
+    };
+    pen.beginPath();
+    pen.moveTo(0, near.height);
+    for (let x = 0; x <= near.width; x += 8) pen.lineTo(x, sand(x));
+    pen.lineTo(near.width, near.height);
+    pen.closePath();
+    pen.fill();
+    pen.save();
+    pen.strokeStyle = rgb(MARKETING_SKY.auroraMid);
+    pen.globalAlpha = 0.22;
+    pen.lineWidth = Math.max(1, H * 0.002);
+    pen.beginPath();
+    for (let x = shoreFrom; x <= shoreTo; x += 8) pen.lineTo(x, sand(x));
+    pen.stroke();
+    pen.restore();
+    const forestEnd = shoreFrom - W * 0.05;
     for (let i = 0; i < 110; i += 1) {
-      const x = noise(i + 1) * near.width;
-      const edge = Math.abs(x / near.width - 0.46) * 2;
-      spruce(pen, x, ground, H * (0.14 + edge * 0.3 + noise(i + 40) * 0.1));
+      const x = noise(i + 1) * forestEnd * 1.04;
+      const edge = Math.abs(x / (W * 1.4) - 0.46) * 2;
+      // Thinning and smaller toward the shore.
+      const thin = clamp((x - (forestEnd - W * 0.25)) / (W * 0.3));
+      if (noise(i + 70) < thin) continue;
+      const tall = H * (0.14 + edge * 0.3 + noise(i + 40) * 0.1) * (1 - thin * 0.5);
+      // No taller than the strip, or its top is cut flat.
+      spruce(pen, x, sand(x), Math.min(tall, sand(x) * 0.97));
+    }
+    for (let i = 0; i < 24; i += 1) {
+      const x = shoreTo + noise(i + 200) * (near.width - shoreTo);
+      spruce(pen, x, sand(x), H * (0.2 + noise(i + 240) * 0.2));
     }
     const top = (CLIFF_TOP - 0.5) * H;
     pen.beginPath();
@@ -290,10 +330,11 @@ export function createForest(root: HTMLElement) {
     update(at: number, beats: BeatProgress): Party | null {
       const { spans, width: W, height: H } = layout;
       const shown = 1 - smooth(beats.twist, 0.12, 0.26);
-      forest.style.opacity = String(shown);
+      forest.style.opacity = String(1 - smooth(beats.lore, 0, 0.3));
       walkers.style.opacity = String(shown);
       if (shown === 0) return null;
-      const drift = (at / H) * W * 0.025;
+      const walkOut = smooth(beats.turn, 0.02, 0.5);
+      const drift = (at / H) * W * 0.025 + walkOut * W * TO_SHORE;
       forest.style.transform = `translate3d(${-drift}px,0,0)`;
 
       const size = H * 0.16;
@@ -326,7 +367,11 @@ export function createForest(root: HTMLElement) {
         let column = moving ? Math.abs(walking) : 0;
         if (inFight) column = FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
         if (seated > 0.5 && beats.turn <= 0) column = SIT_COLUMN;
-        if (beats.turn > 0) column = 1;
+        // Out of the woods onto the shore, then still as it lands.
+        if (beats.turn > 0) {
+          const stepping = walkOut > 0 && walkOut < 1;
+          column = stepping ? Math.floor(drift / (size * 0.16) + row * 2) % WALK_FRAMES : 1;
+        }
         if (fight <= 0) {
           heads.push(x);
           figure.style.filter = "";
@@ -349,11 +394,11 @@ export function createForest(root: HTMLElement) {
         column = hit > 0 ? 1 : FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
         if (fate.kind === "fall") angle = -smooth(hit, 0, 1) * 1.45;
         if (fate.kind === "flung") {
-          const flight = progress(fight, fate.at, fate.at + 0.14);
-          fx = x - flight * W * 0.4;
-          feetY -= Math.sin(flight * Math.PI) * H * 0.3;
-          angle = -flight * 5;
-          figure.style.opacity = String(1 - smooth(flight, 0.6, 1));
+          // Thrown back by the breath, and down on the sand where it lands.
+          const flight = progress(fight, fate.at, fate.at + 0.1);
+          fx = x - ease(flight) * W * (layout.isPhone ? 0.08 : 0.16);
+          feetY -= Math.sin(flight * Math.PI) * H * 0.1;
+          angle = -smooth(flight, 0, 1) * 1.5;
         }
         const dark = charred * (fate.kind === "stand" ? 0.55 : 0.3);
         // Lit by the breaths and the ward, they read brighter than on the walk.

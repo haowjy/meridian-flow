@@ -6,12 +6,13 @@ import {
   dragonGroundSheet,
   dragonMouth,
   dragonSheet,
+  GROUND_FEET,
   GROUND_POSES,
   groundMouth,
 } from "./dragon";
 import type { Layout } from "./film-layout";
 import { createFire } from "./fire";
-import type { Party } from "./forest";
+import { type Party, SHORE_LINE } from "./forest";
 import { GULP_RISE, gulpPhase } from "./sky";
 import { type BeatProgress, clamp, ease, FIGHT, lerp, PERCH, progress, smooth } from "./timeline";
 
@@ -28,6 +29,9 @@ const TURN_RATE = 0.16;
 const MAX_LEAN = 0.7;
 /** The sweep, as shares of the twist: it leaves left, comes back and crosses, pushing the burn. */
 export const REVEAL_STARTS = 0.6;
+/** Its size on the ground, in shares of the stage's lesser side: it towers over the party. */
+const DESK_STANDING = 0.62;
+const PHONE_STANDING = 1;
 /** The share of the turn at which it lands in front of the party. */
 const LANDED = 0.58;
 const PASS = { leaves: 0.55, enters: REVEAL_STARTS, exits: 0.92 };
@@ -112,6 +116,10 @@ export function createDragonActor(root: HTMLElement) {
     fire?.resize(W, H);
     // Phones have no room for the party to give ground, so the dragon holds its place there.
     const fightX = (x: number) => (next.isPhone ? 0.84 : x);
+    // A phone's stage is narrow, so its lesser side is short beside the party: it stands bigger.
+    const standing = next.isPhone ? PHONE_STANDING : DESK_STANDING;
+    // Stood on the beach: its feet on the sand, whatever its size.
+    const onShore = (size: number) => SHORE_LINE - (GROUND_FEET * size * unit) / H;
     const mark = (
       at: number,
       x: number,
@@ -143,13 +151,19 @@ export function createDragonActor(root: HTMLElement) {
       mark(span(spans, "out", 1), 0.4, 0.2, 0.1, -1),
       mark(span(spans, "back", 1), 0.7, 0.26, 0.13),
       mark(span(spans, "turn", 0.3), 0.9, 0.34, 0.2, -1),
-      mark(span(spans, "turn", LANDED), 0.84, 0.76, 0.4, -1),
+      mark(span(spans, "turn", LANDED), 0.84, onShore(standing), standing, -1),
       // It presses in as they give ground, rears back when the spark lands, then comes down
       // again for the breath that kills them.
-      mark(span(spans, "fight", FIGHT.spark.eye[1]), fightX(0.77), 0.76, 0.4, -1),
-      mark(span(spans, "fight", FIGHT.spark.eye[1] + 0.05), fightX(0.83), 0.66, 0.44, -1),
-      mark(span(spans, "fight", FIGHT.breath[0]), fightX(0.72), 0.75, 0.41, -1),
-      mark(span(spans, "twist", 0.22), fightX(0.72), 0.76, 0.4, -1),
+      mark(span(spans, "fight", FIGHT.spark.eye[1]), fightX(0.8), onShore(standing), standing, -1),
+      mark(
+        span(spans, "fight", FIGHT.spark.eye[1] + 0.05),
+        fightX(0.86),
+        onShore(standing) - 0.1,
+        standing * 1.08,
+        -1,
+      ),
+      mark(span(spans, "fight", FIGHT.breath[0]), fightX(0.76), onShore(standing), standing, -1),
+      mark(span(spans, "twist", 0.22), fightX(0.76), onShore(standing), standing, -1),
       // Up behind the box, one loop small in the far sky, and out at the left to turn.
       mark(span(spans, "twist", 0.31), 0.72, 0.4, 0.2, -1, true),
       mark(span(spans, "twist", 0.39), 0.5, 0.17, 0.1, -1, true),
