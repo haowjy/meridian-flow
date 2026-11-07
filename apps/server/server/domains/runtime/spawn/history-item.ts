@@ -108,7 +108,7 @@ export type DescribedBlock =
   | {
       kind: "tool";
       tool: string;
-      /** History withholds the arguments: `return_result` (D6), or the call is missing. */
+      /** History withholds the arguments: `return_result`, or the call is missing. */
       withheld: boolean;
       /** After the arrow: a finished call's result in brief, a failed call's status or code. */
       summary?: string;
@@ -149,7 +149,7 @@ export function describeBlock(input: {
       | undefined;
     const name = String(content.toolName ?? result?.toolName ?? "unknown");
     const registration = registry.getRegistration(name);
-    // Storage may reorder keys; history quotes them in the tool's schema order (D48).
+    // Storage may reorder keys; history quotes them in the tool's schema order.
     const args = orderLikeSchema(
       (call?.input ?? {}) as JsonObject,
       registration?.definition.inputSchema,

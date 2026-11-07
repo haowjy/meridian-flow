@@ -178,7 +178,7 @@ export type RewriteOperation =
   /**
    * A long tail folded into the checkpoint: the content, the effect and the modification stamp
    * stay. The coordinator schedules it once a committed writer frame leaves the tail past its
-   * bound (decision D10).
+   * bound.
    */
   { kind: "compact" };
 

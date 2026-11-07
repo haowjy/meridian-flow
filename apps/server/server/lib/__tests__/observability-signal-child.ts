@@ -41,9 +41,6 @@ const gateway: Gateway = {
       },
     } satisfies StreamEvent;
   },
-  async generate() {
-    throw new Error("The shutdown fixture only streams");
-  },
 };
 
 let runtime!: Awaited<ReturnType<typeof runtimeScenario>>;

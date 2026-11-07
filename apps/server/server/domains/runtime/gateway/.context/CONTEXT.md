@@ -12,14 +12,16 @@ prefix.
 
 ## Port and attempt policy
 
-`Gateway.stream()` yields canonical `StreamEvent`s; `generate()` and `listModels()`
-complete the port; the orchestrator persists a cancelled call's result when
-`shouldPersistCancelledResult()` (`domain/cancel-settlement.ts`) says it has billable usage or
-`meteringStatus: "missing_usage"` (`attempt-stream.ts` stamps a stopped call that kept output but
-got no provider usage). Every adapter's `stream()` is the shared envelope in
-`adapters/provider-stream.ts` around its own request map and collector; after an abort it yields `end`
-with whatever accumulated, possibly nothing, and `attempt-stream.ts` decides what a stop or timeout
-means.
+`Gateway.stream()` yields canonical `StreamEvent`s and `listModels()` completes the port;
+the orchestrator persists every cancelled call's result. A stop ends the stream with exactly one
+`end`, built in the shared envelope (`adapters/provider-stream.ts`) from what the adapter had
+accumulated: the envelope races the SDK against the abort, so a rejecting, returning or hung SDK
+all end at once, with the text and usage so far. `attempt-stream.ts` stamps that `end` (and any
+real `end` after the stop) with `finishReason: null`, since the adapter's reason says nothing true,
+and with `missing_usage` when no provider usage arrived. A timeout aborts the same signal but
+stays an error: `attempt-stream.ts` turns an `end` that follows a timeout into the timeout error.
+A stop before an attempt starts, including one during retry backoff, made no call and ends the
+stream with no events and no response.
 Where the routed model is known, `attempt-stream.ts` calls `resolveCall()`
 (`domain/resolve-call.ts`) once and hands the adapter a `ResolvedCall`:
 `{ cacheTtlSeconds, longCacheWrites, reasoning: "default" | "off" | { effort } }`. Adapters
@@ -36,9 +38,7 @@ models.dev lacks, such as per-TTL cache-write rates and wire parameters.
 Retry occurs only before committed text or tool output; reasoning-only
 output is retryable. Backoff honors provider retry hints and is abort-aware.
 Each attempt has an inactivity stall timer and an absolute ceiling timer on one
-derived signal. Partial-output cancellation may drain usage/end events but is
-bounded by the cancel-drain deadline; iterator cleanup cannot hold cancellation
-hostage.
+derived signal. Iterator cleanup cannot hold cancellation hostage.
 
 Instrumentation wraps the production-composed gateway once. It emits lifecycle
 records keyed by `gatewayCallId`; request capture is a separate bounded debug

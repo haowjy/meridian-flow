@@ -142,7 +142,7 @@ export type ThreadReportResult =
 
 /**
  * The model's `thread_report` result: the child's latest finished report. It
- * has no run number (D6, D17); `running` marks a newer run still in progress,
+ * has no run number; `running` marks a newer run still in progress,
  * and `message` carries the line the model reads about it.
  */
 export type ModelThreadReportResult =

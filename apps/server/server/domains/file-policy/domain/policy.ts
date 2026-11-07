@@ -156,7 +156,7 @@ function workTerms(work: FileWorkFacts): Term[] {
 /**
  * The agent term (§8): the source's cap for every agent, and each link's
  * permission against its own thread. A `read` link may edit only the scratch
- * of its thread's current Work, No Work's included (D55). The minimum wins.
+ * of its thread's current Work, No Work's included. The minimum wins.
  */
 function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
   const terms: Term[] = [
@@ -175,10 +175,10 @@ function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
 }
 
 /**
- * A skill's files (`skills://<skill>/…`, D52) as an agent sees them, judged
+ * A skill's files (`skills://<skill>/…`) as an agent sees them, judged
  * on its own thread: `read` when the binding preloads the skill or offers it
- * as `model-invocable`, or the user invoked it in this thread (D64), otherwise
- * `none`, so an invisible skill reads as missing. Never `edit` (D58). Only
+ * as `model-invocable`, or the user invoked it in this thread, otherwise
+ * `none`, so an invisible skill reads as missing. Never `edit`. Only
  * model tools read `skills://`.
  */
 export function skillLevel(facts: SkillFacts, skill: string): FileAccessLevel {
