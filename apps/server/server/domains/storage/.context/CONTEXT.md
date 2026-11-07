@@ -7,7 +7,7 @@ meaning such as figures or attachments belongs here.
 ## Contract
 
 `ObjectStorePort` exposes `put(key, bytes, mimeType)`, `get`, `getStream`, `copy`,
-`getSignedUrl`, `list` and `delete`. Each returns an `ObjectStoreResult<T>` tagged `ok`
+`readHead`, `signPut`, `getSignedUrl`, `list` and `delete`. Each returns an `ObjectStoreResult<T>` tagged `ok`
 or `error`; the port does not throw. Errors use `invalid_key`, `not_found`,
 `too_large`, or `io_error`.
 
@@ -18,7 +18,21 @@ A file can reach 200 MiB, so nothing outside a bounded read holds an object whol
 - `getStream` is for the export, which pipes it into a zip entry; destroying the
   stream abandons the read.
 - `copy(from, to)` duplicates inside the store (`CopyObject`, `copyFile`) and returns
-  the copy's size and type. A failed copy leaves no object at `to`.
+  the copy's size and type. A failed copy leaves no object at `to`. Local copy and PUT write a temp file under
+  `.tmp/` and rename it with its metadata, so a failed write leaves an existing object as
+  it was; temp files older than a day (crash leftovers) are cleared when the adapter starts.
+- `readHead(key, n)` answers the object's size and first `n` bytes without reading the
+  rest; an empty object answers size 0 (S3 refuses a range read of one).
+- `signPut(key, { sizeBytes, mimeType })` is a short-lived URL for a browser PUT of
+  exactly that length and type; the store refuses any other. It needs no object to
+  exist, and the URL can be used again: a second PUT replaces the object. So no row
+  may point at a key a URL names (upload intake PUTs to `incoming/…` and copies).
+  The result's `headers` are sent as given; the browser sets `Content-Length`. S3
+  signs both as headers on the public-endpoint client. Local signs them into the token and
+  `PUT /api/object-store/local/<token>` (`writeSignedToken`) refuses a wrong length, a wrong
+  type, an expired token and a read token, and replaces an existing object, as S3 does.
+  A signed token authorizes writes, so production with `OBJECT_STORE_PROVIDER=local`
+  requires a private `OBJECT_STORE_SIGNING_SECRET`.
 - `getSignedUrl(key, { contentDisposition })` lets a download carry its filename. S3
   signs it as `ResponseContentDisposition`; the local token carries it inside the
   signed payload, so the link can't be re-pointed at another name.

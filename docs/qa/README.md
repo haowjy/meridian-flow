@@ -28,6 +28,7 @@ stack.
 - [Atomic frozen Apply](../../apps/server/server/domains/collab/.context/qa/atomic-apply.md): production API-core command, merge, rollback, lifecycle and trail probes over a scratch database.
 - [Document removal records](document-removal-records.md): populated upgrade, actor readback, Trash list/read/restore, pending-Work retention, permanent purge, closure/admission races, storage release and after-commit room retirement.
 - [Document existence admission](../../apps/server/server/domains/collab/.context/qa/document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
+- [Direct upload canary](../../apps/server/server/domains/storage/.context/qa/direct-put.md): signed PUT length and type, copy, ranged reads, CORS and expiry against MinIO or R2, with a browser PUT.
 - [Runtime protocols](../../apps/server/server/domains/runtime/.context/qa/runtime-probes.md): RP-1 through RP-21, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
 - [Project chrome and shell](../../apps/app/src/features/project/.context/qa/project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`.
 - [Stop and hand-back](../../apps/server/server/domains/runtime/.context/qa/stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
