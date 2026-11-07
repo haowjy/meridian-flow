@@ -6,9 +6,22 @@ meaning such as figures or attachments belongs here.
 
 ## Contract
 
-`ObjectStorePort` exposes `put(key, bytes, mimeType)`, `getSignedUrl(key)`, and
-`delete(key)`. Each returns an `ObjectStoreResult<T>` tagged `ok` or `error`;
-the port does not throw. Errors use `invalid_key`, `not_found`, or `io_error`.
+`ObjectStorePort` exposes `put(key, bytes, mimeType)`, `get`, `getStream`, `copy`,
+`getSignedUrl`, `list` and `delete`. Each returns an `ObjectStoreResult<T>` tagged `ok`
+or `error`; the port does not throw. Errors use `invalid_key`, `not_found`,
+`too_large`, or `io_error`.
+
+A file can reach 200 MiB, so nothing outside a bounded read holds an object whole:
+
+- `get(key, { maxBytes })` reads a whole object into memory and refuses (`too_large`)
+  above the cap before reading. Only previews and model-sized images use it.
+- `getStream` is for the export, which pipes it into a zip entry; destroying the
+  stream abandons the read.
+- `copy(from, to)` duplicates inside the store (`CopyObject`, `copyFile`) and returns
+  the copy's size and type. A failed copy leaves no object at `to`.
+- `getSignedUrl(key, { contentDisposition })` lets a download carry its filename. S3
+  signs it as `ResponseContentDisposition`; the local token carries it inside the
+  signed payload, so the link can't be re-pointed at another name.
 
 `object://meridian/<key>` is the stable persisted reference. The canonical
 helpers `createObjectStorageUrl` and `objectStoreKeyFromStorageUrl` are its
