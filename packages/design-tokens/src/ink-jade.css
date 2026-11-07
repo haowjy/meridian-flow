@@ -36,8 +36,8 @@
 @theme {
   /* One font everywhere: Inter for UI chrome, the editor, and rendered prose
      alike — differentiated by size + weight, never by family. Loaded via Google
-     Fonts in each app's root. (apps/www keeps a Fraunces landing hero as a
-     deliberate marketing-only exception.) */
+     Fonts in the app's root. (The apps/www landing page self-hosts its own three
+     typefaces as a deliberate marketing-only exception: see marketing.css.) */
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   /* Surface ladder — tonal (no seam borders): grey-gold shelf < grey-gold

@@ -1,0 +1,18 @@
+# Meridian Flow
+
+> Meridian Flow is an AI writing app for fiction writers producing long web serials (LitRPG, progression fantasy, and other genres published chapter by chapter), at 100+ chapters and thousands of words a day. The writer writes alongside Muse, an AI agent that drafts, revises and plans with them, and sends helper agents to read as a serial reader, critique, and check continuity against the story's own world pages.
+
+Meridian Flow is for writers who need Scrivener-scale organisation without its complexity:
+
+- Project: a whole serial, its chapters and its world pages (characters, places, rules, history), kept in one place.
+- Knowledge base: the story bible. Agents read it before they write and update it as the story changes, so a character's page reflects what happened to them in the latest chapter.
+- Muse and helpers: Muse is the main agent the writer talks to. It sends helpers out on a chapter: Reader-sim reads it the way a serial reader would, Critic finds what doesn't work, Writer-helper drafts alternatives, and Continuity-checker compares it against the knowledge base.
+- Edits land as marked changes: every change an agent makes shows who made it and can be taken back, so the writer reviews instead of approving every step.
+- Writing together: the writer and the agents can edit the same document at once without losing each other's text.
+- Billing: credits that agent work draws down.
+
+## Links
+
+- [Landing page](https://www.meridian-flow.com/): a short film of a LitRPG prologue being written in the app
+- [Start writing](https://app.meridian-flow.com/signup): create an account
+- [Sign in](https://app.meridian-flow.com/login)

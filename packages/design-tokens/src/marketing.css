@@ -1,0 +1,39 @@
+/**
+ * Marketing tokens: the values the public landing page needs that the product
+ * palette doesn't have. UI colour on that page comes from the normal roles; only
+ * the night sky, its text scrims and the three story typefaces live here.
+ */
+:root {
+  --mkt-night: oklch(0.135 0.02 200);
+  /* Near-opaque on purpose: a fully opaque bar over the WebGL sky made Chromium's
+     software compositor drop the bottom of the canvas. Below .94 prose shows through. */
+  --mkt-night-bar: oklch(0.135 0.02 200 / 0.985);
+  --mkt-scrim: oklch(0.12 0.02 200);
+  --mkt-shade: oklch(0.15 0.03 205);
+  --mkt-shadow: oklch(0.05 0.012 200 / 0.55);
+  /* The dark theme's primary, by value: the glowing surfaces sit on the light root. */
+  --mkt-glow: oklch(0.68 0.09 175);
+
+  /* The LitRPG System window: a cold blue frame over a translucent field, like the
+     status windows in Solo Leveling. The story's System speaks only in these. */
+  --mkt-system: oklch(0.74 0.15 237);
+  --mkt-system-fill: oklch(0.2 0.07 252 / 0.74);
+  --mkt-system-ink: oklch(0.95 0.03 230);
+
+  /* The party's campfire: its flames, and their hot core. */
+  --mkt-campfire: oklch(0.703 0.199 43.9);
+  --mkt-campfire-core: oklch(0.912 0.133 94);
+
+  /* The sky when WebGL is unavailable. */
+  --mkt-sky-fallback-high: oklch(0.13 0.022 200);
+  --mkt-sky-fallback-horizon: oklch(0.2 0.04 185);
+  --mkt-sky-fallback-sea: oklch(0.12 0.025 195);
+
+  /* Resolved here, on the light root, so a paper shape inside a night region can
+     still use the light ink. */
+  --mkt-paper-ink: var(--color-foreground);
+
+  --mkt-font-title: "IM Fell French Canon", "IM Fell Double Pica", Georgia, serif;
+  --mkt-font-story: "IM Fell Double Pica", Georgia, serif;
+  --mkt-font-plain: "Hanken Grotesk Variable", system-ui, sans-serif;
+}

@@ -1,0 +1,810 @@
+/**
+ * The landing page, as a stacked document: what shows with no script or reduced
+ * motion. `film.css` turns it into the pinned film under `.cine`. A plain stylesheet
+ * rather than utilities, because the film needs named elements.
+ */
+:root {
+  --bar: 56px;
+  --lw: 1240px;
+  --bigf: 23px;
+  --bigw: 660px;
+  --filmh: 800vh;
+}
+
+[data-ui-theme="dark"] {
+  color: var(--color-foreground);
+}
+
+.landing a {
+  color: inherit;
+}
+
+.landing :focus-visible {
+  outline: 2px solid var(--color-jade-text);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.landing h1,
+.landing h2 {
+  font-weight: 400;
+  text-wrap: balance;
+}
+
+#sky {
+  position: fixed;
+  inset: 0 0 auto;
+  width: 100%;
+  height: 100lvh;
+  z-index: 0;
+  display: block;
+  background: linear-gradient(
+    var(--mkt-sky-fallback-high),
+    var(--mkt-sky-fallback-horizon) 68%,
+    var(--mkt-sky-fallback-sea) 72%
+  );
+}
+
+/* The trees left behind the page once the film's stage scrolls away; forest.ts draws them. */
+#treeline {
+  display: none;
+  position: fixed;
+  inset: 0 0 auto;
+  width: 100%;
+  height: 100lvh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cine #treeline {
+  display: block;
+}
+
+main {
+  position: relative;
+  z-index: 1;
+  padding-top: var(--bar);
+}
+
+.cine main {
+  padding-top: 0;
+}
+
+[id] {
+  scroll-margin-top: var(--bar);
+}
+
+/* Top bar */
+.bar {
+  position: fixed;
+  z-index: 30;
+  inset: 0 0 auto;
+  background: var(--mkt-night-bar);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.6vw, 24px);
+  height: 55px;
+  padding: 0 clamp(14px, 2.4vw, 32px);
+}
+
+.word {
+  font: 400 23px / 1 var(--mkt-font-title);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.jumps {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.7vw, 24px);
+  flex: 1;
+  min-width: 0;
+}
+
+.landing .jumps a {
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--color-muted-foreground);
+  padding: 8px 0;
+  white-space: nowrap;
+}
+
+.landing .jumps a:hover,
+.landing .jumps a[aria-current="true"] {
+  color: var(--color-foreground);
+}
+
+[data-play] {
+  display: none;
+}
+
+.ctrl {
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  flex: none;
+  cursor: pointer;
+}
+
+.cine .ctrl {
+  display: inline-grid;
+}
+
+.ctrl:hover {
+  border-color: var(--color-primary);
+}
+
+.ic {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+  display: block;
+}
+
+.ic-pause,
+[data-auto="playing"] .ic-play {
+  display: none;
+}
+
+[data-auto="playing"] .ic-pause {
+  display: block;
+}
+
+.acct {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.5vw, 20px);
+  margin-left: auto;
+}
+
+.signin {
+  font-weight: 500;
+  font-size: 15px;
+  text-decoration: none;
+  padding: 8px 2px;
+  white-space: nowrap;
+}
+
+.landing .signin:hover {
+  color: var(--color-jade-text);
+}
+
+.landing .go {
+  display: inline-block;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+  padding: 7px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: background 0.2s ease-out;
+}
+
+.landing .go:hover {
+  background: var(--color-jade-text);
+}
+
+@media (min-width: 2000px) {
+  .row,
+  .end {
+    max-width: 1600px;
+  }
+}
+
+.here,
+.menu {
+  display: none;
+}
+
+.here {
+  align-items: center;
+  padding: 10px 2px;
+  cursor: pointer;
+}
+
+#herel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.here svg {
+  width: 10px;
+  height: 6px;
+  transition: transform 0.2s ease-out;
+}
+
+.here[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+/* Stacked: reduced motion and no script */
+.stage {
+  position: relative;
+}
+
+.hero {
+  padding: clamp(40px, 8vh, 90px) clamp(20px, 5vw, 72px) 28px;
+  max-width: 640px;
+}
+
+.hero h1 {
+  font: 400 clamp(52px, 6.2vw, 96px) / 1 var(--mkt-font-title);
+  letter-spacing: -0.008em;
+  margin-bottom: 0.34em;
+}
+
+h1 span {
+  display: block;
+  font-size: 0.5em;
+  line-height: 1.1;
+  margin-top: 0.34em;
+  letter-spacing: 0;
+}
+
+.plain {
+  font: 400 clamp(17px, 1.45vw, 20px) / 1.42 var(--mkt-font-plain);
+  max-width: 29em;
+  text-wrap: pretty;
+}
+
+.slotwrap {
+  padding: 0 clamp(10px, 4vw, 56px);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Story layers */
+.ms {
+  font: 400 var(--bigf) / 1.46 var(--mkt-font-story);
+  width: min(var(--bigw), 100%);
+  margin: 48px auto;
+  padding: 0 20px;
+}
+
+.ms p {
+  margin-bottom: 0.8em;
+  text-wrap: pretty;
+}
+
+.ms .open {
+  font: 400 1.5em / 1.12 var(--mkt-font-title);
+  margin-bottom: 0.7em;
+  text-wrap: balance;
+}
+
+.sub {
+  list-style: none;
+  padding: 0 20px;
+  max-width: 46em;
+  margin: 24px auto;
+  display: grid;
+  gap: 12px;
+}
+
+.sub b {
+  font-weight: 600;
+  color: var(--color-jade-text);
+  margin-right: 0.5em;
+}
+
+.sub li.y b {
+  color: var(--color-foreground);
+}
+
+.team {
+  padding: 24px clamp(20px, 5vw, 72px);
+  max-width: 1100px;
+  margin: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ag {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 2px 12px;
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-shelf);
+}
+
+.ag .name {
+  font: 600 16px / 1.3 var(--mkt-font-plain);
+}
+
+.ag p {
+  grid-column: 2;
+  font-size: 16px;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.ring {
+  grid-row: span 2;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-primary);
+}
+
+.ag .live,
+.lines,
+.hub,
+.wlines,
+.capshade {
+  display: none;
+}
+
+.dawn {
+  display: contents;
+}
+
+.world {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 32px clamp(20px, 5vw, 72px);
+  max-width: 1000px;
+  margin: auto;
+}
+
+.wn .name {
+  font: 600 15px / 1.3 var(--mkt-font-plain);
+  color: var(--color-muted-foreground);
+  margin-bottom: 2px;
+}
+
+.wn p {
+  font: 400 clamp(20px, 1.7vw, 24px) / 1.3 var(--mkt-font-story);
+  text-wrap: pretty;
+}
+
+.ask {
+  padding: 24px 16px;
+}
+
+.card {
+  width: min(560px, 100%);
+  margin: auto;
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font: 400 15px / 1.35 var(--mkt-font-plain);
+  box-shadow: 0 0 110px color-mix(in oklab, var(--mkt-glow) 38%, transparent);
+}
+
+.c-q {
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+
+.c-o {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    border-color 0.15s ease-out;
+}
+
+.c-o:hover,
+.c-o[aria-pressed="true"] {
+  background: var(--color-secondary);
+}
+
+.c-o[aria-pressed="true"] {
+  border-color: var(--color-jade-text);
+}
+
+.c-o b {
+  font-weight: 500;
+}
+
+.c-o small {
+  grid-column: 1 / -1;
+  font-size: 13.5px;
+  color: var(--color-muted-foreground);
+}
+
+.c-r {
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-secondary);
+  border-radius: 999px;
+  padding: 1px 8px;
+  align-self: center;
+}
+
+.c-o[aria-pressed="true"] .c-r {
+  background: var(--color-card);
+}
+
+.c-b {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.c-b button {
+  font-weight: 500;
+  padding: 5px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.c-b .sp {
+  flex: 1;
+}
+
+.c-b .nx {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-weight: 600;
+}
+
+.c-b .nx.ol {
+  background: none;
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+}
+
+.c-sys {
+  padding: 9px 12px;
+  text-align: center;
+}
+
+.c-b .nx:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.death {
+  padding: 12vh 20px;
+  text-align: center;
+}
+
+/* The System's window. Its frame and field are also drawn by `wordsStill` for the burn. */
+.sys {
+  border: 1.5px solid var(--mkt-system);
+  border-radius: 3px;
+  background: var(--mkt-system-fill);
+  color: var(--mkt-system-ink);
+  box-shadow:
+    0 0 22px color-mix(in oklab, var(--mkt-system) 45%, transparent),
+    inset 0 0 26px color-mix(in oklab, var(--mkt-system) 22%, transparent);
+  font: 500 15px / 1.4 var(--mkt-font-plain);
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 10px color-mix(in oklab, var(--mkt-system) 70%, transparent);
+}
+
+.sys-big {
+  padding: 0.55em 1.1em 0.6em;
+  font-size: clamp(30px, 4.6vw, 68px);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+.cap {
+  padding: 32px clamp(20px, 5vw, 72px);
+  max-width: 640px;
+}
+
+/* The film's caption shows the knowledge heading as a title; the stacked page uses its SectionHead. */
+.cap-title {
+  display: none;
+}
+
+.cine .cap-title {
+  display: block;
+  font: 400 clamp(34px, 3.2vw, 50px) / 1.08 var(--mkt-font-title);
+  text-wrap: pretty;
+}
+
+.cap header.sect-head {
+  padding: 0;
+}
+
+header.sect-head {
+  padding: 32px clamp(20px, 5vw, 72px) 0;
+  max-width: 640px;
+}
+
+.world > .sect-head {
+  grid-column: 1 / -1;
+  padding: 0 0 8px;
+}
+
+.sect-head h2 {
+  font: 400 clamp(28px, 2.6vw, 40px) / 1.1 var(--mkt-font-title);
+  margin-bottom: 0.35em;
+  text-wrap: pretty;
+}
+
+.sect-head p {
+  font-size: clamp(16px, 1.25vw, 18px);
+  line-height: 1.42;
+  text-wrap: pretty;
+}
+
+/* The film tells each section as story; its plain heading stays for screen readers and crawlers,
+   visible to them even while the film hides the section around it. */
+.cine .sect-head {
+  visibility: visible;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.end {
+  position: relative;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px 96px;
+  text-align: center;
+  /* The question's glow runs past a phone's edges; body's clip doesn't stop iOS zooming out to it. */
+  overflow-x: clip;
+}
+
+.sys-skill {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin-top: clamp(22px, 4vh, 40px);
+  padding: 14px 26px 16px;
+}
+
+.sys-act {
+  margin-top: 14px;
+  padding: 7px 22px;
+  border: 1px solid var(--mkt-system);
+  border-radius: 2px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.15s ease-out;
+}
+
+.sys-act:hover,
+.sys-act:focus-visible {
+  background: color-mix(in oklab, var(--mkt-system) 26%, transparent);
+}
+
+.sys-act:focus-visible {
+  outline: 2px solid var(--mkt-system-ink);
+  outline-offset: 3px;
+}
+
+.skill {
+  display: grid;
+  place-items: center;
+  padding: 12vh 20px;
+}
+
+.book {
+  display: grid;
+  justify-items: center;
+  gap: 28px;
+  position: relative;
+  isolation: isolate;
+  width: min(40em, 100%);
+}
+
+/* The dawn's horizon glows right behind the question: the same night scrim as the death box. */
+.book::before {
+  content: "";
+  position: absolute;
+  inset: -90px -180px -80px;
+  z-index: -1;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--mkt-scrim) 80%, transparent),
+    color-mix(in oklab, var(--mkt-scrim) 55%, transparent) 62%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+.book label {
+  font: 400 clamp(40px, 5vw, 76px) / 1.05 var(--mkt-font-title);
+  text-wrap: balance;
+}
+
+/* The app's chat composer: what a writer types into on their first screen. */
+.book-comp {
+  width: 100%;
+  padding: 12px 12px 10px;
+  background: var(--color-composer-surface);
+  border: 1px solid var(--color-composer-border);
+  border-radius: var(--radius-composer);
+  box-shadow: 0 10px 40px var(--mkt-shadow);
+  text-align: left;
+  transition: border-color 0.15s ease-out;
+}
+
+.book-comp:focus-within {
+  border-color: var(--color-foreground);
+}
+
+.book textarea {
+  display: block;
+  width: 100%;
+  padding: 2px 4px 10px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  color: var(--color-foreground);
+  font: 400 clamp(16px, 1.3vw, 18px) / 1.45 var(--mkt-font-plain);
+  caret-color: var(--color-foreground);
+}
+
+.book textarea::placeholder {
+  color: var(--color-muted-foreground);
+}
+
+.book-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.book-pill {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-weight: 500;
+}
+
+.book-send {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font: 600 14px / 1.2 var(--mkt-font-plain);
+  cursor: pointer;
+}
+
+.book-send:hover {
+  background: color-mix(in oklab, var(--color-primary) 88%, var(--color-foreground));
+}
+
+.book-send:focus-visible {
+  outline: 2px solid var(--color-foreground);
+  outline-offset: 2px;
+}
+
+.end footer {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 16px;
+  font-size: 14px;
+  background: var(--mkt-night);
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+@media (max-width: 819px), (max-height: 499px) {
+  :root {
+    --bar: 52px;
+    --lw: 390px;
+  }
+
+  .row {
+    height: 52px;
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .word {
+    font-size: 20px;
+  }
+
+  .row .jumps {
+    display: none;
+  }
+
+  .here {
+    display: inline-flex;
+  }
+
+  .row .ctrl {
+    width: 26px;
+    height: 26px;
+  }
+
+  .acct {
+    gap: 8px;
+  }
+
+  .landing .go {
+    padding: 7px 12px;
+  }
+
+  .menu:not([hidden]) {
+    display: grid;
+    gap: 0;
+    padding: 2px 14px 8px;
+  }
+
+  .landing .menu a {
+    font-size: 16px;
+    padding: 10px 0;
+    color: var(--color-foreground);
+  }
+
+  .team {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The smallest phones: Sign in and Start writing still have to fit beside the name. */
+@media (max-width: 374px) {
+  .row {
+    padding: 0 10px;
+    gap: 6px;
+  }
+
+  .word {
+    font-size: 17px;
+  }
+
+  .row .ctrl,
+  .cine .row .ctrl {
+    display: none;
+  }
+}

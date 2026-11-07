@@ -14,14 +14,21 @@ boot-script preferences are separate from this envelope.
 
 ## Server config, auth, and watcher boundaries
 
-`src/server/config.ts` is server-only. It parses `APP_ENV`, `LOG_LEVEL`, and the WorkOS
-redirect URI; isomorphic helpers keep guarded environment reads local instead of
+`src/server/config.ts` is server-only. It parses `APP_ENV`, `LOG_LEVEL`, the WorkOS
+redirect URI, and `MERIDIAN_WWW_ORIGIN`; isomorphic helpers keep guarded environment reads local instead of
 importing server config. Auth is WorkOS AuthKit: the hosted callback mints the
 sealed `wos-session` cookie and logout clears it. Reach `/logout` with a
 full-document `<a href>`, never `<Link>`: `signOut()` redirects to api.workos.com,
 which a client-side navigation would `fetch` and fail on CORS. Logout passes
-`returnTo` = `/login` on the request origin, which must be registered in WorkOS as a
-sign-out redirect.
+`returnTo` = `MERIDIAN_WWW_ORIGIN` when set, otherwise `/login` on the request origin,
+and that URL must be registered in WorkOS as a sign-out redirect. With no WorkOS session
+`/logout` redirects there itself, because `signOut` would loop on an absolute `returnTo`.
+
+`MERIDIAN_WWW_ORIGIN` also receives signed-out `/`; set it only once the landing page is
+live ([go-live order][signed-out]). Other signed-out paths still go to sign-in and back,
+and `/signup` opens WorkOS sign-up for the landing page's Start writing.
+
+[signed-out]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/public-site/signed-out-reach-the-landing-page.md
 
 `DEV_AUTH_BYPASS=1` skips all of that: `meridianAuthkitMiddleware` makes every
 request the dev user before it touches AuthKit or any `WORKOS_*` setting, and
