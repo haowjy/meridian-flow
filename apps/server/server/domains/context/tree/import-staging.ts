@@ -83,6 +83,19 @@ export function createDrizzleContextStagedCreation(deps: {
       );
     },
 
+    async stagedIds(stagingId, generation) {
+      const tx = currentDrizzleDb(db);
+      const [folders, documents] = await Promise.all(
+        [contextStagedFolders, contextStagedDocuments].map((table) =>
+          tx
+            .select({ id: table.id })
+            .from(table)
+            .where(and(eq(table.stagingId, stagingId), eq(table.generation, generation))),
+        ),
+      );
+      return new Set([...folders, ...documents].map((row) => row.id));
+    },
+
     async commitStaged(stagingId, expected) {
       const tx = currentDrizzleDb(db);
       const [dirs, files] = await Promise.all([

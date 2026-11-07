@@ -128,12 +128,12 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     record: ImportRecord,
     tree: OrganizedTree,
     entries: readonly ImportEntry[],
-    read: ContextImportRead,
+    context: { read: ContextImportRead; staged: ContextStagedCreation },
   ) {
     const uris = uriMap(tree);
-    const staged = new Set(
-      entries.filter((entry) => entry.state === "prepared").map((entry) => entry.id),
-    );
+    // The stage is the record of what is staged: a planned folder with no import entry (a
+    // DOCX's image folder) is visible only there.
+    const staged = await context.staged.stagedIds(record.id, record.placementGeneration);
     const planned = new Set(
       tree.nodes
         .filter((node) => node.state === "planned" && node.kind !== "folder")
@@ -154,11 +154,13 @@ export function createImportOrganizer(deps: OrganizerDeps) {
           ]
         : [],
     );
-    const existing: ImportLinkCandidate[] = (await read.linkCandidates()).map((candidate) => ({
-      ...candidate,
-      rootId: null,
-      kind: "note",
-    }));
+    const existing: ImportLinkCandidate[] = (await context.read.linkCandidates()).map(
+      (candidate) => ({
+        ...candidate,
+        rootId: null,
+        kind: "note",
+      }),
+    );
     return {
       uris,
       planned,
@@ -354,7 +356,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       const reset = await resetGeneration(claim, tree);
       return reset === "reset" ? 1 : 0;
     }
-    const build = await prepareBuild(record, tree, durableEntries, context.read);
+    const build = await prepareBuild(record, tree, durableEntries, context);
     let built = 0;
     while (!signal.aborted && built < build.pending.length) {
       const batch = await buildBatch(claim, record, projectId, build, built);

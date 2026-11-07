@@ -32,6 +32,8 @@ export type ContextPlacement = {
 export interface ContextStagedCreation {
   /** Caller owns the transaction and fences the stage owner, project and generation. */
   stage(stagingId: string, generation: number, nodes: ContextStage): Promise<void>;
+  /** Ids of the folders and documents staged for this generation, read from the stage itself. */
+  stagedIds(stagingId: string, generation: number): Promise<Set<string>>;
   /** Caller keeps its owner/project lifecycle gate until commit; a changed placement writes nothing. */
   commitStaged(
     stagingId: string,
