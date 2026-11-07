@@ -13,6 +13,8 @@ export const MARKETING_SKY = {
   sea: [0.004, 0.012, 0.016],
   dawnSky: [0.06, 0.15, 0.17],
   sun: [1, 0.8, 0.5],
+  campfire: [1, 0.42, 0.08],
+  campfireCore: [1, 0.88, 0.45],
   veil: [0.012, 0.02, 0.034],
   star: [0.8, 0.87, 1],
   fireCore: [0.85, 0.97, 1],
