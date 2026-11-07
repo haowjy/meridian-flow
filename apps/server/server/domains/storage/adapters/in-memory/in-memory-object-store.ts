@@ -1,6 +1,13 @@
 /** In-memory implementation of the object-store port: a Map of bytes+mime keyed by storage URL. Used by tests and local dev; depends inward on the port and URL helper. */
+import { Readable } from "node:stream";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
-import type { ObjectStorePort, ObjectStoreResult } from "../../ports/object-store.js";
+import type {
+  ObjectStoreCopyOutput,
+  ObjectStoreGetOptions,
+  ObjectStorePort,
+  ObjectStoreResult,
+  ObjectStoreStreamOutput,
+} from "../../ports/object-store.js";
 
 interface StoredObject {
   bytes: Uint8Array;
@@ -27,10 +34,36 @@ export class InMemoryObjectStoreAdapter implements ObjectStorePort {
     return ok({ storageUrl: createObjectStorageUrl(key) });
   }
 
-  async get(key: string): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
+  async get(
+    key: string,
+    options?: ObjectStoreGetOptions,
+  ): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
     const stored = this.objects.get(key);
     if (!stored) return notFound();
+    if (options?.maxBytes !== undefined && stored.bytes.byteLength > options.maxBytes)
+      return { ok: false, error: { code: "too_large", message: "Object is too large to read" } };
     return ok({ bytes: stored.bytes, mimeType: stored.mimeType });
+  }
+
+  async getStream(key: string): Promise<ObjectStoreResult<ObjectStoreStreamOutput>> {
+    const stored = this.objects.get(key);
+    if (!stored) return notFound();
+    return ok({
+      stream: Readable.from([stored.bytes], { objectMode: false }),
+      mimeType: stored.mimeType,
+      sizeBytes: stored.bytes.byteLength,
+    });
+  }
+
+  async copy(fromKey: string, toKey: string): Promise<ObjectStoreResult<ObjectStoreCopyOutput>> {
+    const stored = this.objects.get(fromKey);
+    if (!stored) return notFound();
+    this.objects.set(toKey, stored);
+    return ok({
+      storageUrl: createObjectStorageUrl(toKey),
+      mimeType: stored.mimeType,
+      sizeBytes: stored.bytes.byteLength,
+    });
   }
 
   async list(

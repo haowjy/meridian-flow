@@ -6,14 +6,18 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Stats } from "node:fs";
 import { createReadStream } from "node:fs";
-import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
+  ObjectStoreCopyOutput,
   ObjectStoreErrorCode,
+  ObjectStoreGetOptions,
   ObjectStorePort,
   ObjectStoreResult,
+  ObjectStoreSignedUrlOptions,
+  ObjectStoreStreamOutput,
 } from "../../ports/object-store.js";
 
 interface LocalObjectMetadata {
@@ -35,12 +39,16 @@ export interface LocalSignedObject {
   key: string;
   mimeType: string;
   sizeBytes: number;
+  /** Sent as `Content-Disposition` when the URL was signed for a download. */
+  contentDisposition?: string;
   stream: Readable;
 }
 
 interface SignedPayload {
   key: string;
   exp: number;
+  /** `Content-Disposition` signed with the URL, so a link can't be re-pointed at another name. */
+  cd?: string;
 }
 
 function ok<T>(value: T): ObjectStoreResult<T> {
@@ -75,7 +83,11 @@ function decodePayload(encoded: string): SignedPayload | null {
       Buffer.from(encoded, "base64url").toString("utf8"),
     ) as Partial<SignedPayload>;
     if (typeof parsed.key !== "string" || typeof parsed.exp !== "number") return null;
-    return { key: parsed.key, exp: parsed.exp };
+    return {
+      key: parsed.key,
+      exp: parsed.exp,
+      ...(typeof parsed.cd === "string" ? { cd: parsed.cd } : {}),
+    };
   } catch {
     return null;
   }
@@ -126,11 +138,16 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     }
   }
 
-  async get(key: string): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
+  async get(
+    key: string,
+    options?: ObjectStoreGetOptions,
+  ): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
     const target = this.objectPath(key);
     if (!target.ok) return target;
 
     try {
+      if (options?.maxBytes !== undefined && (await stat(target.value)).size > options.maxBytes)
+        return err("too_large", "Object is too large to read");
       const [bytes, metadata] = await Promise.all([
         readFile(target.value),
         readFile(this.metadataPath(target.value), "utf8"),
@@ -141,6 +158,61 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       return isMissingFile(error)
         ? err("not_found", "Object not found")
         : ioError(error, "Failed to read object");
+    }
+  }
+
+  async getStream(key: string): Promise<ObjectStoreResult<ObjectStoreStreamOutput>> {
+    const target = this.objectPath(key);
+    if (!target.ok) return target;
+
+    try {
+      const [size, metadata] = await Promise.all([
+        stat(target.value),
+        readFile(this.metadataPath(target.value), "utf8"),
+      ]);
+      const parsed = JSON.parse(metadata) as LocalObjectMetadata;
+      return ok({
+        stream: createReadStream(target.value),
+        mimeType: parsed.mimeType,
+        sizeBytes: Number(size.size),
+      });
+    } catch (error) {
+      return isMissingFile(error)
+        ? err("not_found", "Object not found")
+        : ioError(error, "Failed to read object");
+    }
+  }
+
+  async copy(fromKey: string, toKey: string): Promise<ObjectStoreResult<ObjectStoreCopyOutput>> {
+    const source = this.objectPath(fromKey);
+    if (!source.ok) return source;
+    const target = this.objectPath(toKey);
+    if (!target.ok) return target;
+
+    try {
+      const metadata = JSON.parse(
+        await readFile(this.metadataPath(source.value), "utf8"),
+      ) as LocalObjectMetadata;
+      await mkdir(path.dirname(target.value), { recursive: true });
+      await copyFile(source.value, target.value);
+      await writeFile(
+        this.metadataPath(target.value),
+        JSON.stringify({
+          ...metadata,
+          key: toKey,
+          updatedAt: this.now().toISOString(),
+        } satisfies LocalObjectMetadata),
+      );
+      return ok({
+        storageUrl: createObjectStorageUrl(toKey),
+        mimeType: metadata.mimeType,
+        sizeBytes: metadata.sizeBytes,
+      });
+    } catch (error) {
+      await this.delete(toKey);
+      return isMissingFile(error)
+        ? err("not_found", "Object not found")
+        : ioError(error, "Failed to copy object");
     }
   }
 
@@ -193,7 +265,10 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     });
   }
 
-  async getSignedUrl(key: string): Promise<ObjectStoreResult<string>> {
+  async getSignedUrl(
+    key: string,
+    options?: ObjectStoreSignedUrlOptions,
+  ): Promise<ObjectStoreResult<string>> {
     const target = this.objectPath(key);
     if (!target.ok) return target;
 
@@ -206,7 +281,11 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     }
 
     const exp = Math.floor(this.now().getTime() / 1000) + this.signedUrlTtlSeconds;
-    const payload = encodePayload({ key, exp });
+    const payload = encodePayload({
+      key,
+      exp,
+      ...(options?.contentDisposition ? { cd: options.contentDisposition } : {}),
+    });
     const signature = this.sign(payload);
     return ok(`${this.signedUrlBasePath}/${payload}.${signature}`);
   }
@@ -266,6 +345,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
         key: payload.value.key,
         mimeType: metadata.mimeType,
         sizeBytes: Number(size.size),
+        ...(payload.value.cd ? { contentDisposition: payload.value.cd } : {}),
         stream: createReadStream(target.value),
       });
     } catch (error) {
