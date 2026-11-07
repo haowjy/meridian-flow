@@ -21,9 +21,13 @@
   --z-flame: 10;
   --z-pass: 11;
   --z-pass-words: 12;
+  /* The small viewport's frame, with the strip a collapsed address bar uncovers below it. */
+  --below: calc(100lvh - 100svh);
   position: sticky;
   top: 0;
-  height: 100svh;
+  box-sizing: border-box;
+  height: 100lvh;
+  padding-bottom: var(--below);
   overflow: clip;
   container-type: size;
   --hx: clamp(28px, 5cqw, 72px);
@@ -47,7 +51,7 @@
 .cine .hero {
   left: var(--hx);
   top: calc(var(--bar) + 24px);
-  bottom: 24px;
+  bottom: calc(24px + var(--below));
   height: fit-content;
   margin-block: auto;
   width: var(--hw);
@@ -71,7 +75,7 @@
 /* The workspace beat. The spacers centre the caption and stop it sinking past 71% of the screen. */
 .cine .dawn {
   position: absolute;
-  inset: 0;
+  inset: 0 0 var(--below);
   z-index: var(--z-words);
   display: flex;
   flex-direction: column;
@@ -127,7 +131,7 @@
 .cine .capshade {
   display: block;
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: 0 auto var(--below) 0;
   width: min(68vw, 960px);
   z-index: var(--z-low);
   opacity: 0;
@@ -187,7 +191,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: clamp(24px, 8vh, 84px);
+  bottom: calc(clamp(24px, 8svh, 84px) + var(--below));
   z-index: var(--z-sub);
   margin: 0 auto;
   padding: 0 20px;
@@ -221,7 +225,7 @@
 
 .cine .team {
   position: absolute;
-  inset: var(--bar) 0 0;
+  inset: var(--bar) 0 var(--below);
   display: block;
   padding: 0;
   max-width: none;
@@ -334,7 +338,7 @@
   --world-span: min(100cqw - 2 * var(--world-left), 1240px);
   --world-top: max(var(--bar) + 44px, 20cqh);
   position: absolute;
-  inset: 0;
+  inset: 0 0 var(--below);
   display: block;
   padding: 0;
   max-width: none;
@@ -394,7 +398,7 @@
 
 .cine .ask {
   position: absolute;
-  inset: var(--bar) 0 0;
+  inset: var(--bar) 0 var(--below);
   display: grid;
   place-items: center;
   padding: 12px;
@@ -405,7 +409,7 @@
 
 .cine .death {
   position: absolute;
-  inset: 0;
+  inset: 0 0 var(--below);
   display: grid;
   align-content: center;
   justify-items: center;
@@ -548,7 +552,7 @@
   }
 
   .cine .sub {
-    bottom: clamp(20px, 5vh, 44px);
+    bottom: calc(clamp(20px, 5svh, 44px) + var(--below));
   }
 
   .cine .sub li {
@@ -606,7 +610,7 @@
     position: absolute;
     right: 12px;
     top: calc(var(--bar) + 10px);
-    bottom: 12px;
+    bottom: calc(12px + var(--below));
     width: calc(50cqw - 12px);
     margin: 0;
   }
@@ -641,7 +645,7 @@
 
 .cine .skill {
   position: absolute;
-  inset: var(--bar) 0 0;
+  inset: var(--bar) 0 var(--below);
   z-index: var(--z-skill);
   padding: 20px;
   visibility: hidden;

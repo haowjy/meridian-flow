@@ -42,10 +42,12 @@ float N(vec2 p){
 const SHARED = `
 precision highp float;
 uniform vec2 R;
+// The frame the film is laid out in, the top FH pixels; below it the view runs on down.
+uniform float FH;
 uniform float PITCH,YAW,FOCAL,FLOW;
 ${NOISE}
 vec3 ray(){
-  vec2 uv=(gl_FragCoord.xy-.5*R)/R.y;
+  vec2 uv=(vec2(gl_FragCoord.x,gl_FragCoord.y-R.y+FH)-.5*vec2(R.x,FH))/FH;
   vec3 fw=vec3(sin(YAW)*cos(PITCH),sin(PITCH),-cos(YAW)*cos(PITCH));
   vec3 rt=normalize(cross(fw,vec3(0.,1.,.001)));
   return normalize(uv.x*rt+uv.y*cross(rt,fw)+FOCAL*fw);
@@ -347,11 +349,14 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     { signal },
   );
 
-  const resize = () => {
+  // The canvas is as tall as the large viewport; the sky is framed on `frame`, the film's height.
+  let framed = 1;
+  const resize = (frame = canvas.clientHeight) => {
     if (!gl || !scene) return;
     const scale = Math.min(devicePixelRatio || 1, 1.5) * resolution;
-    const width = Math.round(innerWidth * scale);
-    const height = Math.round(innerHeight * scale);
+    const width = Math.round(canvas.clientWidth * scale);
+    const height = Math.round(canvas.clientHeight * scale);
+    framed = Math.min(1, frame / canvas.clientHeight);
     if (canvas.width === width && canvas.height === height) return;
     canvas.width = width;
     canvas.height = height;
@@ -366,7 +371,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     // In full day the scene multiplies the aurora by zero: skip its pass, the heaviest one.
     if (frame.dawn < 1) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, scene.lightTarget);
-      camera(gl, scene.lightPass, waving, scene.lightWidth, scene.lightHeight);
+      camera(gl, scene.lightPass, waving, scene.lightWidth, scene.lightHeight, framed);
       gl.uniform1f(scene.plume, frame.plume + frame.surge * gulpSwell(seconds) * 1.6);
       gl.uniform1f(scene.settled, frame.flow);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -377,7 +382,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
 
   const drawScene = (frame: SkyFrame, seconds: number) => {
     if (!gl || !scene) return;
-    camera(gl, scene.scenePass, frame, canvas.width, canvas.height);
+    camera(gl, scene.scenePass, frame, canvas.width, canvas.height, framed);
     const swell = frame.surge * gulpSwell(seconds);
     for (const [location, key] of scene.floats) gl.uniform1f(location, frame[key]);
     const wave = Math.sin(seconds * 0.9) * 0.65 + Math.sin(seconds * 2.3 + 1) * 0.35;
@@ -418,10 +423,12 @@ function camera(
   frame: SkyFrame,
   width: number,
   height: number,
+  framed: number,
 ) {
   gl.useProgram(target.program);
   gl.viewport(0, 0, width, height);
   gl.uniform2f(target.size, width, height);
+  gl.uniform1f(target.frame, height * framed);
   for (const [location, key] of target.camera) gl.uniform1f(location, frame[key]);
 }
 
@@ -430,7 +437,12 @@ function pass(gl: WebGLRenderingContext, source: string) {
   const camera = Object.entries(CAMERA_UNIFORMS).map(
     ([name, key]) => [gl.getUniformLocation(program, name), key] as const,
   );
-  return { program, size: gl.getUniformLocation(program, "R"), camera };
+  return {
+    program,
+    size: gl.getUniformLocation(program, "R"),
+    frame: gl.getUniformLocation(program, "FH"),
+    camera,
+  };
 }
 
 function texture(gl: WebGLRenderingContext) {

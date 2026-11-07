@@ -22,7 +22,7 @@
 .cine .flame {
   z-index: var(--z-flame);
   width: 100%;
-  height: 100%;
+  height: calc(100% - var(--below));
 }
 
 .cine .flyer {
@@ -187,8 +187,19 @@
 /* Its size comes from GROUND in ground.ts. */
 .cine .forest {
   z-index: var(--z-ground);
-  bottom: 0;
+  bottom: var(--below);
   left: 0;
+}
+
+/* The ground goes on under the frame, into the strip a collapsed address bar uncovers. */
+.cine .forest::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: var(--below);
+  background: var(--mkt-night);
 }
 
 .cine .forest canvas {
@@ -199,7 +210,7 @@
 
 .cine .walkers {
   z-index: var(--z-ground);
-  inset: 0;
+  inset: 0 0 var(--below);
   overflow: hidden;
 }
 
