@@ -4,9 +4,10 @@ import type {
   AgentEditCodecFactory,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createAllowAllFileAccess } from "../../../file-policy/index.js";
 import { createCheckpointService } from "../../checkpoints.js";
@@ -25,7 +26,7 @@ import {
 import { createBranches } from "../../domain/branches.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
-import { readHashlines } from "../../domain/document-revision.js";
+import { readHashlines, versioned } from "../../domain/document-revision.js";
 import { isCodeDocument } from "../../domain/document-schema-type.js";
 import { DraftNotFoundError } from "../../domain/draft-resolver.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
@@ -80,7 +81,20 @@ export function createInMemoryCollabDomain(): CollabDomain {
     coordinator,
     agentCoordinator: coordinator,
     initialDocumentSeeds: {
+      async stageInitialStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      async commitStagedStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      async discardStagedStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
+      async seedInitialDocuments(seeds) {
+        for (const { documentId, state } of seeds)
+          await journal.seedInitialDocument(documentId, state);
+      },
       async lacksAuthority(documentId) {
         const snapshot = await journal.read(documentId);
         return !snapshot.checkpoint && snapshot.updates.length === 0;
@@ -161,6 +175,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 
   return createCollabFacade({
+    importBinder: runtime.importBinder,
     lifecycle: { dispose: async () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
@@ -197,15 +212,29 @@ export function createInMemoryCollabDomain(): CollabDomain {
       reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
+      readForExport: runtime.markdownDocuments.readForExport,
       ensureDocumentAuthority: runtime.markdownDocuments.ensureDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readFrozenMarkdown: runtime.markdownDocuments.readFrozenMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
+      prepareSeed: runtime.markdownDocuments.prepareSeed,
+      async stageInitialStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      async commitStagedStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      async discardStagedStates() {
+        throw new Error("Staged creation requires Postgres");
+      },
+      encodeSeed: runtime.markdownDocuments.encodeSeed,
+      installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
+      bindCopiedBlocks: runtime.linkBinder.bindCopiedBlocks,
       bindStatic: runtime.linkBinder.bindStatic,
     },
     projections: {
@@ -290,6 +319,18 @@ function createInMemoryDraftPeerStub(
     readStoredGrepTexts: async () => new Map(),
     readStoredWordCounts: async () => new Map(),
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
+    readEffectiveBlocks: (input) =>
+      coordinator.withDocument(input.documentId, async (doc) => {
+        const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
+        return Ok({
+          content: model.projectBlocks(toDocHandle(doc)).map((block) => block.node),
+          revision: versioned(doc, scope, () => null).revision,
+          holderUri: scope.holder.uri,
+          stateVector: Y.encodeStateVector(doc),
+          // The in-memory link scopes never settle an ahead ref.
+          aheadSettlements: new Map<string, string>(),
+        });
+      }),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
         const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });

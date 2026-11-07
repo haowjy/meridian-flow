@@ -74,6 +74,7 @@ const file: CatalogEntry = {
   aliases: [],
   path: ["Arc", "Chapter.md"],
   uri: "manuscript://Arc/Chapter.md" as never,
+  extension: "",
   editable: true,
   filetype: "markdown",
   schemaType: "document",
@@ -270,6 +271,7 @@ describe("catalog cache reducer", () => {
           path: ["chapter.md"],
           uri,
           provisionalName: false,
+          extension: "",
           editable: true,
           filetype: "markdown",
           schemaType: "document",
@@ -302,6 +304,7 @@ describe("catalog cache reducer", () => {
           path: ["notes.md"],
           uri,
           provisionalName: false,
+          extension: "",
           editable: true,
           filetype: "markdown",
           schemaType: "document",
@@ -318,11 +321,13 @@ describe("catalog cache reducer", () => {
         identity: { documentId: "document", revision: 1 },
         content: { kind: "exact", databaseName: "exact", schema: "0.5" },
         canonical: null,
+        serverHold: "local",
         lifecycle: { kind: "local" },
         aliases: {},
         obligations: {},
         ...overrides,
         classification: overrides.classification ?? {
+          extension: "",
           editable: true,
           filetype: "markdown",
           schemaType: "document",
@@ -350,6 +355,7 @@ describe("catalog cache reducer", () => {
   describe("planCatalogInstallation", () => {
     it("does not overwrite canonical location until a post-receipt observation", () => {
       const current = record({
+        serverHold: "held",
         lifecycle: { kind: "acknowledged", availabilityGeneration: "authority" },
         canonical: { scheme: "manuscript", path: "/old.md", name: "old.md", workId: null },
         obligations: { canonicalRefresh: { operationId: "move", identityRevision: 1 } },
@@ -512,7 +518,7 @@ describe("catalog cache reducer", () => {
     expect(writes).toHaveLength(3);
     for (const write of writes) validateFolderNamespaceUpdate(null, write.next);
     expect(writes.find((write) => write.next.folderId === "A")?.next).toMatchObject({
-      handle: "folder:A",
+      handle: "catalog-folder:A",
       canonical: loc("P/A"),
       canonicalParent: { kind: "folder", folderId: "P" },
       intents: [],
@@ -644,6 +650,7 @@ describe("catalog cache reducer", () => {
     let state: ResourceProjectionSnapshot = {
       records: [],
       folders,
+      operations: [],
       catalogs: [planCatalogInstallation({ projectId, records: [], view }).checkpoint],
     };
     const metadata = {
@@ -653,7 +660,12 @@ describe("catalog cache reducer", () => {
         expect(state.catalogs[0]!.revision).toBe(input.expectedRevision);
         const byId = new Map(state.folders.map((f) => [f.handle, f]));
         for (const w of input.folders) byId.set(w.next.handle, w.next);
-        state = { records: [], folders: [...byId.values()], catalogs: [input.next] };
+        state = {
+          records: [],
+          folders: [...byId.values()],
+          operations: [],
+          catalogs: [input.next],
+        };
         return "committed" as const;
       },
     } as unknown as ResourceMetadataStore;
@@ -748,8 +760,14 @@ describe("catalog cache reducer", () => {
         canonical: { scheme: "manuscript", workId: null, path: "/Q/Newest.md", name: "Newest.md" },
         canonicalParent: { kind: "folder", folderId: "Q" },
         observationVersion: "3",
-        classification: { editable: true, filetype: "markdown", schemaType: "document" },
+        classification: {
+          extension: "",
+          editable: true,
+          filetype: "markdown",
+          schemaType: "document",
+        },
         content: { kind: "unacquired" },
+        serverHold: "held",
         lifecycle: { kind: "acknowledged", availabilityGeneration: null },
         aliases: {},
         obligations: {},
@@ -778,6 +796,7 @@ describe("catalog cache reducer", () => {
       observationVersion: version,
       aliases: [],
       provisionalName: false,
+      extension: "",
       editable: false,
       disposition: "binary",
       fileType: "binary",

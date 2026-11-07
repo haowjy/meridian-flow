@@ -8,7 +8,7 @@ import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
   type ReactNode,
-  type Ref,
+  type RefObject,
   type UIEventHandler,
   useCallback,
   useEffect,
@@ -21,7 +21,6 @@ import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { editorReferenceNode } from "@/core/editor/extensions/at-reference";
-import type { ReferenceDropOptions } from "@/core/editor/extensions/reference-drop";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
 import {
@@ -29,6 +28,7 @@ import {
   registerLiveRangeEditor,
 } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
+import { holdPictureCapThroughKeyboard } from "@/core/editor/objects";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useLinkableDocuments } from "@/features/links";
@@ -37,24 +37,26 @@ import {
   useAccountId,
   useAccountResourceProjection,
 } from "@/features/project/context/account-feature-context";
-import { activeEntryDrag } from "@/features/project/context/entry-drag/drag-session";
-import { clearDragHint, showDragHint } from "@/features/project/context/tree-drop/drag-hint";
+import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
-import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
+import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
 import { claimEditorFocus, focusIsFree } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
+import { FileDropRuntime } from "./surfaces/files";
 import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
+import { WordCount } from "./WordCount";
 import "./editor.css";
 
 export type EditorSurfaceOptions = {
@@ -272,26 +274,20 @@ function ActiveSessionEditorView({
       linkAhead: (name: string) => linkAhead(name),
     };
   }, [effectiveEditable, identity.schemaType, linkAhead, sharedReferenceCatalog]);
-  const referenceDrop = useMemo<ReferenceDropOptions>(
-    () => ({
-      activeDrag: activeEntryDrag,
-      content: (schema, entries) => {
-        if (!sharedReferenceCatalog) return null;
-        const nodes = entries.map((entry) => {
-          const row = sharedReferenceCatalog.resolveReference(entry.ref);
-          return row ? editorReferenceNode(schema, row) : null;
-        });
-        return nodes.every((node) => node !== null) ? nodes : null;
-      },
-      label: (kind) =>
-        kind === "accept"
-          ? t`Mention`
-          : kind === "unavailable"
-            ? t`Not available in this document`
-            : t`Can’t mention inside code`,
-      showHint: (owner, verdict, point) => showDragHint(owner, verdict, point),
-      clearHint: clearDragHint,
-    }),
+  const referenceDrop = useMemo(
+    () =>
+      referenceDropOptions({
+        catalog: () =>
+          sharedReferenceCatalog && {
+            ...sharedReferenceCatalog,
+            referenceNode: editorReferenceNode,
+          },
+        labels: {
+          accept: t`Mention`,
+          unavailable: t`Can’t mention that here`,
+          code: t`Can’t mention inside code`,
+        },
+      }),
     [sharedReferenceCatalog],
   );
   // What a pasted `[[Name]]` may name: the Editor's link index (the same one
@@ -433,10 +429,11 @@ function ActiveSessionEditorView({
       >
         {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
-        <div className="pointer-events-none absolute right-3 bottom-3 z-10">
+        <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-2">
           <SyncStatus session={session} onReopen={onReopen} removal={removal} />
+          {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>
-        <TrackedEditorCanvas
+        <EditorCanvas
           editor={editor}
           notices={
             <SchemaNotices
@@ -471,7 +468,8 @@ function ActiveSessionEditorView({
           index={linkableDocuments}
           active={active}
         />
-        <ImageIngressRuntime editor={editor} projectId={projectId} documentId={documentId} />
+        <ImageIngressRuntime editor={editor} projectId={projectId} />
+        <FileDropRuntime editor={editor} documentId={documentId} holderUri={holderUri} />
       </section>
     </EditorScopeProvider>
   );
@@ -488,7 +486,7 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
     >
       {/* The toolbar is persistent chrome: it holds its place while the
           document opens, greyed and saying so, rather than popping in. */}
-      <TrackedEditorCanvas
+      <EditorCanvas
         editor={null}
         toolbar={showToolbar ? <DocumentToolbar editor={null} /> : undefined}
       />
@@ -496,7 +494,7 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
   );
 }
 
-function TrackedEditorCanvas({
+function EditorCanvas({
   editor,
   notices,
   toolbar,
@@ -506,21 +504,28 @@ function TrackedEditorCanvas({
   editor: Editor | null;
   notices?: ReactNode;
   toolbar?: ReactNode;
-  scrollRef?: Ref<HTMLDivElement>;
+  scrollRef?: RefObject<HTMLDivElement | null>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
+  const touch = useCoarsePointer();
+  useEffect(
+    () =>
+      editor && touch && scrollRef?.current
+        ? holdPictureCapThroughKeyboard(editor.view, scrollRef.current)
+        : undefined,
+    [editor, touch, scrollRef],
+  );
+
   return (
     <EditorSurfaceFrame
       notices={notices}
       toolbar={toolbar}
-      editor={editor}
+      textCursor={editor !== null}
       scrollRef={scrollRef}
       scrollClassName="meridian-editor main-pane"
       onScroll={onScroll}
     >
-      <div className={cn(editorColumnCanvas, editorColumnFill)}>
-        <EditorContent editor={editor} className={editorColumnFill} />
-      </div>
+      <EditorContent editor={editor} className={editorColumnFill} />
     </EditorSurfaceFrame>
   );
 }

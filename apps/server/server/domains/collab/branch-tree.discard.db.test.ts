@@ -251,6 +251,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess: runtime.app.fileAccess,
           branches: runtime.app.documentSync.branches,
           documentTrash: runtime.app.documentTrash,
+          files: runtime.app.uploadIdentity,
         },
         {
           projectId: s.project.id,

@@ -8,16 +8,16 @@
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type {
   DeleteContextEntryResult,
-  Filetype,
   InvalidOperationReason,
-  NamespaceNameClaim,
   ParsedDocumentFilename,
   RetractionCause,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
+import type { ContextCopyAdapter } from "./context-copy.js";
 import type {
+  AdapterCreateFolderOptions,
   AdapterCreateUntitledOptions,
   ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
@@ -125,12 +125,19 @@ export type AdapterUntitledDocumentResult = {
   name: string;
 };
 
+export type AdapterCreatedFolder = {
+  status: "created" | "already-exists";
+  folderId: string;
+  path: string;
+  name: string;
+};
+
 export type AdapterLocatedDocument = Omit<AdapterUntitledDocumentResult, "status">;
 
 export type AdapterMoveResult = {
   linkUpdate?: { links: number; documents: number };
-  movedNodeId?: string;
   path: string;
+  locationVersion?: string;
 };
 
 export type AdapterDeleteResult = {
@@ -140,6 +147,11 @@ export type AdapterDeleteResult = {
 
 export interface ContextTreeAdapter {
   inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
+  /** The live node with this id, wherever it is now; null when it is gone. */
+  inspectNode(node: {
+    kind: ContextLocationToken["kind"];
+    id: string;
+  }): Promise<Result<ContextLocationToken | null, AdapterFault>>;
   commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,
   ): Promise<Result<void, AdapterFault>>;
@@ -159,27 +171,24 @@ export interface ContextBranchTreeAdapter {
   /** This adapter's source, provisioned. */
   sourceId(): Promise<string>;
   /**
-   * `moved: false` when the branch already has it at `path`: nothing is written. `path` is
-   * the destination as stored (an extensionless name keeps the document's extension).
+   * Moves the document wherever the branch has it now; `moved: false` when it is already at
+   * `path`: nothing is written. `path` is the destination as stored (an extensionless name keeps
+   * the document's extension).
    */
   move(
     path: string,
     input: {
       documentId: string;
-      /** Where the branch has it now: its path and filetype there, and that source. */
-      from: { path: string; filetype: Filetype | null; sourceId: string };
       changedBy: BranchChangeAuthor;
       record(change: RecordedBranchTreeChange): Promise<void>;
+      position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
     },
   ): Promise<Result<{ moved: boolean; path: string }, AdapterFault>>;
-  delete(
-    path: string,
-    input: {
-      documentId: string;
-      changedBy: BranchChangeAuthor;
-      record(change: RecordedBranchTreeChange): Promise<void>;
-    },
-  ): Promise<Result<void, AdapterFault>>;
+  delete(input: {
+    documentId: string;
+    changedBy: BranchChangeAuthor;
+    record(change: RecordedBranchTreeChange): Promise<void>;
+  }): Promise<Result<void, AdapterFault>>;
 }
 
 /**
@@ -193,6 +202,8 @@ export interface ContextSchemeAdapter {
   readonly tree?: ContextTreeAdapter;
   /** Only a draft placement has one. */
   readonly branchTree?: ContextBranchTreeAdapter;
+  /** Copy's source read and destination insert (`context/copy/` orchestrates a drop). */
+  readonly copy?: ContextCopyAdapter;
 
   stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>>;
   read(path: string): Promise<Result<AdapterContextReadResult | null, AdapterFault>>;
@@ -208,12 +219,6 @@ export interface ContextSchemeAdapter {
     markdown: string,
     options?: ContextWriteOptions,
   ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
-  createTrackedDocumentAtFreeName(
-    path: string,
-    markdown: string,
-    reserved: readonly NamespaceNameClaim[],
-    options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>>;
   createBoundDocument(
     path: string,
     bound: BoundWrite | null,
@@ -251,5 +256,10 @@ export interface ContextSchemeAdapter {
     options?: ContextListOptions,
   ): Promise<Result<AdapterFileEntry[], AdapterFault>>;
   mkdir(path: string, options?: ContextWriteOptions): Promise<Result<void, AdapterFault>>;
+  /** A folder under a device-minted id in the folder at `path`; see `AdapterCreateFolderOptions`. */
+  createFolder(
+    path: string,
+    options: AdapterCreateFolderOptions,
+  ): Promise<Result<AdapterCreatedFolder, AdapterFault>>;
   grep(query: GrepQuery): Promise<Result<AdapterGrepResult, AdapterFault>>;
 }

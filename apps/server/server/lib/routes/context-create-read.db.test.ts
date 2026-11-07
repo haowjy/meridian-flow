@@ -25,6 +25,7 @@ import {
   createTestDocumentRemoval,
   createTestRemovalDeps,
 } from "../../test-support/document-removal.js";
+import { deleteAt } from "../../test-support/entry-ref.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -49,6 +50,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createNoopEventSink } = await import("../../domains/observability/index.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
       "../../domains/projects/index.js"
+    );
+    const { createTreeReader } = await import("../../domains/context/tree/tree-view.js");
+    const { createDrizzleProjectContextAvailability } = await import(
+      "../../domains/context/adapters/project-context-availability.js"
     );
     const createDrizzleProjectRepository = createProjectRepositoryForTest;
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
@@ -187,17 +192,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
-              contextPorts,
+              availability: createDrizzleProjectContextAvailability(db, createNoopEventSink()),
+              liveDocuments: createTreeReader(db),
+              documentSync: collab,
               objectStore: createInMemoryObjectStore(),
               eventSink: createNoopEventSink(),
-              workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
             },
-            {
-              projectId: PROJECT_ID,
-              userId: USER_ID,
-              scheme: "manuscript",
-              rawPath: `/${path}`,
-            },
+            { projectId: PROJECT_ID, userId: USER_ID, documentId: created.documentId },
           ),
         ).resolves.toMatchObject({ kind: "tracked", content });
       });
@@ -229,7 +230,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it.each([
       { occupant: "folder", existing: "outline.json", type: "file", path: "outline.json" },
-      { occupant: "file", existing: "Taken", type: "folder", path: "Taken.md" },
+      { occupant: "file", existing: "Taken", type: "folder", path: "Taken" },
     ] as const)("carries a server-discovered $occupant conflict through the create HTTP client", async ({
       occupant,
       existing,
@@ -334,8 +335,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(
-        port.delete("user://user", {
-          expected: { kind: "file", documentId: userDocumentId },
+        deleteAt(port, "user://user", {
+          expected: { kind: "file", nodeId: userDocumentId },
         }),
       ).resolves.toMatchObject({
         ok: true,

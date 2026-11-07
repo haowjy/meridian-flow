@@ -27,6 +27,19 @@ pnpm --filter @meridian/www build
 
 Nx `build`, `test`, and `typecheck` targets wrap package scripts for orchestration.
 
+### Native dependency: sharp
+
+The server converts HEIC, BMP and TIFF images to WebP previews with `sharp`, which ships a
+native `.node` binding and libvips as per-platform packages (`@img/sharp-<os>-<arch>`,
+`@img/sharp-libvips-<os>-<arch>`). Run `pnpm install` and the server build on the target OS,
+libc (glibc or musl) and architecture, or build in an image that matches it. Never copy
+`node_modules` or `apps/server/.output` across platforms: the traced
+`.output/server/node_modules` holds only the builder's platform packages.
+
+The previews are made in a worker thread (`image-preview-worker.ts`, which the build emits
+as `.output/server/workers/image-preview-worker.mjs`). A worker that dies leaves its file with a file card, not a
+failed save.
+
 ## Database
 
 Production uses Postgres. Dev uses a Docker container built from `tools/postgres/Dockerfile`
@@ -73,7 +86,7 @@ fix the cause and rerun it with writers still stopped; never restart the old
 release on a partly migrated schema. Current stop-the-writers ranges: 0075–0081
 (draft review conversion), 0082–0083 (owner handles), 0090–0092 (branch
 tree ownership), 0111–0112 (multi-question asks) and 0113–0114 (unused pricing fields:
-the old release reads and writes the dropped column).
+the old release reads and writes the dropped column), and 0125 (folder document alias).
 
 ## Environment variables
 

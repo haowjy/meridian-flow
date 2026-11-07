@@ -7,20 +7,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  entryNameKey,
   entryNameStemEnd,
   invalidContextEntryNameReason,
   validateContextEntryName,
 } from "./context-entry-name";
-
-describe("entryNameKey", () => {
-  it("makes every spelling of a prose name one key", () => {
-    const key = entryNameKey("Chapter 13");
-    expect(entryNameKey("Chapter 13.md")).toBe(key);
-    expect(entryNameKey("Chapter 13.txt")).toBe(key);
-    expect(entryNameKey("Chapter 13/")).toBe(key);
-  });
-});
 
 describe("entryNameStemEnd", () => {
   it("selects all of a prose name, even a dotted one", () => {
@@ -29,12 +19,16 @@ describe("entryNameStemEnd", () => {
   });
 
   it("selects the part before a visible extension", () => {
-    expect(entryNameStemEnd("outline.json")).toBe("outline".length);
-    expect(entryNameStemEnd("Vol. 2.json")).toBe("Vol. 2".length);
+    expect(entryNameStemEnd("outline.json", { extension: "json", editable: true })).toBe(
+      "outline".length,
+    );
+    expect(entryNameStemEnd("Vol. 2.json", { extension: "json", editable: true })).toBe(
+      "Vol. 2".length,
+    );
   });
 
   it("selects a folder's whole name", () => {
-    expect(entryNameStemEnd("v1.json", "folder")).toBe("v1.json".length);
+    expect(entryNameStemEnd("v1.json")).toBe("v1.json".length);
   });
 });
 
@@ -65,6 +59,13 @@ describe("validateContextEntryName", () => {
         "Lore.md",
         [{ entryId: "sibling", name: "Lore", kind: "file" }],
         "folder",
+      ),
+    ).toBeNull();
+    expect(
+      validateContextEntryName(
+        "binary.md",
+        [{ entryId: "sibling", name: "binary.md", kind: "file" }],
+        "folder",
       )?.level,
     ).toBe("error");
     expect(
@@ -82,7 +83,7 @@ describe("validateContextEntryName", () => {
         "settings",
         [{ entryId: "sibling", name: "settings.toml", kind: "file" }],
         "file",
-        "config.toml",
+        { extension: "toml", editable: true },
       )?.level,
     ).toBe("error");
     expect(

@@ -8,6 +8,9 @@ export interface DocumentFileRecord {
   mimeType: string;
   fileType: BinaryDocumentFileType;
   sizeBytes: number;
+  /** The file's name as the file card shows it. */
+  name: string;
+  hasPreview: boolean;
 }
 
 export interface ProjectDocumentFileRecord extends DocumentFileRecord {

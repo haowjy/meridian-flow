@@ -26,6 +26,7 @@ import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
   createObjectRelease,
+  incomingObjectKey,
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
 } from "../../storage/index.js";
@@ -35,7 +36,7 @@ const WORK_PURGE_BATCH_LIMIT = 100;
 
 export function createDrizzleWorkPurger(deps: {
   db: Database;
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   branches: WorkBranchDisposal;
   now?: () => Date;
@@ -125,10 +126,14 @@ export function createDrizzleWorkPurger(deps: {
         // The Work owns no uploads; its threads' chats do.
         lockedTree.threadIds.length
           ? activeDb
-              .select({ objectKey: uploadIntakes.objectKey })
+              .select({
+                projectId: uploadIntakes.projectId,
+                documentId: uploadIntakes.documentId,
+                objectKey: uploadIntakes.objectKey,
+              })
               .from(uploadIntakes)
               .where(inArray(uploadIntakes.ownerThreadId, lockedTree.threadIds))
-          : Promise.resolve([] as { objectKey: string }[]),
+          : Promise.resolve([] as { projectId: string; documentId: string; objectKey: string }[]),
         activeDb
           .select({ storageUrl: projectResults.storageUrl })
           .from(projectResults)
@@ -153,7 +158,11 @@ export function createDrizzleWorkPurger(deps: {
       // their rows go, so nothing they created stays live and their storage is released.
       const disposed = await disposeDrafts();
       const objectKeys = [
-        ...uploads.map(({ objectKey }) => objectKey),
+        // The incoming object is where an upload's PUT lands; one never finished is still there.
+        ...uploads.flatMap((upload) => [
+          upload.objectKey,
+          incomingObjectKey(upload.projectId, upload.documentId),
+        ]),
         ...[...results, ...binaries].flatMap(({ storageUrl }) => {
           const key = storageUrl ? objectStoreKeyFromStorageUrl(storageUrl) : null;
           return key ? [key] : [];

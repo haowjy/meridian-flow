@@ -1,14 +1,16 @@
 /** Transactional namespace locks and live-path occupancy checks for context commands. */
-import { documentPartsForNamespaceClaim, folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, works } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
+import { eq, inArray, sql } from "drizzle-orm";
+import {
+  currentDrizzleDb,
+  getDrizzleTransactionLocal,
+  setDrizzleTransactionLocal,
+} from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
 import { ContextEntryConflictError } from "../../ports/context-document-store.js";
-import { LIVE_TREE, visibleDocuments, visibleFolders } from "../../tree/tree-view.js";
 import { loadWorkRestoreNamespaceRows } from "../../tree/tree-view-sql.js";
 
 export type ContextNamespace = {
@@ -134,15 +136,32 @@ async function sourceNamespaces(
   }));
 }
 
+const namespaceLocks = {};
+export function assertNamespaceKeysHeld(namespaces: readonly ContextNamespace[]): void {
+  const held = getDrizzleTransactionLocal<ReadonlySet<string>>(namespaceLocks);
+  for (const namespace of namespaces) {
+    const key = contextNamespaceKey(namespace);
+    if (!held?.has(key)) throw new Error(`Namespace not locked: ${key}`);
+  }
+}
+
 async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<void> {
-  for (const key of [...new Set(keys)].sort())
-    await currentDrizzleDb(db).execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`,
-    );
+  const ordered = [...new Set(keys)].sort();
+  if (!ordered.length) return;
+  await currentDrizzleDb(db).execute(sql`
+    select pg_advisory_xact_lock(hashtextextended(key, 0::bigint))
+    from (select value as key from jsonb_array_elements_text(${JSON.stringify(ordered)}::jsonb) order by value) ordered`);
+  setDrizzleTransactionLocal(
+    namespaceLocks,
+    new Set([
+      ...(getDrizzleTransactionLocal<ReadonlySet<string>>(namespaceLocks) ?? []),
+      ...ordered,
+    ]),
+  );
 }
 
 /**
- * Row-lock every document a move mutates (moved files and an overwrite victim), sorted. NO KEY
+ * Row-lock every document a move mutates (moved files), sorted. NO KEY
  * UPDATE is compatible with the journal's holder FK KEY SHARE but orders a same-source move
  * against derive certification and other moves of the same rows.
  */
@@ -185,50 +204,6 @@ export async function readTreeLocations(
 }
 
 /**
- * Caller holds the logical namespace lock; a folder's document alias participates in
- * document claims. Only the live tree occupies a path: a hidden node never blocks a live
- * entry.
- */
-export async function hasOppositeContextEntry(
-  db: Database,
-  sourceId: string,
-  parentId: string | null,
-  filename: string,
-  kind: "file" | "folder",
-): Promise<boolean> {
-  const tx = currentDrizzleDb(db);
-  if (kind === "file") {
-    const vf = visibleFolders(LIVE_TREE);
-    const siblings = await tx
-      .select({ name: vf.name })
-      .from(vf)
-      .where(
-        and(
-          eq(vf.contextSourceId, sourceId as never),
-          parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as never),
-        ),
-      );
-    return siblings.some((row) => folderDocumentName(row.name) === filename);
-  }
-  const vd = visibleDocuments(LIVE_TREE);
-  const parts = documentPartsForNamespaceClaim({ kind: "folder", filename });
-  if (!parts) return false;
-  const [row] = await tx
-    .select({ id: vd.id })
-    .from(vd)
-    .where(
-      and(
-        eq(vd.contextSourceId, sourceId as never),
-        parentId === null ? isNull(vd.folderId) : eq(vd.folderId, parentId as never),
-        eq(vd.name, parts.name),
-        eq(vd.extension, parts.extension),
-      ),
-    )
-    .limit(1);
-  return !!row;
-}
-
-/**
  * Check the complete arriving Work tree before restoring either table. Hidden rows are a
  * branch's and stay hidden through a restore, so they neither arrive nor occupy (F11).
  */
@@ -245,23 +220,10 @@ export async function guardWorkContextRestore(db: Database, workId: string): Pro
     ),
   );
   const rows = await loadWorkRestoreNamespaceRows(currentDrizzleDb(db), workId);
-  const files = new Map<string, boolean>();
-  const directories = new Map<string, boolean>();
-  const folderAliases = new Map<string, boolean>();
-  const key = (row: (typeof rows)[number], name: string) =>
-    JSON.stringify([row.source, row.parent, name]);
+  const names = new Map<string, boolean>();
   for (const row of rows) {
-    const namespace = row.kind === "file" ? files : directories;
-    const literal = key(row, row.name);
-    if (namespace.has(literal) && (row.arriving || namespace.get(literal)))
-      throw new ContextEntryConflictError();
-    namespace.set(literal, row.arriving || namespace.get(literal) === true);
-    if (row.kind === "folder") {
-      const alias = key(row, folderDocumentName(row.name));
-      folderAliases.set(alias, row.arriving || folderAliases.get(alias) === true);
-    }
+    const key = JSON.stringify([row.source, row.parent, row.name]);
+    if (names.has(key) && (row.arriving || names.get(key))) throw new ContextEntryConflictError();
+    names.set(key, row.arriving || names.get(key) === true);
   }
-  for (const [name, arriving] of files)
-    if (folderAliases.has(name) && (arriving || folderAliases.get(name)))
-      throw new ContextEntryConflictError();
 }

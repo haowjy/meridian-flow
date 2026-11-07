@@ -1,6 +1,7 @@
 /** Pure selection and represented-removal obligation protocol. */
 
 import type { ContextTab } from "@/client/stores";
+import { canonicalDocumentPath } from "../routing/local-document-address";
 import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
 import {
   type ContextRemovalIntent,
@@ -29,6 +30,12 @@ export type TerminalRouteRemoval = {
   intent: ContextRemovalIntent;
 };
 
+/**
+ * What proved a bound route's document. A navigation that named it and an address answer prove it
+ * for the locator; a review proves it only for the address that carries its item.
+ */
+export type RouteBindingProof = "navigation" | "answer" | "review";
+
 export type ContextRouteSelection =
   | { status: "none"; revision: number }
   | {
@@ -43,6 +50,7 @@ export type ContextRouteSelection =
       revision: number;
       locator: ContextRouteTarget;
       identity: ContextRouteIdentity;
+      by: RouteBindingProof;
     }
   | {
       status: "rejected";
@@ -66,6 +74,35 @@ export type SelectionTransition = {
 };
 
 export const sameLocator = sameContextTarget;
+
+export type RouteOwner = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
+
+/** Whether the selection is about exactly this route (paths compare without the leading slash). */
+export function selectionAtRoute(
+  selection: ContextRouteSelection,
+  route: RouteOwner,
+): selection is Exclude<ContextRouteSelection, { status: "none" }> {
+  if (selection.status === "none") return false;
+  const { locator } = selection;
+  return (
+    locator.scheme === route.scheme &&
+    canonicalDocumentPath(locator.path) === canonicalDocumentPath(route.path) &&
+    locator.workId === route.workId &&
+    locator.rootThreadId === route.rootThreadId
+  );
+}
+
+/** The document the route is bound to: proven by a navigation that named it or by an address answer. */
+export function routeSelectionDocumentId(
+  selection: ContextRouteSelection,
+  route: RouteOwner,
+): string | null {
+  return selectionAtRoute(selection, route) &&
+    selection.status === "bound" &&
+    selection.identity.kind === "server"
+    ? selection.identity.documentId
+    : null;
+}
 
 export function continuityForSelection(selection: ContextRouteSelection): RouteContinuityVerdict {
   return selection.status === "bound"
@@ -114,6 +151,14 @@ export function beginSelection(
   locator: ContextRouteTarget,
   reentryGuard: TerminalRouteRemoval | null = null,
 ): SelectionTransition {
+  // A navigation that named its document, or an answer, already bound this locator. A review's
+  // binding ends with its address: the same path without the item names no document.
+  if (
+    selection.status === "bound" &&
+    selection.by !== "review" &&
+    sameLocator(selection.locator, locator)
+  )
+    return { selection, planning: [], rejection: null, retireReentryGuard: false };
   const revision = selection.revision + 1;
   const next: ContextRouteSelection = {
     status: "candidate",
@@ -144,6 +189,8 @@ export function supersedeSelectionForWorkChange(
   locator: ContextRouteTarget | null,
   reentryGuard: TerminalRouteRemoval | null = null,
 ): SelectionTransition {
+  if (selection.status === "bound" && locator && sameLocator(selection.locator, locator))
+    return { selection, planning: [], rejection: null, retireReentryGuard: false };
   const revision = selection.revision + 1;
   const next: ContextRouteSelection = locator
     ? { status: "candidate", revision, locator, obligations: [], reentryGuard }
@@ -163,6 +210,7 @@ export function bindSelection(
   selection: ContextRouteSelection,
   revision: number,
   identity: ContextRouteIdentity,
+  by: RouteBindingProof,
 ): SelectionTransition | null {
   if (selection.revision !== revision) return null;
   if (selection.status === "candidate") {
@@ -171,6 +219,7 @@ export function bindSelection(
       revision,
       locator: selection.locator,
       identity,
+      by,
     };
     const current = continuityForSelection(bound);
     const guard = selection.reentryGuard;
@@ -204,10 +253,19 @@ export function bindSelection(
       selection.identity.kind === identity.kind &&
       selection.identity.documentId === identity.documentId
     ) {
+      // A review address is the review's own: another binder that got there first yields to it,
+      // and a plain proof never takes it back.
+      if (by === "review" && selection.by !== "review")
+        return {
+          selection: { ...selection, revision: revision + 1, by },
+          planning: [],
+          rejection: null,
+          retireReentryGuard: false,
+        };
       return { selection, planning: [], rejection: null, retireReentryGuard: false };
     }
     return {
-      selection: { ...selection, revision: revision + 1, identity },
+      selection: { ...selection, revision: revision + 1, identity, by },
       planning: [],
       rejection: null,
       retireReentryGuard: false,
@@ -215,13 +273,30 @@ export function bindSelection(
   }
   if (selection.status === "rejected") {
     return {
-      selection: { status: "bound", revision: revision + 1, locator: selection.locator, identity },
+      selection: {
+        status: "bound",
+        revision: revision + 1,
+        locator: selection.locator,
+        identity,
+        by,
+      },
       planning: [],
       rejection: null,
       retireReentryGuard: false,
     };
   }
   return null;
+}
+
+/** A writer's exit from a review, or its close, keeps the document the route is bound to. */
+export function adoptReviewBinding(selection: ContextRouteSelection): SelectionTransition | null {
+  if (selection.status !== "bound" || selection.by !== "review") return null;
+  return {
+    selection: { ...selection, by: "navigation" },
+    planning: [],
+    rejection: null,
+    retireReentryGuard: false,
+  };
 }
 
 export function rejectSelection(

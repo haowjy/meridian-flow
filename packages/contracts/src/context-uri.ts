@@ -2,7 +2,7 @@
 
 import { validateContextEntryName } from "./context-entry-validation.js";
 import { classifyHandleToken, decodeWorkHandle, parseHandle, type WorkHandle } from "./handles.js";
-import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
+import { canonicalLeaf } from "./protocol/document-filename.js";
 import type { ResolvedWorkAuthority } from "./works/index.js";
 
 export const CONTEXT_URI_SCHEMES = [
@@ -527,8 +527,7 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
   const path = schemeSeparator >= 0 ? uri.slice(schemeSeparator + 3) : uri;
   const segment = path.split("/").filter(Boolean).at(-1);
   if (!segment) return null;
-  const parsed = parseDocumentFilename(segment);
-  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : segment;
+  return canonicalLeaf(segment);
 }
 
 const uploadsBelongToChat =

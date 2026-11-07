@@ -66,11 +66,22 @@ export function namespaceContextRefusal(
   error: ContextError,
   paths: NamespaceRefusalPaths,
 ): WriteToolErrorOutput {
+  // The entry changed area mid-call; like any stale location, check with `ls` and retry.
+  if (error.code === "io_error" && error.reason === "namespace_changed")
+    return namespaceRefusal(command, "stale_location", paths);
   switch (error.code) {
     case "conflict":
       return namespaceRefusal(command, "location_taken", paths);
     case "destination_missing":
       return namespaceRefusal(command, "destination_missing", paths);
+    case "permission_denied":
+      return writeToolError(
+        command,
+        `Can't ${command} ${paths.path}: you don't have edit access there.`,
+        "permission_denied",
+        { path: paths.path },
+      );
+    case "not_found":
     case "stale_source":
     case "stale_target":
     case "operation_mismatch":
@@ -80,7 +91,7 @@ export function namespaceContextRefusal(
         ? namespaceRefusal(command, error.reason, paths)
         : namespaceRefusal(command, "unsupported", paths);
     default:
-      // Not found, an archived or missing Work, a bad name, an I/O failure: the port's own words.
+      // An archived or missing Work, a bad name, an I/O failure: the port's own words.
       return writeToolError(command, contextErrorMessage(error), "invalid_write", {
         path: paths.path,
       });

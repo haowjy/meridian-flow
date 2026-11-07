@@ -2,13 +2,13 @@
  * DrillInMenu — a dropdown that browses a folder tree in place and ends in
  * actions. A folder opens inside the same menu, with a "‹ folder" row on top to
  * step back out; there are no flyouts or root heading. A divider separates
- * the tree from the actions.
+ * the tree from the actions. An action with choices opens them the same way,
+ * in place of the tree.
  *
  * Document paths and placement menus supply a tree and actions. This component
  * owns only drill state; picking an entry and running an action belong to the caller.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import {
   type ComponentPropsWithoutRef,
@@ -30,6 +30,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+
+/** The list scrolls above the actions, which stay in reach on a long folder. */
+const MENU_CLASS =
+  "flex w-64 max-w-[calc(100vw-1rem)] flex-col overflow-hidden max-h-[min(26rem,var(--radix-dropdown-menu-content-available-height))]";
 
 export type DrillNode = {
   id: string;
@@ -56,8 +60,10 @@ export type DrillAction = {
   icon: LucideIcon;
   onSelect: () => void;
   disabled?: boolean;
-  /** A warning under the label: what the action will also do (rows arriving renamed). */
+  /** A warning under the label: what the action will also do (a moved row arriving renamed). */
   note?: string | null;
+  /** Selecting the action opens these in place of the tree, with a back row; `onSelect` is unused. */
+  choices?: readonly DrillAction[];
 };
 
 export type DrillInMenuProps = {
@@ -71,9 +77,10 @@ export type DrillInMenuProps = {
   openAt: readonly DrillNode[];
   /** Footer actions for the level on screen; the caller closes the menu when one is done. */
   actions?: (trail: readonly DrillNode[]) => readonly DrillAction[];
-  caption?: ReactNode;
   status?: ReactNode;
   isDisabled?: (node: DrillNode) => boolean;
+  /** Lists folders alone: a destination picker has nothing to do with a file. */
+  foldersOnly?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCloseAutoFocus?: (event: Event) => void;
@@ -132,9 +139,9 @@ export function DrillInMenuBody({
   openAt,
   actions,
   onPick,
-  caption,
   status,
   isDisabled,
+  foldersOnly,
   onCloseAutoFocus,
   onEscapeKeyDown,
 }: Omit<DrillInMenuProps, "children" | "open" | "onOpenChange">) {
@@ -152,17 +159,85 @@ export function DrillInMenuBody({
     focusFirstRow();
   };
   const isHere = (id: string) => id === exitedId || hereIds.includes(id);
+  const [choosingKey, setChoosingKey] = useState<string | null>(null);
 
   const folder = trail.at(-1) ?? null;
-  const entries = tree.children(folder?.id ?? null);
+  const children = tree.children(folder?.id ?? null);
+  const entries = foldersOnly ? children.filter((node) => node.folder) : children;
   const currentActions = actions?.(trail) ?? [];
+  const choosing = currentActions.find((action) => action.key === choosingKey && action.choices);
   const noteId = useId();
+  const choose = (key: string | null) => {
+    setChoosingKey(key);
+    focusFirstRow();
+  };
+
+  const actionItem = (action: DrillAction) => (
+    <Fragment key={action.key}>
+      <DropdownMenuItem
+        disabled={action.disabled}
+        aria-describedby={action.note ? `${noteId}-${action.key}` : undefined}
+        onSelect={(event) => {
+          event.preventDefault();
+          if (action.choices) choose(action.key);
+          else action.onSelect();
+        }}
+      >
+        <action.icon aria-hidden />
+        <span className="min-w-0 flex-1 truncate">{action.label}</span>
+        {action.choices ? <ChevronRight className="ml-auto" aria-hidden /> : null}
+      </DropdownMenuItem>
+      {action.note ? (
+        <p
+          id={`${noteId}-${action.key}`}
+          className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
+        >
+          {action.note}
+        </p>
+      ) : null}
+    </Fragment>
+  );
+
+  if (choosing?.choices) {
+    return (
+      <DropdownMenuContent
+        ref={contentRef}
+        align="start"
+        className={MENU_CLASS}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            choose(null);
+          }
+        }}
+        onCloseAutoFocus={onCloseAutoFocus}
+        onEscapeKeyDown={onEscapeKeyDown}
+      >
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault();
+            choose(null);
+          }}
+          aria-label={t`Back from ${choosing.label}`}
+        >
+          <ChevronLeft aria-hidden />
+          <span className="min-w-0 flex-1 truncate font-medium">{choosing.label}</span>
+        </DropdownMenuItem>
+        {status ? (
+          <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
+            {status}
+          </div>
+        ) : null}
+        <div className="min-h-0 overflow-y-auto">{choosing.choices.map(actionItem)}</div>
+      </DropdownMenuContent>
+    );
+  }
 
   return (
     <DropdownMenuContent
       ref={contentRef}
       align="start"
-      className="w-64 max-w-[calc(100vw-1rem)]"
+      className={MENU_CLASS}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft" && trail.length > 0) {
           event.preventDefault();
@@ -172,7 +247,6 @@ export function DrillInMenuBody({
       onCloseAutoFocus={onCloseAutoFocus}
       onEscapeKeyDown={onEscapeKeyDown}
     >
-      {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
       {folder ? (
         <DropdownMenuItem
           onSelect={(event) => {
@@ -185,12 +259,8 @@ export function DrillInMenuBody({
           <span className="min-w-0 flex-1 truncate font-medium">{folder.title ?? folder.name}</span>
         </DropdownMenuItem>
       ) : null}
-      {entries.length === 0 ? (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">
-          <Trans>Nothing here yet.</Trans>
-        </p>
-      ) : (
-        entries.map((node) => (
+      <div className="min-h-0 overflow-y-auto">
+        {entries.map((node) => (
           <DropdownMenuItem
             key={node.id}
             disabled={isDisabled?.(node)}
@@ -207,37 +277,15 @@ export function DrillInMenuBody({
             <span className="min-w-0 flex-1 truncate">{node.name}</span>
             {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
           </DropdownMenuItem>
-        ))
-      )}
+        ))}
+      </div>
       {status ? (
         <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
           {status}
         </div>
       ) : null}
       {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
-      {currentActions.map((action) => (
-        <Fragment key={action.key}>
-          <DropdownMenuItem
-            disabled={action.disabled}
-            aria-describedby={action.note ? `${noteId}-${action.key}` : undefined}
-            onSelect={(event) => {
-              event.preventDefault();
-              action.onSelect();
-            }}
-          >
-            <action.icon aria-hidden />
-            {action.label}
-          </DropdownMenuItem>
-          {action.note ? (
-            <p
-              id={`${noteId}-${action.key}`}
-              className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
-            >
-              {action.note}
-            </p>
-          ) : null}
-        </Fragment>
-      ))}
+      {currentActions.map(actionItem)}
     </DropdownMenuContent>
   );
 }

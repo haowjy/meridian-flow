@@ -56,6 +56,9 @@ export const projectQueryKeys = {
   renamePrefix: ["projects", "rename"] as const,
   rename: (projectId: string) => ["projects", "rename", projectId] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
+  /** A document's imported properties, fetched by id once the catalog says it has any. */
+  documentProperties: (projectId: string, documentId: string) =>
+    ["projects", projectId, "documents", documentId, "properties"] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   documentTrash: (projectId: string) => ["projects", projectId, "document-trash"] as const,
   /** Where a folder is now, by its entry id: what a folder chip's menu opens inside. */
@@ -96,6 +99,9 @@ export const projectQueryKeys = {
       "draft",
       itemKey ?? null,
     ] as const,
+  /** Every item's draft metadata read of one document in a Work. */
+  workDraftMetadataOf: (projectId: string, workId: string, documentId: string) =>
+    ["projects", projectId, "works", workId, "documents", documentId, "draft"] as const,
   contextCatalog: (projectId: string, scope: CatalogScope) =>
     ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,
   contextCatalogView: (

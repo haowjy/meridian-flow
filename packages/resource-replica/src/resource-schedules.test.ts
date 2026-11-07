@@ -228,8 +228,14 @@ it("projects every nested placement/deletion schedule", () => {
         revision: 1,
         identity: { documentId: "f", revision: 1 },
         content: { kind: "unacquired" },
-        classification: { editable: true, filetype: "markdown", schemaType: "document" },
+        classification: {
+          extension: "",
+          editable: true,
+          filetype: "markdown",
+          schemaType: "document",
+        },
         canonical: loc("P/A/doc.md"),
+        serverHold: "held",
         lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
         aliases: {},
         obligations: {},
@@ -312,6 +318,8 @@ it("projects every nested placement/deletion schedule", () => {
       handle: "A",
       folderId: "A",
       revision: 1,
+      serverHold: "held",
+      observationVersion: "0",
       canonical: loc("P/A"),
       intents: [],
     };
@@ -328,7 +336,7 @@ it("projects every nested placement/deletion schedule", () => {
       projectId: "p",
       handle: "A",
       folderId: "A",
-      source: record.canonical,
+      source: record.canonical ?? undefined,
       intentId: `i${++sequence}`,
       operationId: `o${sequence}`,
     });

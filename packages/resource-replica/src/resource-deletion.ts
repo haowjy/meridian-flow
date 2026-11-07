@@ -2,13 +2,67 @@
 
 import { newerCanonicalObservation } from "./canonical-observation";
 import { intentOwnsDeletionAt, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
-import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
+import type {
+  NamespaceIntent,
+  PlacementAdmission,
+  ResourceRecord,
+  ResourceWrite,
+} from "./resource-records";
+import { deleteNeedsServer } from "./server-hold";
+
+/**
+ * How long a deleted document that exists only on this device keeps its content before cleanup.
+ * The server keeps its own deletions in Trash; this device has none, and nothing brings the
+ * document back during this window. Kept for #1219, which decides what recovers it.
+ */
+export const LOCAL_DELETION_UNDO_MS = 10 * 60_000;
+
+/** The exact content of a document the server never held is cleaned up once this window closes. */
+function locallyDeleted(
+  resource: ResourceRecord["resource"],
+  deletionIntentId: string,
+  now: number,
+): ResourceRecord["resource"] {
+  const next = { ...resource, revision: resource.revision + 1 };
+  return resource.content.kind === "exact"
+    ? {
+        ...next,
+        obligations: {
+          ...resource.obligations,
+          cleanup: {
+            obligationId: deletionIntentId,
+            exactDatabaseName: resource.content.databaseName,
+            notBefore: now + LOCAL_DELETION_UNDO_MS,
+          },
+        },
+      }
+    : next;
+}
+
+/** A queued delete of a document the server never accepted settles on this device. */
+export function settleDeletionLocally(
+  record: ResourceRecord,
+  intentId: string,
+  now = Date.now(),
+): ResourceWrite {
+  return {
+    expectedRevision: record.resource.revision,
+    next: {
+      resource: locallyDeleted(record.resource, intentId, now),
+      intents: record.intents.map((intent) =>
+        intent.intentId === intentId ? { ...intent, state: "settled-locally" } : intent,
+      ),
+    },
+  };
+}
 
 export function planResourceDeletion(
   record: ResourceRecord,
   projectId: string,
   intentId: string,
   operationId?: string,
+  admission?: PlacementAdmission,
+  now = Date.now(),
 ): ResourceWrite | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
@@ -17,10 +71,7 @@ export function planResourceDeletion(
     )
   )
     return null;
-  const neverSubmitted =
-    record.resource.lifecycle.kind === "local" &&
-    record.resource.canonical === null &&
-    record.intents.every((intent) => intent.attempts.length === 0);
+  const neverAccepted = !deleteNeedsServer(record.resource.serverHold);
   const superseded = supersedeRepairableNamespaceWork(record, projectId);
   const deletion: NamespaceIntent = {
     projectId,
@@ -29,27 +80,17 @@ export function planResourceDeletion(
     sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,
     identityRevision: record.resource.identity.revision,
     desired: { kind: "delete" },
+    ...(admission ? { admission } : {}),
     ...(operationId ? { operationId } : {}),
     attempts: [],
-    state: neverSubmitted ? "settled-locally" : "pending",
+    state: neverAccepted ? "settled-locally" : "pending",
   };
   return {
     expectedRevision: record.resource.revision,
     next: {
-      resource: {
-        ...record.resource,
-        revision: record.resource.revision + 1,
-        ...(neverSubmitted && record.resource.content.kind === "exact"
-          ? {
-              obligations: {
-                cleanup: {
-                  obligationId: intentId,
-                  exactDatabaseName: record.resource.content.databaseName,
-                },
-              },
-            }
-          : {}),
-      },
+      resource: neverAccepted
+        ? locallyDeleted(record.resource, intentId, now)
+        : { ...record.resource, revision: record.resource.revision + 1 },
       intents: [
         ...superseded.intents.map((intent) =>
           !superseded.repaired &&

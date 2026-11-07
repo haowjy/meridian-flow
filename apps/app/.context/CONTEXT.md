@@ -242,8 +242,25 @@ the app-wide focus-ring CSS for app-moved focus; Work archive focus uses it so
 focus following a pointer command stays quiet.
 
 E2E fixtures may seed relational project/Work/thread/context shells through the
-authenticated API or SQL, but never write Yjs content or
-`documents.markdown_projection`; Yjs is authoritative and projection is a
-derived cache. Teardown removes context sources and relies on cascades.
+authenticated API or SQL, but never write Yjs content or the `document_blocks`
+rows; Yjs is authoritative and those rows are derived from it. Teardown removes context sources and relies on cascades.
 
 Related server contracts live in [the server context](../../server/server/domains/threads/.context/CONTEXT.md).
+
+## Showing a saved file
+
+Every saved file is displayed. An image browsers can't draw has a server-made
+preview. The read answers carry the original's URL (Download) and `drawUrl`,
+what to draw: the preview, the original, or nothing. The server decides; the
+client keeps no list of drawable types. The context viewer and the editor's
+`image` and `figure` nodes draw `drawUrl`; with none, or when an unknown
+binary, an image with no preview, or a decode failure leaves nothing drawable,
+a `FileCard` shows name, type, size, Download. An `<img>` failure gets one
+automatic URL refresh, then the card, and the editor then treats that picture
+as undrawable: it keeps re-signing the card's Download before expiry and never
+retries the `<img>`. Retry stays only for a signed-URL request that failed. Draft review opens any
+binary draft (`ThreadDraftListItem.binary`) in the same preview.
+
+## Import activity
+
+The authenticated app root owns one account-keyed import coordinator, so uploads continue after the initiating tree unmounts or the writer changes project. Imports have no surface of their own: the Import button in a destination section header carries a spinner or dot and opens a popover (`features/import/AGENTS.md`), and a phone reaches the same content in a sheet from its `+` menu. The app root also holds the one `FailureToaster` (`components/app/failure-toast.tsx`, on Sonner). A failure with no place on a document or in the import popup calls `notifyFailure`: top right on desktop, under the top bar on a phone, kept until dismissed or replaced by key. A success never toasts. The phone shell needs a coarse pointer (`usePhoneShell`): a 390px window with a fine pointer is the desktop shell, so a phone probe must emulate touch.

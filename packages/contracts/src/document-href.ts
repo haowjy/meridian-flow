@@ -6,7 +6,8 @@ import {
   parseContextUri,
   splitDocumentHrefSuffix,
 } from "./context-uri.js";
-import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
+import { addressCandidates, canonicalLeaf, filenameSplits } from "./protocol/document-filename.js";
+import { filetypeForExtension } from "./protocol/filetype.js";
 
 export { splitDocumentHrefSuffix } from "./context-uri.js";
 
@@ -89,43 +90,58 @@ export function spellDocumentHref(holderUri: string | null, target: LinkAddress)
 /** Canonicalize only the filename: folder segments are literal names. */
 export function documentPathKey(path: string): string {
   const slash = path.lastIndexOf("/");
-  const parsed = parseDocumentFilename(path.slice(slash + 1));
-  return parsed.ok
-    ? path.slice(0, slash + 1) + renderFilename(parsed.value.name, parsed.value.extension)
-    : path;
-}
-
-/** Stored basename keys needed by exact and extension-omitted path matching. */
-export function documentPathCandidateNames(path: string): string[] {
-  const key = documentPathKey(path);
-  const basename = key.slice(key.lastIndexOf("/") + 1);
-  const parsed = parseDocumentFilename(basename);
-  return parsed.ok ? [...new Set([parsed.value.name, basename])] : [basename];
+  return path.slice(0, slash + 1) + canonicalLeaf(path.slice(slash + 1));
 }
 
 /**
- * The one candidate at a resolved path: the exact path, or else the path with
- * its final extension omitted when exactly one candidate fits. Addresses are
- * unique, so there is never a choice between several.
+ * Stored names a link's path can match: every split of its canonical leaf, because a file kept
+ * as `page.html` is stored as name `page` and extension `html`.
+ */
+export function documentPathCandidateNames(path: string): string[] {
+  return filenameSplits(canonicalLeaf(path.slice(path.lastIndexOf("/") + 1))).map(
+    (split) => split.name,
+  );
+}
+
+/** `path` without its registered extension (`a/again.md` is `a/again`); null when it has none. */
+export function omittedExtensionPath(path: string): string | null {
+  const dot = path.lastIndexOf(".");
+  return dot > path.lastIndexOf("/") + 1 && filetypeForExtension(path.slice(dot + 1)) !== null
+    ? path.slice(0, dot)
+    : null;
+}
+
+/** The candidate a tree lookup finds at a path: its exact spelling, else its alias (`ch1.md` is `ch1`). */
+export function matchDocumentAddress<T>(
+  candidates: readonly T[],
+  path: string,
+  pathOf: (candidate: T) => string,
+): T | null {
+  const slash = path.lastIndexOf("/");
+  const dir = path.slice(0, slash + 1);
+  for (const leaf of addressCandidates(path.slice(slash + 1))) {
+    const found = candidates.find((candidate) => pathOf(candidate) === dir + leaf);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * The one candidate a link names: `matchDocumentAddress`, else the unique candidate whose path
+ * differs only by a registered extension the link left off. Only links may omit it.
  */
 export function matchDocumentPath<T>(
   candidates: readonly T[],
   path: string,
   pathOf: (candidate: T) => string,
 ): T | null {
-  const key = documentPathKey(path);
-  const exact = candidates.find((candidate) => documentPathKey(pathOf(candidate)) === key);
-  if (exact) return exact;
-  const loose = candidates.filter((candidate) => {
-    const value = pathOf(candidate);
-    const slash = value.lastIndexOf("/");
-    const parsed = parseDocumentFilename(value.slice(slash + 1));
-    return (
-      parsed.ok &&
-      parsed.value.extension !== "" &&
-      value.slice(0, slash + 1) + parsed.value.name === key
-    );
-  });
+  const found = matchDocumentAddress(candidates, path, pathOf);
+  if (found) return found;
+  const slash = path.lastIndexOf("/");
+  const wanted = path.slice(0, slash + 1) + canonicalLeaf(path.slice(slash + 1));
+  const loose = candidates.filter(
+    (candidate) => omittedExtensionPath(pathOf(candidate)) === wanted,
+  );
   return loose.length === 1 ? (loose[0] ?? null) : null;
 }
 

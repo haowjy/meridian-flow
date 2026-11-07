@@ -63,6 +63,7 @@ it("keeps the room incarnation when a fresher admission reopens an unacquired ca
     }).next;
     reserved.resource.content = { kind: "unacquired" };
     reserved.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "6" };
+    reserved.resource.serverHold = "held";
     reserved.resource.obligations = {};
     reserved.intents = [];
     await writer.commitResource({ expectedRevision: null, next: reserved });

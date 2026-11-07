@@ -24,6 +24,8 @@ interface InternalWriteResultBase {
   frontier?: ObservationFrontier;
   /** The blocks a read selected, for a host copying them. */
   nodes?: readonly Block[];
+  /** Where each settled `ahead:` ref in `nodes` points, read in the same scope as `nodes`. */
+  aheadSettlements?: ReadonlyMap<string, string>;
   model?: AgentEditModelPayload;
   writeId?: string;
   settlementId?: string;

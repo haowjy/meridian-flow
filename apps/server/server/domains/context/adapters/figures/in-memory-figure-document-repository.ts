@@ -15,6 +15,8 @@ const toRecord = (input: ProjectDocumentFileRecord): DocumentFileRecord => ({
   mimeType: input.mimeType,
   fileType: input.fileType,
   sizeBytes: input.sizeBytes,
+  name: input.name,
+  hasPreview: input.hasPreview,
 });
 
 export class InMemoryFigureDocumentRepository implements FigureDocumentRepository {

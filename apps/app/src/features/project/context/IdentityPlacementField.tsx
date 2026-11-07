@@ -21,9 +21,9 @@ import { cn } from "@/lib/utils";
 import { useAccountResourceReplica } from "./account-feature-context";
 import {
   allocateContextEntryArrivalName,
+  documentRow,
   entryNameStemEnd,
   invalidContextEntryNameReason,
-  nameOccupancy,
 } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
@@ -42,7 +42,12 @@ import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity
 import { ValidationNote } from "./validation-note";
 
 type ExitReason = "escape" | "blur" | "commit";
-export type QueuedIdentityFailure = { kind: "error"; name: string };
+export type QueuedIdentityFailure = {
+  kind: "error";
+  name: string;
+  /** The server refused the document's creation, not a rename. */
+  created: boolean;
+};
 
 type IdentityNote = { kind: "error"; message: string } | null;
 
@@ -85,7 +90,11 @@ export function IdentityPlacementField({
   const [ghost, setGhost] = useState("");
   const [noteValue, setNoteValue] = useState(value);
   const [requestError, setRequestError] = useState<string | null>(() =>
-    failure ? t`Couldn't rename this document. Try another name.` : null,
+    failure
+      ? failure.created
+        ? t`Couldn't create this document. Try another place.`
+        : t`Couldn't rename this document. Try another name.`
+      : null,
   );
   const [commitReason, setCommitReason] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -99,7 +108,8 @@ export function IdentityPlacementField({
     const input = inputRef.current;
     input?.focus();
     // Only the part before a visible extension: `outline` in `outline.json`.
-    if (input?.value) input.setSelectionRange(0, entryNameStemEnd(input.value));
+    if (input?.value)
+      input.setSelectionRange(0, entryNameStemEnd(input.value, documentRow(location.leaf)));
   }, []);
 
   useEffect(() => {
@@ -187,7 +197,7 @@ export function IdentityPlacementField({
     : "";
 
   const liveReason = noteValue.trim()
-    ? invalidContextEntryNameReason(noteValue.trim(), location.leaf)
+    ? invalidContextEntryNameReason(noteValue.trim(), documentRow(location.leaf))
     : null;
   const identityNote = deriveIdentityNote({
     validationReason: commitReason ?? liveReason,
@@ -209,7 +219,7 @@ export function IdentityPlacementField({
       setCommitReason(t`Name is required`);
       return;
     }
-    const reason = invalidContextEntryNameReason(name, location.leaf);
+    const reason = invalidContextEntryNameReason(name, documentRow(location.leaf));
     if (reason) {
       setCommitReason(reason);
       setNoteValue(value);
@@ -219,17 +229,17 @@ export function IdentityPlacementField({
       destination: identityDestination(location, editorWorkId, destination ?? undefined),
       name: allocateContextEntryArrivalName(
         name,
-        nameOccupancy(
+        new Set(
           folderChildren(
             allEntries,
             destination?.scheme ?? location.scheme,
             destination?.folderPath ?? location.parentPath,
           )
             .filter((entry) => entry.entryId !== tab.documentId)
-            .map((entry) => ({ entryId: entry.entryId, name: entry.name, kind: entry.kind })),
+            .map((entry) => entry.name),
         ),
         "file",
-        location.leaf,
+        documentRow(location.leaf),
       ),
       typedName: name,
     });
@@ -407,6 +417,6 @@ function suggestionForSession(
   );
   if (!suggestion || tab.kind === "new") return suggestion;
   // The suggestion carries the file's visible extension (`.json`); a prose name has none.
-  const extension = tab.name.slice(entryNameStemEnd(tab.name));
+  const extension = tab.name.slice(entryNameStemEnd(tab.name, documentRow(tab.name)));
   return extension && !suggestion.endsWith(extension) ? `${suggestion}${extension}` : suggestion;
 }

@@ -20,6 +20,7 @@ import type { Database } from "@meridian/database";
 import {
   branchTreeChanges,
   branchTreeFolders,
+  branchTreeRanks,
   branchTreeUnsettled,
   documentEdits,
   folders,
@@ -32,6 +33,7 @@ import {
   latestTransition,
   type StoredTreeEntry,
 } from "../../collab/domain/tree-inverse.js";
+import { reconcileBranchSiblingOrder } from "./branch-sibling-order.js";
 import { tombstoneFolders } from "./node-rows.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
@@ -130,6 +132,16 @@ export async function dropDocumentRows(
   input: { branchId: BranchId; documentIds: readonly DocumentId[]; settle: BranchSettlement },
 ): Promise<BranchSettlementResult> {
   if (input.documentIds.length === 0) return { pruned: [], applied: [] };
+  const affectedParents = await currentDrizzleDb(db)
+    .select({ kind: branchTreeRanks.parentKind, id: branchTreeRanks.parentId })
+    .from(branchTreeRanks)
+    .where(
+      and(
+        eq(branchTreeRanks.branchId, input.branchId),
+        eq(branchTreeRanks.nodeKind, "document"),
+        inArray(branchTreeRanks.nodeId, [...input.documentIds]),
+      ),
+    );
   const settled = await settleBranchEntries(db, input);
   await currentDrizzleDb(db)
     .delete(branchTreeChanges)
@@ -140,6 +152,16 @@ export async function dropDocumentRows(
         inArray(branchTreeChanges.nodeId, [...input.documentIds]),
       ),
     );
+  await currentDrizzleDb(db)
+    .delete(branchTreeRanks)
+    .where(
+      and(
+        eq(branchTreeRanks.branchId, input.branchId),
+        eq(branchTreeRanks.nodeKind, "document"),
+        inArray(branchTreeRanks.nodeId, [...input.documentIds]),
+      ),
+    );
+  await reconcileBranchSiblingOrder(db, input.branchId, affectedParents);
   return settled;
 }
 
@@ -373,6 +395,7 @@ export async function readBranchTreeFacts(
       rootSourceId: branchTreeChanges.movedRootSourceId,
       name: branchTreeChanges.movedName,
       extension: branchTreeChanges.movedExtension,
+      rank: branchTreeChanges.movedRank,
     })
     .from(branchTreeChanges)
     .where(
@@ -393,6 +416,7 @@ export async function readBranchTreeFacts(
               rootSourceId: row.rootSourceId,
               name: row.name,
               extension: row.extension,
+              rank: row.rank,
             }
           : null,
       deleted: row.deleted,
@@ -453,6 +477,7 @@ export async function writeBranchTreeFacts(
     movedRootSourceId: moved?.folderId ? null : (moved?.rootSourceId ?? null),
     movedName: moved?.name ?? null,
     movedExtension: moved?.extension ?? null,
+    movedRank: moved?.rank ?? null,
     deleted: facts.deleted,
     changedThreadId: changed ? (input.changedBy?.threadId ?? null) : null,
     changedTurnId: changed ? (input.changedBy?.turnId ?? null) : null,

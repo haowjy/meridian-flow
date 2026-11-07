@@ -1,7 +1,8 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
+import { installProjectReadRestart, projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "./project-query-keys";
 
 export type AppQueryProviderProps = {
@@ -21,6 +22,7 @@ export function AppQueryProvider({ initialProjects, children }: AppQueryProvider
       defaultOptions: {
         queries: {
           retry: 1,
+          enabled: projectReadEnabled(),
         },
       },
     });
@@ -29,6 +31,8 @@ export function AppQueryProvider({ initialProjects, children }: AppQueryProvider
     }
     return client;
   });
+
+  useEffect(() => installProjectReadRestart(queryClient), [queryClient]);
 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "nitro/config";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
 const repoLogsGlob = `${path.join(repoRoot, "logs").replaceAll(path.sep, "/")}/**`;
 
 /**
@@ -49,6 +50,9 @@ export default defineConfig({
       dir: path.join(repoRoot, "apps/server/server/domains/packages/builtin"),
     },
   ],
+  // CommonJS packages that read `__dirname` (libheif's WASM loader) break when inlined into
+  // the ESM worker chunk, so they stay external and are traced into the output.
+  traceDeps: ["heic-decode", "libheif-js", "bmp-ts"],
   features: {
     websocket: true,
   },

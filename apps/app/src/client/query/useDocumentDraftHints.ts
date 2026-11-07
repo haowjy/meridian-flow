@@ -8,6 +8,7 @@ import type { DocumentDraftHint } from "@meridian/contracts/branches";
 import { useQuery } from "@tanstack/react-query";
 
 import { listDocumentDraftHints } from "@/client/api/branches-api";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "./project-query-keys";
 
 const NONE: readonly DocumentDraftHint[] = [];
@@ -20,7 +21,7 @@ export function useDocumentDraftHints(
   const { data } = useQuery({
     queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
     queryFn: () => listDocumentDraftHints(projectId, documentId).then((answer) => answer.items),
-    enabled: options.enabled && Boolean(projectId) && Boolean(documentId),
+    enabled: projectReadEnabled(options.enabled && Boolean(projectId) && Boolean(documentId)),
     staleTime: 15_000,
   });
   return data ?? NONE;

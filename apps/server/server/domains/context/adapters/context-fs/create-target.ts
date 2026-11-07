@@ -53,11 +53,15 @@ export function resolveCreateTarget(
   return Ok({ dir, ...parsed });
 }
 
-/** A binary's target: a prose-shaped name takes its storage type's registered suffix. */
+/**
+ * A binary's target: the router's decided name parts as given, otherwise (a direct adapter
+ * caller) a prose-shaped name takes its storage type's registered suffix.
+ */
 export function resolveBinaryTarget(
   path: string,
-  storage: { fileType: string; mimeType?: string },
+  storage: { fileType: string; mimeType?: string; filename?: { name: string; extension: string } },
 ): Result<{ dir: string[]; name: string; extension: string }, AdapterFault> {
+  if (storage.filename) return Ok({ dir: splitPath(path).dir, ...storage.filename });
   const target = parseTarget(path, {});
   if (!target.ok) return target;
   const { name, extension } = filenameForBinary(

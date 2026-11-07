@@ -1,0 +1,73 @@
+/** Per-process bound on concurrent multipart receives for one import. */
+import { IMPORT_LIMITS, ImportError } from "./manifest.js";
+
+export interface ImportAdmission {
+  /** A release callback, or null when the import already has its limit in flight. */
+  enter(importId: string): (() => void) | null;
+}
+
+export function createImportAdmission(
+  limit: number = IMPORT_LIMITS.receivesPerImport,
+): ImportAdmission {
+  const active = new Map<string, number>();
+  return {
+    enter(importId) {
+      const count = active.get(importId) ?? 0;
+      if (count >= limit) return null;
+      active.set(importId, count + 1);
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        const left = (active.get(importId) ?? 1) - 1;
+        if (left) active.set(importId, left);
+        else active.delete(importId);
+      };
+    },
+  };
+}
+
+/** The response deadline never releases admission while body/storage execution is still alive. */
+export async function inReceiveScope<Context, Result>(
+  input: {
+    importId: string;
+    admission: ImportAdmission;
+    authorize(): Promise<Context>;
+    pulse(): Promise<void>;
+    reportError(cause: unknown): void;
+  },
+  run: (context: Context, signal: AbortSignal) => Promise<Result>,
+): Promise<Result> {
+  const release = input.admission.enter(input.importId);
+  if (!release) throw new ImportError(429, "import_busy");
+  const controller = new AbortController();
+  let pulse: ReturnType<typeof setInterval> | undefined;
+  const stopPulse = () => clearInterval(pulse);
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    deadline = setTimeout(
+      () => {
+        stopPulse();
+        const error = new ImportError(408, "import_busy");
+        controller.abort(error);
+        reject(error);
+      },
+      10 * 60 * 1000,
+    );
+  });
+  const execution = (async () => {
+    try {
+      const context = await input.authorize();
+      controller.signal.throwIfAborted();
+      pulse = setInterval(() => {
+        void input.pulse().catch(input.reportError);
+      }, 30_000);
+      return await run(context, controller.signal);
+    } finally {
+      stopPulse();
+      clearTimeout(deadline);
+      release();
+    }
+  })();
+  return Promise.race([execution, timeout]);
+}

@@ -26,6 +26,7 @@ import { createError } from "nitro/h3";
 import type { Branches, DocumentLinkScopes } from "../domains/collab/index.js";
 import type { DocumentLinkResolver } from "../domains/context/index.js";
 import type { DocumentTrash } from "../domains/context/ports/document-trash.js";
+import type { UploadIdentityPort } from "../domains/context/uploads/index.js";
 import type { FileAccess } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/domain/work-authority.js";
 import { requireProjectOwner } from "../domains/projects/index.js";
@@ -42,6 +43,8 @@ export interface DocumentLinkRouteDeps {
   branches: Pick<Branches, "viewForWork">;
   /** Project-authorized retained identities for gone links; purged rows are absent. */
   documentTrash: Pick<DocumentTrash, "retained">;
+  /** What a chip says of a stored file: its type and size. */
+  files: Pick<UploadIdentityPort, "lookupDocuments">;
 }
 
 type DocumentAnswer = Extract<DocumentLinkAnswer, { state: "document" }>["document"];
@@ -209,7 +212,31 @@ export async function handleDocumentLinkResolveRequest(
   if (unanswered.length > 0) {
     await answerFromBranchView(deps, { projectId, userId, view, unanswered, answers });
   }
+  await addFileFacts(deps.files, answers);
   return holderUri === undefined ? { answers } : { answers, holderUri };
+}
+
+/** A stored file's type and size, on the answers that name one; a tracked document has neither. */
+async function addFileFacts(
+  files: DocumentLinkRouteDeps["files"],
+  answers: readonly DocumentLinkAnswer[],
+): Promise<void> {
+  const named = answers.flatMap((answer) => (answer.state === "document" ? [answer.document] : []));
+  if (named.length === 0) return;
+  const identities = new Map(
+    (await files.lookupDocuments([...new Set(named.map((document) => document.id))])).map(
+      (identity) => [identity.documentId, identity],
+    ),
+  );
+  for (const document of named) {
+    const identity = identities.get(document.id);
+    if (identity?.storageUrl)
+      document.file = {
+        fileType: identity.fileType,
+        mimeType: identity.mimeType,
+        sizeBytes: identity.sizeBytes,
+      };
+  }
 }
 
 /**

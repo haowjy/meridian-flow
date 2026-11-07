@@ -9,11 +9,9 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
-import { useDeleteContextEntry } from "../context/document-delete-undo";
-import { MoveFeedbackProvider } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { SurfaceNotices } from "../context/project-notices";
 import { treeFolderIds } from "../context/tree-expansion-state";
+import { useDeleteContextEntry } from "../context/use-delete-context-entry";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import type { ResolvedProjectViewProps } from "../ProjectView";
 
@@ -71,7 +69,7 @@ function MobileFolderTree({
   const { catalog, isComplete, isError, refetch } = useContextCatalogView(projectId, scheme, {
     workId: editorWorkId,
   });
-  const deletion = useDeleteContextEntry("mobile");
+  const deletion = useDeleteContextEntry(projectId);
   const openDocument = useOpenProjectDocument(projectId);
   const [localCreate, setLocalCreate] = useState<{
     kind: ContextCreateKind;
@@ -135,9 +133,10 @@ function MobileFolderTree({
             owner: {},
             scheme,
             catalog,
-            capabilities: ["rename", "move", "delete"],
+            capabilities: ["rename", "move", "copy", "delete"],
             activeScheme: null,
             activePath: null,
+            refusalNotice: true,
             isExpanded,
             toggleEntry,
             onRequestDelete: deletion.requestDelete,
@@ -153,23 +152,19 @@ function MobileFolderTree({
               createdFile: (path) => onSelectContextPath(path, scheme),
             },
             onSelectFile: (_scheme, file) => {
-              if (file.editable)
-                void openDocument({
-                  documentId: file.documentId,
-                  known: { scheme, file, workId: editorWorkId },
-                  workId: editorWorkId ?? undefined,
-                });
-              else onSelectContextPath(file.path, scheme);
+              void openDocument({
+                documentId: file.documentId,
+                known: { scheme, file, workId: editorWorkId },
+                workId: editorWorkId ?? undefined,
+              });
             },
           }}
         >
-          <MoveFeedbackProvider feedback={{ surface: "mobile" }}>
-            <TreeChildren
-              parentId={dir.entryId}
-              parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
-              depth={0}
-            />
-          </MoveFeedbackProvider>
+          <TreeChildren
+            parentId={dir.entryId}
+            parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
+            depth={0}
+          />
           {!pending && catalog.children(dir.entryId).length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
               <Trans>This folder is empty.</Trans>
@@ -180,7 +175,6 @@ function MobileFolderTree({
       {catalog && isError ? (
         <InlineErrorRow message={t`Could not load files.`} onRetry={refetch} />
       ) : null}
-      <SurfaceNotices surface="mobile" className="sticky bottom-2 mx-2 mt-2" />
     </div>
   );
 }

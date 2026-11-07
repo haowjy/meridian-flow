@@ -1,6 +1,10 @@
 /** Draft operation policy over the shared committed-replica runtime. */
 
-import { bytesEqual, type SavePrecondition } from "@meridian/agent-edit/integration";
+import {
+  bindBlockOrigins,
+  bytesEqual,
+  type SavePrecondition,
+} from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import { admitSegmentRows } from "./document-mutation-policy.js";
 import {
@@ -13,6 +17,7 @@ import {
 } from "./draft-runtime.js";
 import {
   type AppendDraftJournalInput,
+  blockOriginsFromDraftSeed,
   DraftMissingError,
   type DraftSnapshot,
   DraftStaleUpdateError,
@@ -24,7 +29,10 @@ export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> 
     draftId: string,
     fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
   ): Promise<T>;
-  /** A private copy of the committed draft, the caller's to change and destroy. */
+  /**
+   * A private copy of the committed draft, the caller's to change and destroy, with the draft's
+   * block addresses bound.
+   */
   copyDraft(draftId: string): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot; position: number }>;
   /**
    * Replays a response's rows on a candidate of the committed draft. With `commit`, the rows
@@ -87,7 +95,15 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     draftId: string,
   ): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot; position: number }> {
     const base = await loadBase(draftId);
-    return { doc: cloneReplica(base.replica), snapshot: base.snapshot, position: base.replica.seq };
+    const doc = cloneReplica(base.replica);
+    try {
+      const origins = blockOriginsFromDraftSeed(base.snapshot.seed);
+      if (origins) bindBlockOrigins(doc, origins);
+    } catch (cause) {
+      doc.destroy();
+      throw cause;
+    }
+    return { doc, snapshot: base.snapshot, position: base.replica.seq };
   }
 
   /**

@@ -65,6 +65,7 @@ import {
   type WorkBranchCommands,
   WorkBranchCommandsBoundary,
 } from "@/features/draft-review/useWorkBranchCommands";
+import { ImportProvider } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
@@ -80,13 +81,14 @@ import type { ContextRemovalRoutePort } from "./context/context-removal-coordina
 import { DocumentTrashDialog } from "./context/DocumentTrashDialog";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
 import { resolveEditorFrame } from "./context/editor-presentation";
+import { RefusalToasts } from "./context/entry-drag/RefusalToasts";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
-import { ProjectNoticesProvider } from "./context/project-notices";
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { DragHint } from "./context/tree-drop/drag-hint";
+import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
 import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
@@ -201,6 +203,8 @@ export type ProjectViewProps = {
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewItemKey?: string;
+  /** The document that item names. */
+  reviewDocumentId?: string;
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
@@ -385,34 +389,37 @@ export function ProjectView(props: ProjectViewProps) {
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
   };
   return (
-    <ProjectNoticesProvider key={props.projectId} projectId={props.projectId}>
-      <DocumentTrashRestoreProvider projectId={props.projectId}>
-        <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-          <DocumentTrashDialog projectId={props.projectId} />
-          {hydrated ? (
-            <>
-              {resolvedProps.contextLive && editorScope.status === "ready" ? (
-                <ProjectContextRemovalController
-                  projectId={props.projectId}
-                  activeScreen={props.activeScreen}
-                  activeContextScheme={props.activeContextScheme}
-                  activeContextPath={props.activeContextPath}
-                  activeContextChat={props.activeContextChat}
-                  editorWorkId={editorScope.workId}
-                  localDocumentId={props.activeLocalDocumentId}
-                  route={props.contextRemovalRoute}
-                />
-              ) : null}
+    <DocumentTrashRestoreProvider key={props.projectId} projectId={props.projectId}>
+      <RefusalToasts projectId={props.projectId} />
+      <div className="flex h-full min-h-0 w-full bg-background text-foreground">
+        <DocumentTrashDialog projectId={props.projectId} />
+        {hydrated ? (
+          <>
+            {resolvedProps.contextLive && editorScope.status === "ready" ? (
+              <ProjectContextRemovalController
+                projectId={props.projectId}
+                activeScreen={props.activeScreen}
+                activeContextScheme={props.activeContextScheme}
+                activeContextPath={props.activeContextPath}
+                activeContextChat={props.activeContextChat}
+                editorWorkId={editorScope.workId}
+                localDocumentId={props.activeLocalDocumentId}
+                reviewDocumentId={props.reviewDocumentId}
+                route={props.contextRemovalRoute}
+              />
+            ) : null}
+            <ImportProvider key={props.projectId} projectId={props.projectId}>
+              <WindowDropGuard />
               <HydratedReviewProject
                 {...resolvedProps}
                 projectTitle={projectTitle}
                 titleEdit={{ projectId: props.projectId, onSave: renameProject }}
               />
-            </>
-          ) : null}
-        </div>
-      </DocumentTrashRestoreProvider>
-    </ProjectNoticesProvider>
+            </ImportProvider>
+          </>
+        ) : null}
+      </div>
+    </DocumentTrashRestoreProvider>
   );
 }
 
@@ -800,7 +807,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
           onSelectScreen={screenSwitch.selectScreen}
-          onSelectContextPath={props.onSelectContextPath}
           onCollapse={close("threads")}
         />
       ),

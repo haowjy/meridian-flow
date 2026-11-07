@@ -5,33 +5,23 @@ import {
   validateContextEntryName as validateSharedContextEntryName,
 } from "@meridian/contracts/context-entry-validation";
 import {
-  filenameCandidates,
-  type NamespaceNameClaim,
-  namespaceName,
+  firstFreeName,
+  type NamedRow,
   parseDocumentFilename,
-  renderFilename,
+  splitRendered,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { ContextCreateKind } from "./context-create-kind";
 
-/**
- * What two sibling names clash on. A folder compares as a document name, so a
- * folder `Lore.md` and a document `Lore` are one name and cannot coexist.
- */
-export function entryNameKey(name: string): string {
-  const bare = name.trim().replace(/\/$/, "");
-  const parsed = parseDocumentFilename(bare);
-  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : bare;
+/** A tracked document's naming facts from its canonical name: a registered suffix is its own. */
+export function documentRow(name: string): NamedRow {
+  const parsed = parseDocumentFilename(name);
+  return { extension: parsed.ok ? parsed.value.extension : "", editable: true };
 }
 
-/** Where the part a writer renames ends: before a visible extension, otherwise the whole name. */
-export function entryNameStemEnd(name: string, kind: ContextCreateKind = "file"): number {
-  if (kind === "folder") return name.length;
-  const parsed = parseDocumentFilename(name);
-  const extension = parsed.ok ? parsed.value.extension : "";
-  return extension && name.toLowerCase().endsWith(`.${extension}`)
-    ? name.length - extension.length - 1
-    : name.length;
+/** Where the part a writer renames ends: before the row's extension, otherwise the whole name. */
+export function entryNameStemEnd(name: string, row?: NamedRow): number {
+  return splitRendered(name, row?.extension ?? "").name.length;
 }
 
 function validationReason(error: ContextEntryValidationError): string {
@@ -63,8 +53,8 @@ export function parentContextEntryPath(path: string): string {
   return cut <= 0 ? "" : path.slice(0, cut);
 }
 
-/** Why a typed document name is refused, or null; `current` is the stored name being renamed. */
-export function invalidContextEntryNameReason(name: string, current?: string): string | null {
+/** Why a typed document name is refused, or null; `current` is the row being renamed. */
+export function invalidContextEntryNameReason(name: string, current?: NamedRow): string | null {
   const result = validateSharedContextEntryName(name);
   if (!result.ok) return validationReason(result);
   const stored = storedFilename(result.value, current);
@@ -92,8 +82,8 @@ export function validateContextEntryName(
   raw: string,
   siblings: readonly ContextEntrySibling[],
   kind: ContextCreateKind = "file",
-  /** The stored name of the file being renamed; absent when creating. */
-  current?: string,
+  /** The file being renamed; absent when creating. */
+  current?: NamedRow,
 ): ContextEntryNameSeverity | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -105,12 +95,8 @@ export function validateContextEntryName(
     if (!stored.ok) return { level: "error", message: stored.message };
     candidate = stored.name;
   }
-  const key = entryNameKey(candidate);
-  const occupant = siblings.find((sibling) =>
-    kind === "folder" && sibling.kind === "dir"
-      ? sibling.name === candidate
-      : entryNameKey(sibling.name) === key,
-  );
+  // Siblings clash on the literal rendered name, whatever their kinds.
+  const occupant = siblings.find((sibling) => sibling.name === candidate);
   if (occupant) {
     return {
       level: "error",
@@ -131,50 +117,17 @@ export function moveEntryName(currentName: string, repair?: { name: string }): s
   return repair?.name ?? currentName;
 }
 
-/**
- * The names a folder's rows hold, indexed once so each candidate checks in
- * constant time. A claim collides with the same kind by its literal name and
- * with the other kind by its alias (`sameNamespaceName`).
- */
-export type NameOccupancy = {
-  taken: (candidate: NamespaceNameClaim) => boolean;
-  claim: (candidate: NamespaceNameClaim) => void;
-};
-
-export function nameOccupancy(siblings: readonly ContextEntrySibling[]): NameOccupancy {
-  const literal = { document: new Set<string>(), folder: new Set<string>() };
-  const alias = { document: new Set<string>(), folder: new Set<string>() };
-  const claim = (candidate: NamespaceNameClaim) => {
-    literal[candidate.kind].add(candidate.filename);
-    alias[candidate.kind].add(namespaceName(candidate));
-  };
-  for (const sibling of siblings)
-    claim({ kind: sibling.kind === "dir" ? "folder" : "document", filename: sibling.name });
-  return {
-    taken: (candidate) =>
-      literal[candidate.kind].has(candidate.filename) ||
-      alias[candidate.kind === "folder" ? "document" : "folder"].has(namespaceName(candidate)),
-    claim,
-  };
-}
-
 /** Predict the first free name for a rename or move; the server remains authoritative. */
 export function allocateContextEntryArrivalName(
   typed: string,
-  occupied: NameOccupancy,
+  occupied: ReadonlySet<string>,
   kind: ContextCreateKind,
-  current?: string,
+  current?: NamedRow,
 ): string {
   const stored = kind === "folder" ? null : storedFilename(typed, current);
   if (stored && !stored.ok) return typed.trim();
   const desired = stored
-    ? ({
-        kind: "document",
-        name: stored.filename.name,
-        extension: stored.filename.extension,
-      } as const)
-    : ({ kind: "folder", name: typed.trim() } as const);
-  for (const candidate of filenameCandidates(desired))
-    if (!occupied.taken(candidate)) return candidate.filename;
-  throw new Error("unreachable");
+    ? { name: stored.filename.name, extension: stored.filename.extension }
+    : { name: typed.trim() };
+  return firstFreeName(desired, occupied).filename;
 }

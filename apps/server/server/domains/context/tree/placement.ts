@@ -13,7 +13,7 @@
  * source involved and the document locks of every target document.
  */
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
-import { allocateFilename, folderDocumentName } from "@meridian/contracts/protocol";
+import { firstFreeName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -25,6 +25,7 @@ import type { CreateFault } from "./hidden-node-types.js";
 import { normalizeNames } from "./name-normalization.js";
 import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import { insertFolder } from "./node-rows.js";
+import { placeLiveSibling } from "./sibling-order.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import {
   createTreeReader,
@@ -71,7 +72,6 @@ export async function walkFolders(
         contextSourceId,
         parentId,
         filename: name,
-        as: "folder",
       });
       if (found.kind === "found" && found.node.kind === "folder") {
         parentId = found.node.id;
@@ -107,6 +107,12 @@ export async function ensureLiveFolderPath(
     await claimDocumentLocation(db, contextSourceId, gap.parentId, gap.name);
     if (hidden) {
       await updatePlacedFolder(db, hidden, { parentId: gap.parentId, clear: "hidden" });
+      await placeLiveSibling(db, {
+        node: { kind: "folder", id: hidden },
+        sourceId: contextSourceId,
+        parentId: gap.parentId,
+        arrived: true,
+      });
       // Another branch's hidden folder at the same path folds into the revealed one.
       await absorbAt(db, hidden);
     }
@@ -116,6 +122,34 @@ export async function ensureLiveFolderPath(
   });
   if (walk.kind !== "walked") return Err({ code: "conflict" });
   return Ok({ folderId: walk.folderId, placed: created });
+}
+
+/**
+ * A live folder under a device-minted id, at `name` or the first free name beside it (a
+ * conflict never refuses: the folder that arrives second yields). A hidden folder a branch
+ * holds at that path is absorbed into it, so the id stays the folder's identity. The caller
+ * holds the source's namespace lock and has resolved `parentId` to a live folder.
+ */
+export async function createLiveFolder(
+  db: Database,
+  input: {
+    contextSourceId: ContextSourceId;
+    parentId: FolderId | null;
+    name: string;
+    id: FolderId;
+  },
+): Promise<{ name: string }> {
+  const { contextSourceId, parentId } = input;
+  const tree = createTreeReader(db);
+  const { name } = firstFreeName(
+    { name: input.name },
+    await tree.namesAt(LIVE_TREE, { contextSourceId, parentId }),
+  );
+  await insertFolder(db, { contextSourceId, parentId, name }, { hidden: false, id: input.id });
+  await claimDocumentLocation(db, contextSourceId, parentId, name);
+  await absorbAt(db, input.id);
+  await normalizeNames(db, [{ kind: "folder", id: input.id }]);
+  return { name };
 }
 
 export type LiveLocation = {
@@ -193,6 +227,12 @@ export async function placeLive(
   const { ancestors, parentId, at, filename } = prepared.value;
   await land(parentId, at);
   await normalizeNames(db, [target.node]);
+  await placeLiveSibling(db, {
+    node: target.node,
+    sourceId: target.at.contextSourceId,
+    parentId,
+    arrived: true,
+  });
   await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
   return Ok({ ancestors, at });
 }
@@ -249,35 +289,17 @@ async function prepareLivePlacement(
   const ancestors = await placeAncestors(db, tree, target);
   if (!ancestors.ok) return ancestors;
   const { parentId } = ancestors.value;
-  const desired =
-    target.node.kind === "document"
-      ? ({
-          kind: "document",
-          name: target.at.name,
-          extension: target.at.extension ?? "",
-        } as const)
-      : ({ kind: "folder", name: target.at.name } as const);
-  const filename = await allocateFilename(desired, async ({ filename }) =>
-    Boolean(
-      ancestorTaken(
-        [...ancestors.value.path, filename].join("/"),
-        await tree.childAt(LIVE_TREE, {
-          contextSourceId: target.at.contextSourceId,
-          parentId,
-          filename,
-          as: target.node.kind,
-        }),
-        target.node,
-      ),
+  const extension = target.node.kind === "document" ? (target.at.extension ?? "") : "";
+  const free = firstFreeName(
+    { name: target.at.name, extension },
+    await tree.namesAt(
+      LIVE_TREE,
+      { contextSourceId: target.at.contextSourceId, parentId },
+      target.node,
     ),
   );
-  const extension = target.node.kind === "document" ? (target.at.extension ?? "") : undefined;
-  const at: LiveLocation = {
-    ...target.at,
-    parentFolderId: parentId,
-    name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
-  };
-  return Ok({ ancestors: ancestors.value.placed, parentId, at, filename });
+  const at: LiveLocation = { ...target.at, parentFolderId: parentId, name: free.name };
+  return Ok({ ancestors: ancestors.value.placed, parentId, at, filename: free.filename });
 }
 
 /** A hidden target's row at its final location, visible. */
@@ -379,7 +401,6 @@ async function placeAncestors(
       contextSourceId,
       parentId,
       filename: row.name,
-      as: "folder",
     });
     if (holder.kind === "found" && holder.node.kind === "folder") {
       // One folder per path (decision 10): a hidden one folds into the visible holder; a
@@ -396,6 +417,12 @@ async function placeAncestors(
       parentId,
       clear: row.hidden ? "hidden" : row.deleted ? "deleted" : null,
       contextSourceId,
+    });
+    await placeLiveSibling(db, {
+      node: { kind: "folder", id: row.id },
+      sourceId: contextSourceId,
+      parentId,
+      arrived: true,
     });
     await claimDocumentLocation(db, contextSourceId, parentId, row.name);
     // A split may have left a hidden twin at a restored folder's path (§8.3).
@@ -422,7 +449,7 @@ async function updatePlacedFolder(
     .set({
       parentId: change.parentId,
       ...(change.contextSourceId ? { contextSourceId: change.contextSourceId } : {}),
-      ...(change.name ? { name: change.name, documentAlias: folderDocumentName(change.name) } : {}),
+      ...(change.name ? { name: change.name } : {}),
       ...(change.clear === "hidden" ? { hidden: false } : {}),
       ...(change.clear === "deleted" ? { deletedAt: null } : {}),
       updatedAt: new Date(),

@@ -1,0 +1,127 @@
+/**
+ * The reference door: what dropping project-tree rows on a writing surface
+ * does. Rows become the same chips `@` writes, at the landing: in a paragraph
+ * of their own at a seam, beside (never inside) a word, a chip or a code span
+ * in text, and nowhere in a code block.
+ */
+
+import { closeHistory } from "@tiptap/pm/history";
+import { Fragment, type Node as PMNode, type Schema } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
+import type { EditorView } from "@tiptap/pm/view";
+import { yUndoPluginKey } from "@tiptap/y-tiptap";
+
+import type { DropDoor, DropPlan } from "../../landing/drop-plan";
+import { snapOutOfCode, snapOutOfIdentityLink, snapToWordEdge } from "../../landing/inline-snap";
+import type { Landing } from "../../landing/point-landing";
+
+export type ReferenceDropEntry = Readonly<{
+  ref: Readonly<{ kind: "file" | "folder"; id: string }>;
+}>;
+
+export type ReferenceDropRefusalReason = "unavailable" | "code";
+
+export type ReferenceDropOptions = {
+  activeDrag: () => readonly ReferenceDropEntry[] | null;
+  /** Resolves identities through the host's live `@` catalog and builds its exact node shape. */
+  content: (schema: Schema, entries: readonly ReferenceDropEntry[]) => readonly PMNode[] | null;
+  label: (kind: "accept" | ReferenceDropRefusalReason) => string;
+};
+
+/** The door for project-tree rows. */
+export function referenceDropDoor(options: ReferenceDropOptions): DropDoor {
+  return {
+    plan: ({ view }, landing) => {
+      const refuse = (reason: ReferenceDropRefusalReason): DropPlan => ({
+        kind: "refuse",
+        hint: options.label(reason),
+      });
+      const entries = options.activeDrag();
+      if (!entries?.length) return refuse("unavailable");
+      const nodes = options.content(view.state.schema, entries);
+      if (!nodes || nodes.length !== entries.length) return refuse("unavailable");
+      if (landing.kind === "source") return refuse("code");
+      const placed = placeNodes(view, landing, nodes);
+      if (!placed) return refuse("unavailable");
+      return {
+        kind: "accept",
+        pos: placed.pos,
+        hint: options.label("accept"),
+        effect: "copy",
+        commit: placed.commit,
+      };
+    },
+  };
+}
+
+/** Where inline nodes land at a landing, and how: one undo step, the caret after them. */
+export type NodePlacement = { pos: number; commit(view: EditorView): void };
+
+/**
+ * Inline nodes at a landing: in a paragraph of their own at a seam, beside (never inside) a
+ * word, a chip or a code span in text. Null where this content cannot stand there. The one
+ * placement for everything dropped as chips: rows, and files.
+ */
+export function placeNodes(
+  view: EditorView,
+  landing: Exclude<Landing, { kind: "source" }>,
+  nodes: readonly PMNode[],
+): NodePlacement | null {
+  if (landing.kind === "seam") {
+    const paragraph = view.state.schema.nodes.paragraph;
+    const content = Fragment.fromArray(separated(view, nodes));
+    if (!paragraph?.validContent(content)) return null;
+    const block = paragraph.create(null, content);
+    return {
+      pos: landing.pos,
+      commit: (target) => insert(target, landing.pos, block, (end) => end - 1),
+    };
+  }
+  const { doc } = view.state;
+  const pos = snapToWordEdge(doc, snapOutOfIdentityLink(doc, snapOutOfCode(doc, landing.pos)));
+  const content = spaced(view, pos, nodes);
+  if (!content) return null;
+  return { pos, commit: (target) => insert(target, pos, content, (end) => end) };
+}
+
+function separated(view: EditorView, nodes: readonly PMNode[]): PMNode[] {
+  return nodes.flatMap((node, index) => (index > 0 ? [view.state.schema.text(" "), node] : [node]));
+}
+
+/** The chips at `pos`, with a space on a side that touches a non-space. */
+function spaced(view: EditorView, pos: number, nodes: readonly PMNode[]): Fragment | null {
+  if (nodes.some((node) => !node.isInline)) return null;
+  const { doc, schema } = view.state;
+  const $pos = doc.resolve(pos);
+  const parent = $pos.parent;
+  if (!parent.isTextblock || parent.type.spec.code) return null;
+  if (nodes.some((node) => !parent.type.allowsMarks(node.marks))) return null;
+
+  const before = pos > $pos.start() ? doc.textBetween(pos - 1, pos, "\0", "\0") : "";
+  const after = pos < $pos.end() ? doc.textBetween(pos, pos + 1, "\0", "\0") : "";
+  const content = separated(view, nodes);
+  if (before && !/\s/u.test(before)) content.unshift(schema.text(" "));
+  if (after && !/\s/u.test(after)) content.push(schema.text(" "));
+  const fragment = Fragment.fromArray(content);
+  return parent.canReplace($pos.index(), $pos.index(), fragment) ? fragment : null;
+}
+
+/** One undo step for the drop, the caret after it. */
+function insert(
+  view: EditorView,
+  pos: number,
+  content: Fragment | PMNode,
+  caretFrom: (end: number) => number,
+): void {
+  yUndoPluginKey.getState(view.state)?.undoManager.stopCapturing();
+  const transaction = closeHistory(view.state.tr).insert(pos, content);
+  const end = transaction.mapping.map(pos, 1);
+  transaction.setSelection(TextSelection.create(transaction.doc, caretFrom(end)));
+  // A chip named like a host ("notes.zip", "a.io") is a link already. Neither autolink nor the
+  // paste rules a `uiEvent: "drop"` would wake may turn it into a website.
+  transaction.setMeta("preventAutolink", true);
+  view.dispatch(transaction.scrollIntoView());
+  yUndoPluginKey.getState(view.state)?.undoManager.stopCapturing();
+  view.dispatch(closeHistory(view.state.tr));
+  view.focus();
+}

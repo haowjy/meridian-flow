@@ -37,11 +37,16 @@ function setup(filetype = "typescript") {
   const engine = createMarkdownDocumentEngine({
     links: createStaticDocumentLinkScopes(),
     codec: mdxCodec({ schema }),
+    exportCodec: mdxCodec({ schema, export: true }),
     model,
     journal,
     coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
+      seedInitialDocuments: async () => {},
+      stageInitialStates: async () => {},
+      commitStagedStates: async () => [],
+      discardStagedStates: async () => ({ remaining: false }),
       async lacksAuthority(documentId) {
         const snapshot = await journal.read(documentId);
         return !snapshot.checkpoint && snapshot.updates.length === 0;

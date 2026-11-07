@@ -21,8 +21,8 @@ import {
   splitDocumentFile,
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
-import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { createCopyIdentityMap, remapCopiedBlocks } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -95,7 +95,6 @@ export async function resolveDocumentAddress(
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
   const { filePath: basePath, fragment } = splitDocumentFile(path);
-  const canonicalPath = documentPathKey(basePath) + (fragment === undefined ? "" : `#${fragment}`);
   if (command === "create" || command === "copy") {
     if (fragment) return writeToolError(command, `${command} does not accept a #fragment in path`);
     const ensureOptions = {
@@ -125,7 +124,7 @@ export async function resolveDocumentAddress(
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
       return writeToolError(command, documentNotFoundMessage(command), "document_not_found", {
-        path: canonicalPath,
+        path: path,
       });
     }
     // A URI naming no Work, no scheme or no live chat addresses no document; the reason says
@@ -138,14 +137,14 @@ export async function resolveDocumentAddress(
         ref.error.slip !== undefined);
     if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
       return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
-        path: canonicalPath,
+        path: path,
       });
     }
     return writeToolError(
       command,
       contextErrorMessage(ref.error),
       unknownAddress ? "document_not_found" : "invalid_write",
-      unknownAddress ? { path: canonicalPath } : {},
+      unknownAddress ? { path: path } : {},
     );
   }
   if (ref.value.kind !== "tracked") {
@@ -159,7 +158,7 @@ export async function resolveDocumentAddress(
     );
   }
   if (!ref.value.documentId) {
-    return writeToolError(command, `Document id missing for ${canonicalPath}`);
+    return writeToolError(command, `Document id missing for ${path}`);
   }
   return {
     documentId: ref.value.documentId,
@@ -440,7 +439,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         ctx,
       );
       if (isToolError(read)) return read;
-      copied = read;
+      const { properties, aliases } = source.ref;
+      copied = {
+        ...read,
+        inherited: { ...(properties ? { properties } : {}), ...(aliases ? { aliases } : {}) },
+      };
     } else if ((parsed.command === "insert" || parsed.command === "replace") && parsed.from) {
       const read = await readCopySource(deps, principal, parsed.command, parsed.from, ctx);
       if (isToolError(read)) return read;
@@ -459,7 +462,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             },
             ...(parsed.command === "copy" && copied
               ? {
-                  metadata: { copiedFrom: copied.copiedFrom },
+                  metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
                   sourceExtension: sourceExtension(copied.copiedFrom.uri),
                 }
               : {}),
@@ -489,6 +492,33 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           ? await removedPathError(deps, call, parsed.command, parsed.path, ctx.threadId)
           : null;
       return removed ?? address;
+    }
+
+    if (parsed.command === "copy" && copied) {
+      // The copy's new identity is known now: a whole document's own links name the copy, not
+      // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
+      // A selection is not the copied set: its links to the whole source keep naming it.
+      copied = {
+        ...copied,
+        nodes: remapCopiedBlocks({
+          blocks: copied.nodes,
+          sourceHolderUri: copied.copiedFrom.uri,
+          aheadSettlements: copied.aheadSettlements,
+          map: createCopyIdentityMap({
+            documents: copied.wholeDocument
+              ? [
+                  {
+                    sourceDocumentId: copied.sourceDocumentId,
+                    sourceUri: copied.copiedFrom.uri,
+                    documentId: address.documentId,
+                    uri: address.uri,
+                  },
+                ]
+              : [],
+            folders: [],
+          }),
+        }),
+      };
     }
 
     let outcome = await writeUnderGrant(
@@ -548,7 +578,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         try {
           await retractCreatedTrackedDocument({
             port: context.port,
-            path: parsed.path,
+            uri: address.uri,
             documentId: address.documentId,
             cause: "create_failed",
           });
@@ -572,7 +602,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       deps.responseWrites.trackStagedCreate({
         responseId,
         port: context.port,
-        path: parsed.path,
+        uri: address.uri,
         documentId: address.documentId,
       });
     }

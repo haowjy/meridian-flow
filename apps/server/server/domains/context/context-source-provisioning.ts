@@ -21,7 +21,10 @@ import {
 import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
 import { lockContextSources } from "./adapters/context-fs/document-locations.js";
-import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
+import {
+  DrizzleContextDocumentStore,
+  locateDocumentById,
+} from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
@@ -310,8 +313,9 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.readableSourceStore())?.findDocument(folderId, name, extension) ?? null;
   }
 
-  async findDocumentById(view: TreeView, documentId: string) {
-    return (await this.readableSourceStore())?.findDocumentById(view, documentId) ?? null;
+  /** A document by id is the project's, not this source's: it never waits on the source. */
+  findDocumentById(view: TreeView, documentId: string) {
+    return locateDocumentById(this.db, view, documentId);
   }
 
   /** A forward is the project's, not this source's: it never waits on the source. */
@@ -335,6 +339,19 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     // The source root always exists.
     if (dir.length === 0) return null;
     return this.mutate((store) => store.ensureFolderPath(dir));
+  }
+
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
+  }) {
+    return this.mutate((store) => store.createFolderIfAbsent(input));
+  }
+
+  async insertNewTree(input: Parameters<ContextDocumentStore["insertNewTree"]>[0]) {
+    return this.mutate((store) => store.insertNewTree(input));
   }
 
   async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {
@@ -389,8 +406,16 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     });
   }
 
+  async namesAt(view: TreeView, parentId: string | null) {
+    return (await this.readableSourceStore())?.namesAt(view, parentId) ?? new Set<string>();
+  }
+
   async listFolders(view: TreeView, parentId: string | null) {
     return (await this.readableSourceStore())?.listFolders(view, parentId) ?? [];
+  }
+
+  async parentOrderPolicy(view: TreeView, parentId: string | null) {
+    return (await this.readableSourceStore())?.parentOrderPolicy(view, parentId) ?? "default";
   }
 
   async listDocuments(view: TreeView, folderId: string | null) {

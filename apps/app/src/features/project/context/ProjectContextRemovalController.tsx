@@ -5,6 +5,8 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import type { ScreenKey } from "../shell/screens";
 import { useContextRemovalCoordinator } from "./account-feature-context";
 import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
+import { selectionAtRoute } from "./context-removal-protocol";
+import { useContextRemovalProject } from "./use-context-removal-project";
 
 export type ProjectContextRemovalControllerProps = {
   projectId: string;
@@ -15,6 +17,8 @@ export type ProjectContextRemovalControllerProps = {
   activeContextChat?: string | null;
   editorWorkId: string;
   localDocumentId?: string;
+  /** A review address names its document by item: that id is proof, so the route starts bound. */
+  reviewDocumentId?: string;
   route: ContextRemovalRoutePort;
 };
 
@@ -26,6 +30,7 @@ export function ProjectContextRemovalController({
   activeContextChat,
   editorWorkId,
   localDocumentId,
+  reviewDocumentId,
   route,
 }: ProjectContextRemovalControllerProps) {
   const coordinator = useContextRemovalCoordinator();
@@ -53,6 +58,19 @@ export function ProjectContextRemovalController({
     return () => registration.release();
   }, [coordinator, projectId, stableRoute]);
 
+  // A navigation's binding can land after the address was already repaired elsewhere: a selection
+  // about another route than the URL begins again here.
+  const { selection } = useContextRemovalProject(projectId);
+  const selectionStale =
+    selection.status !== "none" &&
+    (activeContextScheme === null ||
+      activeContextPath === null ||
+      !selectionAtRoute(selection, {
+        scheme: activeContextScheme,
+        path: activeContextPath,
+        workId: editorWorkId,
+        rootThreadId: activeContextChat ?? undefined,
+      }));
   const previousLocalDocument = useRef(localDocumentId);
   useLayoutEffect(() => {
     const registration = registrationRef.current;
@@ -75,7 +93,9 @@ export function ProjectContextRemovalController({
       previousLocalDocument.current = localDocumentId;
       coordinator.clearRouteSelection(projectId);
     }
-    if (locator) coordinator.beginRouteSelection(projectId, locator);
+    if (locator && reviewDocumentId)
+      coordinator.enterRoute(projectId, locator, reviewDocumentId, "review");
+    else if (locator) coordinator.beginRouteSelection(projectId, locator);
     else coordinator.clearRouteSelection(projectId);
   }, [
     activeContextChat,
@@ -86,6 +106,8 @@ export function ProjectContextRemovalController({
     editorWorkId,
     projectId,
     localDocumentId,
+    reviewDocumentId,
+    selectionStale,
   ]);
 
   return null;

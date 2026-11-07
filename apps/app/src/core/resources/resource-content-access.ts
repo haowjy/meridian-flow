@@ -5,6 +5,7 @@ import type {
   ResourceMetadataStore,
   ResourceRecord,
 } from "@meridian/resource-replica";
+import { encodeStateVector } from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { LocalDocumentSessionFactory } from "@/core/editor/document-session-registry";
 import type {
@@ -246,6 +247,20 @@ export class ResourceContentAccess {
       adoptionBound: false,
       ownership: { kind: "registry", ownershipByProject: new Map([[projectId, ownership]]) },
     });
+  }
+
+  /**
+   * The Yjs state vector (base64) of the live document this device holds open, with the edits it
+   * has not yet sent. A Copy of the document waits until the server's room has received them.
+   * Null when no session is open: the server then copies what it holds.
+   */
+  stateVector(documentId: string): string | null {
+    for (const entry of this.entries.values()) {
+      if (entry.identity.documentId !== documentId) continue;
+      const bytes = encodeStateVector(entry.session.document);
+      return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+    }
+    return null;
   }
 
   ownershipFor(

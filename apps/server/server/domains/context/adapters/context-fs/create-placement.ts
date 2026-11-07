@@ -51,7 +51,8 @@ export type LiveOnlyCommand =
   | "take a whole-file write"
   | "create a file with text"
   | "create an untitled file"
-  | "make an empty folder";
+  | "make an empty folder"
+  | "receive a copy";
 
 export interface CreatePlacement {
   readonly kind: ContextPlacement["kind"];
@@ -82,6 +83,7 @@ type BranchTreeCommand = {
   documentId: DocumentId;
   changedBy: BranchChangeAuthor;
   record(change: RecordedBranchTreeChange): Promise<void>;
+  position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
 };
 
 export interface BranchTreeCommands {
@@ -168,6 +170,7 @@ function livePlacement(
           storageUrl: options.storageUrl,
           mimeType: options.mimeType,
           sizeBytes: options.sizeBytes,
+          ...(options.hasPreview ? { hasPreview: true } : {}),
           ...(options.metadata ? { metadata: options.metadata } : {}),
         });
         return Ok({ documentId: doc.id, placement: "live" as const });
@@ -252,6 +255,7 @@ function draftPlacement(
             storageUrl: options.storageUrl,
             mimeType: options.mimeType,
             sizeBytes: options.sizeBytes,
+            ...(options.hasPreview ? { hasPreview: true } : {}),
             ...(options.metadata ? { metadata: options.metadata } : {}),
           },
           createdBy: { threadId: placement.threadId },
@@ -307,6 +311,7 @@ function branchTreeCommands(
             branch,
             documentId: command.documentId,
             ...target,
+            ...(command.position ? { position: command.position } : {}),
             changedBy: command.changedBy,
           });
           if (!moved.ok)

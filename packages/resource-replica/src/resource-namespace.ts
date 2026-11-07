@@ -1,22 +1,17 @@
 /** Durable namespace reconciliation: pure record transitions around an account-bound transport. */
-import {
-  isOwnedContextScheme,
-  type ParsedContextAuthority,
-  parseContextUri,
-} from "@meridian/contracts/context-uri";
+import { isOwnedContextScheme } from "@meridian/contracts/context-uri";
 import type {
-  ContextOperationReceipt,
+  ContextCreateDestination,
   CreateUntitledContextDocumentResponse,
-  CreateUntitledDestination,
-  ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation } from "./canonical-observation";
-import {
-  namespaceIntentOutcome,
-  resolveUnavailableNamespace,
-  settleNamespaceIntent,
-} from "./namespace-journal-policy";
-import { committedResourceDeletion } from "./resource-deletion";
+import { originOperation, refreshWitness } from "./first-place";
+import { resolveUnavailableNamespace, settleNamespaceIntent } from "./namespace-journal-policy";
+import { namespaceReceiptIs } from "./namespace-receipts";
+import { deleteRequest, moveRequest } from "./namespace-requests";
+import type { PlacementVerdict } from "./placement-journal";
+import { committedResourceDeletion, settleDeletionLocally } from "./resource-deletion";
+import { namespaceIntentOutcome } from "./resource-intent-policy";
 import { followedJoin, pendingJoinTarget } from "./resource-join";
 import type {
   DestinationParentLookup,
@@ -30,20 +25,20 @@ import type {
   ResourceMetadataStore,
   ResourceNamespaceLock,
   ResourceNamespaceTransport,
-  ResourceOwnerKey,
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
-import { destinationParentLocation, sameOwner } from "./resource-records";
-import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
+import {
+  destinationParentLocation,
+  namespaceEntryIs,
+  namespaceRequestId,
+  sameDestinationParent,
+} from "./resource-records";
+import { deleteNeedsServer, holdAfterAttempt } from "./server-hold";
 
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
   NamespaceAttempt,
   { request: { kind: Kind } }
->;
-type ReceiptOf<Kind extends ContextOperationReceipt["command"]["kind"]> = Extract<
-  ContextOperationReceipt,
-  { command: { kind: Kind } }
 >;
 
 export type NamespaceAttemptIds = Readonly<{ attemptId: string; operationId: string }>;
@@ -77,30 +72,8 @@ function normalizedPath(path: string): string {
   return path.replace(/^\/+/, "");
 }
 
-function displayedPath(path: string): string {
+export function displayedPath(path: string): string {
   return `/${normalizedPath(path)}`;
-}
-
-function sameSource(location: ResourceLocation | null, request: NamespaceRequest): boolean {
-  if (!location || request.kind === "create") return request.kind === "create";
-  return (
-    location.scheme === request.scheme &&
-    normalizedPath(location.path) === normalizedPath(request.body.path) &&
-    sameOwner(location, requestSourceOwner(request))
-  );
-}
-
-/** The owner a move or delete request names for its source. */
-function requestSourceOwner(
-  request: Extract<NamespaceRequest, { kind: "move" | "delete" }>,
-): ResourceOwnerKey {
-  return request.kind === "delete"
-    ? { workId: request.workId, workHandle: request.workHandle, rootThreadId: request.rootThreadId }
-    : {
-        workId: request.body.sourceWorkId ?? null,
-        workHandle: request.sourceWorkHandle,
-        rootThreadId: request.body.sourceRootThreadId,
-      };
 }
 
 function requestFor(
@@ -111,77 +84,75 @@ function requestFor(
 ): NamespaceRequest | null {
   const { resource } = record;
   if (resource.obligations.canonicalRefresh) return null;
-  if (intent.desired.kind === "create") {
-    if (
-      resource.lifecycle.kind !== "local" ||
-      resource.canonical ||
-      resource.obligations.createEligibility?.eligibleAt == null ||
-      (resource.content.kind === "exact" && resource.content.initialization === "reserved")
-    )
-      return null;
-    return {
-      kind: "create",
-      body: {
-        documentId: resource.identity.documentId,
-        ...(intent.desired.destination
-          ? { destination: createDestination(intent.desired.destination) }
-          : intent.desired.folderPath
-            ? { folderPath: normalizedPath(intent.desired.folderPath) }
-            : {}),
-      },
-    };
-  }
   const source = resource.canonical;
-  if (!source) return null;
   if (intent.desired.kind === "delete") {
-    return {
-      kind: "delete",
-      scheme: source.scheme,
-      workId: source.workId,
-      workHandle: source.workHandle ?? null,
-      rootThreadId: source.rootThreadId ?? null,
-      rootThreadRef: source.rootThreadRef ?? null,
-      body: {
-        operationId,
-        path: normalizedPath(source.path),
-        expected: { kind: "file", documentId: resource.identity.documentId },
-      },
-    };
+    if (!source) return null;
+    return deleteRequest({ kind: "file", id: resource.identity.documentId }, operationId);
   }
-  const destination = intent.desired.destination;
-  const parent = destinationParentLocation(destination.parent, lookup);
-  if (!parent) return null;
-  const owners = moveOwnerFields(source, parent);
+  switch (resource.serverHold) {
+    case "local":
+      return materializationRequest(record, intent);
+    case "held":
+      // A move starts from the place the catalog (or the create's answer) gave.
+      if (!source) return null;
+      break;
+    default:
+      // `uncertain` is replayed, never re-created; `spent` moves to a new id first.
+      return null;
+  }
+  if (intent.desired.kind !== "set-location") return null;
+  const { destination, typedName } = intent.desired;
+  if (!destinationParentLocation(destination.parent, lookup)) return null;
+  return moveRequest(
+    { kind: "file", id: resource.identity.documentId },
+    operationId,
+    { destination, typedName },
+    { name: source.name, parent: resource.canonicalParent },
+  );
+}
+
+/**
+ * What the server makes of a document it holds no row for. The placement says where it goes; the
+ * resource says what it is (an untitled document the server names), so a new kind of
+ * single-document materialization adds a branch here and no placement, projection or repair
+ * branch anywhere else. A root an operation made (`copiedBy`) is never `local`, so it never reaches
+ * a create here.
+ */
+function materializationRequest(
+  record: ResourceRecord,
+  intent: NamespaceIntent,
+): NamespaceRequest | null {
+  const { resource } = record;
+  const materialization = resource.materialization;
+  if (!materialization || intent.desired.kind !== "set-location") return null;
+  if (
+    resource.obligations.createEligibility?.eligibleAt == null ||
+    (resource.content.kind === "exact" && resource.content.initialization === "reserved")
+  )
+    return null;
   return {
-    kind: "move",
-    scheme: source.scheme,
-    ...owners,
+    kind: "create",
     body: {
-      operationId,
-      path: normalizedPath(source.path),
-      expected: { kind: "file", nodeId: resource.identity.documentId },
-      destinationParent: {
-        ...destination.parent,
-        ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
-      },
-      destinationScheme: parent.scheme,
-      destinationFolderPath: [normalizedPath(parent.path), ...(destination.createFolders ?? [])]
-        .filter(Boolean)
-        .join("/"),
-      ...owners.body,
-      newName: intent.desired.kind === "set-location" ? intent.desired.typedName : destination.name,
+      documentId: resource.identity.documentId,
+      // The server names a nameless create itself, so it takes the folder path and picks the name.
+      ...(materialization.kind === "untitled" && materialization.unnamed
+        ? materialization.folderPath
+          ? { folderPath: normalizedPath(materialization.folderPath) }
+          : {}
+        : { destination: createDestination(intent.desired.destination) }),
     },
   };
 }
 
-/** The create carries what a move would: the server resolves the parent by identity. */
-function createDestination(destination: ResourceDestination): CreateUntitledDestination {
+/** The create carries what a move would: the server resolves the parent and the position by identity. */
+export function createDestination(destination: ResourceDestination): ContextCreateDestination {
   return {
     parent: {
       ...destination.parent,
       ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
     },
     name: destination.name,
+    ...(destination.position ? { position: destination.position } : {}),
   };
 }
 
@@ -189,9 +160,10 @@ function replaceIntent(
   record: ResourceRecord,
   intentId: string,
   replace: (intent: NamespaceIntent) => NamespaceIntent,
+  serverHold = record.resource.serverHold,
 ): ResourceRecord {
   return {
-    resource: { ...record.resource, revision: record.resource.revision + 1 },
+    resource: { ...record.resource, revision: record.resource.revision + 1, serverHold },
     intents: record.intents.map((intent) =>
       intent.intentId === intentId ? replace(intent) : intent,
     ),
@@ -214,6 +186,9 @@ export function prepareNamespaceAttempt(
         intents: resolveUnavailableNamespace(record.intents, true),
       },
     };
+  // A delete queued behind a refused create has nothing on the server to delete.
+  if (intent.desired.kind === "delete" && !deleteNeedsServer(record.resource.serverHold))
+    return settleDeletionLocally(record, intent.intentId);
   if (intent.identityRevision !== record.resource.identity.revision) {
     return {
       expectedRevision: record.resource.revision,
@@ -224,7 +199,9 @@ export function prepareNamespaceAttempt(
     };
   }
   if (
-    (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+    intent.desired.kind === "set-location" &&
+    record.resource.serverHold === "held" &&
+    record.resource.canonical !== null &&
     !destinationParentLocation(intent.desired.destination.parent, lookup)
   )
     return {
@@ -236,11 +213,13 @@ export function prepareNamespaceAttempt(
     };
   const request = requestFor(record, intent, intent.operationId ?? ids.operationId, lookup);
   if (!request) return null;
-  const next = replaceIntent(record, intent.intentId, (current) => ({
-    ...current,
-    state: "submitted",
-    attempts: [...current.attempts, unrecordedAttempt(ids.attemptId, request)],
-  }));
+  const attempt = unrecordedAttempt(ids.attemptId, request);
+  const next = replaceIntent(
+    record,
+    intent.intentId,
+    (current) => ({ ...current, state: "submitted", attempts: [...current.attempts, attempt] }),
+    holdAfterAttempt(record.resource.serverHold, attempt),
+  );
   return { expectedRevision: record.resource.revision, next };
 }
 
@@ -248,9 +227,13 @@ function unrecordedAttempt(attemptId: string, request: NamespaceRequest): Namesp
   switch (request.kind) {
     case "create":
       return { attemptId, request };
+    case "create-folder":
+      return { attemptId, request };
     case "move":
       return { attemptId, request };
     case "delete":
+      return { attemptId, request };
+    case "copy":
       return { attemptId, request };
   }
 }
@@ -259,6 +242,8 @@ export function namespaceOutcomeMatches(
   attempt: NamespaceAttempt,
   outcome: NamespaceOutcome,
 ): boolean {
+  if (outcome.kind === "refusal")
+    return outcome.operationId === namespaceRequestId(attempt.request) && !outcome.error.retryable;
   if (attempt.request.kind === "create") {
     return (
       outcome.kind === "create" &&
@@ -267,8 +252,12 @@ export function namespaceOutcomeMatches(
         outcome.result.documentId === attempt.request.body.documentId)
     );
   }
-  if (outcome.kind === "refusal")
-    return outcome.operationId === attempt.request.body.operationId && !outcome.error.retryable;
+  if (attempt.request.kind === "create-folder")
+    return (
+      outcome.kind === "create-folder" &&
+      (outcome.result.status === "conflict" ||
+        outcome.result.folderId === attempt.request.body.folderId)
+    );
   if (
     outcome.kind !== "operation" ||
     outcome.receipt.operationId !== attempt.request.body.operationId ||
@@ -276,83 +265,33 @@ export function namespaceOutcomeMatches(
   )
     return false;
   const receipt = outcome.receipt;
-  if (attempt.request.kind === "delete" && namespaceReceiptIs(receipt, "delete")) {
-    const source = parseContextUri(receipt.command.uri);
+  if (attemptIs(attempt, "delete") && namespaceReceiptIs(receipt, "delete"))
+    return namespaceEntryIs(receipt.command.expected, attempt.request);
+  if (attemptIs(attempt, "copy") && namespaceReceiptIs(receipt, "copy")) {
+    const { body } = attempt.request;
     return (
-      source.ok &&
-      source.value.scheme === attempt.request.scheme &&
-      source.value.path === normalizedPath(attempt.request.body.path) &&
-      authorityMatches(attempt.request.scheme, source.value.authority, attempt.request) &&
-      JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
+      receipt.command.sources.length === body.sources.length &&
+      body.sources.every(
+        (source, index) =>
+          source.copyId === receipt.command.sources[index]?.copyId &&
+          JSON.stringify(source.expected) ===
+            JSON.stringify(receipt.command.sources[index]?.expected),
+      ) &&
+      sameDestinationParent(receipt.command.destinationParent, body.destinationParent) &&
+      JSON.stringify(receipt.command.position) === JSON.stringify(body.position)
     );
   }
   if (attemptIs(attempt, "move") && namespaceReceiptIs(receipt, "move")) {
-    const source = parseContextUri(receipt.command.sourceUri);
-    const destination = parseContextUri(receipt.command.destinationUri);
-    const destinationParentPath = destination.ok
-      ? destination.value.path.split("/").slice(0, -1).join("/")
-      : "";
+    const { command } = receipt;
+    const { body } = attempt.request;
     return (
-      source.ok &&
-      destination.ok &&
-      source.value.scheme === attempt.request.scheme &&
-      source.value.path === normalizedPath(attempt.request.body.path) &&
-      authorityMatches(attempt.request.scheme, source.value.authority, {
-        workId: attempt.request.body.sourceWorkId ?? null,
-        workHandle: attempt.request.sourceWorkHandle,
-        rootThreadId: attempt.request.body.sourceRootThreadId,
-        rootThreadRef: attempt.request.sourceRootThreadRef,
-      }) &&
-      sameDestinationParent(
-        receipt.command.destinationParent,
-        attempt.request.body.destinationParent,
-      ) &&
-      (attempt.request.body.destinationParent?.kind === "folder"
-        ? true
-        : destination.value.scheme === attempt.request.body.destinationScheme &&
-          destinationParentPath === normalizedPath(attempt.request.body.destinationFolderPath) &&
-          authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
-            workId: attempt.request.body.destinationWorkId ?? null,
-            workHandle: attempt.request.destinationWorkHandle,
-            rootThreadId: attempt.request.body.destinationRootThreadId,
-            rootThreadRef: attempt.request.destinationRootThreadRef,
-          })) &&
-      JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
+      namespaceEntryIs(command.expected, attempt.request) &&
+      sameDestinationParent(command.destinationParent, body.destinationParent) &&
+      JSON.stringify(command.position) === JSON.stringify(body.position) &&
+      command.name === body.name
     );
   }
   return false;
-}
-
-function sameDestinationParent(
-  left: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
-  right: Extract<NamespaceRequest, { kind: "move" }>["body"]["destinationParent"],
-): boolean {
-  if (!left || !right) return left === right;
-  if (JSON.stringify(left.createFolders ?? []) !== JSON.stringify(right.createFolders ?? []))
-    return false;
-  if (left.kind === "folder" || right.kind === "folder")
-    return left.kind === "folder" && right.kind === "folder" && left.folderId === right.folderId;
-  return left.scheme === right.scheme && sameOwner(left.owner, right.owner);
-}
-
-function authorityMatches(
-  scheme: ProjectContextTreeScheme,
-  authority: ParsedContextAuthority,
-  owner: Parameters<typeof resourceContextAuthority>[1],
-): boolean {
-  const expected = resourceContextAuthority(scheme, owner);
-  // A chat's bare uploads URI parses as contextual: the handle exists only after creation.
-  const expectedKind =
-    expected.kind === "chat" && expected.chatRef === null ? "contextual" : expected.kind;
-  return (
-    authority.kind === expectedKind &&
-    (authority.kind !== "work" ||
-      (expected.kind === "work" && authority.workHandle === expected.workHandle)) &&
-    (authority.kind !== "lineage" ||
-      (expected.kind === "lineage" && authority.rootThreadRef === expected.rootThreadRef)) &&
-    (authority.kind !== "chat" ||
-      (expected.kind === "chat" && authority.chatRef === expected.chatRef))
-  );
 }
 
 function attemptIs<Kind extends NamespaceRequest["kind"]>(
@@ -362,21 +301,15 @@ function attemptIs<Kind extends NamespaceRequest["kind"]>(
   return attempt.request.kind === kind;
 }
 
-export function namespaceReceiptIs<Kind extends ContextOperationReceipt["command"]["kind"]>(
-  receipt: ContextOperationReceipt,
-  kind: Kind,
-): receipt is ReceiptOf<Kind> {
-  return receipt.command.kind === kind;
-}
-
 export function namespaceAttemptWithOutcome(
   attempt: NamespaceAttempt,
   outcome: NamespaceOutcome,
 ): NamespaceAttempt {
+  if (outcome.kind === "refusal") return { ...attempt, outcome };
   if (attemptIs(attempt, "create") && outcome.kind === "create")
     return { attemptId: attempt.attemptId, request: attempt.request, outcome };
-  if (outcome.kind === "refusal" && (attemptIs(attempt, "move") || attemptIs(attempt, "delete")))
-    return { ...attempt, outcome };
+  if (attemptIs(attempt, "create-folder") && outcome.kind === "create-folder")
+    return { attemptId: attempt.attemptId, request: attempt.request, outcome };
   if (
     attemptIs(attempt, "move") &&
     outcome.kind === "operation" &&
@@ -391,6 +324,16 @@ export function namespaceAttemptWithOutcome(
     attemptIs(attempt, "delete") &&
     outcome.kind === "operation" &&
     namespaceReceiptIs(outcome.receipt, "delete")
+  )
+    return {
+      attemptId: attempt.attemptId,
+      request: attempt.request,
+      outcome: { kind: "operation", receipt: outcome.receipt },
+    };
+  if (
+    attemptIs(attempt, "copy") &&
+    outcome.kind === "operation" &&
+    namespaceReceiptIs(outcome.receipt, "copy")
   )
     return {
       attemptId: attempt.attemptId,
@@ -414,15 +357,19 @@ export function recordNamespaceOutcome(
   if (attempt.outcome) return null;
   if (intent.state !== "submitted" || !namespaceOutcomeMatches(attempt, outcome))
     throw new Error("Namespace outcome does not match current attempt");
-  const next = replaceIntent(record, intentId, (current) => ({
-    ...current,
-    state: "received",
-    attempts: current.attempts.map((candidate) =>
-      candidate.attemptId === attemptId
-        ? namespaceAttemptWithOutcome(candidate, outcome)
-        : candidate,
-    ),
-  }));
+  const answered = namespaceAttemptWithOutcome(attempt, outcome);
+  const next = replaceIntent(
+    record,
+    intentId,
+    (current) => ({
+      ...current,
+      state: "received",
+      attempts: current.attempts.map((candidate) =>
+        candidate.attemptId === attemptId ? answered : candidate,
+      ),
+    }),
+    holdAfterAttempt(record.resource.serverHold, answered),
+  );
   return { expectedRevision: record.resource.revision, next };
 }
 
@@ -463,7 +410,9 @@ export function settleNamespaceOutcome(
     // records that it happened.
     if (!followedJoin(record, attempt.request.body.documentId, outcome.result.documentId)) {
       if (!joinTaken) return null;
+      // Another record holds the joined document, so this id cannot follow it: replace it.
       repair = true;
+      resource = { ...resource, serverHold: "spent" };
     }
   } else if (outcome.kind === "create") {
     if (
@@ -495,7 +444,7 @@ export function settleNamespaceOutcome(
         },
       };
     }
-  } else if (outcome.kind === "refusal") {
+  } else if (outcome.kind !== "operation") {
     repair = true;
   } else if (attemptIs(attempt, "move")) {
     const receipt = outcome.receipt;
@@ -548,6 +497,7 @@ export function settleNamespaceOutcome(
       intent,
       disposition === "accepted" && repair ? "refused" : disposition,
       settledAt,
+      resource.serverHold,
     ),
   };
   return { expectedRevision: record.resource.revision, next };
@@ -559,6 +509,8 @@ export function installCanonicalRefresh(input: {
   operationId: string;
   location: ResourceLocation;
   parent: import("./resource-records").ParentRef;
+  rank?: string | null;
+  locationVersion?: string;
   observationVersion: string;
 }): ResourceWrite | null {
   const obligation = input.record.resource.obligations.canonicalRefresh;
@@ -599,6 +551,8 @@ export function installCanonicalRefresh(input: {
           ? {
               canonical: input.location,
               canonicalParent: input.parent,
+              canonicalRank: input.rank,
+              canonicalLocationVersion: input.locationVersion,
               observationVersion: input.observationVersion,
             }
           : {}),
@@ -622,6 +576,8 @@ export function installNamespaceAvailability(
       operationId,
       location: availability.location,
       parent: availability.parent,
+      rank: availability.rank,
+      locationVersion: availability.locationVersion,
       observationVersion: availability.observationVersion,
     });
   const { canonicalRefresh: _completed, ...obligations } = record.resource.obligations;
@@ -652,7 +608,9 @@ function replayEligible(
       record.resource.aliases[attempt.request.body.documentId] !== undefined
     );
   if (intent.identityRevision !== record.resource.identity.revision) return false;
-  return sameSource(record.resource.canonical, attempt.request);
+  // A folder's or an operation's request never rides a document's journal. A move or delete
+  // goes by id, so another device having moved the entry changes nothing about replaying it.
+  return attempt.request.kind !== "create-folder" && attempt.request.kind !== "copy";
 }
 
 /** Reconcile one resource through at most one network dispatch; CAS retries never redispatch. */
@@ -662,6 +620,7 @@ export function reconcileResourceNamespace(input: {
   transport: ResourceNamespaceTransport;
   lock: ResourceNamespaceLock;
   newAttemptIds: () => NamespaceAttemptIds;
+  gate?: NamespaceGate;
   now?: () => number;
 }): Promise<NamespaceReconcileResult> {
   return reconcileNamespaceJournal({
@@ -669,20 +628,27 @@ export function reconcileResourceNamespace(input: {
     read: () => input.metadata.readResource(input.key),
     commit: (write: ResourceWrite) => input.metadata.commitResource(write),
     prepare: async (record, ids) => {
-      const intent = activeNamespaceIntent(record);
-      const parent =
-        intent?.desired.kind === "set-location" ? intent.desired.destination.parent : null;
-      const observed =
-        parent?.kind === "folder"
-          ? await input.transport.lookupIdentity(intent!.projectId, {
-              kind: "folder",
-              id: parent.folderId,
-            })
-          : null;
-      return prepareNamespaceAttempt(record, ids, () =>
-        observed?.kind === "available" ? observed.location : null,
-      );
+      // A move resolves its parent by id now; a create names its parent in the request and the
+      // server answers a destination it cannot find.
+      const intent = record.resource.serverHold === "held" ? activeNamespaceIntent(record) : null;
+      if (intent?.desired.kind === "set-location") {
+        const parent = intent.desired.destination.parent;
+        if (parent.kind === "folder") {
+          const observed = await input.transport.lookupIdentity(intent.projectId, {
+            kind: "folder",
+            id: parent.folderId,
+          });
+          return prepareNamespaceAttempt(record, ids, () =>
+            observed.kind === "available" ? observed.location : null,
+          );
+        }
+      }
+      return prepareNamespaceAttempt(record, ids);
     },
+    repair: (record, intentId) => ({
+      expectedRevision: record.resource.revision,
+      next: replaceIntent(record, intentId, (current) => ({ ...current, state: "needs-repair" })),
+    }),
     recordOutcome: recordNamespaceOutcome,
     settle: (record: ResourceRecord) => settleNamespaceOutcome(record, input.now?.()),
     pendingJoin: (record: ResourceRecord) => pendingJoinTarget(record) !== null,
@@ -690,16 +656,17 @@ export function reconcileResourceNamespace(input: {
     refresh: async (record) => {
       const barrier = record.resource.obligations.canonicalRefresh;
       if (!barrier) return null;
-      const intent = record.intents.find((i) =>
-        i.attempts.some(
-          (a) => a.request.kind !== "create" && a.request.body.operationId === barrier.operationId,
-        ),
+      const origin = { intents: record.intents, copiedBy: record.resource.copiedBy };
+      const witness = refreshWitness(
+        origin,
+        await originOperation(origin, input.metadata),
+        barrier.operationId,
       );
-      if (!intent) return null;
+      if (!witness) return null;
       return installNamespaceAvailability(
         record,
         barrier.operationId,
-        await input.transport.lookupIdentity(intent.projectId, {
+        await input.transport.lookupIdentity(witness.projectId, {
           kind: "file",
           id: record.resource.identity.documentId,
         }),
@@ -707,6 +674,9 @@ export function reconcileResourceNamespace(input: {
     },
   });
 }
+
+/** Whether a pending placement may dispatch now (see `placementDispatchVerdict`). */
+export type NamespaceGate = (intent: NamespaceIntent) => Promise<PlacementVerdict>;
 
 /** Shared journal replay for content resources and folder namespace records. */
 export async function reconcileNamespaceJournal<
@@ -720,7 +690,11 @@ export async function reconcileNamespaceJournal<
   newAttemptIds: () => NamespaceAttemptIds;
   read: () => Promise<Record | null>;
   commit: (write: Write) => Promise<"committed" | "stale">;
+  /** Holds a pending placement behind its predecessors, or sends it to repair when their failure changed its premise. */
+  gate?: NamespaceGate;
   prepare: (record: Record, ids: NamespaceAttemptIds) => Write | null | Promise<Write | null>;
+  /** Marks a pending intent as needing the writer's repair, as when its destination is gone. */
+  repair: (record: Record, intentId: string) => Write;
   recordOutcome: (
     record: Record,
     intentId: string,
@@ -751,7 +725,12 @@ export async function reconcileNamespaceJournal<
     if (!intent) return "idle";
     if (intent.state === "needs-repair") return "needs-repair";
     if (intent.state === "pending") {
-      const write = await input.prepare(record, input.newAttemptIds());
+      const verdict = (await input.gate?.(intent)) ?? "go";
+      if (verdict === "wait") return "blocked";
+      const write =
+        verdict === "repair"
+          ? input.repair(record, intent.intentId)
+          : await input.prepare(record, input.newAttemptIds());
       if (!write) return "blocked";
       if ((await input.commit(write)) === "stale") continue;
       if (

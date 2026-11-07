@@ -5,7 +5,6 @@
  * - catalog-backed canonical navigation under Work-specific readability (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   branches,
@@ -102,7 +101,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: act,
         contextSourceId: source,
         name: "Act 1",
-        documentAlias: folderDocumentName("Act 1"),
       });
       const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
         listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
@@ -124,6 +122,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             return { kind: "live" };
           },
         },
+        files: { lookupDocuments: async () => [] },
         documentTrash: {
           retained: async () => new Set(),
         },
@@ -344,9 +343,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           destinationSourceId: target.contextSourceId,
           destinationPath: "new",
           expectedTarget: { state: "absent" },
-          overwrite: false,
-          graduateProvisionalName: true,
           destinationFiletype: "markdown",
+          destinationFilename: { name: "new", extension: "" },
         }),
       ).toMatchObject({ ok: true });
       const r = resolver();
@@ -376,6 +374,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         branches: { viewForWork: async () => ({ kind: "live" }) },
         documentTrash: { retained: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
       };
       const routeResolve = (holderDocumentId?: string) =>
         handleDocumentLinkResolveRequest(deps, {
@@ -456,6 +455,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         branches: { viewForWork: async () => ({ kind: "live" }) },
         documentTrash: { retained: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
       };
       const result = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
@@ -521,6 +521,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 : { kind: "live" },
         },
         documentTrash: { retained: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
       };
       const resolveIn = (workId: string) =>
         handleDocumentLinkResolveRequest(deps, {
@@ -643,6 +644,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
         documentTrash: { retained: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
       };
       const response = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,

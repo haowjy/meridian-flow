@@ -18,7 +18,6 @@ import type { BindMarkdownInput } from "../../../collab/index.js";
 import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../../collab/test-support/document-link-scopes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
-import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { ContextFS } from "./context-fs.js";
 import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
@@ -33,8 +32,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const USER_ID = "00000000-0000-4000-8000-000000000701";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000703";
-    const DOC_ROLLBACK_SOURCE_ID = "00000000-0000-4000-8000-000000000708";
-    const DOC_ROLLBACK_TARGET_ID = "00000000-0000-4000-8000-000000000709";
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
@@ -60,16 +57,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         isPrimary: true,
       });
     });
-
-    async function insertDocument(id: string, name: string) {
-      await db.insert(documents).values({
-        id,
-        contextSourceId: SOURCE_ID,
-        name,
-        extension: "",
-        fileType: "markdown",
-      });
-    }
 
     function createContextHarness() {
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
@@ -128,8 +115,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             await hook();
           };
         },
-        move: (source: string, destination: string) =>
-          mover.move(dispatch(source), dispatch(destination)),
+        move: async (source: string, destination: string) => {
+          const token = await context.tree.inspectMovable(source);
+          if (!token.ok || !token.value) throw new Error(`Nothing to move at ${source}`);
+          return mover.commitWriterLocation(
+            {
+              kind: token.value.kind === "directory" ? "folder" : "file",
+              nodeId: token.value.nodeId,
+            },
+            dispatch(""),
+            {
+              destination: {
+                kind: "at",
+                folder: dispatch(destination.split("/").slice(0, -1).join("/")),
+                createFolders: [],
+              },
+              name: destination.split("/").at(-1),
+            },
+          );
+        },
       };
     }
 
@@ -233,7 +237,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(move("chapter", "archive/chapter.txt")).resolves.toMatchObject({
         ok: true,
-        value: { destinationPath: "archive/chapter" },
+        value: { destinationUri: "kb://archive/chapter" },
       });
 
       expect(concurrentWrite).toMatchObject({
@@ -258,57 +262,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await expect(db.select().from(folders)).resolves.toHaveLength(1);
-    });
-
-    it("ignores source content activity during an overwrite move", async () => {
-      await insertDocument(DOC_ROLLBACK_SOURCE_ID, "rollback-source");
-      await insertDocument(DOC_ROLLBACK_TARGET_ID, "rollback-target");
-      const tree = new DrizzleContextTreeMutationStore(db, {
-        removal: createTestDocumentRemoval(db),
-        catalogMutations: createDrizzleContextCatalog(db),
-      });
-      const source = await tree.inspect(SOURCE_ID, "rollback-source");
-      const target = await tree.inspect(SOURCE_ID, "rollback-target");
-      expect(source?.kind).toBe("file");
-      expect(target?.kind).toBe("file");
-
-      let destructiveWrites = 0;
-      tree.setBeforeDestructiveWrite(async () => {
-        destructiveWrites += 1;
-        if (destructiveWrites === 2) {
-          await db
-            .update(documents)
-            .set({ updatedAt: new Date("2030-01-01T00:00:00.000Z") })
-            .where(eq(documents.id, DOC_ROLLBACK_SOURCE_ID));
-        }
-      });
-
-      const result = await tree.commitMove({
-        source: source as Extract<NonNullable<typeof source>, { kind: "file" }>,
-        destinationSourceId: SOURCE_ID,
-        destinationPath: "rollback-target",
-        expectedTarget: {
-          state: "occupied",
-          token: target as Extract<NonNullable<typeof target>, { kind: "file" }>,
-        },
-        overwrite: true,
-        graduateProvisionalName: false,
-        destinationFiletype: "markdown",
-      });
-      const [targetAfter] = await db
-        .select({ deletedAt: documents.deletedAt })
-        .from(documents)
-        .where(eq(documents.id, DOC_ROLLBACK_TARGET_ID));
-
-      expect(result).toEqual({
-        ok: true,
-        value: {
-          movedNodeId: DOC_ROLLBACK_SOURCE_ID,
-          destinationPath: "rollback-target",
-          linkUpdate: { links: 0, documents: 0 },
-        },
-      });
-      expect(targetAfter?.deletedAt).toBeInstanceOf(Date);
     });
   });
 }
