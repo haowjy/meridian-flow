@@ -1,11 +1,11 @@
 import type { CardStore } from "./card-store";
-import { createDragonActor, REVEAL_STARTS } from "./dragon-actor";
+import { createDragonActor } from "./dragon-actor";
 import { type FilmParts, type Layout, measureLayout } from "./film-layout";
 import { createForest } from "./forest";
 import type { ProductSlot } from "./ProductPlaceholder";
 import { createSky, type SkyFrame } from "./sky";
 import {
-  ASK_LIFT,
+  ASK,
   type BeatProgress,
   beatProgress,
   CAMP,
@@ -14,10 +14,11 @@ import {
   envelope,
   FIGHT,
   lerp,
-  PERCH,
   progress,
   SECTIONS,
   smooth,
+  TURN,
+  TWIST,
   WORLD_TYPED,
   WRITE_TYPED,
 } from "./timeline";
@@ -138,12 +139,14 @@ const HORIZON_YAW = 0.34;
 function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const tilt = smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
   // The fire uncovers a finished dawn, so the sky is already there behind it.
-  const revealed = beats.twist >= REVEAL_STARTS;
+  const revealed = beats.twist >= TWIST.reveals;
   // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
   const hurt = envelope(beats.fight, [FIGHT.spark.eye[1], FIGHT.spark.eye[1] + 0.09], 0.02, 0.06);
   const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
   // From the perch on, the Cold Fire it sent up stays in the sky and pulses until the box burns.
-  const stirred = smooth(beats.turn, PERCH[0], PERCH[0] + 0.06) * (1 - smooth(beats.twist, 0, 0.3));
+  const stirred =
+    smooth(beats.turn, TURN.perch[0], TURN.perch[0] + 0.06) *
+    (1 - smooth(beats.twist, ...TWIST.coldFireFades));
   // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
   const breathing =
     stirred * 0.5 +
@@ -154,7 +157,7 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
   // The veil keeps the chapter readable; once its text fades the perch and the fight are the
   // picture, so it lifts.
-  const lifted = smooth(beats.turn, PERCH[0] - 0.08, PERCH[0] + 0.04);
+  const lifted = smooth(beats.turn, TURN.perch[0] - 0.08, TURN.perch[0] + 0.04);
   veil = lerp(veil, 0.06, lifted);
   veil = lerp(veil, 0.2, toTwist);
   veil = lerp(veil, 0, dawn);
@@ -174,9 +177,9 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
     aurora:
       lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
       smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
-      breathing * (1 - smooth(beats.twist, 0, 0.3)),
+      breathing * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
     // Low in the north behind the mountains, the same every night until the box burns.
-    plume: 0.9 * (1 - smooth(beats.twist, 0, 0.3)),
+    plume: 0.9 * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
     surge: stirred,
     pulse: Math.max(
       1 - smooth(beats.push, 0, 0.35),
@@ -185,14 +188,6 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
     ),
   };
 }
-
-/**
- * Whenever the card is fully up it shows only what the visitor chose: nothing,
- * autoplay included, answers for them, and a pass made by scrolling or jumping
- * past comes off when they come back. Only as the card starts to leave does the
- * System pick the survivor, so its notice shows on the card on the way out.
- */
-const ASSIGN_AFTER = 0.89;
 
 /**
  * The scroll film. The stage is pinned while the page scrolls through it, and
@@ -290,7 +285,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const write = progress(beats.write, 0, WRITE_TYPED);
     const { dawn: dawnP, hints, leave } = beats;
     const push = ease(beats.push);
-    const askLift = smooth(asked, ...ASK_LIFT);
+    const askLift = smooth(asked, ...ASK.lift);
 
     show(hero, 1 - clamp(push * 2.4));
     hero.style.transform = `translateY(${-push * 70}px)`;
@@ -300,7 +295,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     let blockWidth: number;
     let opacity: number;
     let grade: number;
-    if (twistP < REVEAL_STARTS) {
+    if (twistP < TWIST.reveals) {
       blockWidth = home.w * lerp(1, 2.5, push);
       x = lerp(home.x, width / 2 - blockWidth * 0.5, push);
       y = lerp(home.y, height * 0.5 - blockWidth * 0.3, push);
@@ -329,7 +324,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       }
     }
     const block = slot.element;
-    const stretched = isPhone && twistP >= REVEAL_STARTS && leave <= 0;
+    const stretched = isPhone && twistP >= TWIST.reveals && leave <= 0;
     block.style.height = stretched
       ? `${((height - y - 12) * blockLayoutWidth) / blockWidth}px`
       : "";
@@ -343,7 +338,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     if (hints > 0) slot.set("hints", progress(hints, 0.08, 0.95));
     else if (asked > 0) slot.set("ask", 0);
     else if (beats.lore > 0) slot.set("lore", beats.lore);
-    else slot.set(twistP < REVEAL_STARTS ? "start" : "team", 0);
+    else slot.set(twistP < TWIST.reveals ? "start" : "team", 0);
 
     show(world, smooth(beats.sky, 0.9, 1) * (1 - smooth(worldBeat, 0.9, 1)));
     worldTypers.forEach((typer, index) => {
@@ -363,7 +358,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const chapterIn = smooth(open, 0, 0.7);
     const chapterDim = turn > 0 ? smooth(turn, 0, 0.16) : 1 - smooth(out, 0, 0.28);
     // The chapter gives way just before it breathes, so the perch has the screen.
-    const chapterGone = smooth(turn, PERCH[0] - 0.08, PERCH[0]);
+    const chapterGone = smooth(turn, TURN.perch[0] - 0.08, TURN.perch[0]);
     show(chapter, chapterIn * chapterDim * (1 - chapterGone));
     const chapterOffset = lerp(
       lerp(layout.chapterFrom, layout.chapterTo, ease(write) * 0.3 + write * 0.7),
@@ -375,7 +370,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     typers[1].set(progress(write, 0.42, 0.9), write >= 0.42 && write < 0.9);
     typers[2].set(progress(write, 0.5, 0.98), write >= 0.5 && write < 0.985);
 
-    const askGone = smooth(asked, ASSIGN_AFTER, 1);
+    const askGone = smooth(asked, ASK.assigns, 1);
     show(ask, clamp(askLift * 5) * (1 - askGone));
     block.classList.toggle("s-lifted", askLift > 0);
     if (askLift > 0 && askLift < 1) {
@@ -481,14 +476,14 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const party = forest.update(current, beats);
     if (!nightKept && beats.twist > 0.2) {
       const [start, end] = layout.spans.twist;
-      const lastNight = lerp(start, end, REVEAL_STARTS) - 1;
+      const lastNight = lerp(start, end, TWIST.reveals) - 1;
       sky.draw(skyFrame(beatProgress(lastNight, layout.spans), lastNight, layout), now / 1000);
       actor.keepNight(forest.withTrees(skyCanvas));
       nightKept = true;
       needsPaint = true;
     }
     actor.update(now / 1000, current, beats, party);
-    if (beats.ask >= ASSIGN_AFTER) store.assignIfUnanswered();
+    if (beats.ask >= ASK.assigns) store.assignIfUnanswered();
     else store.withdrawPass();
     if (current !== previous || needsPaint) {
       needsPaint = false;
