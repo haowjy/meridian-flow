@@ -13,6 +13,8 @@ export default defineEventHandler(async (event) => {
       message: result.error.message,
     });
   setHeader(event, "Content-Type", result.value.mimeType);
+  if (result.value.contentDisposition)
+    setHeader(event, "Content-Disposition", result.value.contentDisposition);
   setHeader(event, "Content-Length", String(result.value.sizeBytes));
   setHeader(event, "Cache-Control", "private, max-age=60");
   return sendStream(event, Readable.toWeb(result.value.stream) as unknown as ReadableStream);
