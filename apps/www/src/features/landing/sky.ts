@@ -1,5 +1,15 @@
 import { MARKETING_SKY as C, type LinearRgb } from "@meridian/design-tokens/marketing-sky";
-import { type BeatProgress, ease, envelope, FIGHT, lerp, smooth, TURN, TWIST } from "./timeline";
+import {
+  type BeatProgress,
+  ease,
+  envelope,
+  FIGHT,
+  lerp,
+  smooth,
+  TURN,
+  TWIST,
+  tilt,
+} from "./timeline";
 
 /** A sky colour as a GLSL literal, and as a CSS colour for the layers drawn over the sky. */
 export const vec3 = ([r, g, b]: LinearRgb) =>
@@ -68,8 +78,12 @@ vec4 aurora(vec3 rd){
   for(int i=0;i<14;i++){
     float k=float(i)*1.57;
     float t=(1.+(k+j*1.57)*.075)/rd.y;
-    float f=field(rd.xz*min(t,16.)*1.1,bare);
+    vec2 at=rd.xz*min(t,16.)*1.1;
+    float f=field(at,bare);
     vec3 c=mix(${vec3(C.auroraLow)},${vec3(C.auroraMid)},smoothstep(0.,8.,k));
+    // Whole curtains lean teal-blue, more so toward their thin tops; the rest stay green.
+    float blue=smoothstep(.38,.72,N(at*.07+vec2(11.,FLOW*.012)));
+    c=mix(c,${vec3(C.auroraBlue)},blue*(.45+.4*smoothstep(2.,14.,k)));
     c=mix(c,${vec3(C.auroraHigh)},smoothstep(8.,21.,k));
     a+=c*f*exp(-k*.1);
     fire+=bare*exp(-k*.1);
@@ -188,7 +202,7 @@ const HORIZON_YAW = 0.34;
  * position, so it holds still when the page does.
  */
 export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
-  const tilt = smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
+  const tipped = tilt(beats);
   // The fire uncovers a finished dawn, so the sky is already there behind it.
   const revealed = beats.twist >= TWIST.reveals;
   // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
@@ -213,9 +227,9 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
   veil = lerp(veil, 0.2, toTwist);
   veil = lerp(veil, 0, dawn);
   return {
-    pitch: lerp(OVERHEAD_PITCH, HORIZON_PITCH, tilt),
-    yaw: HORIZON_YAW * tilt * tilt,
-    focal: lerp(0.62, 0.9, tilt),
+    pitch: lerp(OVERHEAD_PITCH, HORIZON_PITCH, tipped),
+    yaw: HORIZON_YAW * tipped * tipped,
+    focal: lerp(0.62, 0.9, tipped),
     flow:
       scrolled * 0.4 +
       ease(beats.push) * 2 +
