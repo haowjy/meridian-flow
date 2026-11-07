@@ -26,7 +26,11 @@ authenticated.
   hands either breath to. A story moment more than one layer must agree on (when the
   dragon lands, when the party goes) is a named cue in `timeline.ts`; where the ground,
   the beach and the shore are is `ground.ts`. A layer keeps only the curves nothing else
-  matches. Stacking order is the `--z-*` table on `.cine .stage` in `film.css`.
+  matches. Their elements are drawn in `scenery.css`; stacking order is the `--z-*` table on
+  `.cine .stage` in `film.css`.
+- A pause or a longer moment is a row in `BEATS`, not a remapping of shares: split a beat whose
+  parts need retiming on their own, as the death is split into `dies`, `still`, `flight` and
+  `burn`.
 - Colour comes from token roles. Night regions set `data-ui-theme="dark"` on
   themselves; the product block and question card sit outside them, on the light
   root. Values no role covers go in `design-tokens/src/marketing.css`, or

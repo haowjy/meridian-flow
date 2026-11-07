@@ -20,6 +20,10 @@
   --mkt-system-fill: oklch(0.2 0.07 252 / 0.74);
   --mkt-system-ink: oklch(0.95 0.03 230);
 
+  /* The party's campfire: its flames, and their hot core. */
+  --mkt-campfire: oklch(0.703 0.199 43.9);
+  --mkt-campfire-core: oklch(0.912 0.133 94);
+
   /* The sky when WebGL is unavailable. */
   --mkt-sky-fallback-high: oklch(0.13 0.022 200);
   --mkt-sky-fallback-horizon: oklch(0.2 0.04 185);

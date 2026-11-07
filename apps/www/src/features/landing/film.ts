@@ -8,17 +8,18 @@ import type { ProductSlot } from "./ProductPlaceholder";
 import { createSky, STILL_SKY, skyFrame } from "./sky";
 import {
   ASK,
+  along,
   type BeatProgress,
   beatProgress,
   CAMP,
   clamp,
+  DEATH,
   ease,
   lerp,
   progress,
   SECTIONS,
   smooth,
   TURN,
-  TWIST,
   WORLD_TYPED,
   WRITE_TYPED,
 } from "./timeline";
@@ -145,7 +146,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const hero = one("#hero");
   const chapter = one("#chapter");
   const team = one("#the-team");
-  const twist = one("#the-twist");
+  const deathBox = one("#the-death");
   const caption = one("#knowledge-base");
   const captionShade = one("#capshade");
   const ask = one("#your-decisions");
@@ -216,7 +217,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
   function paint(at: number, beats: BeatProgress) {
     const { spans, height, width, home, workspace, blockLayoutWidth, isPhone } = layout;
-    const { world: worldBeat, open, out, back, ask: asked, turn, twist: twistP } = beats;
+    const { world: worldBeat, open, out, back, ask: asked, turn, burn: burnP } = beats;
     const worldP = progress(worldBeat, 0, WORLD_TYPED);
     const write = progress(beats.write, 0, WRITE_TYPED);
     const { dawn: dawnP, hints, leave } = beats;
@@ -231,7 +232,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     let blockWidth: number;
     let opacity: number;
     let grade: number;
-    if (twistP < TWIST.reveals) {
+    if (burnP < DEATH.reveals) {
       blockWidth = home.w * lerp(1, 2.5, push);
       x = lerp(home.x, width / 2 - blockWidth * 0.5, push);
       y = lerp(home.y, height * 0.5 - blockWidth * 0.3, push);
@@ -260,7 +261,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       }
     }
     const block = slot.element;
-    const stretched = isPhone && twistP >= TWIST.reveals && leave <= 0;
+    const stretched = isPhone && burnP >= DEATH.reveals && leave <= 0;
     block.style.height = stretched
       ? `${((height - y - 12) * blockLayoutWidth) / blockWidth}px`
       : "";
@@ -274,7 +275,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     if (hints > 0) slot.set("hints", progress(hints, 0.08, 0.95));
     else if (asked > 0) slot.set("ask", 0);
     else if (beats.lore > 0) slot.set("lore", beats.lore);
-    else slot.set(twistP < TWIST.reveals ? "start" : "team", 0);
+    else slot.set(burnP < DEATH.reveals ? "start" : "team", 0);
 
     show(world, smooth(beats.sky, 0.9, 1) * (1 - smooth(worldBeat, 0.9, 1)));
     worldTypers.forEach((typer, index) => {
@@ -358,11 +359,11 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     skill.classList.toggle("on", beats.skill > 0.04 && leave < 0.5);
 
     // The box opens the way the System's windows do: from a bright line, all at once.
-    const opened = smooth(twistP, 0.0225, 0.075);
-    show(twist, smooth(twistP, 0.015, 0.03) * (1 - smooth(twistP, 0.9625, 1)));
-    twist.style.transform =
+    const opened = smooth(beats.dies, ...DEATH.opens);
+    show(deathBox, smooth(beats.dies, ...DEATH.appears) * (1 - smooth(burnP, ...DEATH.gone)));
+    deathBox.style.transform =
       opened < 1 ? `scale(${lerp(0.03, 1, opened)},${lerp(0.4, 1, opened)})` : "";
-    twist.style.filter = opened < 1 ? `brightness(${lerp(2.4, 1, opened)})` : "";
+    deathBox.style.filter = opened < 1 ? `brightness(${lerp(2.4, 1, opened)})` : "";
 
     const captionShown =
       (isPhone ? smooth(beats.lore, 0.2, 0.4) : smooth(beats.lore, 0.08, 0.32)) *
@@ -410,9 +411,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const beats = beatProgress(current, layout.spans);
     // Before the night is kept: its still takes the trees from where they stand now.
     const party = forest.update(current, beats);
-    if (!nightKept && beats.twist > 0.4) {
-      const [start, end] = layout.spans.twist;
-      const lastNight = lerp(start, end, TWIST.reveals) - 1;
+    if (!nightKept && beats.still > 0) {
+      const lastNight = along(layout.spans, "burn", DEATH.reveals) - 1;
       sky.draw(
         skyFrame(beatProgress(lastNight, layout.spans), lastNight / layout.height),
         now / 1000,

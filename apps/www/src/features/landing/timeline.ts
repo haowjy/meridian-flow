@@ -28,7 +28,10 @@ const BEATS = [
   ["camp", 1.4, 4],
   ["turn", 1.8, 6.5],
   ["fight", 3, 8.5],
-  ["twist", 4, 8.5],
+  ["dies", 0.8, 2],
+  ["still", 1, 2],
+  ["flight", 0.9, 2],
+  ["burn", 1.3, 2.5],
   ["dawn", 1.5, 4],
   ["lore", 1.5, 3.5],
   ["ask", 3, 8.5],
@@ -61,22 +64,27 @@ export const TURN = {
   perch: [0.6, 0.97],
 } as const;
 
-/** Where the fire starts uncovering the dawn and the product behind the night. */
-const REVEALS = 0.7;
 /**
- * The twist: the last one standing goes and the box opens over the place, and for a while nothing
- * moves. Then the dragon takes off, loops once small in the far sky, and comes back across to burn
- * the box away.
+ * The death, across four beats. `dies`: the box opens over the last one standing, and the last
+ * shadow goes. `still`: nothing moves but the sky, and the Cold Fire over the peak dies down.
+ * `flight`: the dragon takes off, loops once small in the far sky, and goes out at the left.
+ * `burn`: it comes back across the stage, burning the box away to uncover the dawn.
  */
-export const TWIST = {
-  partyGone: [0.09, 0.195],
-  takesOff: 0.445,
-  /** The Cold Fire it sent up dies down as the box burns. */
-  coldFireFades: [0, 0.475],
-  reveals: REVEALS,
-  /** Out at the left, back in, and across the stage pushing the burn. */
-  pass: { leaves: 0.6625, enters: REVEALS, exits: 0.94 },
+export const DEATH = {
+  /** Shares of `dies`: the box appears, grows from a bright line, and the party goes. */
+  appears: [0.075, 0.15],
+  opens: [0.11, 0.375],
+  partyGone: [0.45, 0.975],
+  /** Shares of `flight`: up behind the box, the loop, and out at the left. */
+  loop: [0.14, 0.41, 0.64],
+  /** Shares of `burn`: where the fire uncovers the dawn, the dragon leaves, and the box goes. */
+  reveals: 0.08,
+  exits: 0.82,
+  gone: [0.89, 1],
 } as const;
+
+/** How much of the Cold Fire the dragon sent up is still over the peak: it dies down in the still. */
+export const coldFireLeft = (beats: BeatProgress) => 1 - ease(beats.still);
 
 /** It comes back into the dawn, and reaches the knowledge base early in the lore. */
 export const DAWN = { returns: 0.1 } as const;
@@ -124,7 +132,7 @@ export const tilt = (beats: BeatProgress) => smooth(beats.sky, 0.28, 0.86);
 /** The dragon is on the ground from its landing until it takes off, but for the rear at the spark. */
 export const grounded = (beats: BeatProgress) =>
   beats.turn >= TURN.lands &&
-  beats.twist < TWIST.takesOff &&
+  beats.flight <= 0 &&
   (beats.fight < FIGHT.spark.eye[1] || beats.fight >= FIGHT.breath[0]);
 
 /** The share of the write and world beats spent typing; the rest is the hold. */

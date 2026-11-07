@@ -19,6 +19,7 @@ import {
   type BeatProgress,
   clamp,
   DAWN,
+  DEATH,
   ease,
   envelope,
   FIGHT,
@@ -28,7 +29,6 @@ import {
   progress,
   smooth,
   TURN,
-  TWIST,
 } from "./timeline";
 
 type Point = readonly [number, number, number];
@@ -81,7 +81,7 @@ export function createDragonActor(root: HTMLElement) {
   const wings = flyer.firstElementChild as HTMLElement;
   const caption = root.querySelector("#knowledge-base") as HTMLElement;
   const text = document.createRange();
-  const words = root.querySelector("#the-twist") as HTMLElement;
+  const words = root.querySelector("#the-death") as HTMLElement;
   const row = root.querySelector("#s-beast-row") as HTMLElement;
   const updraft = root.querySelector("#updraft") as HTMLElement;
   const gulp = updraft.firstElementChild as HTMLElement;
@@ -161,14 +161,14 @@ export function createDragonActor(root: HTMLElement) {
         -1,
       ),
       mark(along(spans, "fight", FIGHT.breath[0]), fightX(0.69), onShore(standing), standing, -1),
-      mark(along(spans, "twist", TWIST.takesOff), fightX(0.69), onShore(standing), standing, -1),
+      mark(spans.flight[0], fightX(0.69), onShore(standing), standing, -1),
       // Up behind the box, one loop small in the far sky, and out at the left to turn.
-      mark(along(spans, "twist", 0.4825), 0.72, 0.4, 0.2, -1, true),
-      mark(along(spans, "twist", 0.5425), 0.5, 0.17, 0.1, -1, true),
-      mark(along(spans, "twist", 0.595), 0.26, 0.2, 0.11, -1, true),
-      mark(along(spans, "twist", TWIST.pass.leaves), -0.18, 0.42, 0.3, -1, true),
-      mark(along(spans, "twist", TWIST.pass.enters), -0.35, 0.58, 0.66),
-      mark(along(spans, "twist", TWIST.pass.exits), 1.4, 0.46, 0.8),
+      mark(along(spans, "flight", DEATH.loop[0]), 0.72, 0.4, 0.2, -1, true),
+      mark(along(spans, "flight", DEATH.loop[1]), 0.5, 0.17, 0.1, -1, true),
+      mark(along(spans, "flight", DEATH.loop[2]), 0.26, 0.2, 0.11, -1, true),
+      mark(spans.burn[0], -0.18, 0.42, 0.3, -1, true),
+      mark(along(spans, "burn", DEATH.reveals), -0.35, 0.58, 0.66),
+      mark(along(spans, "burn", DEATH.exits), 1.4, 0.46, 0.8),
     ];
     way = wayBack(next);
   };
@@ -323,8 +323,7 @@ export function createDragonActor(root: HTMLElement) {
   const pose = (at: number) => {
     const placed = place(at);
     const { spans } = layout;
-    if (at < along(spans, "twist", TWIST.pass.exits))
-      return { ...placed, onTop: false, settled: 0 };
+    if (at < along(spans, "burn", DEATH.exits)) return { ...placed, onTop: false, settled: 0 };
     const t = progress(at, along(spans, "dawn", DAWN.returns), along(spans, "lore", LORE.arrives));
     return {
       ...placed,
@@ -340,13 +339,13 @@ export function createDragonActor(root: HTMLElement) {
     const dx = ahead.x - now.x;
     const dy = ahead.y - now.y;
     const moving = Math.hypot(dx, dy) > 0.6;
-    const circled = beats.twist >= TWIST.pass.exits;
-    const passing = beats.twist >= TWIST.pass.enters && !circled;
+    const circled = beats.burn >= DEATH.exits;
+    const passing = beats.burn >= DEATH.reveals && !circled;
     const landing = beats.turn >= TURN.descends;
     flyer.style.zIndex = `var(--z-${passing ? "pass" : now.onTop ? "over" : circled || landing ? "low" : "far"})`;
     // It faces where it flies, except in the face-off, where it keeps its eyes on the party even
     // as it rears back.
-    const facingThem = landing && beats.twist < TWIST.takesOff;
+    const facingThem = landing && beats.flight <= 0;
     const wanted = !facingThem && moving && Math.abs(dx) > 0.3 ? Math.sign(dx) : now.facing;
     facing += (wanted - facing) * TURN_RATE;
     const tilt = moving ? clamp(Math.atan2(dy, Math.abs(dx) + 1), -MAX_LEAN, MAX_LEAN) : 0;
@@ -407,7 +406,7 @@ export function createDragonActor(root: HTMLElement) {
      * its mouth and body are, and the burn's fire while it crosses the box.
      */
     update(seconds: number, at: number, beats: BeatProgress): Dragon {
-      const { twist, lore } = beats;
+      const { burn: burnP, lore } = beats;
       const { height: H } = layout;
       const shown = lore < LORE.arrives;
       flyer.style.opacity = shown ? "1" : "0";
@@ -415,16 +414,18 @@ export function createDragonActor(root: HTMLElement) {
 
       const moved = Math.abs(at - lastAt);
       lastAt = at;
-      const passing = twist > TWIST.pass.enters && twist < TWIST.pass.exits;
+      const passing = burnP > DEATH.reveals && burnP < DEATH.exits;
       const wanted = shown && passing ? Math.min(1, moved / 10) : 0;
       breath += (wanted - breath) * (wanted > breath ? 0.5 : 0.09);
       if (breath < 0.01) breath = 0;
 
       const placed = pose(at);
       const char = (placed.x + placed.size * 0.43 + unit * FRONT_AHEAD) / H;
-      const box = words.getBoundingClientRect();
-      const burnt = clamp(((char + WORDS_HANDOVER) * H - box.left) / box.width);
-      const edge = twist >= TWIST.pass.exits ? 1 : passing ? burnt : 0;
+      const burnt = () => {
+        const box = words.getBoundingClientRect();
+        return clamp(((char + WORDS_HANDOVER) * H - box.left) / box.width);
+      };
+      const edge = burnP >= DEATH.exits ? 1 : passing ? burnt() : 0;
       words.style.zIndex = passing ? "var(--z-pass-words)" : "";
       words.style.maskImage =
         edge > 0

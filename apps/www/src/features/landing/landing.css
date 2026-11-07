@@ -495,7 +495,7 @@ h1 span {
   cursor: default;
 }
 
-.twist {
+.death {
   padding: 12vh 20px;
   text-align: center;
 }
@@ -562,8 +562,14 @@ p.sect-head {
   text-wrap: pretty;
 }
 
-/* The film tells each section as story; its plain heading stays for screen readers and crawlers. */
+/* The film tells each section as story; its plain heading stays for screen readers and crawlers,
+   visible to them even while the film hides the section around it. */
+.cine .cap h2 {
+  visibility: visible;
+}
+
 .cine .sect-head {
+  visibility: visible;
   position: absolute;
   width: 1px;
   height: 1px;
@@ -629,7 +635,7 @@ p.sect-head {
   width: min(40em, 100%);
 }
 
-/* The dawn's horizon glows right behind the question: the same night scrim as the twist. */
+/* The dawn's horizon glows right behind the question: the same night scrim as the death box. */
 .book::before {
   content: "";
   position: absolute;

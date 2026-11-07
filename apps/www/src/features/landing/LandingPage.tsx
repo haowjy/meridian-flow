@@ -174,7 +174,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               </li>
             </ol>
 
-            <div className="twist" id="the-twist" {...NIGHT}>
+            <div className="death" id="the-death" {...NIGHT}>
               <div className="sys sys-big">
                 <p>{SYSTEM.death}</p>
               </div>
@@ -187,13 +187,13 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 <p className="sect-head">{SECTION_HEADS.knowledge.line}</p>
               </div>
               <div className="workspot" id="the-workspace" />
-              <SectionHead section="workspace" />
             </div>
 
             <div className="ask" id="your-decisions">
               <SectionHead section="decisions" />
               <QuestionCard store={store} />
             </div>
+            <SectionHead section="workspace" />
 
             <div className="skill" id="skill" {...NIGHT}>
               <div className="sys sys-skill" role="status">

@@ -1,0 +1,381 @@
+/*
+ * The scenery's elements: the dragon, the fire canvas, the updraft, the campfire's status sheets,
+ * the trees, the party and the fight's shots. Their scripts (`dragon-actor.ts`, `forest.ts`,
+ * `fight.ts`) place them every frame; this file only draws them. Stacking is the `--z-*` table in
+ * `film.css`.
+ */
+
+.flyer,
+.flame {
+  display: none;
+}
+
+.cine .flyer,
+.cine .flame {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.cine .flame {
+  z-index: var(--z-flame);
+  width: 100%;
+  height: 100%;
+}
+
+.cine .flyer {
+  z-index: var(--z-words);
+  width: 200px;
+  height: 200px;
+  opacity: 0;
+  filter: drop-shadow(0 0 3px var(--mkt-glow));
+}
+
+.cine .flyer i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--mkt-night);
+  mask: var(--dragon-sheet) 0 0 / 600% 100% no-repeat;
+}
+
+.cine .flyer.grounded i {
+  mask-image: var(--dragon-ground);
+  mask-size: 400% 100%;
+}
+
+.updraft {
+  display: none;
+}
+
+/* The perched dragon's Cold Fire going straight up: a thin bright core in a soft glow, and a
+   knot rising through it on each gulp. */
+.cine .updraft {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: var(--z-product);
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.cine .updraft::before,
+.cine .updraft::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.cine .updraft::before {
+  inset: 0 38%;
+  background: linear-gradient(to top, var(--cold-fire-core), var(--cold-fire) 25%, transparent 92%);
+  opacity: calc(0.55 + var(--gulp, 0) * 0.45);
+  filter: blur(1.5px);
+}
+
+.cine .updraft::after {
+  inset: 0 -40%;
+  background: linear-gradient(
+    to top,
+    color-mix(in oklab, var(--cold-fire) 70%, transparent),
+    color-mix(in oklab, var(--cold-fire) 25%, transparent) 50%,
+    transparent
+  );
+  opacity: calc(0.4 + var(--gulp, 0) * 0.6);
+  filter: blur(12px);
+}
+
+.cine .updraft i {
+  position: absolute;
+  top: 0;
+  left: -90%;
+  right: -90%;
+  aspect-ratio: 1 / 2.6;
+  background: radial-gradient(
+    closest-side,
+    var(--cold-fire-core),
+    color-mix(in oklab, var(--cold-fire) 80%, transparent) 40%,
+    transparent
+  );
+  filter: blur(3px);
+}
+
+.sheets {
+  display: none;
+}
+
+/* The System's status windows over the camp, all four at once. */
+.cine .sheets {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: var(--z-low);
+  gap: 12px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cine .sheet {
+  display: grid;
+  align-content: start;
+  gap: 0.3em;
+  width: 15.5em;
+  padding: 0.7em 0.9em 0.75em;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.cine .sheet p {
+  margin: 0;
+}
+
+.cine .sheet-name {
+  font-size: 1.2em;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.cine .sheet-kind {
+  opacity: 0.7;
+}
+
+.cine .sheet-who {
+  margin-bottom: 0.35em;
+  font-weight: 400;
+}
+
+.cine .sheet-skill {
+  font-weight: 600;
+}
+
+.cine .sheet-does {
+  font-weight: 400;
+}
+
+@media (max-width: 640px) {
+  .cine .sheets {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: calc(100cqw - 32px);
+  }
+
+  .cine .sheet {
+    width: auto;
+    padding: 0.6em 0.7em 0.65em;
+    font-size: 11px;
+  }
+}
+
+.forest,
+.walkers {
+  display: none;
+}
+
+.cine .forest,
+.cine .walkers {
+  display: block;
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Its size comes from GROUND in ground.ts. */
+.cine .forest {
+  z-index: var(--z-ground);
+  bottom: 0;
+  left: 0;
+}
+
+.cine .forest canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.cine .walkers {
+  z-index: var(--z-ground);
+  inset: 0;
+  overflow: hidden;
+}
+
+.cine .walkers i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 256px;
+  height: 256px;
+  transform-origin: 0 0;
+  background: color-mix(in oklab, var(--mkt-glow) 42%, var(--mkt-night));
+  mask: var(--walk-sheet) 0 0 / 900% 500% no-repeat;
+}
+
+/* The campfire, in a 120px box scaled to the party's height, with the ground at 86px: a warm
+   glow, two crossed logs, and three tongues of flame that flicker out of step. */
+.cine .walkers .camp {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 120px;
+  height: 120px;
+  opacity: 0;
+  transform-origin: 0 0;
+  background: radial-gradient(
+    circle at 60px 74px,
+    color-mix(in oklab, var(--mkt-campfire) 45%, transparent),
+    transparent 46px
+  );
+}
+
+.cine .walkers .camp::before,
+.cine .walkers .camp::after {
+  content: "";
+  position: absolute;
+  top: 80px;
+  left: 42px;
+  width: 36px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--mkt-night);
+  box-shadow: 0 -1px 3px color-mix(in oklab, var(--mkt-campfire) 70%, transparent);
+  transform: rotate(14deg);
+}
+
+.cine .walkers .camp::after {
+  transform: rotate(-14deg);
+}
+
+.cine .walkers .camp span {
+  position: absolute;
+  bottom: 38px;
+  left: 60px;
+  width: 16px;
+  height: 30px;
+  margin-left: -8px;
+  clip-path: polygon(50% 0, 72% 38%, 100% 70%, 88% 94%, 50% 100%, 12% 94%, 0 70%, 28% 38%);
+  background: linear-gradient(
+    to top,
+    var(--mkt-campfire-core) 0 30%,
+    var(--mkt-campfire) 72%,
+    color-mix(in oklab, var(--mkt-campfire) 40%, transparent)
+  );
+  filter: blur(0.5px);
+  transform-origin: 50% 100%;
+  animation: flicker 0.9s ease-in-out infinite alternate;
+}
+
+.cine .walkers .camp span:nth-child(2) {
+  left: 52px;
+  height: 21px;
+  animation-duration: 0.7s;
+  animation-delay: -0.3s;
+}
+
+.cine .walkers .camp span:nth-child(3) {
+  left: 68px;
+  height: 18px;
+  animation-duration: 1.1s;
+  animation-delay: -0.6s;
+}
+
+@keyframes flicker {
+  from {
+    transform: scale(0.92, 0.86) skewX(-6deg);
+  }
+  to {
+    transform: scale(1.04, 1.12) skewX(5deg);
+  }
+}
+
+.cine .walkers .ward,
+.cine .walkers .spark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100px;
+  height: 100px;
+  opacity: 0;
+  transform-origin: 0 0;
+}
+
+/* Sigrun's rune going off: a hard white core, a ring and spinning rays. */
+.cine .walkers .ward {
+  background:
+    radial-gradient(circle, var(--walk-ward) 0 10%, transparent 12%),
+    radial-gradient(circle, transparent 0 29%, var(--walk-ward) 30% 32%, transparent 34%),
+    radial-gradient(
+      circle,
+      color-mix(in oklab, var(--walk-ward) 75%, transparent) 0,
+      color-mix(in oklab, var(--walk-ward) 22%, transparent) 26%,
+      transparent 52%
+    );
+  mix-blend-mode: plus-lighter;
+}
+
+.cine .walkers .ward::before {
+  content: "";
+  position: absolute;
+  inset: -70%;
+  background: repeating-conic-gradient(var(--walk-ward) 0 1.6deg, transparent 1.6deg 20deg);
+  mask: radial-gradient(circle, black 0 6%, transparent 58%);
+}
+
+.cine .walkers .spark {
+  width: 40px;
+  height: 40px;
+  background: radial-gradient(
+    var(--walk-lantern) 18%,
+    color-mix(in oklab, var(--walk-lantern) 40%, transparent) 40%,
+    transparent 70%
+  );
+}
+
+.cine .walkers .rune,
+.cine .walkers .song,
+.cine .walkers .hit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transform-origin: 0 0;
+}
+
+/* Sigrun's cut rune, thrown as a crescent of white. */
+.cine .walkers .rune {
+  width: 34px;
+  height: 64px;
+  border-radius: 50%;
+  border-right: 4px solid var(--walk-ward);
+  filter: drop-shadow(0 0 6px var(--walk-ward));
+}
+
+/* Maren's song: rings rolling out toward it. */
+.cine .walkers .song {
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: repeating-radial-gradient(
+    circle,
+    transparent 0 11px,
+    var(--walk-ward) 12px 14px,
+    transparent 15px 22px
+  );
+  mask: radial-gradient(circle, transparent 12%, black 30%, transparent 72%);
+  mix-blend-mode: plus-lighter;
+}
+
+.cine .walkers .hit {
+  width: 90px;
+  height: 90px;
+  background: radial-gradient(
+    circle,
+    var(--walk-ward) 0 8%,
+    color-mix(in oklab, var(--walk-lantern) 70%, transparent) 18%,
+    transparent 60%
+  );
+  mix-blend-mode: plus-lighter;
+}

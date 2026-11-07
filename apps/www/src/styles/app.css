@@ -13,6 +13,7 @@
 @import '@fontsource-variable/hanken-grotesk/wght.css';
 @import '../features/landing/landing.css';
 @import '../features/landing/film.css';
+@import '../features/landing/scenery.css';
 @import '../features/landing/product-placeholder.css';
 
 @layer base {
