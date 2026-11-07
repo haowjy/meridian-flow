@@ -1095,6 +1095,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let deleteObservedCommittedPurge = false;
       const objectStore = {
         put: backingStore.put.bind(backingStore),
+        putStream: backingStore.putStream.bind(backingStore),
         get: backingStore.get.bind(backingStore),
         list: backingStore.list.bind(backingStore),
         getSignedUrl: backingStore.getSignedUrl.bind(backingStore),

@@ -3,6 +3,8 @@
  * result types) for binary object storage. The boundary the in-memory, local,
  * and s3 adapters implement; callers depend on this, not a concrete backend.
  */
+import type { Readable } from "node:stream";
+
 export type ObjectStoreErrorCode = "invalid_key" | "not_found" | "io_error";
 
 export interface ObjectStoreError {
@@ -40,6 +42,16 @@ export interface ObjectStoreListOptions {
   limit?: number;
 }
 
+export interface ObjectStorePutStreamOptions {
+  /**
+   * Exact byte length of `body`, which the caller guarantees (S3 needs it before the first
+   * byte and can't tell a short stream from a slow one). Adapters that can count refuse a
+   * mismatch.
+   */
+  sizeBytes: number;
+  mimeType: string;
+}
+
 /**
  * Binary object storage. Callers persist only stable storage URLs; renderers ask
  * the store for short-lived read URLs when bytes are needed.
@@ -49,6 +61,15 @@ export interface ObjectStorePort {
     key: string,
     bytes: Uint8Array,
     mimeType: string,
+  ): Promise<ObjectStoreResult<ObjectStorePutOutput>>;
+  /**
+   * Stores `body` without holding it whole. A stream that errors or is destroyed leaves no
+   * object under `key`, and an existing object stays as it was.
+   */
+  putStream(
+    key: string,
+    body: Readable,
+    options: ObjectStorePutStreamOptions,
   ): Promise<ObjectStoreResult<ObjectStorePutOutput>>;
   get(key: string): Promise<ObjectStoreResult<ObjectStoreGetOutput>>;
   list(

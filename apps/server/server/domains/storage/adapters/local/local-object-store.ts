@@ -3,16 +3,18 @@
  * a base dir and mints HMAC-signed local read tokens for signed URLs. Owns the
  * on-disk layout and token signing; depends inward on the port and URL helper.
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Stats } from "node:fs";
-import { createReadStream } from "node:fs";
-import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreErrorCode,
   ObjectStorePort,
+  ObjectStorePutStreamOptions,
   ObjectStoreResult,
 } from "../../ports/object-store.js";
 
@@ -58,6 +60,9 @@ function isMissingFile(error: unknown): boolean {
 function ioError(error: unknown, fallback: string): ObjectStoreResult<never> {
   return err("io_error", error instanceof Error ? error.message : fallback);
 }
+
+/** Streams land here before the rename. A key can't start with ".", so no object collides with it. */
+const INCOMING_DIR = ".incoming";
 
 const SAFE_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9/_:+=.,@-]*$/;
 
@@ -124,6 +129,44 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     } catch (error) {
       return err("io_error", error instanceof Error ? error.message : "Failed to write object");
     }
+  }
+
+  async putStream(
+    key: string,
+    body: Readable,
+    options: ObjectStorePutStreamOptions,
+  ): Promise<ObjectStoreResult<{ storageUrl: string }>> {
+    const target = this.objectPath(key);
+    if (!target.ok) return target;
+
+    const incoming = path.join(this.rootDir, INCOMING_DIR, `${randomUUID()}.part`);
+    try {
+      await mkdir(path.dirname(incoming), { recursive: true });
+      const out = createWriteStream(incoming);
+      await pipeline(body, out);
+      if (out.bytesWritten !== options.sizeBytes)
+        throw new Error("Stream length differs from sizeBytes");
+      await mkdir(path.dirname(target.value), { recursive: true });
+      await rename(incoming, target.value);
+    } catch (error) {
+      await unlink(incoming).catch(() => undefined);
+      return ioError(error, "Failed to write object");
+    }
+    try {
+      await writeFile(
+        this.metadataPath(target.value),
+        JSON.stringify({
+          key,
+          mimeType: options.mimeType,
+          sizeBytes: options.sizeBytes,
+          updatedAt: this.now().toISOString(),
+        } satisfies LocalObjectMetadata),
+      );
+    } catch (error) {
+      await unlink(target.value).catch(() => undefined);
+      return ioError(error, "Failed to write object metadata");
+    }
+    return ok({ storageUrl: createObjectStorageUrl(key) });
   }
 
   async get(key: string): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
@@ -308,7 +351,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
             : ioError(error, "Failed to enumerate object store");
       }
       for (const entry of entries) {
-        if (entry.endsWith(".metadata.json")) continue;
+        if (entry.endsWith(".metadata.json") || (!relativeDir && entry === INCOMING_DIR)) continue;
         const relativePath = relativeDir ? path.join(relativeDir, entry) : entry;
         const absolutePath = path.join(absoluteDir, entry);
         let fileStat: Stats;

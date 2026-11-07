@@ -1,6 +1,11 @@
 /** In-memory implementation of the object-store port: a Map of bytes+mime keyed by storage URL. Used by tests and local dev; depends inward on the port and URL helper. */
+import type { Readable } from "node:stream";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
-import type { ObjectStorePort, ObjectStoreResult } from "../../ports/object-store.js";
+import type {
+  ObjectStorePort,
+  ObjectStorePutStreamOptions,
+  ObjectStoreResult,
+} from "../../ports/object-store.js";
 
 interface StoredObject {
   bytes: Uint8Array;
@@ -25,6 +30,33 @@ export class InMemoryObjectStoreAdapter implements ObjectStorePort {
   ): Promise<ObjectStoreResult<{ storageUrl: string }>> {
     this.objects.set(key, { bytes, mimeType });
     return ok({ storageUrl: createObjectStorageUrl(key) });
+  }
+
+  async putStream(
+    key: string,
+    body: Readable,
+    options: ObjectStorePutStreamOptions,
+  ): Promise<ObjectStoreResult<{ storageUrl: string }>> {
+    const chunks: Buffer[] = [];
+    try {
+      for await (const chunk of body) chunks.push(chunk as Buffer);
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: "io_error",
+          message: error instanceof Error ? error.message : "Stream failed",
+        },
+      };
+    }
+    const bytes = Buffer.concat(chunks);
+    if (bytes.byteLength !== options.sizeBytes) {
+      return {
+        ok: false,
+        error: { code: "io_error", message: "Stream length differs from sizeBytes" },
+      };
+    }
+    return this.put(key, bytes, options.mimeType);
   }
 
   async get(key: string): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {

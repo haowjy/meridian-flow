@@ -39,6 +39,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         storedObjects.set(key, { bytes, mimeType });
         return { ok: true, value: { storageUrl: createObjectStorageUrl(key) } };
       },
+      async putStream() {
+        throw new Error("unused");
+      },
       async get(key) {
         const stored = storedObjects.get(key);
         return stored
