@@ -544,6 +544,40 @@ h1 span {
   text-wrap: pretty;
 }
 
+header.sect-head {
+  padding: 32px clamp(20px, 5vw, 72px) 0;
+  max-width: 640px;
+}
+
+.world > .sect-head {
+  grid-column: 1 / -1;
+  padding: 0 0 8px;
+}
+
+.sect-head h2 {
+  font: 400 clamp(28px, 2.6vw, 40px) / 1.1 var(--mkt-font-title);
+  margin-bottom: 0.35em;
+  text-wrap: pretty;
+}
+
+.sect-head p,
+p.sect-head {
+  font-size: clamp(16px, 1.25vw, 18px);
+  line-height: 1.42;
+  text-wrap: pretty;
+}
+
+/* The film tells each section as story; its plain heading stays for screen readers and crawlers. */
+.cine .sect-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .end {
   position: relative;
   min-height: 100svh;
