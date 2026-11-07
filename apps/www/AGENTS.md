@@ -23,9 +23,12 @@ authenticated.
   themselves; the product block and question card sit outside them, on the light
   root. Values no role covers go in `design-tokens/src/marketing.css`, or
   `marketing-sky.ts` for the shader.
-- `ProductPlaceholder.tsx` is a drawing of the app, not the app: don't show anything
-  there the real product doesn't do at that point in the story. Real footage replaces
+- `ProductPlaceholder.tsx` is a drawing of the app, not the app. The page shows the
+  [target][target], so helpers run at once here; everything else in the drawing must be
+  something the real product does at that point in the story. Real footage replaces
   its markup and `product-placeholder.css`, and seeks in `createProductSlot`'s `set`.
 - Nothing here links to the app's `/`: signed out, that redirects back to this page.
   Sign in goes to `/login`, Start writing to `/signup`. Recipe:
   [signed-out redirects](.context/qa/signed-out-redirects.md).
+
+[target]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/public-site/landing-page-shows-the-target.md
