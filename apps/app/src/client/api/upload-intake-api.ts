@@ -9,7 +9,7 @@ import {
   type UploadStart,
 } from "@meridian/contracts/protocol";
 import type { ComposerUploadPort, ComposerUploadScope } from "@/components/app/composer";
-import { uploadFileDirect } from "./direct-upload";
+import { UploadRefusedError, uploadFileDirect } from "./direct-upload";
 import { errorMessageFromPayload, readResponsePayload } from "./http-client";
 
 import { meridianApiErrorFromPayload } from "./meridian-error";
@@ -39,7 +39,7 @@ async function response<T>(request: Promise<Response>): Promise<T> {
       "message" in payload &&
       payload.message === "invalid_filename"
     ) {
-      throw new Error(
+      throw new UploadRefusedError(
         t`This filename contains unsupported characters. Rename the file and attach it again.`,
       );
     }
@@ -49,7 +49,7 @@ async function response<T>(request: Promise<Response>): Promise<T> {
       "message" in payload &&
       payload.message === "too_large"
     )
-      throw new Error(tooLarge());
+      throw new UploadRefusedError(tooLarge());
     throw (
       meridianApiErrorFromPayload(payload, value.status) ??
       new Error(errorMessageFromPayload(payload, value.status))

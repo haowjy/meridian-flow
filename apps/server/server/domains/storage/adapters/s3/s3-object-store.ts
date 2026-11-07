@@ -238,8 +238,11 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
   ): Promise<ObjectStoreResult<ObjectStoreSignedPut>> {
     if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
 
-    // No HEAD first: the object does not exist yet. The length and type are signed headers, so
-    // the store refuses any other.
+    // The bucket must exist before the browser PUTs to it. No HEAD of the object: it does not
+    // exist yet. The length and type are signed headers, so the store refuses any other.
+    const ensured = await this.ensureBucket();
+    if (!ensured.ok) return ensured;
+
     try {
       const url = await getSignedUrl(
         this.presignClient,

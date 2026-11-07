@@ -6,6 +6,13 @@ import type { FileTarget } from "../../../../../../../domains/file-policy/index.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The browser mints the intake id as a UUID; anything else is refused before it reaches the database. */
+export function uploadIntakeId(value: unknown): string {
+  if (typeof value !== "string" || !UUID.test(value))
+    throw createError({ statusCode: 400, message: "intakeId must be a UUID" });
+  return value;
+}
+
 /** The chat is in the query, as for every uploads route. The client mints its id at the first attach; its row may not exist until Send. */
 export function uploadSubject(projectId: string, chatId: unknown) {
   if (typeof chatId !== "string" || !UUID.test(chatId))

@@ -6,16 +6,17 @@
 import type { StartUploadInput, UploadStart } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, readBody, setResponseStatus } from "nitro/h3";
 import { resolveContextRoute } from "./_helpers.js";
-import { uploadErrorToHttp, uploadSubject } from "./upload/_shared.js";
+import { uploadErrorToHttp, uploadIntakeId, uploadSubject } from "./upload/_shared.js";
 
 export default defineEventHandler(async (event): Promise<UploadStart> => {
   const { app, userId, projectId, scheme, edit } = await resolveContextRoute(event);
   if (scheme !== "uploads")
     throw createError({ statusCode: 400, message: "Upload intake requires uploads" });
   const body = (await readBody<Partial<StartUploadInput>>(event)) ?? {};
-  const { intakeId, filename, sizeBytes, mimeType } = body;
-  if (typeof intakeId !== "string" || !intakeId || typeof filename !== "string" || !filename)
-    throw createError({ statusCode: 400, message: "intakeId and filename are required" });
+  const { filename, sizeBytes, mimeType } = body;
+  const intakeId = uploadIntakeId(body.intakeId);
+  if (typeof filename !== "string" || !filename)
+    throw createError({ statusCode: 400, message: "filename is required" });
   const subject = uploadSubject(projectId, getQuery(event).chatId);
   if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0)
     throw createError({ statusCode: 400, message: "sizeBytes must be a whole number of bytes" });
