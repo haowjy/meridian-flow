@@ -774,12 +774,11 @@
   pointer-events: none;
 }
 
+/* Its size comes from GROUND in ground.ts. */
 .cine .forest {
   z-index: 2;
   bottom: 0;
   left: 0;
-  width: 250%;
-  height: 50%;
 }
 
 .cine .forest canvas {
