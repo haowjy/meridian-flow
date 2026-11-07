@@ -113,6 +113,7 @@ if (!RUN) {
         fingerprint: `upload-${suffix}`,
         filename: `map-${suffix}.png`,
         mimeType: "image/png",
+        sizeBytes: 1,
         finalPath: `map-${suffix}.png`,
         objectKey: `uploads/${PROJECT}/${documentId}`,
         fileType: "png",

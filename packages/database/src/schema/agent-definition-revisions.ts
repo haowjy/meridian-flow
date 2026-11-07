@@ -127,7 +127,7 @@ export const threadAgentBindings = pgTable("thread_agent_bindings", {
   invocationOverlay: jsonb("invocation_overlay").$type<InvocationOverlay>(),
   /**
    * Packaged skills the user invoked with `/skill` in this thread, by slug,
-   * pinned to the reference the body was read from (D64). The only mutable
+   * pinned to the reference the body was read from. The only mutable
    * field: re-invoking replaces a slug's pin. Children start empty.
    */
   invokedSkills: jsonb("invoked_skills")

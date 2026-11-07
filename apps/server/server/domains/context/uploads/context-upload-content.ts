@@ -1,19 +1,12 @@
 /** ContextFS-backed upload content adapter. */
 import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
-import { classifyFiletype, firstFreeName, renderFilename } from "@meridian/contracts/protocol";
+import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
 import { keptFileName } from "../../file-intake/index.js";
 import { contextAreaOf } from "../context/uri.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
-import {
-  ASSETS_FOLDER,
-  type UploadContentPort,
-  type UploadReservation,
-  type UploadSourceDestination,
-} from "./upload-intake.js";
-
-const MAX_NAME_COPIES = 100;
+import type { PlacedUpload, UploadContentPort, UploadSourceDestination } from "./upload-intake.js";
 
 /** Tracked text bound before finalize; binary and empty uploads need nothing bound. */
 type BoundUpload = BoundWrite | null;
@@ -22,12 +15,12 @@ export function createContextUploadContentPort(
   contextPorts: UnifiedContextPortFactory,
 ): UploadContentPort<BoundUpload> {
   /**
-   * A source upload is written through the port the route resolved for the host's scope. A chat
-   * upload goes through the chat's own port, at the chat-relative `uploads://name`: a New-chat
+   * A source upload goes through the port the route resolved for the host's scope. A chat upload
+   * goes through the chat's own port, written at the chat-relative `uploads://name`: a New-chat
    * upload has no handle yet, and the write must not depend on one.
    */
   function portFor(
-    reservation: UploadReservation,
+    reservation: PlacedUpload,
     actorUserId: string,
     source?: UploadSourceDestination,
   ): ContextPort {
@@ -39,12 +32,16 @@ export function createContextUploadContentPort(
     });
   }
 
-  const addressOf = (scheme: ContextUriScheme, path: string) =>
-    canonicalContextUri(scheme, path, { kind: "contextual" });
-  const writeUri = (reservation: UploadReservation, source?: UploadSourceDestination) =>
-    addressOf(source?.scheme ?? "uploads", reservation.finalPath);
+  const writeUri = (reservation: PlacedUpload, source?: UploadSourceDestination) =>
+    canonicalContextUri(
+      source?.scheme ?? ("uploads" satisfies ContextUriScheme),
+      reservation.finalPath,
+      {
+        kind: "contextual",
+      },
+    );
 
-  const isTracked = (reservation: UploadReservation) =>
+  const isTracked = (reservation: PlacedUpload) =>
     classifyFiletype(reservation.fileType).kind === "tracked";
 
   return {
@@ -52,67 +49,44 @@ export function createContextUploadContentPort(
       if (!isTracked(reservation) || text.length === 0) return { ok: true, bound: null };
       const port = portFor(reservation, actorUserId, source);
       const bound = await port.bindTrackedDocument(writeUri(reservation, source), text);
-      return bound.ok ? { ok: true, bound: bound.value } : { ok: false, definite: true };
+      return bound.ok
+        ? { ok: true, bound: bound.value }
+        : { ok: false, conflict: bound.error.code === "conflict" };
     },
 
     async persist(input) {
-      const { reservation, source } = input;
-      const port = portFor(reservation, input.actorUserId, source);
+      const { source } = input;
+      const uri = writeUri(input.reservation, source);
+      const port = portFor(input.reservation, input.actorUserId, source);
       const origin = {
         type: "import" as const,
         userId: input.actorUserId,
         source: "upload",
-        filename: reservation.filename,
-        sourceId: reservation.intakeId,
+        filename: input.reservation.filename,
+        sourceId: input.reservation.intakeId,
       };
-      const classification = classifyFiletype(reservation.fileType);
-      const write = (uri: string, keptName: string) =>
+      const classification = classifyFiletype(input.reservation.fileType);
+      const result =
         classification.kind === "tracked"
-          ? port.createBoundDocument(uri, input.bound, {
-              documentId: reservation.documentId,
+          ? await port.createBoundDocument(uri, input.bound, {
+              documentId: input.reservation.documentId,
               origin,
             })
-          : port.writeBinary(uri, {
-              documentId: reservation.documentId,
+          : await port.writeBinary(uri, {
+              documentId: input.reservation.documentId,
               fileType: classification.kind === "unknown" ? "binary" : classification.fileType,
               storageUrl: input.storageUrl ?? "",
               mimeType: input.mimeType,
               sizeBytes: input.sizeBytes,
               hasPreview: input.hasPreview,
-              ...(input.keptAsFile || source ? { filename: keptFileName(keptName) } : {}),
+              ...(input.keptAsFile ? { filename: keptFileName(input.reservation.finalPath) } : {}),
               origin,
             });
-      if (!source) {
-        const uri = writeUri(reservation);
-        const result = await write(uri, reservation.finalPath);
-        return result.ok &&
-          result.value.uri === uri &&
-          result.value.documentId === reservation.documentId
-          ? { ok: true, finalPath: reservation.finalPath }
-          : { ok: false, definite: true };
-      }
-      // A source upload takes its name now, not when it reserved: the same file dropped twice
-      // keeps both ("map.pdf", then "map (2).pdf"), and a folder renamed meanwhile is no obstacle.
-      // A file's own extension stays its extension, so a second "notes.zip" is "notes (2).zip".
-      const desired =
-        classification.kind === "tracked"
-          ? input.documentFilename
-          : keptFileName(
-              renderFilename(input.documentFilename.name, input.documentFilename.extension),
-            );
-      const taken = new Set<string>();
-      for (let attempt = 0; attempt < MAX_NAME_COPIES; attempt += 1) {
-        const filename = firstFreeName(desired, taken).filename;
-        const path = `${ASSETS_FOLDER}/${filename}`;
-        const result = await write(addressOf(source.scheme, path), filename);
-        if (result.ok)
-          return result.value.documentId === reservation.documentId
-            ? { ok: true, finalPath: path }
-            : { ok: false, definite: true };
-        if (result.error.code !== "conflict") break;
-        taken.add(filename);
-      }
-      return { ok: false, definite: true };
+      if (result.ok)
+        return result.value.uri === uri && result.value.documentId === input.reservation.documentId
+          ? { ok: true }
+          : { ok: false, conflict: false };
+      return { ok: false, conflict: result.error.code === "conflict" };
     },
 
     async remove({ reservation, actorUserId }) {

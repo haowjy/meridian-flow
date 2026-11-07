@@ -267,6 +267,11 @@ msgstr ""
 #~ msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 #~ msgstr ""
 
+#. placeholder {0}: file.name
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "{0} is text, so it was added as a document in assets. The chip links to it."
+msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
+
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
@@ -2264,8 +2269,7 @@ msgstr ""
 msgid "Couldn't queue the compaction."
 msgstr ""
 
-#: src/client/api/source-upload-api.ts
-#: src/client/api/upload-intake-api.ts
+#: src/client/api/upload-request.ts
 msgid "Couldn't reach the server. Check your connection."
 msgstr ""
 
@@ -5693,6 +5697,14 @@ msgstr ""
 msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 msgstr ""
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "The upload didn’t start."
+msgstr "上传未能开始。"
+
+#: src/client/api/direct-upload.ts
+msgid "The upload to storage failed."
+msgstr ""
+
 #: src/features/import/reason-copy.ts
 msgid "The uploaded file is no longer available."
 msgstr ""
@@ -5992,10 +6004,10 @@ msgstr ""
 #~ msgstr ""
 
 #: src/client/api/upload-intake-api.ts
-msgid "This filename contains unsupported characters. Rename the file and attach it again."
-msgstr ""
+#~ msgid "This filename contains unsupported characters. Rename the file and attach it again."
+#~ msgstr ""
 
-#: src/client/api/source-upload-api.ts
+#: src/client/api/upload-request.ts
 msgid "This filename contains unsupported characters. Rename the file and try again."
 msgstr "此文件名含有不受支持的字符。请重命名文件后重试。"
 

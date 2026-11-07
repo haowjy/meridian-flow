@@ -5,7 +5,6 @@
  * - MIME and extension precedence for canonical upload names and Markdown conversion
  */
 
-import { Readable } from "node:stream";
 import { Hocuspocus } from "@hocuspocus/server";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -43,7 +42,13 @@ import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./drizzle-upload-intake.js";
-import { createUploadIntake } from "./upload-intake.js";
+import {
+  createUploadIntake,
+  incomingObjectKey,
+  type UploadContentPort,
+  type UploadIntake,
+} from "./upload-intake.js";
+import { uploadBytes } from "./upload-test-support.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
@@ -109,10 +114,17 @@ if (!RUN) {
       actorUserId: USER,
       owner: { kind: "chat" as const, projectId: PROJECT, chatId },
       filename: "chapter.md",
-      documentFilename: { name: "chapter", extension: "", filetype: "markdown" as const },
       mimeType: "text/markdown",
+      sizeBytes: 10,
       fingerprint,
+    });
+
+    const claimInput = (intakeId: string, filename = "chapter") => ({
+      projectId: PROJECT,
+      intakeId,
+      documentFilename: { name: filename, extension: "", filetype: "markdown" as const },
       fileType: "markdown" as const,
+      storageUrl: `object://meridian/uploads/${intakeId}`,
     });
 
     it("converges concurrent production service calls on the authoritative trio", async () => {
@@ -144,16 +156,20 @@ if (!RUN) {
         };
         const content = new TextEncoder().encode("# Concurrent\n");
         const request = () => ({
-          ...reservation("concurrent-service", NEW_CHAT),
-          sizeBytes: content.byteLength,
-          body: Readable.from(Buffer.from(content)),
+          intakeId: "concurrent-service",
+          actorUserId: USER,
+          projectId: PROJECT,
+          chatId: NEW_CHAT,
+          filename: "chapter.md",
+          mimeType: "text/markdown",
+          bytes: content,
         });
 
         // Settle both calls before `finally` deletes the user: a rejected
         // Promise.all would leave the other transaction running into the delete.
         const settled = await Promise.allSettled([
-          service(firstDb).intake(request()),
-          service(waiterDb).intake(request()),
+          uploadBytes(service(firstDb), objectStore, request()),
+          uploadBytes(service(waiterDb), objectStore, request()),
         ]);
         const [first, waiter] = settled.map((outcome) => {
           if (outcome.status === "rejected") throw outcome.reason;
@@ -171,24 +187,36 @@ if (!RUN) {
       }
     });
 
-    it("converges idempotency, derives the address from the chat's handle, and suffixes active collisions", async () => {
+    it("converges idempotency, picks the name at claim, derives the address from the chat's handle, and suffixes active collisions", async () => {
       const repo = await seed();
       const first = await repo.reserve(reservation("one", NEW_CHAT));
       const replay = await repo.reserve(reservation("one", NEW_CHAT));
       const conflict = await repo.reserve(reservation("one", NEW_CHAT, "different"));
-      const collision = await repo.reserve(reservation("two", NEW_CHAT));
-      const existingChat = await repo.reserve(reservation("three", CHAT));
-      expect(first.kind === "reserved" && first.reservation.canonicalUri).toBe("uploads://chapter");
+      await repo.reserve(reservation("two", NEW_CHAT));
+      await repo.reserve(reservation("three", CHAT));
+      if (first.kind !== "reserved") throw new Error(first.kind);
+      // A reservation holds no name: nothing is taken until finish reads the bytes.
+      expect(first.reservation).toMatchObject({
+        finalPath: null,
+        fileType: null,
+        state: "reserved",
+      });
       expect(replay.kind === "existing" && replay.reservation.documentId).toBe(
-        first.kind !== "conflict" && first.kind !== "owner_unavailable"
-          ? first.reservation.documentId
-          : "",
+        first.reservation.documentId,
       );
       expect(conflict).toEqual({ kind: "conflict" });
-      expect(collision.kind === "reserved" && collision.reservation.finalPath).toBe("chapter (2)");
-      expect(existingChat.kind === "reserved" && existingChat.reservation.canonicalUri).toBe(
+      const claimedOne = await repo.claim(claimInput("one"));
+      const claimedTwo = await repo.claim(claimInput("two"));
+      const claimedThree = await repo.claim(claimInput("three"));
+      expect(claimedOne.kind === "claimed" && claimedOne.reservation.canonicalUri).toBe(
+        "uploads://chapter",
+      );
+      expect(claimedTwo.kind === "claimed" && claimedTwo.reservation.finalPath).toBe("chapter (2)");
+      expect(claimedThree.kind === "claimed" && claimedThree.reservation.canonicalUri).toBe(
         "uploads://@c1/chapter",
       );
+      // A second claim of the same intake changes nothing.
+      expect((await repo.claim(claimInput("one", "other"))).kind).toBe("existing");
       // The New chat gets its row, and so its handle, at Send: the same upload now reads there.
       await database.current.insert(threads).values({
         id: NEW_CHAT,
@@ -209,7 +237,9 @@ if (!RUN) {
       if (reserved.kind === "conflict" || reserved.kind === "owner_unavailable") {
         throw new Error("reservation failed");
       }
-      const identity = reserved.reservation;
+      const claimed = await repo.claim(claimInput("delete"));
+      if (claimed.kind !== "claimed") throw new Error(claimed.kind);
+      const identity = { ...claimed.reservation, canonicalUri: claimed.reservation.canonicalUri };
       const [intake] = await database.current
         .select()
         .from(uploadIntakes)
@@ -222,11 +252,11 @@ if (!RUN) {
         extension: "",
         fileType: "markdown",
       });
-      await repo.finalize(PROJECT, "delete");
+      await repo.finalize(PROJECT, "delete", true);
       const base = {
         intakeId: "delete",
         documentId: identity.documentId,
-        uri: identity.canonicalUri,
+        uri: identity.canonicalUri ?? "",
       };
       const { removed, deleteDraft } = deletion(repo);
       expect(await deleteDraft({ ...base, expectedRevision: "wrong" }, USER)).toEqual({
@@ -311,12 +341,14 @@ if (!RUN) {
           ["LICENSE", "application/pdf", "LICENSE", "pdf", "pdf"],
         ];
         for (const [filename, mimeType, name, extension, fileType] of cases) {
-          const result = await service.intake({
-            ...reservation(filename, NEW_CHAT),
+          const result = await uploadBytes(service, intakeStore, {
+            intakeId: filename,
+            actorUserId: USER,
+            projectId: PROJECT,
+            chatId: NEW_CHAT,
             filename,
             mimeType,
-            sizeBytes: content.byteLength,
-            body: Readable.from(Buffer.from(content)),
+            bytes: content,
           });
           expect(result).toMatchObject({
             ok: true,
@@ -359,26 +391,7 @@ if (!RUN) {
         branches: collab.branches,
         catalogMutations: catalog,
       });
-      const unusedStore: ObjectStorePort = {
-        async put() {
-          return { ok: true, value: { storageUrl: "object://unused" } };
-        },
-        async putStream() {
-          return { ok: true, value: { storageUrl: "object://unused" } };
-        },
-        async delete() {
-          return { ok: true, value: undefined };
-        },
-        async get() {
-          return { ok: false, error: { code: "not_found", message: "missing" } };
-        },
-        async list() {
-          return { ok: true, value: { keys: [] } };
-        },
-        async getSignedUrl() {
-          return { ok: false, error: { code: "not_found", message: "missing" } };
-        },
-      };
+      const unusedStore = createInMemoryObjectStore();
       const service = createUploadIntake({
         repository: createDrizzleUploadIntakeRepository(database.current),
         content: createContextUploadContentPort(contextPorts),
@@ -388,10 +401,14 @@ if (!RUN) {
         catalog,
       });
       const content = new TextEncoder().encode("# Chapter One\n\nIt began.");
-      const result = await service.intake({
-        ...reservation("tracked", NEW_CHAT),
-        sizeBytes: content.byteLength,
-        body: Readable.from(Buffer.from(content)),
+      const result = await uploadBytes(service, unusedStore, {
+        intakeId: "tracked",
+        actorUserId: USER,
+        projectId: PROJECT,
+        chatId: NEW_CHAT,
+        filename: "chapter.md",
+        mimeType: "text/markdown",
+        bytes: content,
       });
       if (!result.ok) throw new Error(result.error.code);
       expect(await collab.readAsMarkdown(result.value.documentId as never)).toEqual({
@@ -418,6 +435,223 @@ if (!RUN) {
       expect(await publishedUsed()).toBe(false);
       await service.consume([result.value.documentId], NEW_CHAT);
       expect(await publishedUsed()).toBe(true);
+    });
+
+    describe("start, PUT, finish", () => {
+      const noop = () => ({ ok: true as const });
+      type Content = UploadContentPort<null>;
+
+      async function flow(
+        overrides: { content?: Partial<Content>; afterHead?: () => Promise<void> } = {},
+      ) {
+        const repo = await seed();
+        const store = createInMemoryObjectStore();
+        const hooked: ObjectStorePort = {
+          ...store,
+          put: store.put.bind(store),
+          get: store.get.bind(store),
+          delete: store.delete.bind(store),
+          list: store.list.bind(store),
+          copy: store.copy.bind(store),
+          signPut: store.signPut.bind(store),
+          getStream: store.getStream.bind(store),
+          getSignedUrl: store.getSignedUrl.bind(store),
+          async readHead(key, bytes) {
+            const head = await store.readHead(key, bytes);
+            await overrides.afterHead?.();
+            return head;
+          },
+        };
+        const bound: string[] = [];
+        const content: Content = {
+          bind: async ({ text }) => {
+            bound.push(text);
+            return { ok: true, bound: null };
+          },
+          persist: async () => noop(),
+          remove: async () => noop(),
+          ...overrides.content,
+        };
+        const intake: UploadIntake = createUploadIntake({
+          repository: repo,
+          content,
+          objectStore: hooked,
+          release: createObjectRelease({ objectStore: store, onFailure() {} }),
+          eventSink: createNoopEventSink(),
+          catalog: { refreshSources: async () => "1" },
+        });
+        const owner = { kind: "chat" as const, projectId: PROJECT, chatId: NEW_CHAT };
+        const bytesOf = (size: number, text = "") =>
+          new Uint8Array(size).map((_, i) => text.charCodeAt(i) || 0x78);
+        return {
+          intake,
+          store,
+          bound,
+          start: (
+            intakeId: string,
+            size: number,
+            filename = "map.pdf",
+            mimeType = "application/pdf",
+          ) =>
+            intake.start({
+              intakeId,
+              actorUserId: USER,
+              owner,
+              filename,
+              mimeType,
+              sizeBytes: size,
+            }),
+          finish: (intakeId: string) => intake.finish({ intakeId, actorUserId: USER, owner }),
+          put: (documentId: string, bytes: Uint8Array, mimeType = "application/pdf") =>
+            store.put(incomingObjectKey(PROJECT, documentId), bytes, mimeType),
+          keys: async () => {
+            const listed = await store.list("");
+            return listed.ok ? listed.value.keys.map((entry) => entry.key) : [];
+          },
+          bytesOf,
+        };
+      }
+      const reservedOf = (
+        started: Awaited<ReturnType<Awaited<ReturnType<typeof flow>>["start"]>>,
+      ) => {
+        if (!started.ok || started.value.state === "finalized") throw new Error("not reserved");
+        return started.value;
+      };
+
+      it("answers each retry by the state the upload has reached", async () => {
+        const f = await flow();
+        const bytes = f.bytesOf(8);
+        const first = reservedOf(await f.start("retry", 8));
+        expect(first.state).toBe("reserved");
+        expect(reservedOf(await f.start("retry", 8)).documentId).toBe(first.documentId);
+        // Finish before the PUT keeps the row, so the writer can PUT and finish again.
+        expect(await f.finish("retry")).toEqual({ ok: false, error: { code: "not_uploaded" } });
+        await f.put(first.documentId, bytes);
+        const done = await f.finish("retry");
+        expect(done).toMatchObject({ ok: true, value: { documentId: first.documentId } });
+        expect(await f.finish("retry")).toEqual(done);
+        expect(await f.start("retry", 8)).toMatchObject({
+          ok: true,
+          value: { state: "finalized" },
+        });
+        expect(await f.keys()).toEqual([`uploads/${PROJECT}/${first.documentId}`]);
+        // A different name or size for the same intake is a different upload.
+        expect(await f.start("retry", 9)).toEqual({
+          ok: false,
+          error: { code: "idempotency_conflict" },
+        });
+      });
+
+      it("refuses an object of another length, drops it, and lets the writer upload again", async () => {
+        const f = await flow();
+        const first = reservedOf(await f.start("short", 8));
+        await f.put(first.documentId, f.bytesOf(4));
+        expect(await f.finish("short")).toEqual({ ok: false, error: { code: "size_mismatch" } });
+        expect(await f.keys()).toEqual([]);
+        const again = reservedOf(await f.start("short", 8));
+        expect(again.state).toBe("reserved");
+        await f.put(first.documentId, f.bytesOf(8));
+        expect((await f.finish("short")).ok).toBe(true);
+      });
+
+      it("reads type and text from the stored bytes, never from the declared name", async () => {
+        const f = await flow();
+        // Declared as Markdown; the stored bytes are a PDF of the same length.
+        const pdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n");
+        const first = reservedOf(
+          await f.start("liar", pdf.byteLength, "notes.md", "text/markdown"),
+        );
+        await f.put(first.documentId, pdf, "text/markdown");
+        const result = await f.finish("liar");
+        expect(result.ok && result.value.fileType).toBe("pdf");
+        expect(f.bound).toEqual([""]);
+        // Text is bound as read from the object.
+        const text = "# Real text\n";
+        const second = reservedOf(await f.start("honest", text.length, "real.md", "text/markdown"));
+        await f.put(second.documentId, new TextEncoder().encode(text), "text/markdown");
+        expect((await f.finish("honest")).ok).toBe(true);
+        expect(f.bound.at(-1)).toBe(text);
+      });
+
+      it("a delete after finish read the bytes, before the name is claimed, leaves nothing behind and the intake deleted", async () => {
+        let deleteNow: () => Promise<unknown> = async () => {};
+        const f = await flow({ afterHead: () => deleteNow().then(() => {}) });
+        const first = reservedOf(await f.start("race", 8));
+        await f.put(first.documentId, f.bytesOf(8));
+        deleteNow = () =>
+          f.intake.deleteDraft(
+            {
+              intakeId: "race",
+              documentId: first.documentId,
+              uri: "uploads://map.pdf",
+              expectedRevision: first.locationRevision,
+            },
+            USER,
+          );
+        expect(await f.finish("race")).toEqual({
+          ok: false,
+          error: { code: "idempotency_conflict" },
+        });
+        expect(await f.keys()).toEqual([]);
+        expect(await f.start("race", 8)).toEqual({
+          ok: false,
+          error: { code: "idempotency_conflict" },
+        });
+      });
+
+      it("a delete after the name is claimed, before the commit, is not undone by finish", async () => {
+        let deleteNow: () => Promise<unknown> = async () => {};
+        const f = await flow({
+          content: { bind: async () => (await deleteNow(), { ok: true, bound: null }) },
+        });
+        const first = reservedOf(await f.start("late", 8));
+        await f.put(first.documentId, f.bytesOf(8));
+        deleteNow = () =>
+          f.intake.deleteDraft(
+            {
+              intakeId: "late",
+              documentId: first.documentId,
+              uri: "uploads://map.pdf",
+              expectedRevision: first.locationRevision,
+            },
+            USER,
+          );
+        expect(await f.finish("late")).toEqual({
+          ok: false,
+          error: { code: "idempotency_conflict" },
+        });
+        expect(await f.keys()).toEqual([]);
+      });
+
+      it("resumes from the stored object when persisting fails, without deleting anything", async () => {
+        let fail = true;
+        const f = await flow({
+          content: { persist: async () => (fail ? { ok: false, conflict: false } : { ok: true }) },
+        });
+        const first = reservedOf(await f.start("resume", 8));
+        await f.put(first.documentId, f.bytesOf(8));
+        expect(await f.finish("resume")).toEqual({ ok: false, error: { code: "storage_failed" } });
+        // The bytes are already checked and stored: starting again skips the PUT.
+        expect(await f.start("resume", 8)).toMatchObject({ ok: true, value: { state: "stored" } });
+        expect(await f.keys()).toContain(`uploads/${PROJECT}/${first.documentId}`);
+        fail = false;
+        expect((await f.finish("resume")).ok).toBe(true);
+        expect(await f.keys()).toEqual([`uploads/${PROJECT}/${first.documentId}`]);
+      });
+
+      it("sweeps uploads untouched for a day, objects and row, and leaves the rest", async () => {
+        const f = await flow();
+        const quiet = reservedOf(await f.start("quiet", 8));
+        await f.put(quiet.documentId, f.bytesOf(8));
+        const finished = reservedOf(await f.start("finished", 8));
+        await f.put(finished.documentId, f.bytesOf(8));
+        expect((await f.finish("finished")).ok).toBe(true);
+        expect(await f.intake.sweepAbandoned()).toBe(0);
+        const later = new Date(Date.now() + 25 * 60 * 60 * 1000);
+        expect(await f.intake.sweepAbandoned(later)).toBe(1);
+        expect(await f.keys()).toEqual([`uploads/${PROJECT}/${finished.documentId}`]);
+        expect(await f.start("quiet", 8)).toMatchObject({ ok: true, value: { state: "reserved" } });
+      });
     });
   });
 }

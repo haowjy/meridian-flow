@@ -28,7 +28,7 @@ import { compactionFailureMeridianError } from "./compaction/decision.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
-  | { kind: "success"; finishReason: FinishReason }
+  | { kind: "success"; finishReason: FinishReason | null }
   | { kind: "asked"; askId: string }
   | {
       kind: "failed";
@@ -45,9 +45,15 @@ export type FinalizedExecution = {
   report: SavedExecutionReport | null;
 };
 
-function publicText(blocks: Block[], responseId: string | null): string {
-  return blocks
-    .filter((block) => block.responseId === responseId && block.blockType === "text")
+/**
+ * A finished run reports its final response, even an empty one. An interrupted run's last response
+ * may have said nothing yet, so it reports the latest text the run wrote.
+ */
+function publicText(blocks: Block[], finalResponseId: string | null, interrupted: boolean): string {
+  const text = blocks.filter((block) => block.blockType === "text");
+  const responseId = interrupted ? (text.at(-1)?.responseId ?? null) : finalResponseId;
+  return text
+    .filter((block) => block.responseId === responseId)
     .map((block) => blockPlainText(block.blockType, block.content) ?? "")
     .join("");
 }
@@ -56,6 +62,7 @@ async function resolveReportContent(
   input: {
     turnId: TurnId;
     responseId: string | null;
+    interrupted: boolean;
     capture: SavedExecutionReport["capture"];
     empty: boolean;
   },
@@ -65,7 +72,7 @@ async function resolveReportContent(
 
   const text = input.capture
     ? ""
-    : publicText(await deps.blocks.listByTurn(input.turnId), input.responseId);
+    : publicText(await deps.blocks.listByTurn(input.turnId), input.responseId, input.interrupted);
   return {
     source: input.capture
       ? ("return_result" as const)
@@ -286,11 +293,11 @@ export async function finalizeExecution(
               ? "cancelled"
               : "failed";
         const responses = await deps.repos.modelResponses.listByTurn(turn.id);
-        const finalResponseId = responses.at(-1)?.id ?? null;
         const content = await resolveReportContent(
           {
             turnId: turn.id,
-            responseId: finalResponseId,
+            responseId: responses.at(-1)?.id ?? null,
+            interrupted: outcome !== "succeeded",
             capture,
             empty: input.reportContent === "empty",
           },

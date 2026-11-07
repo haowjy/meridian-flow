@@ -1,4 +1,3 @@
-import { Readable } from "node:stream";
 /**
  * Whole-document write doors bind outside their transaction and apply the
  * bound write inside it (contract §6.2, ledger A2-1): desired state, applied
@@ -28,6 +27,7 @@ import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { unloadHocuspocus } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { entryAt, moveTo } from "../../test-support/entry-ref.js";
+import { uploadBytes } from "../context/uploads/upload-test-support.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
@@ -244,14 +244,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             door: "an upload binds before finalize's transaction and persists under its locks",
             act: async () => {
               const bytes = new TextEncoder().encode("# Upload\n\n[Ahead](manuscript://future)");
-              const uploaded = await app.uploadIntake.intake({
-                intakeId: randomUUID(),
+              const uploaded = await uploadBytes(app.uploadIntake, app.objectStore, {
                 actorUserId: userId,
-                owner: { kind: "chat", projectId, chatId: randomUUID() },
+                projectId,
+                chatId: randomUUID(),
                 filename: "upload.md",
                 mimeType: "text/markdown",
-                sizeBytes: bytes.byteLength,
-                body: Readable.from(Buffer.from(bytes)),
+                bytes,
               });
               if (!uploaded.ok) throw new Error(uploaded.error.code);
               return uploaded.value.documentId;

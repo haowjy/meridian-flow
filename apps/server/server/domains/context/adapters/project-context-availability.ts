@@ -502,8 +502,8 @@ export function createDrizzleProjectContextAvailability(
             .filter((row) => row.document.deletedAt)
             .map((row) => row.document.id as DocumentId);
           const removals = await readRemovalRecords(tx, tombstoned);
-          // A branch's view lists a document deleted live while it has pending changes to it
-          // (D79): there it is available at the location it was deleted at. The view's own
+          // A branch's view lists a document deleted live while it has pending changes to it,
+          // so there it is available at the location it was deleted at. The view's own
           // listing decides, so availability and the branch's tree never disagree.
           const listedInView = new Set<string>();
           if (view.kind === "branch") {

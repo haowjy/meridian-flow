@@ -248,8 +248,8 @@ one source's tree contributes.
   series of committed reads, not one database snapshot; a folder moved while it runs lands
   on one side of it. A selection collapses to its outermost roots first: a root inside
   another selected folder, or selected twice, is already in that copy. Everything slow
-  happens before the receipt's transaction opens: the reads, a binary's duplicated bytes
-  (`prepareBinaryCopy`, D24), the plan, and the binding. A source room that is not open
+  happens before the receipt's transaction opens: the reads, a binary's duplicated object (`prepareBinaryCopy`, D24: a
+  store-side `copy`, never through memory), the plan, and the binding. A source room that is not open
   loads through a second connection, so a transaction held across the reads would starve
   the pool. Each put key is released if no transaction commits to name its object (a
   refusal, a retryable failure, a replay that never reads it). A process crash between a put

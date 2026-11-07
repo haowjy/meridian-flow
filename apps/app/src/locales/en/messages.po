@@ -267,6 +267,11 @@ msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 #~ msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 #~ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
+#. placeholder {0}: file.name
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "{0} is text, so it was added as a document in assets. The chip links to it."
+msgstr "{0} is text, so it was added as a document in assets. The chip links to it."
+
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
@@ -2264,8 +2269,7 @@ msgstr "Couldn't open this folder."
 msgid "Couldn't queue the compaction."
 msgstr "Couldn't queue the compaction."
 
-#: src/client/api/source-upload-api.ts
-#: src/client/api/upload-intake-api.ts
+#: src/client/api/upload-request.ts
 msgid "Couldn't reach the server. Check your connection."
 msgstr "Couldn't reach the server. Check your connection."
 
@@ -5693,6 +5697,14 @@ msgstr "The text it edited was discarded, so the change wasn't kept. The AI will
 msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "The upload didn’t start."
+msgstr "The upload didn’t start."
+
+#: src/client/api/direct-upload.ts
+msgid "The upload to storage failed."
+msgstr "The upload to storage failed."
+
 #: src/features/import/reason-copy.ts
 msgid "The uploaded file is no longer available."
 msgstr "The uploaded file is no longer available."
@@ -5992,10 +6004,10 @@ msgstr "This file is unavailable. Refresh and try again."
 #~ msgstr "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
 
 #: src/client/api/upload-intake-api.ts
-msgid "This filename contains unsupported characters. Rename the file and attach it again."
-msgstr "This filename contains unsupported characters. Rename the file and attach it again."
+#~ msgid "This filename contains unsupported characters. Rename the file and attach it again."
+#~ msgstr "This filename contains unsupported characters. Rename the file and attach it again."
 
-#: src/client/api/source-upload-api.ts
+#: src/client/api/upload-request.ts
 msgid "This filename contains unsupported characters. Rename the file and try again."
 msgstr "This filename contains unsupported characters. Rename the file and try again."
 

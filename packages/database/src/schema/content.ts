@@ -260,7 +260,7 @@ export const folders = pgTable(
       .on(table.contextSourceId, table.name)
       .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
     // Every folder a branch's view may show besides live ones, by path: a hidden one (and
-    // absorb), or a deleted one above a document a draft outlived (D79). One predicate, so
+    // absorb), or a deleted one above a document a draft outlived. One predicate, so
     // the tree view's one non-live arm and a hidden-only lookup both imply it.
     index("folders_nonlive_location")
       .on(table.contextSourceId, table.parentId, table.name)
@@ -424,9 +424,12 @@ export const uploadIntakes = pgTable(
     fingerprint: text("fingerprint").notNull(),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull(),
-    finalPath: text("final_path").notNull(),
+    // The name and type are chosen when the stored bytes are read, at finish: null while reserved.
+    finalPath: text("final_path"),
     objectKey: text("object_key").notNull(),
-    fileType: text("file_type").notNull(),
+    fileType: text("file_type"),
+    // The length the writer declared; finish refuses an object of any other.
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     locationRevision: uuid("location_revision").notNull(),
     state: text("state").notNull().default("reserved"),
     storageUrl: text("storage_url"),
@@ -447,6 +450,10 @@ export const uploadIntakes = pgTable(
     index("upload_intakes_owner_thread")
       .on(table.ownerThreadId)
       .where(sql`${table.ownerThreadId} IS NOT NULL`),
+    // The sweep of abandoned uploads reads only rows that never finalized.
+    index("upload_intakes_open_updated")
+      .on(table.updatedAt)
+      .where(sql`${table.state} IN ('reserved', 'object_stored')`),
   ],
 );
 
