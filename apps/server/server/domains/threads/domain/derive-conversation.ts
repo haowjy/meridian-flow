@@ -248,7 +248,7 @@ export async function forkThreadAgent(
       };
     }
     const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
-    // The fork copies the turns that invoked these skills, `skills://` headers included (D64).
+    // The fork copies the turns that invoked these skills, `skills://` headers included.
     for (const [slug, reference] of Object.entries(binding.invokedSkills)) {
       await deps.agentRevisions.recordInvokedSkill(target.id, slug, reference);
     }

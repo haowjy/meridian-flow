@@ -275,12 +275,13 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
   ) {
     const latest = activeCompaction(input.turns);
     const since = input.turns.filter((turn) => !latest || turn.position > latest.position);
-    const responseTurns = since.filter((turn) => turn.role === "assistant").map((turn) => turn.id);
-    if (
-      !since.some(isCompactionNotesTurn) &&
-      responseTurns.length > 0 &&
-      (await input.deps.repos.modelResponses.findLatestForTurns(responseTurns))
-    ) {
+    // Whether the model has answered since compaction: some assistant turn has a block that
+    // belongs to a response. A call stopped before output leaves a response row with none.
+    const answeredTurns = new Set(
+      input.blocks.filter((block) => block.responseId !== null).map((block) => block.turnId),
+    );
+    const responded = since.some((turn) => turn.role === "assistant" && answeredTurns.has(turn.id));
+    if (!since.some(isCompactionNotesTurn) && responded) {
       const marker = prepareCompactionNotes({
         threadId: input.threadId,
         turns: [...input.turns, ...assembled.preparationUpdates.turns],

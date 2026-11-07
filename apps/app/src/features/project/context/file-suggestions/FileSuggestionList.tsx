@@ -87,7 +87,7 @@ export const FileSuggestionList = forwardRef<
   return (
     // The keydown boundary wraps header + rows so one arrow walk covers both;
     // the listbox role stays on the rows alone (the header is not an option).
-    // biome-ignore lint/a11y/noStaticElementInteractions: keydown-only composite boundary — the focusables inside carry the interactive roles, and no ARIA role fits a note+listbox composite.
+    // biome-ignore lint/a11y/noStaticElementInteractions: keydown-only composite boundary — the focusables inside carry the interactive roles, and no ARIA role fits a note+listbox composite. slop-lint: allow suppression the reason is stated in this comment
     <div ref={rootRef} onKeyDown={handleKeyDown}>
       {header}
       <div role="listbox" aria-label={t`File suggestions`}>

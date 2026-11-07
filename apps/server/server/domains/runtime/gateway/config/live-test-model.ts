@@ -33,7 +33,6 @@ export function withLiveTestModel(gateway: Gateway, modelId: string): Gateway {
 
   return {
     stream: (request) => gateway.stream(redirect(request)),
-    generate: (request) => gateway.generate(redirect(request)),
     listModels: (): ModelInfo[] => REGISTRY_MODEL_IDS.map((id) => ({ ...override, id })),
     getDefaultModel: () => gateway.getDefaultModel(),
   };

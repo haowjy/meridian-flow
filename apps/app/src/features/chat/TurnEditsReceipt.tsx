@@ -260,8 +260,8 @@ export function TurnEditsReceipt({
     >
       {/* The WHOLE header row is the expand/collapse target — hover washes the
             full width, wrapping around the Undo chip, which fences its own click. */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. slop-lint: allow suppression the reason is stated in this comment */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. slop-lint: allow suppression the reason is stated in this comment */}
       <div
         onClick={() => setExpanded((value) => !value)}
         className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-colors hover:bg-muted"

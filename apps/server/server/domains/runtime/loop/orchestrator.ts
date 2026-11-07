@@ -105,12 +105,7 @@ import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { AskService } from "../asks/ask-service.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
-import {
-  type GenerateRequest,
-  type GenerateResult,
-  type Gateway as LlmGateway,
-  shouldPersistCancelledResult,
-} from "../gateway/index.js";
+import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
@@ -781,7 +776,7 @@ async function runDrainTurn(
                   preflight.assembled,
                   deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
                 );
-              // A reply holds the run claim, so the chat's mode can't change under it (D62).
+              // A reply holds the run claim, so the chat's mode can't change under it.
               reservedTurn.writeMode = setupThread.aiWriteMode;
               return {
                 result: undefined,
@@ -1116,7 +1111,7 @@ async function settleCancelledResponse(input: {
   predictedCacheState: PrefixCacheState;
 }): Promise<Turn> {
   let currentTurn = input.currentTurn;
-  if (input.result && shouldPersistCancelledResult(input.result)) {
+  if (input.result) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
       runInput: input.runInput,
@@ -1216,7 +1211,7 @@ function stagedWriteResult(block: Block): AgentEditResultV1 | undefined {
   return isAgentEditResultEnvelope(result) ? (result as AgentEditResultV1) : undefined;
 }
 
-/** A write's tool-result fields: the model's text and the typed result beside it (D43). */
+/** A write's tool-result fields: the model's text and the typed result beside it. */
 function writeResultContent(result: AgentEditResultV1): { output: string; result: JsonValue } {
   return { output: renderAgentEditResult(result), result: toJsonValue(result) };
 }
@@ -2465,7 +2460,7 @@ async function executeLoop({
           } catch (flushError) {
             // The flush is this stream scope's durable boundary. It replaces
             // normal control flow, but never an error already in flight.
-            // biome-ignore lint/correctness/noUnsafeFinally: required failure precedence
+            // biome-ignore lint/correctness/noUnsafeFinally: required failure precedence. slop-lint: allow suppression the reason is stated in this comment
             if (streamFailure === undefined) throw flushError;
             emitEvent(eventSink, {
               level: "error",
