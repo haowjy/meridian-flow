@@ -6,6 +6,7 @@ import {
   type BeatProgress,
   CAMP,
   clamp,
+  DEATH,
   ease,
   envelope,
   FIGHT,
@@ -13,7 +14,6 @@ import {
   progress,
   smooth,
   TURN,
-  TWIST,
   tilt,
 } from "./timeline";
 
@@ -260,8 +260,6 @@ export function createForest(root: HTMLElement) {
   const sheets = root.querySelector("#sheets") as HTMLElement;
   root.style.setProperty("--walk-sheet", `url(${partySheet().toDataURL()})`);
   root.style.setProperty("--walk-lantern", rgb(MARKETING_SKY.sun));
-  root.style.setProperty("--campfire", rgb(MARKETING_SKY.campfire));
-  root.style.setProperty("--campfire-core", rgb(MARKETING_SKY.campfireCore));
   root.style.setProperty("--walk-ward", rgb(MARKETING_SKY.fireCore));
   let layout: Layout;
 
@@ -365,7 +363,7 @@ export function createForest(root: HTMLElement) {
     },
     update(at: number, beats: BeatProgress): Party | null {
       const { spans, width: W, height: H } = layout;
-      const shown = 1 - smooth(beats.twist, ...TWIST.partyGone);
+      const shown = 1 - smooth(beats.dies, ...DEATH.partyGone);
       walkers.style.opacity = String(shown);
       const drift = W * walked(at, layout);
       // As the stage starts to scroll away, the trees hand over to a fixed copy behind the page
