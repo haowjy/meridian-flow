@@ -19,6 +19,7 @@ import {
 import { escStep } from "./esc-chain";
 import { type KeymapBinding, type KeymapReach, mergeKeymapContributions } from "./keymap";
 import { watchManuscriptLayout } from "./manuscript-layout";
+import { pastSlop } from "./track-press";
 
 const CHROME_EXTENSION_NAME = "meridianChrome";
 
@@ -41,9 +42,6 @@ export function getEditorChrome(editor: Editor | null | undefined): EditorChrome
   if (!editor || editor.isDestroyed) return null;
   return editor.storage[CHROME_EXTENSION_NAME]?.chrome ?? null;
 }
-
-/** Pointer travel that turns a click into a sweep, matching ProseMirror's slop. */
-const SWEEP_SLOP_PX = 4;
 
 /** Marks chrome that lives outside the editor's DOM — a portalled object row, a table grip — as still belonging to one editor, so a right-click on it goes through that editor's claim ladder instead of straight to the browser. */
 const EDITOR_CHROME_ATTRIBUTE = "data-editor-chrome";
@@ -266,9 +264,9 @@ export const ChromeKernelExtension = Extension.create({
                 return false;
               }
               if (!sweepOrigin || chrome.gesture !== "idle") return false;
-              const travelled =
-                Math.abs(event.clientX - sweepOrigin.x) + Math.abs(event.clientY - sweepOrigin.y);
-              if (travelled >= SWEEP_SLOP_PX) controller.setGesture("sweep");
+              if (pastSlop(event.clientX - sweepOrigin.x, event.clientY - sweepOrigin.y)) {
+                controller.setGesture("sweep");
+              }
               return false;
             },
           },

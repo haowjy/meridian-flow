@@ -3991,8 +3991,8 @@ msgid "No column has been resized yet."
 msgstr "No column has been resized yet."
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "No context files yet."
-msgstr "No context files yet."
+#~ msgid "No context files yet."
+#~ msgstr "No context files yet."
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "No favorite chats yet."
@@ -4136,8 +4136,8 @@ msgid "Nothing here yet"
 msgstr "Nothing here yet"
 
 #: src/components/app/DrillInMenu.tsx
-msgid "Nothing here yet."
-msgstr "Nothing here yet."
+#~ msgid "Nothing here yet."
+#~ msgstr "Nothing here yet."
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Nothing in the trash."
