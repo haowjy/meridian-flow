@@ -349,7 +349,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
     key: "system",
     name: "The System",
     page: {
-      lead: "Levels, skills, tags and cores, and nothing else. Everyone has had them for as long as anyone remembers.",
+      lead: "Levels, titles, skills, tags and cores, and nothing else. Everyone has had them for as long as anyone remembers.",
       facts: [
         ["Who has it", "Everyone"],
         ["Tags", "Every living thing, except the beast"],
@@ -558,7 +558,7 @@ export const VOCAB_PAGE: WikiPage = {
       [
         [
           "The System:",
-          "Levels, skills, tags, boxes and cores. Harl’s clerks call it the Count and the dwarves the Ledger, but the narration says the System.",
+          "Levels, titles, skills, tags, boxes and cores. Harl’s clerks call it the Count and the dwarves the Ledger, but the narration says the System.",
         ],
         ["Tag:", "The name and level over every living thing, as in [Frost Wolf, Lv 41]."],
         ["Box:", "A blue System window, private to one person."],
@@ -611,12 +611,43 @@ export const END = {
   start: "Start writing →",
 } as const;
 
-/** The System's status windows at the campfire, one over each of the four, before the turn. */
+/**
+ * The System's status windows at the campfire, one over each of the four, before the turn. Rows:
+ * name, race and level, title, skill, what the skill does, status.
+ */
 export const SHEETS: Record<CharacterKey, readonly string[]> = {
-  tam: ["Tam", "Human · Level 58", "[Spark]"],
-  sigrun: ["Sigrun", "Dwarf · Level 74", "[Ward Rune]"],
-  maren: ["Maren", "Elf · Level 70", "[Mending Hymn]"],
-  oskar: ["Oskar", "Beastkin · Level 66", "[Sense Fear]"],
+  tam: [
+    "Tam",
+    "Human · Level 58",
+    "Title: Prodigy of Harl",
+    "[Spark]",
+    "Sets fire to what you touch or throw. Will not catch in deep cold.",
+    "Status: Alive",
+  ],
+  sigrun: [
+    "Sigrun",
+    "Dwarf · Level 74",
+    "Title: Champion of the Holds",
+    "[Ward Rune]",
+    "Each rune cut into your skin turns one blow, then goes dark.",
+    "Status: Alive",
+  ],
+  maren: [
+    "Maren",
+    "Elf · Level 70",
+    "Title: Healer to the Queen of Vell",
+    "[Mending Hymn]",
+    "While you sing, wounds near you close.",
+    "Status: Alive",
+  ],
+  oskar: [
+    "Oskar",
+    "Beastkin · Level 66",
+    "Title: Returned from the Ice",
+    "[Sense Fear]",
+    "Hear a creature’s fear a breath before it moves.",
+    "Status: Alive",
+  ],
 };
 
 /** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
