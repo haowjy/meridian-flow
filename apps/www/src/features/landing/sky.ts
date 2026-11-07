@@ -57,14 +57,16 @@ const LIGHT_SHADER = `${SHARED}
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
 float fbm(vec2 p){return .6*N(p)+.3*N(p*2.1+5.)+.1*N(p*4.3+9.);}
 const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
-uniform float PLUME;
+// SETTLED is the flow without the clock: where the aurora lies follows the scroll alone, so time
+// away from the page can't drift it all into a gap.
+uniform float PLUME,SETTLED;
 const float AHEAD=${HORIZON_YAW.toFixed(3)};
 float field(vec2 p,float fire,out float band){
   vec2 w=vec2(N(p*.45+vec2(FLOW*.1,0.)),N(p*.45+vec2(4.,-FLOW*.08)))-.5;
   vec2 q=p+w*3.2;
   float n=1.-abs(2.*fbm(q+vec2(FLOW*.03,-FLOW*.02))-1.);
   n=max(pow(n,8.)-.05,0.)*1.5;
-  float cover=smoothstep(.4,.58,N(p*.13+vec2(FLOW*.015,3.)));
+  float cover=smoothstep(.4,.58,N(p*.13+vec2(SETTLED*.015,3.)));
   // Where the Cold Fire is strong the sheet's gaps fill in.
   cover=max(cover,min(fire*.3,.5));
   // It thins with distance, as the real ones do: far off a few arcs, not a lit horizon.
@@ -353,6 +355,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene.lightTarget);
     camera(gl, scene.lightPass, waving, scene.lightWidth, scene.lightHeight);
     gl.uniform1f(scene.plume, frame.plume + frame.surge * gulpSwell(seconds) * 1.6);
+    gl.uniform1f(scene.settled, frame.flow);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     drawScene(waving, seconds);
@@ -458,6 +461,7 @@ function connect(gl: WebGLRenderingContext) {
     floats,
     pulsedAurora: gl.getUniformLocation(scenePass.program, "AU"),
     plume: gl.getUniformLocation(lightPass.program, "PLUME"),
+    settled: gl.getUniformLocation(lightPass.program, "SETTLED"),
     drift: gl.getUniformLocation(scenePass.program, "DRIFT"),
     light,
     lightTarget,
