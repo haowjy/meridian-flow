@@ -56,8 +56,6 @@ export type ContextViewerSurfaceControllerProps = {
   activeContextPath: string | null;
   /** A chat's Scratch route names its lineage here, in place of a Work. */
   activeContextChat?: string | null;
-  /** The review item the address carries; a review address owns its path. */
-  reviewItemKey?: string;
   onSelectContextPath: (
     path: string,
     scheme?: ProjectContextTreeScheme,
@@ -87,7 +85,6 @@ export function ContextViewerSurfaceController({
   activeContextScheme,
   activeContextPath,
   activeContextChat,
-  reviewItemKey,
   active,
   onShowEditorRecents,
   sidebarToggle,
@@ -140,7 +137,12 @@ export function ContextViewerSurfaceController({
       if (workspaceRoute.identity.kind === "server")
         selectTab(projectId, routeWorkId, workspaceRoute.tab.documentId, workspaceRoute.tab);
       else
-        contextRemoval.bindRouteSelection(projectId, selection.revision, workspaceRoute.identity);
+        contextRemoval.bindRouteSelection(
+          projectId,
+          selection.revision,
+          workspaceRoute.identity,
+          "answer",
+        );
     } else if (workspaceRoute.kind === "materialized-local") {
       contextRemoval.redirectMaterializedLocal(
         projectId,
@@ -154,10 +156,15 @@ export function ContextViewerSurfaceController({
       !routeTreeIsFetching &&
       !routeTreeIsError
     ) {
-      contextRemoval.bindRouteSelection(projectId, selection.revision, {
-        kind: "server",
-        documentId: routedFile.documentId,
-      });
+      contextRemoval.bindRouteSelection(
+        projectId,
+        selection.revision,
+        {
+          kind: "server",
+          documentId: routedFile.documentId,
+        },
+        "answer",
+      );
     } else if (
       selection.status === "candidate" &&
       activeContextScheme === "unfiled" &&
@@ -306,7 +313,6 @@ export function ContextViewerSurfaceController({
     activeContextScheme,
     activeContextPath,
     activeContextChat,
-    reviewItemKey,
     routeDisplayed,
     onOpenContextTarget,
   });

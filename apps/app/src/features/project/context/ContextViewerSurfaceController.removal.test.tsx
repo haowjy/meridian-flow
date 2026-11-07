@@ -441,7 +441,12 @@ it("does not admit an old bound document while its retained controller is inacti
         coordinator?.beginRouteSelection("project", locator);
         const revision = coordinator?.getProjectSnapshot("project").selection.revision;
         if (revision === undefined) throw new Error("Selection missing");
-        coordinator?.bindRouteSelection("project", revision, { kind: "server", documentId: "a" });
+        coordinator?.bindRouteSelection(
+          "project",
+          revision,
+          { kind: "server", documentId: "a" },
+          "answer",
+        );
       });
       expect(coordinator.getProjectSnapshot("project").admitted).toBeNull();
     } finally {

@@ -39,6 +39,7 @@ const bound: ContextRouteSelection = {
   revision: 1,
   locator,
   identity: { kind: "server", documentId: "doc-a" },
+  by: "navigation",
 };
 const candidate: ContextRouteSelection = {
   status: "candidate",
@@ -55,7 +56,7 @@ beforeEach(() => {
   });
 });
 
-async function follows(selection: ContextRouteSelection, reviewItemKey?: string) {
+async function follows(selection: ContextRouteSelection) {
   const open = vi.fn<OpenContextRoute>(async () => ({ kind: "applied" as const }));
   function Host() {
     useFollowOpenDocumentPlacement({
@@ -64,7 +65,6 @@ async function follows(selection: ContextRouteSelection, reviewItemKey?: string)
       selection,
       activeContextScheme: "manuscript",
       activeContextPath: "/old.md",
-      reviewItemKey,
       routeDisplayed: true,
       onOpenContextTarget: open,
     });
@@ -90,5 +90,5 @@ it("leaves a route that is only a candidate where the writer put it", async () =
 });
 
 it("leaves a review address on its own path, which the live placement does not show", async () => {
-  expect(await follows(bound, "draft-item")).not.toHaveBeenCalled();
+  expect(await follows({ ...bound, by: "review" })).not.toHaveBeenCalled();
 });

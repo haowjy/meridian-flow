@@ -56,11 +56,13 @@ import {
   workingSetRouteForTarget,
 } from "./context-removal-planner";
 import {
+  adoptReviewBinding,
   beginSelection,
   bindSelection,
   type ContextRouteSelection,
   leaveSelection,
   type RemovalPlanningEffect,
+  type RouteBindingProof,
   reduceRepresentedRemoval,
   rejectSelection,
   type SelectionTransition,
@@ -488,17 +490,52 @@ export class ContextRemovalCoordinator {
     return transition.selection.revision;
   }
 
-  /** A navigation that names a document binds the route it opens: the id is proof. */
-  enterRoute(projectId: string, locator: ContextRouteTarget, documentId: string): void {
-    this.bindRouteSelection(projectId, this.beginRouteSelection(projectId, locator), {
-      kind: "server",
-      documentId,
-    });
+  /** A navigation or review that names a document binds the route it opens: the id is proof. */
+  enterRoute(
+    projectId: string,
+    locator: ContextRouteTarget,
+    documentId: string,
+    by: RouteBindingProof,
+  ): void {
+    const { selection } = this.project(projectId);
+    if (
+      selection.status === "bound" &&
+      selection.by === by &&
+      selection.identity.documentId === documentId &&
+      sameLocator(selection.locator, locator)
+    )
+      return;
+    this.bindRouteSelection(
+      projectId,
+      this.beginRouteSelection(projectId, locator),
+      { kind: "server", documentId },
+      by,
+    );
   }
 
-  bindRouteSelection(projectId: string, revision: number, identity: ContextRouteIdentity): boolean {
+  /** The bound document is not where the route held it: the address answer decides again. */
+  unbindRoute(projectId: string, documentId: string): void {
+    const { selection } = this.project(projectId);
+    if (selection.status !== "bound" || selection.identity.documentId !== documentId) return;
+    this.leaveSelection(projectId);
+    this.beginRouteSelection(projectId, selection.locator);
+  }
+
+  /** The writer left a review or closed its draft: the route stays bound to the document. */
+  adoptReviewBinding(projectId: string): void {
+    if (this.unavailable()) return;
+    const transition = adoptReviewBinding(this.project(projectId).selection);
+    if (transition) this.applySelectionTransition(projectId, transition);
+  }
+
+  bindRouteSelection(
+    projectId: string,
+    revision: number,
+    identity: ContextRouteIdentity,
+    by: RouteBindingProof,
+  ): boolean {
     if (this.unavailable()) return false;
-    const transition = bindSelection(this.project(projectId).selection, revision, identity);
+    const transition = bindSelection(this.project(projectId).selection, revision, identity, by);
     if (!transition) return false;
     this.applySelectionTransition(projectId, transition);
     return true;

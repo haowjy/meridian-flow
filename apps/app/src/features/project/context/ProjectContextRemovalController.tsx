@@ -93,7 +93,8 @@ export function ProjectContextRemovalController({
       previousLocalDocument.current = localDocumentId;
       coordinator.clearRouteSelection(projectId);
     }
-    if (locator && reviewDocumentId) coordinator.enterRoute(projectId, locator, reviewDocumentId);
+    if (locator && reviewDocumentId)
+      coordinator.enterRoute(projectId, locator, reviewDocumentId, "review");
     else if (locator) coordinator.beginRouteSelection(projectId, locator);
     else coordinator.clearRouteSelection(projectId);
   }, [

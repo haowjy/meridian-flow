@@ -35,18 +35,26 @@ Rename or move prepares the open tab's new locator and the replacement address a
 commit, so the old address keeps its identity continuity until the new one is accepted.
 
 A tab is its document id; its path, name and owner are a display cache the replica refreshes. A
-route is bound to a document only when that is proven: a navigation that names the document (a tab
-click, a tree open) binds the route it opens in `commit()` (`enterRoute`), and any other URL (paste,
-reload, Back/Forward) stays a candidate until its address answer binds it
-(`addressRouteBinding`), so the path's occupant decides there. A tab found by its cached path may
-paint but never binds. A bound document the address catalog does not list holds: the answer naming
-another document is the path's occupant, so the route waits for the move or removal the availability
-stream brings (there is no separate identity lookup: a missed move is the only way in, and the
-stream settles it). A review address binds its route to the item's document at once
-(`reviewDocumentId` on `ProjectContextRemovalController`) and owns its path: the availability
-planner never relocates it, and it is never a candidate for rejection. A selection about another
+route is bound to a document only when that is proven, and the bound selection records what proved
+it (`by`). A navigation that names the document (a tab click, a tree open) binds the route it
+opens in `commit()` (`enterRoute`), and any other URL (paste, reload, Back/Forward) stays a
+candidate until its address answer binds it (`addressRouteBinding`), so the path's occupant
+decides there. A tab found by its cached path may paint but never binds. A selection about another
 route than the URL begins again (`ProjectContextRemovalController`), so a binding that lands late
 cannot stay stale.
+
+A review address binds its route to the item's document at once (`reviewDocumentId` on the
+controller, or a navigation that carries an item, `by: "review"`) and owns its path: the availability planner does not relocate that
+binding, the follow hook does not follow it, and it is never a candidate for rejection. The
+binding ends with the item: Back onto the same path without it begins a candidate, and
+`ReadableProjectRoute` stops counting it in that render. A writer's exit from the review or its
+close keeps the document (`adoptReviewBinding` makes it a navigation's), because the drafted path
+still has to be repaired to the live one.
+
+A bound document the address catalog does not list holds (`holdsBoundDocument`): the answer naming
+another document is the path's occupant, so the route waits. The hold asks `resolveForOpen` once:
+`available` goes to that location, anything else drops the binding (`unbindRoute`) so the address
+answer decides. A failed catalog during a hold shows the error with Retry.
 Draft-only tabs are the exception: no catalog lists them, so their cached path still matches.
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload

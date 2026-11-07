@@ -133,7 +133,7 @@ function MobileLocalDocumentHost({
       );
     } else if (workspace.kind === "owner") {
       if (selected.status === "candidate")
-        removal.bindRouteSelection(projectId, selected.revision, workspace.identity);
+        removal.bindRouteSelection(projectId, selected.revision, workspace.identity, "answer");
       else if (selected.status === "bound" && selected.identity.documentId === tab.documentId)
         removal.activate({
           projectId,
@@ -238,10 +238,15 @@ function useMobileRouteBinding({
     const catalogSettled = !isFetching && !isError;
     const draftOnly = activeTab !== null && isDraftOnly(activeTab);
     if (activeTab && (draftOnly || catalogSettled)) {
-      contextRemoval.bindRouteSelection(projectId, selection.revision, {
-        kind: "server",
-        documentId: activeTab.documentId,
-      });
+      contextRemoval.bindRouteSelection(
+        projectId,
+        selection.revision,
+        {
+          kind: "server",
+          documentId: activeTab.documentId,
+        },
+        "answer",
+      );
     } else if (
       selection.status === "candidate" &&
       catalogResolved &&

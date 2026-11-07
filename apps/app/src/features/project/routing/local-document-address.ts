@@ -152,6 +152,23 @@ export function resolveLocalDocumentAddress(
   };
 }
 
+/**
+ * The route waits when it is bound to a document the catalog does not list: an answer naming
+ * another document (or none) is the path's occupant, never the route's document, and opening it
+ * would add a stray tab. Reached by a tab clicked after a move this device missed.
+ */
+export function holdsBoundDocument(
+  boundDocumentId: string | null,
+  catalog: CatalogContextView | null,
+  remote: DocumentAddressResult | undefined,
+): boolean {
+  return (
+    boundDocumentId !== null &&
+    resolveLiveRouteDocument({ path: "", boundDocumentId, catalog }).kind === "pending" &&
+    !(remote && remote.kind !== "unavailable" && remote.document.documentId === boundDocumentId)
+  );
+}
+
 /** Local content masks failure, but a successful server address owns canonical repair. */
 export function reconcileDocumentAddress(
   local: ReturnType<typeof resolveLocalDocumentAddress>,

@@ -5,7 +5,6 @@ import { type ProjectSearch, projectSearchEquals } from "./project-route";
 export function applyContextRemovalSearchUpdate({
   search,
   update,
-  itemKey,
   relocated,
   openContext,
   goWorks,
@@ -13,8 +12,6 @@ export function applyContextRemovalSearchUpdate({
 }: {
   search: ProjectSearch;
   update: (latest: ProjectSearch) => ProjectSearch;
-  /** The review item the current address carries. */
-  itemKey: string | undefined;
   /** Set when the planner moved the route's own bound document; absent for a fallback to another. */
   relocated: { documentId: string } | undefined;
   openContext: OpenContextRoute;
@@ -23,9 +20,6 @@ export function applyContextRemovalSearchUpdate({
 }): void {
   const next = update(search);
   if (projectSearchEquals(next, search)) return;
-  // A review address owns its path: the item names where the draft puts the document, which the
-  // live move the planner saw is not.
-  if (relocated && itemKey) return;
   if (next.scheme && next.path !== undefined)
     void openContext(
       {
