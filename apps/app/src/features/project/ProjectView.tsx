@@ -13,6 +13,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { parseDraftItemKey } from "@meridian/contracts";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
@@ -402,6 +403,11 @@ export function ProjectView(props: ProjectViewProps) {
                 activeContextChat={props.activeContextChat}
                 editorWorkId={editorScope.workId}
                 localDocumentId={props.activeLocalDocumentId}
+                reviewDocumentId={
+                  props.reviewItemKey
+                    ? parseDraftItemKey(props.reviewItemKey)?.documentId
+                    : undefined
+                }
                 route={props.contextRemovalRoute}
               />
             ) : null}

@@ -110,7 +110,6 @@ import {
   routeWorkIssue,
   type WorkDetailTarget,
 } from "./project-route";
-import { useLocateHeldDocument } from "./use-locate-held-document";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
@@ -524,7 +523,9 @@ function ReadableProjectDestination({
   );
   const remoteAnswer = reviewBoundAddressResult(addressBinding, documentLookup.data);
   // The bound document is the route's wherever it went. While the catalog does not list it, an
-  // answer naming another document (or none) is the path's occupant, never the route's document.
+  // answer naming another document (or none) is the path's occupant, never the route's document:
+  // the route waits for the move or removal the availability stream brings. Reached by a tab
+  // clicked after a move this device missed (offline); without it the occupant opens as a stray tab.
   const holdsBound =
     boundDocumentId !== null &&
     addressBinding.kind === "plain" &&
@@ -534,15 +535,6 @@ function ReadableProjectDestination({
       remoteAnswer.kind !== "unavailable" &&
       remoteAnswer.document.documentId === boundDocumentId
     );
-  const holdFailed = useLocateHeldDocument({
-    projectId,
-    documentId: holdsBound && remoteAnswer ? boundDocumentId : null,
-    address,
-    editorWorkId: workId,
-    navigation,
-    openContext,
-    refetchAddress: () => void documentLookup.refetch(),
-  });
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     holdsBound ? undefined : remoteAnswer,
@@ -597,9 +589,7 @@ function ReadableProjectDestination({
         ? // A prerequisite that failed ends the wait: the address stays, with a way to retry.
           documentLookup.isError || gated.outcome === "failed"
           ? "error"
-          : holdFailed
-            ? "unavailable"
-            : "loading"
+          : "loading"
         : documentResult.kind === "unavailable"
           ? closingRef &&
             !closeState.removed &&

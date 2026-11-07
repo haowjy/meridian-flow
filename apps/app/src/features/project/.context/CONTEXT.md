@@ -40,9 +40,13 @@ click, a tree open) binds the route it opens in `commit()` (`enterRoute`), and a
 reload, Back/Forward) stays a candidate until its address answer binds it
 (`addressRouteBinding`), so the path's occupant decides there. A tab found by its cached path may
 paint but never binds. A bound document the address catalog does not list holds: the answer naming
-another document is the path's occupant, and `useLocateHeldDocument` asks the server for the bound
-id once and moves the URL to where it is. A selection about another route than the URL begins
-again (`ProjectContextRemovalController`), so a binding that lands late cannot stay stale.
+another document is the path's occupant, so the route waits for the move or removal the availability
+stream brings (there is no separate identity lookup: a missed move is the only way in, and the
+stream settles it). A review address binds its route to the item's document at once
+(`reviewDocumentId` on `ProjectContextRemovalController`) and owns its path: the availability
+planner never relocates it, and it is never a candidate for rejection. A selection about another
+route than the URL begins again (`ProjectContextRemovalController`), so a binding that lands late
+cannot stay stale.
 Draft-only tabs are the exception: no catalog lists them, so their cached path still matches.
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload
