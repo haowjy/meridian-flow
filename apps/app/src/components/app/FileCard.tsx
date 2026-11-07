@@ -8,6 +8,7 @@
 import { Trans } from "@lingui/react/macro";
 import { Download, FileText } from "lucide-react";
 
+import { fileTypeLabel } from "@/lib/file-type-label";
 import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
@@ -20,17 +21,8 @@ export type FileCardProps = {
   className?: string;
 };
 
-/** "TIFF image", "PDF", "File": the writer's word for a MIME type. */
-function typeLabel(name: string, mimeType: string): string {
-  const [kind, subtype = ""] = mimeType.split("/");
-  const extension = name.includes(".") ? name.split(".").pop() : undefined;
-  const format = (extension || subtype.replace(/^x-|\+.*$/g, "")).toUpperCase();
-  if (!format || mimeType === "application/octet-stream") return extension?.toUpperCase() ?? "";
-  return kind === "image" ? `${format} image` : format;
-}
-
 export function FileCard({ name, mimeType, sizeBytes, url, className }: FileCardProps) {
-  const details = [typeLabel(name, mimeType), sizeBytes === null ? "" : formatBytes(sizeBytes)]
+  const details = [fileTypeLabel(name, mimeType), sizeBytes === null ? "" : formatBytes(sizeBytes)]
     .filter(Boolean)
     .join(", ");
   return (

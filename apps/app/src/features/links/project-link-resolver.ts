@@ -171,8 +171,8 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         uri: document.uri,
         workId: document.workId,
         rootThreadId: document.rootThreadId ?? undefined,
-        ...(document.file ? { file: document.file } : {}),
       });
+      if (found && document.file) found.document.file = document.file;
       // A hidden document is "in a draft": keep the destination the server named.
       return found && answer.inBranch && answer.branch
         ? { ...found, branch: answer.branch }

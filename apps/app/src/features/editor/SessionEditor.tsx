@@ -48,6 +48,7 @@ import { claimEditorFocus, focusIsFree } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
+import { FileDropRuntime } from "./surfaces/files";
 import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
@@ -466,6 +467,7 @@ function ActiveSessionEditorView({
           active={active}
         />
         <ImageIngressRuntime editor={editor} projectId={projectId} documentId={documentId} />
+        <FileDropRuntime editor={editor} documentId={documentId} holderUri={holderUri} />
       </section>
     </EditorScopeProvider>
   );

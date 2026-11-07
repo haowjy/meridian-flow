@@ -16,10 +16,11 @@
 import { t } from "@lingui/core/macro";
 import { parseLinkRef } from "@meridian/contracts";
 
-import { linkChip, linkChipAttributes } from "./link-chip";
+import { linkChip, linkChipAttributes, linkChipDetail } from "./link-chip";
 import { goneLinkDocumentId, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import type { MountedLinks } from "./link-storage";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
+import { linkUploads } from "./link-uploads";
 
 /**
  * Keeps a link element's chip and accessible state in step with its answer,
@@ -35,9 +36,23 @@ export function drawLinkAnswer(
   if (!links || !target || !isInternalLinkTarget(target)) return () => {};
   const { resolution, requester } = links;
   const key: LinkKey = { ref: stored.ref, href: linkTargetHref(target) };
+  const ref = parseLinkRef(stored.ref);
+  const uploadOf = ref?.kind === "doc" ? ref.documentId : null;
 
   const sync = () => {
     const entry = resolution.read(key);
+    const upload = uploadOf === null ? null : linkUploads.read(uploadOf);
+    const detail = linkChipDetail(entry, upload);
+    draw(element, "data-link-detail", detail);
+    draw(
+      element,
+      "data-link-upload",
+      upload?.kind ?? (entry?.state === "uploading" ? "uploading" : null),
+    );
+    element.style.setProperty(
+      "--link-upload-progress",
+      upload?.kind === "uploading" && upload.percent !== null ? `${upload.percent}%` : "0%",
+    );
     // An editor with no project behind it draws its links as plain anchors.
     const chip = resolution.available ? linkChip(target, entry, resolution.baseUri) : null;
     const attributes = chip ? linkChipAttributes(chip) : null;
@@ -53,11 +68,13 @@ export function drawLinkAnswer(
     draw(
       element,
       "aria-description",
-      entry?.state === "gone"
-        ? t`No longer available`
-        : entry?.state === "missing"
-          ? t`Doesn't exist yet`
-          : inBranch,
+      upload?.kind === "failed"
+        ? upload.message || t`Upload failed`
+        : entry?.state === "gone"
+          ? t`No longer available`
+          : entry?.state === "missing"
+            ? t`Doesn't exist yet`
+            : inBranch,
     );
     // The sighted writer reads the same words on hover; outside a draft the link's own title stays.
     draw(element, "title", inBranch ?? (typeof link.title === "string" ? link.title : null));
@@ -70,10 +87,12 @@ export function drawLinkAnswer(
 
   sync();
   const unsubscribe = resolution.subscribe(sync);
+  const unsubscribeUploads = uploadOf === null ? () => {} : linkUploads.subscribe(sync);
   const release = requester.watch(key);
   return () => {
     release();
     unsubscribe();
+    unsubscribeUploads();
   };
 }
 
