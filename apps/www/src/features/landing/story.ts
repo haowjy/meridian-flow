@@ -33,7 +33,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Tam",
     note: "Seventeen and Level 58: the strongest human his age ever recorded.",
     pitch: "The prodigy who has never failed at anything.",
-    lastLine: "I put my one spark in its eye, and it wasn’t enough. Next time it gets both.",
+    lastLine: "That’s it? I was just getting good at this.",
     lead: "Tam is a farm boy from Harl who reached Level 58 at seventeen, higher than anyone his age has ever been.",
     facts: [
       ["Race", "Human"],
@@ -95,7 +95,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Sigrun",
     note: "Champion of the holds. She cuts her wards into her own arms.",
     pitch: "Her ward turns one blow. She has to choose which.",
-    lastLine: "My ward turns one blow. Next time I’ll know which one.",
+    lastLine: "One more stroke and that rune would have held.",
     lead: "Sigrun is the champion of the dwarven holds, a runesmith who carves her wards into her own forearms.",
     facts: [
       ["Race", "Dwarf"],
@@ -144,8 +144,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Maren",
     note: "The queen of Vell’s healer. Blind for a thousand years.",
     pitch: "She has never seen anything. Not even a box.",
-    lastLine:
-      "It’s dark again. That box was the first thing I’ve ever seen, and I’m going back to see it again.",
+    lastLine: "So that’s what fire looks like.",
     lead: "Maren has been the queen of Vell’s healer for nine hundred years, and blind since she was six.",
     facts: [
       ["Race", "Elf"],
@@ -206,7 +205,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Oskar",
     note: "Kessa guide. The only one who has walked to the ice and back.",
     pitch: "He believed the songs.",
-    lastLine: "I told them the songs were true. I’ll have to tell them again.",
+    lastLine: "The song was true, and there’s no one left to sing it.",
     lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked to the edge of the ice and come back.",
     facts: [
       ["Race", "Beastkin, bear-blooded"],
