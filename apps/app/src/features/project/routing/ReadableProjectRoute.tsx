@@ -21,6 +21,7 @@ import {
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -492,6 +493,24 @@ function ReadableProjectDestination({
     selection,
     workId,
   ]);
+  // Discarding a draft's move leaves the review address cached at the destination it named;
+  // the server answers the live path once the metadata shows the move is gone. Inactive keys are
+  // removed, not invalidated: a stale answer at the live key points back at the scratch key and
+  // the two replace the URL at each other faster than either refetch lands.
+  const queryClient = useQueryClient();
+  const addressedHadTree = useRef(false);
+  const addressedTree =
+    closeMetadata?.data && "item" in closeMetadata.data ? closeMetadata.data.item.tree : undefined;
+  useEffect(() => {
+    if (addressedTree === undefined) return;
+    if (addressedTree) addressedHadTree.current = true;
+    else if (addressedHadTree.current) {
+      addressedHadTree.current = false;
+      const queryKey = projectQueryKeys.documentAddresses(projectId);
+      queryClient.removeQueries({ queryKey, type: "inactive" });
+      void queryClient.invalidateQueries({ queryKey });
+    }
+  }, [addressedTree, projectId, queryClient]);
   const listedDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
   // The list omits an active draft with no effect; the addressed item's own metadata still
   // says whether live holds its document, so a held no-effect draft keeps its draft-only host.
@@ -788,7 +807,6 @@ function ReadableProjectDestination({
     },
     [contextRemoval, projectId],
   );
-  const queryClient = useQueryClient();
   const navigateTrash = useCallback(
     (trash: false | true | string, options?: { replace?: boolean }) => {
       const current = router.history.location;
