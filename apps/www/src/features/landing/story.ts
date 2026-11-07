@@ -2,7 +2,7 @@
 
 export type AnswerKey = "a" | "b";
 
-export type Question = {
+type Question = {
   text: string;
   options: ReadonlyArray<{
     key: AnswerKey;

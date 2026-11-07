@@ -108,17 +108,6 @@ export function ProductPlaceholder() {
             </p>
           </article>
         </div>
-        <nav className="s-tabs" aria-label="Workspace views">
-          <button type="button" data-view="project" aria-pressed="false">
-            Project
-          </button>
-          <button type="button" data-view="page" aria-pressed="false">
-            Page
-          </button>
-          <button type="button" data-view="chat" aria-pressed="true">
-            Chat
-          </button>
-        </nav>
       </div>
       <aside className="s-chat" aria-label="Chat">
         <div className="s-ct">
@@ -188,6 +177,17 @@ export function ProductPlaceholder() {
           </span>
         </div>
       </aside>
+      <nav className="s-tabs" aria-label="Workspace views">
+        <button type="button" data-view="project" aria-pressed="false">
+          Project
+        </button>
+        <button type="button" data-view="page" aria-pressed="false">
+          Page
+        </button>
+        <button type="button" data-view="chat" aria-pressed="true">
+          Chat
+        </button>
+      </nav>
     </div>
   );
 }
@@ -238,8 +238,8 @@ function HelperCard({
   );
 }
 
-export type ProductView = "project" | "page" | "chat";
-export type ProductState = "team" | "hints";
+type ProductView = "project" | "page" | "chat";
+type ProductState = "team" | "hints";
 export type ProductSlot = ReturnType<typeof createProductSlot>;
 
 /** The product block's only interface. The film drives it; rail and tabs work under the visitor. */

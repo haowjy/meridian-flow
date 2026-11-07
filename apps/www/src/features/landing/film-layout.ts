@@ -1,20 +1,16 @@
-import { type BeatSpans, clamp, spanBeats } from "./timeline";
+import { type BeatSpans, type Span, spanBeats } from "./timeline";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** The breakpoints in landing.css. Queries, not widths: scrollbars must not split the two. */
-const PHONE_QUERY = "(max-width: 819px), (max-height: 499px)";
-const SHORT_QUERY = "(max-height: 499px)";
 
-export type Rect = { x: number; y: number; w: number };
-export type Line = { path: SVGPathElement; dot: SVGCircleElement; length: number };
+type Rect = { x: number; y: number; w: number };
+type Line = { path: SVGPathElement; dot: SVGCircleElement; length: number };
 
 export type FilmParts = {
   stage: HTMLElement;
   end: HTMLElement;
   blockHome: HTMLElement;
+  workspaceSpot: HTMLElement;
   block: HTMLElement;
-  caption: HTMLElement;
-  chapter: HTMLElement;
   chapterOpening: HTMLElement;
   lastTypedParagraph: HTMLElement;
   turnParagraphs: { a: HTMLElement; b: HTMLElement };
@@ -39,6 +35,7 @@ export type Layout = {
   turn: { a: number; b: number };
   spans: BeatSpans;
   stops: { y: number; t: number }[];
+  subtitles: Record<string, Span>;
   endTop: number;
   documentHeight: number;
   teamLines: Line[];
@@ -99,64 +96,28 @@ function layoutWorld(parts: FilmParts) {
   });
 }
 
-/** Where the workspace block lands at dawn, beside the caption or under it on a phone. */
-function workspaceRect(parts: FilmParts, layout: { width: number; height: number; bar: number }) {
-  const { width, height, bar } = layout;
-  const { caption } = parts;
-  const left = caption.offsetLeft;
-  const blockWidth = Math.min(
-    width - left - caption.offsetWidth - 72,
-    (height - bar - 48) / 0.625,
-    1020,
-  );
-  return {
-    x: width - blockWidth - 36,
-    y: Math.max(bar + 20, (height + bar - blockWidth * 0.625) / 2),
-    w: blockWidth,
-  };
-}
-
 /**
  * Reads the geometry CSS laid out, and works out what only script can: where the
  * film's layers go and how far each beat scrolls.
  */
 export function measureLayout(parts: FilmParts): Layout {
   const html = document.documentElement;
-  const isPhone = matchMedia(PHONE_QUERY).matches;
-  const isShort = matchMedia(SHORT_QUERY).matches;
-  const windowWidth = html.clientWidth;
-  const width = parts.stage.clientWidth;
-  const height = innerHeight;
-  const bar = Number.parseFloat(getComputedStyle(html).getPropertyValue("--bar"));
-  const { blockHome, block, caption, chapterOpening, lastTypedParagraph } = parts;
+  const { stage, blockHome, workspaceSpot, block, chapterOpening, lastTypedParagraph } = parts;
+  // The hub and its curves exist only where the team spreads around the chapter.
+  const isPhone = parts.hub.offsetParent === null;
+  const width = stage.clientWidth;
+  const height = stage.clientHeight;
 
   parts.teamLines.replaceChildren();
   parts.worldLines.replaceChildren();
   const teamLines = isPhone ? [] : layoutTeam(parts, width);
   const worldLines = isPhone ? [] : layoutWorld(parts);
 
-  html.style.setProperty(
-    "--cy",
-    `${
-      isPhone
-        ? bar + 16
-        : Math.max(
-            bar + 24,
-            Math.min(
-              (height + bar - caption.offsetHeight) / 2,
-              height * 0.71 - caption.offsetHeight,
-            ),
-          )
-    }px`,
-  );
-
-  const home = { x: blockHome.offsetLeft, y: blockHome.offsetTop, w: blockHome.offsetWidth };
-  const onPhone = { x: home.x, y: bar + 16 + caption.offsetHeight + 14, w: home.w };
-  const workspace = isShort
-    ? home
-    : isPhone
-      ? onPhone
-      : workspaceRect(parts, { width, height, bar });
+  const rectOf = (element: HTMLElement) => ({
+    x: element.offsetLeft,
+    y: element.offsetTop,
+    w: element.offsetWidth,
+  });
 
   const anchor = height * 0.44;
   const { a: turnA, b: turnB } = parts.turnParagraphs;
@@ -169,16 +130,16 @@ export function measureLayout(parts: FilmParts): Layout {
     return middle;
   };
 
-  const { spans, stops, length } = spanBeats(height);
+  const { spans, stops, subtitles, length } = spanBeats(height);
   html.style.setProperty("--filmh", `${length + height}px`);
   const documentHeight = html.scrollHeight;
   return {
-    windowWidth,
+    windowWidth: html.clientWidth,
     width,
     height,
     isPhone,
-    home,
-    workspace,
+    home: rectOf(blockHome),
+    workspace: rectOf(workspaceSpot),
     blockLayoutWidth: block.offsetWidth,
     chapterFrom: middleOf(chapterOpening) - anchor,
     chapterTo: middleOf(lastTypedParagraph) - anchor,
@@ -188,6 +149,7 @@ export function measureLayout(parts: FilmParts): Layout {
     },
     spans,
     stops,
+    subtitles,
     endTop: parts.end.offsetTop,
     documentHeight,
     teamLines,

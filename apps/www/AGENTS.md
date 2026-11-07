@@ -14,9 +14,9 @@ authenticated.
   must never render a changing value into a node the film writes. A value the visitor
   changes goes through `card-store.ts`, which the card, the prose and the product block
   all read.
-- CSS owns the first screen: `landing.css` lays it out in container units of the stage,
-  and `film-layout.ts` reads the result back. Don't compute that geometry in script, or
-  the first paint and the film disagree.
+- CSS owns placement: `film.css` lays out the stage in container units, and
+  `film-layout.ts` reads the result back. Don't compute geometry in script, or the first
+  paint and the film disagree. Script only draws the SVG curves between what CSS placed.
 - `timeline.ts` owns the beats and sections, `film-layout.ts` positions, `transport.ts`
   everything that moves the page for the visitor, and `film.ts` paints.
 - Colour comes from token roles. Night regions set `data-ui-theme="dark"` on

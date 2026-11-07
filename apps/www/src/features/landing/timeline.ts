@@ -3,6 +3,7 @@ export const lerp = (from: number, to: number, t: number) => from + (to - from) 
 export const ease = (t: number) => t * t * (3 - 2 * t);
 export const progress = (value: number, from: number, to: number) =>
   clamp((value - from) / (to - from));
+export const smooth = (value: number, from: number, to: number) => ease(progress(value, from, to));
 
 /** Beat name, then its scroll length in viewport heights and its autoplay seconds. */
 const BEATS = [
@@ -21,8 +22,9 @@ const BEATS = [
   ["leave", 0.45, 3],
 ] as const;
 
-export type Beat = (typeof BEATS)[number][0];
-export type BeatSpans = Record<Beat, readonly [start: number, end: number]>;
+type Beat = (typeof BEATS)[number][0];
+export type Span = readonly [start: number, end: number];
+export type BeatSpans = Record<Beat, Span>;
 /** How far through each beat a scroll position is, 0 to 1. */
 export type BeatProgress = Record<Beat, number>;
 
@@ -32,8 +34,11 @@ const BEAT_SECONDS = BEATS.reduce((total, beat) => total + beat[2], 0);
 export const AUTOPLAY_SECONDS = BEAT_SECONDS + AUTOPLAY_TAIL_SECONDS;
 export const AUTOPLAY_MINUTES = Math.round((AUTOPLAY_SECONDS / 60) * 2) / 2;
 
+const along = (spans: BeatSpans, name: Beat, share: number) =>
+  spans[name][0] + (spans[name][1] - spans[name][0]) * share;
+
 export function spanBeats(viewportHeight: number) {
-  const spans = {} as Record<Beat, readonly [number, number]>;
+  const spans = {} as Record<Beat, Span>;
   const stops = [{ y: 0, t: 0 }];
   let position = 0;
   let seconds = 0;
@@ -43,7 +48,14 @@ export function spanBeats(viewportHeight: number) {
     seconds += duration;
     stops.push({ y: position, t: seconds });
   }
-  return { spans: spans as BeatSpans, stops, length: position };
+  const write = (share: number) => along(spans, "write", share);
+  const subtitles = {
+    s1: [spans.open[0], write(0.2)],
+    s2: [write(0.24), write(0.7)],
+    s3: spans.out,
+    s4: [spans.back[1] - viewportHeight * 0.2, spans.ask[0] + viewportHeight * 0.02],
+  } as Record<string, Span>;
+  return { spans, stops, subtitles, length: position };
 }
 
 export function beatProgress(at: number, spans: BeatSpans): BeatProgress {
@@ -51,9 +63,6 @@ export function beatProgress(at: number, spans: BeatSpans): BeatProgress {
   for (const [name] of BEATS) result[name] = progress(at, spans[name][0], spans[name][1]);
   return result;
 }
-
-const along = (spans: BeatSpans, name: Beat, share: number) =>
-  spans[name][0] + (spans[name][1] - spans[name][0]) * share;
 
 /** The four stops of the top bar, in order. */
 export const SECTIONS = [

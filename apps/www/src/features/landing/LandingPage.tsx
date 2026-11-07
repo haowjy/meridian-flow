@@ -170,13 +170,16 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               </blockquote>
             </div>
 
-            <div className="cap" id="the-workspace" {...NIGHT}>
-              <h2>Muse edits the old chapters while you write the next one.</h2>
-              <p>
-                Critic, Continuity-checker and Reader-sim read your project and report back to you.
-                Muse and Writer write the prose into your manuscript, and you can type anywhere
-                while they work.
-              </p>
+            <div className="dawn">
+              <div className="cap" id="the-workspace" {...NIGHT}>
+                <h2>Muse edits the old chapters while you write the next one.</h2>
+                <p>
+                  Critic, Continuity-checker and Reader-sim read your project and report back to
+                  you. Muse and Writer write the prose into your manuscript, and you can type
+                  anywhere while they work.
+                </p>
+              </div>
+              <div className="workspot" />
             </div>
           </div>
         </section>
