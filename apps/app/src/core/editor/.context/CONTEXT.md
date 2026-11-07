@@ -275,7 +275,12 @@ keyboard, pointer, drop, or draft-recovery answer.
   (`landing/slice-drop.ts`: text and nodes moved or copied inside the editor,
   or text from outside, read again by the host's text parser where it lands),
   project-tree rows (`extensions/reference-drop/reference-drop-door.ts`, handed
-  in from `config.ts`) and files (`images/image-drop-door.ts`, also handed in).
+  in from `config.ts`) and files (`file-drop/file-drop-door.ts`, also handed in). The files door takes any
+  file: a picture goes through the picture lane, and every other file becomes a chip
+  (a plain link to a file uploading into `assets/` of the document's own source),
+  placed by the same `placeNodes` the row door uses. Files land in the order the drop
+  lists them, a run of chips as one edit; a file over `MAX_UPLOAD_BYTES` is refused
+  alone, before anything is inserted for it.
   `landing/` imports neither lane. A host mounts only the doors it has; a
   payload with no door is unclaimed at `dragover`, `drop` and `handleDrop`
   alike, and the click route rides with the plugin, so a code file and the

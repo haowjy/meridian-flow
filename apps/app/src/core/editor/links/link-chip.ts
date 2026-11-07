@@ -103,6 +103,14 @@ function uriFamily(uri: string): ContextUriScheme | null {
   return scheme && SCHEMES.has(scheme) ? (scheme as ContextUriScheme) : null;
 }
 
+/** A file's type and size in one detail row; null when nothing is known. */
+function fileFacts(name: string, mimeType: string, sizeBytes: number | null): string | null {
+  const facts = [fileTypeLabel(name, mimeType), sizeBytes === null ? "" : formatBytes(sizeBytes)];
+  const known = facts.filter(Boolean);
+  // slop-lint: allow middle-dot file-detail row
+  return known.length > 0 ? known.join(" · ") : null;
+}
+
 /**
  * What a chip for a stored file says after its name: its type and size, or
  * how its upload stands. Null for a link that names no file. The local upload
@@ -121,10 +129,5 @@ export function linkChipDetail(
   const { file, title } = entry.document;
   // A picture's size is never drawn: its chip is the picture.
   if (!file || file.fileType === "image") return null;
-  const facts = [
-    fileTypeLabel(title, file.mimeType ?? ""),
-    file.sizeBytes === null ? "" : formatBytes(file.sizeBytes),
-  ].filter(Boolean);
-  // slop-lint: allow middle-dot file-detail row
-  return facts.length > 0 ? facts.join(" · ") : null;
+  return fileFacts(title, file.mimeType ?? "", file.sizeBytes);
 }

@@ -37,3 +37,27 @@ Following a folder link, by press, Enter or the menu's Open, goes through
 `followLinkFrom`: with a navigator registered it sets the surface's `folder` request
 instead of navigating, and the app draws the menu there. A folder link with no folder
 answer follows like any address.
+
+## Chips for stored files
+
+A dropped file is a plain Markdown link with a `doc:` ref, minted by the client before
+the file exists. What the chip says is drawn, never stored (`link-chip.ts`'s
+`linkChipDetail`, `link-mark-view.ts`):
+
+- The uploader's own tab reads `link-uploads.ts`, a module-wide store keyed by document
+  id: progress, and a failure. It is module-wide, not per editor, so an upload outlives the
+  document that started it and a chip drawn after the writer navigates back finds its
+  progress. `file-drop/FileDropExtension.ts` cancels an upload whose chip has been out of
+  its document for `ABSENT_UPLOAD_GRACE_MS`, so a cut and paste in one document survives
+  and an undo does not. A chip pasted into another document is not the uploader's: it
+  hears the server, which answers `uploading` while an unfinalized intake holds the id and
+  `gone` once the upload was taken back.
+- Another tab, or the same one after a reload, hears `uploading` from the resolve route. A
+  chip asked before the intake reserved its row (the first 8 KiB of the file) is answered
+  `gone` and is asked again only when the catalog changes, which the finalize does.
+- A document answer carries `file` (type, MIME type, size) for a stored file, from the
+  resolve route. The local index knows type and MIME but not size, so a stored file's chip
+  asks the server once. The detail row is `PDF · 2.4 MB`; a picture's chip carries none.
+- A chip named like a host (`notes.zip`, `a.io`) must not be rewritten into a website:
+  placement sets `preventAutolink` and no `uiEvent: "drop"` (TipTap's paste rules read that
+  as an outside drop and linkify the range).
