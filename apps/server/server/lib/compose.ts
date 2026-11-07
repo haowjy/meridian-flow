@@ -1869,7 +1869,10 @@ export function createInMemoryAppServices(): AppServices {
       async put() {
         throw new Error("in-memory object store is not implemented");
       },
-      async putStream() {
+      async readHead() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async signPut() {
         throw new Error("in-memory object store is not implemented");
       },
       async get() {
