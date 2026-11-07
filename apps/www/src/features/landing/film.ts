@@ -84,8 +84,24 @@ function typewriter(element: HTMLElement, caretClass: string) {
 
 /** Reduced motion: the stacked page over a still night sky. */
 function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
-  const stopListening = store.onSend(() => root.querySelector("#end")?.scrollIntoView());
+  const end = root.querySelector("#end") as HTMLElement;
+  const stopListening = store.onSend(() => end.scrollIntoView());
   signal.addEventListener("abort", stopListening);
+  const reached = new IntersectionObserver(([entry]) => {
+    if (entry.isIntersecting) store.assignIfUnanswered();
+  });
+  reached.observe(end);
+  signal.addEventListener("abort", () => reached.disconnect());
+  for (const button of root.querySelectorAll("[data-rekindle]")) {
+    button.addEventListener(
+      "click",
+      () => {
+        store.reset();
+        root.querySelector("#the-world")?.scrollIntoView();
+      },
+      { signal },
+    );
+  }
   const sky = createSky(root.querySelector("#sky") as HTMLCanvasElement, signal);
   const frame: SkyFrame = {
     pitch: HORIZON_PITCH,
@@ -145,6 +161,9 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
     ),
   };
 }
+
+/** Past the card without an answer, the System picks the survivor while the card is still up. */
+const ASSIGN_AFTER = 0.8;
 
 /** Autoplay acts out the card while it plays. */
 function demonstrateCard(store: CardStore, asked: number) {
@@ -407,8 +426,9 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     root,
     store,
     getLayout: () => layout,
-    onRewind: () => {
-      current = 0;
+    onJump: () => {
+      current = scrollY;
+      needsPaint = true;
     },
     signal,
   });
@@ -437,6 +457,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     actor.update(now / 1000, current, beats);
     forest.update(current, beats);
     if (transport.isPlaying()) demonstrateCard(store, beats.ask);
+    if (beats.ask >= ASSIGN_AFTER) store.assignIfUnanswered();
     if (current !== previous || needsPaint) {
       needsPaint = false;
       paint(current, beats);

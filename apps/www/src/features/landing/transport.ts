@@ -20,11 +20,11 @@ export function createTransport(options: {
   root: HTMLElement;
   store: CardStore;
   getLayout: () => Layout;
-  /** The page jumped to the start: the film should follow without easing through the story. */
-  onRewind: () => void;
+  /** The page jumped back: the film should cut there without easing through the story. */
+  onJump: () => void;
   signal: AbortSignal;
 }) {
-  const { root, store, getLayout, onRewind, signal } = options;
+  const { root, store, getLayout, onJump, signal } = options;
   const html = document.documentElement;
   const playButtons = [...root.querySelectorAll<HTMLElement>("[data-play]")];
   let state: AutoplayState = "idle";
@@ -69,7 +69,7 @@ export function createTransport(options: {
     const { documentHeight, height } = getLayout();
     if (state === "done" || scrollY >= documentHeight - height - 2) {
       scrollTo(0, 0);
-      onRewind();
+      onJump();
       time = 0;
     } else {
       time = interpolate(scrollY, "y", "t");
@@ -124,6 +124,20 @@ export function createTransport(options: {
     glide.to = getLayout().spans.hints[1];
   });
   signal.addEventListener("abort", stopListening);
+
+  // Rekindle: time goes back to the cliff, before anyone was chosen.
+  for (const button of root.querySelectorAll("[data-rekindle]")) {
+    button.addEventListener(
+      "click",
+      () => {
+        interrupt();
+        store.reset();
+        scrollTo(0, getLayout().spans.world[0]);
+        onJump();
+      },
+      { signal },
+    );
+  }
 
   setState("idle");
   if (location.hash) scrollTo(0, jumpPosition(location.hash));

@@ -8,13 +8,11 @@ import {
   DRAGON_PAGE,
   FELL,
   museReply,
-  NOBODY_LINE,
   NOTES,
   PROLOGUE,
   QUESTION,
-  SKIPPED,
   SURVIVED,
-  UNDEAD,
+  SYSTEM,
   type WikiPage,
   WORLD_PAGES,
 } from "./story";
@@ -82,6 +80,7 @@ export function ProductPlaceholder() {
               <span id="s-typing" />
               <i className="s-car" />
             </p>
+            <p className="s-draft sys s-sys">{SYSTEM.tutorial}</p>
           </article>
           {CHARACTERS.map((character) => (
             <article
@@ -373,10 +372,10 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
 
   const followAnswers = () => {
     const answer = store.getAnswer();
-    part("#s-choice").textContent = answer ? characterName(answer) : SKIPPED;
-    reply.textContent = museReply(answer);
+    part("#s-choice").textContent = answer ? characterName(answer) : "";
+    reply.textContent = answer ? museReply(answer) : "";
     for (const { key } of CHARACTERS) {
-      const fate = !answer ? UNDEAD : key === answer ? SURVIVED : FELL;
+      const fate = key === answer ? SURVIVED : FELL;
       part(`#s-note-${key}`).textContent = state === "hints" ? fate : ALIVE;
     }
   };
@@ -402,8 +401,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
       // The view only exists on phones: on desktop every pane is on screen.
       if (!held) view((next === "hints" && progress >= 0.45) || arrived ? "page" : "chat");
       if (next !== "hints") return;
-      const protagonist = CHARACTERS.find(({ key }) => key === store.getAnswer());
-      const line = protagonist?.lastLine ?? NOBODY_LINE;
+      const line = CHARACTERS.find(({ key }) => key === store.getAnswer())?.lastLine ?? "";
       typing.textContent = line.slice(0, Math.round(line.length * progress));
     },
   };

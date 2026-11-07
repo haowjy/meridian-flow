@@ -477,6 +477,11 @@ h1 span {
   color: var(--color-foreground);
 }
 
+.c-sys {
+  padding: 9px 12px;
+  text-align: center;
+}
+
 .c-b .nx:disabled {
   opacity: 0.45;
   cursor: default;
@@ -487,11 +492,26 @@ h1 span {
   text-align: center;
 }
 
-.twist blockquote {
-  font: italic 400 clamp(46px, 7.4vw, 118px) / 1.05 var(--mkt-font-title);
-  text-wrap: balance;
-  margin: 0 auto;
-  max-width: 11em;
+/* The System's window. Its frame and field are also drawn by `wordsStill` for the burn. */
+.sys {
+  border: 1.5px solid var(--mkt-system);
+  border-radius: 3px;
+  background: var(--mkt-system-fill);
+  color: var(--mkt-system-ink);
+  box-shadow:
+    0 0 22px color-mix(in oklab, var(--mkt-system) 45%, transparent),
+    inset 0 0 26px color-mix(in oklab, var(--mkt-system) 22%, transparent);
+  font: 500 15px / 1.4 var(--mkt-font-plain);
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 10px color-mix(in oklab, var(--mkt-system) 70%, transparent);
+}
+
+.sys-big {
+  padding: 0.55em 1.1em 0.6em;
+  font-size: clamp(30px, 4.6vw, 68px);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
 }
 
 .cap {
@@ -517,43 +537,101 @@ h1 span {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: clamp(120px, 20vh, 190px) 20px 28px;
+  padding: clamp(80px, 12vh, 132px) 20px 28px;
   text-align: center;
 }
 
-.end h2 {
-  font: 400 clamp(58px, 8.4vw, 132px) / 1 var(--mkt-font-title);
+.end .last {
+  font: italic 400 clamp(22px, 2.2vw, 32px) / 1.35 var(--mkt-font-story);
+  max-width: 26em;
+  text-wrap: balance;
 }
 
-.blank {
+.sys-skill {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin-top: clamp(22px, 4vh, 40px);
+  padding: 14px 26px 16px;
+}
+
+.sys-act {
+  margin-top: 14px;
+  padding: 7px 22px;
+  border: 1px solid var(--mkt-system);
+  border-radius: 2px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.15s ease-out;
+}
+
+.sys-act:hover,
+.sys-act:focus-visible {
+  background: color-mix(in oklab, var(--mkt-system) 26%, transparent);
+}
+
+.sys-act:focus-visible {
+  outline: 2px solid var(--mkt-system-ink);
+  outline-offset: 3px;
+}
+
+.book {
+  display: grid;
+  justify-items: center;
+  gap: 26px;
+  width: min(34em, 100%);
+  margin-top: clamp(28px, 5vh, 52px);
+}
+
+/* The dawn's horizon glows right behind the question: the same night scrim as the twist. */
+.book {
   position: relative;
-  font: italic 400 clamp(22px, 2.3vw, 30px) / 1.3 var(--mkt-font-story);
-  min-height: 1.3em;
-  width: min(30em, 100%);
-  margin: 0.5em auto 1em;
+  isolation: isolate;
 }
 
-.blank input {
+.book::before {
+  content: "";
+  position: absolute;
+  inset: -70px -160px -60px;
+  z-index: -1;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--mkt-scrim) 78%, transparent),
+    color-mix(in oklab, var(--mkt-scrim) 52%, transparent) 62%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+.book label {
+  display: grid;
+  gap: 12px;
   width: 100%;
+  font: 400 clamp(28px, 2.9vw, 42px) / 1.1 var(--mkt-font-title);
+  text-wrap: balance;
+}
+
+.book input {
+  width: 100%;
+  padding: 6px 2px;
   border: 0;
+  border-bottom: 1px solid var(--color-border);
   outline: 0;
   background: none;
   color: inherit;
-  font: inherit;
+  font: italic 400 clamp(18px, 1.8vw, 24px) / 1.3 var(--mkt-font-story);
   text-align: center;
   caret-color: var(--color-foreground);
 }
 
-.blank:has(input:placeholder-shown):not(:focus-within)::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 0.15em;
-  width: 0.07em;
-  height: 1em;
-  background: var(--color-foreground);
-  pointer-events: none;
-  animation: blink 1.1s steps(1) infinite;
+.book input::placeholder {
+  color: var(--color-muted-foreground);
+}
+
+.book input:focus {
+  border-bottom-color: var(--color-foreground);
 }
 
 .end footer {
@@ -635,11 +713,5 @@ h1 span {
   .row .ctrl,
   .cine .row .ctrl {
     display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .blank::before {
-    animation: none;
   }
 }
