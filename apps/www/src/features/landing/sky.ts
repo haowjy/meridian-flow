@@ -57,11 +57,12 @@ const LIGHT_SHADER = `${SHARED}
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
 float fbm(vec2 p){return .6*N(p)+.3*N(p*2.1+5.)+.1*N(p*4.3+9.);}
 const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
+const float HY=${HORIZON_YAW.toFixed(3)};
 // SETTLED is the flow without the clock: where the aurora lies follows the scroll alone, so time
 // away from the page can't drift it all into a gap.
 uniform float PLUME,SETTLED;
-// Right of the middle of the level view, toward the peak: the text sits on the left.
-const float AHEAD=${((HORIZON_YAW + SUMMIT_AZIMUTH) / 2 + 0.08).toFixed(3)};
+// Down the middle of the level view, so the peak on the right stands clear of it.
+const float AHEAD=${HORIZON_YAW.toFixed(3)};
 float field(vec2 p,float fire,out float band){
   vec2 w=vec2(N(p*.45+vec2(FLOW*.1,0.)),N(p*.45+vec2(4.,-FLOW*.08)))-.5;
   vec2 q=p+w*3.2;
@@ -91,8 +92,12 @@ float field(vec2 p,float fire,out float band){
 vec3 aurora(vec3 rd){
   if(rd.y<.006) return vec3(0.);
   vec3 a=vec3(0.);
-  float b=(atan(rd.x,-rd.z)-AZ)/.4;
+  float az=atan(rd.x,-rd.z);
+  float b=(az-AZ)/.4;
   float fire=exp(-b*b)*exp(-rd.y*3.)*PLUME;
+  // The low sky right of the middle belongs to the peak and the great curtain: the sheet thins
+  // there, until the stirred Cold Fire fills it back in.
+  float spare=max(1.-.75*smoothstep(HY,HY+.3,az)*smoothstep(.55,.12,rd.y),min(fire*.4,1.));
   float j=H(gl_FragCoord.xy*.013);
   for(int i=0;i<14;i++){
     float k=float(i)*1.57;
@@ -107,7 +112,7 @@ vec3 aurora(vec3 rd){
     float blue=smoothstep(.55,.8,N(at*.07+vec2(11.,FLOW*.012)));
     c=mix(c,${vec3(C.auroraBlue)},blue*.3);
     c=mix(c,${vec3(C.auroraHigh)},smoothstep(5.,17.,k));
-    a+=c*f*exp(-k*.075);
+    a+=c*f*spare*exp(-k*.075);
     // The great curtain hangs from a bright green hem; its rays fade fast above it.
     a+=mix(${vec3(C.auroraLow)},c,smoothstep(0.,6.,k))*band*(2.2*exp(-k*.35)+.12);
   }
