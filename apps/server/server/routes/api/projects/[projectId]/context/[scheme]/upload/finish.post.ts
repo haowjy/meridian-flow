@@ -4,17 +4,16 @@
  */
 
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
-import { createError, defineEventHandler, getQuery, readBody } from "nitro/h3";
+import { defineEventHandler, getQuery, readBody } from "nitro/h3";
 import { resolveContextRoute } from "../_helpers.js";
-import { uploadDestination, uploadErrorToHttp } from "./_shared.js";
+import { uploadDestination, uploadErrorToHttp, uploadIntakeId } from "./_shared.js";
 
 export default defineEventHandler(async (event): Promise<UploadIntakeResult> => {
   const route = await resolveContextRoute(event);
   const { app, userId, edit } = route;
-  const { intakeId } = (await readBody<{ intakeId?: unknown }>(event)) ?? {};
-  if (typeof intakeId !== "string" || !intakeId)
-    throw createError({ statusCode: 400, message: "intakeId is required" });
-  const destination = uploadDestination(route, getQuery(event).chatId, intakeId);
+  const body = await readBody<{ intakeId?: unknown }>(event);
+  const intakeId = uploadIntakeId(body?.intakeId);
+  const destination = uploadDestination(route, getQuery(event).chatId);
   const result = await edit([destination.container], () =>
     app.uploadIntake.finish({
       intakeId,

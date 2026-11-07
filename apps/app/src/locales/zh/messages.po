@@ -5705,6 +5705,10 @@ msgstr "上传未能开始。"
 msgid "The upload to storage failed."
 msgstr ""
 
+#: src/components/app/composer/Composer.tsx
+msgid "The upload was stopped."
+msgstr ""
+
 #: src/features/import/reason-copy.ts
 msgid "The uploaded file is no longer available."
 msgstr ""

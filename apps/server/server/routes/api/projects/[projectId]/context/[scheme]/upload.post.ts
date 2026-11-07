@@ -7,16 +7,17 @@
 import type { StartUploadInput, UploadStart } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, readBody, setResponseStatus } from "nitro/h3";
 import { resolveContextRoute } from "./_helpers.js";
-import { uploadDestination, uploadErrorToHttp } from "./upload/_shared.js";
+import { uploadDestination, uploadErrorToHttp, uploadIntakeId } from "./upload/_shared.js";
 
 export default defineEventHandler(async (event): Promise<UploadStart> => {
   const route = await resolveContextRoute(event);
   const { app, userId, edit } = route;
   const body = (await readBody<Partial<StartUploadInput>>(event)) ?? {};
-  const { intakeId, filename, sizeBytes, mimeType } = body;
-  if (typeof intakeId !== "string" || !intakeId || typeof filename !== "string" || !filename)
-    throw createError({ statusCode: 400, message: "intakeId and filename are required" });
-  const destination = uploadDestination(route, getQuery(event).chatId, intakeId);
+  const { filename, sizeBytes, mimeType } = body;
+  const intakeId = uploadIntakeId(body.intakeId);
+  if (typeof filename !== "string" || !filename)
+    throw createError({ statusCode: 400, message: "filename is required" });
+  const destination = uploadDestination(route, getQuery(event).chatId);
   if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0)
     throw createError({ statusCode: 400, message: "sizeBytes must be a whole number of bytes" });
   const result = await edit([destination.container], () =>

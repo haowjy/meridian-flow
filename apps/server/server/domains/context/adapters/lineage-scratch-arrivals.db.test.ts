@@ -79,7 +79,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       ownerThreadId: root,
       contextSourceId: uploadsSource,
       documentId: upload,
-      fingerprint: "f",
       filename: "pic.png",
       mimeType: "image/png",
       sizeBytes: 1,

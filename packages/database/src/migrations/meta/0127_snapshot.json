@@ -6905,12 +6905,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "filename": {
           "name": "filename",
           "type": "text",
@@ -6959,12 +6953,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'reserved'"
-        },
-        "storage_url": {
-          "name": "storage_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "consumed_at": {
           "name": "consumed_at",

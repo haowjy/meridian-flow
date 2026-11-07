@@ -36,18 +36,14 @@ import { createNoopEventSink } from "../../observability/index.js";
 import {
   createInMemoryObjectStore,
   createObjectRelease,
+  incomingObjectKey,
   type ObjectStorePort,
 } from "../../storage/index.js";
 import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./drizzle-upload-intake.js";
-import {
-  createUploadIntake,
-  incomingObjectKey,
-  type UploadContentPort,
-  type UploadIntake,
-} from "./upload-intake.js";
+import { createUploadIntake, type UploadContentPort, type UploadIntake } from "./upload-intake.js";
 import { uploadBytes } from "./upload-test-support.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -64,6 +60,7 @@ if (!RUN) {
     const NEW_CHAT = "00000000-0000-4000-8000-000000000a03";
     /** A chat whose row, and so whose handle `c1`, exists. */
     const CHAT = "00000000-0000-4000-8000-000000000a04";
+    const NEW_OWNER = { kind: "chat" as const, projectId: PROJECT, chatId: NEW_CHAT };
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -105,18 +102,13 @@ if (!RUN) {
       return { removed, deleteDraft: intake.deleteDraft };
     }
 
-    const reservation = (
-      intakeId: string,
-      chatId: string,
-      fingerprint = `fingerprint-${intakeId}`,
-    ) => ({
+    const reservation = (intakeId: string, chatId: string, filename = "chapter.md") => ({
       intakeId,
       actorUserId: USER,
       owner: { kind: "chat" as const, projectId: PROJECT, chatId },
-      filename: "chapter.md",
+      filename,
       mimeType: "text/markdown",
       sizeBytes: 10,
-      fingerprint,
     });
 
     const claimInput = (intakeId: string, filename = "chapter") => ({
@@ -124,7 +116,6 @@ if (!RUN) {
       intakeId,
       documentFilename: { name: filename, extension: "", filetype: "markdown" as const },
       fileType: "markdown" as const,
-      storageUrl: `object://meridian/uploads/${intakeId}`,
     });
 
     it("converges concurrent production service calls on the authoritative trio", async () => {
@@ -191,7 +182,7 @@ if (!RUN) {
       const repo = await seed();
       const first = await repo.reserve(reservation("one", NEW_CHAT));
       const replay = await repo.reserve(reservation("one", NEW_CHAT));
-      const conflict = await repo.reserve(reservation("one", NEW_CHAT, "different"));
+      const conflict = await repo.reserve(reservation("one", NEW_CHAT, "other.md"));
       await repo.reserve(reservation("two", NEW_CHAT));
       await repo.reserve(reservation("three", CHAT));
       if (first.kind !== "reserved") throw new Error(first.kind);
@@ -252,21 +243,29 @@ if (!RUN) {
         extension: "",
         fileType: "markdown",
       });
-      await repo.finalize(PROJECT, "delete", true);
+      await repo.finalize(PROJECT, "delete");
       const base = {
         intakeId: "delete",
         documentId: identity.documentId,
         uri: identity.canonicalUri ?? "",
       };
       const { removed, deleteDraft } = deletion(repo);
-      expect(await deleteDraft({ ...base, expectedRevision: "wrong" }, USER)).toEqual({
+      expect(await deleteDraft({ ...base, expectedRevision: "wrong" }, USER, NEW_OWNER)).toEqual({
         kind: "identity_mismatch",
       });
       expect(
-        await deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER),
+        await deleteDraft(
+          { ...base, expectedRevision: identity.locationRevision },
+          USER,
+          NEW_OWNER,
+        ),
       ).toEqual({ kind: "deleted" });
       expect(
-        await deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER),
+        await deleteDraft(
+          { ...base, expectedRevision: identity.locationRevision },
+          USER,
+          NEW_OWNER,
+        ),
       ).toEqual({ kind: "already_deleted" });
       // An arrived upload leaves through the canonical soft delete, never a hard delete.
       expect(removed).toEqual([identity.documentId]);
@@ -587,6 +586,7 @@ if (!RUN) {
               expectedRevision: first.locationRevision,
             },
             USER,
+            { kind: "chat", projectId: PROJECT, chatId: NEW_CHAT },
           );
         expect(await f.finish("race")).toEqual({
           ok: false,
@@ -615,6 +615,7 @@ if (!RUN) {
               expectedRevision: first.locationRevision,
             },
             USER,
+            { kind: "chat", projectId: PROJECT, chatId: NEW_CHAT },
           );
         expect(await f.finish("late")).toEqual({
           ok: false,

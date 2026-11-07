@@ -1098,10 +1098,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         readHead: backingStore.readHead.bind(backingStore),
         signPut: backingStore.signPut.bind(backingStore),
         get: backingStore.get.bind(backingStore),
-        getStream: backingStore.getStream.bind(backingStore),
-        copy: backingStore.copy.bind(backingStore),
-        list: backingStore.list.bind(backingStore),
-        getSignedUrl: backingStore.getSignedUrl.bind(backingStore),
         async delete() {
           deleteObservedCommittedPurge = (await works.findById(work.id)) === null;
           return {
@@ -1294,7 +1290,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ownerThreadId: THREAD_ID,
         contextSourceId: source.id,
         documentId: document.id,
-        fingerprint: "fingerprint",
         filename: "reference.png",
         mimeType: "image/png",
         sizeBytes: 1,
@@ -1303,7 +1298,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "png",
         locationRevision: crypto.randomUUID(),
         state: "finalized",
-        storageUrl: stored.value.storageUrl,
       });
       const [lineageSource] = await db
         .insert(schema.contextSources)

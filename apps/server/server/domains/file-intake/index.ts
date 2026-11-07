@@ -27,8 +27,12 @@ const TEXT_MIMES = new Set([
   "application/xml",
 ]);
 
+// type/subtype tokens only: the signed PUT echoes the type back as a header.
+const MIME_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
+
 export function normalizeMime(mimeType: string): string {
-  return mimeType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+  const mime = mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+  return MIME_TYPE.test(mime) ? mime : "application/octet-stream";
 }
 
 export function normalizeFilename(filename: string): string {

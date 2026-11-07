@@ -245,6 +245,7 @@ import {
 } from "../domains/runtime/model-request-debug/index.js";
 import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
 import {
+  createInMemoryObjectStore,
   createObjectRelease,
   type LocalObjectStoreAdapter,
   type ObjectRelease,
@@ -1860,35 +1861,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory tool executor is not implemented");
       },
     },
-    objectStore: {
-      async put() {
-        throw new Error("in-memory object store is not implemented");
-      },
-      async readHead() {
-        throw new Error("in-memory object store is not implemented");
-      },
-      async signPut() {
-        throw new Error("in-memory object store is not implemented");
-      },
-      async get() {
-        throw new Error("in-memory object store is not implemented");
-      },
-      async getStream() {
-        throw new Error("in-memory object store is not implemented");
-      },
-      async copy() {
-        throw new Error("in-memory object store is not implemented");
-      },
-      async list() {
-        throw new Error("in-memory object store is not implemented");
-      },
-      async getSignedUrl() {
-        throw new Error("in-memory object store is not implemented");
-      },
-      async delete() {
-        throw new Error("in-memory object store is not implemented");
-      },
-    },
+    objectStore: createInMemoryObjectStore(),
     localObjectStore: null,
     uploadIntake: {
       async start() {

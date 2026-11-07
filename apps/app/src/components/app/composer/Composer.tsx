@@ -459,21 +459,35 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
-  // Removing a pending chip stops its upload.
+  // Removing a pending chip stops its upload. A pending chip nothing is uploading (Undo brings
+  // back one that was stopped) is a failed one: clicking it retries.
   useEffect(() => {
     if (!editor) return;
-    const stopRemoved = () => {
+    const settleChips = () => {
       const present = new Set<string>();
-      editor.state.doc.descendants((node) => {
-        if (node.type.name === "composerUpload")
-          present.add((node.attrs.upload as ComposerPendingUploadAttrs).intakeId);
+      const orphaned: { pos: number; upload: ComposerPendingUploadAttrs }[] = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name !== "composerUpload") return;
+        const upload = node.attrs.upload as ComposerPendingUploadAttrs;
+        present.add(upload.intakeId);
+        if (upload.state === "pending" && !uploadAbortsRef.current.has(upload.intakeId))
+          orphaned.push({ pos, upload });
       });
       for (const [intakeId, abort] of uploadAbortsRef.current)
         if (!present.has(intakeId)) abort.abort();
+      if (orphaned.length === 0) return;
+      const tr = editor.state.tr.setMeta("addToHistory", false);
+      for (const { pos, upload } of orphaned)
+        tr.setNodeAttribute(pos, "upload", {
+          ...upload,
+          state: "failed",
+          error: t`The upload was stopped.`,
+        });
+      editor.view.dispatch(tr);
     };
-    editor.on("update", stopRemoved);
+    editor.on("update", settleChips);
     return () => {
-      editor.off("update", stopRemoved);
+      editor.off("update", settleChips);
     };
   }, [editor]);
   useEffect(() => {
@@ -523,6 +537,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       state: "pending",
       error: null,
     };
+    // Registered before the chip goes in: a pending chip with no entry here reads as stopped.
+    const abort = new AbortController();
+    uploadAbortsRef.current.set(intakeId, abort);
     if (retryPosition === undefined) {
       editor
         .chain()
@@ -538,8 +555,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
     setPending((n) => n + 1);
     const scope = scopeRef.current;
-    const abort = new AbortController();
-    uploadAbortsRef.current.set(intakeId, abort);
     try {
       const ready = await resolvedUploadPort.intake({
         file,
