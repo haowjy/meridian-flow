@@ -20,6 +20,14 @@ type AssetRouteInput = {
   assetDocumentId: string;
 };
 
+/**
+ * The server route that saves a stored file under its own name. A store's signed URL can't be
+ * relied on for that: browsers ignore `download=` on another origin.
+ */
+export function documentDownloadUrl(documentId: string): string {
+  return `/api/documents/${encodeURIComponent(documentId)}/download`;
+}
+
 export type UploadFigureInput = {
   projectId: string;
   hostDocumentId: string;

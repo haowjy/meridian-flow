@@ -61,7 +61,7 @@ export interface GetFigureSignedUrlInput {
 }
 
 export interface FigureAssetServiceOptions {
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "put" | "getSignedUrl">;
   /** Deletes the object (and its preview) when the asset document is not created. */
   release: ObjectRelease;
   documents: FigureDocumentRepository;
@@ -94,7 +94,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 async function signObjectUrlBestEffort(
   eventSink: EventSink,
-  objectStore: ObjectStorePort,
+  objectStore: Pick<ObjectStorePort, "getSignedUrl">,
   key: string,
   context: Record<string, unknown>,
 ): Promise<string | null> {

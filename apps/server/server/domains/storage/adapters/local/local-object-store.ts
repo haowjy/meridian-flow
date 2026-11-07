@@ -6,7 +6,17 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Stats } from "node:fs";
 import { createReadStream } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
@@ -50,6 +60,10 @@ interface SignedPayload {
   /** `Content-Disposition` signed with the URL, so a link can't be re-pointed at another name. */
   cd?: string;
 }
+
+/** Local stand-in for a bucket lifecycle rule: temp files older than this are crash leftovers. */
+const STALE_TEMP_MS = 24 * 60 * 60 * 1000;
+const TEMP_DIR = ".tmp";
 
 function ok<T>(value: T): ObjectStoreResult<T> {
   return { ok: true, value };
@@ -99,6 +113,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
   private readonly signingSecret: string;
   private readonly signedUrlTtlSeconds: number;
   private readonly now: () => Date;
+  private tempCleared = false;
 
   constructor(options: LocalObjectStoreOptions) {
     this.rootDir = path.resolve(options.rootDir);
@@ -193,23 +208,24 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       const metadata = JSON.parse(
         await readFile(this.metadataPath(source.value), "utf8"),
       ) as LocalObjectMetadata;
-      await mkdir(path.dirname(target.value), { recursive: true });
-      await copyFile(source.value, target.value);
-      await writeFile(
-        this.metadataPath(target.value),
-        JSON.stringify({
+      const tempData = await this.tempPath();
+      try {
+        await copyFile(source.value, tempData);
+        await this.commit(tempData, target.value, {
           ...metadata,
           key: toKey,
           updatedAt: this.now().toISOString(),
-        } satisfies LocalObjectMetadata),
-      );
+        });
+      } catch (error) {
+        await rm(tempData, { force: true });
+        throw error;
+      }
       return ok({
         storageUrl: createObjectStorageUrl(toKey),
         mimeType: metadata.mimeType,
         sizeBytes: metadata.sizeBytes,
       });
     } catch (error) {
-      await this.delete(toKey);
       return isMissingFile(error)
         ? err("not_found", "Object not found")
         : ioError(error, "Failed to copy object");
@@ -369,6 +385,51 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     return ok(target);
   }
 
+  private async tempPath(): Promise<string> {
+    const dir = path.join(this.rootDir, TEMP_DIR);
+    await mkdir(dir, { recursive: true });
+    if (!this.tempCleared) {
+      this.tempCleared = true;
+      await this.clearStaleTemp(dir);
+    }
+    return path.join(dir, `${crypto.randomUUID()}.part`);
+  }
+
+  /**
+   * Moves a finished temp file to `target` with its metadata. The metadata is written to a temp
+   * file first, so a failure to write it leaves an existing object as it was.
+   */
+  private async commit(
+    tempData: string,
+    target: string,
+    metadata: LocalObjectMetadata,
+  ): Promise<void> {
+    const tempMetadata = `${tempData}.metadata`;
+    try {
+      await writeFile(tempMetadata, JSON.stringify(metadata, null, 2));
+      await mkdir(path.dirname(target), { recursive: true });
+      await rename(tempData, target);
+      await rename(tempMetadata, this.metadataPath(target));
+    } catch (error) {
+      await rm(tempMetadata, { force: true });
+      throw error;
+    }
+  }
+
+  /** Crash leftovers, cleared once per process before the first write that makes a temp file. */
+  private async clearStaleTemp(dir: string): Promise<void> {
+    const cutoff = this.now().getTime() - STALE_TEMP_MS;
+    for (const entry of await readdir(dir)) {
+      const file = path.join(dir, entry);
+      try {
+        if ((await stat(file)).mtimeMs < cutoff) await rm(file, { force: true });
+      } catch (error) {
+        // Another process finished with the file between the listing and now.
+        if (!isMissingFile(error)) throw error;
+      }
+    }
+  }
+
   private metadataPath(objectPath: string): string {
     return `${objectPath}.metadata.json`;
   }
@@ -388,7 +449,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
             : ioError(error, "Failed to enumerate object store");
       }
       for (const entry of entries) {
-        if (entry.endsWith(".metadata.json")) continue;
+        if (entry.endsWith(".metadata.json") || (!relativeDir && entry === TEMP_DIR)) continue;
         const relativePath = relativeDir ? path.join(relativeDir, entry) : entry;
         const absolutePath = path.join(absoluteDir, entry);
         let fileStat: Stats;

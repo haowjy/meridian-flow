@@ -75,7 +75,6 @@ export function createContextImageAssetPort(deps: {
             `Could not resolve image asset ${reference.uri}: ${object.error.message}`,
           );
         }
-        if (object.value.bytes.byteLength > options.maxBytes) return null;
         const actualType = object.value.mimeType.split(";")[0]?.trim().toLowerCase();
         if (actualType !== mediaType || !actualType.startsWith("image/")) return null;
         return {
