@@ -203,6 +203,8 @@ export type ProjectViewProps = {
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewItemKey?: string;
+  /** The document that item names. */
+  reviewDocumentId?: string;
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
@@ -402,6 +404,7 @@ export function ProjectView(props: ProjectViewProps) {
                 activeContextChat={props.activeContextChat}
                 editorWorkId={editorScope.workId}
                 localDocumentId={props.activeLocalDocumentId}
+                reviewDocumentId={props.reviewDocumentId}
                 route={props.contextRemovalRoute}
               />
             ) : null}

@@ -16,7 +16,7 @@ import {
   isWholeDocumentChange,
 } from "@/features/draft-review/draft-changes";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
-import { hasTreeLine } from "@/features/draft-review/tree-line";
+import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
@@ -41,8 +41,7 @@ export function WorkChangeFile({
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
-  const draftedDelete = file.draft.tree?.deleted === true;
-  const treeOnly = draftedDelete || (!file.draft.hasDraft && hasTreeLine(file.draft));
+  const treeOnly = reviewHasNoRoom(file.draft);
   const shown = expanded || treeOnly;
   const view = useDraftView(draft, { controller, enabled: shown, item: file.draft });
   if (
@@ -61,7 +60,7 @@ export function WorkChangeFile({
 
   const review = (focus?: ReviewFocus) => {
     controller.dismissNotice();
-    return file.draft.hasDraft || draftedDelete
+    return file.draft.hasDraft || treeOnly
       ? openReviewFile(file, workId, focus)
       : imageOpenable && setPreviewing(true);
   };
@@ -109,7 +108,7 @@ export function WorkChangeFile({
             )}
             disabled={
               !file.contextLocation ||
-              (file.draft.hasDraft === false && !imageOpenable && !draftedDelete)
+              (file.draft.hasDraft === false && !imageOpenable && !treeOnly)
             }
             onClick={() => review()}
           >
