@@ -51,13 +51,13 @@ export const characterName = (key: CharacterKey) =>
   CHARACTERS.find((character) => character.key === key)?.name ?? "";
 
 export const PROLOGUE = {
-  opening: "They told us to kill the beast in the Greenlands.",
+  opening: "They sent us to the Greenlands to kill the beast under the Cold Fire.",
   lines: [
     "Each of us had been condemned by our own country. Kill it, they said, and our “crimes” would be forgiven.",
-    "Nobody said what the beast was. I don’t think they knew.",
-    "Every night the Cold Fire burned above us. We thought it was beautiful.",
+    "Nobody who went under the Cold Fire had ever come back to say what the beast was.",
+    "Every night the sky burned green above us. We thought it was beautiful.",
   ],
-  turn: "On the ninth night, it found us.",
+  turn: "On the ninth night, the beast found us.",
 } as const;
 
 export const QUESTION =
