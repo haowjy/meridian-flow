@@ -1,71 +1,70 @@
-/** The card's questions and the product block's lines that follow the answers. */
+/** The prologue on the page, and the choice that ends it. */
 
-export type AnswerKey = "a" | "b";
+export type CharacterKey = "tam" | "sigrun" | "oskar" | "maren";
 
-type Question = {
-  text: string;
-  options: ReadonlyArray<{
-    key: AnswerKey;
-    label: string;
-    detail: string;
-    recommended?: boolean;
-  }>;
+type Character = {
+  key: CharacterKey;
+  name: string;
+  note: string;
+  /** Why the visitor might pick them. */
+  pitch: string;
+  /** The prologue's last line once they are the one who lived. */
+  lastLine: string;
 };
 
-export const QUESTIONS: readonly Question[] = [
+export const CHARACTERS: readonly Character[] = [
   {
-    text: "Dell’s scar is on his right hand here. Chapter 9 says left. What’s going on?",
-    options: [
-      {
-        key: "a",
-        label: "He is not Dell",
-        detail: "Someone took his place. The wrong hand is the first clue.",
-        recommended: true,
-      },
-      {
-        key: "b",
-        label: "The log is wrong",
-        detail: "Ise rewrote that volume from memory. Now she has to doubt herself.",
-      },
-    ],
+    key: "tam",
+    name: "Tam",
+    note: "Mill boy from Harl. Accused of burning the town’s grain. Says he didn’t.",
+    pitch: "He still has to prove he didn’t do it.",
+    lastLine:
+      "My name is Tam. I did not burn the grain. I walked out of the fire, and nobody believed that either.",
   },
   {
-    text: "Does Ise tell anyone in chapter 413?",
-    options: [
-      {
-        key: "a",
-        label: "She tells no one",
-        detail: "She watches him alone for now.",
-        recommended: true,
-      },
-      {
-        key: "b",
-        label: "She tells the bosun",
-        detail: "She gets one ally, and one more person who can talk.",
-      },
-    ],
+    key: "sigrun",
+    name: "Sigrun",
+    note: "Sent by the northern clans. She killed a jarl and won’t say why.",
+    pitch: "She still hasn’t said why.",
+    lastLine:
+      "My name is Sigrun. I killed a jarl, and I will tell you why. I walked out of the fire because I had not finished.",
+  },
+  {
+    key: "oskar",
+    name: "Oskar",
+    note: "Sent by the king of the coast. He sold a fleet. Two fingers short.",
+    pitch: "He’d sell this story to anyone.",
+    lastLine:
+      "My name is Oskar. I have sold everything I ever owned. I walked out of the fire and started looking for a buyer.",
+  },
+  {
+    key: "maren",
+    name: "Maren",
+    note: "Sent by the abbey at Vell for heresy. She doesn’t flinch at fire.",
+    pitch: "The fire didn’t burn her.",
+    lastLine:
+      "My name is Maren. I walked out of the fire, and it did not burn me. I have stopped telling people that.",
   },
 ];
 
-/** Chapter 413's next line, by who the man is, then whether Ise tells. */
-export const NEXT_LINE: Record<AnswerKey, Record<AnswerKey, string>> = {
-  a: {
-    a: "She did not tell the crew. She told the log, in the brown ink she kept for weather, and went up on deck to stand beside him.",
-    b: "She found the bosun in the chain locker and shut the door. “Show me your hands,” she said. “Then I’ll tell you about the captain’s.”",
-  },
-  b: {
-    a: "She did not tell the crew. She took the eleventh volume to her bunk and began checking her own handwriting against the sky.",
-    b: "She found the bosun in the chain locker and shut the door. “How much of the log do you remember?” she said.",
-  },
-};
+export const characterName = (key: CharacterKey) =>
+  CHARACTERS.find((character) => character.key === key)?.name ?? "";
 
-export const MUSE_REPLY: Record<AnswerKey, { chat: string; note: string }> = {
-  a: {
-    chat: "I read every chapter with Dell in it and put the hints in 146, 263 and 380. His notes now say he was replaced at 380.",
-    note: "Replaced at chapter 380. The man aboard after that has the scar on his right hand, on purpose.",
-  },
-  b: {
-    chat: "I read every chapter that quotes the log and put the hints in 146, 263 and 380. His notes now say Ise’s log is unreliable.",
-    note: "The right-hand scar in chapter 412 stands: Ise’s log is the error.",
-  },
-};
+export const PROLOGUE = {
+  opening: "They told us to kill the beast in the Greenlands.",
+  lines: [
+    "Four of us went north, and four countries wanted us dead.",
+    "Nobody said what the beast was. I don’t think they knew.",
+    "Every night the Cold Fire burned above us. We thought it was beautiful.",
+  ],
+  turn: "On the ninth night, the Cold Fire came down.",
+} as const;
+
+export const QUESTION =
+  "This is the prologue. Only one of them survives it and becomes the protagonist. Who is it?";
+
+export const SURVIVED = "Walked out of the fire. Protagonist.";
+export const FELL = "Died in the Greenlands, in the prologue.";
+
+export const museReply = (key: CharacterKey) =>
+  `The prologue ends with ${characterName(key)} now, and all four pages are up to date.`;

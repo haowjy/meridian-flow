@@ -310,6 +310,10 @@
   border-radius: 12px;
 }
 
+.s-asking .s-take {
+  visibility: hidden;
+}
+
 .s-take > b {
   font-weight: 600;
 }

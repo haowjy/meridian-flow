@@ -15,9 +15,9 @@ const BEATS = [
   ["write", 1.2, 14],
   ["out", 0.7, 3.5],
   ["back", 0.8, 7],
-  ["ask", 1, 10],
-  ["turn", 0.7, 6],
+  ["turn", 1.1, 7],
   ["twist", 2, 6],
+  ["ask", 1, 10],
   ["dawn", 1.1, 4],
   ["lore", 2.2, 6],
   ["hints", 1.2, 9],
@@ -54,7 +54,7 @@ export function spanBeats(viewportHeight: number) {
     s1: [spans.open[0], write(0.2)],
     s2: [write(0.24), write(0.7)],
     s3: spans.out,
-    s4: [spans.back[1] - viewportHeight * 0.2, spans.ask[0] + viewportHeight * 0.02],
+    s4: [spans.back[1] - viewportHeight * 0.2, spans.turn[0] + viewportHeight * 0.1],
   } as Record<string, Span>;
   return { spans, stops, subtitles, length: position };
 }

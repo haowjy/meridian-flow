@@ -4,6 +4,7 @@ import { type FilmParts, type Layout, measureLayout } from "./film-layout";
 import { createForest } from "./forest";
 import type { ProductSlot } from "./ProductPlaceholder";
 import { createSky, type SkyFrame } from "./sky";
+import { CHARACTERS } from "./story";
 import {
   type BeatProgress,
   beatProgress,
@@ -80,7 +81,7 @@ function typewriter(element: HTMLElement, caretClass: string) {
 
 /** Reduced motion: the stacked page over a still night sky. */
 function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
-  const stopListening = store.onSend(() => root.querySelector("#the-twist")?.scrollIntoView());
+  const stopListening = store.onSend(() => root.querySelector("#the-workspace")?.scrollIntoView());
   signal.addEventListener("abort", stopListening);
   const sky = createSky(root.querySelector("#sky") as HTMLCanvasElement, signal);
   const frame: SkyFrame = {
@@ -117,7 +118,6 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const dawn = revealed ? 1 : ease(beats.dawn);
   const toTwist = smooth(beats.twist, 0, 0.5);
   let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
-  veil = lerp(veil, 0.62, smooth(beats.ask, 0, 0.2));
   veil = lerp(veil, 0.2, toTwist);
   veil = lerp(veil, 0, dawn);
   return {
@@ -146,10 +146,7 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
 /** Autoplay acts out the card while it plays. */
 function demonstrateCard(store: CardStore, asked: number) {
   if (asked <= 0 || asked >= 0.86) return;
-  if (asked < 0.3) store.demonstrate(0, null);
-  else if (asked < 0.46) store.demonstrate(0, "a");
-  else if (asked < 0.62) store.demonstrate(1, null);
-  else store.demonstrate(1, "a");
+  store.demonstrate(asked < 0.45 ? null : CHARACTERS[0].key);
 }
 
 /**
@@ -197,7 +194,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     block: slot.element,
     chapterOpening: one(".open"),
     lastTypedParagraph: one("#p3"),
-    turnParagraphs: { a: one("#r-a"), b: one("#r-b") },
+    turnParagraph: one("#p4"),
     hub: one(".hub"),
     agents,
     teamLines: one<SVGSVGElement>("#lines"),
@@ -214,9 +211,9 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     typewriter(one("#ty2"), "ai"),
     typewriter(one("#ty3"), "me"),
   ] as const;
-  const turnTypers = { a: typewriter(one("#tra"), "me"), b: typewriter(one("#trb"), "me") };
+  const turnTyper = typewriter(one("#ty4"), "me");
   const worldTypers = ["#w0", "#w1", "#w2", "#w3"].map((id) => typewriter(one(id), "me"));
-  const allTypers = [...typers, turnTypers.a, turnTypers.b, ...worldTypers];
+  const allTypers = [...typers, turnTyper, ...worldTypers];
 
   let layout: Layout = measureLayout(parts);
   let current = 0;
@@ -268,7 +265,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       x = lerp((width - fullWidth) / 2, workspace.x, settle);
       y = lerp((height + barHeight - fullWidth * BLOCK_ASPECT) / 2, workspace.y, settle);
       opacity = 1;
-      grade = 1;
+      grade = 1 - smooth(asked, 0, 0.14) * (1 - smooth(asked, 0.9, 1)) * 0.3;
       if (isPhone) {
         // No room beside the headline, so the product fills the screen and then slides down for it.
         blockWidth = workspace.w;
@@ -293,6 +290,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
         ? `brightness(${grade.toFixed(3)}) saturate(${(1 - (1 - grade) * 0.5).toFixed(3)})`
         : "none";
     block.inert = !(dawnP > 0.7 && leave < 0.05);
+    block.classList.toggle("s-asking", asked > 0 && (asked < 1 || store.getAnswer() !== null));
     if (hints > 0) slot.set("hints", progress(hints, 0.08, 0.95));
     else if (beats.lore > 0) slot.set("lore", beats.lore);
     else slot.set("team", 0);
@@ -313,15 +311,12 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     });
 
     const chapterIn = smooth(open, 0, 0.7);
-    const chapterDim =
-      asked > 0
-        ? clamp(1 - smooth(asked, 0, 0.12) + smooth(asked, 0.9, 1))
-        : 1 - smooth(out, 0, 0.28);
+    const chapterDim = turn > 0 ? smooth(turn, 0, 0.16) : 1 - smooth(out, 0, 0.28);
     show(chapter, chapterIn * chapterDim * (1 - smooth(twistP, 0.02, 0.2)));
     const chapterOffset = lerp(
       lerp(layout.chapterFrom, layout.chapterTo, ease(write) * 0.3 + write * 0.7),
-      layout.turn[store.whoIsHe()],
-      smooth(turn, 0, 0.4),
+      layout.turn,
+      smooth(turn, 0, 0.3),
     );
     chapter.style.transform = `translate3d(0,${-chapterOffset}px,0)`;
     typers[0].set(progress(write, 0.04, 0.42), write > 0.02 && write < 0.42);
@@ -331,7 +326,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const askShown = smooth(asked, 0, 0.14) * (1 - smooth(asked, 0.9, 1));
     show(ask, askShown);
     card.style.transform = `translateY(${(1 - askShown) * 18}px)`;
-    turnTypers[store.whoIsHe()].set(progress(turn, 0.2, 1), turn > 0.15 && turn < 1);
+    turnTyper.set(progress(turn, 0.2, 0.7), turn > 0.15 && turn < 0.7);
 
     const fade = height * 0.035;
     for (const subtitle of subtitles) {
@@ -341,7 +336,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       subtitle.style.transform = `translateY(${(1 - shown) * 8}px)`;
     }
 
-    const teamShown = smooth(out, 0, 0.3) * (1 - smooth(asked, 0, 0.1));
+    const teamShown = smooth(out, 0, 0.3) * (1 - smooth(turn, 0, 0.1));
     show(team, teamShown);
     const reportWindows = [
       [0.1, 0.62],
@@ -399,10 +394,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     },
     signal,
   });
-  const unsubscribe = store.subscribe(() => {
-    needsPaint = true;
-  });
-
   let nightKept = false;
 
   function frame(now: number) {
@@ -467,7 +458,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   return () => {
     controller.abort();
     cancelAnimationFrame(frameRequest);
-    unsubscribe();
     for (const typer of allTypers) typer.restore();
     html.classList.remove("cine", "film-ready");
     delete html.dataset.auto;

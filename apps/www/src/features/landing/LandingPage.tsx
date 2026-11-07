@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { bindStoryChoice, createCardStore } from "./card-store";
+import { createCardStore } from "./card-store";
 import { startFilm } from "./film";
 import { createProductSlot, ProductPlaceholder } from "./ProductPlaceholder";
 import { QuestionCard } from "./QuestionCard";
+import { CHARACTERS, PROLOGUE } from "./story";
 import { SECTIONS } from "./timeline";
 
 const NIGHT = { "data-ui-theme": "dark" } as const;
@@ -16,11 +17,9 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
     const root = rootRef.current as HTMLElement;
     const controller = new AbortController();
     const slot = createProductSlot(root, store, controller.signal);
-    const unbindStory = bindStoryChoice(root, store);
     const stopFilm = startFilm(root, store, slot);
     return () => {
       controller.abort();
-      unbindStory();
       stopFilm();
     };
   }, [store]);
@@ -38,6 +37,11 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               <canvas />
             </div>
             <div className="walkers" id="walkers" aria-hidden="true">
+              <b className="camp" />
+              <i />
+              <i />
+              <i />
+              <i />
               <i />
             </div>
 
@@ -58,64 +62,32 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
 
             <div className="world" id="the-world" {...NIGHT}>
               <svg className="wlines" id="wlines" aria-hidden="true" />
-              <WorldNote id="w0" title="The Harrow">
-                Eleven months out of Sarn, past the edge of every chart she carries.
-              </WorldNote>
-              <WorldNote id="w1" title="Aldous Dell">
-                Captain. A scar across his left palm, from chapter 9.
-              </WorldNote>
-              <WorldNote id="w2" title="Ise Varo">
-                Navigator. Trusts her log over anyone’s memory.
-              </WorldNote>
-              <WorldNote id="w3" title="The stars">
-                Nobody aboard can read them now but her.
-              </WorldNote>
+              {CHARACTERS.map((character, index) => (
+                <WorldNote key={character.key} id={`w${index}`} title={character.name}>
+                  {character.note}
+                </WorldNote>
+              ))}
             </div>
 
             <article className="ms" id="chapter" {...NIGHT}>
-              <p className="open">
-                On the four hundred and twelfth night, the stars came back wrong.
+              <p className="open">{PROLOGUE.opening}</p>
+              <p>
+                <span id="ty1">{PROLOGUE.lines[0]}</span>
               </p>
               <p>
-                <span id="ty1">
-                  Ise Varo went below and read her own handwriting.{" "}
-                  <i>
-                    Ninth night out of Sarn. A boy with a cargo hook opened the captain’s left palm
-                    to the bone. Nine stitches. He did not make a sound.
-                  </i>
-                </span>
-              </p>
-              <p>
-                <span id="ty2">
-                  Above her the hatch scraped. Captain Dell came down the ladder with the lantern,
-                  the way he had every night since Sarn, and asked her where they were.
-                </span>
+                <span id="ty2">{PROLOGUE.lines[1]}</span>
               </p>
               <p id="p3">
-                <span id="ty3">
-                  “Close,” she said, and watched him lift his right hand to hang the lamp on its
-                  hook. The scar ran white across the palm.
-                </span>
+                <span id="ty3">{PROLOGUE.lines[2]}</span>
               </p>
-              <p id="r-a">
-                <span id="tra">
-                  She looked down at her own handwriting. <i>Left hand.</i> A man who had only ever
-                  seen that scar from across a table would get it backwards.
-                </span>
-              </p>
-              <p id="r-b" hidden>
-                <span id="trb">
-                  She looked down at her own handwriting. <i>Left hand.</i> She had rewritten that
-                  page from memory, in a week, with a fever. How much else in the log had she made
-                  up?
-                </span>
+              <p id="p4">
+                <span id="ty4">{PROLOGUE.turn}</span>
               </p>
             </article>
 
             <ol className="sub" {...NIGHT}>
               <li className="y" data-b="s1">
-                <b>You</b>Chapter 412. She reads the log, he comes down the ladder, and neither of
-                them says what they’re thinking.
+                <b>You</b>Write the prologue. Four condemned strangers, one beast, no way home.
               </li>
               <li data-b="s2">
                 <b>Muse</b>Drafting it now. Keep typing, I’ll work around you.
@@ -125,32 +97,32 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             <div className="team" id="the-team" {...NIGHT}>
               <svg className="lines" id="lines" aria-hidden="true" />
               <div className="hub" aria-hidden="true">
-                <b>412. Dead Reckoning</b>Ise Varo went below and read her own handwriting. Above
-                her the hatch scraped.
+                <b>Prologue</b>
+                {PROLOGUE.opening}
               </div>
               <Agent
                 letter="R"
                 name="Reader-sim"
                 live="Reading as a serial reader"
-                report="Attention dips in the log entry and comes back hard on the scar."
+                report="Attention dips on the walk and comes back hard on the Cold Fire."
               />
               <Agent
                 letter="C"
                 name="Critic"
                 live="Reading the scene"
-                report="The lantern clause adds nothing. Cut it."
+                report="“Beautiful” is doing the work. Leave it alone."
               />
               <Agent
                 letter="W"
                 name="Writer-helper"
                 live="Drafting two shorter endings"
-                report="Both endings are ready. The second stops on the scar."
+                report="Both endings are ready. The second stops on the dragon."
               />
               <Agent
                 letter="C"
                 name="Continuity-checker"
-                live="Reading Aldous Dell"
-                report="Chapter 9 puts Dell’s scar on his left hand. This scene has the right."
+                live="Reading Oskar"
+                report="Oskar’s page says he lost two fingers. Here he draws a bow."
                 isKey
               />
             </div>
@@ -160,21 +132,18 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 <b>You</b>Have the team read it.
               </li>
               <li data-b="s4">
-                <b>Muse</b>Continuity-checker found something I can’t settle for you.
+                <b>Muse</b>Fixed Oskar’s hand. Writing the ending now.
               </li>
             </ol>
+
+            <div className="twist" id="the-twist" {...NIGHT}>
+              <blockquote>We had to fight a dragon.</blockquote>
+            </div>
+            <canvas className="flame" id="flame" />
 
             <div className="ask" id="your-decisions">
               <QuestionCard store={store} />
             </div>
-
-            <div className="twist" id="the-twist" {...NIGHT}>
-              <blockquote id="tw-a">The man on the ladder was not Aldous Dell.</blockquote>
-              <blockquote id="tw-b" hidden>
-                The log was wrong, and she had written it.
-              </blockquote>
-            </div>
-            <canvas className="flame" id="flame" />
 
             <div className="dawn">
               <div className="cap" id="the-workspace" {...NIGHT}>
