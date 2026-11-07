@@ -361,10 +361,6 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
           "Levels",
           "“The strongest” means the highest level alive. Humans level fastest and elves slowest. Tam’s 58 at seventeen is a record.",
         ],
-        [
-          "Skills",
-          "Every skill box names where the skill came from: [Source: talent], [Source: practice], [Source: bloodline], [Source: rune]. No box in recorded history has said [Source: unknown].",
-        ],
         ["What it never does", "It has never told anyone what to do, or talked like a game."],
         [
           NOTES,
@@ -617,16 +613,16 @@ export const END = {
 
 /** The System's status windows at the campfire, one over each of the four, before the turn. */
 export const SHEETS: Record<CharacterKey, readonly string[]> = {
-  tam: ["Tam", "Human · Level 58", "[Spark]", "[Source: talent]"],
-  sigrun: ["Sigrun", "Dwarf · Level 74", "[Ward Rune]", "[Source: rune]"],
-  maren: ["Maren", "Elf · Level 70", "[Mending Hymn]", "[Source: practice]"],
-  oskar: ["Oskar", "Beastkin · Level 66", "[Sense Fear]", "[Source: bloodline]"],
+  tam: ["Tam", "Human · Level 58", "[Spark]"],
+  sigrun: ["Sigrun", "Dwarf · Level 74", "[Ward Rune]"],
+  maren: ["Maren", "Elf · Level 70", "[Mending Hymn]"],
+  oskar: ["Oskar", "Beastkin · Level 66", "[Sense Fear]"],
 };
 
 /** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
 export const SYSTEM = {
   death: "You died.",
   assigned: (key: CharacterKey) => `[No selection. Survivor assigned: ${characterName(key)}]`,
-  skill: ["[Unique skill acquired: Rekindle]", "[Source: unknown]"],
+  skill: ["[Unique skill acquired: Rekindle]"],
   rekindle: "Rekindle",
 } as const;
