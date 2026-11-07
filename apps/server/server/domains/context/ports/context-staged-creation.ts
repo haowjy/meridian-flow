@@ -1,7 +1,7 @@
 /** Private creation batches and their all-or-nothing publication into project areas. */
 import type { AheadMint } from "@meridian/agent-edit/integration";
 import type { Filetype } from "@meridian/contracts/protocol";
-import type { DocumentSeedOrigin, PreparedSeed } from "../../collab/index.js";
+import type { PreparedSeed } from "../../collab/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 export type ContextArea = "manuscript" | "kb" | "unfiled";
@@ -12,7 +12,6 @@ export type ContextStage = {
     extension: string;
     filetype: Filetype;
     metadata?: DocumentCreationMetadata;
-    origin: DocumentSeedOrigin;
     content:
       | { kind: "tracked"; seed: PreparedSeed; aheadMints: readonly AheadMint[] }
       | {
@@ -33,6 +32,8 @@ export type ContextPlacement = {
 export interface ContextStagedCreation {
   /** Caller owns the transaction and fences the stage owner, project and generation. */
   stage(stagingId: string, generation: number, nodes: ContextStage): Promise<void>;
+  /** Ids of the folders and documents staged for this generation, read from the stage itself. */
+  stagedIds(stagingId: string, generation: number): Promise<Set<string>>;
   /** Caller keeps its owner/project lifecycle gate until commit; a changed placement writes nothing. */
   commitStaged(
     stagingId: string,

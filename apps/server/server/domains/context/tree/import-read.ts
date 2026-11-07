@@ -3,7 +3,10 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { contextSources } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runInRootDrizzleReadSnapshot,
+} from "../../../shared/drizzle-transaction.js";
 import type { ContextImportArea, ContextImportRead } from "../ports/context-import-read.js";
 import { loadDocumentAddresses } from "./tree-addresses.js";
 import { createTreeReader, LIVE_TREE, visibleDocuments, visibleFolders } from "./tree-view.js";
@@ -80,46 +83,48 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
         }),
       );
     },
-    async linkCandidates() {
-      const sourceRows = await sources(["manuscript", "kb", "unfiled"]);
-      const sourceById = new Map(sourceRows.map((row) => [row.id, row.area]));
-      if (!sourceRows.length) return [];
-      const vd = visibleDocuments(LIVE_TREE);
-      const rows = await currentDrizzleDb(db)
-        .select({
-          id: vd.id,
-          sourceId: vd.contextSourceId,
-          filetype: vd.fileType,
-          metadata: vd.metadata,
-        })
-        .from(vd)
-        .where(
-          inArray(
-            vd.contextSourceId,
-            sourceRows.map((row) => row.id),
-          ),
+    // One snapshot: a delete between the list and the address read would otherwise throw below.
+    linkCandidates: () =>
+      runInRootDrizzleReadSnapshot(db, async () => {
+        const sourceRows = await sources(["manuscript", "kb", "unfiled"]);
+        const sourceById = new Map(sourceRows.map((row) => [row.id, row.area]));
+        if (!sourceRows.length) return [];
+        const vd = visibleDocuments(LIVE_TREE);
+        const rows = await currentDrizzleDb(db)
+          .select({
+            id: vd.id,
+            sourceId: vd.contextSourceId,
+            filetype: vd.fileType,
+            metadata: vd.metadata,
+          })
+          .from(vd)
+          .where(
+            inArray(
+              vd.contextSourceId,
+              sourceRows.map((row) => row.id),
+            ),
+          );
+        const addresses = new Map(
+          (
+            await loadDocumentAddresses(currentDrizzleDb(db), { ids: rows.map((row) => row.id) })
+          ).map((address) => [address.documentId, address]),
         );
-      const addresses = new Map(
-        (await loadDocumentAddresses(currentDrizzleDb(db), { ids: rows.map((row) => row.id) })).map(
-          (address) => [address.documentId, address],
-        ),
-      );
-      return rows.map((row) => {
-        const address = addresses.get(row.id);
-        if (!address || address.deleted || address.hidden)
-          throw new Error(`Live import candidate disappeared: ${row.id}`);
-        const area = sourceById.get(row.sourceId);
-        if (!area) throw new Error(`Import candidate has no project area: ${row.id}`);
-        return {
-          id: row.id,
-          uri: address.uri,
-          path: address.path,
-          aliases: Array.isArray(row.metadata.aliases)
-            ? row.metadata.aliases.filter((alias): alias is string => typeof alias === "string")
-            : [],
-          filetype: row.filetype,
-        };
-      });
-    },
+        return rows.map((row) => {
+          const address = addresses.get(row.id);
+          if (!address || address.deleted || address.hidden)
+            throw new Error(`Live import candidate disappeared: ${row.id}`);
+          const area = sourceById.get(row.sourceId);
+          if (!area) throw new Error(`Import candidate has no project area: ${row.id}`);
+          return {
+            id: row.id,
+            uri: address.uri,
+            path: address.path,
+            aliases: Array.isArray(row.metadata.aliases)
+              ? row.metadata.aliases.filter((alias): alias is string => typeof alias === "string")
+              : [],
+            filetype: row.filetype,
+          };
+        });
+      }),
   };
 }

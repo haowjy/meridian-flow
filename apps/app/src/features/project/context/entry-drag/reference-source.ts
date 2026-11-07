@@ -23,7 +23,7 @@ const NOT_A_DRAG = {};
  * keeps a source inside another draggable (a chip in a row) from also starting the outer drag,
  * and publishes the drag with `source: "reference"`.
  */
-export function startReferenceDrag(
+function startReferenceDrag(
   event: Pick<globalThis.DragEvent, "dataTransfer" | "stopPropagation">,
   subject: ReferenceSubject,
 ) {

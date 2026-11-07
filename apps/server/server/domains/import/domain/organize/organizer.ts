@@ -19,6 +19,8 @@ import { prepareImportEntries } from "./prepare.js";
 const BUILD_NODES = 500;
 const BUILD_BYTES = 16 * 1024 * 1024;
 const MAX_REBUILT_GENERATIONS = 5;
+/** Pause after the nth consecutive failed pass: 10 s, 20 s, 40 s, 80 s. */
+const retryDelayMs = (attempts: number) => 10_000 * 2 ** (attempts - 1);
 
 type OrganizerDeps = {
   repository: ImportRepository;
@@ -65,8 +67,8 @@ async function readText(objects: ObjectStorePort, key: string): Promise<string> 
 }
 
 export function createImportOrganizer(deps: OrganizerDeps) {
-  async function recordNoProgress(claim: OrganizeClaim): Promise<void> {
-    await deps.repository.organizeTransaction(claim, async (locked) => {
+  async function recordNoProgress(claim: OrganizeClaim): Promise<number> {
+    const result = await deps.repository.organizeTransaction(claim, async (locked) => {
       const attempts = locked.claimsWithoutProgress + 1;
       const now = await deps.repository.now();
       await deps.repository.update(locked.id, {
@@ -82,7 +84,9 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             }
           : {}),
       });
+      return attempts;
     });
+    return result.kind === "committed" ? result.value : 0;
   }
   async function resetGeneration(
     claim: OrganizeClaim,
@@ -124,12 +128,12 @@ export function createImportOrganizer(deps: OrganizerDeps) {
     record: ImportRecord,
     tree: OrganizedTree,
     entries: readonly ImportEntry[],
-    read: ContextImportRead,
+    context: { read: ContextImportRead; staged: ContextStagedCreation },
   ) {
     const uris = uriMap(tree);
-    const staged = new Set(
-      entries.filter((entry) => entry.state === "prepared").map((entry) => entry.id),
-    );
+    // The stage is the record of what is staged: a planned folder with no import entry (a
+    // DOCX's image folder) is visible only there.
+    const staged = await context.staged.stagedIds(record.id, record.placementGeneration);
     const planned = new Set(
       tree.nodes
         .filter((node) => node.state === "planned" && node.kind !== "folder")
@@ -150,11 +154,13 @@ export function createImportOrganizer(deps: OrganizerDeps) {
           ]
         : [],
     );
-    const existing: ImportLinkCandidate[] = (await read.linkCandidates()).map((candidate) => ({
-      ...candidate,
-      rootId: null,
-      kind: "note",
-    }));
+    const existing: ImportLinkCandidate[] = (await context.read.linkCandidates()).map(
+      (candidate) => ({
+        ...candidate,
+        rootId: null,
+        kind: "note",
+      }),
+    );
     return {
       uris,
       planned,
@@ -199,12 +205,12 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         name: node.name,
         extension: node.extension,
         filetype: node.filetype,
-        origin: {
-          type: "import" as const,
-          userId: record.userId,
-          source: "upload",
-          filename: node.filename,
-        },
+      };
+      const origin = {
+        type: "import" as const,
+        userId: record.userId,
+        source: "upload",
+        filename: node.filename,
       };
       let document: (typeof documents)[number];
       if (node.kind === "binary") {
@@ -227,7 +233,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             documentId: node.id as DocumentId,
             projectId,
             content,
-            origin: base.origin,
+            origin,
           });
           document = { ...base, content: { kind: "tracked", seed, aheadMints: [] } };
         } else {
@@ -256,7 +262,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             documentId: node.id as DocumentId,
             projectId,
             content: bound.content,
-            origin: base.origin,
+            origin,
           });
           document = {
             ...base,
@@ -350,7 +356,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       const reset = await resetGeneration(claim, tree);
       return reset === "reset" ? 1 : 0;
     }
-    const build = await prepareBuild(record, tree, durableEntries, context.read);
+    const build = await prepareBuild(record, tree, durableEntries, context);
     let built = 0;
     while (!signal.aborted && built < build.pending.length) {
       const batch = await buildBatch(claim, record, projectId, build, built);
@@ -421,6 +427,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       for (let pass = 0; pass < 100 && !signal.aborted; pass++) {
         const claim = await deps.queue.claim();
         if (!claim) break;
+        let retryAfterMs: number | undefined;
         const heartbeat = setInterval(() => void deps.queue.heartbeat(claim), 30_000);
         heartbeat.unref();
         try {
@@ -431,10 +438,11 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             token: claim.token,
             generation: claim.generation,
           });
-          await recordNoProgress(claim);
+          const attempts = await recordNoProgress(claim);
+          if (attempts) retryAfterMs = retryDelayMs(attempts);
         } finally {
           clearInterval(heartbeat);
-          await deps.queue.release(claim);
+          await deps.queue.release(claim, retryAfterMs);
         }
       }
       return total;

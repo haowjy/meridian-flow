@@ -11,7 +11,6 @@ CREATE TABLE "context_staged_documents" (
 	"extension" text NOT NULL,
 	"filetype" text NOT NULL,
 	"metadata" jsonb NOT NULL,
-	"origin" jsonb NOT NULL,
 	"storage_url" text,
 	"mime_type" text,
 	"size_bytes" bigint NOT NULL,

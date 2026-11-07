@@ -10,5 +10,6 @@ export interface OrganizeClaim {
 export interface OrganizeQueue {
   claim(): Promise<OrganizeClaim | null>;
   heartbeat(claim: OrganizeClaim): Promise<boolean>;
-  release(claim: OrganizeClaim): Promise<void>;
+  /** With `retryAfterMs` the import stays leased that long, so a failed pass is not reclaimed at once. */
+  release(claim: OrganizeClaim, retryAfterMs?: number): Promise<void>;
 }
