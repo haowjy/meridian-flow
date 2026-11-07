@@ -152,7 +152,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 letter="C"
                 name="Continuity-checker"
                 live="Reading Tam"
-                report="Tam’s page says his spark won’t catch in deep cold. Here it takes the dragon’s eye."
+                report="Tam’s page says his spark won’t catch in deep cold. Here it takes the beast’s eye."
                 isKey
               />
             </div>
