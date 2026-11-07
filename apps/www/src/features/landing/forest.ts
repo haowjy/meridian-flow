@@ -260,6 +260,8 @@ export function createForest(root: HTMLElement) {
   const sheets = root.querySelector("#sheets") as HTMLElement;
   root.style.setProperty("--walk-sheet", `url(${partySheet().toDataURL()})`);
   root.style.setProperty("--walk-lantern", rgb(MARKETING_SKY.sun));
+  root.style.setProperty("--campfire", rgb(MARKETING_SKY.campfire));
+  root.style.setProperty("--campfire-core", rgb(MARKETING_SKY.campfireCore));
   root.style.setProperty("--walk-ward", rgb(MARKETING_SKY.fireCore));
   let layout: Layout;
 
@@ -397,7 +399,7 @@ export function createForest(root: HTMLElement) {
       const standX = campX - (layout.isPhone ? walkOut * W * 0.25 : 0);
       const fireX = campX - (drift - W * walked(spans.camp[1], layout));
       const seated = smooth(beats.camp, ...CAMP.sits);
-      const ring = [1.6, 0.6, -0.6, -1.6];
+      const ring = [2.1, 1, -1, -2.1];
       const fight = beats.fight;
       const backed =
         (smooth(beats.turn, ...TURN.perch) * 0.05 + smooth(fight, 0.05, FIGHT.breath[0]) * 0.14) *
@@ -484,7 +486,7 @@ export function createForest(root: HTMLElement) {
       // Still burning as they walk away from it, until the ground carries it off.
       const glow = seated * (1 - smooth(beats.turn, 0.45, 0.55));
       camp.style.opacity = String(clamp(glow * (0.9 + Math.sin(at / 17) * 0.1)));
-      camp.style.transform = `translate3d(${fireX - size * 0.6}px,${H * GROUND.feet - size * 0.86}px,0) scale(${size / 100})`;
+      camp.style.transform = `translate3d(${fireX + gap * 0.3 - size * 0.6}px,${H * GROUND.feet - size * 0.86}px,0) scale(${size / 100})`;
       const sheetsUp = envelope(beats.camp, CAMP.sheets, 0.04, 0.05);
       sheets.style.opacity = String(sheetsUp);
       sheets.style.transform = `translate3d(${campX}px,${H * GROUND.feet - size * 1.15 + (1 - sheetsUp) * H * 0.03}px,0) translate(-50%,-100%)`;
