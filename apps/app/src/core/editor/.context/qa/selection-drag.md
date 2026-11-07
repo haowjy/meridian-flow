@@ -79,3 +79,12 @@ move/down/up` or CDP `Input.dispatchMouseEvent`; double and triple presses need 
     itself changes nothing; dragging it into the composer copies and leaves the document as it was.
     Sweep a range across several paragraphs and press in the blank past a line's last word: it lifts
     like a press on the letters; the same blank past the range's last line does not. A press in the margin beside a line outside the range stays native.
+19. **Flick, and a button released out of order.** Drive raw CDP `Input.dispatchMouseEvent`, with no
+    `mouseMoved` between press and release. Press a highlight and release 250px away: the text lands
+    there and the click that follows reaches nothing. On a block handle, the same flick moves the
+    block and opens no menu; on a diagram body it moves the block; on a table body it does nothing
+    to the order. A handle press that wobbles 2px diagonally still opens the menu. Press the left
+    button on a handle and move, press the right (`buttons: 3`), release the left (`buttons: 2`):
+    the block drops at that point at once, and the right button's `pointerup` changes nothing.
+    A touch tap on a highlight (`Input.dispatchTouchEvent`) places a caret and leaves the next
+    press working.

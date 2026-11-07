@@ -39,13 +39,6 @@ export type LinkClickIntent =
   | { action: "place-caret" }
   | { action: "follow"; disposition: LinkFollowDisposition };
 
-/**
- * Pointer travel that turns a click into a drag, matching the chrome kernel's
- * sweep slop. The kernel's own sweep flag cannot answer this: it clears on
- * `mouseup`, and `click` fires after that.
- */
-export const LINK_CLICK_SLOP_PX = 4;
-
 export type LinkClickGesture = {
   /** 0 primary, 1 middle. A right-click never arrives here; it is a claim. */
   button: number;
@@ -55,8 +48,8 @@ export type LinkClickGesture = {
   shiftKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
-  /** Manhattan distance from where the press started to where it ended. */
-  travelledPx: number;
+  /** The press travelled far enough to be a sweep (`pastSlop`), not a click. */
+  swept: boolean;
 };
 
 /** The button that means "somewhere else" everywhere on the web. */
@@ -68,7 +61,7 @@ export function linkClickIntent({
   shiftKey,
   ctrlKey,
   metaKey,
-  travelledPx,
+  swept,
 }: LinkClickGesture): LinkClickIntent {
   // The middle button places nothing anywhere, so none of the caret rules
   // below can apply to it. Everywhere else on the web it means a new tab.
@@ -78,7 +71,7 @@ export function linkClickIntent({
   if (shiftKey) return { action: "place-caret" };
   // A sweep that started and ended on the same link is a selection, not a
   // follow: the writer was highlighting text to read it or point at it (law 7).
-  if (travelledPx >= LINK_CLICK_SLOP_PX) return { action: "place-caret" };
+  if (swept) return { action: "place-caret" };
 
   // Ctrl on Windows and Linux, Cmd on macOS. Taking both is safe: macOS turns
   // Ctrl+click into a context menu before it can become a click, and the claim
