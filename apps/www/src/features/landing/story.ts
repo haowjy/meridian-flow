@@ -395,7 +395,7 @@ export const PROLOGUE = {
     "Four peoples sent their strongest north to kill whatever was breathing it.",
     "We were the four.",
   ],
-  turn: "On the ninth night, we found it.",
+  turn: "On the ninth night, we found it. It was a dragon.",
 } as const;
 
 export const QUESTION =
