@@ -19,7 +19,7 @@ export const Route = createRootRoute({
       ...seo({
         title: "Meridian Flow: AI writing app for serial storytellers",
         description:
-          "Build a world. Bring it to life with a team of agents. An AI writing app for Royal Road and web serial writers.",
+          "Build a world. Bring it to life with a team of agents. AI writing app for serial storytellers.",
         image: "https://www.meridian-flow.com/og.jpg",
       }),
     ],
