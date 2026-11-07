@@ -622,7 +622,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   /** Copy's collab cut/bind and the object store its binaries duplicate into. */
   copy?: ContextCopyCommandDeps;
   /**
-   * The Work mutation boundary (decision D17): a branch command locks its branch's Work first
+   * The Work mutation boundary: a branch command locks its branch's Work first
    * and touches the Work's projection after it (§13.2, S3).
    */
   pendingBranch: {

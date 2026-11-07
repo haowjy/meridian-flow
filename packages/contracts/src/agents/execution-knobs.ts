@@ -121,7 +121,7 @@ export const toolAliases: Record<string, string> = {
 
 /**
  * `edit` was a capability; access is now `permission` and the document tool is
- * `write` (D12, D34). An allow-list naming it fails with the replacement named.
+ * `write`. An allow-list naming it fails with the replacement named.
  */
 const EDIT_IS_PERMISSION_ERROR =
   '"edit" is not a tool. Use "permission: read" or "permission: edit" for what the agent may change, and the "write" tool for documents.';
@@ -159,7 +159,7 @@ function toolList(rejectEdit: boolean) {
 export const toolAllowListSchema = toolList(true);
 
 /**
- * A `disallowed-tools` list. Flow ignores a name it doesn't have (D57), so
+ * A `disallowed-tools` list. Flow ignores a name it doesn't have, so
  * `edit` (a normal Claude Code read-only profile's `Edit`) is ignored too.
  */
 export const toolDenyListSchema = toolList(false);
