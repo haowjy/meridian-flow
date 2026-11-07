@@ -5,20 +5,23 @@ export const progress = (value: number, from: number, to: number) =>
   clamp((value - from) / (to - from));
 export const smooth = (value: number, from: number, to: number) => ease(progress(value, from, to));
 
-/** Beat name, then its scroll length in viewport heights and its autoplay seconds. */
+/**
+ * Beat name, then its scroll length in viewport heights and its autoplay seconds.
+ * Lengths leave one viewport of stillness after each thing to read, about two swipes.
+ */
 const BEATS = [
   ["hold", 0.5, 1.2],
   ["push", 0.9, 2],
   ["sky", 1.6, 7],
-  ["world", 1.1, 8],
+  ["world", 2.1, 11],
   ["open", 0.4, 2.2],
-  ["write", 1.2, 14],
+  ["write", 2.2, 17],
   ["out", 0.7, 3.5],
-  ["back", 0.8, 7],
-  ["turn", 1.1, 7],
-  ["twist", 2, 6],
+  ["back", 0.9, 7],
+  ["turn", 1.8, 9],
+  ["twist", 3, 9],
   ["dawn", 1.5, 6],
-  ["lore", 1.4, 5],
+  ["lore", 1.5, 5],
   ["ask", 3, 12],
   ["hints", 1.2, 9],
   ["roam", 3, 6],
@@ -26,7 +29,10 @@ const BEATS = [
 ] as const;
 
 /** The share of the ask where the question lifts out of the chat, 2 swipes in. */
-export const ASK_LIFT = [0.5, 0.62] as const;
+export const ASK_LIFT = [0.43, 0.55] as const;
+/** The share of the write and world beats spent typing; the rest is the hold. */
+export const WRITE_TYPED = 0.55;
+export const WORLD_TYPED = 0.52;
 
 type Beat = (typeof BEATS)[number][0];
 export type Span = readonly [start: number, end: number];
@@ -53,7 +59,7 @@ export function spanBeats(viewportHeight: number) {
     seconds += duration;
     stops.push({ y: position, t: seconds });
   }
-  const write = (share: number) => along(spans, "write", share);
+  const write = (share: number) => along(spans, "write", share * WRITE_TYPED);
   const subtitles = {
     s1: [spans.open[0], write(0.2)],
     s2: [write(0.24), write(0.7)],
@@ -75,7 +81,7 @@ export const SECTIONS = [
     hash: "#the-world",
     label: "World",
     startsAt: (spans: BeatSpans, vh: number) => spans.sky[1] - vh * 0.1,
-    jumpTo: (spans: BeatSpans) => along(spans, "world", 0.84),
+    jumpTo: (spans: BeatSpans) => along(spans, "world", 0.7),
   },
   {
     hash: "#the-team",
