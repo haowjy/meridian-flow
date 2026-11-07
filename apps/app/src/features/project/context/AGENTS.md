@@ -51,8 +51,8 @@ chat resources rather than ordinary Editor tabs.
   catalogs prune missing folders; active-document reveal expands once.
 - A section's pane states are distinct: rows, an error row with Retry when the
   catalog query failed, "Loading files…" while the catalog is not installed yet
-  (`isComplete` false), and "No context files yet." only once it is. A failed or
-  in-flight load must never read as an empty project.
+  (`isComplete` false), and nothing at all once it is and the section is empty.
+  A failed or in-flight load must never read as an empty project.
 - Document opening records the active tab, not the intent. The device record
   updates before the server request, which waits for `whenOnServer`; restored
   parked tabs do not count as opens.

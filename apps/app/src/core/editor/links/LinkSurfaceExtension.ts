@@ -30,7 +30,7 @@ import {
 import type { EditorView } from "@tiptap/pm/view";
 
 import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
-import { getEditorChrome, hoverOwner } from "../chrome";
+import { getEditorChrome, hoverOwner, pastSlop } from "../chrome";
 import { linkClipboardPlugin } from "./link-clipboard";
 import {
   anchorLinkRange,
@@ -169,7 +169,9 @@ export const LinkSurfaceExtension = Extension.create({
         shiftKey: event.shiftKey,
         ctrlKey: event.ctrlKey,
         metaKey: event.metaKey,
-        travelledPx: travelFrom(started?.origin ?? null, event),
+        swept: started?.origin
+          ? pastSlop(event.clientX - started.origin.x, event.clientY - started.origin.y)
+          : false,
       });
       if (intent.action === "place-caret") return false;
 
@@ -421,11 +423,6 @@ function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
     ref: null,
     href: anchor.getAttribute("data-meridian-link") ?? anchor.getAttribute("href") ?? "",
   };
-}
-
-function travelFrom(origin: LinkPoint | null, event: MouseEvent): number {
-  if (!origin) return 0;
-  return Math.abs(event.clientX - origin.x) + Math.abs(event.clientY - origin.y);
 }
 
 /**

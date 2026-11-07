@@ -460,13 +460,14 @@ function SchemeSection({
             {isError ? (
               <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
             ) : !isComplete || !importedTree ? (
-              <PaneHint depth={1} busy>
+              <p
+                role="status"
+                aria-live="polite"
+                className="py-1.5 pr-2 text-xs text-ink-subtle"
+                style={{ paddingLeft: rowPaddingLeft(1) }}
+              >
                 <Trans>Loading files…</Trans>
-              </PaneHint>
-            ) : importedTree.rows(importedTree.root.entryId).length === 0 && !creating ? (
-              <PaneHint depth={1}>
-                <Trans>No context files yet.</Trans>
-              </PaneHint>
+              </p>
             ) : null}
           </div>
         ) : null}
@@ -478,25 +479,4 @@ function SchemeSection({
 function parentContextPath(path: string): string {
   const separator = path.lastIndexOf("/");
   return separator <= 0 ? "" : path.slice(0, separator);
-}
-
-function PaneHint({
-  depth,
-  busy = false,
-  children,
-}: {
-  depth: number;
-  /** The tree is still loading; announce it instead of claiming the pane is empty. */
-  busy?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <p
-      className="py-1.5 pr-2 text-xs text-ink-subtle"
-      style={{ paddingLeft: rowPaddingLeft(depth) }}
-      {...(busy ? { role: "status", "aria-live": "polite" } : {})}
-    >
-      {children}
-    </p>
-  );
 }

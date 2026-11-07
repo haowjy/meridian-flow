@@ -4,6 +4,7 @@ import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
+import { type EditorChrome, type PressStart, trackPress } from "@/core/editor/chrome";
 
 import { useEditorChrome } from "../../chrome/useEditorChrome";
 import {
@@ -13,9 +14,6 @@ import {
 } from "./block-geometry";
 import { blockAt, moveBlockToSeamTransaction } from "./block-targets";
 
-/** Pointer travel that turns a press into a drag, not a click. */
-const DRAG_SLOP_PX = 4;
-
 /** Which door the press came through. */
 type DragSource = "handle" | "body";
 
@@ -23,8 +21,6 @@ type DragSource = "handle" | "body";
 type Gesture = {
   pointerId: number;
   source: DragSource;
-  startX: number;
-  startY: number;
   /** Last seen pointer y, the only input the drop seam is computed from. */
   pointerY: number;
   /** False while the press might still turn out to be a click. */
@@ -33,10 +29,11 @@ type Gesture = {
   endDrag: (() => void) | null;
   /** The element holding the pointer, when the press took capture. */
   capture: HTMLElement | null;
+  stop: () => void;
 };
 
 /** What the gesture needs from a press, whether React or the DOM delivered it. */
-export type BlockPress = Pick<PointerEvent, "pointerId" | "clientX" | "clientY">;
+export type BlockPress = PressStart & { pointerId: number };
 
 export type BlockGesture = {
   /** The seam the drop line belongs on, or null while nothing has lifted. */
@@ -84,6 +81,7 @@ export function useBlockMovementGesture({
       const gesture = gestureRef.current;
       if (!gesture) return;
       gestureRef.current = null;
+      gesture.stop();
 
       releasePointerCapture(gesture.capture, gesture.pointerId);
       const held = editor.isDestroyed ? null : draggedBlockPos(editor.state);
@@ -108,22 +106,45 @@ export function useBlockMovementGesture({
 
   /** Take the press. */
   const beginGesture = useCallback(
-    (press: BlockPress, pos: number, source: DragSource, capture: HTMLElement | null) => {
+    (
+      chrome: EditorChrome,
+      press: BlockPress,
+      pos: number,
+      source: DragSource,
+      capture: HTMLElement | null,
+    ) => {
       capture?.setPointerCapture?.(press.pointerId);
-      gestureRef.current = {
+      // Built before `beginBlockDrag`: its transaction can end the gesture.
+      const gesture: Gesture = {
         pointerId: press.pointerId,
         source,
-        startX: press.clientX,
-        startY: press.clientY,
         pointerY: press.clientY,
         lifted: false,
         endDrag: null,
         capture,
+        stop: trackPress(press, {
+          lift: (at) => {
+            // Only now is it a drag. A press that never travelled is a click, and
+            // telling the kernel otherwise would blank every surface on the page
+            // for the length of a menu press. `pointerY` is set first: the lift
+            // dispatches, and the drop belongs where the pointer is now.
+            gesture.pointerY = at.clientY;
+            gesture.lifted = true;
+            gesture.endDrag = chrome.beginDrag(() => finishGesture(false));
+            liftBlockDrag(editor);
+            return (event) => {
+              gesture.pointerY = event.clientY;
+              setSeamIndex(seamIndexAtPointer(editor.view, event.clientY));
+            };
+          },
+          end: (how) => finishGesture(how !== "cancel"),
+        }),
       };
-      beginBlockDrag(editor, pos);
+      gestureRef.current = gesture;
       setActive(true);
+      beginBlockDrag(editor, pos);
     },
-    [editor],
+    [editor, finishGesture],
   );
 
   useEffect(() => {
@@ -157,7 +178,7 @@ export function useBlockMovementGesture({
       if (event.button !== 0 || event.pointerType !== "mouse") return;
       if (gestureRef.current || editor.isDestroyed) return;
       const target = objectBodyDragTarget(editor.view, event);
-      if (target) beginGesture(event, target.pos, "body", null);
+      if (target) beginGesture(chrome, event, target.pos, "body", null);
     };
 
     const onDragStart = (event: DragEvent) => {
@@ -178,66 +199,15 @@ export function useBlockMovementGesture({
     };
   }, [editor, editable, chrome, beginGesture]);
 
-  const onPointerMove = useCallback(
-    (event: PointerEvent) => {
-      const gesture = gestureRef.current;
-      if (!gesture || gesture.pointerId !== event.pointerId || !chrome || editor.isDestroyed) {
-        return;
-      }
-      gesture.pointerY = event.clientY;
-
-      if (!gesture.lifted) {
-        const travelled = Math.hypot(
-          event.clientX - gesture.startX,
-          event.clientY - gesture.startY,
-        );
-        if (travelled < DRAG_SLOP_PX) return;
-        // Only now is it a drag. A press that never travelled is a click, and
-        // telling the kernel otherwise would blank every surface on the page
-        // for the length of a menu press.
-        gesture.lifted = true;
-        gesture.endDrag = chrome.beginDrag(() => finishGesture(false));
-        liftBlockDrag(editor);
-      }
-
-      setSeamIndex(seamIndexAtPointer(editor.view, event.clientY));
-    },
-    [chrome, editor, finishGesture],
-  );
-
-  useEffect(() => {
-    if (!active) return;
-    const release = () => finishGesture(true);
-    const abandon = () => finishGesture(false);
-
-    // Captured pointer events still bubble to the window, so these hear the
-    // whole gesture whether or not the handle survives it. `pointercancel` is
-    // the browser taking the gesture away (a touch becoming a page scroll),
-    // `lostpointercapture` is the element losing it, and `blur` is the release
-    // that happens where this document cannot hear it.
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", release);
-    window.addEventListener("pointercancel", abandon);
-    window.addEventListener("lostpointercapture", abandon);
-    window.addEventListener("blur", abandon);
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", release);
-      window.removeEventListener("pointercancel", abandon);
-      window.removeEventListener("lostpointercapture", abandon);
-      window.removeEventListener("blur", abandon);
-    };
-  }, [active, onPointerMove, finishGesture]);
-
   // Nothing outlives an unmount: a surface torn down mid-drag would leave the
   // kernel suppressing chrome for a pointer nobody is following.
   useEffect(() => () => finishGesture(false), [finishGesture]);
 
   const pressHandle = useCallback(
     (press: BlockPress, pos: number, capture: HTMLElement) => {
-      beginGesture(press, pos, "handle", capture);
+      if (chrome) beginGesture(chrome, press, pos, "handle", capture);
     },
-    [beginGesture],
+    [chrome, beginGesture],
   );
 
   const inFlight = useCallback(() => gestureRef.current !== null, []);
