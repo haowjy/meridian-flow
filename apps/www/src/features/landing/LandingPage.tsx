@@ -49,7 +49,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                   <p className="sheet-skill">{SHEETS[key].skill}</p>
                   <p className="sheet-does">{SHEETS[key].does}</p>
                   <p className="sheet-status">
-                    <span>Status</span> {SHEETS[key].status}
+                    <span className="sheet-label">Status</span> {SHEETS[key].status}
                   </p>
                 </div>
               ))}
