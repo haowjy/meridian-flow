@@ -7,19 +7,21 @@ export const smooth = (value: number, from: number, to: number) => ease(progress
 
 /** Beat name, then its scroll length in viewport heights and its autoplay seconds. */
 const BEATS = [
-  ["hold", 0.1, 1.2],
-  ["push", 0.55, 2],
-  ["world", 0.65, 8],
-  ["open", 0.2, 2.2],
-  ["write", 0.8, 14],
-  ["out", 0.45, 3.5],
-  ["back", 0.5, 7],
-  ["ask", 0.7, 10],
-  ["turn", 0.4, 6],
-  ["twist", 0.6, 5],
-  ["dawn", 0.8, 4.5],
-  ["hints", 0.8, 9],
-  ["leave", 0.45, 3],
+  ["hold", 0.5, 1.2],
+  ["push", 0.9, 2],
+  ["sky", 1.6, 7],
+  ["world", 1.1, 8],
+  ["open", 0.4, 2.2],
+  ["write", 1.2, 14],
+  ["out", 0.7, 3.5],
+  ["back", 0.8, 7],
+  ["ask", 1, 10],
+  ["turn", 0.7, 6],
+  ["twist", 2, 6],
+  ["dawn", 1.1, 4],
+  ["lore", 2.2, 6],
+  ["hints", 1.2, 9],
+  ["leave", 0.7, 3],
 ] as const;
 
 type Beat = (typeof BEATS)[number][0];
@@ -68,7 +70,7 @@ export const SECTIONS = [
   {
     hash: "#the-world",
     label: "World",
-    startsAt: (spans: BeatSpans, vh: number) => spans.push[1] - vh * 0.1,
+    startsAt: (spans: BeatSpans, vh: number) => spans.sky[1] - vh * 0.1,
     jumpTo: (spans: BeatSpans) => along(spans, "world", 0.84),
   },
   {

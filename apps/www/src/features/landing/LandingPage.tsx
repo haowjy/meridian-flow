@@ -34,6 +34,12 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
         <section className="film">
           <div className="stage">
             <div className="capshade" id="capshade" />
+            <div className="forest" id="forest" aria-hidden="true">
+              <canvas />
+            </div>
+            <div className="walkers" id="walkers" aria-hidden="true">
+              <i />
+            </div>
 
             <div className="hero" id="hero" {...NIGHT}>
               <h1>
@@ -44,6 +50,10 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
 
             <div className="slotwrap">
               <ProductPlaceholder />
+            </div>
+
+            <div className="flyer" id="flyer" aria-hidden="true">
+              <i />
             </div>
 
             <div className="world" id="the-world" {...NIGHT}>
@@ -164,15 +174,11 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 The log was wrong, and she had written it.
               </blockquote>
             </div>
+            <canvas className="flame" id="flame" />
 
             <div className="dawn">
               <div className="cap" id="the-workspace" {...NIGHT}>
-                <h2>Muse edits the old chapters while you write the next one.</h2>
-                <p>
-                  Critic, Continuity-checker and Reader-sim read your project and report back to
-                  you. Muse and Writer write the prose into your manuscript, and you can type
-                  anywhere while they work.
-                </p>
+                <h2>Every dragon gets a page.</h2>
               </div>
               <div className="workspot" />
             </div>
@@ -227,6 +233,20 @@ function TopBar({ signInUrl, startUrl }: { signInUrl: string; startUrl: string }
         <a className="word" href="#top">
           Meridian Flow
         </a>
+        <button
+          type="button"
+          className="here"
+          id="here"
+          ref={menuButton}
+          aria-expanded={menuOpen}
+          aria-controls="menu"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <span id="herel">Jump to</span>
+          <svg viewBox="0 0 10 6" aria-hidden="true">
+            <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+        </button>
         <PlayControl />
         <nav className="jumps" aria-label="Sections">
           {SECTIONS.map(({ hash, label }) => (
@@ -243,23 +263,6 @@ function TopBar({ signInUrl, startUrl }: { signInUrl: string; startUrl: string }
             Start writing
           </a>
         </div>
-      </div>
-      <div className="row2">
-        <PlayControl />
-        <button
-          type="button"
-          className="here"
-          id="here"
-          ref={menuButton}
-          aria-expanded={menuOpen}
-          aria-controls="menu"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          <span id="herel">Jump to</span>
-          <svg viewBox="0 0 10 6" aria-hidden="true">
-            <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-        </button>
       </div>
       <nav className="menu jumps" id="menu" aria-label="Sections, phone" hidden={!menuOpen}>
         {SECTIONS.map(({ hash, label }) => (
