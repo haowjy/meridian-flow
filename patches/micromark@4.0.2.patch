@@ -1,0 +1,98 @@
+diff --git a/dev/lib/initialize/text.js b/dev/lib/initialize/text.js
+index 7192e70a0972e808d779999e57153bf3ed7bfc3a..be41ac13270e6e1fcec6e113f23c29fa76d0e998 100644
+--- a/dev/lib/initialize/text.js
++++ b/dev/lib/initialize/text.js
+@@ -113,29 +113,23 @@ function createResolver(extraResolver) {
+ 
+   /** @type {Resolver} */
+   function resolveAllText(events, context) {
+-    let index = -1
+-    /** @type {number | undefined} */
+-    let enter
+-
+-    // A rather boring computation (to merge adjacent `data` events) which
+-    // improves mm performance by 29%.
+-    while (++index <= events.length) {
+-      if (enter === undefined) {
+-        if (events[index] && events[index][1].type === types.data) {
+-          enter = index
+-          index++
+-        }
+-      } else if (!events[index] || events[index][1].type !== types.data) {
+-        // Don’t do anything if there is one data token.
+-        if (index !== enter + 2) {
+-          events[enter][1].end = events[index - 1][1].end
+-          events.splice(enter + 2, index - enter - 2)
+-          index = enter + 2
+-        }
+-
+-        enter = undefined
++    // Merge adjacent `data` events in one compacting pass: splicing per run is
++    // quadratic in the number of lines of a single paragraph.
++    let write = 0;
++    let read = 0;
++    while (read < events.length) {
++      if (events[read][1].type !== types.data) {
++        events[write++] = events[read++];
++        continue;
+       }
++      let next = read;
++      while (next < events.length && events[next][1].type === types.data) next++;
++      if (next - read > 2) events[read][1].end = events[next - 1][1].end;
++      events[write++] = events[read];
++      events[write++] = events[read + 1];
++      read = next;
+     }
++    events.length = write;
+ 
+     return extraResolver ? extraResolver(events, context) : events
+   }
+diff --git a/lib/initialize/text.js b/lib/initialize/text.js
+index b9383cb721b95c68bd0e684da6cbf441ed82b8eb..8db33352b5d6a44db8b1432a03cbed36e83b38de 100644
+--- a/lib/initialize/text.js
++++ b/lib/initialize/text.js
+@@ -104,28 +104,24 @@ function createResolver(extraResolver) {
+ 
+   /** @type {Resolver} */
+   function resolveAllText(events, context) {
+-    let index = -1;
+-    /** @type {number | undefined} */
+-    let enter;
+-
+-    // A rather boring computation (to merge adjacent `data` events) which
+-    // improves mm performance by 29%.
+-    while (++index <= events.length) {
+-      if (enter === undefined) {
+-        if (events[index] && events[index][1].type === "data") {
+-          enter = index;
+-          index++;
+-        }
+-      } else if (!events[index] || events[index][1].type !== "data") {
+-        // Don’t do anything if there is one data token.
+-        if (index !== enter + 2) {
+-          events[enter][1].end = events[index - 1][1].end;
+-          events.splice(enter + 2, index - enter - 2);
+-          index = enter + 2;
+-        }
+-        enter = undefined;
++    // Merge adjacent `data` events in one compacting pass: splicing per run is
++    // quadratic in the number of lines of a single paragraph.
++    let write = 0;
++    let read = 0;
++    while (read < events.length) {
++      if (events[read][1].type !== 'data') {
++        events[write++] = events[read++];
++        continue;
+       }
++      let next = read;
++      while (next < events.length && events[next][1].type === 'data') next++;
++      if (next - read > 2) events[read][1].end = events[next - 1][1].end;
++      events[write++] = events[read];
++      events[write++] = events[read + 1];
++      read = next;
+     }
++    events.length = write;
++
+     return extraResolver ? extraResolver(events, context) : events;
+   }
+ }
