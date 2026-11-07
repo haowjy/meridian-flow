@@ -11399,12 +11399,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "origin": {
-          "name": "origin",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
         "storage_url": {
           "name": "storage_url",
           "type": "text",
