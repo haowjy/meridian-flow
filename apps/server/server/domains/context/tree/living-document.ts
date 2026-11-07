@@ -67,8 +67,8 @@ export async function requireLivingDocument(
  * Which of `documentIds` are deleted yet keep an open draft destination in one branch (the
  * branch's id, or a Work's active branch): the deletion is the document's own or its
  * folder's (reason `deleted`; never a discard, a Work cascade or a deleted source), and the
- * branch has an active Work draft of it, which outlived the delete (D79), or moved it, which
- * outlived it too (D80: Apply restores it where the branch put it). Admission's one proof, for
+ * branch has an active Work draft of it, which outlived the delete, or moved it, which
+ * outlived it too (Apply restores it where the branch put it). Admission's one proof, for
  * file facts and for draft creation under the document lock. It never reads `has_effect`: a
  * no-effect draft (an open tab, an Undo after Discard) stays writable, while listing the
  * document in the branch is the tree view's separate, pending-only question.

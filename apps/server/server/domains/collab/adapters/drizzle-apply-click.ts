@@ -533,7 +533,7 @@ export function createDrizzleApplyClick(
                       return finish({ status: "changed", commandId: command.envelope.commandId });
                     const state = cut ? (node?.branch?.state ?? null) : null;
                     // Only the writer's knowledge brings a document back: a delete their view
-                    // did not show leaves the click undone and the draft pending (D79). A
+                    // did not show leaves the click undone and the draft pending. A
                     // hidden tombstone is a discarded creation, never asked about.
                     if (
                       state !== "deleting" &&

@@ -13,7 +13,7 @@
  *   self-hosted models.
  * - Either timer aborts the underlying provider HTTP stream (via the SDK's own
  *   signal support), not just the iterator.
- * - If the provider SDK ignores the signal, attempt-stream
+ * - If the provider SDK ignores the signal, the provider-stream envelope
  *   races the iterator against the abort anyway.
  * - The timeout error is surfaced as a retryable `provider_error` StreamEvent,
  *   so the retry machinery can try the same provider again.
@@ -63,7 +63,9 @@ export interface ModelAttemptSignal {
   signal: AbortSignal;
   /** Re-arm the inactivity deadline. Call on every stream progress event. */
   notifyProgress: () => void;
-  /** Clear both timers and the parent listener. Idempotent. */
+  /** Abort the derived signal, releasing a provider call still in flight. */
+  abort: () => void;
+  /** Clear both timers and the parent listener, and stop re-arming. Idempotent. */
   cleanup: () => void;
 }
 
@@ -72,9 +74,7 @@ export interface ModelAttemptSignal {
  * inactivity timer and a fixed ceiling timer.
  *
  * Behavior:
- * - If the parent is already aborted: returns the parent signal with no-op
- *   notifyProgress/cleanup (no timer to clear).
- * - Otherwise creates an AbortController armed with both timers. `notifyProgress`
+ * - Creates an AbortController armed with both timers. `notifyProgress`
  *   resets only the stall timer; the ceiling timer is never extended.
  * - A timer value <= 0 disables that timer. With both disabled the attempt has no
  *   deadline at all (explicit self-hosted configuration).
@@ -86,15 +86,13 @@ export function createModelAttemptSignal(
   parent: AbortSignal | undefined,
   timeouts: ModelAttemptTimeouts,
 ): ModelAttemptSignal {
-  if (parent?.aborted) {
-    return { signal: parent, notifyProgress: () => {}, cleanup: () => {} };
-  }
-
   const controller = new AbortController();
   let stallTimer: ReturnType<typeof setTimeout> | undefined;
   let ceilingTimer: ReturnType<typeof setTimeout> | undefined;
 
+  let done = false;
   const armStall = () => {
+    if (done) return;
     if (stallTimer !== undefined) clearTimeout(stallTimer);
     stallTimer =
       timeouts.stallMs > 0
@@ -121,7 +119,9 @@ export function createModelAttemptSignal(
   return {
     signal: controller.signal,
     notifyProgress: armStall,
+    abort: () => controller.abort(new Error("Attempt finished")),
     cleanup: () => {
+      done = true;
       if (stallTimer !== undefined) clearTimeout(stallTimer);
       if (ceilingTimer !== undefined) clearTimeout(ceilingTimer);
       parent?.removeEventListener("abort", onParentAbort);

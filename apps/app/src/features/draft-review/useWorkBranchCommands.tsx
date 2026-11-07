@@ -198,7 +198,7 @@ export function useWorkBranchCommands({
       return started;
     };
     /**
-     * `restore` is whether the writer chose to bring a deleted document back (D79). A single
+     * `restore` is whether the writer chose to bring a deleted document back. A single
      * document's Apply means yes when its row showed it deleted; an Apply all passes what its
      * confirmation named.
      */

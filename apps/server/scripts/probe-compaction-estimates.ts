@@ -3,12 +3,27 @@
 import { readFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
 import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
-import type { GenerateRequest } from "../server/domains/runtime/gateway/index.js";
+import type {
+  GenerateRequest,
+  GenerateResult,
+  StreamEvent,
+} from "../server/domains/runtime/gateway/index.js";
 import { createGatewayFromEnv } from "../server/domains/runtime/gateway/index.js";
 import {
   CJK_CODE_POINT_TOKEN_RATES,
   estimateRequestTokens,
 } from "../server/domains/runtime/loop/compaction/index.js";
+
+/** The final result of a stream; an error event throws. */
+async function collect(events: AsyncIterable<StreamEvent>): Promise<GenerateResult> {
+  let result: GenerateResult | undefined;
+  for await (const event of events) {
+    if (event.type === "error") throw new Error(`${event.code}: ${event.message}`);
+    if (event.type === "end") result = event.result;
+  }
+  if (!result) throw new Error("Stream ended without a result");
+  return result;
+}
 
 const corpusUrl = new URL("./fixtures/compaction-estimator-probe.json", import.meta.url);
 applyDevEnvToProcess();
@@ -159,11 +174,13 @@ async function completeToolTranscript(
         }
       : message,
   );
-  const prime = await gateway.generate({
-    ...request,
-    model,
-    messages: transcript,
-  });
+  const prime = await collect(
+    gateway.stream({
+      ...request,
+      model,
+      messages: transcript,
+    }),
+  );
   const call = prime.toolCalls.find(({ name }) => name === TOOL.name);
   if (!call)
     throw new Error(
@@ -334,7 +351,7 @@ for (const [provider, key] of providerKeys) {
     }
     const estimate = estimateRequestTokens({ request, baseline: null, tokenizer: model.tokenizer });
     try {
-      const result = await gateway.generate(request);
+      const result = await collect(gateway.stream(request));
       const reported = result.usage.inputTokens;
       const ratio = reported === 0 ? "n/a" : (estimate / reported).toFixed(3);
       console.log(
@@ -366,8 +383,8 @@ for (const [provider, key] of providerKeys) {
           tokenizer: model.tokenizer,
         });
         const [noImages, noFile] = await Promise.all([
-          gateway.generate(withoutImages),
-          gateway.generate(withoutFile),
+          collect(gateway.stream(withoutImages)),
+          collect(gateway.stream(withoutFile)),
         ]);
         console.log(
           `${provider} | image-heavy (no images) | ${noImages.model} | ${noImagesEstimate} | ${noImages.usage.inputTokens} | ${(noImagesEstimate / noImages.usage.inputTokens).toFixed(3)}`,

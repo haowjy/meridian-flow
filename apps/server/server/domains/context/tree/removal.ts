@@ -249,7 +249,7 @@ class RestoreFault extends Error {
  * name-claim rule. Apply restores whichever removal is current; a reversing caller (a
  * reply's rollback, the turn card's Undo) names the removal it reverses. Clears the record,
  * bumps `location_version`, settles the document's arrival and refreshes the catalog in the
- * caller's transaction. Touches no draft: drafts outlive a delete (D79). A fault rolls back
+ * caller's transaction. Touches no draft: drafts outlive a delete. A fault rolls back
  * everything it placed. The caller holds the document's namespace, then its document lock
  * (`acquireTreeScope`).
  */
