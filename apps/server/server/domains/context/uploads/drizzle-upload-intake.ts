@@ -4,7 +4,7 @@ import type { ContextSourceId } from "@meridian/contracts";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { type Filetype, firstFreeName, type UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, projects, threads, uploadIntakes } from "@meridian/database/schema";
+import { projects, threads, uploadIntakes } from "@meridian/database/schema";
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
@@ -152,13 +152,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
     const activeDb = currentDrizzleDb(db);
     if (!input.documentId || !(await projectOwnedBy(db, projectId, input.actorUserId)))
       return { kind: "owner_unavailable" };
-    // The client minted this id; a document already holding it is not this upload's to take.
-    const [taken] = await activeDb
-      .select({ id: documents.id })
-      .from(documents)
-      .where(eq(documents.id, input.documentId as never))
-      .limit(1);
-    if (taken) return { kind: "conflict" };
     const [created] = await activeDb
       .insert(uploadIntakes)
       .values({
