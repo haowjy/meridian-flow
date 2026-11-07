@@ -20,12 +20,11 @@ export function createTransport(options: {
   root: HTMLElement;
   store: CardStore;
   getLayout: () => Layout;
-  remeasure: () => void;
   /** The page jumped to the start: the film should follow without easing through the story. */
   onRewind: () => void;
   signal: AbortSignal;
 }) {
-  const { root, store, getLayout, remeasure, onRewind, signal } = options;
+  const { root, store, getLayout, onRewind, signal } = options;
   const html = document.documentElement;
   const playButtons = [...root.querySelectorAll<HTMLElement>("[data-play]")];
   let state: AutoplayState = "idle";
@@ -114,7 +113,6 @@ export function createTransport(options: {
       (event) => {
         event.preventDefault();
         interrupt();
-        remeasure();
         scrollTo(0, jumpPosition(link.hash));
       },
       { signal },

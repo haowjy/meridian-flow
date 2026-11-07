@@ -1,6 +1,6 @@
 import { type AnswerKey, QUESTIONS } from "./story";
 
-export type CardState = {
+type CardState = {
   step: number;
   answers: readonly (AnswerKey | null)[];
 };

@@ -1,6 +1,6 @@
 /**
  * Marketing app stylesheet: Tailwind, the shared tokens, the landing page's three
- * self-hosted typefaces, and the page's own styles in `landing.css`.
+ * self-hosted typefaces, and the page's own styles.
  */
 @import 'tailwindcss' source('../');
 @import '@meridian/design-tokens/ink-jade.css';
@@ -11,7 +11,8 @@
 @import '@fontsource/im-fell-double-pica/400.css';
 @import '@fontsource/im-fell-double-pica/400-italic.css';
 @import '@fontsource-variable/hanken-grotesk/wght.css';
-@import './landing.css';
+@import '../features/landing/landing.css';
+@import '../features/landing/film.css';
 @import '../features/landing/product-placeholder.css';
 
 @layer base {

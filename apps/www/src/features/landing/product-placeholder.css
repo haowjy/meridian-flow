@@ -1,6 +1,6 @@
 /**
  * A drawing of the app, disposable with `ProductPlaceholder.tsx`. Real footage
- * replaces this file; the block's box and motion are in `landing.css`.
+ * replaces this file; the block's box and motion are in `film.css`.
  */
 .slot {
   position: relative;

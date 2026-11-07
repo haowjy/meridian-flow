@@ -2,11 +2,17 @@ import type { CardStore } from "./card-store";
 import { type FilmParts, type Layout, measureLayout } from "./film-layout";
 import type { ProductSlot } from "./ProductPlaceholder";
 import { createSky, type SkyFrame } from "./sky";
-import { type BeatProgress, beatProgress, clamp, ease, lerp, progress, SECTIONS } from "./timeline";
+import {
+  type BeatProgress,
+  beatProgress,
+  clamp,
+  ease,
+  lerp,
+  progress,
+  SECTIONS,
+  smooth,
+} from "./timeline";
 import { createTransport } from "./transport";
-
-/** A touch device's address bar resizes the window by less than this. */
-const ADDRESS_BAR_HEIGHT = 120;
 
 const show = (element: HTMLElement | SVGElement, opacity: number) => {
   element.style.opacity = String(opacity);
@@ -108,20 +114,20 @@ function skyFrame(beats: BeatProgress, raw: number, velocity: number, layout: La
   const workspaceCenter = (workspace.x + workspace.w / 2 - windowWidth / 2) / height;
   const spread =
     lerp(home.w / 2 / height, (workspace.w / 2 / height) * 0.9, dawn) * (1 - push * 0.9);
-  const toTwist = ease(progress(beats.twist, 0, 0.5));
+  const toTwist = smooth(beats.twist, 0, 0.5);
   let veil = lerp(0, 0.86, push);
   veil = lerp(veil, 0.62, ease(beats.out));
-  veil = lerp(veil, 0.8, ease(progress(beats.ask, 0, 0.2)));
+  veil = lerp(veil, 0.8, smooth(beats.ask, 0, 0.2));
   veil = lerp(veil, 0.34, toTwist);
   veil = lerp(veil, 0, dawn);
   const horizon = -0.25;
   return {
     lampX: lerp(lerp(homeCenter, workspaceCenter, dawn), stageCenter, toEnd),
     lampY: horizon,
-    rotation: 0.7 + raw * 0.00011 - ease(progress(beats.twist, 0.1, 1)) * 1.1,
+    rotation: 0.7 + raw * 0.00011 - smooth(beats.twist, 0.1, 1) * 1.1,
     trail:
       clamp(Math.abs(velocity) * 0.0006, 0, 0.1) +
-      ease(progress(beats.twist, 0.15, 0.6)) * (1 - ease(progress(beats.twist, 0.85, 1))) * 0.11,
+      smooth(beats.twist, 0.15, 0.6) * (1 - smooth(beats.twist, 0.85, 1)) * 0.11,
     dawn,
     horizon,
     veil,
@@ -130,7 +136,7 @@ function skyFrame(beats: BeatProgress, raw: number, velocity: number, layout: La
     width: lerp(spread, 0, toEnd),
     aurora:
       lerp(0.72, 0.4, push) +
-      ease(progress(beats.twist, 0.05, 0.45)) * (1 - ease(progress(beats.twist, 0.8, 1))) * 1.1,
+      smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 1.1,
   };
 }
 
@@ -184,9 +190,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     stage: one(".stage"),
     end: one("#end"),
     blockHome: one(".slotwrap"),
+    workspaceSpot: one(".workspot"),
     block: slot.element,
-    caption,
-    chapter,
     chapterOpening: one(".open"),
     lastTypedParagraph: one("#p3"),
     turnParagraphs: { a: one("#r-a"), b: one("#r-b") },
@@ -233,7 +238,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     show(hero, 1 - clamp(push * 2.4));
     hero.style.transform = `translateY(${-push * 70}px)`;
 
-    const rise = ease(progress(dawnP, 0.15, 1));
+    const rise = smooth(dawnP, 0.15, 1);
     let x: number;
     let y: number;
     let blockWidth: number;
@@ -250,7 +255,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       x = workspace.x + (workspace.w - blockWidth) / 2;
       y = lerp(height * 0.86, workspace.y, rise);
       opacity = clamp(dawnP / 0.28);
-      grade = lerp(0.42, 1, ease(progress(dawnP, 0.2, 0.95)));
+      grade = lerp(0.42, 1, smooth(dawnP, 0.2, 0.95));
       if (leave > 0) {
         const away = ease(leave);
         y += away * height * 0.75;
@@ -268,7 +273,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     if (hints > 0) slot.set("hints", progress(hints, 0.08, 0.95));
     else slot.set("team", 0);
 
-    show(world, ease(progress(push, 0.6, 1)) * (1 - ease(progress(worldP, 0.84, 1))));
+    show(world, smooth(push, 0.6, 1) * (1 - smooth(worldP, 0.84, 1)));
     worldTypers.forEach((typer, index) => {
       const from = 0.04 + index * 0.2;
       typer.set(progress(worldP, from, from + 0.22), worldP >= from && worldP < from + 0.22);
@@ -277,50 +282,42 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       const line = layout.worldLines[index - 1];
       if (line) {
         line.path.style.strokeDashoffset = String(
-          line.length * (1 - ease(progress(worldP, from, from + 0.2))),
+          line.length * (1 - smooth(worldP, from, from + 0.2)),
         );
         line.dot.style.opacity = worldP > from ? "1" : "0";
       }
     });
 
-    const chapterIn = ease(progress(open, 0, 0.7));
+    const chapterIn = smooth(open, 0, 0.7);
     const chapterDim =
       asked > 0
-        ? clamp(1 - ease(progress(asked, 0, 0.12)) + ease(progress(asked, 0.9, 1)))
-        : 1 - ease(progress(out, 0, 0.28));
-    show(chapter, chapterIn * chapterDim * (1 - ease(progress(twistP, 0.02, 0.2))));
+        ? clamp(1 - smooth(asked, 0, 0.12) + smooth(asked, 0.9, 1))
+        : 1 - smooth(out, 0, 0.28);
+    show(chapter, chapterIn * chapterDim * (1 - smooth(twistP, 0.02, 0.2)));
     const chapterOffset = lerp(
       lerp(layout.chapterFrom, layout.chapterTo, ease(write) * 0.3 + write * 0.7),
       layout.turn[store.whoIsHe()],
-      ease(progress(turn, 0, 0.4)),
+      smooth(turn, 0, 0.4),
     );
     chapter.style.transform = `translate3d(0,${-chapterOffset}px,0)`;
     typers[0].set(progress(write, 0.04, 0.42), write > 0.02 && write < 0.42);
     typers[1].set(progress(write, 0.42, 0.9), write >= 0.42 && write < 0.9);
     typers[2].set(progress(write, 0.5, 0.98), write >= 0.5 && write < 0.985);
 
-    const askShown = ease(progress(asked, 0, 0.14)) * (1 - ease(progress(asked, 0.9, 1)));
+    const askShown = smooth(asked, 0, 0.14) * (1 - smooth(asked, 0.9, 1));
     show(ask, askShown);
     card.style.transform = `translateY(${(1 - askShown) * 18}px)`;
     turnTypers[store.whoIsHe()].set(progress(turn, 0.2, 1), turn > 0.15 && turn < 1);
 
-    const writeStart = spans.write[0];
-    const writeLength = spans.write[1] - spans.write[0];
-    const subtitleSpans: Record<string, readonly [number, number]> = {
-      s1: [spans.open[0], writeStart + writeLength * 0.2],
-      s2: [writeStart + writeLength * 0.24, writeStart + writeLength * 0.7],
-      s3: [spans.out[0], spans.out[1]],
-      s4: [spans.back[1] - height * 0.2, spans.ask[0] + height * 0.02],
-    };
     const fade = height * 0.035;
     for (const subtitle of subtitles) {
-      const [from, to] = subtitleSpans[subtitle.dataset.b as string];
+      const [from, to] = layout.subtitles[subtitle.dataset.b as string];
       const shown = progress(at, from, from + fade) * (1 - progress(at, to - fade, to));
       show(subtitle, shown);
       subtitle.style.transform = `translateY(${(1 - shown) * 8}px)`;
     }
 
-    const teamShown = ease(progress(out, 0, 0.3)) * (1 - ease(progress(asked, 0, 0.1)));
+    const teamShown = smooth(out, 0, 0.3) * (1 - smooth(asked, 0, 0.1));
     show(team, teamShown);
     const reportWindows = [
       [0.1, 0.62],
@@ -330,13 +327,13 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     ];
     agents.forEach((agent, index) => {
       agent.style.opacity = String(
-        isPhone ? 1 : ease(progress(out, 0.25 + index * 0.12, 0.5 + index * 0.12)),
+        isPhone ? 1 : smooth(out, 0.25 + index * 0.12, 0.5 + index * 0.12),
       );
       const [leaves, returns] = reportWindows[index];
       agent.classList.toggle("back", back >= returns);
       const line = layout.teamLines[index];
       if (!line || teamShown === 0) return;
-      const drawn = ease(progress(out, 0.1 + index * 0.08, 0.8 + index * 0.04));
+      const drawn = smooth(out, 0.1 + index * 0.08, 0.8 + index * 0.04);
       line.path.style.strokeDashoffset = String(line.length * (1 - drawn));
       const returned = progress(back, leaves, returns);
       const point = line.path.getPointAtLength(line.length * (out < 1 ? drawn : 1 - returned));
@@ -345,11 +342,11 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       line.dot.style.opacity = out > 0 && (returned < 1 || out < 1) ? "1" : "0";
     });
 
-    const twistShown = ease(progress(twistP, 0.1, 0.4)) * (1 - ease(progress(twistP, 0.93, 1)));
+    const twistShown = smooth(twistP, 0.1, 0.4) * (1 - smooth(twistP, 0.93, 1));
     show(twist, twistShown);
     twist.style.transform = `scale(${1.06 - twistShown * 0.06})`;
 
-    const captionShown = ease(progress(dawnP, 0.72, 1)) * (1 - ease(progress(leave, 0, 0.4)));
+    const captionShown = smooth(dawnP, 0.72, 1) * (1 - smooth(leave, 0, 0.4));
     show(caption, captionShown);
     captionShade.style.opacity = String(captionShown);
     caption.style.transform = `translateY(${(1 - captionShown) * 14}px)`;
@@ -372,7 +369,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     root,
     store,
     getLayout: () => layout,
-    remeasure: measure,
     onRewind: () => {
       current = 0;
     },
@@ -412,15 +408,13 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     frameRequest = requestAnimationFrame(frame);
   }
 
-  // A phone's address bar firing resize mid-scroll would otherwise rebuild the layout.
+  // A phone's address bar resizes the window but not the stage, which is `100svh`.
   addEventListener(
     "resize",
     () => {
-      const isAddressBar =
-        "ontouchstart" in window &&
-        html.clientWidth === layout.windowWidth &&
-        Math.abs(innerHeight - layout.height) < ADDRESS_BAR_HEIGHT;
-      if (!isAddressBar) measure();
+      if (html.clientWidth !== layout.windowWidth || parts.stage.clientHeight !== layout.height) {
+        measure();
+      }
     },
     { signal },
   );
@@ -441,6 +435,5 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     html.classList.remove("cine", "film-ready");
     delete html.dataset.auto;
     html.style.removeProperty("--filmh");
-    html.style.removeProperty("--cy");
   };
 }
