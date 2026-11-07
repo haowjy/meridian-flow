@@ -607,7 +607,7 @@ export const museReply = (key: CharacterKey) =>
 /** The end, after the Rekindle window. */
 export const END = {
   question: "What will you write?",
-  placeholder: "A farm boy, a dragon, and nine days north…",
+  placeholder: "A thief, a heist, and a god who owes her money…",
   start: "Start writing →",
 } as const;
 

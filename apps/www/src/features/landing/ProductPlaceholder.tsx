@@ -150,8 +150,8 @@ export function ProductPlaceholder() {
           <HelperCard
             letter="W"
             name="Writer-helper"
-            scope="Endings"
-            line="Drafting the four endings"
+            scope="Ninth night"
+            line="Drafting the ninth night"
           />
           <HelperCard
             letter="C"

@@ -134,7 +134,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 letter="R"
                 name="Reader-sim"
                 live="Reading as a serial reader"
-                report="Attention dips on the party introductions and comes back hard at the frozen army."
+                report="Attention dips on the party introductions and comes back hard at the campfire."
               />
               <Agent
                 letter="C"
@@ -145,8 +145,8 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               <Agent
                 letter="W"
                 name="Writer-helper"
-                live="Drafting the four endings"
-                report="Four endings ready, one for each survivor."
+                live="Drafting the ninth night"
+                report="Two versions of the ninth night ready. The shorter one hits harder."
               />
               <Agent
                 letter="C"
