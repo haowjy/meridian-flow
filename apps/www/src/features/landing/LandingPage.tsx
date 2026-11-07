@@ -31,6 +31,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
     <div className="landing" ref={rootRef}>
       <TopBar signInUrl={`${appOrigin}/login`} startUrl={startUrl} />
       <canvas id="sky" />
+      <canvas id="treeline" />
 
       <main id="top">
         <section className="film">
