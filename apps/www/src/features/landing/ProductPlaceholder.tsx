@@ -2,13 +2,14 @@ import type { CardStore } from "./card-store";
 import { LORE_ARRIVES } from "./dragon-actor";
 import {
   ALIVE,
+  BEAST_PAGE,
   CHARACTERS,
   characterName,
   DRAGON_PAGE,
   FELL,
   museReply,
+  NOTES,
   PROLOGUE,
-  QUESTION,
   SURVIVED,
   type WikiPage,
 } from "./story";
@@ -20,7 +21,7 @@ import {
  */
 export function ProductPlaceholder() {
   return (
-    <div className="slot" id="slot" data-state="team" data-view="chat">
+    <div className="slot" id="slot" data-state="start" data-view="chat">
       <aside className="s-rail" aria-label="Project">
         <div className="s-proj">The Long Reckoning</div>
         <button type="button" className="s-n">
@@ -42,7 +43,9 @@ export function ProductPlaceholder() {
             {name}
           </RailDocument>
         ))}
-        <RailDocument id="ddragon">The Beast</RailDocument>
+        <RailDocument id="dbeast" rowId="s-beast-row">
+          The Beast
+        </RailDocument>
       </aside>
       <div className="s-pane">
         <div className="s-top">
@@ -53,11 +56,16 @@ export function ProductPlaceholder() {
         <div className="s-body">
           <article className="s-doc" id="dprologue">
             <div className="name">Prologue</div>
-            <p>{PROLOGUE.opening}</p>
+            <p className="s-only-start">
+              <i className="s-car" />
+            </p>
+            <p className="s-draft">{PROLOGUE.opening}</p>
             {PROLOGUE.lines.map((line) => (
-              <p key={line}>{line}</p>
+              <p className="s-draft" key={line}>
+                {line}
+              </p>
             ))}
-            <p>{PROLOGUE.turn}</p>
+            <p className="s-draft">{PROLOGUE.turn}</p>
             <p className="s-only-hints">
               <span id="s-typing" />
               <i className="s-car" />
@@ -75,6 +83,10 @@ export function ProductPlaceholder() {
               <PageBody page={character} statusId={`s-note-${character.key}`} />
             </article>
           ))}
+          <article className="s-doc" id="dbeast" data-folder="Knowledge Base" hidden>
+            <div className="name">The Beast</div>
+            <PageBody page={BEAST_PAGE} />
+          </article>
           <article className="s-doc" id="ddragon" data-folder="Knowledge Base" hidden>
             <div className="name">The Dragon</div>
             <figure className="s-fig">
@@ -89,6 +101,7 @@ export function ProductPlaceholder() {
           Prologue <span className="s-only-team">2 running</span>
         </div>
         <div className="s-msgs">
+          <div className="s-me s-only-start">Let’s write the prologue.</div>
           <div className="s-me s-only-team">Have the team read it.</div>
           <HelperCard letter="C" name="Continuity-checker" scope="Prologue" line="Finished" done />
           <HelperCard letter="C" name="Critic" scope="Prologue" line="Reading the scene" />
@@ -119,20 +132,7 @@ export function ProductPlaceholder() {
             <small>Prologue, Tam, Sigrun, Oskar, Maren</small>
           </div>
         </div>
-        <div className="s-take s-only-team">
-          <b>{QUESTION}</b>
-          {CHARACTERS.map(({ key, name, pitch }) => (
-            <div className="s-opt" key={key}>
-              <b>{name}</b>
-              <small>{pitch}</small>
-            </div>
-          ))}
-          <div className="s-foot">
-            <span>Skip</span>
-            <span>Continues in 4 min</span>
-          </div>
-        </div>
-        <div className="s-comp s-only-hints">
+        <div className="s-comp">
           <span className="s-pill">Muse</span>
           <span className="s-pill">Auto-apply</span>
           <u />
@@ -194,7 +194,7 @@ function PageBody({ page, statusId }: { page: WikiPage; statusId?: string }) {
         ))}
       </ul>
       {page.sections.map(([heading, body]) => (
-        <section key={heading}>
+        <section className={heading === NOTES ? "s-notes" : undefined} key={heading}>
           <h3>{heading}</h3>
           {typeof body === "string" ? (
             <p>
@@ -218,15 +218,17 @@ function PageBody({ page, statusId }: { page: WikiPage; statusId?: string }) {
 
 function RailDocument({
   id,
+  rowId,
   on,
   children,
 }: {
   id: string;
+  rowId?: string;
   on?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <button type="button" className={`s-n in ${on ? "on" : ""}`} data-doc={id}>
+    <button type="button" id={rowId} className={`s-n in ${on ? "on" : ""}`} data-doc={id}>
       {children}
     </button>
   );
@@ -261,7 +263,7 @@ function HelperCard({
 }
 
 type ProductView = "project" | "page" | "chat";
-type ProductState = "team" | "lore" | "hints";
+type ProductState = "start" | "team" | "lore" | "ask" | "hints";
 export type ProductSlot = ReturnType<typeof createProductSlot>;
 
 /** The product block's only interface. The film drives it; rail and tabs work under the visitor. */
@@ -273,7 +275,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   const tabs = [...slot.querySelectorAll<HTMLElement>(".s-tabs button")];
   const typing = part("#s-typing");
   const reply = part("#s-reply");
-  const dragonRow = part(".s-n[data-doc='ddragon']");
+  const dragonRow = part("#s-beast-row");
   let state: ProductState | null = null;
   // Once the visitor picks a document or tab, autoplay leaves that view alone.
   let held = false;
@@ -338,6 +340,10 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   return {
     element: slot,
     set(next: ProductState, progress: number) {
+      const arrived = next === "lore" && progress >= LORE_ARRIVES;
+      const named = next === "ask" || next === "hints" || arrived;
+      dragonRow.textContent = named ? "The Dragon" : "The Beast";
+      dragonRow.dataset.doc = named ? "ddragon" : "dbeast";
       if (next !== state) {
         state = next;
         held = false;
@@ -345,9 +351,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
         followAnswers();
         open("dprologue");
       }
-      const arrived = next === "lore" && progress >= LORE_ARRIVES;
       if (next === "lore" && !held) open(arrived ? "ddragon" : "dprologue");
-      dragonRow.textContent = next === "hints" || arrived ? "The Dragon" : "The Beast";
       dragonRow.classList.toggle("s-landed", arrived && progress < 0.8);
       // The view only exists on phones: on desktop every pane is on screen.
       if (!held) view((next === "hints" && progress >= 0.45) || arrived ? "page" : "chat");

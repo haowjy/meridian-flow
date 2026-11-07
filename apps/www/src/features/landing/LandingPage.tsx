@@ -141,15 +141,15 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             </div>
             <canvas className="flame" id="flame" />
 
-            <div className="ask" id="your-decisions">
-              <QuestionCard store={store} />
-            </div>
-
             <div className="dawn">
-              <div className="cap" id="the-workspace" {...NIGHT}>
+              <div className="cap" id="knowledge-base" {...NIGHT}>
                 <h2>Every dragon gets a page.</h2>
               </div>
-              <div className="workspot" />
+              <div className="workspot" id="the-workspace" />
+            </div>
+
+            <div className="ask" id="your-decisions">
+              <QuestionCard store={store} />
             </div>
           </div>
         </section>

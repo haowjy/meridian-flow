@@ -301,67 +301,26 @@
   color: var(--color-card);
 }
 
-.s-take {
-  display: grid;
-  gap: 6px;
-  padding: 10px;
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-}
-
-.s-asking .s-take {
-  visibility: hidden;
-}
-
-.s-take > b {
-  font-weight: 600;
-}
-
-.s-opt {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0 8px;
-  padding: 6px 9px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.s-opt small {
-  grid-column: 1 / -1;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-
-.s-rec {
-  font-size: 11px;
-  font-weight: 500;
-  background: var(--color-sidebar);
-  border-radius: 999px;
-  padding: 1px 7px;
-  align-self: center;
-}
-
-.s-foot {
-  display: flex;
-  justify-content: space-between;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-  padding: 0 3px;
-}
-
 .s-tabs,
 .s-only-hints,
+.s-only-start,
+.slot[data-state="start"] .s-only-team,
+.slot[data-state="start"] .s-draft,
+.slot[data-state="start"] .s-notes,
+.slot:not([data-state="start"], [data-state="hints"]) .s-comp,
 .slot[data-state="hints"] .s-only-team {
   display: none;
+}
+
+.slot[data-state="start"] .s-only-start {
+  display: block;
 }
 
 .slot[data-state="hints"] .s-only-hints {
   display: block;
 }
 
-.slot[data-state="hints"] .s-ed.s-only-hints,
-.slot[data-state="hints"] .s-comp.s-only-hints {
+.slot[data-state="hints"] .s-ed.s-only-hints {
   display: flex;
 }
 
