@@ -80,22 +80,6 @@ export const EMPTY_INGRESS_STATE: ImageIngressPluginState = {
 /** One slot in flight as presence carries it: the join, and the shape to reserve. */
 export type AnnouncedUpload = { token: string; frame: PendingImageFrame | null };
 
-let ingressSequence = 0;
-/**
- * This tab's share of every id, so no two clients can mint the same one.
- *
- * An upload's id is written into the shared document as its slot's
- * `uploadToken` (`pending-images.ts`), so a counter alone would have two writers
- * claiming each other's slots after both opened the document.
- */
-const ingressOrigin = Math.random().toString(36).slice(2, 10);
-
-/** A new id for one arrival. Ids never repeat, here or on any other client. */
-export function nextIngressId(prefix: string): string {
-  ingressSequence += 1;
-  return `${prefix}:${ingressOrigin}:${ingressSequence}`;
-}
-
 export function imageIngressStorage(editor: Editor | null | undefined): ImageIngressStorage | null {
   if (!editor || editor.isDestroyed) return null;
   return editor.storage[IMAGE_INGRESS_NAME] ?? null;

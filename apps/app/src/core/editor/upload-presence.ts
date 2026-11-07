@@ -40,12 +40,12 @@ import {
 } from "./images/image-ingress-runtime";
 import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
 
-export const UPLOAD_PRESENCE_NAME = "meridianUploadPresence";
+const UPLOAD_PRESENCE_NAME = "meridianUploadPresence";
 
 /** The awareness field carrying what one client is sending right now. */
-export const UPLOAD_PRESENCE_FIELD = "uploads";
+const UPLOAD_PRESENCE_FIELD = "uploads";
 
-export type UploadPresenceOptions = {
+type UploadPresenceOptions = {
   /**
    * This client's presence, whose owner decides when it is on the wire
    * (`core/editor/local-presence.ts`). Null on an editor with no shared room,

@@ -13,11 +13,17 @@ import type {
   UploadStart,
 } from "@meridian/contracts/protocol";
 import {
+  ASSETS_FOLDER,
   classifyFiletype,
   firstFreeName,
   MAX_UPLOAD_BYTES,
   type ParsedDocumentFilename,
 } from "@meridian/contracts/protocol";
+import {
+  needsPreviewConversion,
+  PREVIEW_SOURCE_MAX_BYTES,
+  saveImagePreview,
+} from "../../file-intake/image-preview.js";
 import {
   classifyUpload,
   intakeFilename,
@@ -26,14 +32,6 @@ import {
   normalizeMime,
   TRACKED_TEXT_MAX_BYTES,
 } from "../../file-intake/index.js";
-
-export { classifyUpload } from "../../file-intake/index.js";
-
-import {
-  needsPreviewConversion,
-  PREVIEW_SOURCE_MAX_BYTES,
-  saveImagePreview,
-} from "../../file-intake/image-preview.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
   createObjectStorageUrl,
@@ -47,9 +45,6 @@ import type { ContextPort } from "../ports/context-port.js";
 
 /** Bytes of the file's start that classification looks at. */
 const HEAD_BYTES = 8 * 1024;
-
-/** The folder a source upload lands in, in the host's own source. */
-export const ASSETS_FOLDER = "assets";
 
 /** Names a source upload tries before it gives up: other writers can take a name between tries. */
 const MAX_NAME_COPIES = 100;
@@ -71,9 +66,9 @@ const ABANDONED_AFTER_MS = 24 * 60 * 60 * 1000;
 const SWEEP_BATCH = 50;
 
 /** Deleting a draft is a chat attach's undo; a source upload is deleted as the document it became. */
-export type ChatUploadOwner = Extract<UploadOwner, { kind: "chat" }>;
+type ChatUploadOwner = Extract<UploadOwner, { kind: "chat" }>;
 
-export type StartUploadOutcome =
+type StartUploadOutcome =
   | { ok: true; value: UploadStart }
   | { ok: false; error: UploadIntakeError };
 

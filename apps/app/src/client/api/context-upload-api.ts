@@ -18,7 +18,7 @@ import { fileTooLargeMessage } from "@/lib/upload-limit";
 import { UploadRefusedError, uploadFileDirect } from "./direct-upload";
 import { jsonPost, uploadResponse } from "./upload-request";
 
-export type ContextUploadTarget = {
+type ContextUploadTarget = {
   projectId: string;
   scheme: string;
   /** `chatId` for a chat's uploads, `workId` for a Work's Scratch; nothing otherwise. */

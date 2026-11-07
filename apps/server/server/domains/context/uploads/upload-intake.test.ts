@@ -4,9 +4,10 @@
  * - Server-side upload content taxonomy
  */
 import { describe, expect, it } from "vitest";
+import { classifyUpload } from "../../file-intake/index.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
-import { classifyUpload, type PlacedUpload } from "./upload-intake.js";
+import type { PlacedUpload } from "./upload-intake.js";
 
 const bytes = new TextEncoder().encode("chapter one");
 

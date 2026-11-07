@@ -19,7 +19,6 @@ import {
   imageIngressPluginKey,
   imageIngressStorage,
   ingressState,
-  nextIngressId,
   sendIngressMessage,
 } from "./image-ingress-runtime";
 import {
@@ -42,7 +41,7 @@ export function startImageImport(
   if (!link) return;
 
   const controller = new AbortController();
-  const id = nextIngressId("image-import");
+  const id = crypto.randomUUID();
   const filename = imageFilenameFromUrl(pending.url);
   sendIngressMessage(editor, {
     set: {
