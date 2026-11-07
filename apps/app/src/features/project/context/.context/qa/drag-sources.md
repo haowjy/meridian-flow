@@ -17,9 +17,10 @@ tree's own drag is [Row selection and drag](../../../../../../../../docs/qa/row-
 2. A Work (`w1`) and a chat in it in draft mode (`./mf thread create --work w1`, then the
    `write_mode` control as in [Model move and delete](../../../../../../../server/server/domains/collab/.context/qa/model-move-delete.md)). Seed
    `manuscript://Book/Draftdoc`; send `--mock` with a `read` then a `write` `replace` (`in: 1`) of its only
-   block. An upload: `curl -sk -X POST --data-binary @notes.txt -H 'content-type: text/plain'
-   "<server origin>/api/projects/<p>/context/uploads/upload?chatId=<chat>&intakeId=<uuid>&filename=notes.txt"`
-   (the file is the body; the dev login needs no cookie).
+   block. An upload: `POST .../context/uploads/upload?chatId=<chat>` with JSON
+   `{intakeId, filename, sizeBytes, mimeType}`, `PUT` the bytes to the returned `put.url` with
+   `put.headers`, then `POST .../upload/finish?chatId=<chat>` with `{intakeId}` (the dev login
+   needs no cookie), or attach in the composer.
 3. Drag with `agent-browser mouse move/down/up` in several moves at 1440×900 (the harness in the
    evidence folder, `drag.sh`, takes two CSS selectors). A menu's items are in a portal: click them by
    `snapshot -i` ref, not by text.

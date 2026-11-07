@@ -448,7 +448,7 @@ export async function handleDocumentDraftHintsRequest(
   };
 }
 
-/** What the branch's row does to the document's placement, for the Work notice on live (D26). */
+/** What the branch's row does to the document's placement, for the Work notice on live. */
 async function pendingTreeChange(
   deps: BranchRouteServices,
   branch: DocumentBranchOrigin,
@@ -607,7 +607,7 @@ export async function handleApplyClickRequest(
   const deletedLive = item?.item.deletedLive ?? false;
   // A live delete that committed after the item resolved, at authorization or at the grants'
   // confirmation: nothing was claimed, so the click runs once more, resolves the item as
-  // deleted and authorizes its restore (D79). Every other denial is final.
+  // deleted and authorizes its restore. Every other denial is final.
   const denied = (denial: FileAccessDenied | undefined): Promise<ApplyClickAnswer> =>
     denial?.facts?.deleted && !deletedLive && !overtaken
       ? handleApplyClickRequest(deps, input, true)

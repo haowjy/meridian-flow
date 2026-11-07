@@ -1,5 +1,5 @@
 {
-  "id": "d8fc55ee-4373-4072-b8a7-a27b97988a8c",
+  "id": "9bd7da27-a664-49dc-9c0e-6a1fa319692c",
   "prevId": "ef133063-9d9b-490a-878d-59b4c6676f58",
   "version": "7",
   "dialect": "postgresql",
@@ -6927,7 +6927,7 @@
           "name": "final_path",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "object_key": {
           "name": "object_key",
@@ -6938,6 +6938,12 @@
         "file_type": {
           "name": "file_type",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
@@ -7016,6 +7022,22 @@
           ],
           "isUnique": false,
           "where": "\"upload_intakes\".\"owner_thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "upload_intakes_open_updated": {
+          "name": "upload_intakes_open_updated",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"upload_intakes\".\"state\" IN ('reserved', 'object_stored')",
           "concurrently": false,
           "method": "btree",
           "with": {}

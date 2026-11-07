@@ -37,7 +37,7 @@ export function createProjectExport(deps: {
   pendingDrafts: { count(projectId: string): Promise<number> };
   documents: ExportDocumentReader;
   files: Pick<FileAccess, "listAccess">;
-  objects: Pick<ObjectStorePort, "get">;
+  objects: Pick<ObjectStorePort, "getStream">;
 }) {
   async function createScope(projectId: string, accountId: string, options: ProjectExportOptions) {
     const { documents: inventory, sources, settlements } = await deps.snapshot.read(projectId);
@@ -92,9 +92,9 @@ export function createProjectExport(deps: {
         throw new ExportReadError("document_unavailable", "Document could not be read for export");
       return { text: result.value, excludedLinks, outsideCounts };
     }
+    /** A document's bytes as chunks, so a large stored file is never held whole. */
     async function read(documentId: string): Promise<{
-      bytes: Uint8Array;
-      mimeType: string;
+      chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>;
       filename: string;
       excludedLinks: number;
     }> {
@@ -105,13 +105,13 @@ export function createProjectExport(deps: {
       if (document.storageUrl) {
         const key = objectStoreKeyFromStorageUrl(document.storageUrl);
         if (!key) throw new ExportReadError("storage_invalid", "Invalid document storage URL");
-        const result = await deps.objects.get(key);
+        const result = await deps.objects.getStream(key);
         if (!result.ok)
           throw new ExportReadError(
             result.error.code === "not_found" ? "not_found" : "storage_unavailable",
             result.error.message,
           );
-        return { ...result.value, filename, excludedLinks: 0 };
+        return { chunks: result.value.stream, filename, excludedLinks: 0 };
       }
       const { text, excludedLinks } = await spell(document);
       const properties = readStoredDocumentProperties(document.metadata);
@@ -122,8 +122,7 @@ export function createProjectExport(deps: {
       return {
         filename,
         excludedLinks,
-        bytes: new TextEncoder().encode(frontmatter + text),
-        mimeType: "text/markdown; charset=utf-8",
+        chunks: [new TextEncoder().encode(frontmatter + text)],
       };
     }
     function stream(projectName: string): Readable {
@@ -146,11 +145,15 @@ export function createProjectExport(deps: {
               const entry = new ZipPassThrough(`${root}/${path}`);
               zip.add(entry);
               yield* drain();
-              const { bytes, excludedLinks: excluded } = await read(id);
+              const { chunks: content, excludedLinks: excluded } = await read(id);
               excludedLinks += excluded;
-              for (let offset = 0; offset < bytes.length; offset += 65536) {
-                entry.push(bytes.subarray(offset, offset + 65536), false);
-                yield* drain();
+              // Leaving this loop early destroys a stored file's stream, so an abandoned
+              // export stops reading the object.
+              for await (const chunk of content) {
+                for (let offset = 0; offset < chunk.length; offset += 65536) {
+                  entry.push(chunk.subarray(offset, offset + 65536), false);
+                  yield* drain();
+                }
               }
               entry.push(new Uint8Array(), true);
               yield* drain();

@@ -1095,8 +1095,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let deleteObservedCommittedPurge = false;
       const objectStore = {
         put: backingStore.put.bind(backingStore),
-        putStream: backingStore.putStream.bind(backingStore),
+        readHead: backingStore.readHead.bind(backingStore),
+        signPut: backingStore.signPut.bind(backingStore),
         get: backingStore.get.bind(backingStore),
+        getStream: backingStore.getStream.bind(backingStore),
+        copy: backingStore.copy.bind(backingStore),
         list: backingStore.list.bind(backingStore),
         getSignedUrl: backingStore.getSignedUrl.bind(backingStore),
         async delete() {
@@ -1294,6 +1297,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fingerprint: "fingerprint",
         filename: "reference.png",
         mimeType: "image/png",
+        sizeBytes: 1,
         finalPath: "reference.png",
         objectKey,
         fileType: "png",

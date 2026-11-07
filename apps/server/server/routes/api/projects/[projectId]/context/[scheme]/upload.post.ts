@@ -1,95 +1,36 @@
 /**
- * Transport adapter for authoritative UploadIntake. The file is the request body, streamed; the
- * name and owner ride in the query and the type in Content-Type. `uploads` takes a chat's attach;
- * any other source takes a file dropped into a document, into that source's `assets/`.
+ * Transport adapter for starting an authoritative upload (a chat attach, or a file dropped into a
+ * document): reserves it and returns a signed PUT
+ * for the bytes. The file never passes through here; `upload/finish` reads it back from the store.
  */
 
-import { Readable } from "node:stream";
-import { MAX_UPLOAD_BYTES, type UploadIntakeResult } from "@meridian/contracts/protocol";
-import {
-  createError,
-  defineEventHandler,
-  getQuery,
-  getRequestHeader,
-  setResponseStatus,
-} from "nitro/h3";
+import type { StartUploadInput, UploadStart } from "@meridian/contracts/protocol";
+import { createError, defineEventHandler, getQuery, readBody, setResponseStatus } from "nitro/h3";
 import { resolveContextRoute } from "./_helpers.js";
+import { uploadDestination, uploadErrorToHttp } from "./upload/_shared.js";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export default defineEventHandler(async (event): Promise<UploadIntakeResult> => {
-  const { app, userId, projectId, scheme, port, container, edit } =
-    await resolveContextRoute(event);
-  const query = getQuery(event);
-  const { filename } = query;
-  if (typeof filename !== "string" || !filename)
-    throw createError({ statusCode: 400, message: "filename is required" });
-  const length = getRequestHeader(event, "content-length");
-  if (!length || !/^\d+$/.test(length))
-    throw createError({ statusCode: 411, message: "Content-Length is required" });
-  const sizeBytes = Number(length);
-  const body = event.req.body;
-  if (!body) throw createError({ statusCode: 400, message: "The file is the request body" });
-  const common = {
-    actorUserId: userId,
-    filename,
-    mimeType: getRequestHeader(event, "content-type") ?? "application/octet-stream",
-    sizeBytes,
-    body: Readable.fromWeb(body as never),
-  };
-
-  let result: Awaited<ReturnType<typeof app.uploadIntake.intake>>;
-  if (scheme === "uploads") {
-    // A chat attach. The client mints the chat id at the first attach; the row may not exist
-    // until Send.
-    const { intakeId, chatId } = query;
-    if (typeof intakeId !== "string" || !intakeId)
-      throw createError({ statusCode: 400, message: "intakeId and filename are required" });
-    if (typeof chatId !== "string" || !UUID.test(chatId))
-      throw createError({ statusCode: 400, message: "chatId is required" });
-    result = await edit([container], () =>
-      app.uploadIntake.intake({
-        ...common,
-        intakeId,
-        owner: { kind: "chat", projectId, chatId },
-      }),
-    );
-  } else {
-    // A file dropped into a document: `assets/` of the document's own source. The id is the
-    // client's, so the link to the file stood in the document before this request.
-    const { documentId } = query;
-    if (typeof documentId !== "string" || !UUID.test(documentId))
-      throw createError({ statusCode: 400, message: "documentId is required" });
-    result = await edit([container], () =>
-      app.uploadIntake.intake({
-        ...common,
-        intakeId: documentId,
-        owner: { kind: "source", projectId },
-        source: { scheme, port, documentId },
-      }),
-    );
-  }
-  if (!result.ok) {
-    if (result.error.code === "invalid_filename") {
-      throw createError({ statusCode: 400, message: "invalid_filename", data: result.error });
-    }
-    if (result.error.code === "too_large") {
-      throw createError({
-        statusCode: 413,
-        message: "too_large",
-        data: { limitBytes: MAX_UPLOAD_BYTES },
-      });
-    }
-    const statusCode =
-      result.error.code === "idempotency_conflict"
-        ? 409
-        : result.error.code === "owner_unavailable"
-          ? 404
-          : result.error.code === "size_mismatch"
-            ? 400
-            : 502;
-    throw createError({ statusCode, message: result.error.code });
-  }
+export default defineEventHandler(async (event): Promise<UploadStart> => {
+  const route = await resolveContextRoute(event);
+  const { app, userId, edit } = route;
+  const body = (await readBody<Partial<StartUploadInput>>(event)) ?? {};
+  const { intakeId, filename, sizeBytes, mimeType } = body;
+  if (typeof intakeId !== "string" || !intakeId || typeof filename !== "string" || !filename)
+    throw createError({ statusCode: 400, message: "intakeId and filename are required" });
+  const destination = uploadDestination(route, getQuery(event).chatId, intakeId);
+  if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0)
+    throw createError({ statusCode: 400, message: "sizeBytes must be a whole number of bytes" });
+  const result = await edit([destination.container], () =>
+    app.uploadIntake.start({
+      intakeId,
+      actorUserId: userId,
+      owner: destination.owner,
+      ...("source" in destination ? { source: destination.source } : {}),
+      filename,
+      sizeBytes,
+      mimeType: typeof mimeType === "string" ? mimeType : "",
+    }),
+  );
+  if (!result.ok) throw uploadErrorToHttp(result.error);
   setResponseStatus(event, 201);
   return result.value;
 });

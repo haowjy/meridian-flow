@@ -1,4 +1,3 @@
-import { Readable } from "node:stream";
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
 
 import { randomUUID } from "node:crypto";
@@ -29,6 +28,7 @@ import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 import { createContextUploadContentPort } from "./uploads/context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./uploads/drizzle-upload-intake.js";
 import { createUploadIntake } from "./uploads/upload-intake.js";
+import { uploadBytes } from "./uploads/upload-test-support.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {
@@ -233,14 +233,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         const deletedRef = await register(`uploads://@c1/${filename}`);
         const bytes = new TextEncoder().encode(`Upload ${filename}`);
         const uploadOnce = async () => {
-          const uploaded = await intake.intake({
-            intakeId: randomUUID(),
+          const uploaded = await uploadBytes(intake, intakeStore, {
             actorUserId: userId,
-            owner: { kind: "chat", projectId, chatId },
+            projectId,
+            chatId,
             filename,
             mimeType,
-            sizeBytes: bytes.byteLength,
-            body: Readable.from(Buffer.from(bytes)),
+            bytes,
           });
           if (!uploaded.ok) throw new Error(uploaded.error.code);
           return uploaded.value;

@@ -283,8 +283,7 @@ export function createWorkProjectionMutation(input: {
     },
     /**
      * The set's Works locked before `operation` takes any branch or draft row, so every
-     * structural draft write enters Work, then branch, then draft, the order Archive takes
-     * (decision D12).
+     * structural draft write enters Work, then branch, then draft, the order Archive takes.
      */
     mutate(set, operation, options) {
       return runInDrizzleTransaction(input.db, async () => {

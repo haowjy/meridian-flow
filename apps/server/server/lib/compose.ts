@@ -1483,18 +1483,18 @@ export function createInMemoryAppServices(): AppServices {
   return {
     gateway: {
       async *stream(request) {
-        const result = await this.generate(request);
-        yield { type: "start" as const, model: result.model, provider: result.provider };
-        yield { type: "end" as const, result };
-      },
-      async generate(request) {
-        return {
-          content: [],
-          toolCalls: [],
-          finishReason: "end_turn" as const,
-          usage: { inputTokens: 0, outputTokens: 0 },
-          model: request.model ?? "in-memory",
-          provider: "in-memory",
+        const model = request.model ?? "in-memory";
+        yield { type: "start" as const, model, provider: "in-memory" };
+        yield {
+          type: "end" as const,
+          result: {
+            content: [],
+            toolCalls: [],
+            finishReason: "end_turn" as const,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            model,
+            provider: "in-memory",
+          },
         };
       },
       listModels: () => [],
@@ -1629,7 +1629,7 @@ export function createInMemoryAppServices(): AppServices {
       documents: exportDocumentsFrom(documentSync),
       files: createAllowAllFileAccess(),
       objects: {
-        async get() {
+        async getStream() {
           throw new Error("No export objects in memory");
         },
       },
@@ -1869,10 +1869,19 @@ export function createInMemoryAppServices(): AppServices {
       async put() {
         throw new Error("in-memory object store is not implemented");
       },
-      async putStream() {
+      async readHead() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async signPut() {
         throw new Error("in-memory object store is not implemented");
       },
       async get() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async getStream() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async copy() {
         throw new Error("in-memory object store is not implemented");
       },
       async list() {
@@ -1887,8 +1896,14 @@ export function createInMemoryAppServices(): AppServices {
     },
     localObjectStore: null,
     uploadIntake: {
-      async intake() {
+      async start() {
         throw new Error("in-memory upload intake is not implemented");
+      },
+      async finish() {
+        throw new Error("in-memory upload intake is not implemented");
+      },
+      async sweepAbandoned() {
+        return 0;
       },
       async deleteDraft() {
         return { kind: "identity_mismatch" };

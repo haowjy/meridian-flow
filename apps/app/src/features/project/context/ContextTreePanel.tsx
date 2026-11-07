@@ -95,7 +95,7 @@ export function ContextTreePanel(props: ContextTreePanelProps) {
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* The destination rows own the sidebar's single rule. Explorer panes
           stay on one uninterrupted rail material beneath it. */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). slop-lint: allow suppression the reason is stated in this comment */}
       <div
         ref={scroller}
         onDragOver={(event) => {

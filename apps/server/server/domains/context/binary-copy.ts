@@ -1,6 +1,6 @@
 /**
  * Whole-document copy of a binary file: the one place a copy depends on
- * how a document is stored. It duplicates the storage object, so deleting
+ * how a document is stored. It duplicates the storage object inside the store, so deleting
  * either file never removes the other's bytes, and creates the destination
  * with `metadata.copiedFrom` through the copier's own port: in a draft-mode chat
  * that is a hidden row holding the branch's object, never shared (12b-Q2).
@@ -48,33 +48,20 @@ export async function prepareBinaryCopy(input: {
 }): Promise<Result<PreparedBinaryCopy, ContextError>> {
   const sourceKey = objectStoreKeyFromStorageUrl(input.source.storageUrl);
   if (!sourceKey) return ioError(input.source.uri, "The source file has no stored object.");
-  const object = await input.objectStore.get(sourceKey);
-  if (!object.ok) return ioError(input.source.uri, object.error.message);
-
   const key = `copies/${crypto.randomUUID()}`;
-  const mimeType = input.source.mimeType ?? object.value.mimeType;
-  const put = await input.objectStore.put(key, object.value.bytes, mimeType);
-  if (!put.ok) return ioError(input.source.uri, put.error.message);
+  const copy = await input.objectStore.copy(sourceKey, key);
+  if (!copy.ok) return ioError(input.source.uri, copy.error.message);
   // The preview is derived, so a copy that can't carry it just shows the file card.
-  const preview = input.source.hasPreview
-    ? await input.objectStore.get(previewObjectKey(sourceKey))
-    : null;
   const hasPreview =
-    preview?.ok === true &&
-    (
-      await input.objectStore.put(
-        previewObjectKey(key),
-        preview.value.bytes,
-        preview.value.mimeType,
-      )
-    ).ok;
+    input.source.hasPreview === true &&
+    (await input.objectStore.copy(previewObjectKey(sourceKey), previewObjectKey(key))).ok;
   return {
     ok: true,
     value: {
-      storageUrl: put.value.storageUrl,
+      storageUrl: copy.value.storageUrl,
       key,
-      mimeType,
-      sizeBytes: object.value.bytes.byteLength,
+      mimeType: input.source.mimeType ?? copy.value.mimeType,
+      sizeBytes: copy.value.sizeBytes,
       hasPreview,
     },
   };

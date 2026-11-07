@@ -77,10 +77,10 @@ function currentWorkLines(
 }
 
 /**
- * Where this chat's AI writes land (D9, D62): the chat's mode over its Work.
- * An archived Work freezes its own scratch and branch (D29, D30); only an agent
+ * Where this chat's AI writes land: the chat's mode over its Work.
+ * An archived Work freezes its own scratch and branch; only an agent
  * the action policy lets unarchive is offered that, and only a draft-mode chat
- * has auto-apply as a way out (D31). One description, two presentations: the
+ * has auto-apply as a way out. One description, two presentations: the
  * Work context's `writes:` line and the switch notice.
  */
 export function describeWriteMode(input: {
@@ -147,9 +147,9 @@ function currentLines(work: ContextWork, writes: string[]): string[] {
 
 export function renderWorkContext(input: {
   current: ContextWork;
-  /** The chat's write mode (D62). */
+  /** The chat's write mode. */
   aiWriteMode: AiWriteMode;
-  /** Whether the thread's agent chain may unarchive (D39). */
+  /** Whether the thread's agent chain may unarchive. */
   mayUnarchive: boolean;
   rootThreadRef?: string;
   /** The chat whose uploads bare `uploads://` names: this thread's top primary chat. */

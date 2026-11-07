@@ -1,10 +1,15 @@
 /** In-memory implementation of the object-store port: a Map of bytes+mime keyed by storage URL. Used by tests and local dev; depends inward on the port and URL helper. */
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
+  ObjectStoreCopyOutput,
+  ObjectStoreGetOptions,
+  ObjectStoreHead,
   ObjectStorePort,
-  ObjectStorePutStreamOptions,
   ObjectStoreResult,
+  ObjectStoreSignedPut,
+  ObjectStoreSignedPutOptions,
+  ObjectStoreStreamOutput,
 } from "../../ports/object-store.js";
 
 interface StoredObject {
@@ -32,37 +37,53 @@ export class InMemoryObjectStoreAdapter implements ObjectStorePort {
     return ok({ storageUrl: createObjectStorageUrl(key) });
   }
 
-  async putStream(
+  async get(
     key: string,
-    body: Readable,
-    options: ObjectStorePutStreamOptions,
-  ): Promise<ObjectStoreResult<{ storageUrl: string }>> {
-    const chunks: Buffer[] = [];
-    try {
-      for await (const chunk of body) chunks.push(chunk as Buffer);
-    } catch (error) {
-      return {
-        ok: false,
-        error: {
-          code: "io_error",
-          message: error instanceof Error ? error.message : "Stream failed",
-        },
-      };
-    }
-    const bytes = Buffer.concat(chunks);
-    if (bytes.byteLength !== options.sizeBytes) {
-      return {
-        ok: false,
-        error: { code: "io_error", message: "Stream length differs from sizeBytes" },
-      };
-    }
-    return this.put(key, bytes, options.mimeType);
-  }
-
-  async get(key: string): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
+    options?: ObjectStoreGetOptions,
+  ): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
     const stored = this.objects.get(key);
     if (!stored) return notFound();
+    if (options?.maxBytes !== undefined && stored.bytes.byteLength > options.maxBytes)
+      return { ok: false, error: { code: "too_large", message: "Object is too large to read" } };
     return ok({ bytes: stored.bytes, mimeType: stored.mimeType });
+  }
+
+  async getStream(key: string): Promise<ObjectStoreResult<ObjectStoreStreamOutput>> {
+    const stored = this.objects.get(key);
+    if (!stored) return notFound();
+    return ok({
+      stream: Readable.from([stored.bytes], { objectMode: false }),
+      mimeType: stored.mimeType,
+      sizeBytes: stored.bytes.byteLength,
+    });
+  }
+
+  async copy(fromKey: string, toKey: string): Promise<ObjectStoreResult<ObjectStoreCopyOutput>> {
+    const stored = this.objects.get(fromKey);
+    if (!stored) return notFound();
+    this.objects.set(toKey, stored);
+    return ok({
+      storageUrl: createObjectStorageUrl(toKey),
+      mimeType: stored.mimeType,
+      sizeBytes: stored.bytes.byteLength,
+    });
+  }
+
+  async readHead(key: string, headBytes: number): Promise<ObjectStoreResult<ObjectStoreHead>> {
+    const stored = this.objects.get(key);
+    if (!stored) return notFound();
+    return ok({ head: stored.bytes.slice(0, headBytes), sizeBytes: stored.bytes.byteLength });
+  }
+
+  /** Tests stand in for the browser with `put` at `key`. */
+  async signPut(
+    key: string,
+    options: ObjectStoreSignedPutOptions,
+  ): Promise<ObjectStoreResult<ObjectStoreSignedPut>> {
+    return ok({
+      url: `/memory-object-store/${encodeURIComponent(key)}`,
+      headers: { "Content-Type": options.mimeType },
+    });
   }
 
   async list(

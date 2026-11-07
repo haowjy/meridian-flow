@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import {
   createGatewayFromEnv,
   type Gateway,
-  GatewayStreamError,
   type GenerateRequest,
   type StreamEvent,
 } from "../../apps/server/server/domains/runtime/gateway/index.js";
@@ -18,10 +17,6 @@ export interface SmokeServer {
   providerIds: string[];
   defaultModel?: string;
   close: () => Promise<void>;
-}
-
-interface ErrorBody {
-  error: { code: string; message: string };
 }
 
 function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -67,10 +62,6 @@ function httpStatusForErrorCode(code: string): number {
   }
 }
 
-function gatewayErrorBody(err: GatewayStreamError): ErrorBody {
-  return { error: { code: err.code, message: err.message } };
-}
-
 function inferDefaultModel(gateway: Gateway): string | undefined {
   return gateway.getDefaultModel();
 }
@@ -95,13 +86,22 @@ async function handleGenerate(gateway: Gateway, body: unknown, res: ServerRespon
   }
 
   try {
-    const result = await gateway.generate(body);
-    sendJson(res, 200, result);
-  } catch (err) {
-    if (err instanceof GatewayStreamError) {
-      sendJson(res, httpStatusForErrorCode(err.code), gatewayErrorBody(err));
-      return;
+    for await (const event of gateway.stream(body)) {
+      if (event.type === "error") {
+        sendJson(res, httpStatusForErrorCode(event.code), {
+          error: { code: event.code, message: event.message },
+        });
+        return;
+      }
+      if (event.type === "end") {
+        sendJson(res, 200, event.result);
+        return;
+      }
     }
+    sendJson(res, 502, {
+      error: { code: "provider_error", message: "Stream ended without a result" },
+    });
+  } catch (err) {
     sendJson(res, 500, {
       error: {
         code: "provider_error",

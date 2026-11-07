@@ -150,7 +150,7 @@ export function recoverLatePeerEdits(input: {
 }): LateRecovery {
   const { doc, schema } = input;
   const memory = input.memory ?? NO_LATE_TYPING;
-  // Typing written before is never deleted again (D35): its deletions are left out of the peer's view.
+  // Typing written before is never deleted again: its deletions are left out of the peer's view.
   const remembered = new Set(memory.spans.flatMap((s) => s.ids));
   const deleted = new Set(memory.deleted);
   for (const { id } of input.lost.deleted) if (!remembered.has(keyOf(id))) deleted.add(keyOf(id));

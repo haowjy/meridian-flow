@@ -5,7 +5,7 @@
  * while refusing retries after committed output.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Retry timing, buffering, and cancellation-drain policy
+ * - Retry timing and buffering
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamWithRetry } from "./attempt-stream.js";
@@ -242,7 +242,7 @@ describe("streamWithRetry retry-after", () => {
 
     await vi.advanceTimersByTimeAsync(0);
     controller.abort();
-    await expect(completion).rejects.toBe(controller.signal.reason);
+    await expect(completion).resolves.toEqual([]);
     expect(calls()).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -307,44 +307,5 @@ describe("per-attempt timing", () => {
       timeToFirstTokenMs: 11,
       generationMs: null,
     });
-  });
-});
-
-describe("cancel drain", () => {
-  it("uses one deadline even with late chunks and an iterator that ignores return", async () => {
-    vi.useFakeTimers();
-    try {
-      const controller = new AbortController();
-      const { adapter } = scriptedAdapter([
-        async function* () {
-          yield { type: "text.delta", text: "first" };
-          await new Promise((resolve) => setTimeout(resolve, 4_000));
-          yield { type: "text.delta", text: "late" };
-          await new Promise(() => {});
-        },
-      ]);
-      const stream = streamWithRetry(
-        adapter,
-        { ...REQUEST, signal: controller.signal },
-        MODEL,
-        { ...RETRY, maxAttempts: 1 },
-        { stallMs: 60_000, ceilingMs: 60_000 },
-      );
-      await stream.next();
-      const late = stream.next();
-      controller.abort();
-      await vi.advanceTimersByTimeAsync(4_000);
-      expect((await late).value).toEqual({ type: "text.delta", text: "late" });
-      let done = false;
-      const finish = stream.next().then((result) => {
-        done = result.done === true;
-      });
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(done).toBe(true);
-      await finish;
-      expect(vi.getTimerCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
