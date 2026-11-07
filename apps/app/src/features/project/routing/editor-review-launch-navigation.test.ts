@@ -57,6 +57,7 @@ function setup(
     }),
     lookup,
     admitDraftReview: () => undefined,
+    enterRoute: () => undefined,
   });
   return { open, history };
 }

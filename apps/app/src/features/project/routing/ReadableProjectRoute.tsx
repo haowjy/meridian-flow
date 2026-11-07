@@ -43,6 +43,7 @@ import {
   useDraftCommandOwner,
 } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
+import { routeSelectionDocumentId, selectionAtRoute } from "../context/context-removal-protocol";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useRemovalRecord } from "../context/use-removal-record";
@@ -55,9 +56,9 @@ import {
 } from "./chat-navigation";
 import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
 import {
+  addressRouteBinding,
   bindDocumentAddressReview,
   documentAddressQueryOptions,
-  reviewAddressRouteBinding,
   reviewBoundAddressResult,
 } from "./document-address-review";
 import {
@@ -69,12 +70,10 @@ import {
 import { editorDefaultWorkPending } from "./editor-default-work";
 import { createEditorDocumentCommand, prepareEditorDestination } from "./editor-document-command";
 import {
-  canonicalDocumentPath,
   gateLiveView,
   projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
-  routeContinuityDocumentId,
 } from "./local-document-address";
 import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
 import { ProjectNavigationProvider } from "./ProjectNavigationContext";
@@ -111,6 +110,7 @@ import {
   routeWorkIssue,
   type WorkDetailTarget,
 } from "./project-route";
+import { useLocateHeldDocument } from "./use-locate-held-document";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
@@ -230,7 +230,6 @@ function ReadableProjectDestination({
     tabs: workspaceTabs,
   });
   const localDocumentId = localDocument.kind === "resolved" ? localDocument.documentId : undefined;
-  const navigatedDocumentId = navigation?.navigatedDocumentId(location.state);
   const localResourceHandle =
     localDocument.kind === "resolved" ? localDocument.owner.tab.resourceHandle : undefined;
   const localPointer =
@@ -427,13 +426,15 @@ function ReadableProjectDestination({
     if (closingRef && documentLookup.data?.kind === "unavailable") void closeMetadata?.refetch();
   }, [closingRef?.itemKey, documentLookup.dataUpdatedAt]);
   const { selection } = useContextRemovalProject(projectId);
-  const boundDocumentId = routeContinuityDocumentId({
-    selection,
-    admittedDocumentId: admission?.documentId ?? null,
-    destination: documentDestination,
-    editorWorkId: workId,
-    rootThreadId: address.lineage,
-  });
+  const boundDocumentId =
+    documentDestination && workId !== null
+      ? routeSelectionDocumentId(selection, {
+          scheme: documentDestination.scheme,
+          path: documentDestination.path,
+          workId,
+          rootThreadId: address.lineage,
+        })
+      : null;
   const localDocumentAddress = useMemo(
     () =>
       documentDestination && addressBinding.kind === "plain"
@@ -465,10 +466,12 @@ function ReadableProjectDestination({
       destination.kind !== "document" ||
       !workId ||
       selection.status !== "candidate" ||
-      selection.locator.scheme !== destination.scheme ||
-      canonicalDocumentPath(selection.locator.path) !== canonicalDocumentPath(destination.path) ||
-      selection.locator.workId !== workId ||
-      selection.locator.rootThreadId !== address.lineage
+      !selectionAtRoute(selection, {
+        scheme: destination.scheme,
+        path: destination.path,
+        workId,
+        rootThreadId: address.lineage,
+      })
     )
       return;
     contextRemoval.rejectRouteCandidate(projectId, selection.revision);
@@ -501,9 +504,48 @@ function ReadableProjectDestination({
           },
     [listedDrafts, addressedItem],
   );
+  const openContext = useMemo(
+    () =>
+      createEditorDocumentCommand({
+        projectId,
+        accountId: user.userId,
+        read: () => ({ ...latest.current, addressDocumentId: addressDocumentIdRef.current }),
+        lookup: (documentId) =>
+          getProjectContextAvailability(projectId, [documentId]).then(
+            (result) => result.resolutions[0] ?? { kind: "failed" as const },
+            () => ({ kind: "failed" as const }),
+          ),
+        admitDraftReview: (installed, reviewWorkId) =>
+          contextRemoval.admitDraftReview(projectId, installed, reviewWorkId),
+        enterRoute: (locator, documentId) =>
+          contextRemoval.enterRoute(projectId, locator, documentId),
+      }),
+    [contextRemoval, projectId, user.userId],
+  );
+  const remoteAnswer = reviewBoundAddressResult(addressBinding, documentLookup.data);
+  // The bound document is the route's wherever it went. While the catalog does not list it, an
+  // answer naming another document (or none) is the path's occupant, never the route's document.
+  const holdsBound =
+    boundDocumentId !== null &&
+    addressBinding.kind === "plain" &&
+    !addressCatalog?.findDocument(boundDocumentId) &&
+    !(
+      remoteAnswer &&
+      remoteAnswer.kind !== "unavailable" &&
+      remoteAnswer.document.documentId === boundDocumentId
+    );
+  const holdFailed = useLocateHeldDocument({
+    projectId,
+    documentId: holdsBound && remoteAnswer ? boundDocumentId : null,
+    address,
+    editorWorkId: workId,
+    navigation,
+    openContext,
+    refetchAddress: () => void documentLookup.refetch(),
+  });
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
-    reviewBoundAddressResult(addressBinding, documentLookup.data),
+    holdsBound ? undefined : remoteAnswer,
     addressBinding.kind === "plain" ? "live" : "review",
   );
   const gated = gateLiveView(
@@ -519,20 +561,21 @@ function ReadableProjectDestination({
     reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
-  const reviewRouteBinding = reviewAddressRouteBinding(
+  const routeBinding = addressRouteBinding(
     addressBinding,
     documentResult,
     selection,
     documentDestination,
     workId,
+    address.lineage,
   );
   useLayoutEffect(() => {
-    if (!reviewRouteBinding) return;
-    contextRemoval.bindRouteSelection(projectId, reviewRouteBinding.revision, {
+    if (!routeBinding) return;
+    contextRemoval.bindRouteSelection(projectId, routeBinding.revision, {
       kind: "server",
-      documentId: reviewRouteBinding.documentId,
+      documentId: routeBinding.documentId,
     });
-  }, [contextRemoval, projectId, reviewRouteBinding?.revision, reviewRouteBinding?.documentId]);
+  }, [contextRemoval, projectId, routeBinding?.revision, routeBinding?.documentId]);
   const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
   const reviewItemKey = address.itemKey ?? draftOnly?.draft.itemKey;
   const addressDocumentId =
@@ -554,7 +597,9 @@ function ReadableProjectDestination({
         ? // A prerequisite that failed ends the wait: the address stays, with a way to retry.
           documentLookup.isError || gated.outcome === "failed"
           ? "error"
-          : "loading"
+          : holdFailed
+            ? "unavailable"
+            : "loading"
         : documentResult.kind === "unavailable"
           ? closingRef &&
             !closeState.removed &&
@@ -662,43 +707,6 @@ function ReadableProjectDestination({
         itemKey,
       ),
     [projectId, user.userId],
-  );
-  const openContext = useMemo(
-    () =>
-      createEditorDocumentCommand({
-        projectId,
-        accountId: user.userId,
-        read: () => ({ ...latest.current, addressDocumentId: addressDocumentIdRef.current }),
-        lookup: (documentId) =>
-          getProjectContextAvailability(projectId, [documentId]).then(
-            (result) => result.resolutions[0] ?? { kind: "failed" as const },
-            () => ({ kind: "failed" as const }),
-          ),
-        admitDraftReview: (installed, reviewWorkId) =>
-          contextRemoval.admitDraftReview(projectId, installed, reviewWorkId),
-      }),
-    [contextRemoval, projectId, user.userId],
-  );
-  const relocate = useCallback(
-    (documentId: string) => {
-      const { address, editorWorkId } = latest.current;
-      const document = address.destination;
-      if (document.kind !== "document" || !editorWorkId)
-        return Promise.resolve<NavigationSettlement>({ kind: "superseded" });
-      // Where the document is now may be this very address, when the answer for it is stale.
-      void documentLookup.refetch();
-      return openContext(
-        {
-          scheme: document.scheme,
-          path: `/${document.path}`,
-          workId: editorWorkId,
-          ...(address.lineage ? { rootThreadId: address.lineage } : {}),
-          documentId,
-        },
-        { replace: true, replaceIfSameDocument: true },
-      );
-    },
-    [openContext, documentLookup.refetch],
   );
   // A document the server never accepted keeps its stable local identity when its placement is
   // refused, and the route bound to it follows that identity back to Unfiled. Its own tab already
@@ -881,7 +889,6 @@ function ReadableProjectDestination({
   const editorDocument = {
     editorWorkId: workId,
     localDocumentId,
-    navigatedDocumentId,
     activeContextScheme: search.scheme ?? null,
     activeContextPath: search.path ?? null,
     activeContextChat: search.chat ?? null,
@@ -975,8 +982,6 @@ function ReadableProjectDestination({
               workId={workId}
               noWorkId={noWorkId}
               navigation={navigation}
-              navigatedDocumentId={navigatedDocumentId}
-              relocate={relocate}
               onAdmission={setAdmission}
             />
           ) : null}
@@ -1022,7 +1027,6 @@ function ReadableProjectDestination({
                 }),
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
-            activeNavigatedDocumentId={editorDocument.navigatedDocumentId}
             activeContextScheme={editorDocument.activeContextScheme}
             activeContextFolder={search.folder ?? null}
             activeContextPath={editorDocument.activeContextPath}

@@ -35,12 +35,14 @@ Rename or move prepares the open tab's new locator and the replacement address a
 commit, so the old address keeps its identity continuity until the new one is accepted.
 
 A tab is its document id; its path, name and owner are a display cache the replica refreshes. A
-navigation that knew the document (a tab click, a tree open) carries the id in its history entry
-(`meridianNavigatedDocument`), and `ProjectNavigation.navigatedDocumentId` honors it only for the
-entry the latest navigation of this page load created. The candidate selection carries it, so the
-route finds the tab by id; a pasted URL, a reload and Back/Forward carry none, and the path's
-occupant decides there. When the address answers a different document than the one carried,
-`ProjectAddressDocument` relocates the carried id (once per address) and never opens the occupant.
+route is bound to a document only when that is proven: a navigation that names the document (a tab
+click, a tree open) binds the route it opens in `commit()` (`enterRoute`), and any other URL (paste,
+reload, Back/Forward) stays a candidate until its address answer binds it
+(`addressRouteBinding`), so the path's occupant decides there. A tab found by its cached path may
+paint but never binds. A bound document the address catalog does not list holds: the answer naming
+another document is the path's occupant, and `useLocateHeldDocument` asks the server for the bound
+id once and moves the URL to where it is. A selection about another route than the URL begins
+again (`ProjectContextRemovalController`), so a binding that lands late cannot stay stale.
 Draft-only tabs are the exception: no catalog lists them, so their cached path still matches.
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload

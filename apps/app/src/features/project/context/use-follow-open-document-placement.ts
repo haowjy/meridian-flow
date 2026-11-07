@@ -17,7 +17,7 @@ import {
   useProjectContextAvailabilityCoordinator,
 } from "./account-feature-context";
 import { routeTargetForTab } from "./context-removal-planner";
-import type { ContextRouteSelection } from "./context-removal-protocol";
+import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
 import { projectResourceTab } from "./context-tab-from-file";
 
 export function useFollowOpenDocumentPlacement(input: {
@@ -28,6 +28,8 @@ export function useFollowOpenDocumentPlacement(input: {
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   activeContextChat?: string | null;
+  /** The review item the address carries, when it is a review address. */
+  reviewItemKey?: string;
   routeDisplayed: boolean;
   onOpenContextTarget: OpenContextRoute;
 }): void {
@@ -47,14 +49,7 @@ export function useFollowOpenDocumentPlacement(input: {
             rootThreadId: input.activeContextChat ?? undefined,
           }
         : null;
-    const { selection } = input;
-    const boundDocumentId =
-      route &&
-      selection.status === "bound" &&
-      selection.identity.kind === "server" &&
-      sameContextTarget(selection.locator, route)
-        ? selection.identity.documentId
-        : null;
+    const boundDocumentId = route ? routeSelectionDocumentId(input.selection, route) : null;
     for (const tab of tabs) {
       const projection = projectResourceTab(
         input.projectId,
@@ -83,9 +78,11 @@ export function useFollowOpenDocumentPlacement(input: {
         continue;
       }
       // A route is the tab's only while the selection is bound to it there; a URL the writer
-      // just pasted or traversed to is never pulled back to an open tab's placement.
+      // just pasted or traversed to is never pulled back to an open tab's placement. A review
+      // address owns its path (the draft's, which the live placement does not show).
       const routeFollowsTab =
         input.routeDisplayed &&
+        input.reviewItemKey === undefined &&
         route !== null &&
         tab.kind !== "new" &&
         projection.tab.kind !== "new" &&
@@ -124,6 +121,7 @@ export function useFollowOpenDocumentPlacement(input: {
     input.editorWorkId,
     input.onOpenContextTarget,
     input.projectId,
+    input.reviewItemKey,
     input.routeDisplayed,
     input.selection,
     availability,

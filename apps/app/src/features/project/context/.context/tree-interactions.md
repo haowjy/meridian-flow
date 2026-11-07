@@ -127,10 +127,8 @@ namespace intent through `AccountResourceReplica.setFolderLocation`. The folder
 and its descendants show their new place at once in the tree, open tabs and
 routes, and so does the phone. One placement source, the projected catalog, serves
 every surface, and a route resolves its open document by identity: the document the
-route holds by continuity (`routeContinuityDocumentId`: bound in the removal
-coordinator's Editor-context locator, whatever Work the Editor selects, and actually
-admitted by this surface; a binding a cached tab guessed before the server answered
-is not continuity) is found by id, so a
+route is bound to (a navigation that named it, or an address answer, both proof; a
+cached tab's guess never binds) is found by id, so a
 move of it or a folder above it, that move's rollback after a refusal, or another
 document taking the path it holds or left never strands it. `resolveLocalDocumentAddress`
 returns it as `bound` and it outranks the server's answer for that path; admission
@@ -139,7 +137,8 @@ phone host finds the same document by identity meanwhile. Desktop and phone also
 follow the replica's placement (`useFollowOpenDocumentPlacement`): a move or delete
 of the open document changes the URL at once. The route follows only while the selection is
 bound to that document at the current route and its projected locator or owner differs, so a
-pasted or traversed URL is never pulled back to an open tab. A document under a pending
+pasted or traversed URL is never pulled back to an open tab. A review address owns its path and
+is never followed; its tab still reconciles. A document under a pending
 move carries `placementPending` for the same reason: a server alias for the path the
 writer just gave it cannot pull the route back.
 

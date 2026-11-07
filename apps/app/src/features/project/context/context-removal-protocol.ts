@@ -68,26 +68,33 @@ export type SelectionTransition = {
 
 export const sameLocator = sameContextTarget;
 
-/**
- * The document a selection names for exactly this route: the one it is bound to, or the id the
- * navigation that began the candidate carried in `locator.documentId`. A candidate from a URL
- * with no id (paste, reload, history traversal) names none, and the path's occupant decides.
- */
+type RouteOwner = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
+
+/** Whether the selection is about exactly this route (paths compare without the leading slash). */
+export function selectionAtRoute(
+  selection: ContextRouteSelection,
+  route: RouteOwner,
+): selection is Exclude<ContextRouteSelection, { status: "none" }> {
+  if (selection.status === "none") return false;
+  const { locator } = selection;
+  return (
+    locator.scheme === route.scheme &&
+    canonicalDocumentPath(locator.path) === canonicalDocumentPath(route.path) &&
+    locator.workId === route.workId &&
+    locator.rootThreadId === route.rootThreadId
+  );
+}
+
+/** The document the route is bound to: proven by a navigation that named it or by an address answer. */
 export function routeSelectionDocumentId(
   selection: ContextRouteSelection,
-  route: Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">,
+  route: RouteOwner,
 ): string | null {
-  if (selection.status === "none" || selection.status === "rejected") return null;
-  const { locator } = selection;
-  if (
-    locator.scheme !== route.scheme ||
-    canonicalDocumentPath(locator.path) !== canonicalDocumentPath(route.path) ||
-    locator.workId !== route.workId ||
-    locator.rootThreadId !== route.rootThreadId
-  )
-    return null;
-  if (selection.status === "candidate") return locator.documentId ?? null;
-  return selection.identity.kind === "server" ? selection.identity.documentId : null;
+  return selectionAtRoute(selection, route) &&
+    selection.status === "bound" &&
+    selection.identity.kind === "server"
+    ? selection.identity.documentId
+    : null;
 }
 
 export function continuityForSelection(selection: ContextRouteSelection): RouteContinuityVerdict {
@@ -137,6 +144,9 @@ export function beginSelection(
   locator: ContextRouteTarget,
   reentryGuard: TerminalRouteRemoval | null = null,
 ): SelectionTransition {
+  // A navigation that named its document already bound this locator.
+  if (selection.status === "bound" && sameLocator(selection.locator, locator))
+    return { selection, planning: [], rejection: null, retireReentryGuard: false };
   const revision = selection.revision + 1;
   const next: ContextRouteSelection = {
     status: "candidate",
@@ -167,6 +177,8 @@ export function supersedeSelectionForWorkChange(
   locator: ContextRouteTarget | null,
   reentryGuard: TerminalRouteRemoval | null = null,
 ): SelectionTransition {
+  if (selection.status === "bound" && locator && sameLocator(selection.locator, locator))
+    return { selection, planning: [], rejection: null, retireReentryGuard: false };
   const revision = selection.revision + 1;
   const next: ContextRouteSelection = locator
     ? { status: "candidate", revision, locator, obligations: [], reentryGuard }

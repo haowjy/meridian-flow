@@ -66,6 +66,7 @@ export function MobileProject(props: MobileProjectProps) {
     activeContextScheme: props.activeContextScheme,
     activeContextPath: props.activeContextPath,
     activeContextChat: props.activeContextChat,
+    reviewItemKey: props.reviewItemKey,
     routeDisplayed: props.activeScreen === "context",
     onOpenContextTarget: props.onOpenContextTarget,
   });

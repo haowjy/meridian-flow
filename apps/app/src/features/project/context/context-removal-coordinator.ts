@@ -488,6 +488,14 @@ export class ContextRemovalCoordinator {
     return transition.selection.revision;
   }
 
+  /** A navigation that names a document binds the route it opens: the id is proof. */
+  enterRoute(projectId: string, locator: ContextRouteTarget, documentId: string): void {
+    this.bindRouteSelection(projectId, this.beginRouteSelection(projectId, locator), {
+      kind: "server",
+      documentId,
+    });
+  }
+
   bindRouteSelection(projectId: string, revision: number, identity: ContextRouteIdentity): boolean {
     if (this.unavailable()) return false;
     const transition = bindSelection(this.project(projectId).selection, revision, identity);

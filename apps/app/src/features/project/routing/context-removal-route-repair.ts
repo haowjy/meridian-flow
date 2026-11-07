@@ -30,6 +30,7 @@ export function applyContextRemovalSearchUpdate({
         path: next.path,
         workId: next.work,
         rootThreadId: next.chat,
+        ...(relocated ? { documentId: relocated.documentId } : {}),
       },
       // A relocation keeps the review the address carries, until ReviewAddressOwner (which knows
       // the document's identity) decides it no longer applies. A fallback opens another document,

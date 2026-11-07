@@ -373,9 +373,10 @@ it("restores the exact older local owner across A to B to A through mounted cont
     );
 
     await act(async () => selectWork?.("work-b"));
+    // A URL naming no document stays a candidate until its address answer arrives; this
+    // harness mounts no route, and a tab found by its cached path proves nothing.
     expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
-      selection: { status: "bound", identity: { documentId: chapter.documentId } },
-      admitted: { scheme: "manuscript", path: "/a.md", workId: "work-b" },
+      selection: { status: "candidate", locator: { workId: "work-b", path: "/a.md" } },
     });
     expect(useContextTabsStore.getState().byProject.project?.selectedTabIdByWork["work-a"]).toBe(
       older.documentId,
