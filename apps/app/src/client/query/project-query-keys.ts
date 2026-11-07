@@ -99,13 +99,9 @@ export const projectQueryKeys = {
       "draft",
       itemKey ?? null,
     ] as const,
-  /** Every draft metadata read of one Work; the document id sits mid-key, so match by predicate. */
-  isWorkDraftMetadata: (key: readonly unknown[], projectId: string, workId: string) =>
-    key[0] === "projects" &&
-    key[1] === projectId &&
-    key[3] === workId &&
-    key[4] === "documents" &&
-    key[6] === "draft",
+  /** Every item's draft metadata read of one document in a Work. */
+  workDraftMetadataOf: (projectId: string, workId: string, documentId: string) =>
+    ["projects", projectId, "works", workId, "documents", documentId, "draft"] as const,
   contextCatalog: (projectId: string, scope: CatalogScope) =>
     ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,
   contextCatalogView: (
