@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 
 import { projectQueryKeys } from "./project-query-keys";
+import { isProjectReadPaused } from "./useProjectCreation";
 
 export type AppQueryProviderProps = {
   /** From `_authenticated` loader — `null` triggers client fetch. */
@@ -21,6 +22,7 @@ export function AppQueryProvider({ initialProjects, children }: AppQueryProvider
       defaultOptions: {
         queries: {
           retry: 1,
+          enabled: (query) => !isProjectReadPaused(query.queryKey),
         },
       },
     });
