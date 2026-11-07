@@ -1896,8 +1896,14 @@ export function createInMemoryAppServices(): AppServices {
     },
     localObjectStore: null,
     uploadIntake: {
-      async intake() {
+      async start() {
         throw new Error("in-memory upload intake is not implemented");
+      },
+      async finish() {
+        throw new Error("in-memory upload intake is not implemented");
+      },
+      async sweepAbandoned() {
+        return 0;
       },
       async deleteDraft() {
         return { kind: "identity_mismatch" };

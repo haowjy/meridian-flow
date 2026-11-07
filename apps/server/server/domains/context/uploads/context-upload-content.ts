@@ -6,7 +6,7 @@ import { keptFileName } from "../../file-intake/index.js";
 import { contextAreaOf } from "../context/uri.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
-import type { UploadContentPort, UploadReservation } from "./upload-intake.js";
+import type { ClaimedUpload, UploadContentPort } from "./upload-intake.js";
 
 /** Tracked text bound before finalize; binary and empty uploads need nothing bound. */
 type BoundUpload = BoundWrite | null;
@@ -18,17 +18,17 @@ export function createContextUploadContentPort(
    * The chat's own port, written at the chat-relative `uploads://name`: a New-chat upload has no
    * handle yet, and the write must not depend on one.
    */
-  function portFor(reservation: UploadReservation, actorUserId: string): ContextPort {
+  function portFor(reservation: ClaimedUpload, actorUserId: string): ContextPort {
     return contextPorts.forProject(reservation.projectId, actorUserId, new Map(), undefined, {
       chatId: reservation.owner.chatId,
       chatRef: null,
     });
   }
 
-  const writeUri = (reservation: UploadReservation) =>
+  const writeUri = (reservation: ClaimedUpload) =>
     canonicalContextUri("uploads", reservation.finalPath, { kind: "contextual" });
 
-  const isTracked = (reservation: UploadReservation) =>
+  const isTracked = (reservation: ClaimedUpload) =>
     classifyFiletype(reservation.fileType).kind === "tracked";
 
   return {
@@ -36,7 +36,7 @@ export function createContextUploadContentPort(
       if (!isTracked(reservation) || text.length === 0) return { ok: true, bound: null };
       const port = portFor(reservation, actorUserId);
       const bound = await port.bindTrackedDocument(writeUri(reservation), text);
-      return bound.ok ? { ok: true, bound: bound.value } : { ok: false, definite: true };
+      return bound.ok ? { ok: true, bound: bound.value } : { ok: false };
     },
 
     async persist(input) {
@@ -69,7 +69,7 @@ export function createContextUploadContentPort(
         result.value.uri === writeUri(input.reservation) &&
         result.value.documentId === input.reservation.documentId
         ? { ok: true }
-        : { ok: false, definite: true };
+        : { ok: false };
     },
 
     async remove({ reservation, actorUserId }) {
