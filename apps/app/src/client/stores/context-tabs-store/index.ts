@@ -1,4 +1,3 @@
-export { sameServerContextTabLocator, serverContextTabLocatorKey } from "./context-tab-locator";
 export {
   type ContextTab,
   commitContextAvailability,

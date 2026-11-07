@@ -25,6 +25,7 @@ import {
 } from "./context/account-feature-context";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
+import { selectionAtRoute } from "./context/context-removal-protocol";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import type { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
@@ -103,7 +104,7 @@ export function ContextViewerSurfaceController({
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = editorWorkId ? editorTabsForWork(tabs, editorWorkId) : [];
   const removalState = useContextRemovalProject(projectId);
-  const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
+  const { workspaceRoute, tab: activeTab } = resolvedEditor;
 
   const {
     catalog: routeCatalog,
@@ -120,19 +121,28 @@ export function ContextViewerSurfaceController({
     const selection = removalState.selection;
     if (selection.status === "none") return;
     if (
-      selection.locator.scheme !== activeContextScheme ||
-      selection.locator.path !== activeContextPath ||
-      selection.locator.workId !== routeWorkId ||
-      selection.locator.rootThreadId !== (activeContextChat ?? undefined)
+      routeWorkId === undefined ||
+      !selectionAtRoute(selection, {
+        scheme: activeContextScheme,
+        path: activeContextPath,
+        workId: routeWorkId,
+        rootThreadId: activeContextChat ?? undefined,
+      })
     )
       return;
     const routed = routeCatalog?.findPath(activeContextPath);
     const routedFile = routed?.kind === "file" ? routed : null;
     if (workspaceRoute.kind === "owner" && selection.status === "candidate") {
-      if (workspaceRoute.identity.kind === "server") {
+      // A tab found by its cached path paints but proves nothing: the address answer binds.
+      if (workspaceRoute.identity.kind === "server")
         selectTab(projectId, routeWorkId, workspaceRoute.tab.documentId, workspaceRoute.tab);
-      }
-      contextRemoval.bindRouteSelection(projectId, selection.revision, workspaceRoute.identity);
+      else
+        contextRemoval.bindRouteSelection(
+          projectId,
+          selection.revision,
+          workspaceRoute.identity,
+          "answer",
+        );
     } else if (workspaceRoute.kind === "materialized-local") {
       contextRemoval.redirectMaterializedLocal(
         projectId,
@@ -146,10 +156,15 @@ export function ContextViewerSurfaceController({
       !routeTreeIsFetching &&
       !routeTreeIsError
     ) {
-      contextRemoval.bindRouteSelection(projectId, selection.revision, {
-        kind: "server",
-        documentId: routedFile.documentId,
-      });
+      contextRemoval.bindRouteSelection(
+        projectId,
+        selection.revision,
+        {
+          kind: "server",
+          documentId: routedFile.documentId,
+        },
+        "answer",
+      );
     } else if (
       selection.status === "candidate" &&
       activeContextScheme === "unfiled" &&
@@ -294,9 +309,10 @@ export function ContextViewerSurfaceController({
   useFollowOpenDocumentPlacement({
     projectId,
     editorWorkId: routeWorkId,
-    selectedDocumentId,
+    selection: removalState.selection,
     activeContextScheme,
     activeContextPath,
+    activeContextChat,
     routeDisplayed,
     onOpenContextTarget,
   });

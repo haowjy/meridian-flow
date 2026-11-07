@@ -6,22 +6,28 @@
  * URL's catalog, so a move that leaves that catalog would otherwise strand the
  * editor on the old path.
  */
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { useContextTabs, useContextTabsActions } from "@/client/stores";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import { sameContextTarget } from "../routing/project-route";
 import {
   useAccountResourceProjection,
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./account-feature-context";
+import { routeTargetForTab } from "./context-removal-planner";
+import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
 import { projectResourceTab } from "./context-tab-from-file";
 
 export function useFollowOpenDocumentPlacement(input: {
   projectId: string;
   editorWorkId: string | null | undefined;
-  selectedDocumentId: string | null | undefined;
-  activeContextScheme: string | null;
+  /** The route follows a document only while the selection is bound to it at this route. */
+  selection: ContextRouteSelection;
+  activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
+  activeContextChat?: string | null;
   routeDisplayed: boolean;
   onOpenContextTarget: OpenContextRoute;
 }): void {
@@ -32,6 +38,20 @@ export function useFollowOpenDocumentPlacement(input: {
   const availability = useProjectContextAvailabilityCoordinator();
 
   useEffect(() => {
+    const route =
+      input.editorWorkId && input.activeContextScheme !== null && input.activeContextPath !== null
+        ? {
+            scheme: input.activeContextScheme,
+            path: input.activeContextPath,
+            workId: input.editorWorkId,
+            rootThreadId: input.activeContextChat ?? undefined,
+          }
+        : null;
+    // A review binding owns the draft's path, which the live placement does not show.
+    const boundDocumentId =
+      route && !(input.selection.status === "bound" && input.selection.by === "review")
+        ? routeSelectionDocumentId(input.selection, route)
+        : null;
     for (const tab of tabs) {
       const projection = projectResourceTab(
         input.projectId,
@@ -59,24 +79,15 @@ export function useFollowOpenDocumentPlacement(input: {
         settleWriterClose(contextRemoval.closeVanished(input.projectId, tab));
         continue;
       }
-      const atRoute =
-        tab.kind !== "new" &&
-        input.activeContextScheme === tab.scheme &&
-        input.activeContextPath === tab.path;
-      // Phone has no tab-strip selection: the tab that currently occupies the URL is
-      // the open document. Desktop still requires the selected id when it has one.
-      const isOpen =
-        input.selectedDocumentId == null ? atRoute : input.selectedDocumentId === tab.documentId;
+      // A route is the tab's only while the selection is bound to it there; a URL the writer
+      // just pasted or traversed to is never pulled back to an open tab's placement.
       const routeFollowsTab =
         input.routeDisplayed &&
+        route !== null &&
         tab.kind !== "new" &&
         projection.tab.kind !== "new" &&
-        isOpen &&
-        atRoute &&
-        (projection.tab.scheme !== tab.scheme ||
-          projection.tab.path !== tab.path ||
-          projection.tab.workId !== tab.workId ||
-          projection.tab.rootThreadId !== tab.rootThreadId);
+        boundDocumentId === tab.documentId &&
+        !sameContextTarget(routeTargetForTab(projection.tab, route.workId), route);
       if (routeFollowsTab && projection.tab.kind !== "new")
         void input
           .onOpenContextTarget(
@@ -104,13 +115,14 @@ export function useFollowOpenDocumentPlacement(input: {
         );
     }
   }, [
+    input.activeContextChat,
     input.activeContextPath,
     input.activeContextScheme,
     input.editorWorkId,
     input.onOpenContextTarget,
     input.projectId,
     input.routeDisplayed,
-    input.selectedDocumentId,
+    input.selection,
     availability,
     contextRemoval,
     reconcileResourceTab,

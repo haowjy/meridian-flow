@@ -43,7 +43,7 @@ const MOCK_MODEL: ModelInfo = {
   maxOutputTokens: 4096,
   promptCache: { kind: "automatic", shortTtlSeconds: null, longTtlSeconds: null },
   reasoning: { efforts: ["low", "medium", "high", "max"] },
-  capabilities: new Set(),
+  capabilities: new Set(["image_input"]),
 };
 
 export function mockProviderConfig(baseUrl: string): ProviderConfig {

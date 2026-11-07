@@ -43,6 +43,7 @@ it("shows the bound document after a rename, before its readable address follows
       revision: 1,
       locator: { scheme: "manuscript", path: "/old.md", workId: "work" },
       identity: { kind: "server", documentId: "document" },
+      by: "navigation",
     },
   });
   expect(visible.tab).toBe(moved);

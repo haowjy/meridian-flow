@@ -24,6 +24,7 @@ import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextDocumentHost, type EditableContextTab } from "../context/ContextDocumentHost";
 import { ContextViewerHost } from "../context/ContextViewerHost";
+import { selectionAtRoute } from "../context/context-removal-protocol";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
@@ -132,7 +133,7 @@ function MobileLocalDocumentHost({
       );
     } else if (workspace.kind === "owner") {
       if (selected.status === "candidate")
-        removal.bindRouteSelection(projectId, selected.revision, workspace.identity);
+        removal.bindRouteSelection(projectId, selected.revision, workspace.identity, "answer");
       else if (selected.status === "bound" && selected.identity.documentId === tab.documentId)
         removal.activate({
           projectId,
@@ -225,20 +226,28 @@ function useMobileRouteBinding({
     const selection = removalState.selection;
     if (selection.status === "none") return;
     if (
-      selection.locator.scheme !== activeContextScheme ||
-      selection.locator.path !== activeContextPath ||
-      selection.locator.workId !== workId ||
-      selection.locator.rootThreadId !== (route.rootThreadId ?? undefined)
+      !selectionAtRoute(selection, {
+        scheme: activeContextScheme,
+        path: activeContextPath,
+        workId,
+        rootThreadId: route.rootThreadId ?? undefined,
+      })
     )
       return;
-    // The live catalog says nothing about a pending draft: its tab is the identity.
+    // A draft-only tab is never live at its cached path, so the path doesn't identify it: a
+    // review binds on arrival, and a plain URL there waits for the address answer.
     const catalogSettled = !isFetching && !isError;
     const draftOnly = activeTab !== null && isDraftOnly(activeTab);
-    if (activeTab && (draftOnly || catalogSettled)) {
-      contextRemoval.bindRouteSelection(projectId, selection.revision, {
-        kind: "server",
-        documentId: activeTab.documentId,
-      });
+    if (activeTab && !draftOnly && catalogSettled) {
+      contextRemoval.bindRouteSelection(
+        projectId,
+        selection.revision,
+        {
+          kind: "server",
+          documentId: activeTab.documentId,
+        },
+        "answer",
+      );
     } else if (
       selection.status === "candidate" &&
       catalogResolved &&

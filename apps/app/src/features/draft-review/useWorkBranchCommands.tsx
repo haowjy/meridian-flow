@@ -74,10 +74,20 @@ export function useWorkBranchCommands({
       queryClient
         .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workBranchDrafts(projectId, workId))
         ?.find((item) => item.itemKey === draft.itemKey);
-    const refresh = () => {
+    // The Work's list re-reads with the touched documents' own reads: the route reads a
+    // discarded move from the item's metadata, and the document header reads its draft hints.
+    const refresh = (documentIds: readonly string[]) => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
       });
+      for (const documentId of documentIds) {
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDraftMetadataOf(projectId, workId, documentId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
+        });
+      }
     };
     /** The list without the item's move or delete, until the refetch confirms it. */
     const dropTreeLine = (item: ThreadDraftListItem) =>
@@ -160,7 +170,8 @@ export function useWorkBranchCommands({
       const present = (outcome: CommandOutcome) => {
         if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
         if (outcome.kind === "done") applied(item, outcome);
-        if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
+        if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending)
+          refresh([draft.documentId]);
       };
       return {
         captured,
@@ -169,7 +180,7 @@ export function useWorkBranchCommands({
           if (treeAlreadyApplied && target.kind === "tree") {
             void captured.release({ cancel: true }).outcome;
             if (item) dropTreeLine(item);
-            refresh();
+            refresh([draft.documentId]);
             return { sent: false, outcome: Promise.resolve({ kind: "done" }) };
           }
           const started = captured.release({ omitTree: treeAlreadyApplied });
@@ -213,17 +224,9 @@ export function useWorkBranchCommands({
       if (item?.isNew && target.kind === "draft") {
         const removed: DiscardNotice = { kind: "removed", end() {} };
         const outcome = owner.removeCreated(ref(draft), item).then((answer) => {
-          refresh();
+          refresh([draft.documentId]);
           if (answer.kind !== "done") {
             if (heldNotice.current === removed) endNotice();
-            void queryClient.invalidateQueries({
-              queryKey: projectQueryKeys.workDraftMetadata(
-                projectId,
-                workId,
-                draft.documentId,
-                draft.itemKey,
-              ),
-            });
           }
           return answer;
         });
@@ -236,7 +239,7 @@ export function useWorkBranchCommands({
         // The line goes at once; the refetch after the answer restores it if the server refused.
         dropTreeLine(item);
         const outcome = owner.discardItem(ref(draft), item, target, surface).then((answer) => {
-          refresh();
+          refresh([draft.documentId]);
           return answer;
         });
         // No Undo: the server's settlement of the move or delete has none (`discardItem`).
@@ -259,11 +262,12 @@ export function useWorkBranchCommands({
                         ? rows
                         : [...(rows ?? []), item],
                   );
-                return acknowledged.then(refresh, refresh);
+                const settle = () => refresh([draft.documentId]);
+                return acknowledged.then(settle, settle);
               }
             : undefined,
         });
-      void discarded.outcome.then(refresh);
+      void discarded.outcome.then(() => refresh([draft.documentId]));
       return { sent: true, outcome: discarded.outcome };
     };
     const commandChange = (
@@ -354,7 +358,7 @@ export function useWorkBranchCommands({
         if (locked || !branchId)
           return Promise.resolve(drafts.map(() => ({ kind: "blocked" as const })));
         return owner.discardAll(drafts.map(ref), branchId).then((answer) => {
-          refresh();
+          refresh(drafts.map((draft) => draft.documentId));
           return drafts.map(() => answer);
         });
       },

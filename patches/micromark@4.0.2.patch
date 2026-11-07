@@ -1,0 +1,206 @@
+diff --git a/dev/lib/initialize/text.js b/dev/lib/initialize/text.js
+index 7192e70..f71d1d9 100644
+--- a/dev/lib/initialize/text.js
++++ b/dev/lib/initialize/text.js
+@@ -113,29 +113,23 @@ function createResolver(extraResolver) {
+ 
+   /** @type {Resolver} */
+   function resolveAllText(events, context) {
+-    let index = -1
+-    /** @type {number | undefined} */
+-    let enter
+-
+-    // A rather boring computation (to merge adjacent `data` events) which
+-    // improves mm performance by 29%.
+-    while (++index <= events.length) {
+-      if (enter === undefined) {
+-        if (events[index] && events[index][1].type === types.data) {
+-          enter = index
+-          index++
+-        }
+-      } else if (!events[index] || events[index][1].type !== types.data) {
+-        // Don’t do anything if there is one data token.
+-        if (index !== enter + 2) {
+-          events[enter][1].end = events[index - 1][1].end
+-          events.splice(enter + 2, index - enter - 2)
+-          index = enter + 2
+-        }
+-
+-        enter = undefined
++    // Merge adjacent `data` events in one compacting pass: splicing per run is
++    // quadratic in the number of lines of a single paragraph.
++    let write = 0
++    let read = 0
++    while (read < events.length) {
++      if (events[read][1].type !== types.data) {
++        events[write++] = events[read++]
++        continue
+       }
++      let next = read + 2
++      while (next < events.length && events[next][1].type === types.data) next++
++      if (next - read > 2) events[read][1].end = events[next - 1][1].end
++      events[write++] = events[read]
++      if (read + 1 < events.length) events[write++] = events[read + 1]
++      read = next
+     }
++    events.length = write
+ 
+     return extraResolver ? extraResolver(events, context) : events
+   }
+@@ -153,12 +147,15 @@ function createResolver(extraResolver) {
+  * @type {Resolver}
+  */
+ function resolveAllLineSuffixes(events, context) {
+-  let eventIndex = 0 // Skip first.
++  // One pass into a fresh array: splicing a suffix pair per line is quadratic.
++  const output = []
++  let inserted = false
++  let eventIndex = -1
+ 
+   while (++eventIndex <= events.length) {
+     if (
+-      (eventIndex === events.length ||
+-        events[eventIndex][1].type === types.lineEnding) &&
++      eventIndex > 0 &&
++      (eventIndex === events.length || events[eventIndex][1].type === types.lineEnding) &&
+       events[eventIndex - 1][1].type === types.data
+     ) {
+       const data = events[eventIndex - 1][1]
+@@ -200,7 +197,6 @@ function resolveAllLineSuffixes(events, context) {
+       if (context._contentTypeTextTrailing && eventIndex === events.length) {
+         size = 0
+       }
+-
+       if (size) {
+         const token = {
+           type:
+@@ -220,24 +216,23 @@ function resolveAllLineSuffixes(events, context) {
+           },
+           end: {...data.end}
+         }
+-
+         data.end = {...token.start}
+-
+         if (data.start.offset === data.end.offset) {
+           Object.assign(data, token)
+         } else {
+-          events.splice(
+-            eventIndex,
+-            0,
+-            ['enter', token, context],
+-            ['exit', token, context]
+-          )
+-          eventIndex += 2
++          output.push(['enter', token, context], ['exit', token, context])
++          inserted = true
+         }
+       }
+-
+-      eventIndex++
+     }
++
++    if (eventIndex < events.length) output.push(events[eventIndex])
++  }
++
++  // Callers of `extraResolver` keep the array they passed in.
++  if (inserted) {
++    events.length = output.length
++    for (let index = 0; index < output.length; index++) events[index] = output[index]
+   }
+ 
+   return events
+diff --git a/lib/initialize/text.js b/lib/initialize/text.js
+index b9383cb..da16d16 100644
+--- a/lib/initialize/text.js
++++ b/lib/initialize/text.js
+@@ -104,28 +104,24 @@ function createResolver(extraResolver) {
+ 
+   /** @type {Resolver} */
+   function resolveAllText(events, context) {
+-    let index = -1;
+-    /** @type {number | undefined} */
+-    let enter;
+-
+-    // A rather boring computation (to merge adjacent `data` events) which
+-    // improves mm performance by 29%.
+-    while (++index <= events.length) {
+-      if (enter === undefined) {
+-        if (events[index] && events[index][1].type === "data") {
+-          enter = index;
+-          index++;
+-        }
+-      } else if (!events[index] || events[index][1].type !== "data") {
+-        // Don’t do anything if there is one data token.
+-        if (index !== enter + 2) {
+-          events[enter][1].end = events[index - 1][1].end;
+-          events.splice(enter + 2, index - enter - 2);
+-          index = enter + 2;
+-        }
+-        enter = undefined;
++    // Merge adjacent `data` events in one compacting pass: splicing per run is
++    // quadratic in the number of lines of a single paragraph.
++    let write = 0;
++    let read = 0;
++    while (read < events.length) {
++      if (events[read][1].type !== "data") {
++        events[write++] = events[read++];
++        continue;
+       }
++      let next = read + 2;
++      while (next < events.length && events[next][1].type === "data") next++;
++      if (next - read > 2) events[read][1].end = events[next - 1][1].end;
++      events[write++] = events[read];
++      if (read + 1 < events.length) events[write++] = events[read + 1];
++      read = next;
+     }
++    events.length = write;
++
+     return extraResolver ? extraResolver(events, context) : events;
+   }
+ }
+@@ -142,10 +138,17 @@ function createResolver(extraResolver) {
+  * @type {Resolver}
+  */
+ function resolveAllLineSuffixes(events, context) {
+-  let eventIndex = 0; // Skip first.
++  // One pass into a fresh array: splicing a suffix pair per line is quadratic.
++  const output = [];
++  let inserted = false;
++  let eventIndex = -1;
+ 
+   while (++eventIndex <= events.length) {
+-    if ((eventIndex === events.length || events[eventIndex][1].type === "lineEnding") && events[eventIndex - 1][1].type === "data") {
++    if (
++      eventIndex > 0 &&
++      (eventIndex === events.length || events[eventIndex][1].type === "lineEnding") &&
++      events[eventIndex - 1][1].type === "data"
++    ) {
+       const data = events[eventIndex - 1][1];
+       const chunks = context.sliceStream(data);
+       let index = chunks.length;
+@@ -201,12 +204,20 @@ function resolveAllLineSuffixes(events, context) {
+         if (data.start.offset === data.end.offset) {
+           Object.assign(data, token);
+         } else {
+-          events.splice(eventIndex, 0, ['enter', token, context], ['exit', token, context]);
+-          eventIndex += 2;
++          output.push(['enter', token, context], ['exit', token, context]);
++          inserted = true;
+         }
+       }
+-      eventIndex++;
+     }
++
++    if (eventIndex < events.length) output.push(events[eventIndex]);
+   }
++
++  // Callers of `extraResolver` keep the array they passed in.
++  if (inserted) {
++    events.length = output.length;
++    for (let index = 0; index < output.length; index++) events[index] = output[index];
++  }
++
+   return events;
+-}
+\ No newline at end of file
++}

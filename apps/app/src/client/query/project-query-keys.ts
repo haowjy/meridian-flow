@@ -99,6 +99,9 @@ export const projectQueryKeys = {
       "draft",
       itemKey ?? null,
     ] as const,
+  /** Every item's draft metadata read of one document in a Work. */
+  workDraftMetadataOf: (projectId: string, workId: string, documentId: string) =>
+    ["projects", projectId, "works", workId, "documents", documentId, "draft"] as const,
   contextCatalog: (projectId: string, scope: CatalogScope) =>
     ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,
   contextCatalogView: (

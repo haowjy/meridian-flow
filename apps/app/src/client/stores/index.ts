@@ -31,8 +31,6 @@ export {
   reviewEntriesOf,
   reviewEntryOf,
   type ServerContextTab,
-  sameServerContextTabLocator,
-  serverContextTabLocatorKey,
   type TabOwner,
   tabContextOwner,
   useContextTabs,

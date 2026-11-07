@@ -13,6 +13,7 @@ import {
 } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { routeTargetForTab } from "../context/context-removal-planner";
+import type { RouteBindingProof } from "../context/context-removal-protocol";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { resolveLaunchLocator } from "./launch-locator";
 import {
@@ -24,7 +25,7 @@ import type { ProjectAddress, ProjectDestination } from "./project-address";
 import { workSelectionFor } from "./project-address-resolution";
 import { resolveLocalDocumentSelection } from "./project-local-selection";
 import type { createProjectNavigation } from "./project-navigation";
-import type { ContextRouteRequest } from "./project-route";
+import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
 
 type Navigation = ReturnType<typeof createProjectNavigation>;
 export type EditorCommandSnapshot = {
@@ -41,12 +42,15 @@ export function createEditorDocumentCommand({
   read,
   lookup,
   admitDraftReview,
+  enterRoute,
 }: {
   projectId: string;
   accountId: string;
   read: () => EditorCommandSnapshot;
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
   admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, workId: string) => void;
+  /** Binds the route about to be shown to the document the navigation named. */
+  enterRoute: (locator: ContextRouteTarget, documentId: string, by: RouteBindingProof) => void;
 }): OpenContextRoute {
   return async (request, options) => {
     const current = read();
@@ -133,13 +137,32 @@ export function createEditorDocumentCommand({
               selected.documentId,
               selected,
             );
+        // The writer opened this document: the route is its own from the first frame, whatever
+        // another document holds at its cached path. A pasted or reloaded URL names none.
+        if (target.documentId && target.path && resolvedWorkId && !next.state)
+          enterRoute(
+            {
+              scheme: target.scheme,
+              path: `/${canonicalDocumentPath(target.path)}`,
+              workId: resolvedWorkId,
+              ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
+            },
+            target.documentId,
+            // An address that carries an item is a review: the item owns its path.
+            itemKey ? "review" : "navigation",
+          );
       };
       if (
         options?.replace === undefined &&
         options?.replaceIfSameDocument === true &&
         sameDocument
       ) {
-        const result = await navigation.replaceIfCurrent(ticket, next.address);
+        // The address already carries this review: the owner that settles its path may have
+        // moved the URL since this command read it, and writing the stale path back would flip it.
+        const carriesReview = !!itemKey && itemKey === current.address.itemKey;
+        const result = carriesReview
+          ? { kind: "replaced" as const }
+          : await navigation.replaceIfCurrent(ticket, next.address);
         if (result.kind !== "replaced")
           return result.kind === "failed"
             ? { ...result, stage: "before-acceptance" }
@@ -280,7 +303,10 @@ function openDraftOnlyTabFor(
   if (!request.workId) return undefined;
   const workId = request.workId;
   return editorTabsForWork(tabs, workId).find(
-    (tab) => isDraftOnly(tab) && contextTabMatchesRoute(tab, { ...request, workId }),
+    (tab) =>
+      isDraftOnly(tab) &&
+      (request.documentId === undefined || tab.documentId === request.documentId) &&
+      contextTabMatchesRoute(tab, { ...request, workId }),
   );
 }
 function reviewItemKeyOf(tab: ContextTab, workId: string | undefined): string | undefined {
