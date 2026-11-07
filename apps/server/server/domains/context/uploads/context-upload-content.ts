@@ -1,13 +1,18 @@
 /** ContextFS-backed upload content adapter. */
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
-import { classifyFiletype } from "@meridian/contracts/protocol";
+import { ASSETS_FOLDER, classifyFiletype } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
 import { keptFileName } from "../../file-intake/index.js";
 import { projectBrowseContextUri } from "../browse-layer-scheme.js";
 import { contextAreaOf } from "../context/uri.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
-import type { PlacedUpload, UploadContentPort, UploadSourceDestination } from "./upload-intake.js";
+import type {
+  ClaimedUpload,
+  PlacedUpload,
+  UploadContentPort,
+  UploadSourceDestination,
+} from "./upload-intake.js";
 
 /** Tracked text bound before finalize; binary and empty uploads need nothing bound. */
 type BoundUpload = BoundWrite | null;
@@ -21,7 +26,7 @@ export function createContextUploadContentPort(
    * upload has no handle yet, and the write must not depend on one.
    */
   function portFor(
-    reservation: PlacedUpload,
+    reservation: ClaimedUpload,
     actorUserId: string,
     source?: UploadSourceDestination,
   ): ContextPort {
@@ -42,6 +47,15 @@ export function createContextUploadContentPort(
     classifyFiletype(reservation.fileType).kind === "tracked";
 
   return {
+    async names({ reservation, actorUserId, source }) {
+      const folder = source
+        ? projectBrowseContextUri(source.scheme, ASSETS_FOLDER, source.authority)
+        : "uploads://";
+      const listing = await portFor(reservation, actorUserId, source).list(folder);
+      if (!listing.ok) return new Set();
+      return new Set(listing.value.entries.map((entry) => entry.uri.split("/").pop() ?? ""));
+    },
+
     async bind({ reservation, actorUserId, text, source }) {
       if (!isTracked(reservation) || text.length === 0) return { ok: true, bound: null };
       const port = portFor(reservation, actorUserId, source);
