@@ -141,6 +141,7 @@ export function setImageWidth(editor: Editor, hold: NodeHold, width: number | nu
   if (!at) return false;
   const node = state.doc.nodeAt(at.from);
   if (!node || imageWidthAttr(node.attrs) === width) return false;
-  editor.view.dispatch(state.tr.setNodeMarkup(at.from, undefined, { ...node.attrs, width }));
+  // `setNodeMarkup` replaces a leaf, which would drop the selection and its grips.
+  editor.view.dispatch(state.tr.setNodeAttribute(at.from, "width", width));
   return true;
 }

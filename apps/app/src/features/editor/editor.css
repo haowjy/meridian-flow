@@ -31,7 +31,9 @@
    the writer has, in any split or dock, rather than to the window. The cap is a
    registered length so it resolves to pixels here and inherits as pixels: a
    measured picture's frame is a size container of its own, and an unregistered
-   `60cqh` would resolve against that frame instead. */
+   `60cqh` would resolve against that frame instead. On touch screens the pane
+   height comes from `holdPictureCapThroughKeyboard`, because a phone keyboard
+   shrinks this container. */
 @property --meridian-picture-cap {
   syntax: "<length>";
   inherits: true;
@@ -43,7 +45,7 @@
 }
 
 .meridian-editor .ProseMirror {
-  --meridian-picture-cap: 60cqh;
+  --meridian-picture-cap: calc(var(--meridian-pane-height, 100cqh) * 0.6);
   outline: none;
   /* Height, insets, and the scroll-past-end reserve are the prose column's,
      applied as utilities from `editor-column.ts` — one owner for the geometry

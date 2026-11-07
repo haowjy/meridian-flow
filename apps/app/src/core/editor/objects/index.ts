@@ -44,4 +44,4 @@ export {
   objectSurfaceKind,
   objectTypeSpec,
 } from "./object-types";
-export { pictureCapHeight, pictureCapped } from "./picture-cap";
+export { holdPictureCapThroughKeyboard, pictureCapHeight, pictureCapped } from "./picture-cap";
