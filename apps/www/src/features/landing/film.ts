@@ -12,6 +12,7 @@ import {
   ease,
   FIGHT,
   lerp,
+  PERCH,
   progress,
   SECTIONS,
   smooth,
@@ -146,13 +147,16 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
   // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
   const breathing =
+    flare(beats.turn, PERCH) * 0.9 +
     smooth(beats.fight, 0, 0.08) * 0.35 +
     flare(beats.fight, FIGHT.ward) * 0.45 +
     flare(beats.fight, FIGHT.breath) * 0.7;
   const toTwist = smooth(beats.twist, 0, 0.5);
   let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
-  // The veil keeps the chapter readable; once its text fades the fight is the picture, so it lifts.
-  veil = lerp(veil, 0.06, smooth(beats.fight, 0.02, 0.14));
+  // The veil keeps the chapter readable; once its text fades the perch and the fight are the
+  // picture, so it lifts.
+  const lifted = beats.fight > 0 ? 1 : smooth(beats.turn, PERCH[0] - 0.08, PERCH[0] + 0.04);
+  veil = lerp(veil, 0.06, lifted);
   veil = lerp(veil, 0.2, toTwist);
   veil = lerp(veil, 0, dawn);
   return {
@@ -359,7 +363,9 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
     const chapterIn = smooth(open, 0, 0.7);
     const chapterDim = turn > 0 ? smooth(turn, 0, 0.16) : 1 - smooth(out, 0, 0.28);
-    show(chapter, chapterIn * chapterDim * (1 - smooth(beats.fight, 0, 0.1)));
+    // The chapter gives way just before it breathes, so the perch has the screen.
+    const chapterGone = beats.fight > 0 ? 1 : smooth(turn, PERCH[0] - 0.08, PERCH[0]);
+    show(chapter, chapterIn * chapterDim * (1 - chapterGone));
     const chapterOffset = lerp(
       lerp(layout.chapterFrom, layout.chapterTo, ease(write) * 0.3 + write * 0.7),
       layout.turn,

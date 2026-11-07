@@ -1,6 +1,6 @@
 import { MARKETING_SKY } from "@meridian/design-tokens/marketing-sky";
 import type { Layout } from "./film-layout";
-import { type BeatProgress, clamp, FIGHT, lerp, progress, smooth } from "./timeline";
+import { type BeatProgress, clamp, FIGHT, lerp, PERCH, progress, smooth } from "./timeline";
 
 const WALK_FRAMES = 6;
 const FIGHT_COLUMN = WALK_FRAMES;
@@ -306,7 +306,11 @@ export function createForest(root: HTMLElement) {
       const seated = smooth(beats.back, 0, 0.3);
       const ring = [1.6, 0.6, -0.6, -1.6];
       const fight = beats.fight;
-      const backed = smooth(fight, 0.05, FIGHT.breath[0]) * W * (layout.isPhone ? 0.03 : 0.14);
+      const backed =
+        (smooth(beats.turn, PERCH[0], PERCH[1]) * 0.05 +
+          smooth(fight, 0.05, FIGHT.breath[0]) * 0.14) *
+        W *
+        (layout.isPhone ? 0.2 : 1);
       const heads: number[] = [];
 
       figures.slice(0, WOLF_ROW).forEach((figure, row) => {
