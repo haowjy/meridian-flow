@@ -11,10 +11,12 @@ meaning such as figures or attachments belongs here.
 or `error`; the port does not throw. Errors use `invalid_key`, `not_found`,
 `too_large`, or `io_error`.
 
-A file can reach 200 MiB, so nothing outside a bounded read holds an object whole:
+A file can reach 200 MiB, so only a bounded read holds an object whole:
 
 - `get(key, { maxBytes })` reads a whole object into memory and refuses (`too_large`)
-  above the cap before reading. Only previews and model-sized images use it.
+  above the cap before reading, or when the store reports no length. Previews and
+  model-sized images pass a cap. The import organizer calls `get` uncapped; it is bounded by
+  the import size limit, so raise that limit only with a cap or a stream there.
 - `getStream` is for the export, which pipes it into a zip entry; destroying the
   stream abandons the read.
 - `copy(from, to)` duplicates inside the store (`CopyObject`, `copyFile`) and returns
