@@ -4,7 +4,7 @@ The Prologue of *The Long Reckoning*, which the landing page excerpts. The share
 
 The Cold Fire came on a clear night in spring, and every country saw it.
 
-Four of us watched it from four high places, and none of us knew the others yet. In Harl a farm boy stood on the cliff above his father's barley and watched the north turn green. In Ansgard a dwarf stood on the watch-ledge of the Ninth Hold with a chisel still in her hand. At the edge of Vell an elf who had not seen anything in a thousand years lifted her face, because the wind had gone cold from the wrong direction. On the Kessa steppe a guide stood on a ridge with his horses and said nothing, because he knew the song, and the song had started.
+Four of us watched it from four high places, and none of us knew the others yet. In Harl a farm boy stood on the cliff above his father's barley and watched the north turn green. In Ansgard a dwarf stood on the watch-ledge of the Ninth Hold with a chisel still in her hand. At the edge of Vell an elf who could not see it lifted her face, because the wind had gone cold from the wrong direction. On the Kessa steppe a guide stood on a ridge with his horses and said nothing, because he knew the song, and the song had started.
 
 It looked like a curtain. That was what everyone said afterward, in every language: a green curtain hung across the top of the world, moving slowly, as if someone behind it were breathing.
 
@@ -12,7 +12,7 @@ Every night it reached a little further south, and the sun came up a little cold
 
 By the tenth day the barley in Harl had stopped growing. By the twentieth there was frost on the river at noon. The scholars in every capital argued about it and agreed on one thing: whatever the Cold Fire was, it was eating the light. The sun still rose. It rose pale, like a coin seen through water, and gave off about as much heat.
 
-The crowns sent armies first. Harl sent two thousand spears north under the king's own banner. Ansgard emptied a hold's garrison. Vell sent its rangers, and the Kessa, who have no armies, sent every hunter who would go. None of them came back. No runner, no message. The System still listed them, for those with the right to see such lists, by name and by level, and under every name the same word: *Missing*.
+The four peoples sent armies first. Harl sent two thousand spears north under the king's own banner. Ansgard emptied a hold's garrison. Vell sent its rangers, and the Kessa, who have no armies, sent every hunter who would go. None of them came back. No runner, no message. The System still listed them, for those with the right to see such lists, by name and by level, and under every name the same word: *Missing*.
 
 So they stopped sending armies.
 
@@ -38,7 +38,7 @@ It got darker every day. The sun still came up and crossed the sky, but by the f
 
 On the fifth day we found the army.
 
-The men were sitting down. That was the worst of it. Two thousand men of Harl sat in the snow in their ranks with their spears across their knees, as though someone had called a halt and they had all sat down to wait. Frost had grown over them like fur. Over every one of them the System still hung a tag, small and patient: a name, a level, and the word *Missing*. It had not decided they were dead. Tam walked along the front rank reading names until Sigrun took him by the collar and walked him away.
+The men were sitting down. Two thousand men of Harl sat in the snow in their ranks with their spears across their knees, as though someone had called a halt and they had all sat down to wait. Frost had grown over them like fur. Over every one of them the System still hung a tag, small and patient: a name, a level, and the word *Missing*. It had not decided they were dead. Tam walked along the front rank reading names until Sigrun took him by the collar and walked him away.
 
 They had not fought anything. They had just stopped.
 
@@ -60,7 +60,7 @@ Later, when the fire was low, Tam asked what everyone would do once it was dead.
 
 On the eighth day Maren stopped walking. She turned her face to the north and listened for a long time, and then she said, "It's very big," in a voice nobody had heard her use.
 
-An hour later Tam saw it: far off over the ice, against the brightest part of the green, a shape turning slowly, too big and too slow to be a bird. He said it was a bird. Sigrun said it was cloud. Over every living thing they had met since Harl, the System had hung a tag, and Sigrun looked for this one's and found nothing.
+An hour later Tam saw it: far off over the ice, against the brightest part of the green, a shape turning slowly, too big and too slow to be a bird. He said it was a bird. Sigrun said it was cloud. Over every living thing we had met since Harl, the System had hung a tag, and Sigrun looked for this one's and found nothing.
 
 Oskar had sung most days on the march. After that he stopped.
 
@@ -78,7 +78,7 @@ It almost worked.
 
 The first breath it turned on us, Sigrun took on her left arm. The rune flared white and the green fire split around us like water around a stone, and for a moment we stood in a pocket of warm air in the middle of all that cold, and Tam laughed out loud. Then the rune went dark, and Sigrun was already cutting the next one.
 
-"Tail," Oskar called. "Down. Now." We went down, and the tail went over us with a sound like a ship's keel on gravel. "Left foot. It's afraid for its left foot." None of it made sense until Tam put a spark into the scales above its left foot and the beast flinched, the whole hill of it, and swung its head round. For one long breath its eye was in front of them, as big as a door and green inside, like the sky.
+"Tail," Oskar called. "Down. Now." We went down, and the tail went over us with a sound like a ship's keel on gravel. "Left foot. It's guarding its left foot." Tam put a spark into the scales above the foot, and the beast flinched, the whole hill of it, and swung its head round. For one long breath its eye was in front of us, as big as a door and green inside, like the sky.
 
 Tam put his spark into it.
 
@@ -102,7 +102,9 @@ A box opened in the air in front of me. It was the same blue as every box I had 
 
 I read it three times. I was still standing.
 
-The beast turned its head toward the box, the brightest thing left on the ice. Its one eye narrowed, and it breathed. That's it? I was just getting good at this.
+The beast turned its head toward the box, the brightest thing left on the ice. Its one eye narrowed, and it breathed.
+
+That's it? I was just getting good at this.
 
 The fire went through the box and through me, colder than anything I have a word for.
 
@@ -131,7 +133,7 @@ Then there was nothing to see again.
 
 I was at the edge of Vell. The wind was cold from the wrong direction, and somewhere north of me, I knew, the sky was turning green.
 
-I have told all of this as if I saw it. I didn't. Tam told me the sky was green. Sigrun told me about the tags. Everything in it with eyes in it, someone told me. The box is the only thing I saw myself.
+I have told all of this as if I saw it. I didn't. Tam told me the sky was green. Sigrun told me about the tags. Anything in it that needed eyes, someone told me. The box is the only thing I saw myself.
 
 The next one, the System read to me in my mother's voice.
 
@@ -175,7 +177,7 @@ A box opened in the air in front of me.
 
 The song has no verse about boxes. I have sung it all my life, and I would know.
 
-The beast turned its head. I heard the fear go out of it, and then I heard what it wanted instead: the light. The box was the brightest thing on the ice. It breathed on it the way it breathed on the sun, and I was standing under it.
+The beast turned its head. I heard the fear go out of it, and then I heard what it wanted instead: the light. The box was the brightest thing on the ice. It breathed on the box the way it breathed on the sun, and I was standing under it.
 
 The song was true, and there's no one left to sing it.
 
