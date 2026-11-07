@@ -7,6 +7,7 @@ import type {
 
 import { queryOptions } from "@tanstack/react-query";
 import type { getProjectDocumentAddress } from "@/client/api/projects-api";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ContextRouteSelection } from "../context/context-removal-protocol";
 import type { ProjectDestination } from "./project-address";
@@ -93,7 +94,9 @@ export function documentAddressQueryOptions(
         ...(review ? { review } : {}),
       });
     },
-    enabled: !!input.destination && input.workResolved && input.binding.kind !== "pending",
+    enabled: projectReadEnabled(
+      !!input.destination && input.workResolved && input.binding.kind !== "pending",
+    ),
     staleTime: 0,
     retry: false,
   });
