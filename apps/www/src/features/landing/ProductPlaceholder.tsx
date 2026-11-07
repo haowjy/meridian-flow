@@ -1,6 +1,17 @@
 import type { CardStore } from "./card-store";
 import { LORE_ARRIVES } from "./dragon-actor";
-import { CHARACTERS, characterName, FELL, museReply, PROLOGUE, QUESTION, SURVIVED } from "./story";
+import {
+  ALIVE,
+  CHARACTERS,
+  characterName,
+  DRAGON_PAGE,
+  FELL,
+  museReply,
+  PROLOGUE,
+  QUESTION,
+  SURVIVED,
+  type WikiPage,
+} from "./story";
 
 /**
  * A drawing of the real app, to be replaced by captured footage. The page only
@@ -52,25 +63,16 @@ export function ProductPlaceholder() {
               <i className="s-car" />
             </p>
           </article>
-          {CHARACTERS.map(({ key, name, note, facts, sections }) => (
-            <article className="s-doc" id={`d${key}`} data-folder="Knowledge Base" hidden key={key}>
-              <div className="name">{name}</div>
-              <p className="s-only-hints s-status" id={`s-note-${key}`} />
-              <p>{note}</p>
-              <dl className="s-facts">
-                {facts.map(([label, value]) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-              </dl>
-              {sections.map(([heading, text]) => (
-                <section key={heading}>
-                  <h3>{heading}</h3>
-                  <p>{text}</p>
-                </section>
-              ))}
+          {CHARACTERS.map((character) => (
+            <article
+              className="s-doc"
+              id={`d${character.key}`}
+              data-folder="Knowledge Base"
+              hidden
+              key={character.key}
+            >
+              <div className="name">{character.name}</div>
+              <PageBody page={character} statusId={`s-note-${character.key}`} />
             </article>
           ))}
           <article className="s-doc" id="ddragon" data-folder="Knowledge Base" hidden>
@@ -78,7 +80,7 @@ export function ProductPlaceholder() {
             <figure className="s-fig">
               <i id="s-dragon" />
             </figure>
-            <p>The beast in the Greenlands. Nobody who went north was told what it was.</p>
+            <PageBody page={DRAGON_PAGE} />
           </article>
         </div>
       </div>
@@ -151,6 +153,66 @@ export function ProductPlaceholder() {
         </button>
       </nav>
     </div>
+  );
+}
+
+const CHARACTER_NAME = new RegExp(`\\b(${CHARACTERS.map(({ name }) => name).join("|")})\\b`);
+
+/** A page's text with the party's names linked to their pages, the way a wiki links them. */
+function Linked({ text }: { text: string }) {
+  let offset = 0;
+  return text.split(CHARACTER_NAME).map((part) => {
+    const at = offset;
+    offset += part.length;
+    const character = CHARACTERS.find(({ name }) => name === part);
+    return character ? (
+      <button type="button" className="s-link" data-open={`d${character.key}`} key={at}>
+        {part}
+      </button>
+    ) : (
+      part
+    );
+  });
+}
+
+function PageBody({ page, statusId }: { page: WikiPage; statusId?: string }) {
+  return (
+    <>
+      <p>
+        <Linked text={page.lead} />
+      </p>
+      <ul className="s-facts">
+        {statusId ? (
+          <li>
+            <b>Status:</b> <span id={statusId}>{ALIVE}</span>
+          </li>
+        ) : null}
+        {page.facts.map(([label, value]) => (
+          <li key={label}>
+            <b>{label}:</b> {value}
+          </li>
+        ))}
+      </ul>
+      {page.sections.map(([heading, body]) => (
+        <section key={heading}>
+          <h3>{heading}</h3>
+          {typeof body === "string" ? (
+            <p>
+              <Linked text={body} />
+            </p>
+          ) : (
+            body.map(([label, text]) => (
+              <p key={label}>
+                <b>
+                  <Linked text={label} />
+                </b>{" "}
+                <Linked text={text} />
+              </p>
+            ))
+          )}
+        </section>
+      ))}
+    </>
   );
 }
 
@@ -230,17 +292,18 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
     }
   };
 
-  for (const row of railDocuments) {
-    row.addEventListener(
-      "click",
-      () => {
-        held = true;
-        open(row.dataset.doc as string);
-        view("page");
-      },
-      { signal },
-    );
-  }
+  slot.addEventListener(
+    "click",
+    (event) => {
+      if (!(event.target instanceof Element)) return;
+      const link = event.target.closest<HTMLElement>("[data-doc], [data-open]");
+      if (!link) return;
+      held = true;
+      open((link.dataset.doc ?? link.dataset.open) as string);
+      view("page");
+    },
+    { signal },
+  );
   for (const tab of tabs) {
     tab.addEventListener(
       "click",
@@ -265,7 +328,8 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
     part("#s-choice").textContent = characterName(protagonist);
     reply.textContent = museReply(protagonist);
     for (const { key } of CHARACTERS) {
-      part(`#s-note-${key}`).textContent = key === protagonist ? SURVIVED : FELL;
+      const fate = key === protagonist ? SURVIVED : FELL;
+      part(`#s-note-${key}`).textContent = state === "hints" ? fate : ALIVE;
     }
   };
   followAnswers();
@@ -278,6 +342,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
         state = next;
         held = false;
         slot.dataset.state = next;
+        followAnswers();
         open("dprologue");
       }
       const arrived = next === "lore" && progress >= LORE_ARRIVES;

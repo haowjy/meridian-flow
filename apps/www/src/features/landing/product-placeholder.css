@@ -444,6 +444,12 @@
     font-size: 15px;
   }
 
+  .s-facts {
+    float: none;
+    width: auto;
+    margin: 0 0 14px;
+  }
+
   .s-tabs {
     display: flex;
     background: var(--color-card);
@@ -477,18 +483,21 @@
 }
 
 .s-facts {
-  display: grid;
-  gap: 2px;
-  margin: 0 0 14px;
+  float: right;
+  width: 230px;
+  margin: 0 0 12px 20px;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .s-facts div {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+  padding: 2px 0;
 }
 
 .s-facts dt {
@@ -498,11 +507,19 @@
 .s-doc h3 {
   font-size: 16px;
   font-weight: 600;
-  margin: 14px 0 3px;
+  margin: 16px 0 3px;
 }
 
-.s-status {
-  font-weight: 500;
+.s-doc section:last-of-type {
+  border-top: 1px solid var(--color-border);
+  margin-top: 18px;
+}
+
+.s-link {
+  color: var(--color-jade-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .s-fig {
