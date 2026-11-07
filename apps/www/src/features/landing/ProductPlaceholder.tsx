@@ -145,13 +145,13 @@ export function ProductPlaceholder() {
           <div className="s-me s-only-start">Let’s write the prologue.</div>
           <div className="s-me s-only-team">Have the team read it.</div>
           <HelperCard letter="C" name="Continuity-checker" scope="Prologue" line="Finished" done />
-          <HelperCard letter="C" name="Critic" scope="Prologue" line="Reading the scene" />
+          <HelperCard letter="C" name="Critic" scope="Prologue" line="Reading the climax" />
           <HelperCard letter="R" name="Reader-sim" scope="Prologue" line="Finished" done />
           <HelperCard
             letter="W"
             name="Writer-helper"
-            scope="Ending"
-            line="Drafting two shorter endings"
+            scope="Endings"
+            line="Drafting the four endings"
           />
           <HelperCard
             letter="C"
@@ -162,7 +162,7 @@ export function ProductPlaceholder() {
             hints
           />
           <HelperCard letter="R" name="Reader-sim" scope="Prologue" line="Finished" done hints />
-          <HelperCard letter="C" name="Critic" scope="Prologue" line="Reading the scene" hints />
+          <HelperCard letter="C" name="Critic" scope="Prologue" line="Reading the climax" hints />
           <div className="s-me s-only-hints s-first" id="s-choice" />
           <div className="s-ai s-only-hints" id="s-reply" />
           <div className="s-ed big s-only-hints">

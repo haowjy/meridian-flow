@@ -4,7 +4,7 @@ The Prologue of *The Long Reckoning*, which the landing page excerpts. The share
 
 The Cold Fire came on a clear night in spring, and every country saw it.
 
-Four of us watched it from four high places, and none of us knew the others yet. In Harl a farm boy stood on the cliff above his father's barley and watched the north turn green. In Ansgard a dwarf stood on the watch-ledge of the Ninth Hold with a chisel still in her hand. At the edge of Vell an elf who could not see it lifted her face, because the wind had gone cold from the wrong direction. On the Kessa steppe a guide stood on a ridge with his horses and said nothing, because he knew the song, and the song had started.
+Four of us watched it from four high places, and none of us knew the others yet. In Harl a boy home from the king's court stood on the cliff above his father's barley and watched the north turn green. In Ansgard a dwarf stood on the watch-ledge of the Ninth Hold with a chisel still in her hand. At the edge of Vell an elf who could not see it lifted her face, because the wind had gone cold from the wrong direction. On the Kessa steppe a guide stood on a ridge with his horses and said nothing, because he knew the song, and the song had started.
 
 It looked like a curtain. That was what everyone said afterward, in every language: a green curtain hung across the top of the world, moving slowly, as if someone behind it were breathing.
 
@@ -22,7 +22,7 @@ We were the four.
 
 ---
 
-Tam came from Harl, the furthest south, so the road began with him. He was seventeen. Eighteen months earlier he had been a farm boy; now he was Level 58, higher than anyone his age had ever been, and when the king said so in front of the whole court Tam went red to the ears. His skill was [Spark]. The first one had come out of his right hand and taken the skin off to the elbow, and he still held that arm a little away from his body, as if it belonged to someone he was being polite to. He talked when he was nervous, which was most of the first week.
+Tam came from Harl, the furthest south, so the road began with him. He was seventeen. Eighteen months earlier he had been a farm boy; now he was Level 58, higher than anyone his age had ever been, and when the king said so in front of the whole court Tam went red to the ears. His skill was [Spark], and the box that came with it had said [Source: need], the way boxes did for a first skill. The first spark had come out of his right hand and taken the skin off to the elbow, and he still held that arm a little away from his body, as if it belonged to someone he was being polite to. He talked when he was nervous, which was most of the first week.
 
 At the border fort under the mountains, Sigrun was waiting on the wall. She came down without being asked, looked at Tam's arm and said, "That'll ache in the cold." It did. She was the champion of the holds, a hundred and forty years old and built like a millstone, and both her forearms were scarred from wrist to elbow in neat rows of runes, the newest still scabbed. Tam asked about them that night. "A shield can be dropped," she said, which was not an answer until the wolves came. She carried a letter under the seal of the Ninth Hold and never opened it where anyone could see.
 
@@ -44,9 +44,9 @@ They had not fought anything. They had just stopped.
 
 On the sixth night the wolves came, twenty tags bobbing over the snow like lanterns. [Frost Wolf, Lv 41] Oskar was on his feet with his axe before anyone else had seen one. "Left," he said, "then behind," and they came from the left, and then from behind. That was his skill, [Sense Fear]: he heard an animal's fear a breath before it moved.
 
-Sigrun stood in front of Maren, and the first wolf to reach her hit her raised forearm and stopped as if it had hit a wall. The rune under its teeth flared white and went dark. She was cutting the next one before the wolf had found its feet. [Ward Rune]: one blow per mark, then carve another. Tam understood about the shield.
+Sigrun stood in front of Maren, and the first wolf to reach her hit her raised forearm and stopped as if it had hit a wall. The rune under its teeth flared white and went dark, and she was cutting the next one before the wolf had found its feet.
 
-Tam's sparks would not catch in that cold, so he fought with his knife, badly, and a wolf got its teeth into his scarred arm and held on. Then Maren sang. Nobody had heard her sing before. The bite closed around the wolf's teeth, the wolf let go as though it had bitten something wrong, and Sigrun killed it. [Mending Hymn]: while she sang, a wound closed.
+Tam's sparks would not catch in that cold, so he fought with his knife, badly, and a wolf got its teeth into his scarred arm and held on. Then Maren sang. Nobody had heard her sing before. The bite closed around the wolf's teeth, the wolf let go as though it had bitten something wrong, and Sigrun killed it.
 
 It was the first time we had fought together, and we were not good at it. We were alive at the end. We decided that counted.
 
@@ -60,7 +60,7 @@ Later, when the fire was low, Tam asked what everyone would do once it was dead.
 
 On the eighth day Maren stopped walking. She turned her face to the north and listened for a long time, and then she said, "It's very big," in a voice nobody had heard her use.
 
-An hour later Tam saw it: far off over the ice, against the brightest part of the green, a shape turning slowly, too big and too slow to be a bird. He said it was a bird. Sigrun said it was cloud. Over every living thing we had met since Harl, the System had hung a tag, and Sigrun looked for this one's and found nothing.
+An hour later Tam saw it: far off over the ice, against the brightest part of the green, a shape turning slowly, too big and too slow to be a bird. He said it was a bird. Sigrun said it was cloud. Over every living thing we had met on the road, the System had hung a tag, and Sigrun looked for this one's and found nothing.
 
 Oskar had sung most days on the march. After that he stopped.
 
@@ -68,21 +68,19 @@ Oskar had sung most days on the march. After that he stopped.
 
 On the ninth night, we found it. It was a dragon.
 
-The ice ended in a basin as wide as a city, and the beast lay in the middle of it with its head raised to the sky, breathing. Every breath went up green. That was the Cold Fire.
+The ice ended in a basin as wide as a city, and the dragon lay in the middle of it with its head raised to the sky, breathing. Every breath went up green. That was the Cold Fire.
 
 Oskar said nothing. Sigrun, who knew bones, said nothing at all.
 
-We had a plan, and it had seemed a good one at the fort. Sigrun in front with her wards. Maren behind her, singing. Oskar on the flank, calling its moves. Tam behind them all, with his spark for its eyes.
+We had a plan, and it had seemed a good one at the last camp. A ward held off the cold for as long as it held off the blow, and in that warm air Tam's spark would catch. So: Sigrun in front with her wards. Maren behind her, singing. Oskar on the flank, calling its moves. Tam behind them all, with his spark for its eyes.
 
-It almost worked.
+The first breath it turned on us, Sigrun took on her left arm. The rune flared white and the green fire split around us like water around a stone, and we stood in a pocket of warm air in the middle of all that cold, and Tam laughed out loud, because his hand had gone orange. Then the rune went dark, and Sigrun was already cutting the next one.
 
-The first breath it turned on us, Sigrun took on her left arm. The rune flared white and the green fire split around us like water around a stone, and for a moment we stood in a pocket of warm air in the middle of all that cold, and Tam laughed out loud. Then the rune went dark, and Sigrun was already cutting the next one.
-
-"Tail," Oskar called. "Down. Now." We went down, and the tail went over us with a sound like a ship's keel on gravel. "Left foot. It's guarding its left foot." Tam put a spark into the scales above the foot, and the beast flinched, the whole hill of it, and swung its head round. For one long breath its eye was in front of us, as big as a door and green inside, like the sky.
+"Tail," Oskar called. "Down. Now." We went down, and the tail went over us with a sound like a ship's keel on gravel. "Left foot. It's guarding its left foot." Tam put a spark into the scales above the foot, and the dragon flinched, the whole hill of it, and swung its head round. For one long breath its eye was in front of us, as big as a door and green inside, like the sky.
 
 Tam put his spark into it.
 
-It screamed. We had not known it could make a sound. The ice cracked under the noise in long white lines, the Cold Fire overhead flickered, and for one moment the sun showed through it, white and warm.
+It screamed. We had not known it could make a sound. The ice cracked under the noise in long white lines, the Cold Fire overhead flickered, and for the first time in nine nights we saw stars.
 
 We had hurt it. We had actually hurt it.
 
@@ -94,7 +92,7 @@ Then it killed us.
 
 It killed Sigrun first, because she was in front and the rune on her right arm was only half cut. Oskar shouted and went toward her, and the tail took him off his feet and into the dark. Maren was kneeling over Sigrun, singing, when the breath found her. She didn't stop singing until it was over.
 
-Then there was only me on the ice, with one spark left and a right arm that would not close.
+Then there was only me on the ice, with one spark left and a right hand that would not close.
 
 A box opened in the air in front of me. It was the same blue as every box I had ever seen, and it said:
 
@@ -102,9 +100,9 @@ A box opened in the air in front of me. It was the same blue as every box I had 
 
 I read it three times. I was still standing.
 
-The beast turned its head toward the box, the brightest thing left on the ice. Its one eye narrowed, and it breathed.
+The dragon turned its head toward the box, the brightest thing left on the ice. Its one eye narrowed, and it breathed.
 
-That's it? I was just getting good at this.
+I'd already picked out the field for my father.
 
 The fire went through the box and through me, colder than anything I have a word for.
 
@@ -115,27 +113,25 @@ I was on the cliff above my father's barley. It was night, and the north was tur
 
 ## If Maren survives
 
-It took Tam first. He was still standing where he had put the spark into its eye, still laughing, and the breath came down on him and the laughing stopped. Oskar was next, and I heard it, all of it. Sigrun stood over me with both arms raised and every rune on them dark, and said, "Sing," and I sang, and it was not enough.
+It took Tam first. He was still laughing, and the breath came down on him and the laughing stopped. Oskar was next, and I heard it, all of it. Sigrun stood over me and I heard her last ward break, and she said, "Sing," and I sang, and it was not enough.
 
 Then there was only me on the ice.
 
-Something was in front of me. I did not know what it was. I had not seen anything since I was six years old, and at first I did not understand that I was seeing. It was blue. It was shaped like nothing in the world, perfectly square, and it had words on it, and I could read them.
+Something was in front of me. I did not know what it was. I had not seen anything since I was six years old, and at first I did not understand that I was seeing. It was blue. It was shaped like nothing in the world, perfectly square, and it had marks on it that I could not read. My mother's voice read them to me.
 
 **You died.**
 
 The System had read me ten thousand boxes in my mother's voice. It had never shown me one.
 
-I had perhaps a breath to look at it before the beast turned its head toward the light. It breathed, and the blue went white.
+I had perhaps a breath to look at it before the dragon turned its head toward the light. It breathed, and the blue went white.
 
 So that's what fire looks like.
 
 Then there was nothing to see again.
 
-I was at the edge of Vell. The wind was cold from the wrong direction, and somewhere north of me, I knew, the sky was turning green.
+I have told all of this as if I saw it. I didn't. Tam told me the sky was green, and Sigrun told me about the tags. The rest I heard. The box is the only thing I saw myself.
 
-I have told all of this as if I saw it. I didn't. Tam told me the sky was green. Sigrun told me about the tags. Anything in it that needed eyes, someone told me. The box is the only thing I saw myself.
-
-The next one, the System read to me in my mother's voice.
+I was at the edge of Vell. The wind was cold from the wrong direction, and somewhere north of me, I knew, the sky was turning green. The next box, the System read to me in my mother's voice.
 
 [Unique skill acquired: Rekindle]
 [Source: unknown]
@@ -146,17 +142,17 @@ It went for Maren first. I don't know how it knew she was the one keeping us sta
 
 Then there was only me on the ice, with the chisel in my hand and half a rune cut into my arm.
 
-A box opened in the air in front of me.
+Blue light opened in front of my face.
 
 **You died.**
 
-I am a dwarf. I keep exact accounts, and I was still breathing. The System has never been wrong.
+I keep exact accounts. I was still breathing, and the System has never been wrong.
 
-The beast swung its head round to the box, the brightest thing on the ice. I raised the arm with the half-cut rune, and it did nothing at all.
+The dragon swung its head round to the light. I raised the arm with the half-cut rune, and it did nothing at all.
 
 One more stroke and that rune would have held.
 
-The fire came through the box and through me.
+Then the fire.
 
 I was on the watch-ledge of the Ninth Hold, the chisel still in my hand. In the north the sky was turning green for the first time, and behind me my sister was calling up the stairs to ask if I was coming in to eat.
 
@@ -169,17 +165,15 @@ I heard it decide. That is what [Sense Fear] gives you: you hear the fear, and r
 
 It was not afraid of me. I was the one who knew the song.
 
-Then there was only me on the ice.
-
-A box opened in the air in front of me.
+Then there was only me on the ice, and then the box.
 
 **You died.**
 
 The song has no verse about boxes. I have sung it all my life, and I would know.
 
-The beast turned its head. I heard the fear go out of it, and then I heard what it wanted instead: the light. The box was the brightest thing on the ice. It breathed on the box the way it breathed on the sun, and I was standing under it.
+The dragon turned its head. I heard the fear go out of it, and then I heard what it wanted instead: the light. It breathed on the box the way it breathed on the sun, and I was standing under it.
 
-The song was true, and there's no one left to sing it.
+I never got to change the end of the song.
 
 The fire took what the ice had left of my ear, and then the rest of me.
 

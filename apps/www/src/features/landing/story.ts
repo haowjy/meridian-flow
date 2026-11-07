@@ -33,7 +33,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Tam",
     note: "Seventeen and Level 58: the strongest human his age ever recorded.",
     pitch: "The prodigy who has never failed at anything.",
-    lastLine: "That’s it? I was just getting good at this.",
+    lastLine: "I’d already picked out the field for my father.",
     lead: "Tam is a farm boy from Harl who reached Level 58 at seventeen, higher than anyone his age has ever been.",
     facts: [
       ["Race", "Human"],
@@ -55,7 +55,7 @@ export const CHARACTERS: readonly Character[] = [
       ],
       [
         "Abilities",
-        "[Spark] puts fire into anything he can touch or throw at. It won’t catch in deep cold, so on the ice he fights with a knife, badly.",
+        "[Spark] puts fire into anything he can touch or throw at. It won’t catch in deep cold, so on the ice he fights with a knife, badly, unless he stands in the warm air behind one of Sigrun’s wards.",
       ],
       [
         "History",
@@ -118,7 +118,7 @@ export const CHARACTERS: readonly Character[] = [
       ],
       [
         "History",
-        "Champion of the holds for forty years. She lives with her sister above the watch-ledge of the Ninth Hold.",
+        "Champion of the holds for forty years. She lives with her sister below the watch-ledge of the Ninth Hold.",
       ],
       [
         "Relationships",
@@ -143,7 +143,7 @@ export const CHARACTERS: readonly Character[] = [
     key: "maren",
     name: "Maren",
     note: "The queen of Vell’s healer, blind since she was six.",
-    pitch: "She has never seen anything. Not even a box.",
+    pitch: "She hasn’t seen anything since she was six. Not even a box.",
     lastLine: "So that’s what fire looks like.",
     lead: "Maren has been the queen of Vell’s healer for nine hundred years, and blind since she was six.",
     facts: [
@@ -205,7 +205,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Oskar",
     note: "Kessa guide. The only one who has walked into the ice and back.",
     pitch: "He believed the songs.",
-    lastLine: "The song was true, and there’s no one left to sing it.",
+    lastLine: "I never got to change the end of the song.",
     lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked into the ice and come back.",
     facts: [
       ["Race", "Beastkin, bear-blooded"],
@@ -233,7 +233,10 @@ export const CHARACTERS: readonly Character[] = [
       [
         "Relationships",
         [
-          ["Tam", "Answers every question about the ear with “Eat your food.”"],
+          [
+            "Tam",
+            "Asked about the ear, says “The ice.” Asked what in the ice, says “Eat your food.”",
+          ],
           ["Sigrun", "She doesn’t believe him. He doesn’t argue."],
           ["Maren", "Sang her the last verse again."],
         ],
@@ -245,6 +248,7 @@ export const CHARACTERS: readonly Character[] = [
             "Secret",
             "He has seen the beast once before, asleep in the ice. That is what took his ear, and why the clan mothers believed the song.",
           ],
+          ["Wants", "To change the end of the song once the beast is dead."],
         ],
       ],
     ],
@@ -418,7 +422,7 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
         ],
         [
           "Under the Cold Fire",
-          "The barley stopped growing by the tenth day. Harl has the most mouths and the least grain stored. It sent the largest army north and lost it.",
+          "The barley stopped growing by the tenth day. Harl has the most mouths and the least grain stored. It sent the largest army north, and the System lists every man in it as Missing.",
         ],
         [
           NOTES,
@@ -457,7 +461,7 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
           [
             [
               "Secret",
-              "A beast with no tag has a core nobody has ever priced. The Ninth Hold, the runesmiths’ hold, wants it more than it wants the other three alive.",
+              "Nobody knows what a creature with no tag has in its chest. The Ninth Hold, the runesmiths’ hold, wants the beast’s heart more than it wants the other three alive.",
             ],
           ],
         ],
