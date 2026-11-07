@@ -318,7 +318,7 @@ function WorldNote({
 }) {
   return (
     <div className="wn">
-      <h3>{title}</h3>
+      <div className="name">{title}</div>
       <p>
         <span id={id}>{children}</span>
       </p>
@@ -344,7 +344,7 @@ function Agent({
       <div className="ring">
         <span>{letter}</span>
       </div>
-      <h3>{name}</h3>
+      <div className="name">{name}</div>
       <p className="live">{live}</p>
       <p className="rep">{report}</p>
     </div>

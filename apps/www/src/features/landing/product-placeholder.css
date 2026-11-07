@@ -114,7 +114,7 @@
   margin: auto;
 }
 
-.s-doc h3 {
+.s-doc .name {
   font: 600 26px / 1.2 var(--mkt-font-plain);
   margin-bottom: 12px;
 }
