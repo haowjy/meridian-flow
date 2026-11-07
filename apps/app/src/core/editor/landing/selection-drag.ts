@@ -31,7 +31,7 @@ import type { Editor } from "@tiptap/core";
 import { AllSelection, Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
-import { type EditorChrome, getEditorChrome, type PressLift, trackPress } from "../chrome";
+import { type EditorChrome, getEditorChrome, trackPress } from "../chrome";
 import { dragEdgeScroll } from "./edge-scroll";
 
 /** Re-sent `dragover`: native drags repeat it, and the caret, the scroll and a pause past 5s depend on that. */
@@ -143,33 +143,35 @@ function startGesture(
   press: MouseEvent,
   onDone: () => void,
 ): () => void {
+  let lifted: ReturnType<typeof liftSelection> | null = null;
   return trackPress(press, {
-    lift: (at) => liftSelection(view, chrome, press, at),
-    click: (release) => {
+    lift: (at) => {
+      lifted = liftSelection(view, chrome, press, at);
+      return lifted.move;
+    },
+    end: (how, at) => {
+      onDone();
+      if (how !== "click") lifted?.finish(how === "drop");
       // ProseMirror's `mouseup` ran first and did not take this one; the
       // browser would have collapsed the selection to a caret here.
-      if (!release.defaultPrevented) {
-        placeCaret(view, release.clientX, release.clientY, thirdPresses.has(press));
+      else if (at && !at.defaultPrevented) {
+        placeCaret(view, at.clientX, at.clientY, thirdPresses.has(press));
       }
     },
-    end: onDone,
   });
 }
 
-/** A lifted selection. After Escape or a peer's edit it ends itself and ignores the rest of the press. */
-type Lift = PressLift;
-
 /**
  * Lifts the selection with the drag events a native drag would send, and
- * keeps them coming until released or cancelled: by `release`, `cancel`, the
- * chrome's Escape, or a peer's edit that changes what the selection holds.
+ * keeps them coming until `finish`, the chrome's Escape, or a peer's edit that
+ * changes what the selection holds. After the last two `finish` is a no-op.
  */
 function liftSelection(
   view: EditorView,
   chrome: EditorChrome,
   press: MouseEvent,
   at: MouseEvent,
-): Lift {
+): { move: (event: MouseEvent) => void; finish: (release: boolean) => void } {
   const transfer = new DataTransfer();
   let pointer = at;
   let modifiers = modifiersOf(at);
@@ -262,8 +264,7 @@ function liftSelection(
       // Hover chrome elsewhere reads `pointermove`; a native drag sends none.
       event.stopPropagation();
     },
-    release: () => finish(true),
-    cancel: () => finish(false),
+    finish,
   };
 }
 

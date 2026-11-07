@@ -4,7 +4,7 @@ import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
-import { type PressStart, trackPress } from "@/core/editor/chrome";
+import { type EditorChrome, type PressStart, trackPress } from "@/core/editor/chrome";
 
 import { useEditorChrome } from "../../chrome/useEditorChrome";
 import {
@@ -29,7 +29,6 @@ type Gesture = {
   endDrag: (() => void) | null;
   /** The element holding the pointer, when the press took capture. */
   capture: HTMLElement | null;
-  /** Ends the tracker that follows the press. */
   stop: () => void;
 };
 
@@ -107,9 +106,15 @@ export function useBlockMovementGesture({
 
   /** Take the press. */
   const beginGesture = useCallback(
-    (press: BlockPress, pos: number, source: DragSource, capture: HTMLElement | null) => {
-      if (gestureRef.current) return;
+    (
+      chrome: EditorChrome,
+      press: BlockPress,
+      pos: number,
+      source: DragSource,
+      capture: HTMLElement | null,
+    ) => {
       capture?.setPointerCapture?.(press.pointerId);
+      // Built before `beginBlockDrag`: its transaction can end the gesture.
       const gesture: Gesture = {
         pointerId: press.pointerId,
         source,
@@ -117,35 +122,29 @@ export function useBlockMovementGesture({
         lifted: false,
         endDrag: null,
         capture,
-        stop: () => {},
+        stop: trackPress(press, {
+          lift: (at) => {
+            // Only now is it a drag. A press that never travelled is a click, and
+            // telling the kernel otherwise would blank every surface on the page
+            // for the length of a menu press. `pointerY` is set first: the lift
+            // dispatches, and the drop belongs where the pointer is now.
+            gesture.pointerY = at.clientY;
+            gesture.lifted = true;
+            gesture.endDrag = chrome.beginDrag(() => finishGesture(false));
+            liftBlockDrag(editor);
+            return (event) => {
+              gesture.pointerY = event.clientY;
+              setSeamIndex(seamIndexAtPointer(editor.view, event.clientY));
+            };
+          },
+          end: (how) => finishGesture(how !== "cancel"),
+        }),
       };
       gestureRef.current = gesture;
       beginBlockDrag(editor, pos);
       setActive(true);
-      gesture.stop = trackPress(press, {
-        lift: (at) => {
-          // Only now is it a drag. A press that never travelled is a click, and
-          // telling the kernel otherwise would blank every surface on the page
-          // for the length of a menu press. `pointerY` is set first: the lift
-          // dispatches, and the drop belongs where the pointer is now.
-          gesture.pointerY = at.clientY;
-          gesture.lifted = true;
-          gesture.endDrag = chrome?.beginDrag(() => finishGesture(false)) ?? null;
-          liftBlockDrag(editor);
-          return {
-            move: (event) => {
-              gesture.pointerY = event.clientY;
-              setSeamIndex(seamIndexAtPointer(editor.view, event.clientY));
-            },
-            release: () => finishGesture(true),
-            cancel: () => finishGesture(false),
-          };
-        },
-        click: () => finishGesture(true),
-        end: () => finishGesture(false),
-      });
     },
-    [chrome, editor, finishGesture],
+    [editor, finishGesture],
   );
 
   useEffect(() => {
@@ -179,7 +178,7 @@ export function useBlockMovementGesture({
       if (event.button !== 0 || event.pointerType !== "mouse") return;
       if (gestureRef.current || editor.isDestroyed) return;
       const target = objectBodyDragTarget(editor.view, event);
-      if (target) beginGesture(event, target.pos, "body", null);
+      if (target) beginGesture(chrome, event, target.pos, "body", null);
     };
 
     const onDragStart = (event: DragEvent) => {
@@ -206,9 +205,9 @@ export function useBlockMovementGesture({
 
   const pressHandle = useCallback(
     (press: BlockPress, pos: number, capture: HTMLElement) => {
-      beginGesture(press, pos, "handle", capture);
+      if (chrome) beginGesture(chrome, press, pos, "handle", capture);
     },
-    [beginGesture],
+    [chrome, beginGesture],
   );
 
   const inFlight = useCallback(() => gestureRef.current !== null, []);
