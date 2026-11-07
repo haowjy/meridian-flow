@@ -1297,6 +1297,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fingerprint: "fingerprint",
         filename: "reference.png",
         mimeType: "image/png",
+        sizeBytes: 1,
         finalPath: "reference.png",
         objectKey,
         fileType: "png",

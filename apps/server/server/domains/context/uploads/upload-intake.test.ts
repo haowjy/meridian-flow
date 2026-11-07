@@ -3,193 +3,14 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Server-side upload content taxonomy
  */
-import { Readable } from "node:stream";
-import { describe, expect, it, vi } from "vitest";
-import { createNoopEventSink } from "../../observability/index.js";
-import { createObjectRelease } from "../../storage/index.js";
+import { describe, expect, it } from "vitest";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
-import type { UploadIntakeRepository, UploadReservation } from "./upload-intake.js";
-import { classifyUpload, createUploadIntake } from "./upload-intake.js";
+import { type ClaimedUpload, classifyUpload } from "./upload-intake.js";
 
 const bytes = new TextEncoder().encode("chapter one");
 
-function harness() {
-  let row: UploadReservation | null = null;
-  const repository: UploadIntakeRepository = {
-    async abandon() {
-      if (row?.state === "reserved") row = null;
-    },
-    async reserve(input) {
-      if (row)
-        return row.fingerprint === input.fingerprint
-          ? { kind: "existing", reservation: row }
-          : { kind: "conflict" };
-      row = {
-        projectId: input.owner.projectId,
-        intakeId: input.intakeId,
-        documentId: "00000000-0000-4000-8000-000000000001",
-        fingerprint: input.fingerprint,
-        filename: input.filename,
-        finalPath: input.filename,
-        objectKey: "uploads/project/document",
-        canonicalUri: `uploads://${input.filename}`,
-        locationRevision: "revision-1",
-        fileType: input.fileType,
-        state: "reserved",
-        storageUrl: null,
-        consumed: false,
-        owner: { kind: "chat", chatId: input.owner.chatId, chatRef: null },
-      };
-      return { kind: "reserved", reservation: row };
-    },
-    async transaction(operation) {
-      return operation();
-    },
-    async markObjectStored(_projectId, _intakeId, storageUrl) {
-      if (row) row = { ...row, state: "object_stored", storageUrl };
-    },
-    async resetObjectStored() {
-      if (row) row = { ...row, state: "reserved", storageUrl: null };
-    },
-    async lockForFinalize() {
-      if (!row) throw new Error("missing");
-      return row;
-    },
-    async finalize() {
-      if (!row) throw new Error("missing");
-      row = { ...row, state: "finalized" };
-      return row;
-    },
-    async lockForDelete(input) {
-      if (
-        !row ||
-        row.documentId !== input.documentId ||
-        row.canonicalUri !== input.uri ||
-        row.locationRevision !== input.expectedRevision
-      )
-        return { kind: "refused", result: { kind: "identity_mismatch" } };
-      if (row.consumed) return { kind: "refused", result: { kind: "already_used" } };
-      if (row.state === "deleted") return { kind: "refused", result: { kind: "already_deleted" } };
-      return { kind: "claimed", reservation: row };
-    },
-    async markDeleted() {
-      if (row) row = { ...row, state: "deleted" };
-    },
-    async consume() {
-      if (row) row = { ...row, consumed: true };
-      return [];
-    },
-  };
-  const content = {
-    bind: vi.fn(async () => ({ ok: true as const, bound: null })),
-    persist: vi.fn<() => Promise<{ ok: true } | { ok: false; definite: boolean }>>(async () => ({
-      ok: true,
-    })),
-    remove: vi.fn(async () => ({ ok: true as const })),
-  };
-  const objectStore = {
-    put: vi.fn(async () => ({ ok: true as const, value: { storageUrl: "object://upload" } })),
-    delete: vi.fn(async () => ({ ok: true as const, value: undefined })),
-    putStream: vi.fn(async () => ({ ok: true as const, value: { storageUrl: "object://upload" } })),
-    get: vi.fn(),
-    getStream: vi.fn(),
-    copy: vi.fn(),
-    list: vi.fn(),
-    getSignedUrl: vi.fn(),
-  };
-  return {
-    service: createUploadIntake({
-      repository,
-      content,
-      objectStore,
-      release: createObjectRelease({ objectStore, onFailure() {} }),
-      eventSink: createNoopEventSink(),
-      catalog: { refreshSources: async () => "1" },
-    }),
-    content,
-    objectStore,
-    reservation: () => row,
-  };
-}
-
-function input() {
-  return {
-    intakeId: "intake-1",
-    actorUserId: "user-1",
-    owner: { kind: "chat" as const, projectId: "project-1", chatId: "chat-1" },
-    filename: "chapter.md",
-    mimeType: "text/markdown",
-    sizeBytes: bytes.byteLength,
-    body: Readable.from(Buffer.from(bytes)),
-  };
-}
-
 describe("UploadIntake", () => {
-  it("rejects a name or size that differs from the first attempt without a second write", async () => {
-    const { service, content } = harness();
-    await service.intake(input());
-    expect(await service.intake({ ...input(), filename: "other.md" })).toEqual({
-      ok: false,
-      error: { code: "idempotency_conflict" },
-    });
-    expect(
-      await service.intake({
-        ...input(),
-        sizeBytes: bytes.byteLength + 1,
-        body: Readable.from(Buffer.concat([bytes, Buffer.from("!")])),
-      }),
-    ).toEqual({
-      ok: false,
-      error: { code: "idempotency_conflict" },
-    });
-    expect(content.persist).toHaveBeenCalledOnce();
-  });
-
-  it("compensates definite binary non-commit and reuses the same identity on recovery", async () => {
-    const { service, content, objectStore } = harness();
-    content.persist
-      .mockResolvedValueOnce({ ok: false, definite: true })
-      .mockResolvedValueOnce({ ok: true });
-    const binary = new Uint8Array([0, 1, 2]);
-    const request = () => ({
-      ...input(),
-      filename: "asset.bin",
-      mimeType: "application/octet-stream",
-      sizeBytes: binary.byteLength,
-      body: Readable.from(Buffer.from(binary)),
-    });
-    expect(await service.intake(request())).toEqual({
-      ok: false,
-      error: { code: "storage_failed" },
-    });
-    const recovered = await service.intake(request());
-    expect(recovered.ok && recovered.value.documentId).toBe("00000000-0000-4000-8000-000000000001");
-    // The object and its (absent) preview.
-    expect(objectStore.delete).toHaveBeenCalledTimes(2);
-    expect(objectStore.putStream).toHaveBeenCalledTimes(2);
-  });
-
-  it("retains stable stored bytes when transaction settlement is unknown", async () => {
-    const { service, content, objectStore } = harness();
-    content.persist.mockRejectedValueOnce(new Error("connection lost during commit"));
-    const binary = new Uint8Array([0, 1, 2]);
-    const request = () => ({
-      ...input(),
-      filename: "asset.bin",
-      mimeType: "application/octet-stream",
-      sizeBytes: binary.byteLength,
-      body: Readable.from(Buffer.from(binary)),
-    });
-    expect(await service.intake(request())).toEqual({
-      ok: false,
-      error: { code: "storage_failed" },
-    });
-    expect(objectStore.delete).not.toHaveBeenCalled();
-    await service.intake(request());
-    expect(objectStore.putStream).toHaveBeenCalledOnce();
-  });
-
   it("classifies text, images, and designation-only binaries on the server", async () => {
     expect(await classifyUpload({ filename: "notes.unknown", mimeType: "text/plain", bytes })).toBe(
       "markdown",
@@ -212,12 +33,15 @@ describe("UploadIntake", () => {
 });
 
 it("rejects a committed address different from the reservation", async () => {
-  const reservation: UploadReservation = {
+  const reservation: ClaimedUpload = {
     owner: { kind: "chat", chatId: "chat", chatRef: null },
     projectId: "project",
     intakeId: "pending",
     fingerprint: "fingerprint",
+    actorUserId: "user",
     filename: "upload.md",
+    mimeType: "text/markdown",
+    sizeBytes: 0,
     objectKey: "object",
     locationRevision: "revision",
     state: "reserved",
@@ -247,5 +71,5 @@ it("rejects a committed address different from the reservation", async () => {
       hasPreview: false,
       keptAsFile: false,
     }),
-  ).toEqual({ ok: false, definite: true });
+  ).toEqual({ ok: false });
 });

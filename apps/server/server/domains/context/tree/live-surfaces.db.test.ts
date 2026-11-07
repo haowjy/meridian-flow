@@ -781,12 +781,19 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         actorUserId: s.userId,
         owner: { kind: "chat", projectId: s.projectId, chatId },
         filename: "upload.md",
-        documentFilename: { name: "upload", extension: "", filetype: "markdown" },
         mimeType: "text/markdown",
+        sizeBytes: 1,
         fingerprint: "reader-matrix",
-        fileType: "markdown",
       });
-      expect(reserved.kind === "reserved" ? reserved.reservation.finalPath : reserved.kind).toBe(
+      if (reserved.kind !== "reserved") throw new Error(reserved.kind);
+      const claimed = await createDrizzleUploadIntakeRepository(db).claim({
+        projectId: s.projectId,
+        intakeId: "reader-matrix",
+        documentFilename: { name: "upload", extension: "", filetype: "markdown" },
+        fileType: "markdown",
+        storageUrl: "object://meridian/uploads/reader-matrix",
+      });
+      expect(claimed.kind === "claimed" ? claimed.reservation.finalPath : claimed.kind).toBe(
         "upload",
       );
     });

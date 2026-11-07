@@ -42,7 +42,8 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
     const objectStore = {
       put,
       delete: remove,
-      putStream: vi.fn() as never,
+      readHead: vi.fn() as never,
+      signPut: vi.fn() as never,
       get: vi.fn() as never,
       getStream: vi.fn() as never,
       copy: vi.fn() as never,
@@ -105,7 +106,8 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
       const objectStore = {
         put: test.put,
         delete: test.remove,
-        putStream: vi.fn() as never,
+        readHead: vi.fn() as never,
+      signPut: vi.fn() as never,
         get: vi.fn() as never,
         getStream: vi.fn() as never,
         copy: vi.fn() as never,

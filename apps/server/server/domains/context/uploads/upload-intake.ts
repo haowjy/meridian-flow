@@ -204,7 +204,7 @@ export interface UploadContentPort<Bound = unknown> {
 export interface UploadIntake {
   /** Reserves the upload and signs a PUT for its bytes. Calling again with the same `intakeId` resumes it. */
   start(
-    input: StartUploadInput & { actorUserId: string; projectId: string },
+    input: StartUploadInput & { actorUserId: string; owner: UploadOwner },
   ): Promise<StartUploadOutcome>;
   /** Reads what the browser PUT, names the file and makes it visible. Safe to call again. */
   finish(input: {
@@ -273,7 +273,7 @@ export function createUploadIntake<Bound>(deps: {
       }
       if (raw.sizeBytes > MAX_UPLOAD_BYTES)
         return { ok: false, error: { code: "too_large", limitBytes: MAX_UPLOAD_BYTES } };
-      const owner = { kind: "chat" as const, projectId: raw.projectId, chatId: raw.chatId };
+      const { owner } = raw;
       const reserved = await deps.repository.reserve({
         intakeId: raw.intakeId,
         actorUserId: raw.actorUserId,
@@ -297,7 +297,10 @@ export function createUploadIntake<Bound>(deps: {
         case "deleted":
           return conflict;
         case "finalized":
-          return { ok: true, value: { state: "finalized", result: resultOf(claimedOf(reservation)) } };
+          return {
+            ok: true,
+            value: { state: "finalized", result: resultOf(claimedOf(reservation)) },
+          };
         case "object_stored":
           return { ok: true, value: { state: "stored", documentId, locationRevision } };
         case "reserved": {
@@ -316,11 +319,11 @@ export function createUploadIntake<Bound>(deps: {
 
     async finish(raw) {
       const { projectId, chatId } = raw.owner;
-      const read = () => deps.repository.readOwned(projectId, raw.intakeId, raw.actorUserId, chatId);
+      const read = () =>
+        deps.repository.readOwned(projectId, raw.intakeId, raw.actorUserId, chatId);
       let current = await read();
       if (!current || current.state === "deleted") return conflict;
-      if (current.state === "finalized")
-        return { ok: true, value: resultOf(claimedOf(current)) };
+      if (current.state === "finalized") return { ok: true, value: resultOf(claimedOf(current)) };
 
       const incomingKey = incomingObjectKey(projectId, current.documentId);
       if (current.state === "reserved") {
@@ -339,7 +342,11 @@ export function createUploadIntake<Bound>(deps: {
       }
 
       const stored = await deps.objectStore.readHead(current.objectKey, HEAD_BYTES);
-      if (!stored.ok) return storageFailed;
+      if (!stored.ok) {
+        // A delete releases the final object too, and then there is nothing to read.
+        const after = stored.error.code === "not_found" ? await read() : current;
+        return !after || after.state === "deleted" ? conflict : storageFailed;
+      }
       if (stored.value.sizeBytes !== current.sizeBytes) {
         await releaseAll(current);
         return { ok: false, error: { code: "size_mismatch" } };
