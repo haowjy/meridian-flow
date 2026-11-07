@@ -2,8 +2,7 @@ const PRESS_SLOP_PX = 4;
 
 /**
  * Whether a pointer has travelled far enough from its press to be a drag.
- * Straight-line distance: ProseMirror's own test is per axis (`> 4`), which
- * lifts a 3px diagonal wobble, and this keeps it a click.
+ * Straight-line distance, so every press follower agrees on one measure.
  */
 export function pastSlop(dx: number, dy: number): boolean {
   return Math.hypot(dx, dy) >= PRESS_SLOP_PX;
