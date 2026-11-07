@@ -82,6 +82,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       fingerprint: "f",
       filename: "pic.png",
       mimeType: "image/png",
+      sizeBytes: 1,
       finalPath: "pic.png",
       objectKey: "k",
       fileType: "image",
