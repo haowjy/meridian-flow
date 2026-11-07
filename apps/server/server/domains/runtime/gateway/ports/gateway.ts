@@ -3,7 +3,7 @@
  * the rest of the runtime depends on instead of any concrete provider.
  *
  * This is the top-level port that the orchestrator and turn runner consume.
- * They call `gateway.stream(request)` to get an AsyncIterable<StreamEvent>
+ * They call `gateway.stream(request)` to get an AsyncIterable<StreamEvent>.
  * They never know which provider is behind the call.
  *
  * Why a port: adapters are DI/config-driven (see create-gateway.ts). The

@@ -229,6 +229,10 @@ export async function* streamWithRetry(
           }
           if (!attemptSignal.signal.aborted) attemptSignal.notifyProgress();
           const event = next.value;
+          // The provider has finished: a timer firing now would discard a complete result.
+          if ((event.type === "end" || event.type === "error") && !attemptSignal.signal.aborted) {
+            attemptSignal.cleanup();
+          }
           const arrivedAt = now();
           const arrivedBeforeBackpressure = !backpressured;
           if (firstTokenAt === undefined && isFirstTokenEvent(event)) {
@@ -308,17 +312,13 @@ export async function* streamWithRetry(
         if (next.done) break;
         if (!attemptSignal.signal.aborted) attemptSignal.notifyProgress();
         const { event } = next.value;
-        // A timeout aborts the adapter, whose envelope then ends normally; it is still a timeout.
-        const timeoutEvent = modelAttemptTimeoutEvent(attemptSignal.signal);
+        // If the attempt was killed by a timer, surface that timeout event
+        // (retryable) instead of whatever the SDK emitted.
         const failure =
           event.type === "error"
-            ? (timeoutEvent ?? event)
-            : event.type === "end"
-              ? timeoutEvent
-              : undefined;
+            ? (modelAttemptTimeoutEvent(attemptSignal.signal) ?? event)
+            : undefined;
         if (failure) {
-          // If the attempt was killed by a timer, surface that timeout event
-          // (retryable) instead of whatever the SDK emitted.
           sawError = failure;
           if (emittedCommittedOutput || !sawError.retryable || attempt >= maxAttempts) {
             yield timeTerminalEvent({ ...next.value, event: sawError });
@@ -352,6 +352,8 @@ export async function* streamWithRetry(
     } finally {
       buffer.finish();
       attemptSignal.signal.removeEventListener("abort", onAbort);
+      // Aborting first releases an SDK stream hung on a pending next(), which return() would queue behind.
+      attemptSignal.abort();
       attemptSignal.cleanup();
       // A stuck next() can prevent return() from ever settling. Observe teardown
       // rejection without letting provider cleanup hold the run or retry hostage.

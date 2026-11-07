@@ -39,5 +39,4 @@ export type { ProviderAdapter } from "./ports/provider-adapter.js";
 export {
   isCommittedOutputEvent,
   isFirstTokenEvent,
-  isPartialOutputEvent,
 } from "./stream-events.js";
