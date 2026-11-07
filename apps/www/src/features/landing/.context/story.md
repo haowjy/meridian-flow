@@ -72,7 +72,10 @@ eye anyway, and Muse fixes it with Sigrun's ward, which warms the air it shields
 
 Each survivor's last line on the page is their reaction to dying, typed before
 anyone knows about the loop. It never introduces the speaker: nobody dying
-says who they are.
+says who they are. It answers the survivor's card pitch, the only thing the
+visitor has read about them, because on the page it follows straight after
+"You died.": a line that leans on the full Prologue (the campfire, the song)
+means nothing there.
 
 ## World the page establishes
 

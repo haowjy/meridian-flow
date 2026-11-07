@@ -102,7 +102,7 @@ I read it three times. I was still standing.
 
 The dragon turned its head toward the box, the brightest thing left on the ice. Its one eye narrowed, and it breathed.
 
-I'd already picked out the field for my father.
+I didn't know I could lose.
 
 The fire went through the box and through me, colder than anything I have a word for.
 
@@ -138,7 +138,7 @@ I was at the edge of Vell. The wind was cold from the wrong direction, and somew
 
 ## If Sigrun survives
 
-It went for Maren first. I don't know how it knew she was the one keeping us standing, but it knew, and it went past me to reach her. Her song stopped in the middle of a word. Tam came at it from the left with his knife and his bad arm, shouting at it to look at him, and it did. Oskar was calling the next breath when it came. He was right about where it would land. He was standing in it.
+It went for Maren first. I don't know how it knew she was the one keeping us standing, but it knew, and it went past me to reach her. Her song stopped in the middle of a word. Tam came at it from the left with his knife and his bad arm, shouting at it to look at him, and it did. I threw my last whole rune in front of him. It held, and the next breath took him from the other side. Oskar was calling the next breath when it came. He was right about where it would land. He was standing in it.
 
 Then there was only me on the ice, with the chisel in my hand and half a rune cut into my arm.
 
@@ -150,7 +150,7 @@ I keep exact accounts. I was still breathing, and the System has never been wron
 
 The dragon swung its head round to the light. I raised the arm with the half-cut rune, and it did nothing at all.
 
-One more stroke and that rune would have held.
+I chose wrong.
 
 Then the fire.
 
@@ -173,7 +173,7 @@ The song has no verse about boxes. I have sung it all my life, and I would know.
 
 The dragon turned its head. I heard the fear go out of it, and then I heard what it wanted instead: the light. It breathed on the box the way it breathed on the sun, and I was standing under it.
 
-I never got to change the end of the song.
+The song never said who won.
 
 The fire took what the ice had left of my ear, and then the rest of me.
 
