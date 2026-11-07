@@ -141,8 +141,8 @@ export function useBlockMovementGesture({
         }),
       };
       gestureRef.current = gesture;
-      beginBlockDrag(editor, pos);
       setActive(true);
+      beginBlockDrag(editor, pos);
     },
     [editor, finishGesture],
   );
