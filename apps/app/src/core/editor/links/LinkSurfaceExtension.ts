@@ -99,12 +99,12 @@ export function followLinkFrom(
   // A chip whose file is still on its way up has nothing to open; a failed one is sent again.
   const pending = parseLinkRef(key.ref);
   if (pending?.kind === "doc") {
-    const upload = uploads.read(pending.documentId);
+    const upload = uploads.of(pending.documentId);
     if (upload?.kind === "failed") {
       uploads.retry(pending.documentId);
       return "navigated";
     }
-    if (upload || uploads.peerSending(pending.documentId) !== undefined) return "unavailable";
+    if (upload) return "unavailable";
   }
   const surface = getLinkSurface(editor);
   const answer = getLinkAnswerCache(editor)?.read(key) ?? null;
