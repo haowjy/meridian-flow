@@ -46,7 +46,7 @@ export function ProductPlaceholder() {
         </div>
         <div className="s-body">
           <article className="s-doc" id="d412">
-            <h3>412. Dead Reckoning</h3>
+            <div className="name">412. Dead Reckoning</div>
             <p>On the four hundred and twelfth night, the stars came back wrong.</p>
             <p>
               Ise Varo went below and read her own handwriting. Ninth night out of Sarn. A boy with
@@ -63,7 +63,7 @@ export function ProductPlaceholder() {
             </p>
           </article>
           <article className="s-doc" id="d413" hidden>
-            <h3>413. Brown Ink</h3>
+            <div className="name">413. Brown Ink</div>
             <p>
               The wind came back in the morning watch. Nobody aboard thanked it. The crew went up
               the ratlines with the slow care of people who had stopped expecting anything, and the
@@ -76,7 +76,7 @@ export function ProductPlaceholder() {
             </p>
           </article>
           <article className="s-doc" id="d9" hidden>
-            <h3>9. The Hook</h3>
+            <div className="name">9. The Hook</div>
             <p>
               The boy was maybe twelve and had never held a cargo hook. It came round on the swell
               and opened the captain’s palm to the bone. Left hand. Nine stitches, and he did not
@@ -84,22 +84,22 @@ export function ProductPlaceholder() {
             </p>
           </article>
           <article className="s-doc" id="d146" hidden>
-            <h3>146. Salt Tea</h3>
+            <div className="name">146. Salt Tea</div>
             <p>He took the cup in his left hand, the way he always had, and drank.</p>
           </article>
           <article className="s-doc" id="d263" hidden>
-            <h3>263. Night Watch</h3>
+            <div className="name">263. Night Watch</div>
             <p>She would remember later how long he had been gone from the deck that night.</p>
           </article>
           <article className="s-doc" id="d380" hidden>
-            <h3>380. Fog</h3>
+            <div className="name">380. Fog</div>
             <p>
               The fog sat on them for two days. When it lifted he was at the wheel, and nobody had
               seen him go up.
             </p>
           </article>
           <article className="s-doc" id="ddell" hidden>
-            <h3>Aldous Dell</h3>
+            <div className="name">Aldous Dell</div>
             <p>
               Captain of the <i>Harrow</i>. Born in Sarn. Scar across the left palm (chapter 9).
             </p>
@@ -259,7 +259,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   const open = (id: string) => {
     for (const doc of documents) doc.hidden = doc.id !== id;
     for (const row of railDocuments) row.classList.toggle("on", row.dataset.doc === id);
-    part("#s-name").textContent = slot.querySelector(`#${id} h3`)?.textContent ?? "";
+    part("#s-name").textContent = slot.querySelector(`#${id} .name`)?.textContent ?? "";
   };
   const view = (next: ProductView) => {
     slot.dataset.view = next;

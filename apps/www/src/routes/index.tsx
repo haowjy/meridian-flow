@@ -16,6 +16,7 @@ export const Route = createFileRoute("/")({
   // Before first paint, so the hero never flashes the stacked layout that no-script
   // and reduced-motion visitors get. If the bundle never starts the film, stack after all.
   head: () => ({
+    links: [{ rel: "canonical", href: "https://www.meridian-flow.com/" }],
     scripts: [
       {
         children:

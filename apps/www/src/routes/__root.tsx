@@ -17,7 +17,7 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: MARKETING_THEME_COLOR },
       ...seo({
-        title: "Meridian Flow",
+        title: "Meridian Flow: AI writing app for serial storytellers",
         description:
           "Build a world. Bring it to life with a team of agents. An AI writing app for Royal Road and web serial writers.",
         image: "https://www.meridian-flow.com/og.jpg",
