@@ -24,7 +24,7 @@ authenticated.
   root. Values no role covers go in `design-tokens/src/marketing.css`, or
   `marketing-sky.ts` for the shader.
 - `ProductPlaceholder.tsx` is a drawing of the app, not the app. The page shows the
-  [target][target], so helpers run at once here; everything else in the drawing must be
+  [target][target], so helpers run at once here, and its phone tabs are simpler than the app’s drawer; everything else in the drawing must be
   something the real product does at that point in the story. Real footage replaces
   its markup and `product-placeholder.css`, and seeks in `createProductSlot`'s `set`.
 - Nothing here links to the app's `/`: signed out, that redirects back to this page.

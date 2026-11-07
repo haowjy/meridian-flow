@@ -13,7 +13,7 @@ export type FilmParts = {
   block: HTMLElement;
   chapterOpening: HTMLElement;
   lastTypedParagraph: HTMLElement;
-  turnParagraphs: { a: HTMLElement; b: HTMLElement };
+  turnParagraph: HTMLElement;
   hub: HTMLElement;
   agents: HTMLElement[];
   teamLines: SVGSVGElement;
@@ -32,7 +32,7 @@ export type Layout = {
   blockLayoutWidth: number;
   chapterFrom: number;
   chapterTo: number;
-  turn: { a: number; b: number };
+  turn: number;
   spans: BeatSpans;
   stops: { y: number; t: number }[];
   subtitles: Record<string, Span>;
@@ -120,15 +120,6 @@ export function measureLayout(parts: FilmParts): Layout {
   });
 
   const anchor = height * 0.44;
-  const { a: turnA, b: turnB } = parts.turnParagraphs;
-  const turnPosition = (shown: HTMLElement, other: HTMLElement) => {
-    const wasShown = [shown.hidden, other.hidden];
-    shown.hidden = false;
-    other.hidden = true;
-    const middle = middleOf(shown) - anchor;
-    [shown.hidden, other.hidden] = wasShown;
-    return middle;
-  };
 
   const { spans, stops, subtitles, length } = spanBeats(height);
   html.style.setProperty("--filmh", `${length + height}px`);
@@ -143,10 +134,7 @@ export function measureLayout(parts: FilmParts): Layout {
     blockLayoutWidth: block.offsetWidth,
     chapterFrom: middleOf(chapterOpening) - anchor,
     chapterTo: middleOf(lastTypedParagraph) - anchor,
-    turn: {
-      a: turnPosition(turnA, turnB),
-      b: turnPosition(turnB, turnA),
-    },
+    turn: middleOf(parts.turnParagraph) - anchor,
     spans,
     stops,
     subtitles,

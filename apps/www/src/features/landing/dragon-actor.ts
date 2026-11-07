@@ -79,14 +79,17 @@ export function createDragonActor(root: HTMLElement) {
       mark(0, 0.37, 0.13, 0.01, -1),
       mark(span(spans, "hold", 1), 0.37, 0.13, 0.01, -1),
       mark(span(spans, "push", 1), 0.58, 0.3, 0.022, -1),
-      mark(span(spans, "sky", 0.5), 0.66, 0.42, 0.05, -1),
-      mark(span(spans, "sky", 1), 0.68, 0.44, 0.075, -1),
-      mark(span(spans, "world", 1), 0.68, 0.46, 0.1, -1),
-      mark(span(spans, "write", 1), 0.72, 0.5, 0.14, -1),
-      mark(span(spans, "out", 1), 0.72, 0.48, 0.16, -1),
-      mark(span(spans, "back", 1), 0.7, 0.46, 0.18, -1),
-      mark(span(spans, "ask", 1), 0.67, 0.44, 0.2, -1),
-      mark(span(spans, "turn", 1), 0.58, 0.42, 0.22, -1),
+      mark(span(spans, "sky", 0.5), 0.66, 0.3, 0.04, -1),
+      mark(span(spans, "sky", 1), 0.75, 0.26, 0.05, -1),
+      mark(span(spans, "world", 0.5), 0.5, 0.2, 0.055, -1),
+      mark(span(spans, "world", 1), 0.25, 0.24, 0.065),
+      mark(span(spans, "write", 0.5), 0.55, 0.18, 0.075),
+      mark(span(spans, "write", 1), 0.8, 0.24, 0.085, -1),
+      mark(span(spans, "out", 1), 0.4, 0.2, 0.1, -1),
+      mark(span(spans, "back", 1), 0.7, 0.26, 0.13),
+      mark(span(spans, "turn", 0.45), 0.9, 0.34, 0.2, -1),
+      mark(span(spans, "turn", 1), 0.84, 0.76, 0.4, -1),
+      mark(span(spans, "twist", 0.1), 0.82, 0.77, 0.4, -1),
       mark(span(spans, "twist", PASS.leaves), -0.2, 0.3, 0.34, -1),
       mark(span(spans, "twist", PASS.enters), -0.35, 0.58, 0.66),
       mark(span(spans, "twist", PASS.exits), 1.4, 0.46, 0.8),
@@ -227,7 +230,8 @@ export function createDragonActor(root: HTMLElement) {
     const { spans } = layout;
     const circled = at >= span(spans, "twist", PASS.exits);
     const passing = at >= span(spans, "twist", PASS.enters) && !circled;
-    flyer.style.zIndex = passing ? "11" : now.onTop ? "6" : circled ? "3" : "1";
+    const landing = at >= span(spans, "turn", 0.45);
+    flyer.style.zIndex = passing ? "11" : now.onTop ? "6" : circled || landing ? "3" : "1";
     const wanted = circled && moving && Math.abs(dx) > 0.3 ? Math.sign(dx) : now.facing;
     facing += (wanted - facing) * TURN_RATE;
     const tilt = moving ? clamp(Math.atan2(dy, Math.abs(dx) + 1), -MAX_LEAN, MAX_LEAN) : 0;

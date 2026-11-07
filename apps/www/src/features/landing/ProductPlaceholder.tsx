@@ -1,6 +1,6 @@
 import type { CardStore } from "./card-store";
 import { LORE_ARRIVES } from "./dragon-actor";
-import { MUSE_REPLY, NEXT_LINE, QUESTIONS } from "./story";
+import { CHARACTERS, characterName, FELL, museReply, PROLOGUE, QUESTION, SURVIVED } from "./story";
 
 /**
  * A drawing of the real app, to be replaced by captured footage. The page only
@@ -22,120 +22,61 @@ export function ProductPlaceholder() {
           Editor
         </button>
         <div className="s-h">MANUSCRIPT</div>
-        <div className="s-d">Book 1</div>
-        <RailDocument id="d9">9. The Hook</RailDocument>
-        <div className="s-d">Book 2</div>
-        <RailDocument id="d146">146. Salt Tea</RailDocument>
-        <div className="s-d">Book 3</div>
-        <RailDocument id="d263">263. Night Watch</RailDocument>
-        <RailDocument id="d380">380. Fog</RailDocument>
-        <div className="s-d">Book 4</div>
-        <RailDocument id="d412" on>
-          412. Dead Reckoning
-        </RailDocument>
-        <RailDocument id="d413" extraClass="s-only-hints">
-          413. Brown Ink
+        <RailDocument id="dprologue" on>
+          Prologue
         </RailDocument>
         <div className="s-h">KNOWLEDGE BASE</div>
-        <RailDocument id="ddell">Aldous Dell</RailDocument>
-        <RailDocument id="ddragon">The Dragon</RailDocument>
+        {CHARACTERS.map(({ key, name }) => (
+          <RailDocument key={key} id={`d${key}`}>
+            {name}
+          </RailDocument>
+        ))}
+        <RailDocument id="ddragon">The Beast</RailDocument>
       </aside>
       <div className="s-pane">
         <div className="s-top">
           <span id="s-folder">Manuscript</span>
           <span>›</span>
-          <b id="s-name">412. Dead Reckoning</b>
+          <b id="s-name">Prologue</b>
         </div>
         <div className="s-body">
-          <article className="s-doc" id="d412">
-            <div className="name">412. Dead Reckoning</div>
-            <p>On the four hundred and twelfth night, the stars came back wrong.</p>
-            <p>
-              Ise Varo went below and read her own handwriting. Ninth night out of Sarn. A boy with
-              a cargo hook opened the captain’s left palm to the bone. Nine stitches. He did not
-              make a sound.
-            </p>
-            <p>
-              Above her the hatch scraped. Captain Dell came down the ladder with the lantern, the
-              way he had every night since Sarn, and asked her where they were.
-            </p>
-            <p>
-              “Close,” she said, and watched him lift his right hand to hang the lamp on its hook.
-              The scar ran white across the palm.
-            </p>
-          </article>
-          <article className="s-doc" id="d413" hidden>
-            <div className="name">413. Brown Ink</div>
-            <p>
-              The wind came back in the morning watch. Nobody aboard thanked it. The crew went up
-              the ratlines with the slow care of people who had stopped expecting anything, and the
-              sails filled, and for the first time in nine days the <i>Harrow</i> had a wake.
-            </p>
-            <p>Ise stayed at the chart table until the lamp was only a habit.</p>
-            <p>
+          <article className="s-doc" id="dprologue">
+            <div className="name">Prologue</div>
+            <p>{PROLOGUE.opening}</p>
+            {PROLOGUE.lines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+            <p>{PROLOGUE.turn}</p>
+            <p className="s-only-hints">
               <span id="s-typing" />
               <i className="s-car" />
             </p>
           </article>
-          <article className="s-doc" id="d9" hidden>
-            <div className="name">9. The Hook</div>
-            <p>
-              The boy was maybe twelve and had never held a cargo hook. It came round on the swell
-              and opened the captain’s palm to the bone. Left hand. Nine stitches, and he did not
-              make a sound.
-            </p>
-          </article>
-          <article className="s-doc" id="d146" hidden>
-            <div className="name">146. Salt Tea</div>
-            <p>He took the cup in his left hand, the way he always had, and drank.</p>
-          </article>
-          <article className="s-doc" id="d263" hidden>
-            <div className="name">263. Night Watch</div>
-            <p>She would remember later how long he had been gone from the deck that night.</p>
-          </article>
-          <article className="s-doc" id="d380" hidden>
-            <div className="name">380. Fog</div>
-            <p>
-              The fog sat on them for two days. When it lifted he was at the wheel, and nobody had
-              seen him go up.
-            </p>
-          </article>
-          <article className="s-doc" id="ddell" data-folder="Knowledge Base" hidden>
-            <div className="name">Aldous Dell</div>
-            <p>
-              Captain of the <i>Harrow</i>. Born in Sarn. Scar across the left palm (chapter 9).
-            </p>
-            <p className="s-only-hints" id="s-note">
-              {MUSE_REPLY.a.note}
-            </p>
-          </article>
+          {CHARACTERS.map(({ key, name, note }) => (
+            <article className="s-doc" id={`d${key}`} data-folder="Knowledge Base" hidden key={key}>
+              <div className="name">{name}</div>
+              <p>{note}</p>
+              <p className="s-only-hints" id={`s-note-${key}`} />
+            </article>
+          ))}
           <article className="s-doc" id="ddragon" data-folder="Knowledge Base" hidden>
             <div className="name">The Dragon</div>
             <figure className="s-fig">
               <i id="s-dragon" />
             </figure>
-            <p>
-              The northern green dragon. It breathes the lights over the range, and nobody who went
-              up to meet it has come back to say what it wanted.
-            </p>
+            <p>The beast in the Greenlands. The Cold Fire is its breath.</p>
           </article>
         </div>
       </div>
       <aside className="s-chat" aria-label="Chat">
         <div className="s-ct">
-          Chapter 412 <span className="s-only-team">2 running</span>
+          Prologue <span className="s-only-team">2 running</span>
         </div>
         <div className="s-msgs">
           <div className="s-me s-only-team">Have the team read it.</div>
-          <HelperCard
-            letter="C"
-            name="Continuity-checker"
-            scope="Chapter 412"
-            line="Finished"
-            done
-          />
-          <HelperCard letter="C" name="Critic" scope="Chapter 412" line="Reading the scene" />
-          <HelperCard letter="R" name="Reader-sim" scope="Chapter 412" line="Finished" done />
+          <HelperCard letter="C" name="Continuity-checker" scope="Prologue" line="Finished" done />
+          <HelperCard letter="C" name="Critic" scope="Prologue" line="Reading the scene" />
+          <HelperCard letter="R" name="Reader-sim" scope="Prologue" line="Finished" done />
           <HelperCard
             letter="W"
             name="Writer-helper"
@@ -145,34 +86,29 @@ export function ProductPlaceholder() {
           <HelperCard
             letter="C"
             name="Continuity-checker"
-            scope="Dell’s chapters"
+            scope="All four pages"
             line="Finished"
             done
             hints
           />
-          <HelperCard letter="R" name="Reader-sim" scope="Hints" line="Finished" done hints />
-          <HelperCard letter="C" name="Critic" scope="Chapter 413" line="Reading the scene" hints />
-          <div className="s-me s-only-hints s-first">
-            Plant it early. Three hints, nothing a reader would catch the first time.
-          </div>
-          <div className="s-ai s-only-hints" id="s-reply">
-            {MUSE_REPLY.a.chat}
-          </div>
+          <HelperCard letter="R" name="Reader-sim" scope="Prologue" line="Finished" done hints />
+          <HelperCard letter="C" name="Critic" scope="Prologue" line="Reading the scene" hints />
+          <div className="s-me s-only-hints s-first" id="s-choice" />
+          <div className="s-ai s-only-hints" id="s-reply" />
           <div className="s-ed big s-only-hints">
-            <span>Edited 4 documents</span>
+            <span>Edited 5 documents</span>
             <button type="button" id="s-undo">
               Undo
             </button>
-            <small>146, 263, 380, Aldous Dell</small>
+            <small>Prologue, Tam, Sigrun, Oskar, Maren</small>
           </div>
         </div>
         <div className="s-take s-only-team">
-          <b>{QUESTIONS[0].text}</b>
-          {QUESTIONS[0].options.map((option) => (
-            <div className="s-opt" key={option.key}>
-              <b>{option.label}</b>
-              {option.recommended ? <span className="s-rec">Recommended</span> : null}
-              <small>{option.detail}</small>
+          <b>{QUESTION}</b>
+          {CHARACTERS.map(({ key, name, pitch }) => (
+            <div className="s-opt" key={key}>
+              <b>{name}</b>
+              <small>{pitch}</small>
             </div>
           ))}
           <div className="s-foot">
@@ -207,16 +143,14 @@ export function ProductPlaceholder() {
 function RailDocument({
   id,
   on,
-  extraClass = "",
   children,
 }: {
   id: string;
   on?: boolean;
-  extraClass?: string;
   children: React.ReactNode;
 }) {
   return (
-    <button type="button" className={`s-n in ${on ? "on" : ""} ${extraClass}`} data-doc={id}>
+    <button type="button" className={`s-n in ${on ? "on" : ""}`} data-doc={id}>
       {children}
     </button>
   );
@@ -263,7 +197,6 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   const tabs = [...slot.querySelectorAll<HTMLElement>(".s-tabs button")];
   const typing = part("#s-typing");
   const reply = part("#s-reply");
-  const note = part("#s-note");
   const dragonRow = part(".s-n[data-doc='ddragon']");
   let state: ProductState | null = null;
   // Once the visitor picks a document or tab, autoplay leaves that view alone.
@@ -314,9 +247,12 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   );
 
   const followAnswers = () => {
-    const words = MUSE_REPLY[store.whoIsHe()];
-    reply.textContent = words.chat;
-    note.textContent = words.note;
+    const protagonist = store.protagonist();
+    part("#s-choice").textContent = characterName(protagonist);
+    reply.textContent = museReply(protagonist);
+    for (const { key } of CHARACTERS) {
+      part(`#s-note-${key}`).textContent = key === protagonist ? SURVIVED : FELL;
+    }
   };
   followAnswers();
   signal.addEventListener("abort", store.subscribe(followAnswers));
@@ -328,16 +264,17 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
         state = next;
         held = false;
         slot.dataset.state = next;
-        open(next === "hints" ? "d413" : "d412");
+        open("dprologue");
       }
       const arrived = next === "lore" && progress >= LORE_ARRIVES;
-      if (next === "lore" && !held) open(arrived ? "ddragon" : "d412");
-      dragonRow.style.visibility = next === "hints" || arrived ? "visible" : "hidden";
+      if (next === "lore" && !held) open(arrived ? "ddragon" : "dprologue");
+      dragonRow.textContent = next === "hints" || arrived ? "The Dragon" : "The Beast";
       dragonRow.classList.toggle("s-landed", arrived && progress < 0.8);
       // The view only exists on phones: on desktop every pane is on screen.
       if (!held) view((next === "hints" && progress >= 0.45) || arrived ? "page" : "chat");
       if (next !== "hints") return;
-      const line = NEXT_LINE[store.whoIsHe()][store.doesSheTell()];
+      const protagonist = CHARACTERS.find(({ key }) => key === store.protagonist());
+      const line = protagonist?.lastLine ?? "";
       typing.textContent = line.slice(0, Math.round(line.length * progress));
     },
   };
