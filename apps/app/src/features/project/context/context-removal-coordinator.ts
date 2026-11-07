@@ -63,10 +63,12 @@ import {
   leaveSelection,
   type RemovalPlanningEffect,
   type RouteBindingProof,
+  type RouteOwner,
   reduceRepresentedRemoval,
   rejectSelection,
   type SelectionTransition,
   sameLocator,
+  selectionAtRoute,
   supersedeSelectionForWorkChange,
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
@@ -513,10 +515,18 @@ export class ContextRemovalCoordinator {
     );
   }
 
-  /** The bound document is not where the route held it: the address answer decides again. */
-  unbindRoute(projectId: string, documentId: string): void {
+  /**
+   * The bound document is not where the route held it: the address answer decides again. A
+   * selection that has moved on since the question was asked is left alone.
+   */
+  unbindRoute(projectId: string, documentId: string, route: RouteOwner): void {
     const { selection } = this.project(projectId);
-    if (selection.status !== "bound" || selection.identity.documentId !== documentId) return;
+    if (
+      selection.status !== "bound" ||
+      selection.identity.documentId !== documentId ||
+      !selectionAtRoute(selection, route)
+    )
+      return;
     this.leaveSelection(projectId);
     this.beginRouteSelection(projectId, selection.locator);
   }
