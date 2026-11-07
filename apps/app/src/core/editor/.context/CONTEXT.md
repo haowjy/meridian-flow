@@ -239,8 +239,12 @@ keyboard, pointer, drop, or draft-recovery answer.
   `pointerdown` on `pointerup`, treats a `pointermove` with the left bit
   clear as the release, and swallows the `click` after a lift) and
   `liftSelection` pumps the drag events. The block gesture uses the same
-  tracker. Past the slop (4px, `Math.hypot`, shared with the chrome sweep
-  and link clicks) it sends a synthetic
+  tracker. The tracker's host has two callbacks: `lift` returns the move
+  handler, and `end(how, at)` is the one ending (`click`, `drop` or `cancel`;
+  the `stop` it returns is `end("cancel")`), so tearing the view down mid-drag
+  finishes the lift. A mouse-started press follows any pointer but touch, so a
+  pen lifts too. Past the slop (4px, `Math.hypot`, `pastSlop`, shared with the
+  chrome sweep and link clicks) it sends a synthetic
   `dragstart` (at `view.dom`, positioned at the press, since a fast first move
   may already be off the selection) with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
   on a target change and `dragover` (so the caret, the 5s caret timeout and
