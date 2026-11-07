@@ -12,11 +12,12 @@ visibly.
 
 A measured frame reserves the intrinsic box, including small icons; placeholder
 minimums apply only without a measurement. Failed, abandoned or unresolved slots
-give the measured frame back so their message and controls stay usable. A picture
+give the measured frame and any stored width back so their message and controls
+stay usable. A picture
 that arrived without an upload is measured when it draws, so every drawn picture
 has a frame. The frame is what lets the height cap narrow a stored width and keep
 the ratio. The frame is itself a size container, so the cap is a registered
-length that resolves to pixels at the prose root; `60cqh` read inside a frame
+length that resolves to pixels at the prose root; `cqh` read inside a frame
 would answer to the frame.
 
 A pasted web picture becomes a link first; import replaces that link only after

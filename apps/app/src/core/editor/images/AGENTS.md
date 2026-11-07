@@ -26,8 +26,8 @@ slot aborts it.
   target. Resolve and schema-check it when the file returns; never fall back to
   the current selection or another location.
 - `width` is the sole persistent display-size answer, capped by the prose
-  column. Resize previews write DOM only and release one `setNodeMarkup` using a
-  `NodeHold`; a drag that changes nothing on screen writes nothing, and a grip
+  column. Resize previews write DOM only and release one attribute step using a
+  `NodeHold` (`setNodeMarkup` replaces a leaf and drops the selection); a drag that changes nothing on screen writes nothing, and a grip
   stops at the height cap. A table-cell paragraph needs size containment before
   the picture can be capped by its column.
 - A very tall picture pushes the writer's text out of view, so the view caps
@@ -35,7 +35,9 @@ slot aborts it.
   The cap depends on the viewer's pane and the stored picture doesn't, so it is
   never written: not to `width`, not to the wire, not to export or copied
   Markdown. Clicking a picture the cap is holding back opens the viewer, and the
-  object row's Open full screen does the same. Because the box has to narrow to
+  object row's Open full screen does the same. A phone keyboard shrinks the
+  pane, so on touch screens the cap holds through a height drop at the same
+  width while the editor has focus (`holdPictureCapThroughKeyboard`). Because the box has to narrow to
   keep the ratio, the node view needs the shape: an upload's frame, or the
   natural size once the picture draws.
 - Inline images use the same baseline/line-box behavior in prose and cells.

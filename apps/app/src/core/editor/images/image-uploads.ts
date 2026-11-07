@@ -301,7 +301,9 @@ function writeSlot(
 ): void {
   const node = editor.state.doc.nodeAt(pos);
   if (!node) return;
-  const transaction = editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs });
+  // Attribute steps, because `setNodeMarkup` replaces a leaf and a selected slot would lose its grips.
+  const transaction = editor.state.tr;
+  for (const [name, value] of Object.entries(attrs)) transaction.setNodeAttribute(pos, name, value);
   if (!options.history) transaction.setMeta("addToHistory", false);
   if (options.closes) {
     transaction.setMeta(imageIngressPluginKey, {

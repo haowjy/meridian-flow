@@ -94,10 +94,12 @@ export function ImageNodeView(props: NodeViewProps) {
   // a picture whose address would not resolve. Those say what happened and offer
   // a verb, and neither fits inside a measured 32px square (law 5 wants both
   // read and pressed). Nothing lands out of them either, so there is no line
-  // left to keep still.
+  // left to keep still. A stored width goes with it: that size is the picture's,
+  // and a card or a note would be crushed into it.
   const asking =
     mine?.status.kind === "failed" || (!pending && !state.url && state.kind !== "loading");
   const frame = asking ? null : shape;
+  const drawnWidth = asking ? null : width;
 
   // The grips live on the selected state and nowhere else (§5.2's jade ring),
   // and only over something with a box to drag: a picture, or the measured slot
@@ -120,11 +122,11 @@ export function ImageNodeView(props: NodeViewProps) {
       className={cn(
         "meridian-image-node",
         frame && "meridian-image-node--framed",
-        width !== null && "meridian-image-node--sized",
+        drawnWidth !== null && "meridian-image-node--sized",
       )}
       data-type="image"
       data-drag-handle
-      style={imageBoxStyle(frame, width)}
+      style={imageBoxStyle(frame, drawnWidth)}
     >
       {mine ? (
         <PendingImage entry={mine} editor={props.editor} getPos={props.getPos} />

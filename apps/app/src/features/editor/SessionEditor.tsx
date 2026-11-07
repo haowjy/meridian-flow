@@ -28,6 +28,7 @@ import {
   registerLiveRangeEditor,
 } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
+import { holdPictureCapThroughKeyboard } from "@/core/editor/objects";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useLinkableDocuments } from "@/features/links";
@@ -38,6 +39,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -503,6 +505,12 @@ function EditorCanvas({
   scrollRef?: Ref<HTMLDivElement>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
+  const touch = useCoarsePointer();
+  useEffect(
+    () => (editor && touch ? holdPictureCapThroughKeyboard(editor.view) : undefined),
+    [editor, touch],
+  );
+
   return (
     <EditorSurfaceFrame
       notices={notices}
