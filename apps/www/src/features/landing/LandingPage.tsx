@@ -64,6 +64,9 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             <div className="flyer" id="flyer" aria-hidden="true">
               <i />
             </div>
+            <div className="updraft" id="updraft" aria-hidden="true">
+              <i />
+            </div>
 
             <div className="world" id="the-world" {...NIGHT}>
               <svg className="wlines" id="wlines" aria-hidden="true" />

@@ -646,6 +646,69 @@
   mask: var(--dragon-sheet) 0 0 / 600% 100% no-repeat;
 }
 
+.cine .flyer.grounded i {
+  mask-image: var(--dragon-ground);
+  mask-size: 400% 100%;
+}
+
+.updraft {
+  display: none;
+}
+
+/* The perched dragon's Cold Fire going straight up: a thin bright core in a soft glow, and a
+   knot rising through it on each gulp. */
+.cine .updraft {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.cine .updraft::before,
+.cine .updraft::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.cine .updraft::before {
+  inset: 0 38%;
+  background: linear-gradient(to top, var(--cold-fire-core), var(--cold-fire) 25%, transparent 92%);
+  opacity: calc(0.55 + var(--gulp, 0) * 0.45);
+  filter: blur(1.5px);
+}
+
+.cine .updraft::after {
+  inset: 0 -40%;
+  background: linear-gradient(
+    to top,
+    color-mix(in oklab, var(--cold-fire) 70%, transparent),
+    color-mix(in oklab, var(--cold-fire) 25%, transparent) 50%,
+    transparent
+  );
+  opacity: calc(0.4 + var(--gulp, 0) * 0.6);
+  filter: blur(12px);
+}
+
+.cine .updraft i {
+  position: absolute;
+  top: 0;
+  left: -90%;
+  right: -90%;
+  aspect-ratio: 1 / 2.6;
+  background: radial-gradient(
+    closest-side,
+    var(--cold-fire-core),
+    color-mix(in oklab, var(--cold-fire) 80%, transparent) 40%,
+    transparent
+  );
+  filter: blur(3px);
+}
+
 .cine .flame {
   z-index: 10;
   width: 100%;
