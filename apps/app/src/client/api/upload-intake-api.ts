@@ -17,7 +17,10 @@ function url(scope: Pick<ComposerUploadScope, "projectId" | "chatId">, path = ""
 }
 const LIMIT_MB = Math.round(MAX_UPLOAD_BYTES / 1024 / 1024);
 const tooLarge = () => t`Files over ${LIMIT_MB} MB can't be attached.`;
-const response = <T>(request: Promise<Response>) => uploadResponse<T>(request, tooLarge);
+function response<T>(request: Promise<Response>): Promise<T> {
+  return uploadResponse<T>(request, tooLarge);
+}
+
 export const uploadIntakePort: ComposerUploadPort = {
   intake({ file, intakeId, scope, signal }) {
     if (file.size > MAX_UPLOAD_BYTES) return Promise.reject(new Error(tooLarge()));

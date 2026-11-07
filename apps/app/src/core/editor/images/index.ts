@@ -32,6 +32,5 @@ export {
   acceptsInlineImage,
   assetDocumentIdFromSrc,
   browserPictureSource,
-  imageAttrsFromUpload,
   signedUrlRefreshDelayMs,
 } from "./image-workflow";

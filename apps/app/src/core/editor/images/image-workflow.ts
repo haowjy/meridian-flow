@@ -1,8 +1,5 @@
 /** Shared helpers for uploaded editor images and asset-backed rendering. */
-import {
-  parseDocumentFilename,
-  type UploadFigureAssetResponse,
-} from "@meridian/contracts/protocol";
+import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 
@@ -44,14 +41,6 @@ export function imageAltFromFilename(filename: string): string {
     .replace(/[_-]+/g, " ")
     .trim();
   return stem || filename || "Image";
-}
-
-export function imageAttrsFromUpload(response: UploadFigureAssetResponse) {
-  return {
-    src: `asset:${response.assetDocumentId}`,
-    alt: response.figure.alt || null,
-    title: null,
-  };
 }
 
 /**

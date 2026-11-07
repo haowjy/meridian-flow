@@ -14,7 +14,7 @@ import { type Editor, Extension } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 
-import { linkUploads } from "../links/link-uploads";
+import { linkUploads, type UploadRun } from "../links/link-uploads";
 
 export const FILE_DROP_NAME = "meridianFileDrop";
 
@@ -23,12 +23,12 @@ export type FileDropHost = {
   hostDocumentId: string;
   /** The source of that document: a dropped file lands in its `assets/`. */
   scheme: ContextUriScheme;
-  upload(input: {
-    documentId: string;
-    file: File;
-    signal: AbortSignal;
-    onProgress: (percent: number | null) => void;
-  }): Promise<void>;
+  /**
+   * Reserves the upload on the server and answers with the function that sends the bytes. It
+   * resolves before the chip is inserted, so no tab can ask about a file the server has not
+   * heard of; a refusal (a name, a size) rejects with the message to show, and no chip stands.
+   */
+  start(input: { documentId: string; file: File }): Promise<UploadRun>;
 };
 
 declare module "@tiptap/core" {

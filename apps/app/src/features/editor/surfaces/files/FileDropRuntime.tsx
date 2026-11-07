@@ -12,7 +12,7 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { Editor } from "@tiptap/core";
 import { useEffect } from "react";
 
-import { uploadSourceFile } from "@/client/api/source-upload-api";
+import { startSourceUpload, uploadSourceFile } from "@/client/api/source-upload-api";
 import { registerFileDropHost } from "@/core/editor/file-drop";
 
 import { useEditorScope } from "../../editor-scope";
@@ -32,21 +32,17 @@ export function FileDropRuntime({
   const scheme = parsed?.ok ? parsed.value.scheme : null;
 
   useEffect(() => {
-    if (!editor || !projectId || !scheme || scheme === "uploads") return;
-    const owner = rootThreadId ? { rootThreadId } : workId ? { workId } : null;
+    // A chat lineage's Scratch is the model's to create in, so a writer's files are refused there.
+    if (!editor || !projectId || !scheme || scheme === "uploads" || rootThreadId) return;
+    const owner = workId ? { workId } : null;
     return registerFileDropHost(editor, {
       hostDocumentId: documentId,
       scheme,
-      upload: ({ documentId: fileDocumentId, file, signal, onProgress }) =>
-        uploadSourceFile({
-          projectId,
-          scheme,
-          owner,
-          documentId: fileDocumentId,
-          file,
-          signal,
-          onProgress,
-        }),
+      start: async ({ documentId: fileDocumentId, file }) => {
+        const target = { projectId, scheme, owner, documentId: fileDocumentId, file };
+        const started = await startSourceUpload(target);
+        return (signal, onProgress) => uploadSourceFile({ ...target, started, signal, onProgress });
+      },
     });
   }, [editor, documentId, projectId, scheme, workId, rootThreadId]);
 

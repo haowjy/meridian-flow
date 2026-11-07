@@ -36,7 +36,18 @@ export function uploadDestination(route: ResolvedContextRoute, chatId: unknown, 
   }
   if (!UUID.test(intakeId))
     throw createError({ statusCode: 400, message: "intakeId must be the file's new document id" });
-  const source: UploadSourceDestination = { scheme: route.scheme, port: route.port };
+  // A chat lineage's Scratch is the model's to create in; a writer's upload there would fail at
+  // finish, after the bytes were sent.
+  if ("kind" in route.authority && route.authority.kind === "lineage")
+    throw createError({
+      statusCode: 403,
+      message: "A chat's Scratch takes files from the model only",
+    });
+  const source: UploadSourceDestination = {
+    scheme: route.scheme,
+    authority: route.authority,
+    port: route.port,
+  };
   return { owner: { kind: "source" as const, projectId }, container: route.container, source };
 }
 

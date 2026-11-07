@@ -12,15 +12,17 @@
  * the editor that started it and a chip drawn later still finds its progress.
  */
 
+import type { UploadIntakeResult } from "@meridian/contracts/protocol";
+
 export type FileUploadState =
   | { kind: "uploading"; percent: number | null }
   | { kind: "failed"; message: string };
 
 /** Sends the file; reports whole percents, or null where the browser cannot say how much there is. */
-type UploadRun = (
+export type UploadRun = (
   signal: AbortSignal,
   onProgress: (percent: number | null) => void,
-) => Promise<void>;
+) => Promise<UploadIntakeResult>;
 
 type Entry = {
   /** The document whose text holds the link; its editor decides whether the chip is still there. */

@@ -1,11 +1,12 @@
 /** Authoritative, resumable upload intake aggregate. */
 import { createHash } from "node:crypto";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
-import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
+import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import type {
   DeleteDraftUploadInput,
   DeleteDraftUploadResult,
   Filetype,
+  ProjectContextTreeScheme,
   StartUploadInput,
   UploadIntakeError,
   UploadIntakeResult,
@@ -40,6 +41,7 @@ import {
   type ObjectRelease,
   type ObjectStorePort,
 } from "../../storage/index.js";
+import { projectBrowseContextUri } from "../browse-layer-scheme.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ContextPort } from "../ports/context-port.js";
 
@@ -58,7 +60,9 @@ const MAX_NAME_COPIES = 100;
  * document id, so the link to the file can stand in the document before the file arrives.
  */
 export interface UploadSourceDestination {
-  scheme: ContextUriScheme;
+  scheme: ProjectContextTreeScheme;
+  /** The route's own authority: a Work's or a chat lineage's Scratch is addressed through it. */
+  authority: CanonicalContextAuthority;
   port: ContextPort;
 }
 
@@ -138,7 +142,7 @@ export function placedOf(claimed: ClaimedUpload, finalPath = claimed.finalPath):
 function uriOf(placed: PlacedUpload, source?: UploadSourceDestination): string {
   if (placed.owner.kind === "source") {
     if (!source) throw new Error("A source upload needs its destination");
-    return canonicalContextUri(source.scheme, placed.finalPath, { kind: "contextual" });
+    return projectBrowseContextUri(source.scheme, placed.finalPath, source.authority);
   }
   if (!placed.canonicalUri) throw new Error(`Upload ${placed.intakeId} has no address yet`);
   return placed.canonicalUri;
@@ -472,9 +476,15 @@ export function createUploadIntake<Bound>(deps: {
         return storageFailed;
       }
       const keptAsFile = headWasText && classifyFiletype(fileType).kind !== "tracked";
-      const parsed = keptAsFile
+      const named = keptAsFile
         ? { ok: true as const, value: { ...keptFileName(filename), filetype: "binary" as const } }
         : intakeFilename(filename, fileType, mimeType);
+      // A name whose extension no file type claims ("notes.zip") stays whole in the parse; a copy
+      // must number the stem ("notes (2).zip"), so the extension is split off here.
+      const parsed =
+        named.ok && classifyFiletype(fileType).kind !== "tracked" && named.value.extension === ""
+          ? { ok: true as const, value: { ...named.value, ...keptFileName(named.value.name) } }
+          : named;
       if (!parsed.ok)
         return { ok: false, error: { code: "invalid_filename", reason: "name/reserved" } };
 

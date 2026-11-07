@@ -13,26 +13,23 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
-import { uploadFigure } from "@/client/api/figures-api";
+import { startSourceUpload, uploadSourceFile } from "@/client/api/source-upload-api";
 import {
   type ImageBytesPort,
   type ImageUploadPort,
-  imageAttrsFromUpload,
   registerImageIngressHost,
 } from "@/core/editor/images";
 
 export function ImageIngressRuntime({
   editor,
   projectId,
-  documentId,
 }: {
   editor: Editor | null;
   projectId: string | undefined;
-  documentId: string;
 }) {
   const upload = useMemo<ImageUploadPort | null>(
-    () => (projectId ? figureUploadPort(projectId, documentId) : null),
-    [documentId, projectId],
+    () => (projectId ? pictureUploadPort(projectId) : null),
+    [projectId],
   );
 
   useEffect(() => {
@@ -43,19 +40,23 @@ export function ImageIngressRuntime({
   return null;
 }
 
-/** One project's figure endpoint, as the port the ingress calls. */
-function figureUploadPort(projectId: string, hostDocumentId: string): ImageUploadPort {
+/**
+ * One project's picture upload, as the port the ingress calls. A picture goes into
+ * `manuscript://assets/` whichever document holds it: bare picture sources are
+ * manuscript-relative.
+ */
+function pictureUploadPort(projectId: string): ImageUploadPort {
   return async ({ file, alt, signal, onProgress }) => {
-    const reference = await uploadFigure({
+    const target = {
       projectId,
-      hostDocumentId,
+      scheme: "manuscript",
+      owner: null,
+      documentId: crypto.randomUUID(),
       file,
-      alt,
-      signal,
-      onProgress: ({ percent }) => onProgress(percent),
-    });
-    const picture = imageAttrsFromUpload(reference);
-    return { src: picture.src, alt: picture.alt };
+    };
+    const started = await startSourceUpload(target);
+    const stored = await uploadSourceFile({ ...target, started, signal, onProgress });
+    return { src: `asset:${stored.documentId}`, alt: alt || null };
   };
 }
 

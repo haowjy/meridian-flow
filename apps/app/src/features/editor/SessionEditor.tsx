@@ -466,7 +466,7 @@ function ActiveSessionEditorView({
           index={linkableDocuments}
           active={active}
         />
-        <ImageIngressRuntime editor={editor} projectId={projectId} documentId={documentId} />
+        <ImageIngressRuntime editor={editor} projectId={projectId} />
         <FileDropRuntime editor={editor} documentId={documentId} holderUri={holderUri} />
       </section>
     </EditorScopeProvider>
