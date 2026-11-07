@@ -23,6 +23,9 @@ export function applyContextRemovalSearchUpdate({
 }): void {
   const next = update(search);
   if (projectSearchEquals(next, search)) return;
+  // A review address owns its path: the item names where the draft puts the document, which the
+  // live move the planner saw is not.
+  if (relocated && itemKey) return;
   if (next.scheme && next.path !== undefined)
     void openContext(
       {
@@ -32,10 +35,9 @@ export function applyContextRemovalSearchUpdate({
         rootThreadId: next.chat,
         ...(relocated ? { documentId: relocated.documentId } : {}),
       },
-      // A relocation keeps the review the address carries, until ReviewAddressOwner (which knows
-      // the document's identity) decides it no longer applies. A fallback opens another document,
-      // so this address's item names nothing there; the command gives a draft-only tab its own.
-      { replace: true, itemKey: relocated ? itemKey : undefined },
+      // A fallback opens another document, so this address's item names nothing there; the
+      // command gives a draft-only tab its own.
+      { replace: true },
     );
   else if (next.screen === "work") goWorks();
   else if (next.screen === "context") goEditor();

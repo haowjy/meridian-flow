@@ -17,6 +17,8 @@ export type ProjectContextRemovalControllerProps = {
   activeContextChat?: string | null;
   editorWorkId: string;
   localDocumentId?: string;
+  /** A review address names its document by item: that id is proof, so the route starts bound. */
+  reviewDocumentId?: string;
   route: ContextRemovalRoutePort;
 };
 
@@ -28,6 +30,7 @@ export function ProjectContextRemovalController({
   activeContextChat,
   editorWorkId,
   localDocumentId,
+  reviewDocumentId,
   route,
 }: ProjectContextRemovalControllerProps) {
   const coordinator = useContextRemovalCoordinator();
@@ -90,7 +93,8 @@ export function ProjectContextRemovalController({
       previousLocalDocument.current = localDocumentId;
       coordinator.clearRouteSelection(projectId);
     }
-    if (locator) coordinator.beginRouteSelection(projectId, locator);
+    if (locator && reviewDocumentId) coordinator.enterRoute(projectId, locator, reviewDocumentId);
+    else if (locator) coordinator.beginRouteSelection(projectId, locator);
     else coordinator.clearRouteSelection(projectId);
   }, [
     activeContextChat,
@@ -101,6 +105,7 @@ export function ProjectContextRemovalController({
     editorWorkId,
     projectId,
     localDocumentId,
+    reviewDocumentId,
     selectionStale,
   ]);
 

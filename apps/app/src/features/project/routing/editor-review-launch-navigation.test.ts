@@ -156,9 +156,10 @@ describe("review launch navigation", () => {
       expect(history.location.href).not.toContain("item=");
     });
 
-    it("a relocation keeps the review item while the address query has no document id yet", async () => {
+    it("a relocation leaves a review address where it is: the item owns the path", async () => {
       const history = repair("old.md", "renamed.md", { documentId: "doc-1" });
-      await vi.waitFor(() => expect(history.location.href).toContain("renamed.md"));
+      await Promise.resolve();
+      expect(history.location.href).toContain("old.md");
       expect(history.location.href).toContain("item=draft-1");
     });
 
