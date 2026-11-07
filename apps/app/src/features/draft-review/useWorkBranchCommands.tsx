@@ -74,9 +74,15 @@ export function useWorkBranchCommands({
       queryClient
         .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workBranchDrafts(projectId, workId))
         ?.find((item) => item.itemKey === draft.itemKey);
+    // The addressed item's metadata is refreshed with the list: the route reads a discarded
+    // move from it, and only a command's own answer says a per-change discard finished.
     const refresh = () => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
+      });
+      void queryClient.invalidateQueries({
+        predicate: (query) =>
+          projectQueryKeys.isWorkDraftMetadata(query.queryKey, projectId, workId),
       });
     };
     /** The list without the item's move or delete, until the refetch confirms it. */
