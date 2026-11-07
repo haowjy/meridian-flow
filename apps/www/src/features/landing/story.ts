@@ -53,7 +53,7 @@ export const characterName = (key: CharacterKey) =>
 export const PROLOGUE = {
   opening: "They told us to kill the beast in the Greenlands.",
   lines: [
-    "Four of us went north, and four countries wanted us dead.",
+    "Each of us had been condemned by our own country. Kill it, they said, and our “crimes” would be forgiven.",
     "Nobody said what the beast was. I don’t think they knew.",
     "Every night the Cold Fire burned above us. We thought it was beautiful.",
   ],
