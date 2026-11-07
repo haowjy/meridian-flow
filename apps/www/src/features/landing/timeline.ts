@@ -24,8 +24,8 @@ const BEATS = [
   ["dawn", 1.5, 6],
   ["lore", 1.5, 5],
   ["ask", 3, 12],
-  ["hints", 1.2, 9],
-  ["roam", 3, 6],
+  ["hints", 1.2, 5],
+  ["roam", 1.2, 3],
   ["skill", 1.6, 6],
   ["leave", 0.7, 3],
 ] as const;
