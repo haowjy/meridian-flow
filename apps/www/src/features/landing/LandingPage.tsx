@@ -181,16 +181,9 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
 
         <section className="end" id="end" {...NIGHT}>
           <h2>Chapter One</h2>
-          {/* biome-ignore lint/a11y/useSemanticElements: it should feel like the page, not a form field. */}
-          <div
-            className="blank"
-            contentEditable
-            suppressContentEditableWarning
-            role="textbox"
-            tabIndex={0}
-            aria-label="Your first line"
-            spellCheck={false}
-          />
+          <div className="blank">
+            <input aria-label="Your first line" placeholder=" " spellCheck={false} />
+          </div>
           <a className="go big" href={startUrl}>
             Start writing
           </a>
