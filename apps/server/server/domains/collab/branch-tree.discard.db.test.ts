@@ -251,7 +251,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess: runtime.app.fileAccess,
           branches: runtime.app.documentSync.branches,
           documentTrash: runtime.app.documentTrash,
-          uploads: runtime.app.uploadIntake,
           files: runtime.app.uploadIdentity,
         },
         {

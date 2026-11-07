@@ -26,7 +26,7 @@ import { createError } from "nitro/h3";
 import type { Branches, DocumentLinkScopes } from "../domains/collab/index.js";
 import type { DocumentLinkResolver } from "../domains/context/index.js";
 import type { DocumentTrash } from "../domains/context/ports/document-trash.js";
-import type { UploadIdentityPort, UploadIntake } from "../domains/context/uploads/index.js";
+import type { UploadIdentityPort } from "../domains/context/uploads/index.js";
 import type { FileAccess } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/domain/work-authority.js";
 import { requireProjectOwner } from "../domains/projects/index.js";
@@ -43,8 +43,6 @@ export interface DocumentLinkRouteDeps {
   branches: Pick<Branches, "viewForWork">;
   /** Project-authorized retained identities for gone links; purged rows are absent. */
   documentTrash: Pick<DocumentTrash, "retained">;
-  /** Which `doc:` refs name a file still being uploaded. */
-  uploads: Pick<UploadIntake, "inFlight">;
   /** What a chip says of a stored file: its type and size. */
   files: Pick<UploadIdentityPort, "lookupDocuments">;
 }
@@ -148,21 +146,11 @@ export async function handleDocumentLinkResolveRequest(
     projectId as ProjectId,
     refResolutions.flatMap(({ candidateId }) => (candidateId ? [candidateId] : [])),
   );
-  // A ref that names nothing yet may name a file on its way up: the writer's link stood in the
-  // document before the file did.
-  const uploading = await deps.uploads.inFlight(
-    projectId,
-    userId,
-    refResolutions.flatMap(({ candidateId }) => (candidateId ? [candidateId] : [])),
-  );
   for (const { index, resolution, candidateId } of refResolutions) {
-    answers[index] =
-      candidateId && uploading.has(candidateId)
-        ? { state: "uploading" }
-        : answerOf(
-            resolution,
-            candidateId && retainedIds.has(candidateId) ? candidateId : undefined,
-          );
+    answers[index] = answerOf(
+      resolution,
+      candidateId && retainedIds.has(candidateId) ? candidateId : undefined,
+    );
   }
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];

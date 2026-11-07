@@ -29,6 +29,8 @@ import {
 } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
+import { uploads } from "@/core/uploads/upload-store";
+
 import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { getEditorChrome, hoverOwner, pastSlop } from "../chrome";
 import { linkClipboardPlugin } from "./link-clipboard";
@@ -62,7 +64,6 @@ import {
 } from "./link-storage";
 import { createLinkSurface, type LinkMenuTarget, type LinkPoint } from "./link-surface";
 import { classifyLinkTarget } from "./link-target";
-import { linkUploads } from "./link-uploads";
 
 const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
 
@@ -95,11 +96,15 @@ export function followLinkFrom(
   disposition: LinkFollowDisposition,
   at: LinkPoint,
 ): LinkFollowResult {
-  // A chip whose file is not being sent: a press sends it again instead of following.
+  // A chip whose file is still on its way up has nothing to open; a failed one is sent again.
   const pending = parseLinkRef(key.ref);
-  if (pending?.kind === "doc" && linkUploads.read(pending.documentId)?.kind === "failed") {
-    linkUploads.retry(pending.documentId);
-    return "navigated";
+  if (pending?.kind === "doc") {
+    const upload = uploads.read(pending.documentId);
+    if (upload?.kind === "failed") {
+      uploads.retry(pending.documentId);
+      return "navigated";
+    }
+    if (upload || uploads.peerSending(pending.documentId) !== undefined) return "unavailable";
   }
   const surface = getLinkSurface(editor);
   const answer = getLinkAnswerCache(editor)?.read(key) ?? null;

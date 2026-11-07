@@ -2,7 +2,7 @@
  * figures-api — HTTP client for a picture's signed read URLs.
  *
  * Reads a signed-URL cache and fetches a fresh URL when it has expired. Pictures arrive by the
- * direct upload in `source-upload-api.ts`; this is what draws them.
+ * direct upload in `context-upload-api.ts`; this is what draws them.
  */
 import type { GetFigureSignedUrlResponse } from "@meridian/contracts/protocol";
 

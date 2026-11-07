@@ -1,8 +1,8 @@
 /**
  * The app's half of image ingress: where a picture's bytes actually go.
  *
- * The editor owns the lifecycle — the slot, the progress, the failure, the
- * abort — and knows nothing about projects, figure endpoints, or CORS. This
+ * The editor owns the slot and the upload store owns the progress, the failure and
+ * the abort; neither knows projects, endpoints, or CORS. This
  * component is that seam, the same shape as `ProjectLinkRuntime`: it registers
  * the two ports the ingress asks for.
  *
@@ -13,7 +13,7 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
-import { startSourceUpload, uploadSourceFile } from "@/client/api/source-upload-api";
+import { uploadContextFile } from "@/client/api/context-upload-api";
 import {
   type ImageBytesPort,
   type ImageUploadPort,
@@ -46,16 +46,16 @@ export function ImageIngressRuntime({
  * manuscript-relative.
  */
 function pictureUploadPort(projectId: string): ImageUploadPort {
-  return async ({ file, alt, signal, onProgress }) => {
-    const target = {
+  return async ({ id, file, alt, signal, onProgress }) => {
+    const stored = await uploadContextFile({
       projectId,
       scheme: "manuscript",
-      owner: null,
-      documentId: crypto.randomUUID(),
+      query: {},
+      intakeId: id,
       file,
-    };
-    const started = await startSourceUpload(target);
-    const stored = await uploadSourceFile({ ...target, started, signal, onProgress });
+      signal,
+      onProgress,
+    });
     return { src: `asset:${stored.documentId}`, alt: alt || null };
   };
 }

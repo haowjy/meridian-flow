@@ -44,19 +44,16 @@ A dropped file is a plain Markdown link with a `doc:` ref, minted by the client 
 the file exists. What the chip says is drawn, never stored (`link-chip.ts`'s
 `linkChipDetail`, `link-mark-view.ts`):
 
-- The uploader's own tab reads `link-uploads.ts`, a module-wide store keyed by document
-  id: progress, and a failure. It is module-wide, not per editor, so an upload outlives the
-  document that started it and a chip drawn after the writer navigates back finds its
-  progress. `file-drop/FileDropExtension.ts` cancels an upload whose chip has been out of
-  its document for `ABSENT_UPLOAD_GRACE_MS`, so a cut and paste in one document survives
-  and an undo does not. A chip pasted into another document is not the uploader's: it
-  hears the server, which answers `uploading` while an unfinalized intake holds the id and
-  `gone` once the upload was taken back.
-- Another tab, or the same one after a reload, hears `uploading` from the resolve route. The
-  door asks the server to start the upload (`FileDropHost.start`) before it inserts the chip, so
-  the row exists when any tab first asks. The uploading tab starts again about once a minute, and
-  the route answers `uploading` only for a row touched in the last three minutes: a closed tab's
-  chip reads `gone` without waiting for the sweep.
+- The uploader's own tab reads the upload store (`core/uploads/upload-store.ts`), keyed by
+  the id the ref names: progress, and a failure. The store is module-wide, so an upload
+  outlives the editor that started it, and it owns the take-back rule for every upload chip
+  and picture slot (its header). `file-drop/FileDropExtension.ts` only reports which `doc:`
+  ids the text still links to.
+- Another tab hears the upload over presence (`upload-presence.ts`), which reports it into
+  the same store, and draws "Uploading" from there. The server knows nothing of a send in
+  progress: it answers `gone` for a ref that names nothing yet, and a chip with an upload
+  behind it draws the upload instead. A chip copied into another document, or seen after
+  the sending tab closed, reads gone until the file lands.
 - A document answer carries `file` (type, MIME type, size) for a stored file, from the
   resolve route. The local index knows type and MIME but not size, so a stored file's chip
   asks the server once. The detail row is `PDF · 2.4 MB`; a picture's chip carries none.

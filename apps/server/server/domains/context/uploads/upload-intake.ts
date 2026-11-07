@@ -70,13 +70,6 @@ export interface UploadSourceDestination {
 const ABANDONED_AFTER_MS = 24 * 60 * 60 * 1000;
 const SWEEP_BATCH = 50;
 
-/**
- * A source upload's chip reads "uploading" while its row was touched this recently. The tab
- * sending it starts again about once a minute; a row nobody has touched belongs to a tab that
- * left, and its chip reads gone before the sweep drops the row.
- */
-const SENDING_WITHIN_MS = 3 * 60 * 1000;
-
 /** Deleting a draft is a chat attach's undo; a source upload is deleted as the document it became. */
 export type ChatUploadOwner = Extract<UploadOwner, { kind: "chat" }>;
 
@@ -206,16 +199,6 @@ export interface UploadIntakeRepository {
   ): Promise<{ projectId: string; intakeId: string; documentId: string; objectKey: string }[]>;
   /** Drops one such row; false when it was touched or finished meanwhile. */
   dropAbandoned(projectId: string, intakeId: string, cutoff: Date): Promise<boolean>;
-  /**
-   * Which of these documents are source uploads on their way: open, and touched since `since`.
-   * The uploading tab starts again about every minute, so a stale row belongs to a tab that left.
-   */
-  inFlight(
-    projectId: string,
-    actorUserId: string,
-    documentIds: readonly string[],
-    since: Date,
-  ): Promise<ReadonlySet<string>>;
 }
 
 /**
@@ -279,12 +262,6 @@ export interface UploadIntake {
   consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Drops uploads untouched for a day, objects and row. Returns how many it dropped. */
   sweepAbandoned(now?: Date): Promise<number>;
-  /** Which of these documents are source uploads a tab is still sending. */
-  inFlight(
-    projectId: string,
-    actorUserId: string,
-    documentIds: readonly string[],
-  ): Promise<ReadonlySet<string>>;
 }
 
 const resultOf = (
@@ -688,13 +665,5 @@ export function createUploadIntake<Bound>(deps: {
         if (rows.length < SWEEP_BATCH) return dropped;
       }
     },
-
-    inFlight: (projectId, actorUserId, documentIds) =>
-      deps.repository.inFlight(
-        projectId,
-        actorUserId,
-        documentIds,
-        new Date(Date.now() - SENDING_WITHIN_MS),
-      ),
   };
 }

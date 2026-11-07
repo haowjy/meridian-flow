@@ -41,6 +41,7 @@ import { type CSSProperties, type SyntheticEvent, useRef, useState } from "react
 
 import { FileCard } from "@/components/app/FileCard";
 import { Button } from "@/components/ui/button";
+import type { UploadState } from "@/core/uploads/upload-store";
 import { cn } from "@/lib/utils";
 
 import { useAssetImageRenderState } from "../asset-image-render-state";
@@ -71,7 +72,7 @@ export function ImageNodeView(props: NodeViewProps) {
     links: mountedLinks(props.editor),
   });
   const pending = pendingUploadFromDecorations(props.decorations);
-  const mine = pending?.owner === "mine" ? pending.entry : null;
+  const mine = pending?.owner === "mine" ? pending : null;
 
   // The measured shape outlives the entry that carried it: the entry is dropped
   // the moment `src` is written, and the picture is not on screen yet. A
@@ -129,7 +130,12 @@ export function ImageNodeView(props: NodeViewProps) {
       style={imageBoxStyle(frame, drawnWidth)}
     >
       {mine ? (
-        <PendingImage entry={mine} editor={props.editor} getPos={props.getPos} />
+        <PendingImage
+          entry={mine.entry}
+          status={mine.status}
+          editor={props.editor}
+          getPos={props.getPos}
+        />
       ) : pending ? (
         <UploadingElsewhere />
       ) : src === "" ? (
@@ -191,15 +197,17 @@ export function ImageNodeView(props: NodeViewProps) {
  */
 function PendingImage({
   entry,
+  status,
   editor,
   getPos,
 }: {
   entry: PendingImageUpload;
+  status: UploadState;
   editor: NodeViewProps["editor"];
   getPos: NodeViewProps["getPos"];
 }) {
-  const failure = entry.status.kind === "failed" ? entry.status.message : null;
-  const percent = entry.status.kind === "uploading" ? entry.status.percent : null;
+  const failure = status.kind === "failed" ? status.message : null;
+  const percent = status.kind === "uploading" ? status.percent : null;
   const failed = failure !== null;
   const label =
     failure ??

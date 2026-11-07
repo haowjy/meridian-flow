@@ -1,5 +1,6 @@
 /** TipTap Composer schema, clipboard, draft ownership, and exact selection snapshots. */
 
+import { t } from "@lingui/core/macro";
 import { storedHref } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
@@ -35,6 +36,7 @@ import {
   internalClipboardTarget,
   LINK_ADDRESS_ATTRIBUTE,
 } from "@/core/editor/links";
+import { type UploadState, uploads } from "@/core/uploads/upload-store";
 
 export type ComposerDraftRevision = number;
 export type ComposerSelection = Readonly<{ anchor: number; head: number }>;
@@ -73,12 +75,8 @@ type ComposerDocumentReferenceAttrs = DocumentReference &
 export type ComposerReferenceAttrs =
   | ComposerDocumentReferenceAttrs
   | Extract<RestorableReference, { kind: "folder" }>;
-export type ComposerPendingUploadAttrs = {
-  intakeId: string;
-  name: string;
-  state: "pending" | "failed";
-  error: string | null;
-};
+/** A file on its way into the chat's uploads. How it stands is the upload store's, by `intakeId`. */
+export type ComposerPendingUploadAttrs = { intakeId: string; name: string };
 export type ComposerSkillAttrs = MessageSkill;
 
 /** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
@@ -331,6 +329,28 @@ export const ComposerSkillNode = Node.create({
   },
 });
 
+/** A chip nothing in this tab is sending (a copy pasted after its upload ended) reads stopped. */
+function chipState(upload: ComposerPendingUploadAttrs): UploadState {
+  return uploads.read(upload.intakeId) ?? { kind: "failed", message: t`The upload was stopped.` };
+}
+
+function chipAttributes(upload: ComposerPendingUploadAttrs, state: UploadState) {
+  const failed = state.kind === "failed";
+  return {
+    "data-composer-upload": state.kind,
+    "data-intake-id": upload.intakeId,
+    "data-name": upload.name,
+    type: failed ? "button" : undefined,
+    role: failed ? undefined : "status",
+    contenteditable: "false",
+    "aria-label": failed ? t`Failed upload: ${upload.name}` : t`Uploading ${upload.name}`,
+  };
+}
+
+function chipText(upload: ComposerPendingUploadAttrs, state: UploadState): string {
+  return state.kind === "failed" ? `${upload.name} (${state.message})` : `${upload.name}…`;
+}
+
 export const ComposerUploadNode = Node.create({
   name: "composerUpload",
   group: "inline",
@@ -338,23 +358,60 @@ export const ComposerUploadNode = Node.create({
   atom: true,
   selectable: true,
   addAttributes: () => ({ upload: { default: null } }),
-  parseHTML: () => [{ tag: "[data-composer-upload]" }],
+  parseHTML: () => [
+    {
+      tag: "[data-composer-upload]",
+      getAttrs: (element) => {
+        const intakeId = element.getAttribute("data-intake-id");
+        return intakeId
+          ? { upload: { intakeId, name: element.getAttribute("data-name") ?? "" } }
+          : false;
+      },
+    },
+  ],
   renderHTML: ({ node, HTMLAttributes }) => {
-    const value = node.attrs.upload as ComposerPendingUploadAttrs;
+    const upload = node.attrs.upload as ComposerPendingUploadAttrs;
+    const state = chipState(upload);
     return [
-      value.state === "failed" ? "button" : "span",
-      mergeAttributes(HTMLAttributes, {
-        "data-composer-upload": value.state,
-        "data-intake-id": value.intakeId,
-        type: value.state === "failed" ? "button" : undefined,
-        role: value.state === "pending" ? "status" : undefined,
-        contenteditable: "false",
-        "aria-label": `${value.state} upload: ${value.name}`,
-      }),
-      value.state === "pending"
-        ? `${value.name}…`
-        : `${value.name} (${value.error ?? "Upload failed"})`,
+      state.kind === "failed" ? "button" : "span",
+      mergeAttributes(HTMLAttributes, chipAttributes(upload, state)),
+      chipText(upload, state),
     ];
+  },
+  addNodeView: () => (props) => {
+    const upload = props.node.attrs.upload as ComposerPendingUploadAttrs;
+    // The chip itself is swapped inside a frame ProseMirror keeps: a failed chip is a button, so
+    // Enter and a click retry it.
+    const frame = document.createElement("span");
+    frame.contentEditable = "false";
+    let chip: HTMLElement | null = null;
+    const draw = () => {
+      const state = chipState(upload);
+      const tag = state.kind === "failed" ? "BUTTON" : "SPAN";
+      if (chip?.tagName !== tag) {
+        const next = document.createElement(tag.toLowerCase());
+        if (chip) chip.replaceWith(next);
+        else frame.append(next);
+        chip = next;
+      }
+      for (const [name, value] of Object.entries(chipAttributes(upload, state))) {
+        if (value === undefined) chip.removeAttribute(name);
+        else chip.setAttribute(name, value);
+      }
+      chip.textContent = chipText(upload, state);
+    };
+    draw();
+    const unsubscribe = uploads.subscribe((changed) => {
+      if (changed.has(upload.intakeId)) draw();
+    });
+    return {
+      dom: frame,
+      update: (node) =>
+        node.type === props.node.type &&
+        (node.attrs.upload as ComposerPendingUploadAttrs).intakeId === upload.intakeId,
+      ignoreMutation: () => true,
+      destroy: unsubscribe,
+    };
   },
 });
 

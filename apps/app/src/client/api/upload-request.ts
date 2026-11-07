@@ -1,6 +1,8 @@
 /** The two server calls around a direct upload (start and finish), and their errors in the writer's words. */
 import { t } from "@lingui/core/macro";
 
+import { filesTooLargeMessage } from "@/lib/upload-limit";
+
 import { UploadRefusedError } from "./direct-upload";
 import { errorMessageFromPayload, readResponsePayload } from "./http-client";
 import { meridianApiErrorFromPayload } from "./meridian-error";
@@ -11,11 +13,7 @@ export const jsonPost = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-/** `tooLarge` is the message for a file over the limit, which each destination words for itself. */
-export async function uploadResponse<T>(
-  request: Promise<Response>,
-  tooLarge: () => string,
-): Promise<T> {
+export async function uploadResponse<T>(request: Promise<Response>): Promise<T> {
   const value = await request.catch((cause: unknown) => {
     // `fetch` rejects with a bare TypeError ("Failed to fetch") when the network is down.
     throw cause instanceof TypeError
@@ -30,7 +28,8 @@ export async function uploadResponse<T>(
       throw new UploadRefusedError(
         t`This filename contains unsupported characters. Rename the file and try again.`,
       );
-    if (message === "too_large") throw new UploadRefusedError(tooLarge());
+    // The browser checks the size before it asks, so this is the server holding the line.
+    if (message === "too_large") throw new UploadRefusedError(filesTooLargeMessage());
     throw (
       meridianApiErrorFromPayload(payload, value.status) ??
       new Error(errorMessageFromPayload(payload, value.status))

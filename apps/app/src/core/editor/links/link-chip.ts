@@ -19,13 +19,12 @@
 
 import { t } from "@lingui/core/macro";
 import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
-
+import type { UploadState } from "@/core/uploads/upload-store";
 import { fileTypeLabel } from "@/lib/file-type-label";
 import { formatBytes } from "@/lib/format-size";
 
 import type { LinkResolutionEntry } from "./link-resolution";
 import type { LinkTarget } from "./link-target";
-import type { FileUploadState } from "./link-uploads";
 
 /**
  * A document family by scheme. Every internal link knows its family from its
@@ -113,18 +112,16 @@ function fileFacts(name: string, mimeType: string, sizeBytes: number | null): st
 
 /**
  * What a chip for a stored file says after its name: its type and size, or
- * how its upload stands. Null for a link that names no file. The local upload
- * is the uploader's own view and wins; another tab or a reload hears the
- * server's `uploading`.
+ * how its upload stands (this tab's, or another's over presence), which wins.
+ * Null for a link that names no file.
  */
 export function linkChipDetail(
   entry: LinkResolutionEntry | null,
-  upload: FileUploadState | null,
+  upload: UploadState | null,
 ): string | null {
   if (upload?.kind === "failed") return t`Upload failed. Click to retry`;
   if (upload?.kind === "uploading")
     return upload.percent === null ? t`Uploading` : t`Uploading ${upload.percent}%`;
-  if (entry?.state === "uploading") return t`Uploading`;
   if (entry?.state !== "document") return null;
   const { file, title } = entry.document;
   // A picture's size is never drawn: its chip is the picture.

@@ -13,10 +13,11 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { classifyFiletype, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
+import { ASSETS_FOLDER, classifyFiletype, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 
+import { type UploadRun, uploads } from "@/core/uploads/upload-store";
 import { fileTooLargeMessage } from "@/lib/upload-limit";
 
 import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
@@ -29,13 +30,9 @@ import { acceptsInlineImage, isImageFile } from "../images/image-workflow";
 import type { DropDoor } from "../landing/drop-plan";
 import { snapOutOfCode } from "../landing/inline-snap";
 import type { Landing } from "../landing/point-landing";
-import { linkUploads, type UploadRun } from "../links/link-uploads";
-import { fileDropHost } from "./FileDropExtension";
+import { type FileDropHost, fileDropHost } from "./FileDropExtension";
 
 type FileLike = Pick<File, "type" | "name">;
-
-/** The folder a dropped file lands in, in the document's own source. */
-const ASSETS = "assets";
 
 function isUnread(file: FileLike): boolean {
   // Firefox reports `application/x-moz-file` for a dragged file it will not describe.
@@ -92,36 +89,36 @@ function chipFor(editor: Editor, name: string, documentId: string, scheme: strin
   return documentReferenceNode(editor.state.schema, {
     label: name,
     documentId,
-    uri: `${scheme}://${ASSETS}/${name}`,
+    uri: `${scheme}://${ASSETS_FOLDER}/${name}`,
   });
 }
 
-type Started = { ok: true; send: UploadRun } | { ok: false; reason: unknown };
+type Started = { ok: true } | { ok: false; reason: unknown };
 
 /**
- * Text up to the text cap becomes an editable document, not a stored file, and the chip links to
- * it. The writer dropped a file and may expect a file: say what it became once the server has read
- * the bytes and decided.
+ * Sends the file. Text up to the text cap becomes an editable document, not a stored file, and
+ * the chip links to it: the writer dropped a file and may expect a file, so say what it became
+ * once the server has read the bytes and decided.
  */
-function tellWhenText(
+function sendRun(
+  host: FileDropHost,
+  documentId: string,
   file: File,
-  send: UploadRun,
   status: ImageIngressStore | undefined,
 ): UploadRun {
   return async (signal, onProgress) => {
-    const result = await send(signal, onProgress);
+    const result = await host.send({ documentId, file, signal, onProgress });
     if (classifyFiletype(result.fileType).kind === "tracked")
       status?.tell(
         t`${file.name} is text, so it was added as a document in assets. The chip links to it.`,
       );
-    return result;
   };
 }
 
 /**
  * Each file in the order the drop lists them: pictures through their lane, the rest as chips.
  *
- * A chip is inserted only after the server holds its upload (`host.start`): a second tab that
+ * A chip is inserted only after the server holds its upload (`host.reserve`): a second tab that
  * learns of the chip through the document must find the file already reserved, or it would be
  * told the file does not exist. The drop point is carried through whatever the writer types
  * meanwhile.
@@ -153,7 +150,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
     if (entries.length === 0 || !host) return;
     const outcomes = await Promise.all(entries.map(({ started }) => started));
     if (editor.isDestroyed) return;
-    const ready: Array<{ node: PMNode; documentId: string; send: UploadRun; file: File }> = [];
+    const ready: Array<{ node: PMNode; documentId: string; file: File }> = [];
     outcomes.forEach((outcome, index) => {
       const entry = entries[index];
       if (!entry) return;
@@ -164,8 +161,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
         return;
       }
       const node = chipFor(editor, entry.file.name, entry.documentId, host.scheme);
-      if (node)
-        ready.push({ node, documentId: entry.documentId, send: outcome.send, file: entry.file });
+      if (node) ready.push({ node, documentId: entry.documentId, file: entry.file });
     });
     if (ready.length === 0) return;
     const at = here();
@@ -180,8 +176,8 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       status?.refuse(t`A file can’t go there.`);
     } else {
       // The entries exist before the chips do, so no chip ever draws a gap.
-      for (const { documentId, send, file } of ready)
-        linkUploads.begin(documentId, host.hostDocumentId, tellWhenText(file, send, status));
+      for (const { documentId, file } of ready)
+        uploads.begin(documentId, host.hostDocumentId, sendRun(host, documentId, file, status));
       placed.commit(editor.view);
     }
     pinAt(editor.state.selection.from);
@@ -211,8 +207,8 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
     const documentId = crypto.randomUUID();
     // Settled either way, so a refusal that lands while an earlier run is flushing is no
     // unhandled rejection.
-    const started = host.start({ documentId, file }).then(
-      (send): Started => ({ ok: true, send }),
+    const started = host.reserve({ documentId, file }).then(
+      (): Started => ({ ok: true }),
       (reason: unknown): Started => ({ ok: false, reason }),
     );
     run.push({ file, documentId, started });

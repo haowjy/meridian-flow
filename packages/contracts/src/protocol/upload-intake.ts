@@ -15,6 +15,9 @@ export type UploadOwner =
 /** The largest file an upload takes. The browser checks it before sending; the server stays the authority. */
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
+/** The folder of a document's own source that a file dropped into the document lands in. */
+export const ASSETS_FOLDER = "assets";
+
 /** What a browser sends to start an upload: the file's exact size and type, never its bytes. The chat is in the query. */
 export interface StartUploadInput {
   intakeId: string;
@@ -51,8 +54,6 @@ export type UploadIntakeError =
   /** Finish found nothing at the upload URL: the PUT hasn't happened, or the URL expired. */
   | { code: "not_uploaded" }
   | { code: "invalid_filename"; reason: ContextEntryValidationReason; character?: string };
-
-export type UploadIntakeErrorCode = UploadIntakeError["code"];
 
 export interface DeleteDraftUploadInput {
   intakeId: string;

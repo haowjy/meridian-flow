@@ -98,10 +98,9 @@ writer text. A file's own extension stays its extension (`notes (2).zip`). `fina
 it took. `assets/` is created by that write wherever it has gone missing. Chat-only paths
 (`lockForDelete`, `consume`, `lookupUpload`) skip these rows.
 
-`inFlight` answers which document ids are source uploads a tab is still sending: reserved or
-object-stored and touched within three minutes. The uploading tab starts again about once a minute,
-which touches the row; the link resolve route turns a `doc:` ref that names nothing into `uploading`
-with it, and a stale row reads `gone` before the 24-hour sweep drops it.
+The server does not say whether a source upload is still being sent: a `doc:` ref that names
+nothing yet resolves `gone`. The sending tab announces it over presence, and other tabs' chips
+read "Uploading" from that (`apps/app/src/core/uploads/upload-store.ts`).
 
 A source intake is never released through the delete route, which is a chat attach's undo and is
 scoped to the chat (`ChatUploadOwner`). A writer's undo mid-upload aborts the PUT and leaves the row

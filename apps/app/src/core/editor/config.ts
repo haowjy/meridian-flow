@@ -55,7 +55,7 @@ import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { FileDropExtension, fileDropDoor } from "./file-drop";
-import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
+import { ImageIngressExtension } from "./images";
 import { LandingExtension } from "./landing/LandingExtension";
 import { LinkSurfaceExtension, WikilinkPasteExtension, type WikilinkPasteOptions } from "./links";
 import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
@@ -64,6 +64,7 @@ import { sanitizePastedHTML } from "./sanitize-paste";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import type { SessionMarkerStore } from "./session-marker-store";
 import { editorSuggestionHost } from "./suggestion-host";
+import { UploadPresenceExtension } from "./upload-presence";
 
 export type EditorUser = {
   name: string;
@@ -312,8 +313,8 @@ export function createEditorExtensions({
     // mount with collaboration rather than in the standalone set.
     UndoRedoKeymapExtension,
     // A document with no shared room has no "uploading elsewhere", so the
-    // ephemeral half of image ingress mounts here rather than beside the door.
-    ...(schemaType === "document" ? [ImageUploadPresenceExtension.configure({ presence })] : []),
+    // ephemeral half of uploads mounts here rather than beside the doors.
+    ...(schemaType === "document" ? [UploadPresenceExtension.configure({ presence })] : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
     ...(enableDraftInlineReview
       ? [

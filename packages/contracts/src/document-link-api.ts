@@ -61,8 +61,6 @@ export type DocumentLinkAnswer =
     }
   /** A ref the reader cannot reach: no uri, no title. `settled` as on `document`. */
   | { state: "gone"; settled?: true; trashedDocumentId?: string }
-  /** A `doc:` ref whose file is still on its way up: an unfinished upload holds that id. */
-  | { state: "uploading" }
   /** An unsettled ahead ref, or a no-ref address with nothing there: Create. */
   | { state: "missing"; uri: string }
   /** External, malformed, or contextual outside any Work. */

@@ -132,8 +132,6 @@ function usePictureTarget(
       const path = displayedAddress(key.href);
       return { kind: "unavailable", message: t`No image has been uploaded to ${path} yet.` };
     }
-    case "uploading":
-      return { kind: "resolving" };
     case "gone":
     // A picture's source is never a folder; a folder answer is nothing to draw.
     case "folder":

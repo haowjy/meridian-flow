@@ -66,6 +66,7 @@ export function startImageImport(
         return;
       }
       const uploaded = await host.upload({
+        id: crypto.randomUUID(),
         file,
         alt: pending.alt ?? imageAltFromFilename(filename),
         signal: controller.signal,
