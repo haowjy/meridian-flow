@@ -458,7 +458,7 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
           [
             [
               "Secret",
-              "A beast with no tag has a core nobody has ever priced. The Moot wants it more than it wants the other three alive.",
+              "A beast with no tag has a core nobody has ever priced. The Ninth Hold, the runesmiths’ hold, wants it more than it wants the other three alive.",
             ],
           ],
         ],
