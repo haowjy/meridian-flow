@@ -27,7 +27,8 @@
   flex-direction: column;
   gap: 1px;
   min-width: 0;
-  overflow: hidden;
+  overflow: hidden auto;
+  scrollbar-width: none;
 }
 
 .s-proj {
@@ -48,12 +49,12 @@
 }
 
 .s-n.on {
-  background: var(--color-border);
+  background: var(--color-sidebar-accent);
 }
 
 @media (hover: hover) {
-  .s-n:hover {
-    background: var(--color-border);
+  .s-n:not(.on):hover {
+    background: color-mix(in oklab, var(--color-sidebar-accent) 50%, transparent);
   }
 }
 
@@ -61,26 +62,103 @@
   font-weight: 500;
 }
 
-.s-n.in {
-  padding-left: 22px;
+/* The tree rows mirror the app's context tree: a 16px twistie slot, a 16px
+   icon slot, 16px of indent per depth, and a guide line under each open group. */
+.s-n.in,
+.s-f,
+.s-h {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 4px 0 16px;
+  white-space: nowrap;
 }
 
 .s-n.deep {
-  padding-left: 34px;
-}
-
-.s-f {
-  padding: 5px 8px 5px 22px;
-  color: var(--color-muted-foreground);
+  padding-left: 32px;
 }
 
 .s-h {
-  font-size: 12px;
-  font-weight: 600;
+  padding-left: 0;
+  margin-top: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
   letter-spacing: 0.03em;
-  padding: 12px 8px 3px;
-  border-top: 1px solid var(--color-border);
-  margin-top: 6px;
+}
+
+.s-tw,
+.s-ic {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--color-muted-foreground);
+}
+
+.s-tw svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+}
+
+.s-ic svg {
+  width: 14px;
+  height: 14px;
+}
+
+.s-f {
+  width: 100%;
+  border-radius: 6px;
+}
+
+@media (hover: hover) {
+  .s-f:hover {
+    background: color-mix(in oklab, var(--color-sidebar-accent) 50%, transparent);
+  }
+}
+
+.s-f[aria-expanded="false"] .s-tw svg {
+  transform: none;
+}
+
+.s-f[aria-expanded="true"] .s-ic.shut,
+.s-f[aria-expanded="false"] .s-ic:not(.shut) {
+  display: none;
+}
+
+.s-tw svg,
+.s-ic svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.s-nm {
+  min-width: 0;
+  margin-left: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.s-g {
+  position: relative;
+}
+
+.s-g::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: 8px;
+  border-left: 1px solid var(--color-border-subtle);
+  pointer-events: none;
+}
+
+.s-g .s-g::before {
+  left: 24px;
 }
 
 .s-d {
@@ -458,25 +536,15 @@
     padding: 0 10px 14px;
   }
 
+  .s-n.in,
+  .s-f,
   .s-h {
-    border-top: 0;
-    margin-top: 0;
-    padding: 14px 10px 6px;
-    color: var(--color-muted-foreground);
-  }
-
-  .s-n.in {
-    padding: 8px 10px;
+    height: 44px;
     font-size: 15px;
   }
 
-  .s-n.deep {
-    padding-left: 24px;
-  }
-
-  .s-f {
-    padding: 10px 10px 4px;
-    font-size: 15px;
+  .s-h {
+    margin-top: 4px;
   }
 
   .s-tabs {
