@@ -18,27 +18,27 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "tam",
     name: "Tam",
-    note: "Mill hand from Harl. Accused of burning the town’s grain. Says he didn’t.",
+    note: "Youngest warden in Harl’s history. Accused of burning the town’s grain. Says he didn’t.",
     pitch: "He still has to prove he didn’t do it.",
     facts: [
-      ["Age", "20"],
+      ["Age", "24"],
       ["From", "Harl, a river town in the south"],
-      ["Trade", "Miller’s apprentice, poacher by night"],
+      ["Trade", "Warden of the Harl woods and grain road"],
       ["Sent by", "The magistrate of Harl"],
       ["Carries", "A hunting bow and a hatchet"],
     ],
     sections: [
       [
         "Before",
-        "Raised by his uncle at the mill after the river took his parents. Can’t read, but he can weigh a sack by hand. In the lean years he kept the mill fed by poaching the lord’s woods, and nobody ever caught him at it.",
+        "A miller’s orphan who won the crown’s archery at seventeen and came home a hero. The town made him warden at twenty, and children followed him down the street. He still can’t read.",
       ],
       [
         "How he got here",
-        "The town granary burned in a hungry winter with the whole harvest inside. Tam held the only key that night. He ran north before the hearing and was caught at the border, where the magistrate offered him the beast instead of the rope.",
+        "The town granary burned in a hungry winter with the whole harvest inside. As warden, Tam held the only key. The town that had cheered him wanted him hanged, so he ran north before the hearing and was caught at the border, where the magistrate offered him the beast instead of the rope.",
       ],
       [
         "How he fights",
-        "Ten years of poaching made him the best shot of the four and the quietest walker. He scouts ahead, tracks, and keeps them fed. Up close he’s a beginner, and Sigrun is fixing that.",
+        "The best shot of the four and the quietest walker. He scouts ahead, tracks, and keeps them fed. Up close he’s only adequate, and Sigrun is fixing that.",
       ],
       [
         "Personality",
@@ -65,7 +65,7 @@ export const CHARACTERS: readonly Character[] = [
     sections: [
       [
         "Before",
-        "Twelve years at Hakon’s right hand. She carried his shield in three wars and taught his sons to fight. Has a daughter of nine, raised by her sister.",
+        "The most famous fighter in the north. She held the bridge at Ansgard alone for a morning, and the clans still sing about it. Twelve years at Hakon’s right hand. Has a daughter of nine, raised by her sister.",
       ],
       [
         "How she got here",
@@ -100,7 +100,7 @@ export const CHARACTERS: readonly Character[] = [
     sections: [
       [
         "Before",
-        "A chandler’s son who was born able to pull wind out of a clear sky. For twenty years he stood on the flagship’s deck calling weather for sixty ships, and he knew every captain’s debts.",
+        "A chandler’s son born able to pull wind out of a clear sky. He won the battle of Selle Sound with a single storm, and the king knighted him on the deck. For twenty years he called the weather for sixty ships.",
       ],
       [
         "How he got here",
@@ -135,7 +135,7 @@ export const CHARACTERS: readonly Character[] = [
     sections: [
       [
         "Before",
-        "Left at the abbey gate as a baby. The abbey trains its healers in wards, the old magic that holds a wound shut or a door closed. She ran the infirmary by twenty-two and spent fever seasons walking the valley villages.",
+        "Left at the abbey gate as a baby. The abbey trains its healers in wards, the old magic that holds a wound shut or a door closed. She ran the infirmary by twenty-two, saved the queen through the red fever, and was expected to be the next abbess.",
       ],
       [
         "How she got here",
