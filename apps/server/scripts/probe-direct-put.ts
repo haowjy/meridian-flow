@@ -55,7 +55,9 @@ const run = Date.now().toString(36);
 
 async function main() {
   const s3 = new S3Client({ region: "us-east-1", endpoint, forcePathStyle: true, credentials });
-  await s3.send(new CreateBucketCommand({ Bucket: bucket })).catch(() => {});
+  await s3.send(new CreateBucketCommand({ Bucket: bucket })).catch((error: Error) => {
+    if (!/AlreadyOwned|AlreadyExists/.test(error.name)) throw error;
+  });
   const cors: PutBucketCorsCommandInput = {
     Bucket: bucket,
     CORSConfiguration: {
