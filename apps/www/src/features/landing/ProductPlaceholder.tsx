@@ -1,4 +1,5 @@
 import type { CardStore } from "./card-store";
+import { LORE_ARRIVES } from "./dragon-actor";
 import { MUSE_REPLY, NEXT_LINE, QUESTIONS } from "./story";
 
 /**
@@ -37,10 +38,11 @@ export function ProductPlaceholder() {
         </RailDocument>
         <div className="s-h">KNOWLEDGE BASE</div>
         <RailDocument id="ddell">Aldous Dell</RailDocument>
+        <RailDocument id="ddragon">The Dragon</RailDocument>
       </aside>
       <div className="s-pane">
         <div className="s-top">
-          <span>Manuscript</span>
+          <span id="s-folder">Manuscript</span>
           <span>›</span>
           <b id="s-name">412. Dead Reckoning</b>
         </div>
@@ -98,13 +100,23 @@ export function ProductPlaceholder() {
               seen him go up.
             </p>
           </article>
-          <article className="s-doc" id="ddell" hidden>
+          <article className="s-doc" id="ddell" data-folder="Knowledge Base" hidden>
             <div className="name">Aldous Dell</div>
             <p>
               Captain of the <i>Harrow</i>. Born in Sarn. Scar across the left palm (chapter 9).
             </p>
             <p className="s-only-hints" id="s-note">
               {MUSE_REPLY.a.note}
+            </p>
+          </article>
+          <article className="s-doc" id="ddragon" data-folder="Knowledge Base" hidden>
+            <div className="name">The Dragon</div>
+            <figure className="s-fig">
+              <i id="s-dragon" />
+            </figure>
+            <p>
+              The northern green dragon. It breathes the lights over the range, and nobody who went
+              up to meet it has come back to say what it wanted.
             </p>
           </article>
         </div>
@@ -239,7 +251,7 @@ function HelperCard({
 }
 
 type ProductView = "project" | "page" | "chat";
-type ProductState = "team" | "hints";
+type ProductState = "team" | "lore" | "hints";
 export type ProductSlot = ReturnType<typeof createProductSlot>;
 
 /** The product block's only interface. The film drives it; rail and tabs work under the visitor. */
@@ -252,6 +264,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   const typing = part("#s-typing");
   const reply = part("#s-reply");
   const note = part("#s-note");
+  const dragonRow = part(".s-n[data-doc='ddragon']");
   let state: ProductState | null = null;
   // Once the visitor picks a document or tab, autoplay leaves that view alone.
   let held = false;
@@ -259,7 +272,9 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   const open = (id: string) => {
     for (const doc of documents) doc.hidden = doc.id !== id;
     for (const row of railDocuments) row.classList.toggle("on", row.dataset.doc === id);
-    part("#s-name").textContent = slot.querySelector(`#${id} .name`)?.textContent ?? "";
+    const doc = part(`#${id}`);
+    part("#s-folder").textContent = doc.dataset.folder ?? "Manuscript";
+    part("#s-name").textContent = doc.querySelector(".name")?.textContent ?? "";
   };
   const view = (next: ProductView) => {
     slot.dataset.view = next;
@@ -315,8 +330,12 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
         slot.dataset.state = next;
         open(next === "hints" ? "d413" : "d412");
       }
+      const arrived = next === "lore" && progress >= LORE_ARRIVES;
+      if (next === "lore" && !held) open(arrived ? "ddragon" : "d412");
+      dragonRow.style.visibility = next === "hints" || arrived ? "visible" : "hidden";
+      dragonRow.classList.toggle("s-landed", arrived && progress < 0.8);
       // The view only exists on phones: on desktop every pane is on screen.
-      if (!held) view(next === "hints" && progress >= 0.45 ? "page" : "chat");
+      if (!held) view((next === "hints" && progress >= 0.45) || arrived ? "page" : "chat");
       if (next !== "hints") return;
       const line = NEXT_LINE[store.whoIsHe()][store.doesSheTell()];
       typing.textContent = line.slice(0, Math.round(line.length * progress));

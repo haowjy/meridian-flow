@@ -189,19 +189,23 @@ main {
   }
 }
 
-.row2,
+.here,
 .menu {
   display: none;
 }
 
 .here {
-  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-weight: 500;
-  font-size: 15px;
-  padding: 6px 0;
+  padding: 10px 2px;
   cursor: pointer;
+}
+
+#herel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
 .here svg {
@@ -587,38 +591,39 @@ h1 span {
 
 @media (max-width: 819px), (max-height: 499px) {
   :root {
-    --bar: 90px;
+    --bar: 52px;
     --lw: 390px;
   }
 
   .row {
     height: 52px;
-    padding: 0 14px;
-    gap: 10px;
+    padding: 0 12px;
+    gap: 8px;
   }
 
   .word {
-    font-size: 21px;
+    font-size: 20px;
   }
 
-  .row .jumps,
-  .row .ctrl {
+  .row .jumps {
     display: none;
   }
 
-  .row2 {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    height: 37px;
-    padding: 0 14px;
-    overflow-x: auto;
-    scrollbar-width: none;
+  .here {
+    display: inline-flex;
   }
 
-  .row2 .ctrl {
+  .row .ctrl {
     width: 26px;
     height: 26px;
+  }
+
+  .acct {
+    gap: 8px;
+  }
+
+  .landing .go {
+    padding: 7px 12px;
   }
 
   .menu:not([hidden]) {
@@ -639,7 +644,7 @@ h1 span {
 }
 
 /* The smallest phones: Sign in and Start writing still have to fit beside the name. */
-@media (max-width: 359px) {
+@media (max-width: 374px) {
   .row {
     padding: 0 10px;
     gap: 6px;
@@ -647,6 +652,11 @@ h1 span {
 
   .word {
     font-size: 17px;
+  }
+
+  .row .ctrl,
+  .cine .row .ctrl {
+    display: none;
   }
 }
 

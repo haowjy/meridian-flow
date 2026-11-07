@@ -1,5 +1,7 @@
 import type { CardStore } from "./card-store";
+import { createDragonActor, REVEAL_STARTS } from "./dragon-actor";
 import { type FilmParts, type Layout, measureLayout } from "./film-layout";
+import { createForest } from "./forest";
 import type { ProductSlot } from "./ProductPlaceholder";
 import { createSky, type SkyFrame } from "./sky";
 import {
@@ -82,61 +84,62 @@ function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
   signal.addEventListener("abort", stopListening);
   const sky = createSky(root.querySelector("#sky") as HTMLCanvasElement, signal);
   const frame: SkyFrame = {
-    lampX: 0.2,
-    lampY: -0.26,
-    rotation: 0.7,
-    trail: 0,
+    pitch: HORIZON_PITCH,
+    yaw: HORIZON_YAW,
+    focal: 0.9,
+    flow: 3,
     dawn: 0,
-    horizon: -0.26,
     veil: 0.12,
-    zoom: 1,
-    lamp: 0.6,
-    width: 0,
     aurora: 1,
+    pulse: 0,
   };
   const render = () => {
     sky.resize();
-    sky.draw(frame, 3);
+    sky.draw(frame, 0);
   };
   render();
   addEventListener("resize", render, { signal });
 }
 
-function skyFrame(beats: BeatProgress, raw: number, velocity: number, layout: Layout): SkyFrame {
-  const { home, workspace, windowWidth, height, endTop, documentHeight } = layout;
-  const push = ease(beats.push);
-  const dawn = ease(beats.dawn);
-  const toEnd = ease(
-    progress(raw, endTop - height * 0.8, Math.min(documentHeight - height, endTop)),
-  );
-  const stageCenter = (layout.width - windowWidth) / 2 / height;
-  const homeCenter = (home.x + home.w / 2 - windowWidth / 2) / height;
-  const workspaceCenter = (workspace.x + workspace.w / 2 - windowWidth / 2) / height;
-  const spread =
-    lerp(home.w / 2 / height, (workspace.w / 2 / height) * 0.9, dawn) * (1 - push * 0.9);
+/** The product's height over its width. */
+const BLOCK_ASPECT = 0.62;
+/** Just under the phone header, where the fire reveals the product. */
+const PHONE_REVEAL_TOP = 62;
+const OVERHEAD_PITCH = 0.8;
+const HORIZON_PITCH = 0.1;
+const HORIZON_YAW = 0.34;
+
+/** The sky is a function of the scroll position, so it holds still when the page does. */
+function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
+  const tilt = smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
+  // The fire uncovers a finished dawn, so the sky is already there behind it.
+  const revealed = beats.twist >= REVEAL_STARTS;
+  const dawn = revealed ? 1 : ease(beats.dawn);
   const toTwist = smooth(beats.twist, 0, 0.5);
-  let veil = lerp(0, 0.86, push);
-  veil = lerp(veil, 0.62, ease(beats.out));
-  veil = lerp(veil, 0.8, smooth(beats.ask, 0, 0.2));
-  veil = lerp(veil, 0.34, toTwist);
+  let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
+  veil = lerp(veil, 0.62, smooth(beats.ask, 0, 0.2));
+  veil = lerp(veil, 0.2, toTwist);
   veil = lerp(veil, 0, dawn);
-  const horizon = -0.25;
   return {
-    lampX: lerp(lerp(homeCenter, workspaceCenter, dawn), stageCenter, toEnd),
-    lampY: horizon,
-    rotation: 0.7 + raw * 0.00011 - smooth(beats.twist, 0.1, 1) * 1.1,
-    trail:
-      clamp(Math.abs(velocity) * 0.0006, 0, 0.1) +
-      smooth(beats.twist, 0.15, 0.6) * (1 - smooth(beats.twist, 0.85, 1)) * 0.11,
+    pitch: lerp(OVERHEAD_PITCH, HORIZON_PITCH, tilt),
+    yaw: HORIZON_YAW * tilt * tilt,
+    focal: lerp(0.62, 0.9, tilt),
+    flow:
+      (raw / layout.height) * 0.4 +
+      ease(beats.push) * 2 +
+      ease(beats.sky) * 1.5 +
+      smooth(beats.twist, 0, 0.8) * 5 +
+      dawn * 1.5,
     dawn,
-    horizon,
     veil,
-    zoom: lerp(lerp(1, 5.5, push), 1, toTwist),
-    lamp: lerp(lerp(0.55, 0.14, push), 0.5, toTwist) * (1 - dawn),
-    width: lerp(spread, 0, toEnd),
     aurora:
-      lerp(0.72, 0.4, push) +
-      smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 1.1,
+      lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
+      smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5,
+    pulse: Math.max(
+      1 - smooth(beats.push, 0, 0.35),
+      smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),
+      revealed ? 0 : smooth(beats.twist, 0.3, 0.55),
+    ),
   };
 }
 
@@ -202,7 +205,10 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     worldLines: one<SVGSVGElement>("#wlines"),
   };
 
-  const sky = createSky(one<HTMLCanvasElement>("#sky"), signal);
+  const actor = createDragonActor(root);
+  const forest = createForest(root);
+  const skyCanvas = one<HTMLCanvasElement>("#sky");
+  const sky = createSky(skyCanvas, signal);
   const typers = [
     typewriter(one("#ty1"), "ai"),
     typewriter(one("#ty2"), "ai"),
@@ -215,10 +221,15 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   let layout: Layout = measureLayout(parts);
   let current = 0;
   let needsPaint = true;
+  actor.measure(layout);
+  forest.measure(layout);
   const measure = () => {
     const scrollEnd = layout.documentHeight - layout.height;
     const share = scrollY / scrollEnd;
     layout = measureLayout(parts);
+    nightKept = false;
+    actor.measure(layout);
+    forest.measure(layout);
     sky.resize();
     needsPaint = true;
     // The film's length follows the window's height: keep the visitor's place in the story.
@@ -238,24 +249,32 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     show(hero, 1 - clamp(push * 2.4));
     hero.style.transform = `translateY(${-push * 70}px)`;
 
-    const rise = smooth(dawnP, 0.15, 1);
     let x: number;
     let y: number;
     let blockWidth: number;
     let opacity: number;
     let grade: number;
-    if (dawnP <= 0) {
+    if (twistP < REVEAL_STARTS) {
       blockWidth = home.w * lerp(1, 2.5, push);
       x = lerp(home.x, width / 2 - blockWidth * 0.5, push);
       y = lerp(home.y, height * 0.5 - blockWidth * 0.3, push);
       opacity = 1 - clamp((push - 0.25) / 0.55);
       grade = lerp(0.84, 0.3, push);
     } else {
-      blockWidth = workspace.w * lerp(0.8, 1, rise);
-      x = workspace.x + (workspace.w - blockWidth) / 2;
-      y = lerp(height * 0.86, workspace.y, rise);
-      opacity = clamp(dawnP / 0.28);
-      grade = lerp(0.42, 1, smooth(dawnP, 0.2, 0.95));
+      const settle = ease(smooth(dawnP, 0.12, 0.55));
+      const barHeight = 55;
+      const fullWidth = Math.min(width * 0.94, (height - barHeight - 44) / BLOCK_ASPECT);
+      blockWidth = lerp(fullWidth, workspace.w, settle);
+      x = lerp((width - fullWidth) / 2, workspace.x, settle);
+      y = lerp((height + barHeight - fullWidth * BLOCK_ASPECT) / 2, workspace.y, settle);
+      opacity = 1;
+      grade = 1;
+      if (isPhone) {
+        // No room beside the headline, so the product fills the screen and then slides down for it.
+        blockWidth = workspace.w;
+        x = workspace.x;
+        y = lerp(PHONE_REVEAL_TOP, workspace.y, ease(smooth(beats.lore, 0.06, 0.24)));
+      }
       if (leave > 0) {
         const away = ease(leave);
         y += away * height * 0.75;
@@ -263,17 +282,22 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       }
     }
     const block = slot.element;
+    const stretched = isPhone && twistP >= REVEAL_STARTS && leave <= 0;
+    block.style.height = stretched
+      ? `${((height - y - 12) * blockLayoutWidth) / blockWidth}px`
+      : "";
     block.style.transform = `translate3d(${x - home.x}px,${y - home.y}px,0) scale(${blockWidth / blockLayoutWidth})`;
     show(block, opacity);
     block.style.filter =
       grade < 0.995
         ? `brightness(${grade.toFixed(3)}) saturate(${(1 - (1 - grade) * 0.5).toFixed(3)})`
         : "none";
-    block.inert = !(rise > 0.98 && leave < 0.05);
+    block.inert = !(dawnP > 0.7 && leave < 0.05);
     if (hints > 0) slot.set("hints", progress(hints, 0.08, 0.95));
+    else if (beats.lore > 0) slot.set("lore", beats.lore);
     else slot.set("team", 0);
 
-    show(world, smooth(push, 0.6, 1) * (1 - smooth(worldP, 0.84, 1)));
+    show(world, smooth(beats.sky, 0.9, 1) * (1 - smooth(worldP, 0.84, 1)));
     worldTypers.forEach((typer, index) => {
       const from = 0.04 + index * 0.18;
       typer.set(progress(worldP, from, from + 0.22), worldP >= from && worldP < from + 0.22);
@@ -346,7 +370,9 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     show(twist, twistShown);
     twist.style.transform = `scale(${1.06 - twistShown * 0.06})`;
 
-    const captionShown = smooth(dawnP, 0.72, 1) * (1 - smooth(leave, 0, 0.4));
+    const captionShown =
+      (isPhone ? smooth(beats.lore, 0.2, 0.4) : smooth(beats.lore, 0.08, 0.32)) *
+      (1 - smooth(leave, 0, 0.4));
     show(caption, captionShown);
     captionShade.style.opacity = String(captionShown);
     caption.style.transform = `translateY(${(1 - captionShown) * 14}px)`;
@@ -359,7 +385,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     }
   }
 
-  let velocity = 0;
   let lastFrame = performance.now();
   let slowFrames = 0;
   let slowTime = 0;
@@ -378,6 +403,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     needsPaint = true;
   });
 
+  let nightKept = false;
+
   function frame(now: number) {
     const elapsed = Math.min(250, now - lastFrame);
     const step = Math.min(64, now - lastFrame);
@@ -388,22 +415,32 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const previous = current;
     current += (target - current) * (1 - 0.0016 ** ((step / 1000) * 2.2));
     if (Math.abs(target - current) < 0.3) current = target;
-    velocity = lerp(velocity, ((current - previous) / Math.max(step, 1)) * 16, 0.2);
 
     const beats = beatProgress(current, layout.spans);
+    if (!nightKept && beats.twist > 0.2) {
+      const [start, end] = layout.spans.twist;
+      const lastNight = lerp(start, end, REVEAL_STARTS) - 1;
+      sky.draw(skyFrame(beatProgress(lastNight, layout.spans), lastNight, layout), now / 1000);
+      actor.keepNight(skyCanvas);
+      nightKept = true;
+      needsPaint = true;
+    }
+    actor.update(now / 1000, current, beats);
+    forest.update(current, beats);
     if (transport.isPlaying()) demonstrateCard(store, beats.ask);
     if (current !== previous || needsPaint) {
       needsPaint = false;
       paint(current, beats);
-    }
-    sky.draw(skyFrame(beats, current, velocity, layout), now / 1000);
-
-    slowTime += step;
-    slowFrames += 1;
-    if (slowFrames === 40) {
-      if (slowTime / slowFrames > 30) sky.lowerResolution();
-      slowFrames = 0;
-      slowTime = 0;
+      sky.draw(skyFrame(beats, current, layout), now / 1000);
+      slowTime += step;
+      slowFrames += 1;
+      if (slowFrames === 40) {
+        if (slowTime / slowFrames > 30 && sky.lowerResolution()) needsPaint = true;
+        slowFrames = 0;
+        slowTime = 0;
+      }
+    } else {
+      sky.breathe(now / 1000);
     }
     frameRequest = requestAnimationFrame(frame);
   }
