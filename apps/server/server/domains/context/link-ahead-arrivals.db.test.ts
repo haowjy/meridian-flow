@@ -1,6 +1,6 @@
-import { Readable } from "node:stream";
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
 
+import { uploadBytes } from "./uploads/upload-test-support.js";
 import { randomUUID } from "node:crypto";
 import { aheadAddress } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -233,14 +233,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         const deletedRef = await register(`uploads://@c1/${filename}`);
         const bytes = new TextEncoder().encode(`Upload ${filename}`);
         const uploadOnce = async () => {
-          const uploaded = await intake.intake({
-            intakeId: randomUUID(),
+          const uploaded = await uploadBytes(intake, intakeStore, {
             actorUserId: userId,
-            owner: { kind: "chat", projectId, chatId },
+            projectId,
+            chatId,
             filename,
             mimeType,
-            sizeBytes: bytes.byteLength,
-            body: Readable.from(Buffer.from(bytes)),
+            bytes,
           });
           if (!uploaded.ok) throw new Error(uploaded.error.code);
           return uploaded.value;

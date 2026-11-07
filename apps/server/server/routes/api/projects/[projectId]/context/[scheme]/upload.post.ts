@@ -29,8 +29,7 @@ export default defineEventHandler(async (event): Promise<UploadStart> => {
     app.uploadIntake.start({
       intakeId,
       actorUserId: userId,
-      projectId,
-      chatId: subject.chatId,
+      owner: { kind: "chat", projectId, chatId: subject.chatId },
       filename,
       sizeBytes,
       mimeType: typeof mimeType === "string" ? mimeType : "",
