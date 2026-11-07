@@ -18,10 +18,6 @@ describe("uniqueScratchNoteName", () => {
     expect(uniqueScratchNoteName("note.json", ["note.json"])).toBe("note (2).json");
   });
 
-  it("does not split a dotted prose name", () => {
-    expect(uniqueScratchNoteName("Vol. 2", ["Vol. 2"])).toBe("Vol. 2 (2)");
-  });
-
   it("skips taken numbers", () => {
     expect(uniqueScratchNoteName("note.json", ["note.json", "note (2).json"])).toBe(
       "note (3).json",

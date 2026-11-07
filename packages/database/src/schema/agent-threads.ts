@@ -470,7 +470,6 @@ export const modelResponses = pgTable(
     sequence: integer("sequence").notNull(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
-    providerRequestId: text("provider_request_id"),
     priceSource: text("price_source").$type<PriceSource>().notNull().default("computed"),
     pricingSnapshot: jsonb("pricing_snapshot"),
     inputTokens: integer("input_tokens").default(0),
@@ -508,7 +507,7 @@ export const modelResponses = pgTable(
     ),
     check(
       "model_responses_price_source_valid",
-      sql`${table.priceSource} IN ('computed', 'provider_reported', 'configured_rate', 'unknown')`,
+      sql`${table.priceSource} IN ('computed', 'unknown')`,
     ),
     check(
       "model_responses_predicted_cache_state_valid",
@@ -516,7 +515,7 @@ export const modelResponses = pgTable(
     ),
     check(
       "model_responses_predicted_cache_reason_valid",
-      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
+      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
     ),
   ],
 );

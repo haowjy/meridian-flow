@@ -1,38 +1,22 @@
 # agent-edit TODO
 
-Keep the editing protocol reusable across CRDT and tool implementations; do
-not freeze a public abstraction until a second implementation exposes the seam.
+## One save sequencing
 
-## Find and character references
-
-Decode character references in the find view so a query matches the text a
-writer sees. The codec's edge-character encoding currently prevents some plain
-text matches; the seam is `src/model/markdown-text-view.ts` and
-`src/resolver/find.ts`.
-
-## One save sequencing before M3's landing check
-
-A save still has two sequencings, and model inverses commit outside the port.
-The reply save (and the pool's draft one-entry reply) prepares, persists inside
-the pool's transaction and reports before commit (`response-committer.ts`); the
+A save still has two sequencings, and model inverses commit outside the port. The
+reply save (and the pool's draft one-entry reply) prepares, persists inside the
+pool's transaction and reports before commit (`response-committer.ts`); the
 immediate save, `saveNow` in `tool/document-save.ts`, persists in a transaction
-`appendBatch` owns and reports after durability. Undo, redo and revert journal
-and deliver through collab's `drizzle-turn-inverse.ts`. Every save-time concern
-lands once per path: the immediate path is where three review rounds' findings
-lived, and a drafted agent write outside a reply (a one-entry reply) carries no
-save-time "only if empty" precondition, which only `saveNow` passes. Unify
-before M3's landing check, so it is written once: have `saveNow` run the reply
-path's prepare, persist and report inside one transaction the host owns (the
-pool's draft-only one-entry wrapper then becomes optional), and route inverses
-through `prepareSave` when M2b moves revert to the write door.
+`appendBatch` owns and reports after durability. Undo, redo and revert journal and
+deliver through collab's `drizzle-turn-inverse.ts`. So every save-time concern
+lands once per path, and a drafted agent write outside a reply carries no
+save-time "only if empty" precondition, which only `saveNow` passes.
+
+Unify them: have `saveNow` run the reply path's prepare, persist and report inside
+one transaction the host owns, and route inverses through `prepareSave`.
 
 ## Deferred until earned
 
 - Remove the remaining ProseMirror shape coupling from parsed-content types;
   the live-doc side already uses the neutral `AgentEditModel` seam.
-- Freeze a public `DocumentPort`/`HistoryPort` only after a second
-  implementation reveals stable contracts.
-- Add a tool registry/capability gate only when a second tool surface makes the
-  indirection testable.
-- Revisit OSS packaging and surgical formatting from real merge observations,
-  not from a speculative abstraction.
+- Freeze a public `DocumentPort`/`HistoryPort` after a second implementation
+  reveals stable contracts.

@@ -35,7 +35,7 @@ export function agentModelUnavailableReasons(
   gateway: Pick<Gateway, "listModels">,
   model: string,
 ): string[] {
-  if (!gateway.listModels?.().some((item) => item.id === model)) {
+  if (!gateway.listModels().some((item) => item.id === model)) {
     return ["The Agent's configured model is unavailable."];
   }
   return [];

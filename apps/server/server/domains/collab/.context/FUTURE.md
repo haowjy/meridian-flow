@@ -11,6 +11,31 @@ distinguish a legacy raw row from a not-yet-recorded draft create without
 using caller ordering as domain semantics. `domain/ports/work-branch-pending-store.ts`
 remains the independent pending-review authority.
 
+## Restoring an earlier version
+
+Writers will be able to restore an old version of a document from its
+checkpoints. `checkpoints.ts` has `restore`, `listCheckpoints` and
+`createCheckpoint` for this, with no production caller yet: don't delete them as
+dead code. Older `document_yjs_checkpoints` rows are that feature's history, so
+reducing them needs a retention rule, not a single checkpoint per generation.
+
+The likely rule: always keep the initial checkpoint, the latest of each authority
+generation and explicit ones; thin older automatic ones by age. Prune inside the
+checkpoint transaction, under the document mutation lock, and never delete
+`latest_checkpoint_id`. `restore` needs the same lock, or a prune can remove its
+source between `getCheckpoint` and `replaceGeneration`. `seed_live_snapshot` can't
+reuse a checkpoint yet: nothing resolves one by exact position with attribution.
+
+## Edit bytes stay on parts
+
+`document_edit_parts.update` duplicates a journal row on purpose. Live compaction
+deletes those rows, and undo, revert and Apply need the bytes afterwards. Dropping
+the column first needs a retention floor for every receipted origin, one resolver
+for all its readers, and a failure path for a missing origin.
+
+Folded `draft_write_journal` rows can't be pruned either:
+`listConcurrentJournalRows` feeds attribution and reads from `after: 0`.
+
 ## Large-history recovery
 
 Measure idle recovery query plans with settled history before adding a partial

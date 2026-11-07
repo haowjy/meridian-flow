@@ -1,4 +1,4 @@
-import { chromium, type Page } from "@playwright/test";
+import { chromium } from "@playwright/test";
 import { resolveAppUrl } from "./portless";
 
 const APP_URL = resolveAppUrl();
@@ -6,11 +6,6 @@ const PROJECT_ID = process.env.PROJECT_ID;
 const THREAD_ID = process.env.THREAD_ID;
 
 type Check = { name: string; pass: boolean; detail: string };
-
-async function login(page: Page): Promise<void> {
-  await page.goto(`${APP_URL}/api/auth/dev-login`, { waitUntil: "domcontentloaded" });
-  await page.waitForURL("**/auth-check", { timeout: 30_000 });
-}
 
 async function main(): Promise<void> {
   if (!PROJECT_ID || !THREAD_ID) {
@@ -23,7 +18,6 @@ async function main(): Promise<void> {
   const page = await context.newPage();
 
   try {
-    await login(page);
     await page.goto(`${APP_URL}/p/${PROJECT_ID}/chats/${THREAD_ID}`, {
       waitUntil: "networkidle",
       timeout: 60_000,

@@ -19,7 +19,7 @@ including after reload and deletion. This recipe is not a current pass claim.
    --project "$PROJECT" --text <markdown> --json`. Put links to both targets in
    `keep.md` before moving them. Record returned document IDs.
 4. Open the owned app origin in an isolated `agent-browser --session
-   catalog-sidebar` session. Authenticate at `/api/auth/dev-login`, then open
+   catalog-sidebar` session. The stack runs with `DEV_AUTH_BYPASS=1`, so it opens signed in. Open
    `/p/$PROJECT/editor/manuscript/keep.md`. Capture the sidebar and a screenshot.
 
 ## Exercise a loaded browser

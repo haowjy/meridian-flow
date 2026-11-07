@@ -24,7 +24,6 @@ else
     const { createBoundAgentCatalog, createDrizzleAgentRevisionStore } = await import(
       "../../packages/index.js"
     );
-    const { createDrizzleEventJournalReader } = await import("../index.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const {
@@ -48,7 +47,6 @@ else
       await import("../adapters/drizzle/repositories.js")
     ).createDrizzleRepositoriesForTest(db);
     const revisions = createDrizzleAgentRevisionStore(db);
-    const eventReader = createDrizzleEventJournalReader(db);
     const eventWriter = createQuietDrizzleJournalWriter(db);
     const ids = THREAD_WORK_RACE;
     beforeEach(async () => resetThreadWorkRaceFixture(db));
@@ -75,7 +73,7 @@ else
       };
       const agentCatalog = createBoundAgentCatalog({
         store: revisions,
-        defaultModel: () => "gpt-4.1-mini",
+        defaultModel: () => "gpt-5.6-luna",
         unavailableReasons: () => [],
       });
       const agent = await agentCatalog.save(ids.userId, {
@@ -237,7 +235,7 @@ else
         role: "compaction",
         origin: "system",
         status: "complete",
-        compactionModel: "gpt-4.1-mini",
+        compactionModel: "gpt-5.6-luna",
         metadata: {
           kind: "prompt_epoch_boundary",
           cause: "compaction",
@@ -499,7 +497,9 @@ else
         originTurnId: secondTurn.id,
       });
       expect(inheritedFork.thread.initialPromptBakeId).toBe(boundaryBake.id);
-      const forkEvents = await eventReader.listByType(firstFork.thread.id as never, "agent.fork");
+      const forkEvents = (await db.select().from(schema.eventJournal)).filter(
+        (entry) => entry.threadId === firstFork.thread.id && entry.eventType === "agent.fork",
+      );
       expect(forkEvents.map((entry) => entry.payload)).toContainEqual(
         expect.objectContaining({
           type: "agent.fork",
@@ -598,7 +598,7 @@ else
         role: "compaction",
         origin: "system",
         status: "complete",
-        compactionModel: "gpt-4.1-mini",
+        compactionModel: "gpt-5.6-luna",
         prevTurnId: writer.id,
       });
       await expect(
@@ -694,7 +694,8 @@ else
         displayName: "Handoff test model",
         contextWindow: 100_000,
         maxOutputTokens: 4_096,
-        promptCache: { kind: "explicit" as const, ttlMs: 60_000 },
+        promptCache: { kind: "explicit" as const, shortTtlSeconds: 60, longTtlSeconds: 60 },
+        reasoning: { efforts: ["low", "medium", "high", "max"] },
         capabilities: new Set(),
       };
       const summaryRequests: import("../../runtime/gateway/index.js").GenerateRequest[] = [];

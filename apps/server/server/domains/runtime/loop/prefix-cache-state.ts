@@ -18,12 +18,22 @@ import {
   type ThreadRepository,
   type TurnRepository,
 } from "../../threads/index.js";
-import type { ModelInfo, PromptCacheDescriptor } from "../gateway/index.js";
+import {
+  type ModelInfo,
+  type PromptCacheDescriptor,
+  type PromptCacheRetention,
+  resolvePromptCacheTtlSeconds,
+} from "../gateway/index.js";
 
 type CacheHistoryThread = Pick<
   Thread,
-  "id" | "initialPromptBakeId" | "originType" | "originTurnId"
+  "id" | "kind" | "initialPromptBakeId" | "originType" | "originTurnId"
 >;
+
+/** Primary chats ask for the long cache; subagents are short-lived and take the cheaper short one. */
+export function promptCacheRetentionFor(threadKind: Thread["kind"]): PromptCacheRetention {
+  return threadKind === "subagent" ? "short" : "long";
+}
 
 export interface PrefixCacheHistory {
   thread: CacheHistoryThread;
@@ -188,19 +198,21 @@ export function selectReusablePrefixResponse(input: DerivePrefixCacheStateInput)
 }
 
 export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): PrefixCacheState {
-  if (input.promptCache.kind === "none") return cold("uncached");
   const selected = selectReusablePrefixResponse(input);
   if (!selected.response) return cold(selected.reason);
   const response = selected.response;
-  const ttlMs = input.promptCache.ttlMs;
-  if (ttlMs === null) return cold("ttl_unknown");
+  const ttlSeconds = resolvePromptCacheTtlSeconds(
+    input.promptCache,
+    promptCacheRetentionFor(input.history.thread.kind),
+  );
+  if (ttlSeconds === null) return cold("ttl_unknown");
   if (response.requestStartedAt === null) return cold("facts_unavailable");
   const responseTimeMs = Date.parse(response.requestStartedAt);
   if (!Number.isFinite(responseTimeMs) || !Number.isFinite(input.nowMs)) {
     return cold("facts_unavailable");
   }
   const ageMs = Math.max(0, input.nowMs - responseTimeMs);
-  if (ageMs >= ttlMs) return cold("ttl_expired");
+  if (ageMs >= ttlSeconds * 1_000) return cold("ttl_expired");
 
   return { state: "warm", reason: "reusable_prefix" };
 }

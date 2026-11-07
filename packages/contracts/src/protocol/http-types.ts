@@ -323,7 +323,7 @@ export type MoveContextEntryRequest = {
 /** The route's answer; where the entry landed is in the operation's receipt. */
 export type MoveContextEntryResult = { status: "moved" };
 
-/** Which version of a source Copy reads: what the writer's surface shows (D24, 2c). */
+/** Which version of a source Copy reads: what the writer's surface shows. */
 export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */
   | { kind: "live" }

@@ -55,7 +55,7 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
           toolCalls: [],
           finishReason: "end_turn",
           usage: { inputTokens: 0, outputTokens: 0 },
-          model: "gpt-4.1-mini",
+          model: "gpt-5.6-luna",
           provider: "openai",
         },
       };
@@ -102,13 +102,11 @@ describe("RunSession", () => {
             toolCalls: [],
             finishReason: "end_turn",
             usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-            model: "gpt-4.1-mini",
+            model: "gpt-5.6-luna",
             provider: "openai",
           },
         };
       };
-      deps.gateway.settleCancelledResult = async ({ result }) =>
-        result ? { result, persist: true } : null;
     });
 
     const balanceBefore = await f.deps.creditLedger.getBalance({ userId: f.thread.userId });

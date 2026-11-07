@@ -108,7 +108,7 @@ const toolCall = (name: string, input: Record<string, unknown>): GenerateResult 
   toolCalls: [],
   finishReason: "tool_use",
   usage,
-  model: "gpt-4.1-mini",
+  model: "gpt-5.6-luna",
   provider: "openai",
 });
 const done: GenerateResult = {
@@ -116,7 +116,7 @@ const done: GenerateResult = {
   toolCalls: [],
   finishReason: "end_turn",
   usage,
-  model: "gpt-4.1-mini",
+  model: "gpt-5.6-luna",
   provider: "openai",
 };
 

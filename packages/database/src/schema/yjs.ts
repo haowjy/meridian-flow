@@ -312,7 +312,6 @@ export const changeTrailDeliveryOutbox = pgTable(
       .default([]),
     wordsAdded: integer("words_added"),
     wordsRemoved: integer("words_removed"),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -321,9 +320,7 @@ export const changeTrailDeliveryOutbox = pgTable(
       table.version,
       table.eventKind,
     ),
-    index("change_trail_delivery_outbox_pending")
-      .on(table.createdAt)
-      .where(sql`${table.deliveredAt} IS NULL`),
+    index("change_trail_delivery_outbox_pending").on(table.createdAt),
     check(
       "change_trail_delivery_outbox_event_kind_valid",
       sql`${table.eventKind} IN ('updated', 'settled')`,

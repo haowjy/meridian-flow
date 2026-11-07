@@ -114,7 +114,6 @@ export interface CreateModelResponseInput {
   sequence: number;
   provider: string;
   model: string;
-  providerRequestId?: string | null;
   inputTokens?: number;
   outputTokens?: number;
   reasoningTokens?: number | null;

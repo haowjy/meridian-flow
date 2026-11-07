@@ -1,118 +1,49 @@
 # FUTURE — nice-to-have follow-ups (chat)
 
-- Chat's document doors (transcript link follows in `useChatLinkFollowing.ts`,
-  exact-reference chips, tool-row document names, composer `onOpenReference`)
-  each open the Editor in its current Work. Whether the Editor should adopt the
-  chat's Work is one decision for all of them, with one open command (#625).
+- Ctrl/Cmd-click and middle click on a transcript link have no background-tab
+  follow as they do in the Editor. Revisit with #625's destinations.
 
-- Chat follows every transcript link with the `current` gesture
-  (`useChatLinkFollowing.ts`), so Ctrl/Cmd-click and middle click have no
-  background-tab follow as they do in the Editor. Revisit with #625's
-  destinations, when chat's `open` stops being the Editor's pane.
+- `chatLinkScope` treats `useWorks` status `disabled` as pending. In a project
+  whose creation failed, a link click stays on "checking" until Cancel.
+  Distinguish pending creation from failed creation.
 
-- Sent `@` reference chips re-check availability only on the chat's own
-  catalog revision (`reference-availability.ts`, "Known limit"). A delete in
-  another Work's Scratch, a Work deletion, or a visibility change stays filled
-  until the next catalog change or a reload. Refresh on a document lifecycle
-  event instead of the catalog projection when one exists.
+- Spawn and agent UI: `GET /api/threads` returning primary chats only, and an
+  Agent section in the chat switcher.
 
-- `chatLinkScope` treats `useWorks` status `disabled` as pending. In a
-  project whose creation failed, a link click stays on "checking" until Cancel.
-  Distinguish pending creation from failed creation so the latter can report
-  failure without guessing a Work.
+- `ThreadSwitcherPopover` recomputes filtering and grouping on every render even
+  while closed. If long-task violations appear during streaming with many
+  threads, gate the derivation on `open` or memoize it.
 
-- Spawn and agent UI follow-ups: `GET /api/threads` returning primary chats
-  only, and an Agent section in the chat switcher.
+- Unmeasured streaming costs: `partitionTurn` walks the whole block list every
+  render, and the store replaces the turns array per stream update, so
+  `TurnList`, the virtualizer and non-memoized neighbors work per frame. Profile
+  per-component render counts with `react renders` plus a `trace` during a long
+  stream before doing either.
 
-- Chat-focused document viewing is outside the readable project-route cutover.
-  When it is designed, give it its own project/Work authority and route contract;
-  do not reuse the Editor's retained-document controller implicitly.
+- A user-attached image doesn't render in the user turn: the transcript shows a
+  link, not the picture.
 
-- ThreadSwitcherPopover recomputes filtering/grouping (`filterThreadsByTitle`,
-  work-item regrouping) on every render even while the popover is closed.
-  Harmless at today's thread counts; if long-task violations appear during
-  streaming with many threads, gate the derivation on `open` or memoize it.
+- Reload resets transcript reading position and follow mode
+  (`useChatFollowScroll.ts`), process and subagent expansion
+  (`subagent/DisclosureStore.tsx`) and the expanded draft list (`DraftDock.tsx`).
+  Consider retaining these per browser tab, without persisting open menus or
+  confirmations.
 
-- Expanded-fold rail polish, three cosmetic items deliberately left as-is:
-  - A 6px orphan rail tick below a fold whose last row is a tool row.
-    Inherent to the self-contained rail (every tool row paints the stub that
-    keeps the rail continuous); suppressing it on the last row needs the
-    sibling-aware CSS `ActivityRow` already tried and abandoned.
-  - Rail rhythm alternates 3px vs 7px gaps at run boundaries, from
-    `space-y-1` on the run wrapper.
-  - The icon chip fill (`bg-chip-muted-bg`) sits ~2% from the fold
-    background, so only the glyph reads and the rail's 26px interruption is
-    bridged by an icon rather than a solid chip. Token decision.
+- A merged delivery group (two child completions on one reply) can't be produced
+  live on the mock, because the server wakes the parent on each completion. Add a
+  mock script for it and a `apps/app/src/features/chat/.context/qa/chat-session.md` step checking the
+  `./mf thread view` grouping against the screen.
 
-- `partitionTurn` walks the whole block list every render. Items are already
-  keyed by identity (`itemRenderKey`), so an incremental walk could reuse
-  unchanged items per frame instead of re-walking the turn. Not needed at
-  current sizes; revisit if streaming with many long turns shows partition
-  cost.
+- A row below a finishing reply hops by the reply's height change for one frame
+  (27 px measured: 84.8 px streaming, 57.8 px settled). `TurnList.tsx` positions
+  virtual rows from `virtualizer.measureElement`, which reports the shrunken reply
+  a frame late, and `shouldAdjustScrollPositionOnItemSizeChange` only compensates
+  rows wholly above the viewport. No unit seam measures it: use a browser recipe
+  that samples row tops per frame.
 
-- Performance, further. The structural costs (per-token full-document
-  reparse, per-token store update and render, per-revision forced layout) are
-  gone. These remain, all unquantified; measure with `react renders` plus a
-  `trace` during a long stream before implementing:
+- A per-message "stop the reply and send this now" in the queue's controls.
 
-  - **Dirty-track transcript row identity.** The store replaces the turns array
-    per stream update, so `TurnList`/the virtualizer (and non-memoized
-    neighbors like `ChatSurface`/`Composer`) do work per frame. Coalescing
-    already cut this to one update per frame; a stable row id-array identity
-    across content-only updates would let the virtualizer and memoized rows
-    skip.
-  - **Render-count attribution is unmeasured.** No clean frame-level A/B
-    exists; profile per-component render counts per frame to
-    decide whether either item above is worth doing.
-
-- A user-attached image does not render in the user turn: `UserTurn` skips
-  non-text blocks, so the transcript shows a link, not the picture. A
-  composer/UserTurn gap, outside the render model.
-
-- Reload audit: `useChatFollowScroll.ts` resets transcript reading position and
-  follow mode; `subagent/DisclosureStore.tsx` resets process/subagent expansion;
-  `DraftDock.tsx` resets the expanded draft list. Consider retaining these
-  writer choices per browser tab, without persisting open menus or confirmations.
-  Unsent existing-chat draft loss is tracked separately in
-  https://github.com/haowjy/meridian-flow/issues/746.
-
-- A sticky 402 failure shows the full non-retryable explanation live, but only
-  "The AI provider turned this request down." after reload: live-versus-stored
-  drift in failure copy. It moves into the shared chat session's row-failure
-  output; remove this entry then.
-
-- A merged delivery group (two child completions landing on one reply) could not
-  be produced live on the mock, because the server wakes the parent on each
-  completion; only the reviewer's probe script covers it. Add a mock script that
-  lands two completions on one reply, and a step in `docs/qa/chat-session.md`
-  that checks the `./mf thread view` delivery grouping against the screen.
-
-- Polite status announcements and connection-failure alerts still keep their
-  last text until replaced. In particular, the raw WebSocket close text from
-  `client/query/useThreadSnapshotSync.ts` calls unkeyed `announceError`.
-  Give that transport state its own clearable owner and writer-facing wording.
-  Reply, Retry and Stop failure cards aren't part of this gap:
-  `useChatCardAnnouncer` clears their keyed alerts when the cards end.
-
-- A row below a reply that finishes hops by the reply's height change (27 px
-  measured: 84.8 px while streaming, 57.8 px settled) for one frame. `TurnList.tsx`
-  positions each virtual row absolutely from TanStack Virtual's `measureElement`
-  (`virtualizer.measureElement` on the row wrapper), which reports the shrunken
-  reply a frame late, so the row below keeps its old start until ResizeObserver
-  catches up. `shouldAdjustScrollPositionOnItemSizeChange` only compensates rows
-  wholly above the viewport. It hits any tail row, not only queued commands. No unit
-  seam measures it: take it with a browser recipe that samples row tops per frame.
-
-## Stop the reply and send this message now, from the queue
-
-The owner, on removing Stop from beside Send: "why would u want to prepare something but stop it...?
-unless u want to stop and send it... which there should be a way to do that in the queue". Add a per-message
-"stop the reply and send this now" to the queue's controls. The composer doesn't offer it.
-
-## Cancelled failure-announcement batches
-
-If an unrelated unkeyed announceError supersedes a card batch before its
-publication microtask, its keys correctly remain unannounced, but retry waits
-for the next card projection change. Consider reporting cancellation from the
-announcement store so useChatCardAnnouncer can requeue without interrupting the
-newer alert. Low priority: visible cards are not lost.
+- If an unrelated unkeyed `announceError` supersedes a card batch before its
+  publication microtask, retry waits for the next card projection change. Consider
+  reporting cancellation from the announcement store so `useChatCardAnnouncer` can
+  requeue. Low priority: visible cards aren't lost.

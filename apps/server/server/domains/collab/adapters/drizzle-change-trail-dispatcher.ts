@@ -3,7 +3,7 @@
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { changeTrailDeliveryOutbox, changeTrailShells } from "@meridian/database/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInRootDrizzleTransaction,
@@ -26,11 +26,9 @@ export function createDrizzleChangeTrailDispatcher(input: {
       const rows = await tx.execute(sql`
         SELECT candidate.event_id
         FROM change_trail_delivery_outbox candidate
-        WHERE candidate.delivered_at IS NULL
-          AND NOT EXISTS (
+        WHERE NOT EXISTS (
             SELECT 1 FROM change_trail_delivery_outbox predecessor
             WHERE predecessor.trail_id = candidate.trail_id
-              AND predecessor.delivered_at IS NULL
               AND (predecessor.version < candidate.version OR (
                 predecessor.version = candidate.version
                 AND predecessor.event_kind = 'updated'
@@ -60,12 +58,7 @@ export function createDrizzleChangeTrailDispatcher(input: {
         })
         .from(changeTrailDeliveryOutbox)
         .innerJoin(changeTrailShells, eq(changeTrailShells.id, changeTrailDeliveryOutbox.trailId))
-        .where(
-          and(
-            eq(changeTrailDeliveryOutbox.eventId, eventId),
-            isNull(changeTrailDeliveryOutbox.deliveredAt),
-          ),
-        )
+        .where(eq(changeTrailDeliveryOutbox.eventId, eventId))
         .limit(1);
       if (!row) return null;
 
@@ -102,8 +95,7 @@ export function createDrizzleChangeTrailDispatcher(input: {
             };
       await input.journalWriter.appendEvent(row.threadId, event);
       await tx
-        .update(changeTrailDeliveryOutbox)
-        .set({ deliveredAt: new Date() })
+        .delete(changeTrailDeliveryOutbox)
         .where(eq(changeTrailDeliveryOutbox.eventId, row.eventId));
       return { threadId: event.threadId };
     });

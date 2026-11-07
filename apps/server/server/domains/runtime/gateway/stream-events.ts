@@ -23,7 +23,7 @@ export function isPartialOutputEvent(event: StreamEvent): boolean {
   return event.type !== "start" && event.type !== "error";
 }
 
-/** Content deltas the writer can receive; custom deltas are UI-only today. */
+/** Content deltas the writer can receive. */
 export function isFirstTokenEvent(event: StreamEvent): boolean {
   switch (event.type) {
     case "text.delta":
@@ -37,15 +37,13 @@ export function isFirstTokenEvent(event: StreamEvent): boolean {
 }
 
 /**
- * Output the caller may have acted on: visible text, a tool call, a custom
- * content delta, or a terminal success. Reasoning and usage are excluded so an
+ * Output the caller may have acted on: visible text, a tool call, or a terminal success. Reasoning and usage are excluded so an
  * attempt aborted while still thinking remains retryable.
  */
 export function isCommittedOutputEvent(event: StreamEvent): boolean {
   switch (event.type) {
     case "text.delta":
     case "tool_call.delta":
-    case "custom.delta":
     case "end":
       return true;
     default:

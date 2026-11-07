@@ -100,7 +100,7 @@ export async function resolveAgentThreadTurnContext(
     [...(input.baseTools ?? []), ...(report ? [report] : [])],
     policy,
   ).map((tool) =>
-    tool.type === "function" && tool.name === "spawn"
+    tool.name === "spawn"
       ? {
           ...tool,
           description: spawnToolDescription(binding.configuration.namedTargets.length > 0),

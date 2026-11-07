@@ -1,5 +1,6 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
+import { isProductionEnv } from "./production-env.js";
 
 export const env = createEnv({
   server: {
@@ -14,9 +15,6 @@ export const env = createEnv({
     WORKOS_CLIENT_ID: z.string().default("dev-workos-client"),
     WORKOS_COOKIE_PASSWORD: z.string().default(""),
     WORKOS_REDIRECT_URI: z.string().url().optional(),
-    WORKOS_DEV_LOGIN_EMAIL: z.string().optional(),
-    WORKOS_DEV_LOGIN_PASSWORD: z.string().optional(),
-    WORKOS_DEV_AUTOLOGIN: z.enum(["0", "1"]).optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,
@@ -26,9 +24,7 @@ export const env = createEnv({
  * The one gate for every debug path: model-request capture, recent events
  * (`/api/debug/events`), debug routes, and the mock-model script queue.
  *
- * Never on in production, even with the flag. `NODE_ENV=production` with
- * `APP_ENV` unset or `dev` also counts as production, so a deployed process
- * missing `APP_ENV` fails closed. Everywhere else (dev, test, staging) debug
+ * Never on in production (`isProductionEnv`), even with the flag. Everywhere else (dev, test, staging) debug
  * paths are on only with an explicit `APP_DEBUG=1`; `pnpm dev` sets it.
  */
 export function resolveDebugPathsEnabled(input: {
@@ -36,9 +32,7 @@ export function resolveDebugPathsEnabled(input: {
   rawAppEnv?: string;
   debugFlag?: string;
 }): boolean {
-  const appEnv = input.rawAppEnv ?? "dev";
-  if (appEnv === "production") return false;
-  if (input.rawNodeEnv === "production" && appEnv === "dev") return false;
+  if (isProductionEnv(input)) return false;
   return input.debugFlag === "1" || input.debugFlag === "true";
 }
 

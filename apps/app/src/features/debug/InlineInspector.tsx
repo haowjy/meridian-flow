@@ -161,7 +161,7 @@ export function InlineInspector() {
           found?.turn.id ?? blockEl.closest("[data-turn-id]")?.getAttribute("data-turn-id") ?? "?";
         setHit({
           kind: "block",
-          label: `block ${blockId} · turn ${parentTurnId}`,
+          label: `block ${blockId} (turn ${parentTurnId})`,
           record:
             found?.block ??
             ({
@@ -205,7 +205,7 @@ export function InlineInspector() {
       const threadId = composerEl?.getAttribute("data-debug-composer") ?? null;
       setHit({
         kind: "next-turn",
-        label: threadId ? `next turn · ${threadId}` : "next turn",
+        label: threadId ? `next turn (${threadId})` : "next turn",
         record: { note: "lazy-loaded turn context preview" },
         threadId,
         turnId: null,
@@ -379,10 +379,9 @@ export function InlineInspector() {
                 <>
                   <div className="space-y-1">
                     <p className={sectionLabelVariants({ variant: "group" })}>
-                      system prompt
                       {turnContextPreview.preview.baked
-                        ? " · frozen"
-                        : " · will be baked at the first turn attempt"}
+                        ? "system prompt (frozen)"
+                        : "system prompt (will be baked at the first turn attempt)"}
                     </p>
                     <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-muted p-2 font-mono text-meta text-foreground">
                       {turnContextPreview.preview.systemPrompt}

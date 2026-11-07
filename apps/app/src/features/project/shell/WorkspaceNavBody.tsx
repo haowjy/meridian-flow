@@ -77,10 +77,7 @@ export function WorkspaceNavBody({
         ))}
       </div>
 
-      <div
-        ref={childrenRef}
-        className={cn("min-h-0 flex-1 overflow-hidden", !phone && "min-h-[120px]")}
-      >
+      <div ref={childrenRef} className="min-h-0 flex-1 overflow-hidden">
         {children}
       </div>
 

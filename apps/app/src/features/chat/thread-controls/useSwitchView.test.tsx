@@ -7,7 +7,6 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - write-mode switch delivery presentation
- * - write-mode cache invalidation ownership
  */
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
@@ -59,7 +58,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
-import { invalidateWriteModeReads } from "@/client/query/project-invalidation";
 import { type SwitchJournal, type SwitchView, useSwitchView } from "./useSwitchView";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -70,7 +68,6 @@ beforeAll(() => {
 afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
-
 const record = (id: string, over: Record<string, unknown> = {}) => ({
   id,
   mode: "draft" as const,
@@ -212,11 +209,6 @@ const switchItem = (id: string, deliveryState: "awaiting_run" | "waiting") => ({
   summary: "",
   enqueuedAt: "",
 });
-const messageItem = {
-  ...switchItem("m1", "awaiting_run"),
-  intent: "message" as const,
-  control: null,
-};
 const recordOf = (version: string, items: unknown[]) => ({
   version,
   items,
@@ -260,16 +252,4 @@ it("announces a switch as queued from the server's delivery state, not the runni
   replyRunning = false;
   await feed("record", "5", [switchItem("a1", "awaiting_run"), switchItem("a2", "waiting")]);
   expect(announcements.announce).toHaveBeenLastCalledWith("Switch to draft mode queued");
-});
-
-it("invalidates thread and Works reads when a write-mode switch enters or leaves the pending inbox, not on other inbox changes", async () => {
-  await mount();
-  await feed("snapshot", "1", [messageItem]);
-  expect(invalidateWriteModeReads).not.toHaveBeenCalled();
-  await feed("record", "2", [messageItem, switchItem("c1", "awaiting_run")]);
-  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(1);
-  await feed("record", "3", [switchItem("c1", "awaiting_run")]);
-  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(1);
-  await feed("record", "4", []);
-  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(2);
 });
