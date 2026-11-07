@@ -31,6 +31,7 @@ import {
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import { getContextCatalogLookup } from "@/client/api/projects-api";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import {
   type CatalogContextView,
@@ -48,7 +49,6 @@ import {
 import type { ContextOwner } from "./context-request-options";
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
-import { useIsProjectPendingCreation } from "./useProjectCreation";
 
 /** Who a catalog request is for: a Work or lineage holds Scratch, and a chat holds its uploads. */
 export type CatalogOwner = {
@@ -406,14 +406,13 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
     enabled?: boolean;
   } & CatalogOwner,
 ): Record<S, CatalogViewResult> {
-  const projectPending = useIsProjectPendingCreation(projectId);
   const { workId, rootThreadId, chatId } = options;
   // A first send's chat is not on the server yet; its lineage and chat scopes would answer 404.
   const pending = {
     lineage: useIsThreadPendingCreation(rootThreadId),
     chat: useIsThreadPendingCreation(chatId),
   };
-  const enabled = (options.enabled ?? true) && !projectPending;
+  const enabled = options.enabled ?? true;
   const scopeFor = useCallback(
     (scheme: ProjectContextTreeScheme) =>
       aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, chatId }),
@@ -481,14 +480,13 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   return useQueries({
     queries: scopes.map((scope) => ({
       ...contextCatalogQueryOptions(resources, projectId, scope),
-      enabled: catalogScopeReady(scope, enabled, pending),
+      enabled: projectReadEnabled(catalogScopeReady(scope, enabled, pending)),
     })),
     combine,
   });
 }
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
-  const projectPending = useIsProjectPendingCreation(projectId);
   const pending = {
     lineage: useIsThreadPendingCreation(scope.kind === "lineage" ? scope.rootThreadId : null),
     chat: useIsThreadPendingCreation(scope.kind === "chat" ? scope.chatId : null),
@@ -528,7 +526,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled: catalogScopeReady(stableScope, enabled && !projectPending, pending),
+    enabled: projectReadEnabled(catalogScopeReady(stableScope, enabled, pending)),
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(

@@ -11,10 +11,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getProject, listProjects } from "@/client/api/projects-api";
 import { mergeApiProjects } from "@/client/stores";
-
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
-import { useIsProjectPendingCreation } from "./useProjectCreation";
 import { pendingProjectTitles } from "./useRenameProject";
 
 function useProjectListQuery() {
@@ -62,11 +60,9 @@ export function useProject(
 ): Project | undefined {
   const projects = useProjectList();
   const listProject = projects?.find((project) => project.id === projectId);
-  const isCreating = useIsProjectPendingCreation(projectId);
   const detail = useQuery<Project>({
     queryKey: projectQueryKeys.detail(projectId),
     queryFn: () => getProject(projectId),
-    enabled: !isCreating,
     initialData: initialProject ?? listProject,
     staleTime: 30_000,
   });

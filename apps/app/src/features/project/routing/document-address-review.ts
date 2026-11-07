@@ -7,6 +7,7 @@ import type {
 
 import { queryOptions } from "@tanstack/react-query";
 import type { getProjectDocumentAddress } from "@/client/api/projects-api";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   type ContextRouteSelection,
@@ -115,7 +116,9 @@ export function documentAddressQueryOptions(
         ...(review ? { review } : {}),
       });
     },
-    enabled: !!input.destination && input.workResolved && input.binding.kind !== "pending",
+    enabled: projectReadEnabled(
+      !!input.destination && input.workResolved && input.binding.kind !== "pending",
+    ),
     staleTime: 0,
     // A review's answer names another key's path and is only true while the draft's move
     // stands. Kept past its key, two such answers point at each other and the URL loops.

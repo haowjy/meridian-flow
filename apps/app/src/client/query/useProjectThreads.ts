@@ -2,10 +2,10 @@ import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listProjectThreads } from "@/client/api/projects-api";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { applyThreadRenameFence, captureThreadRenameFence } from "./thread-rename-command";
-import { useIsProjectPendingCreation } from "./useProjectCreation";
 
 /**
  * The project thread list read is fenced against in-flight thread renames: a
@@ -50,14 +50,11 @@ export function useProjectThreads(
   isFetching: boolean;
   refetch: () => void;
 } {
-  const callerEnabled = options?.enabled ?? true;
-  const isPendingCreation = useIsProjectPendingCreation(projectId);
-  const enabled = callerEnabled && !isPendingCreation;
   const client = useQueryClient();
   const { data, isError, isFetching, refetch } = unwrapListQuery(
     useQuery({
       ...projectThreadsQueryOptions(client, projectId),
-      enabled,
+      enabled: projectReadEnabled(options?.enabled ?? true),
     }),
   );
 
