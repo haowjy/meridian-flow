@@ -540,8 +540,8 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
 ];
 
 /** The writer's page of everything the reader doesn't know yet, at the Knowledge Base's root. */
-export const SERIES_BIBLE: WikiPage = {
-  lead: "Every spoiler in one place. What the reader doesn’t know yet, what the characters don’t, and what isn’t decided.",
+export const SPOILERS_PAGE: WikiPage = {
+  lead: "What the reader doesn’t know yet, what the characters don’t, and what isn’t decided.",
   facts: [
     ["Series", "The Long Reckoning"],
     ["Genre", "LitRPG, time loop"],
