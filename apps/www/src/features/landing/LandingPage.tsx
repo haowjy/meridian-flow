@@ -40,6 +40,9 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               <b className="camp" />
               <b className="ward" />
               <b className="spark" />
+              <b className="arrow" />
+              <b className="song" />
+              <b className="hit" />
               <i />
               <i />
               <i />

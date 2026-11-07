@@ -750,6 +750,79 @@
   );
 }
 
+.cine .walkers .arrow,
+.cine .walkers .song,
+.cine .walkers .hit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transform-origin: 0 0;
+}
+
+.cine .walkers .arrow {
+  width: 46px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--walk-ward));
+}
+
+/* Maren's song: rings rolling out toward it. */
+.cine .walkers .song {
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: repeating-radial-gradient(
+    circle,
+    transparent 0 11px,
+    var(--walk-ward) 12px 14px,
+    transparent 15px 22px
+  );
+  mask: radial-gradient(circle, transparent 12%, black 30%, transparent 72%);
+  mix-blend-mode: plus-lighter;
+}
+
+.cine .walkers .hit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transform-origin: 0 0;
+}
+
+.cine .walkers .arrow {
+  width: 46px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--walk-ward));
+}
+
+/* Maren's song: rings rolling out toward it. */
+.cine .walkers .song {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: repeating-radial-gradient(
+    circle,
+    transparent 0 9px,
+    color-mix(in oklab, var(--walk-ward) 70%, transparent) 10px 11px,
+    transparent 12px 17px
+  );
+  mask: radial-gradient(circle, black 40%, transparent 70%);
+}
+
+.cine .walkers .hit {
+  width: 90px;
+  height: 90px;
+  background: radial-gradient(
+    circle,
+    var(--walk-ward) 0 8%,
+    color-mix(in oklab, var(--walk-lantern) 70%, transparent) 18%,
+    transparent 60%
+  );
+  mix-blend-mode: plus-lighter;
+}
+
 .cine .skill {
   position: absolute;
   inset: var(--bar) 0 0;

@@ -25,6 +25,8 @@ const BREATH_REACH = 0.5;
 const NO_WALL = 100;
 /** The fight's breaths: how hard, and what share of the way to the party they reach. */
 const FIGHT_BREATH = 0.85;
+/** How long a hit's flash lasts, in shares of the fight beat. */
+const HIT_LASTS = 0.035;
 /** How high the spark arcs, in stage heights. */
 const SPARK_ARC = 0.14;
 /** How far into the dawn it comes back. */
@@ -66,7 +68,11 @@ export function createDragonActor(root: HTMLElement) {
   const text = document.createRange();
   const words = root.querySelector("#the-twist") as HTMLElement;
   const row = root.querySelector("#s-beast-row") as HTMLElement;
-  const spark = root.querySelector("#walkers .spark") as HTMLElement;
+  const shot = (name: string) => root.querySelector(`#walkers .${name}`) as HTMLElement;
+  const spark = shot("spark");
+  const arrow = shot("arrow");
+  const song = shot("song");
+  const hit = shot("hit");
   root.style.setProperty("--dragon-sheet", `url(${dragonSheet().toDataURL()})`);
 
   let marks: Mark[] = [];
@@ -84,6 +90,8 @@ export function createDragonActor(root: HTMLElement) {
     const { spans, width: W, height: H } = next;
     unit = Math.min(H, W * 0.62);
     fire?.resize(W, H);
+    // Phones have no room for the party to give ground, so the dragon holds its place there.
+    const fightX = (x: number) => (next.isPhone ? 0.84 : x);
     const mark = (
       at: number,
       x: number,
@@ -113,11 +121,12 @@ export function createDragonActor(root: HTMLElement) {
       mark(span(spans, "back", 1), 0.7, 0.26, 0.13),
       mark(span(spans, "turn", 0.45), 0.9, 0.34, 0.2, -1),
       mark(span(spans, "turn", 1), 0.84, 0.76, 0.4, -1),
-      // The spark lands and it rears back, then comes down again for the breath that kills them.
-      mark(span(spans, "fight", FIGHT.spark[1]), 0.84, 0.76, 0.4, -1),
-      mark(span(spans, "fight", FIGHT.spark[1] + 0.05), 0.9, 0.66, 0.44, -1),
-      mark(span(spans, "fight", FIGHT.breath[0]), 0.85, 0.75, 0.41, -1),
-      mark(span(spans, "twist", 0.22), 0.84, 0.76, 0.4, -1),
+      // It presses in as they give ground, rears back when the spark lands, then comes down
+      // again for the breath that kills them.
+      mark(span(spans, "fight", FIGHT.spark.at[1]), fightX(0.77), 0.76, 0.4, -1),
+      mark(span(spans, "fight", FIGHT.spark.at[1] + 0.05), fightX(0.83), 0.66, 0.44, -1),
+      mark(span(spans, "fight", FIGHT.breath[0]), fightX(0.72), 0.75, 0.41, -1),
+      mark(span(spans, "twist", 0.22), fightX(0.72), 0.76, 0.4, -1),
       // Up behind the box, one loop small in the far sky, and out at the left to turn.
       mark(span(spans, "twist", 0.31), 0.72, 0.4, 0.2, -1, true),
       mark(span(spans, "twist", 0.39), 0.5, 0.17, 0.1, -1, true),
@@ -323,19 +332,73 @@ export function createDragonActor(root: HTMLElement) {
     wings.style.maskPosition = `${frame * 100}% 0`;
   };
 
+  /** Moves a shot from `from` to `to` across its window, arcing up by `arc` stage heights. */
+  const fling = (
+    element: HTMLElement,
+    window: readonly [number, number],
+    fight: number,
+    from: readonly [number, number],
+    to: readonly [number, number],
+    arc: number,
+    pointed = false,
+  ) => {
+    const t = progress(fight, ...window);
+    const flying = t > 0 && t < 1;
+    element.style.opacity = flying ? "1" : "0";
+    if (!flying) return;
+    const x = lerp(from[0], to[0], t);
+    const y = lerp(from[1], to[1], t) - Math.sin(t * Math.PI) * layout.height * arc;
+    const turn = pointed ? Math.atan2(to[1] - from[1], to[0] - from[0]) : 0;
+    const grow = pointed ? 1 : 0.6 + t;
+    element.style.transform = `translate3d(${x}px,${y}px,0) rotate(${turn}rad) scale(${grow}) translate(-50%,-50%)`;
+  };
+
+  /** Each of the four hits it once, and every hit flashes where it lands. */
+  const attacks = (
+    fight: number,
+    party: Party | null,
+    body: { x: number; y: number; size: number },
+  ) => {
+    if (!party) {
+      for (const element of [arrow, song, spark, hit]) element.style.opacity = "0";
+      return;
+    }
+    const chest = [
+      lerp(mouth[0], body.x, 0.45),
+      lerp(mouth[1], body.y, 0.45) + body.size * 0.05,
+    ] as const;
+    const foot = [body.x - body.size * 0.12, body.y + body.size * 0.22] as const;
+    const from = (row: number) => party.rows[row];
+    fling(arrow, FIGHT.arrow.at, fight, from(FIGHT.arrow.row), chest, 0.03, true);
+    fling(song, FIGHT.song.at, fight, from(FIGHT.song.row), chest, 0.02);
+    fling(spark, FIGHT.spark.at, fight, from(FIGHT.spark.row), mouth, SPARK_ARC);
+    const landings = [
+      [FIGHT.arrow.at[1], chest],
+      [FIGHT.song.at[1], chest],
+      [lerp(FIGHT.charge.at[0], FIGHT.charge.at[1], 0.5), foot],
+      [FIGHT.spark.at[1], mouth],
+    ] as const;
+    const landed = landings.find(([at]) => fight >= at && fight < at + HIT_LASTS);
+    hit.style.opacity = landed ? String(1 - (fight - landed[0]) / HIT_LASTS) : "0";
+    if (landed) {
+      const [x, y] = landed[1];
+      const grow = 0.6 + ((fight - landed[0]) / HIT_LASTS) * 0.8;
+      hit.style.transform = `translate3d(${x}px,${y}px,0) scale(${grow}) translate(-50%,-50%)`;
+    }
+  };
+
   /** The ward breath stops at the front of the party; the killing one sweeps it front to back. */
   const fightBreath = (fight: number, party: Party) => {
     const reach = (target: readonly [number, number], share: number) =>
       [lerp(mouth[0], target[0], share), lerp(mouth[1], target[1], share)] as const;
     const ward = fightWindow(fight, FIGHT.ward);
-    if (ward > 0) return { aim: reach(party.front, 1), breath: ward * FIGHT_BREATH };
+    const front = party.rows[0];
+    const back = party.rows[party.rows.length - 1];
+    if (ward > 0) return { aim: reach(front, 1), breath: ward * FIGHT_BREATH };
     const killing = fightWindow(fight, FIGHT.breath);
     if (killing <= 0) return null;
     const along = progress(fight, ...FIGHT.breath);
-    const target = [
-      lerp(party.front[0], party.back[0], along),
-      lerp(party.front[1], party.back[1], along),
-    ] as const;
+    const target = [lerp(front[0], back[0], along), lerp(front[1], back[1], along)] as const;
     return { aim: reach(target, 1.1), breath: killing * FIGHT_BREATH };
   };
 
@@ -371,15 +434,7 @@ export function createDragonActor(root: HTMLElement) {
           ? `linear-gradient(90deg,transparent ${edge * 106 - 3}%,black ${edge * 106 + 3}%)`
           : "none";
 
-      const sparkFlight = progress(fight, ...FIGHT.spark);
-      spark.style.opacity = party && sparkFlight > 0 && sparkFlight < 1 ? "1" : "0";
-      if (party && sparkFlight > 0 && sparkFlight < 1) {
-        const x = lerp(party.back[0], mouth[0], sparkFlight);
-        const y =
-          lerp(party.back[1], mouth[1], sparkFlight) -
-          Math.sin(sparkFlight * Math.PI) * H * SPARK_ARC;
-        spark.style.transform = `translate3d(${x}px,${y}px,0) translate(-50%,-50%)`;
-      }
+      attacks(fight, party, placed);
 
       const angle = lean + DRAGON_HEAD_ANGLE;
       const fighting = party ? fightBreath(fight, party) : null;

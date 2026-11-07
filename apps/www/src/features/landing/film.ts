@@ -129,6 +129,10 @@ const OVERHEAD_PITCH = 0.8;
 const HORIZON_PITCH = 0.1;
 const HORIZON_YAW = 0.34;
 
+/** Up and back down across a window: 0 outside it, 1 in its middle. */
+const flare = (value: number, [from, to]: readonly [number, number]) =>
+  smooth(value, from, from + 0.04) * (1 - smooth(value, to - 0.06, to));
+
 /** The sky is a function of the scroll position, so it holds still when the page does. */
 function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const tilt = smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
@@ -136,9 +140,14 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const revealed = beats.twist >= REVEAL_STARTS;
   // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
   const hurt =
-    smooth(beats.fight, FIGHT.spark[1], FIGHT.spark[1] + 0.02) *
-    (1 - smooth(beats.fight, FIGHT.spark[1] + 0.03, FIGHT.spark[1] + 0.09));
+    smooth(beats.fight, FIGHT.spark.at[1], FIGHT.spark.at[1] + 0.02) *
+    (1 - smooth(beats.fight, FIGHT.spark.at[1] + 0.03, FIGHT.spark.at[1] + 0.09));
   const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
+  // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
+  const breathing =
+    smooth(beats.fight, 0, 0.08) * 0.35 +
+    flare(beats.fight, FIGHT.ward) * 0.45 +
+    flare(beats.fight, FIGHT.breath) * 0.7;
   const toTwist = smooth(beats.twist, 0, 0.5);
   let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
   veil = lerp(veil, 0.2, toTwist);
@@ -152,12 +161,14 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
       ease(beats.push) * 2 +
       ease(beats.sky) * 1.5 +
       smooth(beats.twist, 0, 0.8) * 5 +
+      ease(beats.fight) * 4 +
       dawn * 1.5,
     dawn,
     veil,
     aurora:
       lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
-      smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5,
+      smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
+      breathing * (1 - smooth(beats.twist, 0, 0.3)),
     pulse: Math.max(
       1 - smooth(beats.push, 0, 0.35),
       smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),
