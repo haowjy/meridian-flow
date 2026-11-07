@@ -274,7 +274,7 @@ export function createForest(root: HTMLElement) {
       forest.style.opacity = String(shown);
       walkers.style.opacity = String(shown);
       if (shown === 0) return;
-      const drift = at * 0.035;
+      const drift = (at / H) * W * 0.025;
       forest.style.transform = `translate3d(${-drift}px,0,0)`;
 
       const size = H * 0.16;
