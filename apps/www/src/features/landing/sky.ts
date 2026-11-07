@@ -84,14 +84,13 @@ float peaks(float z,float s,float k,float h){
 }
 float farRange(float z){float b=(z-AZ)/.09;return peaks(z,3.1,3.,.17)+.1*exp(-b*b);}
 float nearRange(float z){return peaks(z,7.4,2.,.11);}
-// The Cold Fire's source: a column of light rising from behind the dragon's peak into the sheet,
-// brightest where it leaves the mountain, swaying and streaked as it climbs.
-float plume(float az,float y){
-  float h=max(y-farRange(AZ)*.85,0.);
-  float sway=(N(vec2(y*5.-FLOW*.5,1.))-.5)*h*.25;
-  float b=(az-AZ-sway)/(.018+h*.3);
-  float streaks=.5+.5*N(vec2((az-AZ)*70.,y*3.-FLOW*1.1));
-  return exp(-b*b)*exp(-h*2.6)*smoothstep(0.,.03,h)*streaks;
+// The Cold Fire low in the north: a wide band of curtains standing behind the far range, densest
+// around the dragon's peak and fading upward into the sheet. It is there every night.
+float behind(float az,float y){
+  float h=max(y-farRange(az)*.7,0.);
+  float b=(az-AZ)/.55;
+  float curtains=.45+.55*N(vec2(az*38.+FLOW*.2,y*2.-FLOW*.3));
+  return exp(-b*b)*exp(-h*5.)*smoothstep(0.,.04,h)*curtains;
 }
 vec3 stars(vec3 d){
   vec2 s=vec2(atan(d.x,-d.z),d.y)*56.;
@@ -122,7 +121,7 @@ void main(){
   vec3 col;
   if(y>=0.){
     col=sky+stars(rd)*night+light+${vec3(C.auroraLow)}*.008*exp(-y*6.)*AU*night;
-    float rising=plume(az,y)*PLUME*night;
+    float rising=behind(az,y)*PLUME*night;
     col+=(${vec3(C.auroraMid)}*.5+${vec3(C.auroraCore)}*rising*.6)*rising;
     float far=farRange(az),near=nearRange(az);
     vec3 lit=${vec3(C.sun)}*.04*DAWN;
@@ -148,7 +147,7 @@ export type SkyFrame = {
   dawn: number;
   veil: number;
   aurora: number;
-  /** The column of Cold Fire rising from behind the peak, 0 (none) and up. */
+  /** The band of Cold Fire behind the far range, 0 (none) and up. */
   plume: number;
   /** How strongly the aurora breathes while the page is still, 0 to 1. */
   pulse: number;

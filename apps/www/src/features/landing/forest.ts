@@ -116,11 +116,12 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
     pen.fill();
     pen.fillRect(x - unit * 1.75, shoulder + unit * 0.1, unit * 1.2, unit * 1.5);
     if (pose.kind === "fight") {
+      // Sigrun's arm out, a ward rune ringed in her open hand.
       const hand = shoulderX + unit * 1.7;
-      line(unit * 0.2, [shoulderX, shoulder + unit * 0.2], [hand, shoulder]);
+      line(unit * 0.2, [shoulderX, shoulder + unit * 0.2], [hand, shoulder - unit * 0.3]);
       pen.lineWidth = unit * 0.13;
       pen.beginPath();
-      pen.arc(hand - unit * 1.1, shoulder, unit * 2, -0.95, 0.95);
+      pen.arc(hand + unit * 0.3, shoulder - unit * 0.4, unit * 0.75, 0, Math.PI * 2);
       pen.stroke();
     }
   }
@@ -329,7 +330,7 @@ export function createForest(root: HTMLElement) {
           return;
         }
         const fate = FIGHT.fates[row];
-        // Oskar's run at its left foot: out to the dragon and back to the line.
+        // Oskar's charge at its flank: out to the dragon and back to the line.
         if (row === FIGHT.charge.row) {
           const run = progress(fight, ...FIGHT.charge.at);
           x += Math.sin(run * Math.PI) * W * 0.16;

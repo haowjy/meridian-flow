@@ -750,7 +750,7 @@
   );
 }
 
-.cine .walkers .arrow,
+.cine .walkers .rune,
 .cine .walkers .song,
 .cine .walkers .hit {
   position: absolute;
@@ -760,11 +760,13 @@
   transform-origin: 0 0;
 }
 
-.cine .walkers .arrow {
-  width: 46px;
-  height: 3px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--walk-ward));
+/* Sigrun's cut rune, thrown as a crescent of white. */
+.cine .walkers .rune {
+  width: 34px;
+  height: 64px;
+  border-radius: 50%;
+  border-right: 4px solid var(--walk-ward);
+  filter: drop-shadow(0 0 6px var(--walk-ward));
 }
 
 /* Maren's song: rings rolling out toward it. */
@@ -780,35 +782,6 @@
   );
   mask: radial-gradient(circle, transparent 12%, black 30%, transparent 72%);
   mix-blend-mode: plus-lighter;
-}
-
-.cine .walkers .hit {
-  position: absolute;
-  top: 0;
-  left: 0;
-  opacity: 0;
-  transform-origin: 0 0;
-}
-
-.cine .walkers .arrow {
-  width: 46px;
-  height: 3px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--walk-ward));
-}
-
-/* Maren's song: rings rolling out toward it. */
-.cine .walkers .song {
-  width: 70px;
-  height: 70px;
-  border-radius: 50%;
-  background: repeating-radial-gradient(
-    circle,
-    transparent 0 9px,
-    color-mix(in oklab, var(--walk-ward) 70%, transparent) 10px 11px,
-    transparent 12px 17px
-  );
-  mask: radial-gradient(circle, black 40%, transparent 70%);
 }
 
 .cine .walkers .hit {

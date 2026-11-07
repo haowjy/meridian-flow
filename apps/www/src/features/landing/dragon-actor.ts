@@ -70,7 +70,7 @@ export function createDragonActor(root: HTMLElement) {
   const row = root.querySelector("#s-beast-row") as HTMLElement;
   const shot = (name: string) => root.querySelector(`#walkers .${name}`) as HTMLElement;
   const spark = shot("spark");
-  const arrow = shot("arrow");
+  const rune = shot("rune");
   const song = shot("song");
   const hit = shot("hit");
   root.style.setProperty("--dragon-sheet", `url(${dragonSheet().toDataURL()})`);
@@ -110,8 +110,11 @@ export function createDragonActor(root: HTMLElement) {
     marks = [
       mark(0, 0.37, 0.13, 0.01, -1),
       mark(span(spans, "hold", 1), 0.37, 0.13, 0.01, -1),
-      mark(span(spans, "push", 1), 0.58, 0.3, 0.022, -1),
-      mark(span(spans, "sky", 0.5), 0.66, 0.3, 0.04, -1),
+      // Out left along the aurora while the product fades, then back right across the open sky,
+      // in view the whole way.
+      mark(span(spans, "push", 0.45), 0.16, 0.17, 0.016, -1, true),
+      mark(span(spans, "push", 1), 0.36, 0.27, 0.024, 1, true),
+      mark(span(spans, "sky", 0.5), 0.62, 0.3, 0.04, 1, true),
       mark(span(spans, "sky", 1), 0.75, 0.26, 0.05, -1),
       mark(span(spans, "world", 0.5), 0.5, 0.2, 0.055, -1),
       mark(span(spans, "world", 1), 0.25, 0.24, 0.065),
@@ -123,8 +126,8 @@ export function createDragonActor(root: HTMLElement) {
       mark(span(spans, "turn", 1), 0.84, 0.76, 0.4, -1),
       // It presses in as they give ground, rears back when the spark lands, then comes down
       // again for the breath that kills them.
-      mark(span(spans, "fight", FIGHT.spark.at[1]), fightX(0.77), 0.76, 0.4, -1),
-      mark(span(spans, "fight", FIGHT.spark.at[1] + 0.05), fightX(0.83), 0.66, 0.44, -1),
+      mark(span(spans, "fight", FIGHT.spark.eye[1]), fightX(0.77), 0.76, 0.4, -1),
+      mark(span(spans, "fight", FIGHT.spark.eye[1] + 0.05), fightX(0.83), 0.66, 0.44, -1),
       mark(span(spans, "fight", FIGHT.breath[0]), fightX(0.72), 0.75, 0.41, -1),
       mark(span(spans, "twist", 0.22), fightX(0.72), 0.76, 0.4, -1),
       // Up behind the box, one loop small in the far sky, and out at the left to turn.
@@ -363,7 +366,7 @@ export function createDragonActor(root: HTMLElement) {
     body: { x: number; y: number; size: number },
   ) => {
     if (!party) {
-      for (const element of [arrow, song, spark, hit]) element.style.opacity = "0";
+      for (const element of [rune, song, spark, hit]) element.style.opacity = "0";
       return;
     }
     const chest = [
@@ -371,15 +374,27 @@ export function createDragonActor(root: HTMLElement) {
       lerp(mouth[1], body.y, 0.45) + body.size * 0.05,
     ] as const;
     const foot = [body.x - body.size * 0.12, body.y + body.size * 0.22] as const;
+    const flank = [body.x + body.size * 0.05, body.y + body.size * 0.12] as const;
     const from = (row: number) => party.rows[row];
-    fling(arrow, FIGHT.arrow.at, fight, from(FIGHT.arrow.row), chest, 0.03, true);
+    fling(rune, FIGHT.rune.at, fight, from(FIGHT.rune.row), chest, 0.03, true);
     fling(song, FIGHT.song.at, fight, from(FIGHT.song.row), chest, 0.02);
-    fling(spark, FIGHT.spark.at, fight, from(FIGHT.spark.row), mouth, SPARK_ARC);
+    // Tam's two sparks: the scales above its left foot, then its eye.
+    const toEye = fight >= FIGHT.spark.foot[1];
+    const [sparkAt, sparkTo] = toEye ? [FIGHT.spark.eye, mouth] : [FIGHT.spark.foot, foot];
+    fling(
+      spark,
+      sparkAt,
+      fight,
+      from(FIGHT.spark.row),
+      sparkTo,
+      toEye ? SPARK_ARC : SPARK_ARC * 0.4,
+    );
     const landings = [
-      [FIGHT.arrow.at[1], chest],
+      [FIGHT.rune.at[1], chest],
       [FIGHT.song.at[1], chest],
-      [lerp(FIGHT.charge.at[0], FIGHT.charge.at[1], 0.5), foot],
-      [FIGHT.spark.at[1], mouth],
+      [lerp(FIGHT.charge.at[0], FIGHT.charge.at[1], 0.5), flank],
+      [FIGHT.spark.foot[1], foot],
+      [FIGHT.spark.eye[1], mouth],
     ] as const;
     const landed = landings.find(([at]) => fight >= at && fight < at + HIT_LASTS);
     hit.style.opacity = landed ? String(1 - (fight - landed[0]) / HIT_LASTS) : "0";
