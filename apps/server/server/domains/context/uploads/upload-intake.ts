@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
+import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
 import type {
   DeleteDraftUploadInput,
   DeleteDraftUploadResult,
@@ -34,12 +35,29 @@ import {
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
+import type { ContextPort } from "../ports/context-port.js";
 import { openUploadBody, type UploadBody, UploadSizeError } from "./upload-body.js";
+
+/** The folder a source upload lands in, in the host's own source. */
+export const ASSETS_FOLDER = "assets";
+
+/**
+ * Where a source upload (a file dropped into a document) lands: `assets/` of the host's own
+ * source, written through the port the route resolved for the host's scope. The client mints the
+ * document id, so the link to the file can stand in the document before the file arrives.
+ */
+export interface UploadSourceDestination {
+  scheme: ContextUriScheme;
+  port: ContextPort;
+  documentId: string;
+}
 
 export interface UploadIntakeInput {
   intakeId: string;
   actorUserId: string;
   owner: UploadOwner;
+  /** Present exactly when `owner.kind` is `source`. */
+  source?: UploadSourceDestination;
   filename: string;
   mimeType: string;
   /** The request's declared length: the body must carry exactly this many bytes. */
@@ -66,7 +84,7 @@ export interface UploadReservation {
   storageUrl: string | null;
   consumed: boolean;
   /** `chatRef` is null until the chat's row, and so its handle, exists. */
-  owner: { kind: "chat"; chatId: string; chatRef: string | null };
+  owner: { kind: "chat"; chatId: string; chatRef: string | null } | { kind: "source" };
 }
 
 export type ReserveUploadResult =
@@ -80,6 +98,8 @@ export interface UploadIntakeRepository {
     intakeId: string;
     actorUserId: string;
     owner: UploadOwner;
+    /** The id a source upload's document takes: the client's, so its link stands before the file. */
+    documentId?: string;
     filename: string;
     documentFilename: ParsedDocumentFilename;
     mimeType: string;
@@ -92,7 +112,8 @@ export interface UploadIntakeRepository {
   markObjectStored(projectId: string, intakeId: string, storageUrl: string): Promise<void>;
   resetObjectStored(projectId: string, intakeId: string): Promise<void>;
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
-  finalize(projectId: string, intakeId: string): Promise<UploadReservation>;
+  /** `finalPath` is the name a source upload took; a chat upload keeps the one it reserved. */
+  finalize(projectId: string, intakeId: string, finalPath?: string): Promise<UploadReservation>;
   /** Locks and validates the exact unused identity a writer asked to delete. */
   lockForDelete(
     input: DeleteDraftUploadInput,
@@ -102,6 +123,12 @@ export interface UploadIntakeRepository {
     | { kind: "refused"; result: DeleteDraftUploadResult; objectKey?: string }
   >;
   markDeleted(projectId: string, intakeId: string): Promise<void>;
+  /** Which of these documents are uploads still on their way, for a link to draw "uploading". */
+  inFlight(
+    projectId: string,
+    actorUserId: string,
+    documentIds: readonly string[],
+  ): Promise<ReadonlySet<string>>;
   /**
    * Marks the chat's own finalized uploads among `documentIds` as used by a sent message and
    * returns the sources whose rows changed. Another chat's file named here is left alone.
@@ -121,6 +148,7 @@ export interface UploadContentPort<Bound = unknown> {
     actorUserId: string;
     /** The file's text; empty for anything that is not tracked text. */
     text: string;
+    source?: UploadSourceDestination;
   }): Promise<{ ok: true; bound: Bound } | { ok: false; definite: boolean }>;
   persist(input: {
     reservation: UploadReservation;
@@ -133,7 +161,10 @@ export interface UploadContentPort<Bound = unknown> {
     hasPreview: boolean;
     /** Text stored as a binary row: its name keeps the extension the port would otherwise strip. */
     keptAsFile: boolean;
-  }): Promise<{ ok: true } | { ok: false; definite: boolean }>;
+    source?: UploadSourceDestination;
+    /** What a source upload's name is built from; it takes the first free copy in `assets/`. */
+    documentFilename: ParsedDocumentFilename;
+  }): Promise<{ ok: true; finalPath?: string } | { ok: false; definite: boolean }>;
   /** Soft-deletes an arrived upload; `stale` when its identity no longer stands at its URI. */
   remove(input: {
     reservation: UploadReservation;
@@ -146,6 +177,7 @@ export interface UploadIntake {
   deleteDraft(input: DeleteDraftUploadInput, actorUserId: string): Promise<DeleteDraftUploadResult>;
   /** Runs in the sending transaction; republishes the catalog rows whose `used` it changed. */
   consume(documentIds: readonly string[], chatId: string): Promise<void>;
+  inFlight: UploadIntakeRepository["inFlight"];
 }
 
 function fingerprint(input: {
@@ -154,7 +186,10 @@ function fingerprint(input: {
   filename: string;
   sizeBytes: number;
 }): string {
-  const owner = `chat:${input.owner.projectId}:${input.owner.chatId}`;
+  const owner =
+    input.owner.kind === "chat"
+      ? `chat:${input.owner.projectId}:${input.owner.chatId}`
+      : `source:${input.owner.projectId}`;
   return createHash("sha256")
     .update(JSON.stringify([input.actorUserId, owner, input.filename, input.sizeBytes]))
     .digest("hex");
@@ -163,6 +198,13 @@ function fingerprint(input: {
 /** What a failed read of the body means to the writer: a body that isn't the size it declared. */
 function sizeFailure(cause: unknown): UploadIntakeError {
   return cause instanceof UploadSizeError ? { code: "size_mismatch" } : { code: "storage_failed" };
+}
+
+/** A source upload's address as the writer's scope names it; a chat upload's is the reservation's. */
+function resultUri(reservation: UploadReservation, source?: UploadSourceDestination) {
+  return source
+    ? canonicalContextUri(source.scheme, reservation.finalPath, { kind: "contextual" })
+    : reservation.canonicalUri;
 }
 
 export function createUploadIntake<Bound>(deps: {
@@ -230,10 +272,14 @@ export function createUploadIntake<Bound>(deps: {
         filename,
         sizeBytes: raw.sizeBytes,
       });
+      const source = raw.owner.kind === "source" ? raw.source : undefined;
+      if (raw.owner.kind === "source" && !source)
+        throw new Error("A source upload needs its destination");
       const reserved = await deps.repository.reserve({
         intakeId: raw.intakeId,
         actorUserId: raw.actorUserId,
         owner: raw.owner,
+        ...(source ? { documentId: source.documentId } : {}),
         filename: raw.filename,
         documentFilename: parsed.value,
         mimeType,
@@ -253,7 +299,7 @@ export function createUploadIntake<Bound>(deps: {
           ok: true,
           value: {
             documentId: reservation.documentId,
-            uri: reservation.canonicalUri,
+            uri: resultUri(reservation, source),
             fileType: reservation.fileType,
             locationRevision: reservation.locationRevision,
           },
@@ -306,6 +352,7 @@ export function createUploadIntake<Bound>(deps: {
           reservation,
           actorUserId: raw.actorUserId,
           text: storedTracked && whole ? whole.toString("utf8") : "",
+          ...(source ? { source } : {}),
         });
         if (!bound.ok) throw Object.assign(new Error("upload binding failed"), bound);
         const finalized = await deps.repository.transaction(async () => {
@@ -320,15 +367,21 @@ export function createUploadIntake<Bound>(deps: {
             storageUrl: current.storageUrl,
             hasPreview,
             keptAsFile,
+            documentFilename: parsed.value,
+            ...(source ? { source } : {}),
           });
           if (!persisted.ok) throw Object.assign(new Error("upload persistence failed"), persisted);
-          return deps.repository.finalize(raw.owner.projectId, raw.intakeId);
+          return deps.repository.finalize(
+            raw.owner.projectId,
+            raw.intakeId,
+            source ? persisted.finalPath : undefined,
+          );
         });
         return {
           ok: true,
           value: {
             documentId: finalized.documentId,
-            uri: finalized.canonicalUri,
+            uri: resultUri(finalized, source),
             fileType: finalized.fileType,
             locationRevision: finalized.locationRevision,
           },
@@ -375,6 +428,8 @@ export function createUploadIntake<Bound>(deps: {
       }
       return deleted.result;
     },
+    inFlight: (projectId, actorUserId, documentIds) =>
+      deps.repository.inFlight(projectId, actorUserId, documentIds),
     async consume(documentIds, chatId) {
       const sourceIds = await deps.repository.consume(documentIds, chatId);
       if (sourceIds.length > 0) await deps.catalog.refreshSources(sourceIds);

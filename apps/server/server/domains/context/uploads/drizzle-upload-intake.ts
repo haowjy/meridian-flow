@@ -4,15 +4,16 @@ import type { ContextSourceId } from "@meridian/contracts";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { type Filetype, firstFreeName, type UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { projects, threads, uploadIntakes } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { documents, projects, threads, uploadIntakes } from "@meridian/database/schema";
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
 import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
-import type {
-  ReserveUploadResult,
-  UploadIntakeRepository,
-  UploadReservation,
+import {
+  ASSETS_FOLDER,
+  type ReserveUploadResult,
+  type UploadIntakeRepository,
+  type UploadReservation,
 } from "./upload-intake.js";
 
 type IntakeRow = typeof uploadIntakes.$inferSelect;
@@ -23,7 +24,7 @@ async function lockIntakeKey(db: Database, projectId: string, intakeId: string):
   );
 }
 
-/** An intake's owning chat never changes, so it is safe to read before any lock. */
+/** An intake's owning chat never changes, so it is safe to read before any lock. A source upload has none. */
 async function readIntakeOwner(
   db: Database,
   where: ReturnType<typeof and>,
@@ -33,8 +34,11 @@ async function readIntakeOwner(
     .from(uploadIntakes)
     .where(where)
     .limit(1);
-  return row ? { projectId: row.projectId, chatId: row.chatId } : null;
+  return row?.chatId ? { projectId: row.projectId, chatId: row.chatId } : null;
 }
+
+/** An upload still on its way: older than this, a crash left it, and its chip stops saying "uploading". */
+const IN_FLIGHT_MS = 2 * 60 * 60 * 1000;
 
 /**
  * The chat's row may not exist yet (a New-chat upload), so the chat id is locked as a key, not a
@@ -67,17 +71,35 @@ function mapRow(row: IntakeRow, chatRef: string | null): UploadReservation {
     filename: row.filename,
     finalPath: row.finalPath,
     objectKey: row.objectKey,
-    canonicalUri: uploadUri(chatRef, row.finalPath),
+    // A source upload's address depends on the scope it landed in, which only its caller knows.
+    canonicalUri: row.ownerThreadId ? uploadUri(chatRef, row.finalPath) : "",
     locationRevision: row.locationRevision,
     fileType: row.fileType as Filetype,
     state: row.state as UploadReservation["state"],
     storageUrl: row.storageUrl,
     consumed: row.consumedAt !== null,
-    owner: { kind: "chat", chatId: row.ownerThreadId, chatRef },
+    owner: row.ownerThreadId
+      ? { kind: "chat", chatId: row.ownerThreadId, chatRef }
+      : { kind: "source" },
   };
 }
 
 const chatRefJoin = (id: typeof uploadIntakes.ownerThreadId) => eq(threads.id, id);
+
+async function projectOwnedBy(db: Database, projectId: string, actorUserId: string) {
+  const [project] = await currentDrizzleDb(db)
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.id, projectId as never),
+        eq(projects.userId, actorUserId as never),
+        isNull(projects.deletedAt),
+      ),
+    )
+    .limit(1);
+  return Boolean(project);
+}
 
 async function readReservation(db: Database, projectId: string, intakeId: string) {
   const [row] = await currentDrizzleDb(db)
@@ -92,20 +114,13 @@ async function readReservation(db: Database, projectId: string, intakeId: string
 }
 
 /** Runs in `reserve`, which already holds the owning chat's lock. */
-async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: string) {
+async function resolveOwner(
+  db: Database,
+  owner: Extract<UploadOwner, { kind: "chat" }>,
+  actorUserId: string,
+) {
   const activeDb = currentDrizzleDb(db);
-  const [project] = await activeDb
-    .select({ id: projects.id })
-    .from(projects)
-    .where(
-      and(
-        eq(projects.id, owner.projectId as never),
-        eq(projects.userId, actorUserId as never),
-        isNull(projects.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!project) return null;
+  if (!(await projectOwnedBy(db, owner.projectId, actorUserId))) return null;
   // No row yet is a New-chat upload. A row must be a primary thread of this project: a fork or
   // handoff is its own chat, and a subagent's uploads belong to its top chat, never to itself.
   const [chat] = await activeDb
@@ -129,12 +144,55 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
     return thread?.ref ?? null;
   }
 
+  /** Runs in `reserve`, which holds the intake's lock. A source upload fixes no name yet: that is `finalize`'s. */
+  async function reserveSource(
+    projectId: string,
+    input: Parameters<UploadIntakeRepository["reserve"]>[0],
+  ): Promise<ReserveUploadResult> {
+    const activeDb = currentDrizzleDb(db);
+    if (!input.documentId || !(await projectOwnedBy(db, projectId, input.actorUserId)))
+      return { kind: "owner_unavailable" };
+    // The client minted this id; a document already holding it is not this upload's to take.
+    const [taken] = await activeDb
+      .select({ id: documents.id })
+      .from(documents)
+      .where(eq(documents.id, input.documentId as never))
+      .limit(1);
+    if (taken) return { kind: "conflict" };
+    const [created] = await activeDb
+      .insert(uploadIntakes)
+      .values({
+        projectId: projectId as never,
+        intakeId: input.intakeId,
+        actorUserId: input.actorUserId as never,
+        documentId: input.documentId as never,
+        fingerprint: input.fingerprint,
+        filename: input.filename,
+        mimeType: input.mimeType,
+        finalPath: `${ASSETS_FOLDER}/${firstFreeName(input.documentFilename, new Set()).filename}`,
+        objectKey: `uploads/${projectId}/${input.documentId}`,
+        fileType: input.fileType,
+        locationRevision: crypto.randomUUID(),
+      })
+      .onConflictDoNothing({ target: [uploadIntakes.projectId, uploadIntakes.intakeId] })
+      .returning();
+    if (!created) {
+      const winner = await readReservation(db, projectId, input.intakeId);
+      if (!winner) throw new Error("Upload intake winner was not readable");
+      return winner.fingerprint === input.fingerprint
+        ? { kind: "existing", reservation: winner }
+        : { kind: "conflict" };
+    }
+    return { kind: "reserved", reservation: mapRow(created, null) };
+  }
+
   return {
     transaction: (operation) => runInDrizzleTransaction(db, operation),
     async reserve(input): Promise<ReserveUploadResult> {
       return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
-        await lockChat(db, input.owner.projectId, input.owner.chatId);
+        const { owner: requester } = input;
+        if (requester.kind === "chat") await lockChat(db, requester.projectId, requester.chatId);
         await lockIntakeKey(db, input.owner.projectId, input.intakeId);
         const existing = await readReservation(db, input.owner.projectId, input.intakeId);
         if (existing) {
@@ -142,7 +200,8 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             ? { kind: "existing", reservation: existing }
             : { kind: "conflict" };
         }
-        const owner = await resolveOwner(db, input.owner, input.actorUserId);
+        if (requester.kind === "source") return reserveSource(requester.projectId, input);
+        const owner = await resolveOwner(db, requester, input.actorUserId);
         if (!owner) return { kind: "owner_unavailable" };
         await activeDb.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${owner.sourceId}, 0))`,
@@ -163,6 +222,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             ),
         ]);
         const used = new Set([...liveNames, ...reservedNames.map((row) => row.path)]);
+        const chatId = requester.chatId;
         const finalPath = firstFreeName(input.documentFilename, used).filename;
         const documentId = crypto.randomUUID();
         const [created] = await activeDb
@@ -171,7 +231,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             projectId: input.owner.projectId as never,
             intakeId: input.intakeId,
             actorUserId: input.actorUserId as never,
-            ownerThreadId: input.owner.chatId as never,
+            ownerThreadId: chatId as never,
             contextSourceId: owner.sourceId,
             documentId,
             fingerprint: input.fingerprint,
@@ -244,10 +304,10 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
       if (!reservation) throw new Error("Upload reservation unavailable during finalize");
       return reservation;
     },
-    async finalize(projectId, intakeId) {
+    async finalize(projectId, intakeId, finalPath) {
       const [row] = await currentDrizzleDb(db)
         .update(uploadIntakes)
-        .set({ state: "finalized", updatedAt: new Date() })
+        .set({ state: "finalized", updatedAt: new Date(), ...(finalPath ? { finalPath } : {}) })
         .where(
           and(
             eq(uploadIntakes.projectId, projectId as never),
@@ -257,10 +317,11 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         )
         .returning();
       if (!row) throw new Error("Upload reservation unavailable during finalize");
-      return mapRow(row, await chatRefOf(row.ownerThreadId));
+      return mapRow(row, row.ownerThreadId ? await chatRefOf(row.ownerThreadId) : null);
     },
     async lockForDelete(input, actorUserId) {
       const identity = and(
+        isNotNull(uploadIntakes.ownerThreadId),
         eq(uploadIntakes.intakeId, input.intakeId),
         eq(uploadIntakes.documentId, input.documentId as never),
         sql`exists (
@@ -291,7 +352,10 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
       // spelling after the chat row (and its handle) exists. The document and revision pin it.
       if (row.documentId !== input.documentId || row.locationRevision !== input.expectedRevision)
         return { kind: "refused", result: { kind: "identity_mismatch" } };
-      return { kind: "claimed", reservation: mapRow(row, await chatRefOf(row.ownerThreadId)) };
+      return {
+        kind: "claimed",
+        reservation: mapRow(row, row.ownerThreadId ? await chatRefOf(row.ownerThreadId) : null),
+      };
     },
     async markDeleted(projectId, intakeId) {
       await currentDrizzleDb(db)
@@ -303,6 +367,22 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             eq(uploadIntakes.intakeId, intakeId),
           ),
         );
+    },
+    async inFlight(projectId, actorUserId, documentIds) {
+      if (documentIds.length === 0) return new Set();
+      const rows = await currentDrizzleDb(db)
+        .select({ documentId: uploadIntakes.documentId })
+        .from(uploadIntakes)
+        .where(
+          and(
+            eq(uploadIntakes.projectId, projectId as never),
+            eq(uploadIntakes.actorUserId, actorUserId as never),
+            inArray(uploadIntakes.documentId, [...documentIds] as never[]),
+            inArray(uploadIntakes.state, ["reserved", "object_stored"]),
+            gt(uploadIntakes.updatedAt, new Date(Date.now() - IN_FLIGHT_MS)),
+          ),
+        );
+      return new Set<string>(rows.map((row) => row.documentId));
     },
     async consume(documentIds, chatId) {
       if (documentIds.length === 0) return [];

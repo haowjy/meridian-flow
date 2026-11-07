@@ -76,6 +76,7 @@ const GONE: Extract<LinkAnswer, { state: "gone" }> = Object.freeze({
   document: null,
 });
 const MISSING: LinkAnswer = Object.freeze({ state: "missing", document: null });
+const UPLOADING: LinkAnswer = Object.freeze({ state: "uploading", document: null });
 const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
 const answered = (answer: LinkAnswer): LocalLinkAnswer => ({ kind: "answered", answer });
@@ -123,7 +124,10 @@ export function createProjectLinkResolver(
         // Rule 4 (an ahead ref not known settled, at its exact address) is
         // the server's to confirm; see `LocalLinkAnswer`.
         const confirmed = resolution.settled || parseLinkRef(ref)?.kind === "doc";
-        if (answer && confirmed) return answered(answer);
+        // A stored file's size is only the server's to say, so a chip for one asks once;
+        // a picture's size is never drawn.
+        const sizeUnknown = answer?.document.file && answer.document.file.fileType !== "image";
+        if (answer && confirmed && !sizeUnknown) return answered(answer);
         provisional = answer;
       }
       return { kind: "ask", provisional };
@@ -167,6 +171,7 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         uri: document.uri,
         workId: document.workId,
         rootThreadId: document.rootThreadId ?? undefined,
+        ...(document.file ? { file: document.file } : {}),
       });
       // A hidden document is "in a draft": keep the destination the server named.
       return found && answer.inBranch && answer.branch
@@ -189,6 +194,8 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         : GONE;
     case "missing":
       return MISSING;
+    case "uploading":
+      return UPLOADING;
     case "unresolvable":
       return null;
   }
@@ -220,5 +227,6 @@ function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {
     uri: document.uri,
     workId: document.workId,
     ...(document.rootThreadId ? { rootThreadId: document.rootThreadId } : {}),
+    ...(document.file ? { file: { ...document.file, sizeBytes: null } } : {}),
   };
 }

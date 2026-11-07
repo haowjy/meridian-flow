@@ -20,6 +20,8 @@ export default defineEventHandler(async (event) => {
       fileAccess: app.fileAccess,
       branches: app.documentSync.branches,
       documentTrash: app.documentTrash,
+      uploads: app.uploadIntake,
+      files: app.uploadIdentity,
     },
     { projectId: getRouterParam(event, "projectId") ?? "", userId: user.userId, request },
   );

@@ -3,8 +3,14 @@ import type { ContextEntryValidationReason } from "../context-entry-validation.j
 import type { CanonicalContextUri } from "../context-uri.js";
 import type { Filetype } from "./filetype.js";
 
-/** The chat (a primary thread) a file was attached to; its row may not exist yet. */
-export type UploadOwner = { kind: "chat"; projectId: string; chatId: string };
+/**
+ * Who an upload belongs to. A chat's attach waits in its flat `uploads` source for a send; a
+ * source upload (a file dropped into a document) goes straight into `assets/` of the document's
+ * own source and belongs to nobody.
+ */
+export type UploadOwner =
+  | { kind: "chat"; projectId: string; chatId: string }
+  | { kind: "source"; projectId: string };
 
 /** The largest file an upload takes. The browser checks it before sending; the server stays the authority. */
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;

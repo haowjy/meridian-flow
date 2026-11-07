@@ -122,6 +122,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             return { kind: "live" };
           },
         },
+        uploads: { inFlight: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
         documentTrash: {
           retained: async () => new Set(),
         },
@@ -373,6 +375,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         branches: { viewForWork: async () => ({ kind: "live" }) },
         documentTrash: { retained: async () => new Set() },
+        uploads: { inFlight: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
       };
       const routeResolve = (holderDocumentId?: string) =>
         handleDocumentLinkResolveRequest(deps, {
@@ -453,6 +457,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         branches: { viewForWork: async () => ({ kind: "live" }) },
         documentTrash: { retained: async () => new Set() },
+        uploads: { inFlight: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
       };
       const result = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
@@ -518,6 +524,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 : { kind: "live" },
         },
         documentTrash: { retained: async () => new Set() },
+        uploads: { inFlight: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
       };
       const resolveIn = (workId: string) =>
         handleDocumentLinkResolveRequest(deps, {
@@ -640,6 +648,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
         documentTrash: { retained: async () => new Set() },
+        uploads: { inFlight: async () => new Set() },
+        files: { lookupDocuments: async () => [] },
       };
       const response = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,

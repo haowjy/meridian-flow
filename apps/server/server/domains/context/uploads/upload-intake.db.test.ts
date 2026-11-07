@@ -217,7 +217,7 @@ if (!RUN) {
       if (!intake) throw new Error("intake missing");
       await database.current.insert(documents).values({
         id: identity.documentId as never,
-        contextSourceId: intake.contextSourceId,
+        contextSourceId: intake.contextSourceId as never,
         name: "chapter",
         extension: "",
         fileType: "markdown",

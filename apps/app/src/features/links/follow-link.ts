@@ -126,8 +126,9 @@ export async function followProjectLink({
   // The common case: the link was resolved to draw it, so following is
   // instant and nothing is ever shown.
   const known = resolution.read(link);
-  // A folder opens nothing here: each surface opens a folder link's menu itself.
-  if (known?.state === "folder") {
+  // A folder opens nothing here: each surface opens a folder link's menu itself. A file still
+  // on its way up has nothing to open yet.
+  if (known?.state === "folder" || known?.state === "uploading") {
     settle();
     reporter.clear();
     return;
@@ -163,7 +164,7 @@ export async function followProjectLink({
     await open(documentRef(entry), gesture);
     return;
   }
-  if (entry?.state === "folder") {
+  if (entry?.state === "folder" || entry?.state === "uploading") {
     reporter.clear();
     return;
   }
