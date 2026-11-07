@@ -62,23 +62,26 @@ the original result only when the actor/owner/name/size fingerprint matches.
 
 ## Source uploads
 
-A file dropped into a document is a source upload: the same route with any scheme but `uploads`
-(`POST /context/<scheme>/upload?documentId=…&filename=…`, plus `workId` or `rootThreadId` for
-Scratch). It belongs to no chat: `owner_thread_id` and `context_source_id` are null, and the
-`source` destination carries the port the route resolved for the host's scope. The client mints
-the document id and it doubles as the intake id, so the link to the file stands in the document
-before the file exists. A second intake under an id with another name or size is refused
-(`idempotency_conflict`); an id some document already holds fails at `persist` and releases the object.
-Reservation fixes no name. `persist` writes `<scheme>://assets/<name>` through the port and, on
-`conflict`, takes the next free copy (`name (2).ext`, the file's own extension kept), then
-`finalize` records the name it took. `assets/` is created by that write wherever it has gone
-missing, so renaming it mid-upload only makes a new one. Chat-only paths (`lockForDelete`,
-`consume`, `lookupUpload`) skip these rows.
+A file dropped into a document, or a picture, is a source upload: the same start and finish routes
+as a chat attach, with any scheme but `uploads` (`POST /context/<scheme>/upload` and `/upload/finish`,
+plus `workId` for a Work's Scratch). A chat lineage's Scratch refuses (403): only the model creates
+there. It belongs to no chat: `owner_thread_id` and `context_source_id` are null, and the `source`
+destination carries the scheme, authority and port the route resolved for the host. The client mints
+the document id and sends it as the intake id (a UUID that no `documents` row holds, else
+`idempotency_conflict`), so the link to the file stands in the document before the file exists, and
+the door starts the upload before it inserts the chip.
 
-`inFlight` answers which document ids are unfinished uploads (reserved or object-stored, touched
-within two hours) of the asking account; the link resolve route turns a `doc:` ref that names
-nothing into `uploading` with it. A crash leaves a row no one sweeps; the two-hour window is what
-stops its chip saying `uploading` forever.
+`claim` only records the type. Finish places the file in `<scheme>://assets/<name>`: it picks the
+first free name, binds and persists, and on a `conflict` from either (another writer took the name)
+adds the name to the taken set and goes again, so a text file's bound path always matches the one it
+lands at. A file's own extension stays its extension (`notes (2).zip`). `finalize` records the name
+it took. `assets/` is created by that write wherever it has gone missing. Chat-only paths
+(`lockForDelete`, `consume`, `lookupUpload`) skip these rows.
+
+`inFlight` answers which document ids are source uploads a tab is still sending: reserved or
+object-stored and touched within three minutes. The uploading tab starts again about once a minute,
+which touches the row; the link resolve route turns a `doc:` ref that names nothing into `uploading`
+with it, and a stale row reads `gone` before the 24-hour sweep drops it.
 
 Uploads are flat and cannot be created through general ContextFS operations.
 Catalog visibility and finalized intake state commit in the ambient ContextFS
