@@ -151,6 +151,19 @@ export type SkyFrame = {
   plume: number;
   /** How strongly the aurora breathes while the page is still, 0 to 1. */
   pulse: number;
+  /** How hard each gulp of Cold Fire the perched dragon sends up swells the aurora, 0 and up. */
+  surge: number;
+};
+
+const GULP_SECONDS = 1.1;
+/** The share of a gulp spent rising from the mouth; then it reaches the sky. */
+export const GULP_RISE = 0.45;
+/** 0 to 1 through each gulp: it leaves the mouth at 0 and reaches the sky at `GULP_RISE`. */
+export const gulpPhase = (seconds: number) => (seconds / GULP_SECONDS) % 1;
+/** The aurora's swell from the last gulp to reach it, 1 on arrival and decaying. */
+const gulpSwell = (seconds: number) => {
+  const since = (gulpPhase(seconds) - GULP_RISE + 1) % 1;
+  return Math.exp(-since * 5);
 };
 
 const CAMERA_UNIFORMS = { PITCH: "pitch", YAW: "yaw", FOCAL: "focal", FLOW: "flow" } as const;
@@ -231,9 +244,12 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
   const drawScene = (frame: SkyFrame, seconds: number) => {
     if (!gl || !scene) return;
     camera(gl, scene.scenePass, frame, canvas.width, canvas.height);
-    for (const [location, key] of scene.floats) gl.uniform1f(location, frame[key]);
+    const swell = frame.surge * gulpSwell(seconds);
+    for (const [location, key] of scene.floats) {
+      gl.uniform1f(location, key === "plume" ? frame.plume + swell * 1.2 : frame[key]);
+    }
     const wave = Math.sin(seconds * 0.9) * 0.65 + Math.sin(seconds * 2.3 + 1) * 0.35;
-    gl.uniform1f(scene.pulsedAurora, frame.aurora * (1 + frame.pulse * 0.28 * wave));
+    gl.uniform1f(scene.pulsedAurora, frame.aurora * (1 + frame.pulse * 0.28 * wave) + swell * 0.9);
     // The aurora zooms in as it drifts, or the drift would pull its clamped edge into view.
     gl.uniform3f(
       scene.drift,
@@ -249,7 +265,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     draw,
     /** One still-page frame: reuses the aurora pass, so the pulse costs only the scene pass. */
     breathe(seconds: number) {
-      if (!lastFrame?.pulse || seconds - lastBreath < 1 / 30) return;
+      if (!(lastFrame?.pulse || lastFrame?.surge) || seconds - lastBreath < 1 / 30) return;
       lastBreath = seconds;
       drawScene(lastFrame, seconds);
     },

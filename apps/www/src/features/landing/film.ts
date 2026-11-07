@@ -113,6 +113,7 @@ function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
     veil: 0.12,
     aurora: 1,
     pulse: 0,
+    surge: 0,
     plume: 0.5,
   };
   const render = () => {
@@ -147,7 +148,7 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
   // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
   const breathing =
-    flare(beats.turn, PERCH) * 0.9 +
+    flare(beats.turn, PERCH) * 0.5 +
     smooth(beats.fight, 0, 0.08) * 0.35 +
     flare(beats.fight, FIGHT.ward) * 0.45 +
     flare(beats.fight, FIGHT.breath) * 0.7;
@@ -178,6 +179,7 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
       breathing * (1 - smooth(beats.twist, 0, 0.3)),
     // Low in the north behind the mountains, the same every night until the box burns.
     plume: 0.9 * (1 - smooth(beats.twist, 0, 0.3)),
+    surge: flare(beats.turn, PERCH),
     pulse: Math.max(
       1 - smooth(beats.push, 0, 0.35),
       smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),

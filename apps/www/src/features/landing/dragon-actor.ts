@@ -1,7 +1,18 @@
-import { catmullRom, DRAGON_HEAD_ANGLE, DRAGON_POSES, dragonMouth, dragonSheet } from "./dragon";
+import { MARKETING_SKY } from "@meridian/design-tokens/marketing-sky";
+import {
+  catmullRom,
+  DRAGON_HEAD_ANGLE,
+  DRAGON_POSES,
+  dragonGroundSheet,
+  dragonMouth,
+  dragonSheet,
+  GROUND_POSES,
+  groundMouth,
+} from "./dragon";
 import type { Layout } from "./film-layout";
 import { createFire } from "./fire";
 import type { Party } from "./forest";
+import { GULP_RISE, gulpPhase } from "./sky";
 import { type BeatProgress, clamp, ease, FIGHT, lerp, PERCH, progress, smooth } from "./timeline";
 
 type Point = readonly [number, number, number];
@@ -17,6 +28,8 @@ const TURN_RATE = 0.16;
 const MAX_LEAN = 0.7;
 /** The sweep, as shares of the twist: it leaves left, comes back and crosses, pushing the burn. */
 export const REVEAL_STARTS = 0.6;
+/** The share of the turn at which it lands in front of the party. */
+const LANDED = 0.58;
 const PASS = { leaves: 0.55, enters: REVEAL_STARTS, exits: 0.92 };
 /** How far the burn runs ahead of the mouth, and how far its breath reaches, in stage heights. */
 const FRONT_AHEAD = 0.42;
@@ -25,10 +38,6 @@ const BREATH_REACH = 0.5;
 const NO_WALL = 100;
 /** The fight's breaths: how hard, and what share of the way to the party they reach. */
 const FIGHT_BREATH = 0.85;
-/** How far it raises its head to breathe upward, in radians. */
-const HEAD_UP = 0.5;
-/** Where the upward breath reaches, in stage heights above the mouth. */
-const SKYWARD = 0.75;
 /** How long a hit's flash lasts, in shares of the fight beat. */
 const HIT_LASTS = 0.035;
 /** How high the spark arcs, in stage heights. */
@@ -77,7 +86,13 @@ export function createDragonActor(root: HTMLElement) {
   const rune = shot("rune");
   const song = shot("song");
   const hit = shot("hit");
+  const updraft = root.querySelector("#updraft") as HTMLElement;
+  const gulp = updraft.firstElementChild as HTMLElement;
   root.style.setProperty("--dragon-sheet", `url(${dragonSheet().toDataURL()})`);
+  root.style.setProperty("--dragon-ground", `url(${dragonGroundSheet().toDataURL()})`);
+  const rgb = ([r, g, b]: readonly number[]) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
+  root.style.setProperty("--cold-fire", rgb(MARKETING_SKY.fireBody));
+  root.style.setProperty("--cold-fire-core", rgb(MARKETING_SKY.fireCore));
 
   let marks: Mark[] = [];
   let unit = 0;
@@ -88,6 +103,7 @@ export function createDragonActor(root: HTMLElement) {
   let facing = 1;
   let lean = 0;
   let mouth: readonly [number, number] = [0, 0];
+  let headUp = 0;
 
   const measure = (next: Layout) => {
     layout = next;
@@ -127,7 +143,7 @@ export function createDragonActor(root: HTMLElement) {
       mark(span(spans, "out", 1), 0.4, 0.2, 0.1, -1),
       mark(span(spans, "back", 1), 0.7, 0.26, 0.13),
       mark(span(spans, "turn", 0.3), 0.9, 0.34, 0.2, -1),
-      mark(span(spans, "turn", 0.58), 0.84, 0.76, 0.4, -1),
+      mark(span(spans, "turn", LANDED), 0.84, 0.76, 0.4, -1),
       // It presses in as they give ground, rears back when the spark lands, then comes down
       // again for the breath that kills them.
       mark(span(spans, "fight", FIGHT.spark.eye[1]), fightX(0.77), 0.76, 0.4, -1),
@@ -322,27 +338,57 @@ export function createDragonActor(root: HTMLElement) {
     const wanted = !facingThem && moving && Math.abs(dx) > 0.3 ? Math.sign(dx) : now.facing;
     facing += (wanted - facing) * TURN_RATE;
     const tilt = moving ? clamp(Math.atan2(dy, Math.abs(dx) + 1), -MAX_LEAN, MAX_LEAN) : 0;
-    // Perched, it raises its head to breathe the Cold Fire up into the sky.
-    const rearing = fightWindow(beats.turn, PERCH);
-    const flying = lerp(tilt * Math.sign(facing || 1), HEAD_UP * -Math.sign(facing || 1), rearing);
-    const wantedLean = lerp(flying, PICTURE_LEAN, now.settled);
+    // On the ground it stands still with its wings folded; perched, its head rises to the sky.
+    const grounded =
+      at >= span(spans, "turn", LANDED) &&
+      at < span(spans, "twist", 0.22) &&
+      (at < span(spans, "fight", FIGHT.spark.eye[1]) ||
+        at >= span(spans, "fight", FIGHT.breath[0]));
+    flyer.classList.toggle("grounded", grounded);
+    const wantedLean = grounded
+      ? 0
+      : lerp(tilt * Math.sign(facing || 1), PICTURE_LEAN, now.settled);
     lean += (wantedLean - lean) * TURN_RATE;
     const beating = (1 - Math.cos(seconds * (moving ? 10 : 7))) / 2;
     const wave = lerp(beating, PICTURE_STROKE, now.settled);
     const beat = Math.max(now.size * BOB, layout.height * LEAST_BOB);
-    const bob = Math.sin(seconds * 1.3) * 0.05 * now.size - (wave - 0.5) * 2 * beat;
+    const bob = grounded ? 0 : Math.sin(seconds * 1.3) * 0.05 * now.size - (wave - 0.5) * 2 * beat;
     const scale = now.size / BOX;
     const shown = Math.abs(facing) < 0.12 ? 0.12 * (facing < 0 ? -1 : 1) : facing;
-    flyer.style.transform = `translate3d(${now.x - BOX / 2}px,${now.y + bob - BOX / 2}px,0) rotate(${lean}rad) scale(${shown * scale},${scale * (1 + (wave - 0.5) * 0.06)})`;
-    const frame = Math.round(wave * (DRAGON_POSES - 1)) / (DRAGON_POSES - 1);
-    const [offsetX, offsetY] = dragonMouth(frame);
+    const stretch = grounded ? 1 : 1 + (wave - 0.5) * 0.06;
+    flyer.style.transform = `translate3d(${now.x - BOX / 2}px,${now.y + bob - BOX / 2}px,0) rotate(${lean}rad) scale(${shown * scale},${scale * stretch})`;
+    const raised = Math.round(fightWindow(beats.turn, PERCH) * (GROUND_POSES - 1));
+    const poses = grounded ? GROUND_POSES : DRAGON_POSES;
+    const cell = grounded ? raised : Math.round(wave * (DRAGON_POSES - 1));
+    const frame = cell / (poses - 1);
+    const [offsetX, offsetY] = grounded ? groundMouth(frame) : dragonMouth(frame);
+    headUp = grounded ? frame : 0;
     const localX = offsetX * now.size * shown;
-    const localY = offsetY * now.size * (1 + (wave - 0.5) * 0.06);
+    const localY = offsetY * now.size * stretch;
     mouth = [
       now.x + localX * Math.cos(lean) - localY * Math.sin(lean),
       now.y + bob + localX * Math.sin(lean) + localY * Math.cos(lean),
     ];
     wings.style.maskPosition = `${frame * 100}% 0`;
+  };
+
+  /**
+   * Perched with its head raised, it sends the Cold Fire straight up in gulps: a column from its
+   * mouth to the top of the stage, and a bright knot rising through it that swells the aurora as
+   * it arrives (`gulpPhase` in `sky.ts`).
+   */
+  const rise = (seconds: number, strength: number) => {
+    updraft.style.opacity = String(strength);
+    if (strength <= 0) return;
+    const phase = gulpPhase(seconds);
+    const up = clamp(phase / GULP_RISE);
+    const width = layout.height * 0.05;
+    updraft.style.width = `${width}px`;
+    updraft.style.height = `${mouth[1]}px`;
+    updraft.style.transform = `translate3d(${mouth[0] - width / 2}px,0,0)`;
+    updraft.style.setProperty("--gulp", String(Math.exp(-phase * 4)));
+    gulp.style.opacity = phase < GULP_RISE ? String(1 - smooth(up, 0.75, 1)) : "0";
+    gulp.style.transform = `translate3d(0,${mouth[1] * (1 - up)}px,0) translate(0,-50%) scale(${0.7 + up * 0.6})`;
   };
 
   /** Moves a shot from `from` to `to` across its window, arcing up by `arc` stage heights. */
@@ -462,13 +508,8 @@ export function createDragonActor(root: HTMLElement) {
       attacks(fight, party, placed);
 
       const angle = lean + DRAGON_HEAD_ANGLE;
-      const skyward = fightWindow(beats.turn, PERCH);
-      const fighting =
-        skyward > 0
-          ? { aim: [mouth[0] - H * 0.08, mouth[1] - H * SKYWARD] as const, breath: skyward }
-          : party
-            ? fightBreath(fight, party)
-            : null;
+      rise(seconds, shown ? smooth(headUp, 0.6, 1) * fightWindow(beats.turn, PERCH) : 0);
+      const fighting = party ? fightBreath(fight, party) : null;
       fire?.draw(
         fighting
           ? { mouth, ...fighting, char: NO_WALL, time: at / H + seconds * 0.5 }
