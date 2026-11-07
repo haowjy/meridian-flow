@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -238,8 +239,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
             owner: { kind: "chat", projectId, chatId },
             filename,
             mimeType,
-            byteDigest: createHash("sha256").update(bytes).digest("hex"),
-            bytes,
+            sizeBytes: bytes.byteLength,
+            body: Readable.from(Buffer.from(bytes)),
           });
           if (!uploaded.ok) throw new Error(uploaded.error.code);
           return uploaded.value;

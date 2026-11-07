@@ -1292,7 +1292,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextSourceId: source.id,
         documentId: document.id,
         fingerprint: "fingerprint",
-        byteDigest: "a".repeat(64),
         filename: "reference.png",
         mimeType: "image/png",
         finalPath: "reference.png",

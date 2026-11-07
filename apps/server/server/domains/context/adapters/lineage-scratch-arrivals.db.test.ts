@@ -80,7 +80,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       contextSourceId: uploadsSource,
       documentId: upload,
       fingerprint: "f",
-      byteDigest: "0".repeat(64),
       filename: "pic.png",
       mimeType: "image/png",
       finalPath: "pic.png",

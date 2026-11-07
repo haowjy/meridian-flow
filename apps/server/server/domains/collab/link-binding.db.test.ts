@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 /**
  * Whole-document write doors bind outside their transaction and apply the
  * bound write inside it (contract §6.2, ledger A2-1): desired state, applied
@@ -249,8 +250,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 owner: { kind: "chat", projectId, chatId: randomUUID() },
                 filename: "upload.md",
                 mimeType: "text/markdown",
-                bytes,
-                byteDigest: createHash("sha256").update(bytes).digest("hex"),
+                sizeBytes: bytes.byteLength,
+                body: Readable.from(Buffer.from(bytes)),
               });
               if (!uploaded.ok) throw new Error(uploaded.error.code);
               return uploaded.value.documentId;

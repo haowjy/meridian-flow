@@ -1,5 +1,6 @@
 /** Authoritative, resumable upload intake aggregate. */
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import type {
   DeleteDraftUploadInput,
@@ -9,20 +10,31 @@ import type {
   UploadIntakeResult,
   UploadOwner,
 } from "@meridian/contracts/protocol";
-import { classifyFiletype, type ParsedDocumentFilename } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  MAX_UPLOAD_BYTES,
+  type ParsedDocumentFilename,
+} from "@meridian/contracts/protocol";
 import {
   classifyUpload,
   intakeFilename,
+  keptFileName,
   normalizeFilename,
   normalizeMime,
+  TRACKED_TEXT_MAX_BYTES,
 } from "../../file-intake/index.js";
 
 export { classifyUpload } from "../../file-intake/index.js";
 
-import { saveImagePreview } from "../../file-intake/image-preview.js";
+import {
+  needsPreviewConversion,
+  PREVIEW_SOURCE_MAX_BYTES,
+  saveImagePreview,
+} from "../../file-intake/image-preview.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
+import { openUploadBody, type UploadBody, UploadSizeError } from "./upload-body.js";
 
 export interface UploadIntakeInput {
   intakeId: string;
@@ -30,8 +42,9 @@ export interface UploadIntakeInput {
   owner: UploadOwner;
   filename: string;
   mimeType: string;
-  byteDigest: string;
-  bytes: Uint8Array;
+  /** The request's declared length: the body must carry exactly this many bytes. */
+  sizeBytes: number;
+  body: Readable;
 }
 
 export type UploadIntakeOutcome =
@@ -70,10 +83,11 @@ export interface UploadIntakeRepository {
     filename: string;
     documentFilename: ParsedDocumentFilename;
     mimeType: string;
-    byteDigest: string;
     fingerprint: string;
     fileType: Filetype;
   }): Promise<ReserveUploadResult>;
+  /** Drops a reservation whose bytes never arrived, so its name is free and a retry starts clean. */
+  abandon(projectId: string, intakeId: string): Promise<void>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   markObjectStored(projectId: string, intakeId: string, storageUrl: string): Promise<void>;
   resetObjectStored(projectId: string, intakeId: string): Promise<void>;
@@ -105,14 +119,15 @@ export interface UploadContentPort<Bound = unknown> {
   bind(input: {
     reservation: UploadReservation;
     actorUserId: string;
-    bytes: Uint8Array;
+    /** The file's text; empty for anything that is not tracked text. */
+    text: string;
   }): Promise<{ ok: true; bound: Bound } | { ok: false; definite: boolean }>;
   persist(input: {
     reservation: UploadReservation;
     bound: Bound;
     actorUserId: string;
     mimeType: string;
-    bytes: Uint8Array;
+    sizeBytes: number;
     storageUrl: string | null;
     /** A browser-drawable preview sits beside the stored object. */
     hasPreview: boolean;
@@ -135,15 +150,17 @@ function fingerprint(input: {
   actorUserId: string;
   owner: UploadOwner;
   filename: string;
-  mimeType: string;
-  byteDigest: string;
+  sizeBytes: number;
 }): string {
   const owner = `chat:${input.owner.projectId}:${input.owner.chatId}`;
   return createHash("sha256")
-    .update(
-      JSON.stringify([input.actorUserId, owner, input.filename, input.mimeType, input.byteDigest]),
-    )
+    .update(JSON.stringify([input.actorUserId, owner, input.filename, input.sizeBytes]))
     .digest("hex");
+}
+
+/** What a failed read of the body means to the writer: a body that isn't the size it declared. */
+function sizeFailure(cause: unknown): UploadIntakeError {
+  return cause instanceof UploadSizeError ? { code: "size_mismatch" } : { code: "storage_failed" };
 }
 
 export function createUploadIntake<Bound>(deps: {
@@ -170,20 +187,46 @@ export function createUploadIntake<Bound>(deps: {
         };
       }
       const mimeType = normalizeMime(raw.mimeType);
-      const byteDigest = raw.byteDigest.trim().toLowerCase();
-      const actualDigest = createHash("sha256").update(raw.bytes).digest("hex");
-      if (actualDigest !== byteDigest)
-        return { ok: false, error: { code: "idempotency_conflict" } };
-      const fileType = await classifyUpload({ filename, mimeType, bytes: raw.bytes });
-      const parsed = intakeFilename(filename, fileType, mimeType);
+      if (raw.sizeBytes > MAX_UPLOAD_BYTES) {
+        raw.body.destroy();
+        return { ok: false, error: { code: "too_large", limitBytes: MAX_UPLOAD_BYTES } };
+      }
+      let upload: UploadBody;
+      let fileType: Filetype;
+      let headWasText: boolean;
+      let whole: Buffer | null = null;
+      try {
+        upload = await openUploadBody(raw.body, raw.sizeBytes);
+        // Classified from the start of the file. Text and convertible pictures are then read
+        // whole, within a cap, so a NUL late in a text file and the picture preview see every byte.
+        fileType = await classifyUpload({ filename, mimeType, bytes: upload.head });
+        headWasText = classifyFiletype(fileType).kind === "tracked";
+        if (headWasText && raw.sizeBytes <= TRACKED_TEXT_MAX_BYTES) {
+          whole = await upload.collect();
+          fileType = await classifyUpload({ filename, mimeType, bytes: whole });
+        } else if (headWasText) {
+          fileType = "binary";
+        } else if (
+          raw.sizeBytes <= PREVIEW_SOURCE_MAX_BYTES &&
+          (await needsPreviewConversion(upload.head))
+        ) {
+          whole = await upload.collect();
+        }
+      } catch (cause) {
+        raw.body.destroy();
+        return { ok: false, error: sizeFailure(cause) };
+      }
+      const keptAsFile = headWasText && classifyFiletype(fileType).kind !== "tracked";
+      const parsed = keptAsFile
+        ? { ok: true as const, value: { ...keptFileName(filename), filetype: "binary" as const } }
+        : intakeFilename(filename, fileType, mimeType);
       if (!parsed.ok)
         return { ok: false, error: { code: "invalid_filename", reason: "name/reserved" } };
       const canonicalFingerprint = fingerprint({
         actorUserId: raw.actorUserId,
         owner: raw.owner,
         filename,
-        mimeType,
-        byteDigest,
+        sizeBytes: raw.sizeBytes,
       });
       const reserved = await deps.repository.reserve({
         intakeId: raw.intakeId,
@@ -192,7 +235,6 @@ export function createUploadIntake<Bound>(deps: {
         filename: raw.filename,
         documentFilename: parsed.value,
         mimeType,
-        byteDigest,
         fingerprint: canonicalFingerprint,
         fileType,
       });
@@ -204,6 +246,7 @@ export function createUploadIntake<Bound>(deps: {
       if (reservation.state === "deleted")
         return { ok: false, error: { code: "idempotency_conflict" } };
       if (reservation.state === "finalized") {
+        if (!whole) await upload.drain();
         return {
           ok: true,
           value: {
@@ -219,20 +262,33 @@ export function createUploadIntake<Bound>(deps: {
       let storageUrl = reservation.storageUrl;
       let storedThisAttempt = false;
       if (!storedTracked && !storageUrl) {
-        const stored = await deps.objectStore.put(reservation.objectKey, raw.bytes, mimeType);
-        if (!stored.ok) return { ok: false, error: { code: "storage_failed" } };
+        const stream = whole ? Readable.from(whole, { objectMode: false }) : upload.stream();
+        let sizeError: unknown;
+        stream.once("error", (error) => {
+          sizeError = error;
+        });
+        const stored = await deps.objectStore.putStream(reservation.objectKey, stream, {
+          sizeBytes: raw.sizeBytes,
+          mimeType,
+        });
+        if (!stored.ok) {
+          await deps.repository.abandon(raw.owner.projectId, raw.intakeId);
+          return { ok: false, error: sizeFailure(sizeError) };
+        }
         storageUrl = stored.value.storageUrl;
         storedThisAttempt = true;
         await deps.repository.markObjectStored(raw.owner.projectId, raw.intakeId, storageUrl);
         reservation = { ...reservation, state: "object_stored", storageUrl };
+      } else if (!whole) {
+        await upload.drain();
       }
 
       const hasPreview =
-        !storedTracked && storageUrl
+        !storedTracked && storageUrl && whole
           ? await saveImagePreview({
               objectStore: deps.objectStore,
               storageUrl,
-              bytes: raw.bytes,
+              bytes: whole,
               onFailure: (reason) =>
                 emitEvent(deps.eventSink, {
                   level: "warn",
@@ -247,7 +303,7 @@ export function createUploadIntake<Bound>(deps: {
         const bound = await deps.content.bind({
           reservation,
           actorUserId: raw.actorUserId,
-          bytes: raw.bytes,
+          text: storedTracked && whole ? whole.toString("utf8") : "",
         });
         if (!bound.ok) throw Object.assign(new Error("upload binding failed"), bound);
         const finalized = await deps.repository.transaction(async () => {
@@ -258,7 +314,7 @@ export function createUploadIntake<Bound>(deps: {
             bound: bound.bound,
             actorUserId: raw.actorUserId,
             mimeType,
-            bytes: raw.bytes,
+            sizeBytes: raw.sizeBytes,
             storageUrl: current.storageUrl,
             hasPreview,
           });

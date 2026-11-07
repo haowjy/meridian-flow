@@ -3,7 +3,7 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Server-side upload content taxonomy
  */
-import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { createNoopEventSink } from "../../observability/index.js";
 import { createObjectRelease } from "../../storage/index.js";
@@ -13,11 +13,13 @@ import type { UploadIntakeRepository, UploadReservation } from "./upload-intake.
 import { classifyUpload, createUploadIntake } from "./upload-intake.js";
 
 const bytes = new TextEncoder().encode("chapter one");
-const digest = createHash("sha256").update(bytes).digest("hex");
 
 function harness() {
   let row: UploadReservation | null = null;
   const repository: UploadIntakeRepository = {
+    async abandon() {
+      if (row?.state === "reserved") row = null;
+    },
     async reserve(input) {
       if (row)
         return row.fingerprint === input.fingerprint
@@ -116,20 +118,26 @@ function input() {
     owner: { kind: "chat" as const, projectId: "project-1", chatId: "chat-1" },
     filename: "chapter.md",
     mimeType: "text/markdown",
-    byteDigest: digest,
-    bytes,
+    sizeBytes: bytes.byteLength,
+    body: Readable.from(Buffer.from(bytes)),
   };
 }
 
 describe("UploadIntake", () => {
-  it("rejects digest and fingerprint mismatches without a second write", async () => {
+  it("rejects a name or size that differs from the first attempt without a second write", async () => {
     const { service, content } = harness();
     await service.intake(input());
     expect(await service.intake({ ...input(), filename: "other.md" })).toEqual({
       ok: false,
       error: { code: "idempotency_conflict" },
     });
-    expect(await service.intake({ ...input(), byteDigest: "0".repeat(64) })).toEqual({
+    expect(
+      await service.intake({
+        ...input(),
+        sizeBytes: bytes.byteLength + 1,
+        body: Readable.from(Buffer.concat([bytes, Buffer.from("!")])),
+      }),
+    ).toEqual({
       ok: false,
       error: { code: "idempotency_conflict" },
     });
@@ -142,36 +150,42 @@ describe("UploadIntake", () => {
       .mockResolvedValueOnce({ ok: false, definite: true })
       .mockResolvedValueOnce({ ok: true });
     const binary = new Uint8Array([0, 1, 2]);
-    const request = {
+    const request = () => ({
       ...input(),
       filename: "asset.bin",
       mimeType: "application/octet-stream",
-      bytes: binary,
-      byteDigest: createHash("sha256").update(binary).digest("hex"),
-    };
-    expect(await service.intake(request)).toEqual({ ok: false, error: { code: "storage_failed" } });
-    const recovered = await service.intake(request);
+      sizeBytes: binary.byteLength,
+      body: Readable.from(Buffer.from(binary)),
+    });
+    expect(await service.intake(request())).toEqual({
+      ok: false,
+      error: { code: "storage_failed" },
+    });
+    const recovered = await service.intake(request());
     expect(recovered.ok && recovered.value.documentId).toBe("00000000-0000-4000-8000-000000000001");
     // The object and its (absent) preview.
     expect(objectStore.delete).toHaveBeenCalledTimes(2);
-    expect(objectStore.put).toHaveBeenCalledTimes(2);
+    expect(objectStore.putStream).toHaveBeenCalledTimes(2);
   });
 
   it("retains stable stored bytes when transaction settlement is unknown", async () => {
     const { service, content, objectStore } = harness();
     content.persist.mockRejectedValueOnce(new Error("connection lost during commit"));
     const binary = new Uint8Array([0, 1, 2]);
-    const request = {
+    const request = () => ({
       ...input(),
       filename: "asset.bin",
       mimeType: "application/octet-stream",
-      bytes: binary,
-      byteDigest: createHash("sha256").update(binary).digest("hex"),
-    };
-    expect(await service.intake(request)).toEqual({ ok: false, error: { code: "storage_failed" } });
+      sizeBytes: binary.byteLength,
+      body: Readable.from(Buffer.from(binary)),
+    });
+    expect(await service.intake(request())).toEqual({
+      ok: false,
+      error: { code: "storage_failed" },
+    });
     expect(objectStore.delete).not.toHaveBeenCalled();
-    await service.intake(request);
-    expect(objectStore.put).toHaveBeenCalledOnce();
+    await service.intake(request());
+    expect(objectStore.putStream).toHaveBeenCalledOnce();
   });
 
   it("classifies text, images, and designation-only binaries on the server", async () => {
@@ -225,7 +239,7 @@ it("rejects a committed address different from the reservation", async () => {
       reservation,
       bound: null,
       actorUserId: "user",
-      bytes: new Uint8Array(),
+      sizeBytes: 0,
       mimeType: "text/plain",
       storageUrl: null,
       hasPreview: false,

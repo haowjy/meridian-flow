@@ -421,7 +421,6 @@ export const uploadIntakes = pgTable(
       .references(() => contextSources.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
     fingerprint: text("fingerprint").notNull(),
-    byteDigest: text("byte_digest").notNull(),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull(),
     finalPath: text("final_path").notNull(),
@@ -447,7 +446,6 @@ export const uploadIntakes = pgTable(
     index("upload_intakes_owner_thread")
       .on(table.ownerThreadId)
       .where(sql`${table.ownerThreadId} IS NOT NULL`),
-    check("upload_intakes_digest_valid", sql`${table.byteDigest} ~ '^[0-9a-f]{64}$'`),
   ],
 );
 

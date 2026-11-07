@@ -783,7 +783,6 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         filename: "upload.md",
         documentFilename: { name: "upload", extension: "", filetype: "markdown" },
         mimeType: "text/markdown",
-        byteDigest: "a".repeat(64),
         fingerprint: "reader-matrix",
         fileType: "markdown",
       });

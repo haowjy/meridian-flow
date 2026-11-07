@@ -111,7 +111,6 @@ if (!RUN) {
         contextSourceId: SOURCE,
         documentId: documentId as never,
         fingerprint: `upload-${suffix}`,
-        byteDigest: "a".repeat(64),
         filename: `map-${suffix}.png`,
         mimeType: "image/png",
         finalPath: `map-${suffix}.png`,
