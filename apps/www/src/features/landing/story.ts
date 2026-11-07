@@ -2,14 +2,24 @@
 
 export type CharacterKey = "tam" | "sigrun" | "oskar" | "maren";
 
-type Character = {
+type Fact = readonly [label: string, value: string];
+type Part = readonly [label: string, text: string];
+type Section = readonly [heading: string, body: string | readonly Part[]];
+
+/** A Knowledge Base page in plain Markdown: a lead, a list of facts and sections, writer's notes last. */
+export type WikiPage = {
+  lead: string;
+  facts: readonly Fact[];
+  sections: readonly Section[];
+};
+
+type Character = WikiPage & {
   key: CharacterKey;
   name: string;
+  /** The line beside them when they join the party. */
   note: string;
   /** Why the visitor might pick them. */
   pitch: string;
-  facts: ReadonlyArray<readonly [label: string, value: string]>;
-  sections: ReadonlyArray<readonly [heading: string, text: string]>;
   /** The prologue's last line once they are the one who lived. */
   lastLine: string;
 };
@@ -20,142 +30,277 @@ export const CHARACTERS: readonly Character[] = [
     name: "Tam",
     note: "Youngest warden in Harl’s history. Accused of burning the town’s grain. Says he didn’t.",
     pitch: "He still has to prove he didn’t do it.",
+    lastLine:
+      "My name is Tam. I did not burn the grain. I walked out of the fire, and nobody believed that either.",
+    lead: "Tam is the youngest warden in Harl’s history, condemned for burning the town’s grain.",
     facts: [
       ["Age", "24"],
-      ["From", "Harl, a river town in the south"],
-      ["Trade", "Warden of the Harl woods and grain road"],
+      ["Homeland", "Harl, a river town in the south"],
+      ["Allegiance", "None since the trial"],
+      ["Occupation", "Warden of the Harl woods and grain road"],
+      ["Abilities", "Archery, tracking"],
       ["Sent by", "The magistrate of Harl"],
-      ["Carries", "A hunting bow and a hatchet"],
+      ["First appears", "Prologue"],
     ],
     sections: [
       [
-        "Before",
-        "A miller’s orphan who won the crown’s archery at seventeen and came home a hero. The town made him warden at twenty, and children followed him down the street. He still can’t read.",
-      ],
-      [
-        "How he got here",
-        "The town granary burned in a hungry winter with the whole harvest inside. As warden, Tam held the only key. The town that had cheered him wanted him hanged, so he ran north before the hearing and was caught at the border, where the magistrate offered him the beast instead of the rope.",
-      ],
-      [
-        "How he fights",
-        "The best shot of the four and the quietest walker. He scouts ahead, tracks, and keeps them fed. Up close he’s only adequate, and Sigrun is fixing that.",
+        "Appearance",
+        "Lean and sunburnt, a head shorter than Sigrun. Wears the warden’s green coat with the badge cut off.",
       ],
       [
         "Personality",
         "Trusts people too fast. Counts things when he’s scared. Tells the truth badly, which is why nobody believed him.",
       ],
-      ["Wants", "To go home and be believed."],
-      ["Afraid of", "That he left a lamp burning that night, and doesn’t remember."],
+      [
+        "Abilities",
+        "The best shot of the four and the quietest walker. He scouts, tracks and keeps the party fed. Up close he’s only adequate.",
+      ],
+      [
+        "History",
+        [
+          [
+            "Early life",
+            "A miller’s orphan, raised at the mill on the Harl. He won the crown’s archery at seventeen, and the town made him warden at twenty.",
+          ],
+          [
+            "The granary",
+            "It burned in a hungry winter with the whole harvest inside. As warden, Tam held the only key. He ran north before the hearing and was caught at the border, where the magistrate offered him the beast instead of the rope. He still isn’t sure he put the lamp out that night.",
+          ],
+        ],
+      ],
+      [
+        "Relationships",
+        [
+          ["Sigrun", "Teaching him to fight up close. He thinks she likes him."],
+          ["Oskar", "Owes him eleven silver, according to Oskar."],
+          ["Maren", "Stitched his arm after the wolves. The only one who has asked if he did it."],
+        ],
+      ],
+      [
+        "Writer’s notes",
+        [
+          [
+            "Secret",
+            "He can’t read. He signed the grain ledger that week without knowing it showed the stores already sold.",
+          ],
+          ["If he survives", "He goes home to find who emptied the granary before it burned."],
+        ],
+      ],
     ],
-    lastLine:
-      "My name is Tam. I did not burn the grain. I walked out of the fire, and nobody believed that either.",
   },
   {
     key: "sigrun",
     name: "Sigrun",
     note: "Sent by the northern clans. She killed a jarl and won’t say why.",
     pitch: "She still hasn’t said why.",
+    lastLine:
+      "My name is Sigrun. I killed a jarl, and I will tell you why. I walked out of the fire because I had not finished.",
+    lead: "Sigrun held the bridge at Ansgard alone, and was Jarl Hakon’s sworn guard until she killed him at his own table.",
     facts: [
       ["Age", "34"],
-      ["From", "Clan Vard, in the northern fjords"],
-      ["Trade", "Sworn guard to Jarl Hakon"],
+      ["Homeland", "The northern fjords"],
+      ["Allegiance", "Clan Vard"],
+      ["Occupation", "Sworn guard to Jarl Hakon"],
+      ["Abilities", "Axe and shield"],
       ["Sent by", "The clan moot"],
-      ["Carries", "A long axe and a round shield"],
+      ["First appears", "Prologue"],
     ],
     sections: [
       [
-        "Before",
-        "The most famous fighter in the north. She held the bridge at Ansgard alone for a morning, and the clans still sing about it. Twelve years at Hakon’s right hand. Has a daughter of nine, raised by her sister.",
-      ],
-      [
-        "How she got here",
-        "At the midwinter feast she stood up and killed Hakon at his own table, in front of forty witnesses, and sat back down. She has refused to say why. The clans can’t hang a sworn guard without a reason, so they gave her the beast.",
-      ],
-      [
-        "How she fights",
-        "Close and patient. She lets the other side make the first mistake, then ends it in one or two blows. The best fighter of the four by a long way.",
+        "Appearance",
+        "Tall, going grey early, with her left ear missing. Wears a mail shirt patched with rings from three clans.",
       ],
       [
         "Personality",
-        "Says little. Sleeps sitting up and takes the worst watch without being asked. Kinder to Tam than she lets on.",
+        "Says little. Sleeps sitting up and takes the worst watch without being asked.",
       ],
-      ["Wants", "To finish what she started at that table."],
-      ["Afraid of", "Her daughter hearing why."],
+      [
+        "Abilities",
+        "The best fighter of the four. She lets the other side make the first mistake, then ends it in a blow or two.",
+      ],
+      [
+        "History",
+        [
+          [
+            "Early life",
+            "Born to Clan Vard. She joined Hakon’s guard at twenty-two and carried his shield in three wars.",
+          ],
+          [
+            "Ansgard",
+            "She held the bridge alone for a morning until the clans came up. They still sing about it.",
+          ],
+          [
+            "The feast",
+            "At midwinter she stood up, killed Hakon in front of forty witnesses and sat back down. The moot can’t hang a sworn guard without a reason, and she won’t give one, so it gave her the beast.",
+          ],
+        ],
+      ],
+      [
+        "Relationships",
+        [
+          ["Tam", "Teaching him to stop running."],
+          ["Oskar", "Sits where she can see his hands."],
+          ["Maren", "The only one she lets stand behind her."],
+          ["Family", "A daughter of nine, raised by her sister."],
+        ],
+      ],
+      [
+        "Writer’s notes",
+        [
+          ["Secret", "Hakon had promised her daughter to a southern lord to settle a debt."],
+          ["If she survives", "She goes south to find the lord."],
+        ],
+      ],
     ],
-    lastLine:
-      "My name is Sigrun. I killed a jarl, and I will tell you why. I walked out of the fire because I had not finished.",
   },
   {
     key: "oskar",
     name: "Oskar",
     note: "Stormcaller, sent by the king of the coast. He sold a fleet. Two fingers short.",
     pitch: "He’d sell this story to anyone.",
+    lastLine:
+      "My name is Oskar. I have sold everything I ever owned. I walked out of the fire and started looking for a buyer.",
+    lead: "Oskar was stormcaller to the king’s fleet and the hero of Selle Sound, until he sold its sailing dates to the enemy.",
     facts: [
       ["Age", "51"],
-      ["From", "Port Selle, on the coast"],
-      ["Trade", "Stormcaller to the king’s fleet"],
+      ["Homeland", "Port Selle, on the coast"],
+      ["Allegiance", "Whoever is paying"],
+      ["Occupation", "Stormcaller to the king’s fleet"],
+      ["Abilities", "Wind and lightning"],
       ["Sent by", "The king of the coast"],
-      ["Carries", "A boarding sword and a small ledger"],
+      ["First appears", "Prologue"],
     ],
     sections: [
       [
-        "Before",
-        "A chandler’s son born able to pull wind out of a clear sky. He won the battle of Selle Sound with a single storm, and the king knighted him on the deck. For twenty years he called the weather for sixty ships.",
-      ],
-      [
-        "How he got here",
-        "He sold the fleet’s sailing dates to the enemy, and twenty-two ships burned off Cape Ansel. The king’s men took two fingers from his right hand while they asked who else knew. Hanging him would have meant a public trial, so the king sent him north instead.",
-      ],
-      [
-        "How he fights",
-        "Wind and lightning, called with both hands. With two fingers gone he’s lost the fine work, so what he calls now is big and hard to aim. He’s also been known to pay the other side to leave.",
+        "Appearance",
+        "Broad and soft around the middle, with a well-kept beard. Two fingers gone from his right hand. Keeps the king’s ring on a cord.",
       ],
       [
         "Personality",
-        "Charming, tired and always bargaining. Keeps a small ledger of what everyone in the party owes him, and it’s usually right.",
+        "Charming, tired and always bargaining. Keeps a small ledger of what the others owe him, and it’s usually right.",
       ],
-      ["Wants", "To buy his way out of this."],
-      ["Afraid of", "Finding something he can’t put a price on."],
+      [
+        "Abilities",
+        "Calls storms with both hands. Since he lost the fingers they come bigger and harder to aim. Carries a boarding sword, and has been known to pay the other side to leave.",
+      ],
+      [
+        "History",
+        [
+          ["Early life", "A chandler’s son, born able to pull wind out of a clear sky."],
+          [
+            "Selle Sound",
+            "He won the battle with one storm, and the king knighted him on the deck.",
+          ],
+          [
+            "Cape Ansel",
+            "He sold the sailing dates, and twenty-two ships burned. The king’s men took two fingers while they asked who else knew. A public trial would have shamed the crown, so the king sent him north.",
+          ],
+        ],
+      ],
+      [
+        "Relationships",
+        [
+          ["Tam", "Lends him money, mostly to see if he pays it back."],
+          ["Sigrun", "Afraid of her, and says so."],
+          ["Maren", "Asks her to look at his hand every night. It doesn’t need it."],
+        ],
+      ],
+      [
+        "Writer’s notes",
+        [
+          ["Secret", "The enemy held his son. He has heard nothing since the ships burned."],
+          ["If he survives", "He goes looking for his son with no fleet and no name."],
+        ],
+      ],
     ],
-    lastLine:
-      "My name is Oskar. I have sold everything I ever owned. I walked out of the fire and started looking for a buyer.",
   },
   {
     key: "maren",
     name: "Maren",
     note: "Healer and ward-mage, sent by the abbey at Vell for heresy. She doesn’t flinch at fire.",
     pitch: "The fire didn’t burn her.",
+    lastLine:
+      "My name is Maren. I walked out of the fire, and it did not burn me. I have stopped telling people that.",
+    lead: "Maren is a healer and ward-mage who saved the queen from the red fever, then was tried for heresy by her own abbey.",
     facts: [
       ["Age", "29"],
-      ["From", "The abbey at Vell, in the mountains"],
-      ["Trade", "Infirmarian and ward-mage"],
+      ["Homeland", "The abbey at Vell, in the mountains"],
+      ["Allegiance", "The abbey, until the trial"],
+      ["Occupation", "Infirmarian"],
+      ["Abilities", "Wards, healing"],
       ["Sent by", "The abbess of Vell"],
-      ["Carries", "A staff, a lantern and a bag of needles"],
+      ["First appears", "Prologue"],
     ],
     sections: [
       [
-        "Before",
-        "Left at the abbey gate as a baby. The abbey trains its healers in wards, the old magic that holds a wound shut or a door closed. She ran the infirmary by twenty-two, saved the queen through the red fever, and was expected to be the next abbess.",
-      ],
-      [
-        "How she got here",
-        "The infirmary caught fire one night and she went back in for the patients. She walked out with her habit burned off and no mark on her skin. When she told the village that fire was not God’s judgement, the abbey tried her for heresy and gave her the north as penance.",
-      ],
-      [
-        "How she fights",
-        "Wards. She can hold a shield of light over all four of them for about as long as she can hold her breath, and she closes wounds while they’re still bleeding. Good with the staff too, which surprises people.",
+        "Appearance",
+        "Small, with a shaved head and abbey grey. No burns anywhere, not even old ones.",
       ],
       [
         "Personality",
-        "Calm and blunt, with a dark sense of humour. Looks straight at things other people look away from.",
+        "Calm and blunt, with a dark sense of humour. Looks straight at what other people look away from.",
       ],
-      ["Wants", "To learn why the fire didn’t burn her."],
-      ["Afraid of", "That the answer has nothing to do with God."],
+      [
+        "Abilities",
+        "She can hold a shield of light over all four for about as long as she can hold her breath, and close a wound while it’s still bleeding. Good with her staff, which surprises people.",
+      ],
+      [
+        "History",
+        [
+          ["Early life", "Left at the abbey gate as a baby. She ran the infirmary by twenty-two."],
+          [
+            "The red fever",
+            "She nursed the queen through it and was expected to be the next abbess.",
+          ],
+          [
+            "The fire",
+            "The infirmary burned and she went back in for the patients. She walked out with her habit gone and no mark on her skin. When she told the village that fire wasn’t God’s judgement, the abbey tried her and gave her the north as penance. She has been trying to work out why she didn’t burn ever since.",
+          ],
+        ],
+      ],
+      [
+        "Relationships",
+        [
+          ["Tam", "The first to thank her."],
+          ["Sigrun", "Stands behind her in every fight."],
+          ["Oskar", "Knows his hand doesn’t need looking at, and looks anyway."],
+        ],
+      ],
+      [
+        "Writer’s notes",
+        [
+          ["Secret", "She was born in the Greenlands. She doesn’t know."],
+          ["If she survives", "She finds out the dragon won’t attack her."],
+        ],
+      ],
     ],
-    lastLine:
-      "My name is Maren. I walked out of the fire, and it did not burn me. I have stopped telling people that.",
   },
 ];
+
+export const DRAGON_PAGE: WikiPage = {
+  lead: "The beast in the Greenlands. Nobody who went north was told what it was.",
+  facts: [
+    ["Status", "Alive"],
+    ["Kind", "Green dragon"],
+    ["Range", "The Greenlands"],
+    ["First appears", "Prologue"],
+  ],
+  sections: [
+    ["Appearance", "Green-black and longer than a longship, with a spined back and a barbed tail."],
+    ["Abilities", "Flies, and breathes fire that burns blue at the centre and green at the edge."],
+    [
+      "History",
+      "Every country in this story has sent people north to kill it. None of them came back.",
+    ],
+    [
+      "Writer’s notes",
+      [
+        ["Secret", "It has never once left the Greenlands. Nobody has asked why."],
+        ["Undecided", "Whether it’s the last one."],
+      ],
+    ],
+  ],
+};
 
 export const characterName = (key: CharacterKey) =>
   CHARACTERS.find((character) => character.key === key)?.name ?? "";
@@ -173,8 +318,9 @@ export const PROLOGUE = {
 export const QUESTION =
   "This is the prologue. Only one of them survives it and becomes the protagonist. Who is it?";
 
-export const SURVIVED = "Walked out of the fire. Protagonist.";
-export const FELL = "Died in the Greenlands, in the prologue.";
+export const ALIVE = "Alive";
+export const SURVIVED = "Alive, protagonist";
+export const FELL = "Died in the prologue";
 
 export const museReply = (key: CharacterKey) =>
   `The prologue ends with ${characterName(key)} now, and all four pages are up to date.`;
