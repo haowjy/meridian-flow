@@ -234,9 +234,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   `handleDoubleClick` and `handleTripleClick` claim a
   second or third press there so neither the browser nor ProseMirror widens
   the selection; the claim also records a third press for the no-travel case. The file has two halves:
-  `startGesture` follows the mouse (click or lift; ignores a `mouseup` from any
-  button but the left) and `liftSelection` pumps the drag events, so a block
-  gesture could reuse the first. Past 4px it sends a synthetic
+  `trackPress` (`chrome/track-press.ts`; follows a press, mouse or pointer,
+  and decides click or lift; it ends a `mousedown` on `mouseup` and a
+  `pointerdown` on `pointerup`, treats a `pointermove` with the left bit
+  clear as the release, and swallows the `click` after a lift) and
+  `liftSelection` pumps the drag events. The block gesture uses the same
+  tracker. Past the slop (4px, `Math.hypot`, shared with the chrome sweep
+  and link clicks) it sends a synthetic
   `dragstart` (at `view.dom`, positioned at the press, since a fast first move
   may already be off the selection) with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
   on a target change and `dragover` (so the caret, the 5s caret timeout and

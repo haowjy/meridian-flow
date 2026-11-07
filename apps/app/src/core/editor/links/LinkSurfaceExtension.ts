@@ -425,7 +425,7 @@ function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
 
 function travelFrom(origin: LinkPoint | null, event: MouseEvent): number {
   if (!origin) return 0;
-  return Math.abs(event.clientX - origin.x) + Math.abs(event.clientY - origin.y);
+  return Math.hypot(event.clientX - origin.x, event.clientY - origin.y);
 }
 
 /**
