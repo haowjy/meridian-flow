@@ -611,43 +611,50 @@ export const END = {
   start: "Start writing →",
 } as const;
 
-/**
- * The System's status windows at the campfire, one over each of the four, before the turn. Rows:
- * name, race and level, who they are, skill, what the skill does, status.
- */
-export const SHEETS: Record<CharacterKey, readonly string[]> = {
-  tam: [
-    "Tam",
-    "Human · Level 58",
-    "A farm boy from Harl, sent north by the king. The strongest human his age ever recorded.",
-    "[Spark]",
-    "Sets fire to what you touch or throw. Will not catch in deep cold.",
-    "Status: Alive",
-  ],
-  sigrun: [
-    "Sigrun",
-    "Dwarf · Level 74",
-    "Champion of the dwarven holds for forty years. She cuts her wards into her own arms.",
-    "[Ward Rune]",
-    "Each rune cut into your skin turns one blow, then goes dark.",
-    "Status: Alive",
-  ],
-  maren: [
-    "Maren",
-    "Elf · Level 70",
-    "Healer to the queen of Vell for nine hundred years. Blind since she was six.",
-    "[Mending Hymn]",
-    "While you sing, wounds near you close.",
-    "Status: Alive",
-  ],
-  oskar: [
-    "Oskar",
-    "Beastkin · Level 66",
-    "A bear-blooded guide from the Kessa steppe, and the only one who has walked into the ice and back.",
-    "[Sense Fear]",
-    "Hear a creature’s fear a breath before it moves.",
-    "Status: Alive",
-  ],
+/** A System status window at the campfire. The page renders the "Status" label itself. */
+export type Sheet = {
+  name: string;
+  kind: string;
+  who: string;
+  skill: string;
+  does: string;
+  status: string;
+};
+
+/** The System's status windows at the campfire, one over each of the four, before the turn. */
+export const SHEETS: Record<CharacterKey, Sheet> = {
+  tam: {
+    name: "Tam",
+    kind: "Human · Level 58",
+    who: "A farm boy from Harl, sent north by the king. The strongest human his age ever recorded.",
+    skill: "[Spark]",
+    does: "Sets fire to what you touch or throw. Will not catch in deep cold.",
+    status: "Alive",
+  },
+  sigrun: {
+    name: "Sigrun",
+    kind: "Dwarf · Level 74",
+    who: "Champion of the dwarven holds for forty years. She cuts her wards into her own arms.",
+    skill: "[Ward Rune]",
+    does: "Each rune cut into your skin turns one blow, then goes dark.",
+    status: "Alive",
+  },
+  maren: {
+    name: "Maren",
+    kind: "Elf · Level 70",
+    who: "Healer to the queen of Vell for nine hundred years. Blind since she was six.",
+    skill: "[Mending Hymn]",
+    does: "While you sing, wounds near you close.",
+    status: "Alive",
+  },
+  oskar: {
+    name: "Oskar",
+    kind: "Beastkin · Level 66",
+    who: "A bear-blooded guide from the Kessa steppe, and the only one who has walked into the ice and back.",
+    skill: "[Sense Fear]",
+    does: "Hear a creature’s fear a breath before it moves.",
+    status: "Alive",
+  },
 };
 
 /** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
