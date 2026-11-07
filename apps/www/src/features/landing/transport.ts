@@ -105,8 +105,7 @@ export function createTransport(options: {
   );
 
   const jumpPosition = (hash: string) => {
-    const { spans, filmTop } = getLayout();
-    return filmTop + (SECTIONS.find((section) => section.hash === hash)?.jumpTo(spans) ?? 0);
+    return SECTIONS.find((section) => section.hash === hash)?.jumpTo(getLayout().spans) ?? 0;
   };
 
   for (const link of root.querySelectorAll<HTMLAnchorElement>(".jumps a, .word")) {
@@ -123,11 +122,10 @@ export function createTransport(options: {
   }
 
   const stopListening = store.onSend(() => {
-    const { filmTop, spans } = getLayout();
     glide.active = true;
     glide.time = 0;
     glide.from = scrollY;
-    glide.to = filmTop + spans.ask[1] + 1;
+    glide.to = getLayout().spans.ask[1] + 1;
   });
   signal.addEventListener("abort", stopListening);
 

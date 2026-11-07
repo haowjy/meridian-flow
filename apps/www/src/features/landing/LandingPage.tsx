@@ -31,7 +31,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
       <canvas id="sky" />
 
       <main id="top">
-        <section className="film" id="film">
+        <section className="film">
           <div className="stage">
             <div className="capshade" id="capshade" />
 
