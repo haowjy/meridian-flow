@@ -24,6 +24,9 @@ type Character = WikiPage & {
   lastLine: string;
 };
 
+/** Hidden until the reveal: these name the dragon and who survives. */
+export const NOTES = "Writer’s notes";
+
 export const CHARACTERS: readonly Character[] = [
   {
     key: "tam",
@@ -77,7 +80,7 @@ export const CHARACTERS: readonly Character[] = [
         ],
       ],
       [
-        "Writer’s notes",
+        NOTES,
         [
           [
             "Secret",
@@ -145,7 +148,7 @@ export const CHARACTERS: readonly Character[] = [
         ],
       ],
       [
-        "Writer’s notes",
+        NOTES,
         [
           ["Secret", "Hakon had promised her daughter to a southern lord to settle a debt."],
           ["If she survives", "She goes south to find the lord."],
@@ -206,7 +209,7 @@ export const CHARACTERS: readonly Character[] = [
         ],
       ],
       [
-        "Writer’s notes",
+        NOTES,
         [
           ["Secret", "The enemy held his son. He has heard nothing since the ships burned."],
           ["If he survives", "He goes looking for his son with no fleet and no name."],
@@ -267,7 +270,7 @@ export const CHARACTERS: readonly Character[] = [
         ],
       ],
       [
-        "Writer’s notes",
+        NOTES,
         [
           ["Secret", "She was born in the Greenlands. She doesn’t know."],
           ["If she survives", "She finds out the dragon won’t attack her."],
@@ -276,6 +279,16 @@ export const CHARACTERS: readonly Character[] = [
     ],
   },
 ];
+
+export const BEAST_PAGE: WikiPage = {
+  lead: "The reason they were sent north. Nobody who went under the Cold Fire has come back to say what it is.",
+  facts: [
+    ["Range", "The Greenlands"],
+    ["Seen by", "Nobody living"],
+    ["First appears", "Prologue"],
+  ],
+  sections: [],
+};
 
 export const DRAGON_PAGE: WikiPage = {
   lead: "The beast in the Greenlands. Nobody who went north was told what it was.",
@@ -293,7 +306,7 @@ export const DRAGON_PAGE: WikiPage = {
       "Every country in this story has sent people north to kill it. None of them came back.",
     ],
     [
-      "Writer’s notes",
+      NOTES,
       [
         ["Secret", "It has never once left the Greenlands. Nobody has asked why."],
         ["Undecided", "Whether it’s the last one."],

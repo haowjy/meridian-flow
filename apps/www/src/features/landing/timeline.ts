@@ -17,10 +17,11 @@ const BEATS = [
   ["back", 0.8, 7],
   ["turn", 1.1, 7],
   ["twist", 2, 6],
-  ["ask", 1, 10],
-  ["dawn", 1.1, 4],
+  ["dawn", 1.5, 6],
   ["lore", 2.2, 6],
+  ["ask", 1, 10],
   ["hints", 1.2, 9],
+  ["roam", 3, 6],
   ["leave", 0.7, 3],
 ] as const;
 
@@ -65,7 +66,7 @@ export function beatProgress(at: number, spans: BeatSpans): BeatProgress {
   return result;
 }
 
-/** The four stops of the top bar, in order. */
+/** The stops of the top bar, in order. */
 export const SECTIONS = [
   {
     hash: "#the-world",
@@ -80,6 +81,12 @@ export const SECTIONS = [
     jumpTo: (spans: BeatSpans) => spans.out[1],
   },
   {
+    hash: "#knowledge-base",
+    label: "Knowledge Base",
+    startsAt: (spans: BeatSpans) => spans.lore[0],
+    jumpTo: (spans: BeatSpans) => along(spans, "lore", 0.6),
+  },
+  {
     hash: "#your-decisions",
     label: "Your decisions",
     startsAt: (spans: BeatSpans, vh: number) => spans.ask[0] - vh * 0.05,
@@ -88,7 +95,7 @@ export const SECTIONS = [
   {
     hash: "#the-workspace",
     label: "Workspace",
-    startsAt: (spans: BeatSpans, vh: number) => spans.dawn[1] - vh * 0.1,
+    startsAt: (spans: BeatSpans) => spans.hints[0],
     jumpTo: (spans: BeatSpans) => along(spans, "hints", 0.1),
   },
 ] as const;

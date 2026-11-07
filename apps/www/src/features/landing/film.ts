@@ -81,7 +81,7 @@ function typewriter(element: HTMLElement, caretClass: string) {
 
 /** Reduced motion: the stacked page over a still night sky. */
 function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
-  const stopListening = store.onSend(() => root.querySelector("#the-workspace")?.scrollIntoView());
+  const stopListening = store.onSend(() => root.querySelector("#end")?.scrollIntoView());
   signal.addEventListener("abort", stopListening);
   const sky = createSky(root.querySelector("#sky") as HTMLCanvasElement, signal);
   const frame: SkyFrame = {
@@ -176,7 +176,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const chapter = one("#chapter");
   const team = one("#the-team");
   const twist = one("#the-twist");
-  const caption = one("#the-workspace");
+  const caption = one("#knowledge-base");
   const captionShade = one("#capshade");
   const ask = one("#your-decisions");
   const card = one("#card");
@@ -258,7 +258,8 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       opacity = 1 - clamp((push - 0.25) / 0.55);
       grade = lerp(0.84, 0.3, push);
     } else {
-      const settle = ease(smooth(dawnP, 0.12, 0.55));
+      const returned = 1 - ease(smooth(asked, 0, 0.16));
+      const settle = ease(smooth(dawnP, 0.3, 0.7)) * returned;
       const barHeight = 55;
       const fullWidth = Math.min(width * 0.94, (height - barHeight - 44) / BLOCK_ASPECT);
       blockWidth = lerp(fullWidth, workspace.w, settle);
@@ -270,7 +271,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
         // No room beside the headline, so the product fills the screen and then slides down for it.
         blockWidth = workspace.w;
         x = workspace.x;
-        y = lerp(PHONE_REVEAL_TOP, workspace.y, ease(smooth(beats.lore, 0.06, 0.24)));
+        y = lerp(PHONE_REVEAL_TOP, workspace.y, ease(smooth(beats.lore, 0.06, 0.24)) * returned);
       }
       if (leave > 0) {
         const away = ease(leave);
@@ -289,11 +290,11 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       grade < 0.995
         ? `brightness(${grade.toFixed(3)}) saturate(${(1 - (1 - grade) * 0.5).toFixed(3)})`
         : "none";
-    block.inert = !(dawnP > 0.7 && leave < 0.05);
-    block.classList.toggle("s-asking", asked > 0 && (asked < 1 || store.getAnswer() !== null));
+    block.inert = !(push < 0.08 || (dawnP > 0.7 && leave < 0.05));
     if (hints > 0) slot.set("hints", progress(hints, 0.08, 0.95));
+    else if (asked > 0) slot.set("ask", 0);
     else if (beats.lore > 0) slot.set("lore", beats.lore);
-    else slot.set("team", 0);
+    else slot.set(twistP < REVEAL_STARTS ? "start" : "team", 0);
 
     show(world, smooth(beats.sky, 0.9, 1) * (1 - smooth(worldP, 0.84, 1)));
     worldTypers.forEach((typer, index) => {
@@ -367,7 +368,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
     const captionShown =
       (isPhone ? smooth(beats.lore, 0.2, 0.4) : smooth(beats.lore, 0.08, 0.32)) *
-      (1 - smooth(leave, 0, 0.4));
+      (1 - smooth(asked, 0, 0.12));
     show(caption, captionShown);
     captionShade.style.opacity = String(captionShown);
     caption.style.transform = `translateY(${(1 - captionShown) * 14}px)`;

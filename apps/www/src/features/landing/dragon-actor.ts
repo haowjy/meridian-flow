@@ -47,10 +47,10 @@ export function createDragonActor(root: HTMLElement) {
   const flyer = root.querySelector("#flyer") as HTMLElement;
   const wings = flyer.firstElementChild as HTMLElement;
   const fire = createFire(root.querySelector("#flame") as HTMLCanvasElement);
-  const caption = root.querySelector("#the-workspace") as HTMLElement;
+  const caption = root.querySelector("#knowledge-base") as HTMLElement;
   const text = document.createRange();
   const words = root.querySelector("#the-twist") as HTMLElement;
-  const row = root.querySelector(".s-n[data-doc='ddragon']") as HTMLElement;
+  const row = root.querySelector("#s-beast-row") as HTMLElement;
   root.style.setProperty("--dragon-sheet", `url(${dragonSheet().toDataURL()})`);
 
   let marks: Mark[] = [];
