@@ -5,6 +5,7 @@
  * changes (`changes`) alone; a tree line has no place in the text.
  */
 import { useQuery } from "@tanstack/react-query";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
 import type { DraftChangesData } from "./draft-changes";
 import { useChangeItems, useDraftCommandState } from "./draft-changes";
@@ -27,7 +28,7 @@ export function useOpenReviewChanges(
   const command = useDraftCommandState(draft?.itemKey ?? "");
   const listed = useQuery({
     ...workBranchDraftsQueryOptions(controller.projectId, controller.workId),
-    enabled: Boolean(draft),
+    enabled: projectReadEnabled(Boolean(draft)),
   });
   const item = draft ? listed.data?.find((row) => row.itemKey === draft.itemKey) : undefined;
   const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
