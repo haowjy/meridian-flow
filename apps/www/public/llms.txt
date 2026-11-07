@@ -5,7 +5,7 @@
 Meridian Flow is for writers who need Scrivener-scale organisation without its complexity:
 
 - Project: a whole serial, its chapters and its world pages (characters, places, rules, history), kept in one place.
-- Knowledge base: the story bible. Agents read it before they write and update it as the story changes, so a character's page reflects what happened to them in the latest chapter.
+- Knowledge base: the story bible, with a page for each character, place and rule. Agents look things up in it as they work and update a page when the writer asks.
 - Muse and helpers: Muse is the main agent the writer talks to. It sends helpers out on a chapter: Reader-sim reads it the way a serial reader would, Critic finds what doesn't work, Writer-helper drafts alternatives, and Continuity-checker compares it against the knowledge base.
 - Edits land as marked changes: every change an agent makes shows who made it and can be taken back, so the writer reviews instead of approving every step.
 - Writing together: the writer and the agents can edit the same document at once without losing each other's text.
