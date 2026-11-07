@@ -22,7 +22,7 @@ export type LlmCallSummary = {
   provider?: string;
   model?: string;
   outcome: LlmCallOutcome;
-  /** Gateway error code from the close record, kept when a stop is shown as cancelled. */
+  /** Gateway error code from the close record. */
   errorCode?: string;
   firstOutputMs?: number;
   durationMs?: number;
