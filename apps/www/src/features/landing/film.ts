@@ -15,6 +15,8 @@ import {
   progress,
   SECTIONS,
   smooth,
+  WORLD_TYPED,
+  WRITE_TYPED,
 } from "./timeline";
 import { createTransport } from "./transport";
 
@@ -241,7 +243,9 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
   function paint(at: number, beats: BeatProgress) {
     const { spans, height, width, home, workspace, blockLayoutWidth, isPhone } = layout;
-    const { world: worldP, open, write, out, back, ask: asked, turn, twist: twistP } = beats;
+    const { world: worldBeat, open, out, back, ask: asked, turn, twist: twistP } = beats;
+    const worldP = progress(worldBeat, 0, WORLD_TYPED);
+    const write = progress(beats.write, 0, WRITE_TYPED);
     const { dawn: dawnP, hints, leave } = beats;
     const push = ease(beats.push);
     const askLift = smooth(asked, ...ASK_LIFT);
@@ -262,14 +266,14 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       grade = lerp(0.84, 0.3, push);
     } else {
       const returned = 1 - ease(smooth(asked, 0, 0.1));
-      const settle = ease(smooth(dawnP, 0.3, 0.7)) * returned;
+      const settle = ease(smooth(dawnP, 0.5, 0.8)) * returned;
       const barHeight = 55;
       const fullWidth = Math.min(width * 0.94, (height - barHeight - 44) / BLOCK_ASPECT);
       blockWidth = lerp(fullWidth, workspace.w, settle);
       x = lerp((width - fullWidth) / 2, workspace.x, settle);
       y = lerp((height + barHeight - fullWidth * BLOCK_ASPECT) / 2, workspace.y, settle);
       opacity = 1;
-      grade = 1 - askLift * (1 - smooth(asked, 0.9, 1)) * 0.3;
+      grade = 1 - askLift * (1 - smooth(asked, 0.89, 1)) * 0.3;
       if (isPhone) {
         // No room beside the headline, so the product fills the screen and then slides down for it.
         blockWidth = workspace.w;
@@ -299,7 +303,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     else if (beats.lore > 0) slot.set("lore", beats.lore);
     else slot.set(twistP < REVEAL_STARTS ? "start" : "team", 0);
 
-    show(world, smooth(beats.sky, 0.9, 1) * (1 - smooth(worldP, 0.84, 1)));
+    show(world, smooth(beats.sky, 0.9, 1) * (1 - smooth(worldBeat, 0.9, 1)));
     worldTypers.forEach((typer, index) => {
       const from = 0.04 + index * 0.18;
       typer.set(progress(worldP, from, from + 0.22), worldP >= from && worldP < from + 0.22);
@@ -327,7 +331,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     typers[1].set(progress(write, 0.42, 0.9), write >= 0.42 && write < 0.9);
     typers[2].set(progress(write, 0.5, 0.98), write >= 0.5 && write < 0.985);
 
-    const askGone = smooth(asked, 0.9, 1);
+    const askGone = smooth(asked, 0.89, 1);
     show(ask, clamp(askLift * 5) * (1 - askGone));
     block.classList.toggle("s-lifted", askLift > 0);
     if (askLift > 0 && askLift < 1) {
@@ -340,7 +344,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     } else {
       card.style.transform = `translateY(${askGone * 18}px)`;
     }
-    turnTyper.set(progress(turn, 0.2, 0.7), turn > 0.15 && turn < 0.7);
+    turnTyper.set(progress(turn, 0.12, 0.44), turn > 0.09 && turn < 0.44);
 
     const fade = height * 0.035;
     for (const subtitle of subtitles) {
@@ -375,7 +379,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       line.dot.style.opacity = out > 0 && (returned < 1 || out < 1) ? "1" : "0";
     });
 
-    const twistShown = smooth(twistP, 0.1, 0.4) * (1 - smooth(twistP, 0.93, 1));
+    const twistShown = smooth(twistP, 0.07, 0.27) * (1 - smooth(twistP, 0.95, 1));
     show(twist, twistShown);
     twist.style.transform = `scale(${1.06 - twistShown * 0.06})`;
 

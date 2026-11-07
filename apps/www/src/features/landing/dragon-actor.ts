@@ -12,8 +12,8 @@ const ROW_SIZE = 34;
 const TURN_RATE = 0.16;
 const MAX_LEAN = 0.7;
 /** The sweep, as shares of the twist: it leaves left, comes back and crosses, pushing the burn. */
-export const REVEAL_STARTS = 0.4;
-const PASS = { leaves: 0.34, enters: REVEAL_STARTS, exits: 0.88 };
+export const REVEAL_STARTS = 0.6;
+const PASS = { leaves: 0.55, enters: REVEAL_STARTS, exits: 0.92 };
 /** How far the burn runs ahead of the mouth, and how far its breath reaches, in stage heights. */
 const FRONT_AHEAD = 0.42;
 const BREATH_REACH = 0.5;
@@ -89,7 +89,7 @@ export function createDragonActor(root: HTMLElement) {
       mark(span(spans, "back", 1), 0.7, 0.26, 0.13),
       mark(span(spans, "turn", 0.45), 0.9, 0.34, 0.2, -1),
       mark(span(spans, "turn", 1), 0.84, 0.76, 0.4, -1),
-      mark(span(spans, "twist", 0.1), 0.82, 0.77, 0.4, -1),
+      mark(span(spans, "twist", 0.42), 0.82, 0.77, 0.4, -1),
       mark(span(spans, "twist", PASS.leaves), -0.2, 0.3, 0.34, -1),
       mark(span(spans, "twist", PASS.enters), -0.35, 0.58, 0.66),
       mark(span(spans, "twist", PASS.exits), 1.4, 0.46, 0.8),
