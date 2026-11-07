@@ -130,7 +130,7 @@ export function ImageResizeHandles({
   return (
     <span className="meridian-image-resize" aria-hidden>
       {IMAGE_RESIZE_CORNERS.map((corner) => (
-        // biome-ignore lint/a11y/noStaticElementInteractions: a grip is a pointer affordance with no keyboard equivalent yet, and a role it cannot honour reads worse than being hidden; the keyboard path is in this directory's .context/FUTURE
+        // biome-ignore lint/a11y/noStaticElementInteractions: a grip is a pointer affordance with no keyboard equivalent yet, and a role it cannot honour reads worse than being hidden; the keyboard path is in this directory's .context/FUTURE. slop-lint: allow suppression the reason is stated in this comment
         <span
           key={corner}
           className={`meridian-image-resize__grip meridian-image-resize__grip--${corner}`}

@@ -2,8 +2,7 @@
  * Provider-adapter port: the one streaming primitive each provider adapter
  * (anthropic/openai/openai-compatible) implements.
  *
- * The gateway drives this and reduces the stream through consumeStream and
- * the retry machinery. Each adapter maps one provider's SDK events
+ * The gateway drives this through the retry machinery. Each adapter maps one provider's SDK events
  * to canonical StreamEvents.
  *
  * Why one port: every provider has a different SDK contract, but the

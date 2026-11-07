@@ -36,9 +36,6 @@ __mergedSuite("wake-run.test.ts", () => {
       async *stream() {
         yield { type: "end" as const, result: textResult() };
       },
-      async generate() {
-        throw new Error("not used");
-      },
     };
   }
 

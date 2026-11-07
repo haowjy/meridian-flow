@@ -244,7 +244,7 @@ function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]
 
 /**
  * A room's scope follows its Work: an archived Work's drafts and scratch are
- * read-only (D33). The front editor already follows its room; when the server
+ * read-only. The front editor already follows its room; when the server
  * names a scope that `readOnly` doesn't show, this tab's Works catalog is
  * behind (another tab archived or unarchived the Work), and the archived
  * notice, its Unarchive and `readOnly` all come from it. Asked on activation

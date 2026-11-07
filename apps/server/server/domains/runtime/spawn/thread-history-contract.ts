@@ -492,7 +492,7 @@ export function defineThreadHistoryContract(
       expect(text).not.toContain("COPY SENTINEL");
       expect(text).not.toContain("y2:");
       expect(text).not.toContain('"revision"');
-      // The call line quotes the edit's inputs, so the page carries their evidence (D48).
+      // The call line quotes the edit's inputs, so the page carries their evidence.
       expect(text).toContain(
         'write({"command":"replace","path":"manuscript://chapter.md","content":"EDIT SENTINEL","find":"old"})',
       );

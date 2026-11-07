@@ -272,7 +272,7 @@ function DirRow({
       {/* The region spans the subtree, so "after" lands below everything shown inside. */}
       <InsertionLine edge={drop.edge} inset={ROW_INSET_PX + rowPaddingLeft(depth)} />
       <EntryInteractionShell interaction={interaction}>
-        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
+        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
         <div
           role="button"
           tabIndex={0}

@@ -351,7 +351,7 @@ export const AMBIGUOUS_PATH_FAULT: AdapterFault = {
   message: "Two of this Work's drafts share this path. Review the drafts to keep one.",
 };
 
-/** The same clash when one of the two is the draft's own copy of a document deleted live (D79). */
+/** The same clash when one of the two is the draft's own copy of a document deleted live. */
 export const OUTLIVED_PATH_FAULT: AdapterFault = {
   code: "invalid_operation",
   reason: "ambiguous_path",

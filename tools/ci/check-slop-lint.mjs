@@ -178,23 +178,25 @@ function collectSwallowedErrors(sourceFile, lines, findings) {
   visit(sourceFile);
 }
 
+// The raw scanner loses its place after a template with a substitution, so comments come
+// from the parse tree. JsxText is skipped: its words are text, not trivia.
 function comments(sourceFile, text) {
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, sourceFile.languageVariant, text);
-  const result = [];
-  while (true) {
-    const token = scanner.scan();
-    if (token === ts.SyntaxKind.EndOfFileToken) break;
-    if (
-      token === ts.SyntaxKind.SingleLineCommentTrivia ||
-      token === ts.SyntaxKind.MultiLineCommentTrivia
-    ) {
-      result.push({
-        text: scanner.getTokenText(),
-        start: scanner.getTokenPos(),
-      });
+  const byStart = new Map();
+  // A truthy return would stop forEach*CommentRange after the first comment.
+  const add = (pos, end) => {
+    byStart.set(pos, { text: text.slice(pos, end), start: pos });
+  };
+  function visit(node) {
+    if (node.kind === ts.SyntaxKind.JsxText) return;
+    if (node.getChildCount(sourceFile) === 0) {
+      ts.forEachLeadingCommentRange(text, node.pos, add);
+      ts.forEachTrailingCommentRange(text, node.end, add);
+      return;
     }
+    for (const child of node.getChildren(sourceFile)) visit(child);
   }
-  return result;
+  visit(sourceFile);
+  return [...byStart.values()];
 }
 
 function inBacktick(text, position) {

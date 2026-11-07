@@ -244,7 +244,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
           ctx.returnResult(input as ReturnResultCapture),
       },
       capability: "return_result",
-      // The child's saved report renders in its place (D6); history withholds its arguments.
+      // The child's saved report renders in its place; history withholds its arguments.
       historyKind: "routine",
       advertise: false,
     },
