@@ -352,6 +352,8 @@ export function createForest(root: HTMLElement) {
       const { spans, width: W, height: H } = layout;
       const shown = 1 - smooth(beats.twist, 0.12, 0.26);
       walkers.style.opacity = String(shown);
+      // Gone before the film's stage scrolls away; the sky behind it stays.
+      forest.style.opacity = String(1 - smooth(beats.leave, 0, 0.6));
       const walkOut = smooth(beats.turn, 0.02, 0.5);
       // The ground moves only while they walk: along the road, then out of the woods onto the
       // shore. Camped, perched over or fighting, it holds still.
