@@ -188,20 +188,9 @@ export function useSettleConfirmedCreation(projectId: string, hasRouteData: bool
 }
 
 /**
- * Every query under `["projects", id, ...]` pauses for an unresolved or failed
- * create (the server has no such project yet). `AppQueryProvider` installs this
- * as the default `enabled`, so a read needs no guard of its own. A query that
- * sets its own `enabled` replaces the default and must still check
- * `useIsProjectPendingCreation`.
+ * For imperative reads (`fetchQuery` ignores `enabled`); query hooks use
+ * `projectReadEnabled` instead.
  */
-export function isProjectReadPaused(queryKey: readonly unknown[]): boolean {
-  const projectId = queryKey[0] === "projects" ? queryKey[1] : null;
-  if (typeof projectId !== "string") return false;
-  const status = readCreationRecord(projectCreationKey(projectId))?.status;
-  return status === "pending" || status === "failed";
-}
-
-/** Dependent project reads pause for unresolved or failed creates. */
 export function useIsProjectPendingCreation(projectId: string | null | undefined): boolean {
   const record = useCurrentCreationRecord<ProjectCreationPayload, Project>(
     projectId ? projectCreationKey(projectId) : "",

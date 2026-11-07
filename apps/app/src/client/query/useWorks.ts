@@ -7,9 +7,8 @@ import { isUuid, type ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "./project-query-keys";
-import { useIsProjectPendingCreation } from "./useProjectCreation";
 import { projectWorkCommands } from "./work-command-projection";
 import { useWorkCommandRecords } from "./work-command-store";
 import { acquireWorksSnapshot, workFromSnapshot } from "./works-projection-acquisition";
@@ -25,14 +24,13 @@ const isAddressable = <W extends Work>(work: W): work is W & AddressableWork => 
 export function useWorksSnapshot(projectId: string, requested = true) {
   // Called unconditionally: short-circuiting a hook behind `requested` changes
   // the hook order the moment a caller flips it.
-  const projectPending = useIsProjectPendingCreation(projectId);
-  const enabled = requested && !projectPending;
+  const enabled = requested;
   const client = useQueryClient();
   const list = useQuery({
     queryKey: projectQueryKeys.works(projectId),
     queryFn: () => acquireWorksSnapshot(client, projectId),
     staleTime: 30_000,
-    enabled,
+    enabled: projectReadEnabled(requested),
   });
   return { list, enabled };
 }
