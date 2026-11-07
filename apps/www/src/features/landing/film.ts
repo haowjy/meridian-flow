@@ -52,6 +52,8 @@ function typewriter(element: HTMLElement, caretClass: string) {
     }
   };
 
+  fill(rest, 0, characters.length);
+
   let last = -1;
   return {
     set(amount: number, caretVisible: boolean) {
@@ -101,6 +103,7 @@ function skyFrame(beats: BeatProgress, raw: number, velocity: number, layout: La
   const toEnd = ease(
     progress(raw, endTop - height * 0.8, Math.min(documentHeight - height, endTop)),
   );
+  const stageCenter = (layout.width - windowWidth) / 2 / height;
   const homeCenter = (home.x + home.w / 2 - windowWidth / 2) / height;
   const workspaceCenter = (workspace.x + workspace.w / 2 - windowWidth / 2) / height;
   const spread =
@@ -113,7 +116,7 @@ function skyFrame(beats: BeatProgress, raw: number, velocity: number, layout: La
   veil = lerp(veil, 0, dawn);
   const horizon = -0.25;
   return {
-    lampX: lerp(lerp(homeCenter, workspaceCenter, dawn), 0, toEnd),
+    lampX: lerp(lerp(homeCenter, workspaceCenter, dawn), stageCenter, toEnd),
     lampY: horizon,
     rotation: 0.7 + raw * 0.00011 - ease(progress(beats.twist, 0.1, 1)) * 1.1,
     trail:
@@ -179,7 +182,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const sectionLabel = one("#herel");
   const parts: FilmParts = {
     stage: one(".stage"),
-    film: one("#film"),
     end: one("#end"),
     blockHome: one(".slotwrap"),
     block: slot.element,
@@ -206,12 +208,20 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const allTypers = [...typers, turnTypers.a, turnTypers.b, ...worldTypers];
 
   let layout: Layout = measureLayout(parts);
+  let current = 0;
   let needsPaint = true;
   const measure = () => {
-    chapter.style.transform = "none";
+    const scrollEnd = layout.documentHeight - layout.height;
+    const share = scrollY / scrollEnd;
     layout = measureLayout(parts);
     sky.resize();
     needsPaint = true;
+    // The film's length follows the window's height: keep the visitor's place in the story.
+    const nextEnd = layout.documentHeight - layout.height;
+    if (nextEnd !== scrollEnd) {
+      scrollTo(0, share * nextEnd);
+      current = scrollY;
+    }
   };
 
   function paint(at: number, beats: BeatProgress) {
@@ -352,7 +362,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     }
   }
 
-  let current = 0;
   let velocity = 0;
   let lastFrame = performance.now();
   let slowFrames = 0;
@@ -365,7 +374,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     getLayout: () => layout,
     remeasure: measure,
     onRewind: () => {
-      current = -layout.filmTop;
+      current = 0;
     },
     signal,
   });
@@ -379,8 +388,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     lastFrame = now;
     transport.advance(elapsed);
 
-    const raw = scrollY;
-    const target = raw - layout.filmTop;
+    const target = scrollY;
     const previous = current;
     current += (target - current) * (1 - 0.0016 ** ((step / 1000) * 2.2));
     if (Math.abs(target - current) < 0.3) current = target;
@@ -392,7 +400,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       needsPaint = false;
       paint(current, beats);
     }
-    sky.draw(skyFrame(beats, current + layout.filmTop, velocity, layout), now / 1000);
+    sky.draw(skyFrame(beats, current, velocity, layout), now / 1000);
 
     slowTime += step;
     slowFrames += 1;
@@ -421,7 +429,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   document.fonts.ready.then(() => {
     if (!signal.aborted) measure();
   });
-  current = scrollY - layout.filmTop;
+  current = scrollY;
   html.classList.add("film-ready");
   frameRequest = requestAnimationFrame(frame);
 
@@ -430,6 +438,9 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     cancelAnimationFrame(frameRequest);
     unsubscribe();
     for (const typer of allTypers) typer.restore();
-    html.classList.remove("film-ready");
+    html.classList.remove("cine", "film-ready");
+    delete html.dataset.auto;
+    html.style.removeProperty("--filmh");
+    html.style.removeProperty("--cy");
   };
 }

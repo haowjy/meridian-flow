@@ -374,7 +374,7 @@
   animation: blink 1.1s steps(1) infinite;
 }
 
-@media (max-width: 819px) {
+@media (max-width: 819px), (max-height: 499px) {
   .s-rail,
   .s-chat {
     display: none;

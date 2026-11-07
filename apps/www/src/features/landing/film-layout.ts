@@ -2,15 +2,14 @@ import { type BeatSpans, clamp, spanBeats } from "./timeline";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** The breakpoints in landing.css. Queries, not widths: scrollbars must not split the two. */
-const PHONE_QUERY = "(max-width: 819px)";
-const SIDEWAYS_QUERY = "(max-width: 819px) and (max-height: 499px)";
+const PHONE_QUERY = "(max-width: 819px), (max-height: 499px)";
+const SHORT_QUERY = "(max-height: 499px)";
 
 export type Rect = { x: number; y: number; w: number };
 export type Line = { path: SVGPathElement; dot: SVGCircleElement; length: number };
 
 export type FilmParts = {
   stage: HTMLElement;
-  film: HTMLElement;
   end: HTMLElement;
   blockHome: HTMLElement;
   block: HTMLElement;
@@ -40,7 +39,6 @@ export type Layout = {
   turn: { a: number; b: number };
   spans: BeatSpans;
   stops: { y: number; t: number }[];
-  filmTop: number;
   endTop: number;
   documentHeight: number;
   teamLines: Line[];
@@ -60,59 +58,33 @@ function makeLine(svg: SVGSVGElement, d: string): Line {
   return { path, dot, length };
 }
 
-/** Lays out the team cards around the chapter, with a curve from each to the page. */
-function layoutTeam(parts: FilmParts, width: number, rowHeight: number) {
-  const lines: Line[] = [];
-  const cardWidth = Math.min(width * 0.25, 340);
-  const margin = width * 0.045;
-  const spots = [
-    [margin, rowHeight * 0.08],
-    [width - cardWidth - margin, rowHeight * 0.08],
-    [margin, rowHeight * 0.52],
-    [width - cardWidth - margin, rowHeight * 0.52],
-  ];
-  const hubY = parts.hub.offsetTop;
-  parts.agents.forEach((agent, index) => {
-    const [left, top] = spots[index];
-    agent.style.left = `${left}px`;
-    agent.style.top = `${top}px`;
-    const endX = index % 2 ? left : left + cardWidth;
-    const endY = top + 50;
-    const startX = width / 2;
-    const midX = startX + (endX - startX) * 0.5;
+/** Draws a curve from the chapter to each team card. */
+function layoutTeam(parts: FilmParts, width: number) {
+  const startX = width / 2;
+  const startY = parts.hub.offsetTop;
+  return parts.agents.map((agent, index) => {
+    const endX = agent.offsetLeft + (index % 2 ? 0 : agent.offsetWidth);
+    const endY = agent.offsetTop + 50;
+    const midX = (startX + endX) / 2;
     const line = makeLine(
       parts.teamLines,
-      `M${startX} ${hubY} C${midX} ${hubY},${midX} ${endY},${endX} ${endY}`,
+      `M${startX} ${startY} C${midX} ${startY},${midX} ${endY},${endX} ${endY}`,
     );
     line.dot.setAttribute("r", "4.5");
-    lines.push(line);
+    return line;
   });
-  return lines;
 }
 
-/** Places the world notes and joins each to the last, along the sides that face each other. */
-function layoutWorld(parts: FilmParts, width: number, height: number, barHeight: number) {
-  const left = clamp(width * 0.06, 28, 90);
-  const span = Math.min(width - 2 * left, 1240);
-  const top = Math.max(barHeight + 44, height * 0.2);
-  const spots = [
-    [left + 30, top],
-    [left + span * 0.56, top - height * 0.03],
-    [left + span * 0.62, height * 0.6],
-    [left + span * 0.08, height * 0.58],
-  ];
-  const [first, second, third, fourth] = parts.worldNotes.map((note, index) => {
-    note.style.left = `${spots[index][0]}px`;
-    note.style.top = `${spots[index][1]}px`;
-    return {
-      left: note.offsetLeft - 18,
-      right: note.offsetLeft + note.offsetWidth + 16,
-      top: note.offsetTop - 18,
-      bottom: note.offsetTop + note.offsetHeight + 18,
-      x: note.offsetLeft + note.offsetWidth / 2,
-      y: note.offsetTop + 9,
-    };
-  });
+/** Joins each world note to the last, along the sides that face each other. */
+function layoutWorld(parts: FilmParts) {
+  const [first, second, third, fourth] = parts.worldNotes.map((note) => ({
+    left: note.offsetLeft - 18,
+    right: note.offsetLeft + note.offsetWidth + 16,
+    top: note.offsetTop - 18,
+    bottom: note.offsetTop + note.offsetHeight + 18,
+    x: note.offsetLeft + note.offsetWidth / 2,
+    y: note.offsetTop + 9,
+  }));
   const routes = [
     [first.right, first.y, second.left, second.y],
     [second.x, second.bottom, third.x, third.top],
@@ -151,17 +123,17 @@ function workspaceRect(parts: FilmParts, layout: { width: number; height: number
 export function measureLayout(parts: FilmParts): Layout {
   const html = document.documentElement;
   const isPhone = matchMedia(PHONE_QUERY).matches;
-  const isSideways = matchMedia(SIDEWAYS_QUERY).matches;
+  const isShort = matchMedia(SHORT_QUERY).matches;
   const windowWidth = html.clientWidth;
   const width = parts.stage.clientWidth;
   const height = innerHeight;
-  const bar = isPhone ? 90 : 56;
+  const bar = Number.parseFloat(getComputedStyle(html).getPropertyValue("--bar"));
   const { blockHome, block, caption, chapterOpening, lastTypedParagraph } = parts;
 
   parts.teamLines.replaceChildren();
   parts.worldLines.replaceChildren();
-  const teamLines = isPhone ? [] : layoutTeam(parts, width, height - bar);
-  const worldLines = isPhone ? [] : layoutWorld(parts, width, height, bar);
+  const teamLines = isPhone ? [] : layoutTeam(parts, width);
+  const worldLines = isPhone ? [] : layoutWorld(parts);
 
   html.style.setProperty(
     "--cy",
@@ -180,18 +152,20 @@ export function measureLayout(parts: FilmParts): Layout {
 
   const home = { x: blockHome.offsetLeft, y: blockHome.offsetTop, w: blockHome.offsetWidth };
   const onPhone = { x: home.x, y: bar + 16 + caption.offsetHeight + 14, w: home.w };
-  const workspace = isSideways
+  const workspace = isShort
     ? home
     : isPhone
       ? onPhone
       : workspaceRect(parts, { width, height, bar });
 
   const anchor = height * 0.44;
-  const turnPosition = (paragraph: HTMLElement) => {
-    const wasHidden = paragraph.hidden;
-    paragraph.hidden = false;
-    const middle = middleOf(paragraph) - anchor;
-    paragraph.hidden = wasHidden;
+  const { a: turnA, b: turnB } = parts.turnParagraphs;
+  const turnPosition = (shown: HTMLElement, other: HTMLElement) => {
+    const wasShown = [shown.hidden, other.hidden];
+    shown.hidden = false;
+    other.hidden = true;
+    const middle = middleOf(shown) - anchor;
+    [shown.hidden, other.hidden] = wasShown;
     return middle;
   };
 
@@ -209,12 +183,11 @@ export function measureLayout(parts: FilmParts): Layout {
     chapterFrom: middleOf(chapterOpening) - anchor,
     chapterTo: middleOf(lastTypedParagraph) - anchor,
     turn: {
-      a: turnPosition(parts.turnParagraphs.a),
-      b: turnPosition(parts.turnParagraphs.b),
+      a: turnPosition(turnA, turnB),
+      b: turnPosition(turnB, turnA),
     },
     spans,
     stops,
-    filmTop: parts.film.offsetTop,
     endTop: parts.end.offsetTop,
     documentHeight,
     teamLines,

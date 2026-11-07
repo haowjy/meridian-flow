@@ -624,7 +624,7 @@ html[data-auto]:not([data-auto='idle']) .play small {
   top: 0;
   height: 100vh;
   height: 100svh;
-  overflow: hidden;
+  overflow: clip;
   container-type: size;
   --hx: clamp(28px, 5cqw, 72px);
   --hw: clamp(300px, 30cqw, 440px);
@@ -824,8 +824,25 @@ html[data-auto]:not([data-auto='idle']) .play small {
 
 .cine .ag {
   position: absolute;
-  width: min(25vw, 340px);
+  width: min(25cqw, 340px);
   min-height: 96px;
+}
+
+.cine .ag:where(:nth-child(odd)) {
+  left: 4.5cqw;
+}
+
+.cine .ag:where(:nth-child(even)) {
+  right: 4.5cqw;
+}
+
+.cine .ag:where(:nth-child(-n + 4)) {
+  top: 8%;
+}
+
+/* Leaves the subtitle's space under the lower cards. */
+.cine .ag:where(:nth-child(n + 5)) {
+  top: min(52%, 100% - 270px);
 }
 
 .cine .ag .live {
@@ -863,6 +880,9 @@ html[data-auto]:not([data-auto='idle']) .play small {
 }
 
 .cine .world {
+  --world-left: clamp(28px, 6cqw, 90px);
+  --world-span: min(100cqw - 2 * var(--world-left), 1240px);
+  --world-top: max(var(--bar) + 44px, 20cqh);
   position: absolute;
   inset: 0;
   display: block;
@@ -895,7 +915,27 @@ html[data-auto]:not([data-auto='idle']) .play small {
 
 .cine .wn {
   position: absolute;
-  width: min(27vw, 350px);
+  width: min(27cqw, 350px);
+}
+
+.cine .wn:where(:nth-of-type(1)) {
+  left: calc(var(--world-left) + 30px);
+  top: var(--world-top);
+}
+
+.cine .wn:where(:nth-of-type(2)) {
+  left: calc(var(--world-left) + var(--world-span) * 0.56);
+  top: calc(var(--world-top) - 3cqh);
+}
+
+.cine .wn:where(:nth-of-type(3)) {
+  left: calc(var(--world-left) + var(--world-span) * 0.62);
+  top: 60cqh;
+}
+
+.cine .wn:where(:nth-of-type(4)) {
+  left: calc(var(--world-left) + var(--world-span) * 0.08);
+  top: 58cqh;
 }
 
 .cine .ask {
@@ -957,7 +997,7 @@ html[data-auto]:not([data-auto='idle']) .play small {
   background: var(--color-primary);
 }
 
-@media (max-width: 819px) {
+@media (max-width: 819px), (max-height: 499px) {
   :root {
     --bar: 90px;
     --lw: 390px;
@@ -1058,8 +1098,7 @@ html[data-auto]:not([data-auto='idle']) .play small {
 
   .cine .ag {
     position: relative;
-    left: auto !important;
-    top: auto !important;
+    inset: auto;
     width: auto;
     min-height: 0;
     padding: 10px 12px;
@@ -1105,8 +1144,20 @@ html[data-auto]:not([data-auto='idle']) .play small {
   }
 }
 
-/* A phone on its side: the product beside the words. */
-@media (max-width: 819px) and (max-height: 499px) {
+/* The smallest phones: Sign in and Start writing still have to fit beside the name. */
+@media (max-width: 359px) {
+  .row {
+    padding: 0 10px;
+    gap: 6px;
+  }
+
+  .word {
+    font-size: 17px;
+  }
+}
+
+/* A phone on its side, or any short window: side by side, and the card loses its extras. */
+@media (max-height: 499px) {
   .cine .stage {
     --cw: 46cqw;
   }
@@ -1126,6 +1177,17 @@ html[data-auto]:not([data-auto='idle']) .play small {
     bottom: 12px;
     width: calc(50cqw - 12px);
     margin: 0;
+  }
+
+  .cine .team {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+  }
+
+  .cine .c-o small,
+  .cine .c-f {
+    display: none;
   }
 }
 

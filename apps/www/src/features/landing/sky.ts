@@ -107,8 +107,6 @@ const FLOAT_UNIFORMS = {
   AU: "aurora",
 } as const;
 
-export type Sky = ReturnType<typeof createSky>;
-
 /** Draws into `canvas`. Without WebGL every call is a no-op and the canvas's CSS gradient shows. */
 export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
   const gl = canvas.getContext("webgl", {
