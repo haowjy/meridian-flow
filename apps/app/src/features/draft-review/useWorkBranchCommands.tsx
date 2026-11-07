@@ -227,14 +227,6 @@ export function useWorkBranchCommands({
           refresh([draft.documentId]);
           if (answer.kind !== "done") {
             if (heldNotice.current === removed) endNotice();
-            void queryClient.invalidateQueries({
-              queryKey: projectQueryKeys.workDraftMetadata(
-                projectId,
-                workId,
-                draft.documentId,
-                draft.itemKey,
-              ),
-            });
           }
           return answer;
         });

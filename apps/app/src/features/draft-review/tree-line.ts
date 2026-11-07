@@ -36,6 +36,19 @@ export function hasTreeLine(
   return !item.isNew && treeLineOf(item) !== null;
 }
 
+/**
+ * Whether the item's review has no room: a delete, or a move with no text draft. Its review is the
+ * live document with the branch's tree line, so no review session ever binds.
+ */
+export function reviewHasNoRoom(
+  item: Pick<
+    ThreadDraftListItem,
+    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft"
+  >,
+): boolean {
+  return item.tree?.deleted === true || (!item.hasDraft && hasTreeLine(item));
+}
+
 /** The tree line as a review row: one change with no text frame, keyed apart from text. */
 export function treeChange(
   item: Pick<ThreadDraftListItem, "itemKey">,

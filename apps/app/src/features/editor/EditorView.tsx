@@ -12,6 +12,7 @@ import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { InlineDraftReview } from "@/features/draft-review/draft-review-session";
 import type { ReviewSurface } from "@/features/draft-review/review-runtime";
+import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./SessionEditor";
 import { useInlineReviewFocus } from "./useInlineReviewFocus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
@@ -54,10 +55,12 @@ export function EditorView(props: EditorViewProps) {
   const reviewRequested = requestedItemKey !== null;
   const reviewFile = review ? fileForDocument(review.documentId) : null;
   const reviewLocation = reviewFile?.contextLocation ?? null;
-  // A drafted delete has no review room: its branch tree row is the change, while the
-  // live document remains the body the writer reviews. Treat that validated identity as
-  // a shown review once the live session is ready instead of leaving the editor pending.
-  const treeOnlyReview = review?.itemKey !== undefined && reviewFile?.draft.tree?.deleted === true;
+  // A drafted delete, or a move with no text, has no review room: its branch tree row is the
+  // change, while the live document remains the body the writer reviews. Treat that validated
+  // identity as a shown review once the live session is ready instead of leaving the editor
+  // pending.
+  const treeOnlyReview =
+    review?.itemKey !== undefined && !!reviewFile && reviewHasNoRoom(reviewFile.draft);
   const reviewHolderUri = reviewLocation
     ? canonicalContextUri(reviewLocation.scheme, reviewLocation.path)
     : null;
