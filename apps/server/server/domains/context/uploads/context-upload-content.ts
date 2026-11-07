@@ -2,6 +2,7 @@
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
+import { keptFileName } from "../../file-intake/index.js";
 import { contextAreaOf } from "../context/uri.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
@@ -61,6 +62,7 @@ export function createContextUploadContentPort(
               mimeType: input.mimeType,
               sizeBytes: input.sizeBytes,
               hasPreview: input.hasPreview,
+              ...(input.keptAsFile ? { filename: keptFileName(input.reservation.finalPath) } : {}),
               origin,
             });
       return result.ok &&

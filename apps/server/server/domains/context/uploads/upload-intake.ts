@@ -131,6 +131,8 @@ export interface UploadContentPort<Bound = unknown> {
     storageUrl: string | null;
     /** A browser-drawable preview sits beside the stored object. */
     hasPreview: boolean;
+    /** Text stored as a binary row: its name keeps the extension the port would otherwise strip. */
+    keptAsFile: boolean;
   }): Promise<{ ok: true } | { ok: false; definite: boolean }>;
   /** Soft-deletes an arrived upload; `stale` when its identity no longer stands at its URI. */
   remove(input: {
@@ -317,6 +319,7 @@ export function createUploadIntake<Bound>(deps: {
             sizeBytes: raw.sizeBytes,
             storageUrl: current.storageUrl,
             hasPreview,
+            keptAsFile,
           });
           if (!persisted.ok) throw Object.assign(new Error("upload persistence failed"), persisted);
           return deps.repository.finalize(raw.owner.projectId, raw.intakeId);

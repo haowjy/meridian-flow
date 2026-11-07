@@ -6,8 +6,8 @@ meaning such as figures or attachments belongs here.
 
 ## Contract
 
-`ObjectStorePort` exposes `put(key, bytes, mimeType)`, `getSignedUrl(key)`, and
-`delete(key)`. Each returns an `ObjectStoreResult<T>` tagged `ok` or `error`;
+`ObjectStorePort` exposes `put(key, bytes, mimeType)`, `putStream(key, body,
+{ sizeBytes, mimeType })`, `getSignedUrl(key)`, and `delete(key)`. Each returns an `ObjectStoreResult<T>` tagged `ok` or `error`;
 the port does not throw. Errors use `invalid_key`, `not_found`, or `io_error`.
 
 `object://meridian/<key>` is the stable persisted reference. The canonical
@@ -18,6 +18,18 @@ persisted.
 Keys must match the safe-key grammar (`^[a-zA-Z0-9][a-zA-Z0-9/_:+=.,@-]*$`),
 contain no empty or `..` segments, and remain under the local storage root.
 Both adapters validate before I/O.
+
+`putStream` stores a Node `Readable` without holding it whole; the caller
+guarantees `sizeBytes` is the stream's exact length (S3 sends it as
+`ContentLength` and can't tell a short stream from a slow one). A stream that
+errors or is destroyed leaves no object: local writes `.incoming/<uuid>.part`
+under the root and renames it into place (a key can't start with `.`, and
+`list` skips the directory), and the S3 adapter aborts the request itself when
+the body errors or closes early, because the SDK otherwise waits for the
+store's own timeout (30 s on MinIO). S3 clients set
+`requestChecksumCalculation` and `responseChecksumValidation` to
+`WHEN_REQUIRED`: the SDK default adds a CRC32 trailer that R2 rejects. MinIO
+over plain HTTP accepts either setting; R2 itself is untested.
 
 ## Previews
 
@@ -30,7 +42,9 @@ one exists is the document's `has_preview` (also on `context_staged_documents`
 and the import receipt).
 
 `saveImagePreview` (`file-intake/image-preview.ts`) is the one function that
-makes and stores it; every save path calls it right after putting the original:
+makes and stores it; every save path calls it right after putting the original
+(chat intake reads a convertible picture whole only up to
+`PREVIEW_SOURCE_MAX_BYTES`, 50 MiB; a larger one keeps its original and is a card):
 import receive and DOCX-image extraction, chat Uploads intake, pasted or dropped
 figures. A copy duplicates the stored preview instead. It never throws: a file
 with no preview is drawn as a file card. Decoders: `sharp` (TIFF and other
