@@ -461,14 +461,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     [editor, hasContent, restoreSnapshot, snapshot],
   );
   // The store takes back an upload whose chip has left the text, so an undo brings back one that
-  // is still sending or ready to retry. Send waits while any chip here is sending.
-  const [sending, setSending] = useState(false);
+  // is still sending or ready to retry. Send waits while any chip here is sending, and refuses
+  // while one has failed: a message would go without that file, and the chip says why.
+  const [uploadsHeld, setUploadsHeld] = useState<"sending" | "failed" | null>(null);
   useEffect(() => {
     if (!editor) return;
     const watch = uploads.watch(holder, () => new Set(uploadChips(editor).keys()));
     const sync = () => {
-      setSending(
-        [...uploadChips(editor).keys()].some((id) => uploads.read(id)?.kind === "uploading"),
+      // A chip nothing here is sending reads stopped (`chipState`), so it blocks as a failure does.
+      const states = [...uploadChips(editor).keys()].map(
+        (id) => uploads.read(id)?.kind ?? "failed",
+      );
+      setUploadsHeld(
+        states.includes("uploading") ? "sending" : states.includes("failed") ? "failed" : null,
       );
     };
     const changed = () => {
@@ -481,6 +486,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       editor.off("update", changed);
       unsubscribe();
       watch.release();
+      // Its chips go with it (a restored draft has none), so nothing could ever show these files.
+      uploads.discardHeld(holder);
     };
   }, [editor, holder]);
   useEffect(() => {
@@ -491,7 +498,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, []);
 
   async function submit() {
-    if (!editor || submitDisabled || sending || inFlight.current || editor.isEmpty) return;
+    if (!editor || submitDisabled || uploadsHeld || inFlight.current || !hasContent) return;
     const envelope = serializeComposerDraft(
       editor.getJSON(),
       revision.current,
@@ -647,7 +654,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
           (fileDrop.over || fileDropActive) && "border-border-focus bg-sidebar-accent",
         )}
-        aria-busy={busy || sending || undefined}
+        aria-busy={busy || uploadsHeld === "sending" || undefined}
       >
         <EditorContent
           editor={editor}
@@ -714,7 +721,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               type="button"
               size="icon-sm"
               onClick={() => void submit()}
-              disabled={!hasContent || submitDisabled || sending}
+              disabled={!hasContent || submitDisabled || uploadsHeld !== null}
               aria-label={t`Send message`}
               aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
               className={running ? "relative rounded-full" : "rounded-field"}

@@ -15,9 +15,12 @@ import type {
 export type DirectUpload = {
   file: File;
   /** Reserves the upload, or resumes it: calling again returns the state it has reached. */
-  start(): Promise<UploadStart>;
-  /** Idempotent. */
-  finish(): Promise<UploadIntakeResult>;
+  start(signal: AbortSignal | undefined): Promise<UploadStart>;
+  /**
+   * Idempotent. Aborting it only stops the waiting: a finish the server has received lands the
+   * file all the same.
+   */
+  finish(signal: AbortSignal | undefined): Promise<UploadIntakeResult>;
   signal?: AbortSignal;
   /** Whole percents of the PUT, or null where the browser cannot say how much there is to send. */
   onProgress?: (percent: number | null) => void;
@@ -67,12 +70,14 @@ const isAbort = (error: unknown) => error instanceof DOMException && error.name 
  */
 export async function uploadFileDirect(upload: DirectUpload): Promise<UploadIntakeResult> {
   for (let attempt = 0; ; attempt += 1) {
-    const started = await upload.start();
+    const started = await upload.start(upload.signal);
     if (started.state === "finalized") return started.result;
     try {
       if (started.state === "reserved")
         await putFile(started.put, upload.file, upload.signal, upload.onProgress);
-      return await upload.finish();
+      // Taken back while the bytes went up: no finish, so nothing lands.
+      upload.signal?.throwIfAborted();
+      return await upload.finish(upload.signal);
     } catch (error) {
       if (
         attempt > 0 ||

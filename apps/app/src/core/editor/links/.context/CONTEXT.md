@@ -53,8 +53,10 @@ the file exists. What the chip says is drawn, never stored (`link-chip.ts`'s
   the same store, and draws "Uploading" from there. The server knows nothing of a send in
   progress: it answers `gone` for a ref that names nothing yet. So the answer cache's `read`
   says nothing for a `doc:` ref while `uploads.of` has an upload for it, and every reader (the
-  chip, the hint, the menu, a click) waits on the upload instead of calling the file gone. A chip copied into another document, or seen after
-  the sending tab closed, reads gone until the file lands.
+  chip, the hint, the menu, a click) waits on the upload instead of calling the file gone. A chip pasted into another document in the
+  same tab draws the same upload and keeps it sending (the store counts any mounted surface's text).
+  In another tab's other document, or after the sending tab closed, it reads gone until the file
+  lands.
 - A document answer carries `file` (type, MIME type, size) for a stored file, from the
   resolve route. The local index knows type and MIME but not size, so a stored file's chip
   asks the server once. The detail row is `PDF · 2.4 MB`; a picture's chip carries none.

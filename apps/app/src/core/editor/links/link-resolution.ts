@@ -183,7 +183,11 @@ export type InternalLinkResolver = {
 };
 
 export type LinkAnswerCache = {
-  subscribe: (listener: () => void) => () => void;
+  /**
+   * Calls back on every change. An upload's change passes the ids it touched, so a chip that
+   * stands for one upload can ignore the others' progress; any other change passes nothing.
+   */
+  subscribe: (listener: (uploadsChanged?: ReadonlySet<string>) => void) => () => void;
   /** False while no port is registered, which is a real state and not a bug. */
   readonly available: boolean;
   /**
@@ -452,7 +456,7 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     subscribe(listener) {
       listeners.add(listener);
       // What `read` says of a link also turns on whether its file is still sending.
-      const unsubscribeUploads = uploads.subscribe(() => listener());
+      const unsubscribeUploads = uploads.subscribe((changed) => listener(changed));
       return () => {
         listeners.delete(listener);
         unsubscribeUploads();

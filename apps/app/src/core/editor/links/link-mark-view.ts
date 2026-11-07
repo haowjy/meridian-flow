@@ -82,7 +82,10 @@ export function drawLinkAnswer(
   };
 
   sync();
-  const unsubscribe = resolution.subscribe(sync);
+  const unsubscribe = resolution.subscribe((uploadsChanged) => {
+    if (uploadsChanged && (uploadOf === null || !uploadsChanged.has(uploadOf))) return;
+    sync();
+  });
   const release = requester.watch(key);
   return () => {
     release();
@@ -90,7 +93,7 @@ export function drawLinkAnswer(
   };
 }
 
-// Every publish reaches every link on the page; only a changed value touches the DOM.
+// Every resolution publish reaches every link on the page; only a changed value touches the DOM.
 function draw(element: HTMLElement, name: string, value: string | null): void {
   if (element.getAttribute(name) === value) return;
   if (value === null) element.removeAttribute(name);

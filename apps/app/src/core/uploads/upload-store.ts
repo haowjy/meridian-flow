@@ -8,13 +8,18 @@
  * sends again. A surface only draws an entry and reports which of its uploads its text still
  * holds (`watch`); this module decides the rest:
  *
- * - out of the text for `GRACE_MS` (an undo, a delete, a cut never pasted back), a sending upload
+ * - an upload is in sight while any mounted surface's text holds it, whoever sent it: a chip cut
+ *   from one document and pasted into another keeps sending, and its retry there can finish;
+ * - out of sight for `GRACE_MS` (an undo, a delete, a cut never pasted back), a sending upload
  *   stops and keeps its file, so a redo can retry;
  * - stopped or failed and out of sight for `KEPT_MS`, the file is let go;
  * - a holder with no surface mounted keeps sending what its text held, because the writer who
  *   opens another document has not asked to stop. What its text no longer held stops at once:
  *   nothing can paste it back into a closed document, and an upload finishing then would leave a
  *   file nothing links to.
+ *
+ * A stop cannot call back a finish the server already has: that file lands, with nothing in the
+ * text linking to it.
  *
  * Module-wide, not per editor, so the timers run whether or not any editor is open.
  *
@@ -54,8 +59,8 @@ type Entry = {
   run: UploadRun | null;
   state: UploadState;
   controller: AbortController;
-  /** Whether the holder's text held it when last asked. */
-  present: boolean;
+  /** Whether the holder's text held it when last asked: the answer once no surface of it is mounted. */
+  held: boolean;
   waiting: Waiting | null;
   since: number;
   timer: ReturnType<typeof setTimeout> | null;
@@ -63,6 +68,9 @@ type Entry = {
 
 /** The ids a mounted surface's text holds now. */
 type UploadsPresent = () => ReadonlySet<string>;
+
+/** One mounted surface, with what its text held when last asked. */
+type Watcher = { holder: string; read: UploadsPresent; last: ReadonlySet<string> };
 
 export type UploadWatch = {
   /** The holder's text changed: ask again what it holds. */
@@ -73,7 +81,8 @@ export type UploadWatch = {
 type Listener = (changed: ReadonlySet<string>) => void;
 
 const entries = new Map<string, Entry>();
-const watchers = new Map<string, Set<UploadsPresent>>();
+const watchers = new Set<Watcher>();
+const NOTHING: ReadonlySet<string> = new Set();
 const peers = new Map<object, ReadonlyMap<string, UploadFrame | null>>();
 const listeners = new Set<Listener>();
 
@@ -83,17 +92,25 @@ function publish(...ids: string[]): void {
   for (const listener of listeners) listener(changed);
 }
 
-function waitingFor(entry: Entry): Waiting | "now" | null {
-  const mounted = watchers.has(entry.holder);
-  if (entry.state.kind === "uploading") return entry.present ? null : mounted ? "grace" : "now";
-  return entry.present && mounted ? null : "kept";
+function mounted(holder: string): boolean {
+  for (const watcher of watchers) if (watcher.holder === holder) return true;
+  return false;
+}
+
+function waitingFor(id: string, entry: Entry): Waiting | "now" | null {
+  let shown = false;
+  for (const watcher of watchers) if (watcher.last.has(id)) shown = true;
+  if (entry.state.kind !== "uploading") return shown ? null : "kept";
+  if (shown) return null;
+  if (mounted(entry.holder)) return "grace";
+  return entry.held ? null : "now";
 }
 
 /** Sets the one timer the take-back rule needs for this entry, keeping its start across changes. */
 function arm(id: string): void {
   const entry = entries.get(id);
   if (!entry) return;
-  const next = waitingFor(entry);
+  const next = waitingFor(id, entry);
   if (next === "now") {
     stop(id);
     return;
@@ -133,7 +150,9 @@ function stop(id: string): void {
 
 async function send(id: string, entry: Entry, run: UploadRun): Promise<void> {
   const { controller } = entry;
-  const current = () => entries.get(id) === entry && entry.controller === controller;
+  // A stopped run is over even if its finish lands: the entry is the stop's, or a retry's.
+  const current = () =>
+    entries.get(id) === entry && entry.controller === controller && !controller.signal.aborted;
   try {
     await run(controller.signal, (percent) => {
       if (!current() || entry.state.kind !== "uploading" || entry.state.percent === percent) return;
@@ -152,14 +171,21 @@ async function send(id: string, entry: Entry, run: UploadRun): Promise<void> {
   }
 }
 
-function settle(holder: string): void {
-  const held = [...entries].filter(([, entry]) => entry.holder === holder);
-  if (held.length === 0) return;
-  const present = new Set<string>();
-  for (const read of watchers.get(holder) ?? []) for (const id of read()) present.add(id);
-  for (const [id, entry] of held) {
-    // An unmounted holder's last answer stands.
-    if (watchers.has(holder)) entry.present = present.has(id);
+/** Asks one surface again what its text holds, then re-arms every upload it could have moved. */
+function settle(watcher: Watcher): void {
+  // Nothing to look for: a keystroke costs nothing while nothing is sending.
+  if (entries.size === 0) {
+    watcher.last = NOTHING;
+    return;
+  }
+  watcher.last = watcher.read();
+  const held = new Set<string>();
+  for (const other of watchers) {
+    if (other.holder !== watcher.holder) continue;
+    for (const id of other.last) held.add(id);
+  }
+  for (const [id, entry] of entries) {
+    if (entry.holder === watcher.holder) entry.held = held.has(id);
     arm(id);
   }
 }
@@ -201,7 +227,7 @@ export const uploads = {
       run,
       state: { kind: "uploading", percent: null },
       controller: new AbortController(),
-      present: true,
+      held: true,
       waiting: null,
       since: 0,
       timer: null,
@@ -220,7 +246,7 @@ export const uploads = {
       run: null,
       state: { kind: "failed", message },
       controller: new AbortController(),
-      present: true,
+      held: true,
       waiting: null,
       since: 0,
       timer: null,
@@ -248,6 +274,11 @@ export const uploads = {
     publish(id);
   },
 
+  /** Lets go of everything `holder` sent: a surface whose uploads mean nothing without it. */
+  discardHeld(holder: string): void {
+    for (const [id, entry] of entries) if (entry.holder === holder) uploads.discard(id);
+  },
+
   /** What `holder` is sending now, which its presence announces. */
   sending(holder: string): string[] {
     return [...entries].flatMap(([id, entry]) =>
@@ -256,25 +287,22 @@ export const uploads = {
   },
 
   /**
-   * A surface drawing `holder`'s uploads. `present` is asked only while the holder has any, so a
-   * keystroke costs nothing the rest of the time.
+   * A surface drawing uploads: `holder`'s, and any other's pasted into its text. `present` is
+   * asked only while this tab is sending anything, so a keystroke costs nothing the rest of the
+   * time.
    */
   watch(holder: string, present: UploadsPresent): UploadWatch {
-    let set = watchers.get(holder);
-    if (!set) {
-      set = new Set();
-      watchers.set(holder, set);
-    }
-    set.add(present);
-    settle(holder);
+    const watcher: Watcher = { holder, read: present, last: NOTHING };
+    watchers.add(watcher);
+    settle(watcher);
     return {
-      changed: () => settle(holder),
+      changed: () => {
+        if (watchers.has(watcher)) settle(watcher);
+      },
       release() {
-        const mounted = watchers.get(holder);
-        if (!mounted?.delete(present)) return;
-        if (mounted.size === 0) watchers.delete(holder);
-        // The text this surface drew is gone; what it last held is the answer now.
-        for (const [id, entry] of entries) if (entry.holder === holder) arm(id);
+        if (!watchers.delete(watcher)) return;
+        // The text this surface drew is gone; its holder's last answer stands for it.
+        for (const id of entries.keys()) arm(id);
       },
     };
   },

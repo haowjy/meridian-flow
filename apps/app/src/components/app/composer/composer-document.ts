@@ -348,7 +348,10 @@ function chipAttributes(upload: ComposerPendingUploadAttrs, state: UploadState) 
 }
 
 function chipText(upload: ComposerPendingUploadAttrs, state: UploadState): string {
-  return state.kind === "failed" ? `${upload.name} (${state.message})` : `${upload.name}…`;
+  // Send refuses while a chip has failed, so the chip is where the writer reads why.
+  if (state.kind !== "failed") return `${upload.name}…`;
+  const { message } = state;
+  return t`${upload.name} (${message} Click to retry, or remove it to send.)`;
 }
 
 export const ComposerUploadNode = Node.create({
