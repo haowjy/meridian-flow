@@ -3,7 +3,9 @@
  * result types) for binary object storage. The boundary the in-memory, local,
  * and s3 adapters implement; callers depend on this, not a concrete backend.
  */
-export type ObjectStoreErrorCode = "invalid_key" | "not_found" | "io_error";
+import type { Readable } from "node:stream";
+
+export type ObjectStoreErrorCode = "invalid_key" | "not_found" | "too_large" | "io_error";
 
 export interface ObjectStoreError {
   code: ObjectStoreErrorCode;
@@ -20,6 +22,31 @@ export interface ObjectStorePutOutput {
 export interface ObjectStoreGetOutput {
   bytes: Uint8Array;
   mimeType: string;
+}
+
+export interface ObjectStoreGetOptions {
+  /**
+   * Refuses (`too_large`) an object above this many bytes without reading it. Whole-object
+   * reads are for bounded things such as previews; anything else uses `getStream` or `copy`.
+   */
+  maxBytes?: number;
+}
+
+export interface ObjectStoreStreamOutput {
+  stream: Readable;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface ObjectStoreCopyOutput {
+  storageUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface ObjectStoreSignedUrlOptions {
+  /** A `Content-Disposition` value the store sends with the bytes (a download's filename). */
+  contentDisposition?: string;
 }
 
 export interface ObjectStoreListEntry {
@@ -50,11 +77,21 @@ export interface ObjectStorePort {
     bytes: Uint8Array,
     mimeType: string,
   ): Promise<ObjectStoreResult<ObjectStorePutOutput>>;
-  get(key: string): Promise<ObjectStoreResult<ObjectStoreGetOutput>>;
+  get(
+    key: string,
+    options?: ObjectStoreGetOptions,
+  ): Promise<ObjectStoreResult<ObjectStoreGetOutput>>;
+  /** Reads an object as a stream. Destroying the stream abandons the read. */
+  getStream(key: string): Promise<ObjectStoreResult<ObjectStoreStreamOutput>>;
+  /** Duplicates an object inside the store, bytes never passing through the server. */
+  copy(fromKey: string, toKey: string): Promise<ObjectStoreResult<ObjectStoreCopyOutput>>;
   list(
     prefix: string,
     options?: ObjectStoreListOptions,
   ): Promise<ObjectStoreResult<ObjectStoreListOutput>>;
-  getSignedUrl(key: string): Promise<ObjectStoreResult<string>>;
+  getSignedUrl(
+    key: string,
+    options?: ObjectStoreSignedUrlOptions,
+  ): Promise<ObjectStoreResult<string>>;
   delete(key: string): Promise<ObjectStoreResult<void>>;
 }

@@ -43,6 +43,8 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
       put,
       delete: remove,
       get: vi.fn() as never,
+      getStream: vi.fn() as never,
+      copy: vi.fn() as never,
       list: vi.fn() as never,
       getSignedUrl: vi.fn() as never,
     };
@@ -103,6 +105,8 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
         put: test.put,
         delete: test.remove,
         get: vi.fn() as never,
+        getStream: vi.fn() as never,
+        copy: vi.fn() as never,
         list: vi.fn() as never,
         getSignedUrl: vi.fn() as never,
       };
