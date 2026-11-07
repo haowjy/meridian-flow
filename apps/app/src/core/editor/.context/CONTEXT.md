@@ -279,8 +279,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   file: a picture goes through the picture lane, and every other file becomes a chip
   (a plain link to a file uploading into `assets/` of the document's own source),
   placed by the same `placeNodes` the row door uses. Files land in the order the drop
-  lists them, a run of chips as one edit; a file over `MAX_UPLOAD_BYTES` is refused
-  alone, before anything is inserted for it.
+  lists them, a run of chips as one edit; the drop point is an `anchorRange` pin, read back
+  with `resolveAnchorIn` when the chips go in, because a peer's update (a model streaming)
+  replaces the whole fragment and ProseMirror's mapping would land between blocks; a file over `MAX_UPLOAD_BYTES` is refused
+  alone, before anything is inserted for it. A chip with nothing sending (a failed send, or
+  an upload taken back after undo whose chip returned by redo) reads failed and a press
+  retries it on the same id (`link-uploads.ts`); the file is kept ten minutes while its chip
+  is away. A chip that reads `uploading` from the server is asked again every two minutes.
   `landing/` imports neither lane. A host mounts only the doors it has; a
   payload with no door is unclaimed at `dragover`, `drop` and `handleDrop`
   alike, and the click route rides with the plugin, so a code file and the

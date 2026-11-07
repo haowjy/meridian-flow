@@ -6,8 +6,8 @@ decision][uploads].
 
 ## Contract
 
-The browser sends the file to the store, not through the server. Chat only: pictures
-and source destinations move with the file door.
+The browser sends the file to the store, not through the server. A chat attach and a file
+dropped into a document (see Source uploads) share the routes' flow.
 
 1. `start` takes name, exact size, type and `intakeId` (a UUID; a type that is not
    `type/subtype` becomes `application/octet-stream`). It refuses a name finish would
@@ -25,8 +25,9 @@ and source destinations move with the file door.
    row `reserved`), reads the first 8 KiB, classifies, and reads whole only text up to
    `TRACKED_TEXT_MAX_BYTES` (5 MiB) and pictures the browser can't draw up to the
    preview cap. Type and text come from the stored bytes alone: the declared name and type
-   decide nothing, and a tracked file with bytes but no text read from them is a failure,
-   never an empty document. Then `claim` picks the name under the source lock
+   decide nothing. Text is decoded strictly: UTF-8, or UTF-16 with a byte-order mark. Bytes
+   that decode as neither (GBK, Latin-1) stay a stored file through `keptAsFile`, whole. A
+   tracked file with bytes but no text read from them is a failure, never an empty document. Then `claim` picks the name under the source lock
    (`reserved → object_stored`, guarded on `reserved`), then preview, bind, and one
    transaction of persist and `finalized`. Afterwards the incoming object goes, and a
    tracked document's final object too (its text lives in the document).
@@ -49,11 +50,11 @@ finish complete between the two steps and lose its file.) A tab that closed afte
 dropped the same way and its chip reads gone. A bucket lifecycle rule on `incoming/` should also
 expire stray objects (late PUTs, crashes).
 
-Known limits, accepted until source destinations let other writers share an upload (PR 4):
+Known limits, accepted:
 - Two overlapping finishes can copy different bytes over the final key after the first read
   it, and a late PUT plus a slow finish can rewrite the final object of a `finalized` row. The
   signed length still holds and a project has one owner, so only the writer's own file is
-  affected. The fix is an attempt-scoped copy key chosen at `claim`.
+  affected; the client's own retry sends the same bytes. The fix is an attempt-scoped copy key chosen at `claim`.
 - A crash between the finish commit and the release of the incoming object, or a failed
   delete in `release` (it reports and does not throw), leaves an object no row names: up to
   5 MiB for tracked text, whose document holds the text, and the writer cannot see it. The
@@ -88,10 +89,12 @@ the document id and sends it as the intake id (a UUID that no `documents` row ho
 `idempotency_conflict`), so the link to the file stands in the document before the file exists, and
 the door starts the upload before it inserts the chip.
 
-`claim` only records the type. Finish places the file in `<scheme>://assets/<name>`: it picks the
-first free name, binds and persists, and on a `conflict` from either (another writer took the name)
-adds the name to the taken set and goes again, so a text file's bound path always matches the one it
-lands at. A file's own extension stays its extension (`notes (2).zip`). `finalize` records the name
+`claim` only records the type. Finish places the file in `<scheme>://assets/<name>`: it lists
+`assets/` once and picks the first free name against that, so the number of copies costs nothing
+per finish; it binds and persists, and on a `conflict` from either (another writer took the name
+since the list) adds the name to the taken set and goes again, at most 100 times, so a text file's
+bound path always matches the one it lands at. `finish.failed` logs a fixed `reason`, never
+writer text. A file's own extension stays its extension (`notes (2).zip`). `finalize` records the name
 it took. `assets/` is created by that write wherever it has gone missing. Chat-only paths
 (`lockForDelete`, `consume`, `lookupUpload`) skip these rows.
 
@@ -106,6 +109,10 @@ scoped to the chat (`ChatUploadOwner`). A writer's undo mid-upload aborts the PU
 deleted as one. A name `start` refuses (`invalid_filename`) is final, on the client too
 (`UploadRefusedError`); the name loop only renumbers on a collision, so it never changes a name
 `start` accepted into one it would refuse.
+
+A project has no delete path today (only soft delete), so nothing releases a project's objects.
+`upload_intakes` rows cascade with their project; a project purge added later must release the
+objects of its intakes first, as Work purge does.
 
 Uploads are flat and cannot be created through general ContextFS operations.
 Catalog visibility and finalized intake state commit in the ambient ContextFS

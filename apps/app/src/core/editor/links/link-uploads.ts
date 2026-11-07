@@ -90,8 +90,30 @@ export const linkUploads = {
     void send(documentId, entry);
   },
 
-  /** Takes the file back out: whatever is in flight stops. */
+  /** Stops what is in flight and keeps the file, so a chip that comes back can retry. */
   cancel(documentId: string): void {
+    const entry = entries.get(documentId);
+    if (!entry || entry.state.kind === "failed") return;
+    entry.controller.abort();
+    set(documentId, entry, { kind: "failed", message: "" });
+  },
+
+  /** Sends a failed or taken-back upload again, on the same id. */
+  retry(documentId: string): void {
+    const entry = entries.get(documentId);
+    if (entry?.state.kind !== "failed") return;
+    const next: Entry = {
+      ...entry,
+      state: { kind: "uploading", percent: null },
+      controller: new AbortController(),
+    };
+    entries.set(documentId, next);
+    publish();
+    void send(documentId, next);
+  },
+
+  /** Lets go of the file: nothing will retry this upload. */
+  discard(documentId: string): void {
     const entry = entries.get(documentId);
     if (!entry) return;
     entries.delete(documentId);

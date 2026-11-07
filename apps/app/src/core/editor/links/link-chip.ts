@@ -121,7 +121,7 @@ export function linkChipDetail(
   entry: LinkResolutionEntry | null,
   upload: FileUploadState | null,
 ): string | null {
-  if (upload?.kind === "failed") return t`Upload failed`;
+  if (upload?.kind === "failed") return t`Upload failed. Click to retry`;
   if (upload?.kind === "uploading")
     return upload.percent === null ? t`Uploading` : t`Uploading ${upload.percent}%`;
   if (entry?.state === "uploading") return t`Uploading`;

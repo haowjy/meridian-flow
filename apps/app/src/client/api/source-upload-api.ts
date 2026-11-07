@@ -53,13 +53,13 @@ export function startSourceUpload(target: SourceUploadTarget): Promise<UploadSta
 export async function uploadSourceFile(
   target: SourceUploadTarget & {
     /** What `startSourceUpload` answered; the first start of the upload is not asked twice. */
-    started: UploadStart;
+    started?: UploadStart;
     signal: AbortSignal;
     /** Whole percents, or null where the browser cannot say how much there is to send. */
     onProgress: (percent: number | null) => void;
   },
 ): Promise<UploadIntakeResult> {
-  let first: UploadStart | null = target.started;
+  let first: UploadStart | null = target.started ?? null;
   // slop-lint: allow swallowed-error a missed refresh only lets the chip read gone in other tabs until the next one
   const refresh = () => void startSourceUpload(target).catch(() => {});
   const keepAlive = setInterval(refresh, KEEP_ALIVE_MS);

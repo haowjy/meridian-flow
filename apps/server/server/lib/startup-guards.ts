@@ -32,6 +32,7 @@ export type ApiStartupEnv = {
   S3_ACCESS_KEY?: string;
   S3_SECRET_KEY?: string;
   OBJECT_STORE_SIGNING_SECRET?: string;
+  LOCAL_OBJECT_STORE_DIR?: string;
   WORKOS_API_KEY: string;
   WORKOS_CLIENT_ID: string;
   WORKOS_COOKIE_PASSWORD?: string;
@@ -112,6 +113,14 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
         config.OBJECT_STORE_SIGNING_SECRET,
         "must be set to a private secret in production with OBJECT_STORE_PROVIDER=local.",
       );
+    // The default directory is the temp dir, which a restart can clear.
+    if (config.OBJECT_STORE_PROVIDER === "local")
+      requireValue(
+        errors,
+        "LOCAL_OBJECT_STORE_DIR",
+        config.LOCAL_OBJECT_STORE_DIR,
+        "must name a persistent directory in production with OBJECT_STORE_PROVIDER=local.",
+      );
     requireRealSecret(
       errors,
       "WORKOS_API_KEY",
@@ -165,6 +174,7 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
     S3_SECRET_KEY: process.env.S3_SECRET_KEY,
     OBJECT_STORE_SIGNING_SECRET: process.env.OBJECT_STORE_SIGNING_SECRET,
+    LOCAL_OBJECT_STORE_DIR: process.env.LOCAL_OBJECT_STORE_DIR,
     WORKOS_API_KEY: env.WORKOS_API_KEY,
     WORKOS_CLIENT_ID: env.WORKOS_CLIENT_ID,
     WORKOS_COOKIE_PASSWORD: env.WORKOS_COOKIE_PASSWORD,

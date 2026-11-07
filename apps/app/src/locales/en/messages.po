@@ -6363,10 +6363,13 @@ msgstr "Updating a Work…"
 msgid "upload"
 msgstr "upload"
 
-#: src/core/editor/links/link-chip.ts
 #: src/core/editor/links/link-mark-view.ts
 msgid "Upload failed"
 msgstr "Upload failed"
+
+#: src/core/editor/links/link-chip.ts
+msgid "Upload failed. Click to retry"
+msgstr "Upload failed. Click to retry"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"

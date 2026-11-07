@@ -301,6 +301,24 @@ const resultOf = (
 };
 
 /**
+ * The text of a file's bytes: UTF-8, or UTF-16 when a byte-order mark says so. Anything else
+ * (GBK, Latin-1) is not text this app can read, and answers null rather than garbage.
+ */
+function decodeText(bytes: Uint8Array): string | null {
+  const label =
+    bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff
+        ? "utf-16be"
+        : "utf-8";
+  try {
+    return new TextDecoder(label, { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * What the stored bytes say the file is: its type, the name it takes, and the bytes read whole.
  * Text and convertible pictures are read whole within a cap, so a NUL late in a text file and the
  * picture preview see every byte. Throws when the object cannot be read back.
@@ -314,6 +332,7 @@ async function classifyStored(
   let fileType = await classifyUpload({ filename, mimeType, bytes: head });
   const headWasText = classifyFiletype(fileType).kind === "tracked";
   let whole: Buffer | null = null;
+  let text: string | null = null;
   const readWhole = async () => {
     const got = await objectStore.get(objectKey, { maxBytes: sizeBytes });
     if (!got.ok || got.value.bytes.byteLength !== sizeBytes)
@@ -322,7 +341,10 @@ async function classifyStored(
   };
   if (headWasText && sizeBytes <= TRACKED_TEXT_MAX_BYTES) {
     whole = await readWhole();
-    fileType = await classifyUpload({ filename, mimeType, bytes: whole });
+    text = decodeText(whole);
+    // Bytes that are not readable text stay a stored file, whole.
+    fileType =
+      text === null ? "binary" : await classifyUpload({ filename, mimeType, bytes: whole });
   } else if (headWasText) {
     fileType = "binary";
   } else if (sizeBytes <= PREVIEW_SOURCE_MAX_BYTES && (await needsPreviewConversion(head))) {
@@ -338,7 +360,19 @@ async function classifyStored(
     named.ok && classifyFiletype(fileType).kind !== "tracked" && named.value.extension === ""
       ? { ok: true as const, value: { ...named.value, ...keptFileName(named.value.name) } }
       : named;
-  return { fileType, whole, keptAsFile, parsed };
+  return { fileType, whole, text, keptAsFile, parsed };
+}
+
+/** A finish failure whose message is safe to log: it names a step, never writer text. */
+class FinishFault extends Error {}
+
+/** The names `assets/` already holds in the source; none when the folder does not exist yet. */
+async function assetNames(source: UploadSourceDestination): Promise<Set<string>> {
+  const listing = await source.port.list(
+    projectBrowseContextUri(source.scheme, ASSETS_FOLDER, source.authority),
+  );
+  if (!listing.ok) return new Set();
+  return new Set(listing.value.entries.map((entry) => entry.uri.split("/").pop() ?? ""));
 }
 
 const invalidFilename = {
@@ -475,7 +509,7 @@ export function createUploadIntake<Bound>(deps: {
       } catch {
         return storageFailed;
       }
-      const { fileType, whole, keptAsFile, parsed } = classified;
+      const { fileType, whole, text, keptAsFile, parsed } = classified;
       if (!parsed.ok) {
         await releaseAll(current);
         return invalidFilename;
@@ -505,7 +539,7 @@ export function createUploadIntake<Bound>(deps: {
 
       const tracked = classifyFiletype(claimed.fileType).kind === "tracked";
       // A tracked file with bytes but no text read from them must never become an empty document.
-      if (tracked && sizeBytes > 0 && !whole) return storageFailed;
+      if (tracked && sizeBytes > 0 && text === null) return storageFailed;
       const storageUrl = createObjectStorageUrl(claimed.objectKey);
       const hasPreview =
         !tracked && whole
@@ -528,12 +562,12 @@ export function createUploadIntake<Bound>(deps: {
         const bound = await deps.content.bind({
           reservation: placed,
           actorUserId: raw.actorUserId,
-          text: tracked && whole ? whole.toString("utf8") : "",
+          text: text ?? "",
           ...(source ? { source } : {}),
         });
         if (!bound.ok) {
           if (bound.conflict) return { kind: "taken" as const };
-          throw new Error("upload binding failed");
+          throw new FinishFault("upload binding failed");
         }
         return deps.repository.transaction(async () => {
           const locked = await deps.repository.lockForFinalize(projectId, raw.intakeId);
@@ -553,7 +587,7 @@ export function createUploadIntake<Bound>(deps: {
           });
           if (!persisted.ok) {
             if (persisted.conflict) return { kind: "taken" as const };
-            throw new Error("upload persistence failed");
+            throw new FinishFault("upload persistence failed");
           }
           return {
             kind: "finalized" as const,
@@ -568,15 +602,17 @@ export function createUploadIntake<Bound>(deps: {
 
       try {
         // A chat's name is fixed by the claim. A source upload is named in `assets/` now, not
-        // when it started: the same file dropped twice keeps both ("map.pdf", then "map (2).pdf"),
-        // and another writer can take a name between tries.
-        const taken = new Set<string>();
+        // when it started: the same file dropped twice keeps both ("map.pdf", then "map (2).pdf").
+        // The folder is read once, so the first try already skips every name it holds; the loop
+        // only covers another writer taking the name between that read and the bind.
+        const taken = source ? await assetNames(source) : new Set<string>();
         const nextPath = () =>
           source ? `${ASSETS_FOLDER}/${firstFreeName(parsed.value, taken).filename}` : undefined;
         let path = nextPath();
         let outcome = await place(placedOf(claimed, path));
         for (let copy = 1; outcome.kind === "taken"; copy += 1) {
-          if (!path || copy >= MAX_NAME_COPIES) throw new Error("no free name for the upload");
+          if (!path || copy >= MAX_NAME_COPIES)
+            throw new FinishFault("no free name for the upload");
           taken.add(path.slice(ASSETS_FOLDER.length + 1));
           path = nextPath();
           outcome = await place(placedOf(claimed, path));
@@ -587,14 +623,18 @@ export function createUploadIntake<Bound>(deps: {
         }
         await deps.release.keys(tracked ? [incomingKey, claimed.objectKey] : [incomingKey]);
         return { ok: true, value: resultOf(outcome.reservation, source) };
-      } catch {
+      } catch (error) {
         // Nothing is undone: the row is `object_stored` and the object is in place, so a retry
         // reclassifies from it and resumes.
         emitEvent(deps.eventSink, {
           level: "warn",
           source: "context.upload-intake",
           name: "finish.failed",
-          payload: { documentId: claimed.documentId, intakeId: claimed.intakeId },
+          payload: {
+            documentId: claimed.documentId,
+            intakeId: claimed.intakeId,
+            reason: error instanceof FinishFault ? error.message : "unexpected",
+          },
         });
         return storageFailed;
       }

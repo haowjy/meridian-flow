@@ -62,6 +62,7 @@ import {
 } from "./link-storage";
 import { createLinkSurface, type LinkMenuTarget, type LinkPoint } from "./link-surface";
 import { classifyLinkTarget } from "./link-target";
+import { linkUploads } from "./link-uploads";
 
 const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
 
@@ -94,6 +95,12 @@ export function followLinkFrom(
   disposition: LinkFollowDisposition,
   at: LinkPoint,
 ): LinkFollowResult {
+  // A chip whose file is not being sent: a press sends it again instead of following.
+  const pending = parseLinkRef(key.ref);
+  if (pending?.kind === "doc" && linkUploads.read(pending.documentId)?.kind === "failed") {
+    linkUploads.retry(pending.documentId);
+    return "navigated";
+  }
   const surface = getLinkSurface(editor);
   const answer = getLinkAnswerCache(editor)?.read(key) ?? null;
   if (!surface || (answer?.state === "gone" && !goneLinkDocumentId(answer, key)))

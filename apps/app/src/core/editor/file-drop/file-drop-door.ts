@@ -16,10 +16,10 @@ import { t } from "@lingui/core/macro";
 import { classifyFiletype, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import type { Transaction } from "@tiptap/pm/state";
 
 import { fileTooLargeMessage } from "@/lib/upload-limit";
 
+import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { documentReferenceNode } from "../extensions/at-reference/document-link-insertion";
 import { placeNodes } from "../extensions/reference-drop";
 import { imageIngressStorage } from "../images/image-ingress-runtime";
@@ -131,11 +131,18 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
   const host = fileDropHost(editor);
   if (!editor.isEditable || landing.kind === "source") return;
 
-  let at: Exclude<Landing, { kind: "source" }> = landing;
-  const follow = ({ transaction }: { transaction: Transaction }) => {
-    at = { ...at, pos: transaction.mapping.map(at.pos) };
+  // The drop point is pinned in the shared document, which survives a peer's update; ProseMirror's
+  // own mapping does not (the binding replaces the whole fragment).
+  let kind = landing.kind;
+  let pin: EditorAnchor = anchorRange(editor.state, { from: landing.pos, to: landing.pos });
+  const pinAt = (pos: number) => {
+    pin = anchorRange(editor.state, { from: pos, to: pos });
+    kind = "inline";
   };
-  editor.on("transaction", follow);
+  const here = (): Exclude<Landing, { kind: "source" }> | null => {
+    const found = resolveAnchorIn(editor.state, pin);
+    return found && { kind, pos: found.from };
+  };
 
   /** Chips waiting for the next picture or the end of the drop, so a run of them is one edit. */
   let run: Array<{ file: File; documentId: string; started: Promise<Started> }> = [];
@@ -161,11 +168,14 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
         ready.push({ node, documentId: entry.documentId, send: outcome.send, file: entry.file });
     });
     if (ready.length === 0) return;
-    const placed = placeNodes(
-      editor.view,
-      at,
-      ready.map(({ node }) => node),
-    );
+    const at = here();
+    const placed =
+      at &&
+      placeNodes(
+        editor.view,
+        at,
+        ready.map(({ node }) => node),
+      );
     if (!placed) {
       status?.refuse(t`A file can’t go there.`);
     } else {
@@ -174,37 +184,38 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
         linkUploads.begin(documentId, host.hostDocumentId, tellWhenText(file, send, status));
       placed.commit(editor.view);
     }
-    at = { kind: "inline", pos: editor.state.selection.from };
+    pinAt(editor.state.selection.from);
   };
 
-  try {
-    for (const file of files) {
-      if (isImageFile(file)) {
-        await flush();
-        if (editor.isDestroyed) return;
-        insertImageFile(editor, file, at);
-        at = { kind: "inline", pos: editor.state.selection.from };
+  for (const file of files) {
+    if (isImageFile(file)) {
+      await flush();
+      if (editor.isDestroyed) return;
+      const at = here();
+      if (!at) {
+        status?.refuse(t`A file can’t go there.`);
         continue;
       }
-      if (file.size > MAX_UPLOAD_BYTES) {
-        status?.refuse(fileTooLargeMessage(file.name));
-        continue;
-      }
-      if (!host) {
-        status?.refuse(t`Files can’t be added to this document.`);
-        continue;
-      }
-      const documentId = crypto.randomUUID();
-      // Settled either way, so a refusal that lands while an earlier run is flushing is no
-      // unhandled rejection.
-      const started = host.start({ documentId, file }).then(
-        (send): Started => ({ ok: true, send }),
-        (reason: unknown): Started => ({ ok: false, reason }),
-      );
-      run.push({ file, documentId, started });
+      insertImageFile(editor, file, at);
+      pinAt(editor.state.selection.from);
+      continue;
     }
-    await flush();
-  } finally {
-    editor.off("transaction", follow);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      status?.refuse(fileTooLargeMessage(file.name));
+      continue;
+    }
+    if (!host) {
+      status?.refuse(t`Files can’t be added to this document.`);
+      continue;
+    }
+    const documentId = crypto.randomUUID();
+    // Settled either way, so a refusal that lands while an earlier run is flushing is no
+    // unhandled rejection.
+    const started = host.start({ documentId, file }).then(
+      (send): Started => ({ ok: true, send }),
+      (reason: unknown): Started => ({ ok: false, reason }),
+    );
+    run.push({ file, documentId, started });
   }
+  await flush();
 }
