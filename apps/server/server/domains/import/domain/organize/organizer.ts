@@ -19,6 +19,8 @@ import { prepareImportEntries } from "./prepare.js";
 const BUILD_NODES = 500;
 const BUILD_BYTES = 16 * 1024 * 1024;
 const MAX_REBUILT_GENERATIONS = 5;
+/** Pause after the nth consecutive failed pass: 10 s, 20 s, 40 s, 80 s. */
+const retryDelayMs = (attempts: number) => 10_000 * 2 ** (attempts - 1);
 
 type OrganizerDeps = {
   repository: ImportRepository;
@@ -65,8 +67,8 @@ async function readText(objects: ObjectStorePort, key: string): Promise<string> 
 }
 
 export function createImportOrganizer(deps: OrganizerDeps) {
-  async function recordNoProgress(claim: OrganizeClaim): Promise<void> {
-    await deps.repository.organizeTransaction(claim, async (locked) => {
+  async function recordNoProgress(claim: OrganizeClaim): Promise<number> {
+    const result = await deps.repository.organizeTransaction(claim, async (locked) => {
       const attempts = locked.claimsWithoutProgress + 1;
       const now = await deps.repository.now();
       await deps.repository.update(locked.id, {
@@ -82,7 +84,9 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             }
           : {}),
       });
+      return attempts;
     });
+    return result.kind === "committed" ? result.value : 0;
   }
   async function resetGeneration(
     claim: OrganizeClaim,
@@ -421,6 +425,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
       for (let pass = 0; pass < 100 && !signal.aborted; pass++) {
         const claim = await deps.queue.claim();
         if (!claim) break;
+        let retryAfterMs: number | undefined;
         const heartbeat = setInterval(() => void deps.queue.heartbeat(claim), 30_000);
         heartbeat.unref();
         try {
@@ -431,10 +436,11 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             token: claim.token,
             generation: claim.generation,
           });
-          await recordNoProgress(claim);
+          const attempts = await recordNoProgress(claim);
+          if (attempts) retryAfterMs = retryDelayMs(attempts);
         } finally {
           clearInterval(heartbeat);
-          await deps.queue.release(claim);
+          await deps.queue.release(claim, retryAfterMs);
         }
       }
       return total;
