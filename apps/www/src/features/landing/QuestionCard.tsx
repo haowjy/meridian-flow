@@ -8,9 +8,6 @@ export function QuestionCard({ store }: { store: CardStore }) {
 
   return (
     <section className="card" id="card" aria-label="Question from Muse">
-      <div className="c-top">
-        <span>Continues in 4 min</span>
-      </div>
       <div className="c-q">{QUESTION}</div>
       {CHARACTERS.map((character) => (
         <button
