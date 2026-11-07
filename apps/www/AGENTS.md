@@ -31,8 +31,8 @@ authenticated.
   themselves; the product block and question card sit outside them, on the light
   root. Values no role covers go in `design-tokens/src/marketing.css`, or
   `marketing-sky.ts` for the shader.
-- The film tells a fictional LitRPG serial's Prologue. Its canon, the twist it
-  depends on and the ideas already dropped are in
+- The film tells a fictional LitRPG serial's Prologue. Its canon, the impact it
+  aims for and the ideas already dropped are in
   [`features/landing/.context/story.md`](src/features/landing/.context/story.md):
   read it before changing any story copy in `story.ts`.
 - `ProductPlaceholder.tsx` is a drawing of the app, not the app. The page shows the

@@ -664,3 +664,30 @@ export const SYSTEM = {
   skill: ["[Unique skill acquired: Rekindle]"],
   rekindle: "Rekindle",
 } as const;
+
+/** A heading and one plain line for each nav section, written in the words writers search for. */
+export const SECTION_HEADS: Record<
+  "world" | "team" | "knowledge" | "decisions" | "workspace",
+  { heading: string; line: string }
+> = {
+  world: {
+    heading: "Worldbuilding that stays connected.",
+    line: "Keep your web serial’s characters, places and lore in one place, linked to each other.",
+  },
+  team: {
+    heading: "An AI writing team that reads like your readers.",
+    line: "Agents draft, critique, check continuity and read as your audience, so you catch plot holes before your readers do.",
+  },
+  knowledge: {
+    heading: "Every dragon gets a page.",
+    line: "Your story bible keeps up as you write: a page for every character, place and term, updated with each chapter.",
+  },
+  decisions: {
+    heading: "You make the calls.",
+    line: "When the story turns on a choice, the AI asks you, then updates the chapter and every page it touches.",
+  },
+  workspace: {
+    heading: "Chapters, story bible and AI in one window.",
+    line: "Write chapters beside your story bible and your agents, see every change they make, and undo any of it.",
+  },
+};
