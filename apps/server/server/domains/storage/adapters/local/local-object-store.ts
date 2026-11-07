@@ -133,9 +133,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     this.signingSecret = options.signingSecret;
     this.signedUrlTtlSeconds = options.signedUrlTtlSeconds;
     this.now = options.now ?? (() => new Date());
-    void this.clearStaleTemp().catch((error: unknown) => {
-      console.error("object store: clearing stale temp files failed", error);
-    });
+    void this.clearStaleTemp();
   }
 
   async put(
@@ -525,9 +523,9 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
         const file = path.join(dir, entry);
         if ((await stat(file)).mtimeMs < cutoff) await rm(file, { force: true });
       }
-    } catch (error) {
-      // No temp dir yet, or a file another process just finished with: nothing to clear.
-      if (!isMissingFile(error)) throw error;
+    } catch {
+      // Best effort and off the request path: a missing temp dir, or a file another process just
+      // finished with, leaves nothing to clear, and a stale file costs only disk until next start.
     }
   }
 
