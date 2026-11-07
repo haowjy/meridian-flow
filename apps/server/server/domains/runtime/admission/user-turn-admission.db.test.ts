@@ -110,7 +110,6 @@ if (!RUN) {
         ownerThreadId: THREAD,
         contextSourceId: SOURCE,
         documentId: documentId as never,
-        fingerprint: `upload-${suffix}`,
         filename: `map-${suffix}.png`,
         mimeType: "image/png",
         sizeBytes: 1,

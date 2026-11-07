@@ -1,5 +1,4 @@
 /** Authoritative, resumable upload intake aggregate. */
-import { createHash } from "node:crypto";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import type {
   DeleteDraftUploadInput,
@@ -35,6 +34,7 @@ import {
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
   createObjectStorageUrl,
+  incomingObjectKey,
   type ObjectRelease,
   type ObjectStorePort,
 } from "../../storage/index.js";
@@ -46,15 +46,6 @@ const HEAD_BYTES = 8 * 1024;
 /** An upload nobody has touched for this long is dropped, objects and row. */
 const ABANDONED_AFTER_MS = 24 * 60 * 60 * 1000;
 const SWEEP_BATCH = 50;
-
-/**
- * Where a browser's PUT lands. No row points at this key, so a late or repeated PUT through the
- * signed URL can only change bytes nobody has read yet; finish copies it to `objectKey` before
- * it reads anything. A bucket lifecycle rule on this prefix is the backstop for stray objects.
- */
-export function incomingObjectKey(projectId: string, documentId: string): string {
-  return `incoming/${projectId}/${documentId}`;
-}
 
 export type StartUploadOutcome =
   | { ok: true; value: UploadStart }
@@ -69,7 +60,6 @@ export interface UploadReservation {
   intakeId: string;
   actorUserId: string;
   documentId: string;
-  fingerprint: string;
   /** The name the writer picked. */
   filename: string;
   /** The type the writer's browser declared; the signed PUT carries exactly this. */
@@ -83,7 +73,6 @@ export interface UploadReservation {
   fileType: Filetype | null;
   finalPath: string | null;
   canonicalUri: string | null;
-  storageUrl: string | null;
   consumed: boolean;
   /** `chatRef` is null until the chat's row, and so its handle, exists. */
   owner: { kind: "chat"; chatId: string; chatRef: string | null };
@@ -114,7 +103,10 @@ export type ClaimUploadResult =
 
 /** SQL lifecycle owner. Transactions must join the process ambient DB transaction. */
 export interface UploadIntakeRepository {
-  /** Reserves the intake with the declared name, type and size; an existing one is touched. */
+  /**
+   * Reserves the intake with the declared name, type and size; an existing one is touched.
+   * An existing intake made for another actor, chat, name or size is a `conflict`.
+   */
   reserve(input: {
     intakeId: string;
     actorUserId: string;
@@ -122,7 +114,6 @@ export interface UploadIntakeRepository {
     filename: string;
     mimeType: string;
     sizeBytes: number;
-    fingerprint: string;
   }): Promise<ReserveUploadResult>;
   /** The intake, if `actorUserId` made it for `chatId`. */
   readOwned(
@@ -140,16 +131,15 @@ export interface UploadIntakeRepository {
     intakeId: string;
     documentFilename: ParsedDocumentFilename;
     fileType: Filetype;
-    storageUrl: string;
   }): Promise<ClaimUploadResult>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
-  /** `tracked` text lives in its document, so the row stops naming an object. */
-  finalize(projectId: string, intakeId: string, tracked: boolean): Promise<ClaimedUpload>;
-  /** Locks and validates the exact unused identity a writer asked to delete. */
+  finalize(projectId: string, intakeId: string): Promise<ClaimedUpload>;
+  /** Locks and validates the exact unused identity a writer asked to delete, in the chat they name. */
   lockForDelete(
     input: DeleteDraftUploadInput,
     actorUserId: string,
+    owner: UploadOwner,
   ): Promise<
     | { kind: "claimed"; reservation: UploadReservation }
     | { kind: "refused"; result: DeleteDraftUploadResult; reservation?: UploadReservation }
@@ -212,23 +202,15 @@ export interface UploadIntake {
     actorUserId: string;
     owner: UploadOwner;
   }): Promise<UploadIntakeOutcome>;
-  deleteDraft(input: DeleteDraftUploadInput, actorUserId: string): Promise<DeleteDraftUploadResult>;
+  deleteDraft(
+    input: DeleteDraftUploadInput,
+    actorUserId: string,
+    owner: UploadOwner,
+  ): Promise<DeleteDraftUploadResult>;
   /** Runs in the sending transaction; republishes the catalog rows whose `used` it changed. */
   consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Drops uploads untouched for a day, objects and row. Returns how many it dropped. */
   sweepAbandoned(now?: Date): Promise<number>;
-}
-
-function fingerprint(input: {
-  actorUserId: string;
-  owner: UploadOwner;
-  filename: string;
-  sizeBytes: number;
-}): string {
-  const owner = `chat:${input.owner.projectId}:${input.owner.chatId}`;
-  return createHash("sha256")
-    .update(JSON.stringify([input.actorUserId, owner, input.filename, input.sizeBytes]))
-    .digest("hex");
 }
 
 const resultOf = (reservation: ClaimedUpload): UploadIntakeResult => ({
@@ -237,6 +219,46 @@ const resultOf = (reservation: ClaimedUpload): UploadIntakeResult => ({
   fileType: reservation.fileType,
   locationRevision: reservation.locationRevision,
 });
+
+/**
+ * What the stored bytes say the file is: its type, the name it takes, and the bytes read whole.
+ * Text and convertible pictures are read whole within a cap, so a NUL late in a text file and the
+ * picture preview see every byte. Throws when the object cannot be read back.
+ */
+async function classifyStored(
+  objectStore: ObjectStorePort,
+  upload: Pick<UploadReservation, "objectKey" | "filename" | "mimeType" | "sizeBytes">,
+  head: Uint8Array,
+) {
+  const { objectKey, filename, mimeType, sizeBytes } = upload;
+  let fileType = await classifyUpload({ filename, mimeType, bytes: head });
+  const headWasText = classifyFiletype(fileType).kind === "tracked";
+  let whole: Buffer | null = null;
+  const readWhole = async () => {
+    const got = await objectStore.get(objectKey, { maxBytes: sizeBytes });
+    if (!got.ok || got.value.bytes.byteLength !== sizeBytes)
+      throw new Error("stored object could not be read whole");
+    return Buffer.from(got.value.bytes);
+  };
+  if (headWasText && sizeBytes <= TRACKED_TEXT_MAX_BYTES) {
+    whole = await readWhole();
+    fileType = await classifyUpload({ filename, mimeType, bytes: whole });
+  } else if (headWasText) {
+    fileType = "binary";
+  } else if (sizeBytes <= PREVIEW_SOURCE_MAX_BYTES && (await needsPreviewConversion(head))) {
+    whole = await readWhole();
+  }
+  const keptAsFile = headWasText && classifyFiletype(fileType).kind !== "tracked";
+  const parsed = keptAsFile
+    ? { ok: true as const, value: { ...keptFileName(filename), filetype: "binary" as const } }
+    : intakeFilename(filename, fileType, mimeType);
+  return { fileType, whole, keptAsFile, parsed };
+}
+
+const invalidFilename = {
+  ok: false,
+  error: { code: "invalid_filename", reason: "name/reserved" },
+} as const;
 
 export function createUploadIntake<Bound>(deps: {
   repository: UploadIntakeRepository;
@@ -273,20 +295,19 @@ export function createUploadIntake<Bound>(deps: {
       }
       if (raw.sizeBytes > MAX_UPLOAD_BYTES)
         return { ok: false, error: { code: "too_large", limitBytes: MAX_UPLOAD_BYTES } };
+      const mimeType = normalizeMime(raw.mimeType);
+      // A name finish would refuse is refused here, before the bytes are sent. The type is a
+      // guess from the name and the declared type; finish reads the bytes.
+      const guess = await classifyUpload({ filename, mimeType, bytes: new Uint8Array() });
+      if (!intakeFilename(filename, guess, mimeType).ok) return invalidFilename;
       const { owner } = raw;
       const reserved = await deps.repository.reserve({
         intakeId: raw.intakeId,
         actorUserId: raw.actorUserId,
         owner,
         filename,
-        mimeType: normalizeMime(raw.mimeType),
+        mimeType,
         sizeBytes: raw.sizeBytes,
-        fingerprint: fingerprint({
-          actorUserId: raw.actorUserId,
-          owner,
-          filename,
-          sizeBytes: raw.sizeBytes,
-        }),
       });
       if (reserved.kind === "conflict") return conflict;
       if (reserved.kind === "owner_unavailable")
@@ -328,7 +349,8 @@ export function createUploadIntake<Bound>(deps: {
       const incomingKey = incomingObjectKey(projectId, current.documentId);
       if (current.state === "reserved") {
         // Copy first, then read only the final key: a PUT through the signed URL after this
-        // point changes the incoming object and nothing that is read.
+        // point changes the incoming object, not the final one. Two finishes overlapping can
+        // still copy over the final key after the other read it (known limit, see CONTEXT.md).
         const copied = await deps.objectStore.copy(incomingKey, current.objectKey);
         if (!copied.ok) {
           if (copied.error.code !== "not_found") return storageFailed;
@@ -352,41 +374,19 @@ export function createUploadIntake<Bound>(deps: {
         return { ok: false, error: { code: "size_mismatch" } };
       }
 
-      // Type and text come from the stored bytes alone. Text and convertible pictures are read
-      // whole within a cap, so a NUL late in a text file and the picture preview see every byte.
-      const { filename, mimeType, sizeBytes } = current;
-      let fileType: Filetype;
-      let whole: Buffer | null = null;
-      let headWasText: boolean;
+      // Type and text come from the stored bytes alone.
+      const { mimeType, sizeBytes } = current;
+      let classified: Awaited<ReturnType<typeof classifyStored>>;
       try {
-        fileType = await classifyUpload({ filename, mimeType, bytes: stored.value.head });
-        headWasText = classifyFiletype(fileType).kind === "tracked";
-        const readWhole = async () => {
-          const got = await deps.objectStore.get(current.objectKey, { maxBytes: sizeBytes });
-          if (!got.ok || got.value.bytes.byteLength !== sizeBytes)
-            throw new Error("stored object could not be read whole");
-          return Buffer.from(got.value.bytes);
-        };
-        if (headWasText && sizeBytes <= TRACKED_TEXT_MAX_BYTES) {
-          whole = await readWhole();
-          fileType = await classifyUpload({ filename, mimeType, bytes: whole });
-        } else if (headWasText) {
-          fileType = "binary";
-        } else if (
-          sizeBytes <= PREVIEW_SOURCE_MAX_BYTES &&
-          (await needsPreviewConversion(stored.value.head))
-        ) {
-          whole = await readWhole();
-        }
+        classified = await classifyStored(deps.objectStore, current, stored.value.head);
       } catch {
         return storageFailed;
       }
-      const keptAsFile = headWasText && classifyFiletype(fileType).kind !== "tracked";
-      const parsed = keptAsFile
-        ? { ok: true as const, value: { ...keptFileName(filename), filetype: "binary" as const } }
-        : intakeFilename(filename, fileType, mimeType);
-      if (!parsed.ok)
-        return { ok: false, error: { code: "invalid_filename", reason: "name/reserved" } };
+      const { fileType, whole, keptAsFile, parsed } = classified;
+      if (!parsed.ok) {
+        await releaseAll(current);
+        return invalidFilename;
+      }
 
       let claimed: ClaimedUpload;
       if (current.state === "reserved") {
@@ -395,7 +395,6 @@ export function createUploadIntake<Bound>(deps: {
           intakeId: raw.intakeId,
           documentFilename: parsed.value,
           fileType,
-          storageUrl: createObjectStorageUrl(current.objectKey),
         });
         if (claim.kind === "gone") {
           await releaseAll(current);
@@ -415,7 +414,7 @@ export function createUploadIntake<Bound>(deps: {
       const tracked = classifyFiletype(claimed.fileType).kind === "tracked";
       // A tracked file with bytes but no text read from them must never become an empty document.
       if (tracked && sizeBytes > 0 && !whole) return storageFailed;
-      const storageUrl = claimed.storageUrl ?? createObjectStorageUrl(claimed.objectKey);
+      const storageUrl = createObjectStorageUrl(claimed.objectKey);
       const hasPreview =
         !tracked && whole
           ? await saveImagePreview({
@@ -457,7 +456,7 @@ export function createUploadIntake<Bound>(deps: {
           if (!persisted.ok) throw new Error("upload persistence failed");
           return {
             kind: "finalized" as const,
-            reservation: await deps.repository.finalize(projectId, raw.intakeId, tracked),
+            reservation: await deps.repository.finalize(projectId, raw.intakeId),
           };
         });
         if (outcome.kind === "deleted") {
@@ -479,9 +478,9 @@ export function createUploadIntake<Bound>(deps: {
       }
     },
 
-    async deleteDraft(input, actorUserId) {
+    async deleteDraft(input, actorUserId, owner) {
       const deleted = await deps.repository.transaction(async () => {
-        const claim = await deps.repository.lockForDelete(input, actorUserId);
+        const claim = await deps.repository.lockForDelete(input, actorUserId, owner);
         if (claim.kind === "refused") return claim;
         const { reservation } = claim;
         // An arrived upload keeps its identity through the canonical soft delete, so a ref
@@ -510,11 +509,22 @@ export function createUploadIntake<Bound>(deps: {
     async sweepAbandoned(now = new Date()) {
       const cutoff = new Date(now.getTime() - ABANDONED_AFTER_MS);
       let dropped = 0;
-      for (const row of await deps.repository.listAbandoned(cutoff, SWEEP_BATCH)) {
-        await deps.release.keys([incomingObjectKey(row.projectId, row.documentId), row.objectKey]);
-        if (await deps.repository.dropAbandoned(row.projectId, row.intakeId, cutoff)) dropped += 1;
+      for (;;) {
+        const rows = await deps.repository.listAbandoned(cutoff, SWEEP_BATCH);
+        for (const row of rows) {
+          // The row goes first. Its conditional delete is atomic against claim and finalize, so
+          // only the sweep that wins it releases: a finish or start that touched the row after
+          // the list leaves it and its objects alone.
+          if (!(await deps.repository.dropAbandoned(row.projectId, row.intakeId, cutoff))) continue;
+          dropped += 1;
+          await deps.release.keys([
+            incomingObjectKey(row.projectId, row.documentId),
+            row.objectKey,
+          ]);
+        }
+        // A row that was touched is no longer listed, so every pass shrinks the list.
+        if (rows.length < SWEEP_BATCH) return dropped;
       }
-      return dropped;
     },
   };
 }

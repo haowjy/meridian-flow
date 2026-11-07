@@ -23,6 +23,10 @@ export default defineEventHandler(async (event): Promise<DeleteDraftUploadResult
   // finishes has no document yet.
   const subject = uploadSubject(projectId, getQuery(event).chatId);
   return edit([subject.container], () =>
-    app.uploadIntake.deleteDraft({ intakeId, documentId, uri, expectedRevision }, userId),
+    app.uploadIntake.deleteDraft({ intakeId, documentId, uri, expectedRevision }, userId, {
+      kind: "chat",
+      projectId,
+      chatId: subject.chatId,
+    }),
   );
 });

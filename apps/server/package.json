@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development nitro dev",
+    "dev": "NODE_ENV=development NODE_OPTIONS=\"$NODE_OPTIONS --import ./scripts/dev-request-timeout.mjs\" nitro dev",
     "build": "nitro build",
     "start": "NODE_ENV=production node .output/server/index.mjs",
     "preview": "nitro preview",

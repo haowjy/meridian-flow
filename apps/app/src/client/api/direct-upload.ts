@@ -23,6 +23,9 @@ export type DirectUpload = {
   onProgress?: (percent: number | null) => void;
 };
 
+/** The server refused the file itself (its name or size): trying again cannot change the answer. */
+export class UploadRefusedError extends Error {}
+
 // XMLHttpRequest rather than fetch: only it reports bytes sent.
 function putFile(
   put: UploadSignedPut,
@@ -60,7 +63,7 @@ const isAbort = (error: unknown) => error instanceof DOMException && error.name 
 /**
  * Start, PUT, finish. A PUT or finish that fails is tried once more from the start, which signs a
  * fresh URL and skips the PUT if the bytes are already stored. An error from `start` itself
- * (a refused name or size) is final.
+ * and an `UploadRefusedError` from `finish` are final.
  */
 export async function uploadFileDirect(upload: DirectUpload): Promise<UploadIntakeResult> {
   for (let attempt = 0; ; attempt += 1) {
@@ -71,7 +74,13 @@ export async function uploadFileDirect(upload: DirectUpload): Promise<UploadInta
         await putFile(started.put, upload.file, upload.signal, upload.onProgress);
       return await upload.finish();
     } catch (error) {
-      if (attempt > 0 || isAbort(error) || upload.signal?.aborted) throw error;
+      if (
+        attempt > 0 ||
+        isAbort(error) ||
+        error instanceof UploadRefusedError ||
+        upload.signal?.aborted
+      )
+        throw error;
     }
   }
 }

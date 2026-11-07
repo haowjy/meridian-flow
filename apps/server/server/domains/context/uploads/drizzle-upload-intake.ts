@@ -10,7 +10,6 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
 import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
 import {
-  type ClaimedUpload,
   claimedOf,
   type ReserveUploadResult,
   type UploadIntakeRepository,
@@ -66,7 +65,6 @@ function mapRow(row: IntakeRow, chatRef: string | null): UploadReservation {
     intakeId: row.intakeId,
     actorUserId: row.actorUserId,
     documentId: row.documentId,
-    fingerprint: row.fingerprint,
     filename: row.filename,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
@@ -76,7 +74,6 @@ function mapRow(row: IntakeRow, chatRef: string | null): UploadReservation {
     locationRevision: row.locationRevision,
     fileType: row.fileType as Filetype | null,
     state: row.state as UploadReservation["state"],
-    storageUrl: row.storageUrl,
     consumed: row.consumedAt !== null,
     owner: { kind: "chat", chatId: row.ownerThreadId, chatRef },
   };
@@ -143,7 +140,13 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         await lockIntakeKey(db, input.owner.projectId, input.intakeId);
         const existing = await readReservation(db, input.owner.projectId, input.intakeId);
         if (existing) {
-          if (existing.fingerprint !== input.fingerprint) return { kind: "conflict" };
+          if (
+            existing.actorUserId !== input.actorUserId ||
+            existing.owner.chatId !== input.owner.chatId ||
+            existing.filename !== input.filename ||
+            existing.sizeBytes !== input.sizeBytes
+          )
+            return { kind: "conflict" };
           // A start again is the browser saying it is still uploading: the sweep leaves it be.
           if (existing.state === "reserved" || existing.state === "object_stored")
             await activeDb
@@ -169,7 +172,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             ownerThreadId: input.owner.chatId as never,
             contextSourceId: owner.sourceId,
             documentId,
-            fingerprint: input.fingerprint,
             filename: input.filename,
             mimeType: input.mimeType,
             sizeBytes: input.sizeBytes,
@@ -240,7 +242,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             state: "object_stored",
             fileType: input.fileType,
             finalPath: firstFreeName(input.documentFilename, used).filename,
-            storageUrl: input.storageUrl,
             updatedAt: new Date(),
           })
           .where(
@@ -269,28 +270,28 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
       if (!reservation) throw new Error("Upload reservation unavailable during finalize");
       return reservation;
     },
-    async finalize(projectId, intakeId, tracked) {
+    async finalize(projectId, intakeId) {
       const [row] = await currentDrizzleDb(db)
         .update(uploadIntakes)
         .set({
           state: "finalized",
           updatedAt: new Date(),
-          // Tracked text lives in its document: the object it was read from goes with finish.
-          ...(tracked ? { storageUrl: null } : {}),
         })
         .where(
           and(
             eq(uploadIntakes.projectId, projectId as never),
             eq(uploadIntakes.intakeId, intakeId),
-            sql`${uploadIntakes.state} IN ('reserved', 'object_stored', 'finalized')`,
+            sql`${uploadIntakes.state} IN ('object_stored', 'finalized')`,
           ),
         )
         .returning();
       if (!row) throw new Error("Upload reservation unavailable during finalize");
       return claimedOf(mapRow(row, await chatRefOf(row.ownerThreadId)));
     },
-    async lockForDelete(input, actorUserId) {
+    async lockForDelete(input, actorUserId, scope) {
       const identity = and(
+        eq(uploadIntakes.projectId, scope.projectId as never),
+        eq(uploadIntakes.ownerThreadId, scope.chatId as never),
         eq(uploadIntakes.intakeId, input.intakeId),
         eq(uploadIntakes.documentId, input.documentId as never),
         sql`exists (

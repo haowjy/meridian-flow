@@ -16,24 +16,18 @@ export { createObjectRelease, type ObjectRelease } from "./object-release.js";
 export {
   createObjectStorageUrl,
   drawObjectKey,
+  incomingObjectKey,
   objectStoreKeyFromStorageUrl,
   previewObjectKey,
 } from "./object-storage-url.js";
 export type {
-  ObjectStoreCopyOutput,
   ObjectStoreError,
   ObjectStoreErrorCode,
-  ObjectStoreGetOptions,
   ObjectStoreGetOutput,
-  ObjectStoreHead,
   ObjectStoreListEntry,
   ObjectStoreListOptions,
   ObjectStoreListOutput,
   ObjectStorePort,
   ObjectStorePutOutput,
   ObjectStoreResult,
-  ObjectStoreSignedPut,
-  ObjectStoreSignedPutOptions,
-  ObjectStoreSignedUrlOptions,
-  ObjectStoreStreamOutput,
 } from "./ports/object-store.js";

@@ -5676,6 +5676,10 @@ msgstr "The text it edited was undone, so the change wasn't kept. The AI will re
 msgid "The upload to storage failed."
 msgstr "The upload to storage failed."
 
+#: src/components/app/composer/Composer.tsx
+msgid "The upload was stopped."
+msgstr "The upload was stopped."
+
 #: src/features/import/reason-copy.ts
 msgid "The uploaded file is no longer available."
 msgstr "The uploaded file is no longer available."

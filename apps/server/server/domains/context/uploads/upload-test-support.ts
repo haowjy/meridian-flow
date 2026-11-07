@@ -1,7 +1,7 @@
 /** Test stand-in for the browser: start an upload, PUT its bytes to the incoming key, finish. */
 import { randomUUID } from "node:crypto";
-import type { ObjectStorePort } from "../../storage/index.js";
-import { incomingObjectKey, type UploadIntake, type UploadIntakeOutcome } from "./upload-intake.js";
+import { incomingObjectKey, type ObjectStorePort } from "../../storage/index.js";
+import type { UploadIntake, UploadIntakeOutcome } from "./upload-intake.js";
 
 export async function uploadBytes(
   intake: UploadIntake,
