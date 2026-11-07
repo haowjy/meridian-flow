@@ -9,6 +9,7 @@ import {
   FELL,
   museReply,
   NOTES,
+  PLACE_PAGES,
   PROLOGUE,
   QUESTION,
   SURVIVED,
@@ -36,26 +37,37 @@ export function ProductPlaceholder() {
         <button type="button" className="s-n on">
           Editor
         </button>
-        <div className="s-h">MANUSCRIPT</div>
-        <RailDocument id="dprologue" on>
-          Prologue
-        </RailDocument>
-        <div className="s-h">KNOWLEDGE BASE</div>
-        <div className="s-f">{CHARACTERS_FOLDER}</div>
-        {CHARACTERS.map(({ key, name }) => (
-          <RailDocument key={key} id={`d${key}`} nested>
-            {name}
+        <RailSection label="Manuscript" icon={SCROLL_QUILL}>
+          <RailDocument id="dprologue" on>
+            Prologue
           </RailDocument>
-        ))}
-        <div className="s-f">{WORLD_FOLDER}</div>
-        <RailDocument id="dbeast" rowId="s-beast-row" nested>
-          The Beast
-        </RailDocument>
-        {WORLD_PAGES.map(({ key, name }) => (
-          <RailDocument key={key} id={`d${key}`} nested>
-            {name}
-          </RailDocument>
-        ))}
+        </RailSection>
+        <RailSection label="Knowledge Base" icon={LIBRARY}>
+          <RailFolder name={CHARACTERS_FOLDER}>
+            {CHARACTERS.map(({ key, name }) => (
+              <RailDocument key={key} id={`d${key}`} nested>
+                {name}
+              </RailDocument>
+            ))}
+          </RailFolder>
+          <RailFolder name={WORLD_FOLDER}>
+            <RailDocument id="dbeast" rowId="s-beast-row" nested>
+              The Beast
+            </RailDocument>
+            {WORLD_PAGES.map(({ key, name }) => (
+              <RailDocument key={key} id={`d${key}`} nested>
+                {name}
+              </RailDocument>
+            ))}
+          </RailFolder>
+          <RailFolder name={PLACES_FOLDER} closed>
+            {PLACE_PAGES.map(({ key, name }) => (
+              <RailDocument key={key} id={`d${key}`} nested>
+                {name}
+              </RailDocument>
+            ))}
+          </RailFolder>
+        </RailSection>
       </aside>
       <div className="s-pane">
         <div className="s-top">
@@ -76,11 +88,11 @@ export function ProductPlaceholder() {
               </p>
             ))}
             <p className="s-draft">{PROLOGUE.turn}</p>
+            <p className="s-draft sys s-sys">{SYSTEM.tutorial}</p>
             <p className="s-only-hints">
               <span id="s-typing" />
               <i className="s-car" />
             </p>
-            <p className="s-draft sys s-sys">{SYSTEM.tutorial}</p>
           </article>
           {CHARACTERS.map((character) => (
             <article
@@ -107,6 +119,12 @@ export function ProductPlaceholder() {
           </article>
           {WORLD_PAGES.map(({ key, name, page }) => (
             <article className="s-doc" id={`d${key}`} data-folder={WORLD_PATH} hidden key={key}>
+              <div className="name">{name}</div>
+              <PageBody page={page} />
+            </article>
+          ))}
+          {PLACE_PAGES.map(({ key, name, page }) => (
+            <article className="s-doc" id={`d${key}`} data-folder={PLACES_PATH} hidden key={key}>
               <div className="name">{name}</div>
               <PageBody page={page} />
             </article>
@@ -192,6 +210,8 @@ export function ProductPlaceholder() {
 const CHARACTERS_FOLDER = "Characters";
 const WORLD_FOLDER = "World";
 const WORLD_PATH = `Knowledge Base › ${WORLD_FOLDER}`;
+const PLACES_FOLDER = "Places";
+const PLACES_PATH = `Knowledge Base › ${PLACES_FOLDER}`;
 
 const CHARACTER_NAME = new RegExp(`\\b(${CHARACTERS.map(({ name }) => name).join("|")})\\b`);
 
@@ -274,10 +294,104 @@ function RailDocument({
       className={`s-n in ${nested ? "deep" : ""} ${on ? "on" : ""}`}
       data-doc={id}
     >
-      {children}
+      <span className="s-tw" />
+      <Glyph paths={FILE_TEXT} />
+      <span className="s-nm">{children}</span>
     </button>
   );
 }
+
+/** A tree section, drawn as the app's rail draws it: open, with its rows in a guided group. */
+function RailSection({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: readonly string[];
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <div className="s-h">
+        <Glyph paths={CHEVRON} twistie />
+        <Glyph paths={icon} />
+        <span className="s-nm">{label}</span>
+      </div>
+      <div className="s-g">{children}</div>
+    </>
+  );
+}
+
+/** A folder the visitor can open and close, as in the app. `closed` folders start shut. */
+function RailFolder({
+  name,
+  closed,
+  children,
+}: {
+  name: string;
+  closed?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <button type="button" className="s-f" aria-expanded={!closed}>
+        <Glyph paths={CHEVRON} twistie />
+        <Glyph paths={FOLDER} shut />
+        <Glyph paths={FOLDER_OPEN} />
+        <span className="s-nm">{name}</span>
+      </button>
+      <div className="s-g" hidden={closed}>
+        {children}
+      </div>
+    </>
+  );
+}
+
+/** A lucide glyph at the tree's icon size, inlined because www imports no icon package. */
+function Glyph({
+  paths,
+  twistie,
+  shut,
+}: {
+  paths: readonly string[];
+  twistie?: boolean;
+  /** The closed-folder icon; CSS shows it in place of the open one. */
+  shut?: boolean;
+}) {
+  return (
+    <span className={twistie ? "s-tw" : shut ? "s-ic shut" : "s-ic"}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        {paths.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </svg>
+    </span>
+  );
+}
+
+const CHEVRON = ["m9 18 6-6-6-6"];
+const FOLDER = [
+  "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z",
+];
+const FOLDER_OPEN = [
+  "m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2",
+];
+const FILE_TEXT = [
+  "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z",
+  "M14 2v5a1 1 0 0 0 1 1h5",
+  "M10 9H8",
+  "M16 13H8",
+  "M16 17H8",
+];
+const LIBRARY = ["m16 6 4 14", "M12 6v14", "M8 8v12", "M4 4v16"];
+const SCROLL_QUILL = [
+  "M19 17v-5.5",
+  "M14.5 3H4",
+  "M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3",
+  "M16.37 13.15a1.1 1.1 0 0 0 .78-.32l3.38-3.39a3.3 3.3 0 0 0-4.67-4.67L12.47 8.15a1.1 1.1 0 0 0-.32.78v3.67a.55.55 0 0 0 .55.55z",
+  "M18.2 7.1 10.5 14.8",
+];
 
 function HelperCard({
   letter,
@@ -321,6 +435,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   const typing = part("#s-typing");
   const reply = part("#s-reply");
   const dragonRow = part("#s-beast-row");
+  const dragonName = part("#s-beast-row .s-nm");
   let state: ProductState | null = null;
   // Once the visitor picks a document or tab, autoplay leaves that view alone.
   let held = false;
@@ -343,6 +458,13 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
     "click",
     (event) => {
       if (!(event.target instanceof Element)) return;
+      const folder = event.target.closest<HTMLElement>(".s-f");
+      if (folder) {
+        const opening = folder.getAttribute("aria-expanded") !== "true";
+        folder.setAttribute("aria-expanded", String(opening));
+        (folder.nextElementSibling as HTMLElement).hidden = !opening;
+        return;
+      }
       const link = event.target.closest<HTMLElement>("[data-doc], [data-open]");
       if (!link) return;
       held = true;
@@ -387,7 +509,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
     set(next: ProductState, progress: number) {
       const arrived = next === "lore" && progress >= LORE_ARRIVES;
       const named = next === "ask" || next === "hints" || arrived;
-      dragonRow.textContent = named ? "The Dragon" : "The Beast";
+      dragonName.textContent = named ? "The Dragon" : "The Beast";
       dragonRow.dataset.doc = named ? "ddragon" : "dbeast";
       if (next !== state) {
         state = next;

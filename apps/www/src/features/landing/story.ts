@@ -33,8 +33,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Tam",
     note: "Seventeen and Level 58: the strongest human his age ever recorded.",
     pitch: "The prodigy who has never failed at anything.",
-    lastLine:
-      "My name is Tam. I put my one spark in its eye, and it wasn’t enough. Next time it gets both.",
+    lastLine: "I put my one spark in its eye, and it wasn’t enough. Next time it gets both.",
     lead: "Tam is a farm boy from Harl who reached Level 58 at seventeen, higher than anyone his age has ever been.",
     facts: [
       ["Race", "Human"],
@@ -96,7 +95,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Sigrun",
     note: "Champion of the holds. She cuts her wards into her own arms.",
     pitch: "Her ward turns one blow. She has to choose which.",
-    lastLine: "My name is Sigrun. My ward turns one blow. Next time I’ll know which one.",
+    lastLine: "My ward turns one blow. Next time I’ll know which one.",
     lead: "Sigrun is the champion of the dwarven holds, a runesmith who carves her wards into her own forearms.",
     facts: [
       ["Race", "Dwarf"],
@@ -146,7 +145,7 @@ export const CHARACTERS: readonly Character[] = [
     note: "The queen of Vell’s healer. Blind for a thousand years.",
     pitch: "She has never seen anything. Not even a box.",
     lastLine:
-      "My name is Maren. I have been blind for a thousand years. The first thing I ever saw was a box that said I’d finished.",
+      "A thousand years blind, and the first thing I ever saw was a box telling me I was done. I’m not.",
     lead: "Maren has been the queen of Vell’s healer for nine hundred years, and blind since she was six.",
     facts: [
       ["Race", "Elf"],
@@ -207,7 +206,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Oskar",
     note: "Kessa guide. The only one who has walked to the ice and back.",
     pitch: "He believed the songs.",
-    lastLine: "My name is Oskar. I told them the songs were true. I’ll have to tell them again.",
+    lastLine: "I told them the songs were true. I’ll have to tell them again.",
     lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked to the edge of the ice and come back.",
     facts: [
       ["Race", "Beastkin, bear-blooded"],
@@ -349,11 +348,20 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
         ["Who has it", "Everyone"],
         ["Tags", "Every living thing, except the beast"],
         ["Boxes", "Blue; read aloud to anyone who can’t see"],
+        ["Status", "Alive, Missing or Dead"],
       ],
       sections: [
         [
           "Levels",
           "The strongest means the highest level alive. Elves level slowly; a seventeen-year-old at 58 is a record.",
+        ],
+        [
+          "Skills",
+          "A first skill comes at a moment of need. Every skill box names where it came from: [Source: practice], [Source: bloodline], [Source: rune]. No box in recorded history has said [Source: unknown].",
+        ],
+        [
+          "What it never says",
+          "Levels, skills, tags and cores, and nothing else. No quests, no tutorials, no instructions. It has never told anyone what to do.",
         ],
         [
           NOTES,
@@ -385,6 +393,153 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
   },
 ];
 
+/** The Knowledge Base's Places folder, in the order the road north passes them. */
+export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }[] = [
+  {
+    key: "harl",
+    name: "Harl",
+    page: {
+      lead: "The human lowlands, furthest south: river towns, barley, and a king who keeps count of everyone’s level.",
+      facts: [
+        ["People", "Humans"],
+        ["Ruled by", "The king"],
+        ["Known for", "Barley, the Rolls"],
+        ["Sent north", "Tam"],
+      ],
+      sections: [
+        [
+          "The Rolls",
+          "Every spring the king’s clerks walk the villages reading tags and write down every subject’s level. In Harl, rank follows level more than birth, and a high-level commoner is taken into the king’s service whether they want to go or not.",
+        ],
+        [
+          "Under the Cold Fire",
+          "The barley stopped growing by the tenth day. Harl has the most mouths and the least grain stored. It sent the largest army north and lost it.",
+        ],
+        [
+          NOTES,
+          [
+            [
+              "Secret",
+              "If the beast dies, Tam is the strongest person in Harl after the king. The court has already argued about whether to allow it.",
+            ],
+          ],
+        ],
+      ],
+    },
+  },
+  {
+    key: "ansgard",
+    name: "Ansgard",
+    page: {
+      lead: "The dwarven holds, twelve of them, cut into the mountains between Harl and the north.",
+      facts: [
+        ["People", "Dwarves"],
+        ["Ruled by", "The Moot of hold-masters"],
+        ["Known for", "Runes, cores, the bone-halls"],
+        ["Sent north", "Sigrun, of the Ninth Hold"],
+      ],
+      sections: [
+        [
+          "The bone-halls",
+          "Dwarves keep every bone they dig up. The bone-halls hold a labelled skeleton of every creature that has ever lived in the mountains, and not one of them is a dragon.",
+        ],
+        [
+          "Cores",
+          "When a creature with a tag dies, the System leaves a core in its chest, priced by its level. Ansgard’s runesmithing runs on them.",
+        ],
+        [
+          NOTES,
+          [
+            [
+              "Secret",
+              "A beast with no tag has a core nobody has ever priced. The Moot wants it more than it wants the other three alive.",
+            ],
+          ],
+        ],
+      ],
+    },
+  },
+  {
+    key: "vell",
+    name: "Vell",
+    page: {
+      lead: "The elven forest north of the mountains, so old that sound carries differently in it.",
+      facts: [
+        ["People", "Elves"],
+        ["Ruled by", "The queen, for as long as records go back"],
+        ["Known for", "The Long Archive"],
+        ["Sent north", "Maren, the queen’s healer"],
+      ],
+      sections: [
+        [
+          "The Long Archive",
+          "The oldest written record in the world, kept by the queen under the roots of the oldest trees.",
+        ],
+        [
+          "Under the Cold Fire",
+          "The trees went on as if nothing had happened. That frightened the elves more than frost would have.",
+        ],
+        [
+          NOTES,
+          [
+            [
+              "Secret",
+              "The queen sang Maren the Kessa song’s last verse a thousand years ago, the year Maren went blind.",
+            ],
+          ],
+        ],
+      ],
+    },
+  },
+  {
+    key: "steppe",
+    name: "The Kessa Steppe",
+    page: {
+      lead: "Open grass and wind between the forest and the ice. The Kessa have no king and no army, and write nothing down.",
+      facts: [
+        ["People", "The Kessa, beastkin"],
+        ["Ruled by", "The clan mothers"],
+        ["Bloodlines", "Bear, wolf, elk, hare"],
+        ["Sent north", "Oskar, bear-blooded"],
+      ],
+      sections: [
+        [
+          "The songs",
+          "Kessa history, law and maps are sung. A song changes only when the world does.",
+        ],
+        [
+          "The last camp",
+          "The furthest north any clan pitches its tents. Nine days on is the basin where the beast lies.",
+        ],
+      ],
+    },
+  },
+  {
+    key: "greenlands",
+    name: "The Greenlands",
+    page: {
+      lead: "The Kessa name for the ice north of the steppe. On summer nights the ice glows faintly green under the snow.",
+      facts: [
+        ["People", "None"],
+        ["Tags seen", "Frost wolves"],
+        ["Furthest anyone has gone", "Oskar, once"],
+      ],
+      sections: [
+        ["The edge", "Guides take hunters as far as the edge. Nobody goes further."],
+        [
+          NOTES,
+          [
+            [
+              "Secret",
+              "The green under the ice is the beast’s breath. It has been there the whole time.",
+            ],
+          ],
+        ],
+      ],
+    },
+  },
+];
+
 export const characterName = (key: CharacterKey) =>
   CHARACTERS.find((character) => character.key === key)?.name ?? "";
 
@@ -408,11 +563,11 @@ export const FELL = "Died in the prologue";
 export const museReply = (key: CharacterKey) =>
   `The prologue ends with ${characterName(key)} now, and all four pages are up to date.`;
 
-/** The end, under the Rekindle window. Draft wording until the muse sends the line. */
+/** The end, after the Rekindle window. */
 export const END = {
-  question: "What book do you want to write?",
-  placeholder: "A tower that grows a floor every time someone dies in it",
-  start: "Write your first chapter →",
+  question: "What will you write?",
+  placeholder: "A farm boy, a dragon, and nine days north…",
+  start: "Start writing →",
 } as const;
 
 /** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
