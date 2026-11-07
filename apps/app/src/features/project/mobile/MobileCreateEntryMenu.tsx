@@ -12,29 +12,60 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FilePlus, FolderPlus, Plus } from "lucide-react";
+import { FilePlus, FolderPlus, ImportIcon, LoaderCircle, Plus } from "lucide-react";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { ImportMenuItems } from "@/features/import/ImportMenuItems";
+import type { PickKind } from "@/features/import/ImportProvider";
+import type { ImportStatus } from "@/features/import/import-presentation";
 
 import type { ContextCreateKind } from "../context/context-create-kind";
 
 export type MobileCreateEntryMenuProps = {
   /** Triggered when the user selects "New file" or "New folder". */
   onSelect: (kind: ContextCreateKind) => void;
+  /** Present where the area takes imports: opens the OS picker for an import into this folder. */
+  onImport?: (kind: PickKind) => void;
+  /** What the imports in this project ask of the menu's trigger. */
+  importStatus?: ImportStatus | null;
+  /** Present while the project has imports to show: Import… opens them instead of the pickers. */
+  onOpenImports?: () => void;
 };
 
-export function MobileCreateEntryMenu({ onSelect }: MobileCreateEntryMenuProps) {
+function triggerLabel(status: ImportStatus | null | undefined): string {
+  if (status === "running") return t`Create file or folder, import in progress`;
+  if (status === "needs-writer") return t`Create file or folder, import needs your attention`;
+  return t`Create file or folder`;
+}
+
+export function MobileCreateEntryMenu({
+  onSelect,
+  onImport,
+  importStatus,
+  onOpenImports,
+}: MobileCreateEntryMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <PhoneIconButton aria-label={t`Create file or folder`}>
+        <PhoneIconButton aria-label={triggerLabel(importStatus)} className="relative">
           <Plus className="size-5" aria-hidden />
+          {importStatus === "running" ? (
+            <LoaderCircle
+              aria-hidden
+              className="absolute top-1.5 right-1.5 size-3 animate-spin rounded-full bg-background text-muted-foreground motion-reduce:animate-none"
+            />
+          ) : importStatus === "needs-writer" ? (
+            <span aria-hidden className="absolute top-2 right-2 size-2 rounded-full bg-primary" />
+          ) : null}
         </PhoneIconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -56,6 +87,22 @@ export function MobileCreateEntryMenu({ onSelect }: MobileCreateEntryMenuProps) 
           <FolderPlus className="size-4 text-muted-foreground" aria-hidden />
           <Trans>New folder</Trans>
         </DropdownMenuItem>
+        {onOpenImports ? (
+          <DropdownMenuItem className="cursor-pointer" onSelect={onOpenImports}>
+            <ImportIcon className="size-4 text-muted-foreground" aria-hidden />
+            <Trans>Import…</Trans>
+          </DropdownMenuItem>
+        ) : onImport ? (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="cursor-pointer">
+              <ImportIcon className="size-4 text-muted-foreground" aria-hidden />
+              <Trans>Import…</Trans>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <ImportMenuItems onPick={onImport} />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

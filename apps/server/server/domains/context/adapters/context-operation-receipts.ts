@@ -37,8 +37,7 @@ export function createDrizzleContextOperationReceipts(
         );
       return row?.receipt ?? null;
     },
-    async observationVersion(command) {
-      const uri = command.kind === "move" ? command.destinationUri : command.uri;
+    async observationVersion(uri) {
       const key = uri.startsWith("user://") ? `user:${owner.userId}` : `project:${owner.projectId}`;
       const [head] = await currentDrizzleDb(db)
         .select({ version: contextAvailabilityHeads.namespaceGeneration })

@@ -5,7 +5,6 @@
  * - lossy post-commit wakes, durable catalog replay, namespace-only revisions, and persisted classification (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextCatalogCommits,
@@ -117,7 +116,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: folderId,
         contextSourceId: SOURCE_ID,
         name: "Arc",
-        documentAlias: folderDocumentName("Arc"),
       });
       await db.insert(documents).values({
         id: DOCUMENT_ID,
@@ -568,6 +566,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sourceId: SOURCE_ID,
           path: "notes",
           filetype: "markdown",
+          name: "notes",
+          extension: "",
         }),
       ).resolves.toMatchObject({ ok: true });
       const replay = await catalog.changes(scope, before.cursor);

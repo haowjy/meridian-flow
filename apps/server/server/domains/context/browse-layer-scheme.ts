@@ -36,11 +36,3 @@ export function projectBrowseContextUri(
     ? canonicalContextUri(scheme, normalized, authority)
     : canonicalContextUri(scheme, normalized);
 }
-
-export function ownedBrowseUri(
-  scheme: OwnedContextUriScheme,
-  authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }>,
-  path = "",
-): string {
-  return projectBrowseContextUri(scheme, path, authority);
-}

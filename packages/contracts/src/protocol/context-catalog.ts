@@ -3,7 +3,7 @@ import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkAuthorityDto } from "../works/work-authority.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
-import type { DocumentFileType } from "./http-types.js";
+import type { ContextParentOrderPolicy, DocumentFileType } from "./http-types.js";
 
 export type CatalogScope =
   | { kind: "project"; projectId: ProjectId }
@@ -29,12 +29,15 @@ export type CatalogSourceEntry = {
   scheme: ContextUriScheme;
   name: string;
   uri: CanonicalContextUri;
+  orderPolicy?: ContextParentOrderPolicy;
 };
 
 export type CatalogFolderEntry = {
   kind: "folder";
   /** Globally ordered namespace observation, independent of catalog replay cursors. */
   observationVersion: string;
+  /** Per-entry namespace mutation revision. */
+  locationVersion?: string;
   entryId: FolderId;
   scope: CatalogScope;
   sourceId: ContextSourceId;
@@ -43,6 +46,8 @@ export type CatalogFolderEntry = {
   path: readonly string[];
   uri: CanonicalContextUri;
   hasChildren: boolean;
+  rank?: string | null;
+  orderPolicy?: ContextParentOrderPolicy;
   /** Device-synthesized ancestry has no server folder identity or management actions. */
   navigationOnly?: true;
 };
@@ -50,6 +55,8 @@ export type CatalogFolderEntry = {
 type CatalogFileEntryBase = {
   kind: "file";
   observationVersion: string;
+  /** Per-entry namespace mutation revision. */
+  locationVersion?: string;
   entryId: DocumentId;
   scope: CatalogScope;
   sourceId: ContextSourceId;
@@ -60,6 +67,9 @@ type CatalogFileEntryBase = {
   uri: CanonicalContextUri;
   /** Catalog-visible identity state used by cross-device untitled reconciliation. */
   provisionalName: boolean;
+  /** The document has imported frontmatter to show; the properties load by id. */
+  hasProperties?: boolean;
+  rank?: string | null;
   /**
    * Ids a device's create forwarded into this document (a join). A device holding a
    * reservation under one of them follows the join. Absent when none were.
@@ -72,8 +82,11 @@ type CatalogFileEntryBase = {
   upload?: { attachedAt: string; used: boolean; intakeId: string; locationRevision: string };
 };
 
-/** Persisted viewer/storage classification. It is never reconstructed from a filename. */
-export type CatalogFileClassification =
+/**
+ * Persisted viewer/storage classification. It is never reconstructed from a filename. The stored
+ * `extension` is the row's own: a name's suffix cannot say whether it is one (`Vol. 2`).
+ */
+export type CatalogFileClassification = { extension: string } & (
   | {
       editable: true;
       filetype: Filetype;
@@ -96,7 +109,8 @@ export type CatalogFileClassification =
       mimeType: string | null;
       filetype: Filetype;
       schemaType?: never;
-    };
+    }
+);
 
 export type CatalogFileEntry = CatalogFileEntryBase & CatalogFileClassification;
 

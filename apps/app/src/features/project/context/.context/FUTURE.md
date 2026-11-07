@@ -58,10 +58,10 @@ here is a known defect.
   it changes every tree surface (Files, Scratch, Work Files), so it is its own
   change.
 
-## Delete Undo notice
+## Row-edge drops
 
-For `document-delete-undo.tsx` and `shell/SurfaceNotice.tsx`.
-
-- A restore that lands at another name says so only through `announce()`, so a
-  sighted writer learns the new name by scanning the tree. Keep the card open for
-  a moment with "Restored at ‹location›" if that confuses anyone.
+- **An open folder that is last in its parent has no drag edge after it.** An open
+  folder has no bottom edge (that border belongs to its first child), and no
+  next sibling exists to supply a top edge. Move…'s bottom position and
+  collapsing the folder cover it. A trailing drop strip below the last row of
+  each folder would close the gap.

@@ -33,10 +33,12 @@ is not counted as an edit and offers no Undo. Undoing a text copy reverses its
 staged create content and leaves the created document empty (#843: a create has
 no tree entry yet); the receipt shows it as undone and the document stays openable.
 
-A document the turn moved or deleted carries its net tree line in lineage, and
-its row says so: "Moved ch4 to ch4-old" (the folder, section or owner kept only
-when it tells the destination apart: "Scratch for Ascension/notes/ch4") or
-"Deleted ch2". An owner is named by its Work's name or its chat's title, never its
+A document the turn moved, deleted or copied carries its net tree line in lineage,
+and its row says so: "Moved ch4 to ch4-old" (the folder, section or owner kept only
+when it tells the destination apart: "Scratch for Ascension/notes/ch4"),
+"Deleted ch2", or "Copied ch2 to ch2 (copy)" (a create whose document records
+`metadata.copiedFrom`; its `from` is that source). An owner is named by its Work's
+name or its chat's title, never its
 handle (#914): the project shell supplies `OwnerNames` (`owner-names.tsx`,
 `ProjectOwnerNamesProvider`), and outside it a location reads "Scratch". The
 row is a record: it keeps its words after Undo, as text rows do. A deleted

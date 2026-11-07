@@ -4,7 +4,13 @@ import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts
 import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { type ContextTab, type ServerContextTab, useContextTabs } from "@/client/stores";
+import {
+  type ContextTab,
+  editorTabsForWork,
+  type ServerContextTab,
+  useContextTabs,
+} from "@/client/stores";
+import { routeSelectionDocumentId } from "../context/context-removal-protocol";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { resolveRouteDocumentOwner } from "../context/route-document-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
@@ -49,11 +55,16 @@ export function resolveMobileDocumentRoute(input: {
    */
   boundDocumentId?: string | null;
   /**
-   * The Editor workspace's tabs. Only a draft-only review tab is read from it: a pending
-   * new-document draft is not in the live catalog, so the tab the review launch installed
-   * is the document's admission.
+   * The Editor workspace's tabs. Only this Work's tabs are read from it, and only for a draft-only
+   * review tab: a pending new-document draft is not in the live catalog, so the tab the review
+   * launch installed is the document's admission.
    */
   workspaceTabs?: readonly ContextTab[];
+  /**
+   * The route is a review address: its document is the one the review is of, which the
+   * destination's own catalog lacks when the draft moves it to another area.
+   */
+  reviewing?: boolean;
   addressState?: AddressState;
   catalog: CatalogContextView | null;
   isError: boolean;
@@ -100,7 +111,11 @@ export function resolveMobileDocumentRoute(input: {
         })()
       : owner.kind === "draft-only"
         ? owner.tab
-        : null;
+        : owner.kind === "pending" && input.reviewing
+          ? (editorTabsForWork(input.workspaceTabs ?? [], input.workId).find(
+              (tab) => tab.kind !== "new" && tab.documentId === input.boundDocumentId,
+            ) ?? null)
+          : null;
   return {
     requested: true,
     scheme: input.scheme,
@@ -127,14 +142,16 @@ export function useMobileDocumentRoute(input: {
   const { tabs: workspaceTabs } = useContextTabs(input.projectId);
   const { selection } = useContextRemovalProject(input.projectId);
   const boundDocumentId =
-    selection.status === "bound" &&
-    selection.identity.kind === "server" &&
-    selection.locator.scheme === input.scheme &&
-    selection.locator.path === input.path &&
-    selection.locator.workId === input.workId &&
-    selection.locator.rootThreadId === (input.rootThreadId ?? undefined)
-      ? selection.identity.documentId
+    input.scheme !== null && input.path !== null && input.workId !== null
+      ? routeSelectionDocumentId(selection, {
+          scheme: input.scheme,
+          path: input.path,
+          workId: input.workId,
+          rootThreadId: input.rootThreadId ?? undefined,
+        })
       : null;
+  const reviewing =
+    boundDocumentId !== null && selection.status === "bound" && selection.by === "review";
   const { catalog, isError, isFetching } = useContextCatalogView(
     input.projectId,
     input.scheme ?? "kb",
@@ -150,6 +167,7 @@ export function useMobileDocumentRoute(input: {
         rootThreadId: input.rootThreadId,
         boundDocumentId,
         workspaceTabs,
+        reviewing,
         addressState: input.addressState,
         catalog,
         isError,
@@ -158,6 +176,7 @@ export function useMobileDocumentRoute(input: {
     [
       boundDocumentId,
       workspaceTabs,
+      reviewing,
       catalog,
       input.addressState,
       input.enabled,

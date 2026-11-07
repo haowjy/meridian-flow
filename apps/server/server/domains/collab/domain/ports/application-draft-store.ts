@@ -1,6 +1,6 @@
 /** Draft capabilities consumed by collab application services. */
 import type { BranchId } from "@meridian/contracts";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { DraftResolver, ResolvedDraft } from "../draft-resolver.js";
 import type { DraftSnapshot, DraftStore } from "../draft-store.js";
@@ -46,4 +46,9 @@ export type ApplicationDraftStore = DraftStore &
     }): Promise<{ documentDraft: DraftSnapshot; workDraft: DraftSnapshot }>;
     /** The thread's primary Work's active draft on the document, as metadata. */
     resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
+    /**
+     * The Work's active draft on the document, as metadata: its active branch's draft. Null
+     * when the Work has no active branch or no draft of the document.
+     */
+    findWorkDraft(documentId: DocumentId, workId: WorkId): Promise<ResolvedDraft | null>;
   };

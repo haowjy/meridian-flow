@@ -1,32 +1,28 @@
 /**
- * Doing and undoing a planned move through the replica's one placement path.
- * Placement is optimistic: a move resolves once the replica admits it, and a
- * later server refusal lands on the row as its failure mark with Move… to
- * repair. Each placement's operation is remembered so the row's link-update
- * note follows its receipt. Arrival names are predicted from the replica's
- * placement, so a move or its Undo needs no list on screen. Results are data;
- * wording, selection and the notice belong to the caller.
+ * Doing a planned move through the replica's one placement path. Placement is
+ * optimistic: a move resolves once the replica admits it, and a later server
+ * refusal lands on the row as its failure mark with Move… to repair. Each
+ * placement's operation is remembered so the row's link-update note follows
+ * its receipt. Arrival names are predicted from the replica's placement, so a
+ * move needs no list on screen. Results are data; selection belongs to the caller.
  */
 
-import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import {
   type ParentRef,
+  placementParentKey,
   type ResourceDestination,
   type ResourcePlacement,
   type ResourceRecord,
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import {
-  allocateContextEntryArrivalName,
-  type NameOccupancy,
-  nameOccupancy,
-} from "../context-entry-name";
+import { allocateContextEntryArrivalName } from "../context-entry-name";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
-import { type MoveEffect, type MoveRow, planUndo } from "./move-plan";
+import { type MoveRow, recordFor, sameParent } from "./move-plan";
 
-export type MoveContext = {
+/** The replica and project a Move and a Copy act through. */
+export type ReplicaContext = {
   resources: AccountResourceReplica;
   projectId: string;
 };
@@ -34,20 +30,23 @@ export type MoveContext = {
 /** The replica's placement, which names what every parent holds; no list needs to be on screen. */
 export type NamingView = {
   records: readonly ResourceRecord[];
-  placement: Pick<ResourcePlacement, "childrenAt">;
+  folders?: Awaited<ReturnType<AccountResourceReplica["readProjection"]>>["folders"];
+  placement: Pick<ResourcePlacement, "childrenAt" | "namedRow">;
 };
 
 export type MoveResult = {
-  moved: readonly MoveEffect[];
+  /** Rows the replica admitted. */
+  moved: readonly EntryRef[];
   /** Rows the replica would not admit. */
   failed: readonly { entry: EntryRef; name: string }[];
 };
 
-type Arrival = {
+export type Arrival = {
   entry: EntryRef;
   name: string;
   /** The name the writer asked for (a Move… retry keeps a refused rename); the row's own otherwise. */
   typed?: string;
+  before?: ParentRef;
   after: ParentRef;
 };
 
@@ -69,24 +68,37 @@ async function placeEntry(
   return result.operationId ?? null;
 }
 
+/** The file's naming facts as the replica shows them now; a folder, or a row that is gone, has none. */
+function namedRow(view: NamingView, entry: EntryRef) {
+  const record = entry.kind === "file" ? recordFor(view.records, entry.id) : undefined;
+  return record ? view.placement.namedRow(record) : undefined;
+}
+
 /**
  * Free names for the rows of one move. Each destination's names are indexed
  * once; a row's name is reserved once it arrives, so the next row sees it
  * though the replica has not caught up (two `Notes` folders become
  * `Notes (2)` and `Notes (3)`), and a row that fails reserves nothing.
  */
-function arrivals(view: NamingView) {
-  const byParent = new Map<string, NameOccupancy>();
+export function arrivals(view: NamingView, rows: readonly Arrival[]) {
+  const byParent = new Map<string, Set<string>>();
+  const staying = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (!row.before || !sameParent(row.before, row.after)) continue;
+    const key = placementParentKey(row.after);
+    const entries = staying.get(key) ?? new Set<string>();
+    entries.add(row.entry.id);
+    staying.set(key, entries);
+  }
   const occupancy = (parent: ParentRef) => {
-    const key = parentKey(parent);
+    const key = placementParentKey(parent);
     let occupied = byParent.get(key);
     if (!occupied) {
-      occupied = nameOccupancy(
-        view.placement.childrenAt(parent, view.records).map((row) => ({
-          entryId: row.entryId,
-          name: row.name,
-          kind: row.kind === "folder" ? "dir" : "file",
-        })),
+      occupied = new Set(
+        view.placement
+          .childrenAt(parent, view.records)
+          .filter((row) => !staying.get(key)?.has(row.entryId))
+          .map((row) => row.name),
       );
       byParent.set(key, occupied);
     }
@@ -98,21 +110,10 @@ function arrivals(view: NamingView) {
         row.typed ?? row.name,
         occupancy(row.after),
         row.entry.kind,
-        row.name,
+        namedRow(view, row.entry),
       ),
-    reserve: (row: Arrival, name: string) =>
-      occupancy(row.after).claim({
-        kind: row.entry.kind === "folder" ? "folder" : "document",
-        filename: name,
-      }),
+    reserve: (row: Arrival, name: string) => occupancy(row.after).add(name),
   };
-}
-
-/** One key per parent `sameParent` treats as equal. */
-function parentKey(parent: ParentRef): string {
-  if (parent.kind === "folder") return `folder:${parent.folderId}`;
-  if (isProjectScopedScheme(parent.scheme)) return `root:${parent.scheme}`;
-  return `root:${parent.scheme}:${parent.owner.workId ?? ""}:${parent.owner.rootThreadId ?? ""}`;
 }
 
 /**
@@ -123,7 +124,7 @@ export function renamesOnArrival(
   rows: readonly Arrival[],
   view: NamingView,
 ): { name: string; as: string }[] {
-  const names = arrivals(view);
+  const names = arrivals(view, rows);
   return rows.flatMap((row) => {
     const as = names.name(row);
     names.reserve(row, as);
@@ -131,23 +132,25 @@ export function renamesOnArrival(
   });
 }
 
-async function currentView(context: MoveContext) {
+export async function currentView(context: ReplicaContext) {
   const snapshot = await context.resources.readProjection(context.projectId);
   return {
     records: snapshot.records,
+    folders: snapshot.folders,
     placement: resourcePlacementForSnapshot(context.projectId, snapshot),
   };
 }
 
-/** Move…, a drop and Undo all move rows here, each under its predicted free name. */
+/** Move… and a drop both move rows here, each under its predicted free name. */
 export async function moveRows(
   rows: readonly MoveRow[],
-  context: MoveContext,
+  context: ReplicaContext,
   view?: NamingView,
 ): Promise<MoveResult> {
   const { resources, projectId } = context;
-  const names = arrivals(view ?? (await currentView(context)));
-  const moved: MoveEffect[] = [];
+  const current = view ?? (await currentView(context));
+  const names = arrivals(current, rows);
+  const moved: EntryRef[] = [];
   const failed: { entry: EntryRef; name: string }[] = [];
   for (const row of rows) {
     const name = names.name(row);
@@ -156,35 +159,16 @@ export async function moveRows(
         resources,
         projectId,
         row.entry,
-        { parent: row.after, name },
+        { parent: row.after, name, ...(row.position ? { position: row.position } : {}) },
         row.typed ?? row.name,
       );
       names.reserve(row, name);
       if (operationId)
         void renameOperationLifecycle(resources).remember(projectId, row.entry, operationId);
-      moved.push({
-        entry: row.entry,
-        name,
-        previousName: row.name,
-        before: row.before,
-        after: row.after,
-        ...(operationId ? { operationId } : {}),
-      });
+      moved.push(row.entry);
     } catch {
       failed.push({ entry: row.entry, name: row.name });
     }
   }
   return { moved, failed };
-}
-
-/**
- * Puts moved rows back, reading the replica as it is now rather than as it was
- * at the drop (see `planUndo`).
- */
-export async function undoMove(
-  effects: readonly MoveEffect[],
-  context: MoveContext,
-): Promise<MoveResult> {
-  const view = await currentView(context);
-  return moveRows(planUndo(view, effects), context, view);
 }

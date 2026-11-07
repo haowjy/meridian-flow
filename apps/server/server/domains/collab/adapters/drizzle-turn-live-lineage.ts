@@ -1,6 +1,6 @@
 /** Immutable edit/placement discovery for the retained turn change-viewer read model. */
 import type { DocumentId, WorkId } from "@meridian/contracts";
-import { type Database, documentEdits } from "@meridian/database";
+import { type Database, documentEdits, documents } from "@meridian/database";
 import { branches } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -24,8 +24,11 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           op: sql<"create" | "move" | "delete" | "restore">`${documentEdits.treeChange}->>'op'`,
           shownAt: sql<string | null>`${documentEdits.treeChange}->>'shownAt'`,
           landedAt: sql<string | null>`${documentEdits.treeChange}->>'landedAt'`,
+          // A copy's create names the document it read, so the turn can say it copied.
+          copiedFrom: sql<string | null>`${documents.metadata}->'copiedFrom'->>'uri'`,
         })
         .from(documentEdits)
+        .leftJoin(documents, eq(documents.id, documentEdits.documentId))
         // A drafted entry's Work: the branch its destination names.
         .leftJoin(
           branches,

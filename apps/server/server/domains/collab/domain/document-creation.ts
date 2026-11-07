@@ -8,9 +8,19 @@ export type ImmediateDocumentCreation<T> = {
   initializeContent(documentId: DocumentId): Promise<T>;
 };
 
+/** The same, for a tree of documents created together (a Copy), all or none. */
+export type BulkDocumentCreation<T> = {
+  /** Claims every identity as inserted rows. Null when a name or id is taken. */
+  persistIdentities(): Promise<readonly DocumentId[] | null>;
+  initializeContent(documentIds: readonly DocumentId[]): Promise<T>;
+};
+
 export type DocumentCreationAggregate = {
   createDocumentAtomically<T>(
     input: ImmediateDocumentCreation<T>,
+  ): Promise<{ created: true; value: T } | { created: false }>;
+  createDocumentsAtomically<T>(
+    input: BulkDocumentCreation<T>,
   ): Promise<{ created: true; value: T } | { created: false }>;
 };
 
@@ -18,20 +28,31 @@ export function createDocumentCreationAggregate(input: {
   atomic<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * Arrival hook (contract §9.3), inside `atomic` once identity and content exist. The
-   * command already holds the document's namespace key. A branch's create is no arrival:
+   * command already holds the documents' namespace key. A branch's create is no arrival:
    * it never comes through here.
    */
-  onArrival?(documentId: DocumentId): Promise<unknown>;
+  onArrivals?(documentIds: readonly DocumentId[]): Promise<unknown>;
 }): DocumentCreationAggregate {
+  const createDocumentsAtomically: DocumentCreationAggregate["createDocumentsAtomically"] = (
+    creation,
+  ) =>
+    input.atomic(async () => {
+      const documentIds = await creation.persistIdentities();
+      if (documentIds === null) return { created: false } as const;
+      const value = await creation.initializeContent(documentIds);
+      if (documentIds.length > 0) await input.onArrivals?.(documentIds);
+      return { created: true, value } as const;
+    });
+
   return {
-    async createDocumentAtomically<T>(creation: ImmediateDocumentCreation<T>) {
-      return input.atomic(async () => {
-        const documentId = await creation.persistIdentity();
-        if (documentId === null) return { created: false } as const;
-        const value = await creation.initializeContent(documentId);
-        await input.onArrival?.(documentId);
-        return { created: true, value } as const;
-      });
-    },
+    createDocumentsAtomically,
+    createDocumentAtomically: (creation) =>
+      createDocumentsAtomically({
+        persistIdentities: async () => {
+          const documentId = await creation.persistIdentity();
+          return documentId === null ? null : [documentId];
+        },
+        initializeContent: ([documentId]) => creation.initializeContent(documentId as DocumentId),
+      }),
   };
 }

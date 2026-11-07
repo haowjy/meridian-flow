@@ -4,7 +4,6 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - ordered ancestor, owner-Work, and branch-Work fact assembly (kb/decisions/documents/access/file-access-policy.md)
  */
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -68,14 +67,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: chapters,
           contextSourceId: manuscript,
           name: "chapters",
-          documentAlias: folderDocumentName("chapters"),
         },
         {
           id: arc,
           contextSourceId: manuscript,
           parentId: chapters,
           name: "arc-1",
-          documentAlias: folderDocumentName("arc-1"),
         },
       ]);
       await db.insert(documents).values([

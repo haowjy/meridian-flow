@@ -1,21 +1,15 @@
 /**
- * DraftImagePreview — opens a picture that exists only in a Work's branch.
+ * DraftImagePreview — opens a binary file that exists only in a Work's branch.
  *
- * A draft-only image has no review room (there is no text to diff) and no
+ * A draft-only picture or file has no review room (there is no text to diff) and no
  * live path to read, so the strip and the Work page open it here, in a plain
- * preview signed through the Work that holds it.
+ * preview signed through the Work that holds it: the picture, or the file card when
+ * the browser can't draw it.
  */
 import { t } from "@lingui/core/macro";
-import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
+import { FileCard } from "@/components/app/FileCard";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useAssetImageRenderState } from "@/core/editor/asset-image-render-state";
-
-/** Whether a draft's address names a picture, which is what this preview can show. */
-export function isDraftImagePath(path: string | null | undefined): boolean {
-  if (!path) return false;
-  const classification = classifyFiletype(filetypeForPath(path));
-  return classification.kind === "binary" && classification.fileType === "image";
-}
 
 export type DraftImagePreviewTarget = {
   projectId: string;
@@ -51,7 +45,14 @@ function PreviewBody({ target }: { target: DraftImagePreviewTarget }) {
       <DialogTitle className="truncate">{target.name}</DialogTitle>
       <DialogDescription>{t`Waiting for your review`}</DialogDescription>
       <div className="grid min-h-32 place-items-center">
-        {state.url ? (
+        {state.kind === "file" ? (
+          <FileCard
+            name={state.file.name}
+            mimeType={state.file.mimeType}
+            sizeBytes={state.file.sizeBytes}
+            url={state.file.downloadUrl}
+          />
+        ) : state.url ? (
           <img
             src={state.url}
             alt={target.name}

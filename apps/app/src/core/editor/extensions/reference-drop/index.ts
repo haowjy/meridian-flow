@@ -1,8 +1,8 @@
 export {
-  draggingMeridianEntries,
-  MERIDIAN_ENTRIES_MIME,
+  type NodePlacement,
+  placeNodes,
   type ReferenceDropEntry,
-  ReferenceDropExtension,
   type ReferenceDropOptions,
-  type ReferenceDropVerdict,
-} from "./ReferenceDropExtension";
+  type ReferenceDropRefusalReason,
+  referenceDropDoor,
+} from "./reference-drop-door";

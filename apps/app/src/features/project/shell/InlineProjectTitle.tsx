@@ -4,12 +4,14 @@
  * refused one reopens the field with the writer's text.
  */
 import { t } from "@lingui/core/macro";
+import type { Ref } from "react";
 import { cn } from "@/lib/utils";
-import { TitleEditSlot } from "./TitleEditSlot";
+import { type TitleEditHandle, TitleEditSlot } from "./TitleEditSlot";
 
 export type ProjectTitleEdit = { projectId: string; onSave: (title: string) => Promise<unknown> };
 
 export function InlineProjectTitle({
+  editRef,
   projectId,
   title,
   onSave,
@@ -17,6 +19,7 @@ export function InlineProjectTitle({
   inputClassName,
   showRenameHint = false,
 }: ProjectTitleEdit & {
+  editRef?: Ref<TitleEditHandle>;
   title: string;
   /** The resting button: geometry, typography, hover. */
   className?: string;
@@ -27,6 +30,7 @@ export function InlineProjectTitle({
   return (
     <div className="relative flex min-w-0 flex-1 items-center">
       <TitleEditSlot
+        editRef={editRef}
         titleKey={`project:${projectId}`}
         label={t`Project title`}
         failure={() => t`Project title could not be saved. Try again.`}

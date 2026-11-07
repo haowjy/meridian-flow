@@ -12,6 +12,8 @@ export type TreePlacement = {
   rootSourceId: string | null;
   name: string;
   extension: string;
+  /** Sibling rank in the named parent; null follows that parent's default order. */
+  rank?: string | null;
 };
 
 /** A removal as the row held it right after: its time and the `location_version` it wrote. */
@@ -118,7 +120,8 @@ export function samePlacement(a: TreePlacement, b: TreePlacement): boolean {
     a.folderId === b.folderId &&
     a.rootSourceId === b.rootSourceId &&
     a.name === b.name &&
-    a.extension === b.extension
+    a.extension === b.extension &&
+    (a.rank ?? null) === (b.rank ?? null)
   );
 }
 

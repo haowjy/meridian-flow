@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
+import { deleteAt, moveTo } from "../../../test-support/entry-ref.js";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
 import {
@@ -36,7 +37,8 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
             kind: "file" as const,
             nodeId: "document-old",
             sourceId: `${scheme}-source`,
-            path,
+            // A stored document's path is its canonical name: a prose suffix is dropped.
+            path: "old",
             filetype: "markdown",
           });
         }
@@ -58,10 +60,23 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
         }
         return Ok(null);
       }),
-      commitProvisionalGraduation: vi.fn(async () => Ok(undefined)),
-      commitPreparedMove: vi.fn(async (prepared) =>
-        Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
+      inspectNode: vi.fn(async (node: { id: string }) =>
+        Ok(
+          node.id === "document-old"
+            ? {
+                observationVersion: "1",
+                kind: "file" as const,
+                nodeId: "document-old",
+                sourceId: `${scheme}-source`,
+                path: "old",
+                filetype: "markdown" as const,
+                extension: "",
+              }
+            : null,
+        ),
       ),
+      commitProvisionalGraduation: vi.fn(async () => Ok(undefined)),
+      commitPreparedMove: vi.fn(async (prepared) => Ok({ path: prepared.destinationPath })),
       commitRecursiveDelete: vi.fn(async (command) =>
         Ok({
           removed:
@@ -93,12 +108,12 @@ describe("context router deletion receipts", () => {
     });
 
     await expect(
-      port.delete("manuscript://old.md", {
-        expected: { kind: "file", documentId: "document-old" },
+      deleteAt(port, "manuscript://old.md", {
+        expected: { kind: "file", nodeId: "document-old" },
       }),
     ).resolves.toEqual({
       ok: false,
-      error: { code: "stale_target", uri: "manuscript://old.md" },
+      error: { code: "stale_target", uri: "manuscript://" },
     });
   });
 });
@@ -223,56 +238,6 @@ describe("context router owner resolution", () => {
   });
 });
 
-describe("context router untitled identity recovery", () => {
-  it("returns an existing document's canonical cross-scheme location without creating a row", async () => {
-    const requestedCreate = vi.fn();
-    const manuscript = {
-      name: "manuscript",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      locateDocument: async () => Ok(null),
-      createUntitledDocument: requestedCreate,
-    } as unknown as ContextSchemeAdapter;
-    const scratch = {
-      name: "scratch",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      locateDocument: async (documentId: string) =>
-        Ok({ documentId, path: "moved/Untitled 1.md", name: "Untitled 1.md" }),
-      createUntitledDocument: async (_path: string, options: { documentId: string }) =>
-        Ok({
-          status: "already-exists" as const,
-          documentId: options.documentId,
-          path: "moved/Untitled 1.md",
-          name: "Untitled 1.md",
-        }),
-    } as unknown as ContextSchemeAdapter;
-    const port = createContextPortRouter({
-      sources: new Map([
-        ["manuscript", { adapter: manuscript, authority: { kind: "contextual" } }],
-      ]),
-      workAuthorities: new Map([[testWorkHandle("w8"), authority("work-2", "w8")]]),
-      resolveWorkAdapters: () => new Map([["scratch", scratch]]),
-    });
-
-    await expect(
-      port.createUntitledDocument("manuscript://branches", {
-        documentId: "00000000-0000-4000-8000-000000000101",
-        origin: { type: "system" },
-      }),
-    ).resolves.toEqual({
-      ok: true,
-      value: {
-        status: "already-materialized",
-        documentId: "00000000-0000-4000-8000-000000000101",
-        scheme: "scratch",
-        workId: "work-2",
-        path: "moved/Untitled 1.md",
-        name: "Untitled 1.md",
-      },
-    });
-    expect(requestedCreate).not.toHaveBeenCalled();
-  });
-});
-
 describe("context router scheme creation capabilities", () => {
   const workId = "00000000-0000-4000-8000-000000000001";
 
@@ -329,24 +294,25 @@ describe("context router scheme creation capabilities", () => {
 
   it("rejects cross-scheme moves into uploads but allows renames within uploads", async () => {
     const { port, uploads } = createPort();
+    const oldDocument = { kind: "file" as const, nodeId: "document-old" };
 
-    await expect(port.move(`scratch://@w7/old.md`, `uploads://old.md`)).resolves.toMatchObject({
-      ok: false,
-      error: {
-        code: "invalid_operation",
-        uri: "uploads://@c12/old.md",
-        message: expect.stringContaining("scratch://"),
-      },
-    });
     await expect(
-      port.commitWriterLocation(`scratch://@w7/old.md`, `uploads://old.md`),
+      moveTo(port, `scratch://@w7/old.md`, `uploads://old.md`, {
+        expected: oldDocument,
+      }),
     ).resolves.toMatchObject({
       ok: false,
-      error: { code: "invalid_operation", uri: "uploads://@c12/old.md" },
+      error: { code: "invalid_operation", uri: "uploads://@c12/" },
     });
-    await expect(port.move(`uploads://old.md`, `uploads://renamed.md`)).resolves.toEqual({
+    await expect(
+      moveTo(port, `uploads://old.md`, `uploads://renamed.md`, {
+        expected: oldDocument,
+      }),
+    ).resolves.toEqual({
       ok: true,
-      value: { movedNodeId: "document-old", destinationPath: "renamed" },
+      value: {
+        destinationUri: "uploads://@c12/renamed",
+      },
     });
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
   });

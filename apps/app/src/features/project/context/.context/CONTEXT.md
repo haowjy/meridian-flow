@@ -92,18 +92,19 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
                      │
           validateContextEntryName (pure)
 
-Delete and move notices share one notice place per surface (sidebar, Work
-Files, phone browser, chat Files menu), drawn with `SurfaceNotice`: a newer
-notice of either kind replaces the older (`useNoticeSlot`). Each kind has one
-owner per project, mounted together by `ProjectNoticesProvider`:
-`DocumentDeleteUndoProvider` for deletes, `MoveNoticesProvider`
-(`entry-drag/move-notice.tsx`) for moves. Each owner keeps its notice's Undo
-and decides from the replica when Undo still applies, so a notice outlives the
-list that published it. A Trash restore reports its removal to the delete
-owner (`useReportRestoredRemovals`), which closes a delete's notice once every
-removal in that delete's receipt came back. `SurfaceNotices` renders a surface's place: in the
-rail between the tree and User; at the foot of Work Files, the phone browser
-and the chat Files menu.
+A move, copy or delete that works shows only its result in the tree. One that fails toasts
+(`notifyFailure`, `components/app/failure-toast.tsx`) until the writer closes the toast, what it
+reports stops being refused, or the writer leaves the project. `entry-drag/entry-failure.ts` is
+the one path: a failure is data (`EntryFailure`) with its own key, `failureTitle` words it,
+`showFailure` shows it, and one retry runs it again. `runMove`, `runCopy` and `runDelete` do the
+work, and a Retry re-reads the replica, so a row the writer changed since is left alone.
+`RefusalToasts`, mounted once per project in `ProjectView`, watches the replica for what the
+server refused later. Each failure has its own toast, so a newer one never hides an older one;
+`visibleToasts={3}` caps the stack and the rest wait behind it. Rows refused together are one
+failure. A refused Move or delete keeps its mark on the row; a row refused before this project
+opened shows only the mark. A refused Copy has no row left, so it stays in the journal until the
+toast is closed or Retry lands: it survives a reload, and closing it in one tab closes it in the
+others.
 
 ContextPaneController
        ├─ route ↔ server-tab reconciliation
@@ -112,7 +113,10 @@ ContextPaneController
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DocumentPaneChrome (shared with the dock's document)
               │     ├─ PassageNotice, ArchivedWorkNotice
-              │     └─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
+              │     ├─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
+              │     └─ DocumentProperties (read-only frontmatter; mounts when the catalog entry
+              │        has `hasProperties`, then fetches by document id; open/closed is one
+              │        device preference in the surface-prefs store)
               ├─ ContextEditorMountHost (warm-set LRU)
               │     └─ ContextDocumentHost per tab (session boundary + EditorView;
               │        the dock's document renders the same host)
@@ -137,6 +141,10 @@ of a restored document's return to the live tree.
 tracked-classified viewer read renders as text in every host; collaborative
 editing remains in `ContextDocumentHost`. URL-backed text previews use a
 TanStack query so reopening a signed preview can reuse its read.
+The viewer reads by document id (`GET /documents/:documentId/read`), never by path, and its
+query is keyed by the same id: a rename or move elsewhere leaves the bytes on screen and
+cannot make the read open another file. The server answers from the row's live text or
+stored bytes; a draft view is never read here.
 
 `RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
 documents and navigates on click. It does not open a tab on mount. The tab
@@ -209,3 +217,9 @@ from a picker-provided label. The remount registry retains only operation
 selection until settlement plus the receipt note TTL; admission age never
 expires a pending/offline move. Same-folder renames without changed links do
 not claim a placement.
+
+## External-file drops and pending imports
+
+A context tree mounts one drop scope for both catalog-entry moves and external files. The entry route keeps the canonical folder target and move verdicts; the file route captures that same target for import admission. Window-level drop prevention remains active while either route can accept the drag.
+
+Imports add only a temporary root row until reveal. Pending roots have no catalog identity or URI and reserve no namespace names; every revealed node comes from the catalog.

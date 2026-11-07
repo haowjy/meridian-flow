@@ -82,17 +82,19 @@ this status; hidden rows outside the selected view are absent. Discarded tombsto
 have diagnostic lineages, so known-id file access can deny access with their
 removal record; this never grants content access or makes them visible.
 
-Anything deciding whether a node may stand at a path asks as a kind (document
-or folder) through one rule. Create refuses an occupied claim; moves, restores and Apply
-allocate a free leaf name but refuse a document blocking an ancestor. A
-folder holds its document alias (`Lore.md` holds `Lore`); folders never clash
-with folders through it. Generic browsing never asks as a kind, and a path two
-nodes share answers a clash, never a pick.
+Anything deciding whether a node may stand at a path asks what the view shows
+there (`resolvePath`, `childAt`, `namesAt`), literally: a folder and a document
+clash when the folder's name is the document's rendered filename. Create refuses an
+occupied claim; moves, restores and Apply allocate a free leaf name but refuse a
+document blocking an ancestor. A path two nodes share answers a clash, never a pick; a
+path one folder holds answers that folder, and the codec's alias applies only when nothing
+holds the literal name (`resolveAddress`). A caller that wants a document (`resolveDocumentAddress`)
+skips the folder and tries the alias.
 
 An address consumer that already carries a target kind is not making a
 namespace claim. Folder-link preparation passes `directory` to
-`inspectTreeLocation`, so it can select the folder from a legacy same-address
-folder/document collision instead of letting document-first inspection hide it.
+`inspectTreeLocation` and a document address passes `file`, so each selects its own kind
+beside a folder `Lore.md` and a document `Lore`.
 
 ## Lifecycle rules
 
@@ -124,6 +126,16 @@ which owns the transaction, aborts and rediscovers. Hidden-node repair uses the
 same seam in its own transaction and reports after commit.
 Tree writes return changed identities; ContextFS, the mover, Apply, and Discard
 refresh the catalog in their own surrounding transaction.
+
+Sibling order is part of effective placement. Parents are either `default` (folders first, then
+numeric-aware names) or `manual` (stored ranks in byte order: every SQL comparison or `ORDER BY` on
+`rank` uses `COLLATE "C"`, matching `compareCatalogSiblings` in `@meridian/resource-replica`, which also defines the default order). Position commands carry start/end or
+before/after one sibling identity; the server resolves the anchor and allocates the rank while the
+namespace lock is held. Draft-Work placement carries the same position fact, so pending detection,
+Apply, Discard, and inverse operations cannot erase a reorder. Settlement reconciles only the
+parents the document left or entered. If an inverse restores a ranked fact after its parent baseline
+was cleaned up, it rebuilds that baseline before reinstalling the saved rank.
+A batch that arrives together (an import's reveal) is placed in one allocation (`placeArrivedBatch`); export walks each source depth first, children in this order (`export-inventory.ts`), so the archive follows the tree.
 
 ## Removal facts
 
@@ -200,7 +212,7 @@ and never touches a draft.
 
 Every arrival returns its actual free placement. Live moves, drafted moves and
 their inverses, restores, and Apply placements therefore count up rather than
-refusing a leaf-name collision. After a live write, `normalizeNames` looks up only hidden nodes whose indexed claim meets the installed claim and makes those nodes yield in the same transaction; visible wins, then a hidden folder, then the earlier `(created_at, id)`. Folders persist the contracts codec’s document alias so opposite-kind lookup stays indexed.
+refusing a leaf-name collision. After a live write, `normalizeNames` looks up only hidden nodes whose rendered filename equals the installed one and makes those nodes yield in the same transaction; visible wins, then a hidden folder, then the earlier `(created_at, id)`.
 
 ## Lock and identity contracts
 

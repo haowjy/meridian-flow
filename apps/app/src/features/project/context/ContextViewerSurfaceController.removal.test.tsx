@@ -373,9 +373,10 @@ it("restores the exact older local owner across A to B to A through mounted cont
     );
 
     await act(async () => selectWork?.("work-b"));
+    // A URL naming no document stays a candidate until its address answer arrives; this
+    // harness mounts no route, and a tab found by its cached path proves nothing.
     expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
-      selection: { status: "bound", identity: { documentId: chapter.documentId } },
-      admitted: { scheme: "manuscript", path: "/a.md", workId: "work-b" },
+      selection: { status: "candidate", locator: { workId: "work-b", path: "/a.md" } },
     });
     expect(useContextTabsStore.getState().byProject.project?.selectedTabIdByWork["work-a"]).toBe(
       older.documentId,
@@ -440,7 +441,12 @@ it("does not admit an old bound document while its retained controller is inacti
         coordinator?.beginRouteSelection("project", locator);
         const revision = coordinator?.getProjectSnapshot("project").selection.revision;
         if (revision === undefined) throw new Error("Selection missing");
-        coordinator?.bindRouteSelection("project", revision, { kind: "server", documentId: "a" });
+        coordinator?.bindRouteSelection(
+          "project",
+          revision,
+          { kind: "server", documentId: "a" },
+          "answer",
+        );
       });
       expect(coordinator.getProjectSnapshot("project").admitted).toBeNull();
     } finally {

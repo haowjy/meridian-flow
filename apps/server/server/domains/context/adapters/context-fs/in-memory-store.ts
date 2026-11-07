@@ -1,6 +1,6 @@
 import {
-  folderDocumentName,
-  parseDocumentFilename,
+  addressCandidates,
+  firstFreeName,
   type RetractionCause,
 } from "@meridian/contracts/protocol";
 /**
@@ -22,6 +22,7 @@ import {
   type LiveDocumentCreation,
 } from "../../ports/context-document-store.js";
 import type { LiveCreateCandidate } from "../../tree/hidden-node-types.js";
+import type { NewTreeNode } from "../../tree/new-tree.js";
 import type { PathResolution, TreeView } from "../../tree/tree-view.js";
 
 export type FolderRow = ContextFolder & {
@@ -76,6 +77,56 @@ export function findInMemoryContextDocumentsById(
   });
 }
 
+/** The live document at a tree address in one folder: its literal spelling, else its alias. */
+export function findInMemoryContextDocumentAt(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  folderId: string | null,
+  filename: string,
+): DocumentRow | null {
+  for (const leaf of addressCandidates(filename)) {
+    for (const doc of backing.documents.values()) {
+      if (
+        doc.contextSourceId === sourceId &&
+        doc.deletedAt === null &&
+        doc.folderId === folderId &&
+        renderFilename(doc.name, doc.extension) === leaf
+      )
+        return doc;
+    }
+  }
+  return null;
+}
+
+/** The rendered filenames live under one folder, other than `exceptId` itself. */
+export function entryNames(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  parentId: string | null,
+  exceptId?: string,
+): Set<string> {
+  return new Set([
+    ...[...backing.documents.values()]
+      .filter(
+        (row) =>
+          row.id !== exceptId &&
+          row.contextSourceId === sourceId &&
+          row.folderId === parentId &&
+          row.deletedAt === null,
+      )
+      .map((row) => renderFilename(row.name, row.extension)),
+    ...[...backing.folders.values()]
+      .filter(
+        (row) =>
+          row.id !== exceptId &&
+          row.contextSourceId === sourceId &&
+          row.parentId === parentId &&
+          row.deletedAt === null,
+      )
+      .map((row) => row.name),
+  ]);
+}
+
 export function hasOppositeEntry(
   backing: InMemoryContextDocumentStoreBacking,
   sourceId: string,
@@ -88,14 +139,14 @@ export function hasOppositeEntry(
         (row) =>
           row.contextSourceId === sourceId &&
           row.parentId === parentId &&
-          folderDocumentName(row.name) === filename &&
+          row.name === filename &&
           row.deletedAt === null,
       )
     : [...backing.documents.values()].some(
         (row) =>
           row.contextSourceId === sourceId &&
           row.folderId === parentId &&
-          renderFilename(row.name, row.extension) === folderDocumentName(filename) &&
+          renderFilename(row.name, row.extension) === filename &&
           row.deletedAt === null,
       );
 }
@@ -244,16 +295,11 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
 
   async resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>> {
     const { dir, filename } = splitPath(normalizeTreePath(path));
-    const parsed = parseDocumentFilename(filename);
-    if (!parsed.ok) return { kind: "not_found" };
     const folder = await this.resolveFolderAt(view, dir.join("/"));
     if (folder.kind !== "found") return { kind: "not_found" };
-    const document = this.findDocumentRecord(
-      folder.node?.id ?? null,
-      parsed.value.name,
-      parsed.value.extension,
-    );
-    return document ? { kind: "found", node: document } : { kind: "not_found" };
+    const folderId = folder.node?.id ?? null;
+    const doc = findInMemoryContextDocumentAt(this.backing, this.sourceId, folderId, filename);
+    return doc ? { kind: "found", node: this.publicDocument(doc) } : { kind: "not_found" };
   }
 
   private findFolderRecord(parentId: string | null, name: string): ContextFolder | null {
@@ -274,6 +320,108 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     let parentId: string | null = null;
     for (const name of dir) parentId = (await this.createFolder(parentId, name)).id;
     return parentId;
+  }
+
+  async createFolderIfAbsent(input: {
+    parentId: string | null;
+    name: string;
+    id: string;
+    position?: unknown;
+  }) {
+    const held = this.backing.folders.get(input.id);
+    if (held) {
+      // A live folder of this source is a replay; any other holder can never become this folder.
+      if (held.contextSourceId !== this.sourceId || held.deletedAt !== null)
+        throw new ContextEntryConflictError("folder");
+      return {
+        status: "already-exists" as const,
+        folderId: input.id,
+        path: locationPath(this.backing, held.parentId, held.name).split("/"),
+      };
+    }
+    // The catalog's entry-id space is global, and another source holding the id is final too.
+    if (this.backing.documents.has(input.id)) throw new ContextEntryConflictError("folder");
+    const { name } = firstFreeName(
+      { name: input.name },
+      entryNames(this.backing, this.sourceId, input.parentId),
+    );
+    const folder: FolderRow = {
+      id: input.id,
+      contextSourceId: this.sourceId,
+      parentId: input.parentId,
+      name,
+      deletedAt: null,
+      updatedAt: this.nextTimestamp(),
+    };
+    this.backing.folders.set(folder.id, folder);
+    claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
+    return {
+      status: "created" as const,
+      folderId: folder.id,
+      path: locationPath(this.backing, folder.parentId, folder.name).split("/"),
+    };
+  }
+
+  async insertNewTree(input: {
+    parentId: string | null;
+    roots: readonly NewTreeNode[];
+  }): Promise<"inserted"> {
+    // A client-minted root id is unusable when any row already holds it.
+    for (const root of input.roots) {
+      const heldFolder = this.backing.folders.has(root.id);
+      if (heldFolder || this.backing.documents.has(root.id)) {
+        throw new ContextEntryConflictError(heldFolder ? "folder" : "file");
+      }
+    }
+    // The in-memory backing has no sibling ranks: a copy's position is a live-tree concern.
+    const insert = async (parentId: string | null, nodes: readonly NewTreeNode[]) => {
+      for (const node of nodes) {
+        if (node.kind === "folder") {
+          if (
+            hasOppositeEntry(this.backing, this.sourceId, parentId, node.name, "folder") ||
+            this.findFolderRecord(parentId, node.name) ||
+            this.backing.folders.has(node.id)
+          ) {
+            throw new ContextEntryConflictError("folder");
+          }
+          const folder: FolderRow = {
+            id: node.id,
+            contextSourceId: this.sourceId,
+            parentId,
+            name: node.name,
+            deletedAt: null,
+            updatedAt: this.nextTimestamp(),
+          };
+          this.backing.folders.set(folder.id, folder);
+          claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
+          await insert(folder.id, node.children);
+        } else if (node.node.kind === "tracked") {
+          const created = await this.createDocumentRecordIfAbsent({
+            id: node.id,
+            folderId: parentId,
+            name: node.name,
+            extension: node.extension,
+            filetype: node.node.filetype,
+            ...(node.node.metadata ? { metadata: node.node.metadata } : {}),
+          });
+          if (!created) throw new ContextEntryConflictError("file");
+        } else {
+          await this.createBinaryDocument({
+            id: node.id,
+            folderId: parentId,
+            name: node.name,
+            extension: node.extension,
+            fileType: node.node.fileType,
+            storageUrl: node.node.storageUrl,
+            mimeType: node.node.mimeType,
+            sizeBytes: node.node.sizeBytes,
+            ...(node.node.metadata ? { metadata: node.node.metadata } : {}),
+          });
+        }
+      }
+    };
+    await insert(input.parentId, input.roots);
+    return "inserted";
   }
 
   private async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
@@ -324,6 +472,8 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   async createDocumentRecordIfAbsent(
     input: CreateDocumentInput,
   ): Promise<LiveDocumentCreation | null> {
+    // The catalog's entry-id space is global: a folder anywhere already holds this id.
+    if (this.backing.folders.has(input.id ?? "")) throw new ContextEntryConflictError("folder");
     if (
       hasOppositeEntry(
         this.backing,
@@ -357,8 +507,10 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       storageUrl: null,
       mimeType: null,
       sizeBytes: 0,
+      hasPreview: false,
       updatedAt: this.nextTimestamp(),
       provisionalName: input.provisionalName ?? false,
+      metadata: input.metadata ?? {},
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
@@ -442,8 +594,10 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       storageUrl: input.storageUrl,
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,
+      hasPreview: input.hasPreview ?? false,
       updatedAt: this.nextTimestamp(),
       provisionalName: false,
+      metadata: input.metadata ?? {},
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
@@ -470,6 +624,14 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     };
     await walk(null);
     return { folders, documents };
+  }
+
+  async parentOrderPolicy(_view: TreeView, _parentId: string | null) {
+    return "default" as const;
+  }
+
+  async namesAt(_view: TreeView, parentId: string | null): Promise<Set<string>> {
+    return entryNames(this.backing, this.sourceId, parentId);
   }
 
   async listFolders(_view: TreeView, parentId: string | null): Promise<ContextFolder[]> {

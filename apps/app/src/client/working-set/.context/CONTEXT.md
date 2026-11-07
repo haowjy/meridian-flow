@@ -30,6 +30,16 @@ it never reopens a historical path. An empty browser-local workspace stays empty
 through screen entry and reload. Project-entry validation reconciles only tabs
 already restored from sessionStorage against the resource replica.
 
+## Refusals and routes the server does not hold
+
+The server answers a snapshot naming a document it does not hold with a 400. The sweep treats
+any 4xx but 401, 408 and 429 as an answer about the snapshot: no suspect baseline, no timed
+retry, and the pending record stays, so the next report, flush or hydration sends again. A
+snapshot names only documents the replica knows the server holds: a tab whose record is still
+`local` carries `localOnly` and contributes no route, so a pending or refused create costs no
+400 and the device's other routes keep syncing. When the create lands the projection clears the
+flag and the next report adds the route.
+
 ## Suspect baseline (recovery sweep errata)
 
 Design reference: `client-engine.md` § the sweep — the happy path stays

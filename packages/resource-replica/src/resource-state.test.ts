@@ -20,7 +20,7 @@ import {
   planResourceLocation,
   publishResourceTerminal,
   recordAcquiredResourceContent,
-  remintCreateConflict,
+  remintResource,
   reserveResourceDocument,
 } from "./resource-state";
 
@@ -39,6 +39,7 @@ it("records a live server cache once and leaves its adoption witness stable", ()
   const record = reserved();
   record.resource.content = { kind: "unacquired" };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "6" };
+  record.resource.serverHold = "held";
   record.resource.canonical = {
     scheme: "manuscript",
     path: "/chapter.md",
@@ -61,6 +62,7 @@ it("records a live server cache once and leaves its adoption witness stable", ()
   validateResourceRecordUpdate(record, acquired.next);
   expect(acquired.next.resource).toMatchObject({
     content: { kind: "exact", databaseName: "server-cache", schema: "schema" },
+    serverHold: "held",
     lifecycle: { kind: "acknowledged", availabilityGeneration: "7" },
     obligations: {
       sessionAdoption: {
@@ -88,6 +90,7 @@ it("rejects server content captured for an obsolete resource identity", () => {
   record.resource.identity = { documentId: "replacement", revision: 2 };
   record.resource.content = { kind: "unacquired" };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "6" };
+  record.resource.serverHold = "held";
   record.resource.obligations = {};
 
   expect(() =>
@@ -208,7 +211,7 @@ it("remints a received create conflict while retaining exact content and attempt
   const failed = settleNamespaceOutcome(received.next);
   if (!failed) throw new Error("Expected persisted conflict outcome");
 
-  const reminted = remintCreateConflict({
+  const reminted = remintResource({
     record: failed.next,
     documentId: "document-b",
     retryIntentId: "create-b",
@@ -255,15 +258,17 @@ it("rebases queued placement behind the retry when creation remints", () => {
     result: { status: "conflict" },
   });
   if (!received) throw new Error("Expected conflict outcome");
+  const settled = settleNamespaceOutcome(received.next);
+  if (!settled) throw new Error("Expected conflict settlement");
 
-  const reminted = remintCreateConflict({
-    record: received.next,
+  const reminted = remintResource({
+    record: settled.next,
     documentId: "document-b",
     retryIntentId: "create-b",
     rebasedIntentIds: { "place-a": "place-b" },
   });
   if (!reminted) throw new Error("Expected remint");
-  validateResourceRecordUpdate(received.next, reminted.next);
+  validateResourceRecordUpdate(settled.next, reminted.next);
   expect(reminted.next.intents).toMatchObject([
     { intentId: "create-a", state: "superseded", identityRevision: 1 },
     { intentId: "place-a", state: "cancelled", identityRevision: 1 },
@@ -316,6 +321,7 @@ it("starts a fresh adoption witness for an acknowledged exact cache", () => {
   const record = reserved();
   if (record.resource.content.kind === "exact") delete record.resource.content.initialization;
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "6" };
+  record.resource.serverHold = "held";
   record.resource.obligations = {};
   record.intents = [];
 

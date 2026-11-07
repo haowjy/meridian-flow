@@ -19,6 +19,7 @@ export {
 export {
   caretBesideObjectTransaction,
   caretHomeFromObjectTransaction,
+  caretInsideNodeAt,
   caretInsideObjectTransaction,
   gapCursorFits,
   type ObjectAt,
@@ -30,6 +31,7 @@ export {
 export {
   EDITOR_OBJECT_TYPES,
   isEditorObject,
+  isObjectLike,
   isOpaqueObject,
   isSourceBlock,
   type ObjectBody,
@@ -42,3 +44,4 @@ export {
   objectSurfaceKind,
   objectTypeSpec,
 } from "./object-types";
+export { holdPictureCapThroughKeyboard, pictureCapHeight, pictureCapped } from "./picture-cap";

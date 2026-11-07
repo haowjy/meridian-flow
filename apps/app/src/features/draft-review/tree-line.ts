@@ -11,7 +11,7 @@ import { describeMove, type ParsedContextLocation } from "@/features/chat/docume
 import type { ReviewChange } from "./review-model";
 
 export type TreeLine =
-  | { kind: "rename" | "move"; name: string; place: string }
+  | { kind: "rename" | "move" | "reorder"; name: string; place: string }
   | { kind: "delete"; name: string };
 
 const nameOf = (location: ParsedContextLocation | null | undefined) =>
@@ -34,6 +34,19 @@ export function hasTreeLine(
   item: Pick<ThreadDraftListItem, "tree" | "contextLocation" | "documentName" | "isNew">,
 ): boolean {
   return !item.isNew && treeLineOf(item) !== null;
+}
+
+/**
+ * Whether the item's review has no room: a delete, or a move with no text draft. Its review is the
+ * live document with the branch's tree line, so no review session ever binds.
+ */
+export function reviewHasNoRoom(
+  item: Pick<
+    ThreadDraftListItem,
+    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft"
+  >,
+): boolean {
+  return item.tree?.deleted === true || (!item.hasDraft && hasTreeLine(item));
 }
 
 /** The tree line as a review row: one change with no text frame, keyed apart from text. */
@@ -59,7 +72,7 @@ export function treeChange(
   };
 }
 
-/** "ch12: renaming to ch12-old", "ch13: Deleted". */
+/** "ch12: renaming to ch12-old", "ch12: changing position", "ch13: Deleted". */
 export function treeLineSentence(line: TreeLine): string {
   const { name } = line;
   switch (line.kind) {
@@ -67,6 +80,8 @@ export function treeLineSentence(line: TreeLine): string {
       return t`${name}: renaming to ${line.place}`;
     case "move":
       return t`${name}: moving to ${line.place}`;
+    case "reorder":
+      return t`${name}: changing position`;
     case "delete":
       return t`${name}: Deleted`;
   }
@@ -88,6 +103,8 @@ export function treeNoticeSentence(
     return work ? t`${work} is deleting this.` : t`A chat is deleting this.`;
   const move = from ? describeMove(from, change.line.movedTo) : null;
   const place = move?.place ?? nameOf(change.line.movedTo);
+  if (move?.kind === "reorder")
+    return work ? t`${work} is reordering this.` : t`A chat is reordering this.`;
   if (move?.kind === "rename")
     return work
       ? t`${work} is renaming this to ${place}.`
@@ -103,7 +120,10 @@ export function treeNoticeLabel(
   const [only] = changes;
   if (changes.length > 1 || !only) return t`Pending moves and deletes`;
   if ("deleted" in only.line) return t`Pending delete`;
-  return from && describeMove(from, only.line.movedTo).kind === "rename"
+  const kind = from ? describeMove(from, only.line.movedTo).kind : "move";
+  return kind === "rename"
     ? t`Pending rename`
-    : t`Pending move`;
+    : kind === "reorder"
+      ? t`Pending reorder`
+      : t`Pending move`;
 }

@@ -9,7 +9,6 @@ import {
   gateLiveView,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
-  routeContinuityDocumentId,
 } from "./local-document-address";
 
 function catalog(localContent: boolean): CatalogContextView {
@@ -37,9 +36,11 @@ function catalog(localContent: boolean): CatalogContextView {
         parentId: "kb-source",
         name: "Cached.md",
         aliases: [],
+        hasProperties: false,
         path: ["Cached.md"],
         uri: "kb://Cached.md",
         provisionalName: false,
+        extension: "md",
         editable: true,
         filetype: "markdown",
         schemaType: "document",
@@ -52,10 +53,12 @@ function catalog(localContent: boolean): CatalogContextView {
     parentId: "kb-source",
     documentId: "document-id",
     name: "Cached.md",
+    extension: "",
     aliases: [],
     path: "/Cached.md",
     uri: "kb://Cached.md",
     provisionalName: false,
+    hasProperties: false,
     editable: true,
     filetype: "markdown",
     schemaType: "document",
@@ -225,31 +228,6 @@ describe("gateLiveView", () => {
       result: undefined,
     });
   });
-});
-
-const kbRoute = { kind: "document" as const, scheme: "kb" as const, path: "Original.md" };
-function bound(workId: string, documentId = "doc-a") {
-  return {
-    status: "bound" as const,
-    revision: 1,
-    locator: { scheme: "kb" as const, path: "/Original.md", workId },
-    identity: { kind: "server" as const, documentId },
-  };
-}
-
-it.each([
-  ["doc-b", "no-work", "no-work", null],
-  ["doc-a", "no-work", "no-work", "doc-a"],
-  ["doc-a", "work-1", "no-work", null],
-])("requires admission %s and matching Editor context %s / %s", (admittedDocumentId, editorWorkId, selectionWork, expected) => {
-  expect(
-    routeContinuityDocumentId({
-      destination: kbRoute,
-      admittedDocumentId,
-      editorWorkId,
-      selection: bound(selectionWork),
-    }),
-  ).toBe(expected);
 });
 
 it.each([

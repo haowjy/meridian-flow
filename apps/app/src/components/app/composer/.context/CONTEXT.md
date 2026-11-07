@@ -18,5 +18,10 @@
   restored document atoms whose resources are gone; offline or unavailable
   catalogs don't, and folder atoms stay so a deleted folder shows on its chip's
   menu. Confirmed uploads retain ownership; in-memory bytes don't persist.
+- An upload chip isn't part of the message, so Send (button and Enter) waits while one
+  sends and refuses while one has failed or stopped; the chip says to retry or remove it.
+  Unmounting discards the Composer's uploads: its holder dies with it and a restored draft
+  strips upload chips, so a landed file could never be shown. A finish already sent lands
+  unseen in the chat's uploads (the uploads `.context` limit).
 - Send records the exact structured fingerprint before clearing unchanged words.
   If local recording fails, the live draft stays and Send again is the retry.

@@ -5,12 +5,11 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  allocateFilename,
   filenameForBinary,
-  type NamespaceNameClaim,
+  firstFreeName,
+  type NamedRow,
   parseDocumentFilename,
   renderFilename,
-  sameNamespaceName,
   storedFilename,
 } from "./document-filename.js";
 import {
@@ -141,7 +140,7 @@ describe("document filename codec", () => {
   });
 });
 
-const stored = (raw: string, current?: string) => {
+const stored = (raw: string, current?: NamedRow) => {
   const result = storedFilename(raw, current);
   return result.ok ? result.name : `refused: ${result.message}`;
 };
@@ -165,14 +164,16 @@ describe("storedFilename", () => {
   });
 
   it("keeps the renamed file's extension when none is typed", () => {
-    expect(stored("settings", "config.toml")).toBe("settings.toml");
-    expect(stored("pic", "map.png")).toBe("pic.png");
-    expect(stored("Chapter 14", "Chapter 13")).toBe("Chapter 14");
+    expect(stored("settings", { extension: "toml", editable: true })).toBe("settings.toml");
+    expect(stored("pic", { extension: "png", editable: false })).toBe("pic.png");
+    expect(stored("Chapter 14", { extension: "", editable: true })).toBe("Chapter 14");
   });
 
   it("lets a typed extension state the type", () => {
-    expect(stored("Chapter 13.md", "config.toml")).toBe("Chapter 13");
-    expect(stored("Notes.txt", "bytes.pdf")).toBe("Notes");
+    expect(stored("Chapter 13.md", { extension: "toml", editable: true })).toBe("Chapter 13");
+    expect(stored("Notes.txt", { extension: "pdf", editable: false })).toBe("Notes.txt");
+    expect(stored("page", { extension: "html", editable: false })).toBe("page.html");
+    expect(stored("x.md", { extension: "md", editable: false })).toBe("x.md");
   });
 
   it("passes the codec's refusal through", () => {
@@ -183,36 +184,19 @@ describe("storedFilename", () => {
   });
 });
 
-describe("namespace name claims", () => {
-  it("shares document-folder aliases and counts documents and whole folder names", async () => {
-    const claims = [
-      { kind: "folder", filename: "Lore.md" },
-      { kind: "document", filename: "Map" },
-      { kind: "folder", filename: "Map (2)" },
-    ] as const;
-    expect(
-      sameNamespaceName(
-        { kind: "document", filename: "Lore" },
-        { kind: "folder", filename: "Lore.md" },
-      ),
-    ).toBe(true);
-    expect(
-      sameNamespaceName(
-        { kind: "folder", filename: "Lore" },
-        { kind: "document", filename: "Lore.md" },
-      ),
-    ).toBe(false);
-    expect(
-      sameNamespaceName(
-        { kind: "folder", filename: "Lore" },
-        { kind: "folder", filename: "Lore.md" },
-      ),
-    ).toBe(false);
-    const taken = (candidate: NamespaceNameClaim) =>
-      claims.some((claim) => sameNamespaceName(candidate, claim));
-    await expect(
-      allocateFilename({ kind: "document", name: "Map", extension: "" }, taken),
-    ).resolves.toBe("Map (3)");
-    await expect(allocateFilename({ kind: "folder", name: "Map" }, taken)).resolves.toBe("Map (3)");
+describe("free filenames", () => {
+  it("counts documents and folders by their literal rendered names", () => {
+    const taken = new Set(["Lore.md", "Map", "Map (2)"]);
+    expect(firstFreeName({ name: "Map" }, taken)).toEqual({
+      name: "Map (3)",
+      extension: "",
+      filename: "Map (3)",
+    });
+    expect(firstFreeName({ name: "Lore" }, taken).filename).toBe("Lore");
+    expect(firstFreeName({ name: "Lore", extension: "md" }, taken)).toEqual({
+      name: "Lore (2)",
+      extension: "md",
+      filename: "Lore (2).md",
+    });
   });
 });

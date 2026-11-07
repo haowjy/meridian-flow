@@ -103,6 +103,17 @@ next chat in that project fails on `threads_project_ref`. Retry a failed 0083 wi
 writers still stopped; never restart the old release on a partly converted schema.
 The old release also still reads `works.slug`, which 0083 drops.
 
+Migrations `0125` and `0126` drop columns the previous release writes, so stop every
+application server and worker, old and new, while they deploy; neither release can serve
+against the other's schema. `0125` drops `folders.document_alias`, which the old release
+writes on every folder create and rename (folders and documents now clash by literal
+rendered filename). `0126` drops `upload_intakes.byte_digest`, `fingerprint` and
+`storage_url`, which the old release inserts at every chat attach, and the new release's
+reserve inserts `size_bytes`, which the old one never sets. Start only the new release
+afterwards. Intakes still open across the cutover read `size_bytes = 0`: a resumed old
+attach gets `idempotency_conflict` and an old `object_stored` row gets `size_mismatch`
+(its object is deleted). The documents are untouched.
+
 `0092` rebuilds what an active branch's drafted tree entries own
 (`branch_tree_folders`, `branch_tree_unsettled`, which 0090 and 0091 started
 from current rows only) from `document_edits.tree_change`: the branch's rows on a

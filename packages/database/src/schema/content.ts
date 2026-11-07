@@ -154,6 +154,7 @@ export const contextSources = pgTable(
     description: text("description"),
     isPrimary: boolean("is_primary").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
+    orderPolicy: text("order_policy").$type<"default" | "manual">().notNull().default("default"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -207,6 +208,7 @@ export const contextSources = pgTable(
       "context_sources_adapter_type_valid",
       sql`${table.adapterType} IN ('local', 'google_drive', 'dropbox', 'notion')`,
     ),
+    check("context_sources_order_policy_valid", sql`${table.orderPolicy} IN ('default', 'manual')`),
   ],
 );
 
@@ -220,10 +222,10 @@ export const folders = pgTable(
       .references(() => contextSources.id, { onDelete: "cascade" }),
     parentId: uuid("parent_id").$type<FolderId>(),
     name: text("name").notNull(),
-    /** Canonical document spelling of the folder name, for indexed cross-kind claims. */
-    documentAlias: text("document_alias").notNull(),
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
+    rank: text("rank"),
+    orderPolicy: text("order_policy").$type<"default" | "manual">().notNull().default("default"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -246,9 +248,10 @@ export const folders = pgTable(
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
       .where(sql`${table.deletedAt} IS NULL`),
-    index("folders_context_parent_alias_active")
-      .on(table.contextSourceId, table.parentId, table.documentAlias)
-      .where(sql`${table.deletedAt} IS NULL`),
+    index("folders_sibling_rank_live")
+      .on(table.contextSourceId, table.parentId, sql`${table.rank} COLLATE "C"`, table.id)
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
+    check("folders_order_policy_valid", sql`${table.orderPolicy} IN ('default', 'manual')`),
     // Hidden folders occupy no live path; nothing makes them unique.
     uniqueIndex("folders_context_parent_name_live")
       .on(table.contextSourceId, table.parentId, table.name)
@@ -290,8 +293,11 @@ export const documents = pgTable(
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
+    /** A browser-drawable preview sits beside the original object (`previewObjectKey`). */
+    hasPreview: boolean("has_preview").notNull().default(false),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
     provisionalName: boolean("provisional_name").notNull().default(false),
+    rank: text("rank"),
     metadata: jsonbDefault("metadata"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -345,6 +351,9 @@ export const documents = pgTable(
       table.name,
       table.extension,
     ),
+    index("documents_sibling_rank_live")
+      .on(table.contextSourceId, table.folderId, sql`${table.rank} COLLATE "C"`, table.id)
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
     // Hidden documents occupy no live path; nothing makes them unique.
     uniqueIndex("documents_context_folder_name_live")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
@@ -405,22 +414,23 @@ export const uploadIntakes = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     // The owning chat's thread id. No FK: the chat's row may not exist yet at attach time, and
     // trashing or purging it must not cascade (the same as lineage Scratch's root id).
-    ownerThreadId: uuid("owner_thread_id").$type<ThreadId>().notNull(),
+    // Null with `contextSourceId` for a source upload (a file dropped into a document): it
+    // belongs to no chat and takes its name in `assets/` when it finalizes.
+    ownerThreadId: uuid("owner_thread_id").$type<ThreadId>(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
-      .notNull()
       .references(() => contextSources.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
-    fingerprint: text("fingerprint").notNull(),
-    byteDigest: text("byte_digest").notNull(),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull(),
-    finalPath: text("final_path").notNull(),
+    // The name and type are chosen when the stored bytes are read, at finish: null while reserved.
+    finalPath: text("final_path"),
     objectKey: text("object_key").notNull(),
-    fileType: text("file_type").notNull(),
+    fileType: text("file_type"),
+    // The length the writer declared; finish refuses an object of any other.
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     locationRevision: uuid("location_revision").notNull(),
     state: text("state").notNull().default("reserved"),
-    storageUrl: text("storage_url"),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -428,9 +438,6 @@ export const uploadIntakes = pgTable(
   (table) => [
     unique("upload_intakes_project_intake_unique").on(table.projectId, table.intakeId),
     unique("upload_intakes_document_unique").on(table.documentId),
-    uniqueIndex("upload_intakes_source_path_live")
-      .on(table.contextSourceId, sql`lower(${table.finalPath})`)
-      .where(sql`${table.state} <> 'deleted'`),
     check(
       "upload_intakes_state_valid",
       sql`${table.state} IN ('reserved', 'object_stored', 'finalized', 'deleted')`,
@@ -438,7 +445,10 @@ export const uploadIntakes = pgTable(
     index("upload_intakes_owner_thread")
       .on(table.ownerThreadId)
       .where(sql`${table.ownerThreadId} IS NOT NULL`),
-    check("upload_intakes_digest_valid", sql`${table.byteDigest} ~ '^[0-9a-f]{64}$'`),
+    // The sweep of abandoned uploads reads only rows that never finalized.
+    index("upload_intakes_open_updated")
+      .on(table.updatedAt)
+      .where(sql`${table.state} IN ('reserved', 'object_stored')`),
   ],
 );
 

@@ -171,9 +171,6 @@ export function useMountedEditor({
             content: (schema, entries) =>
               referenceDropRef.current?.content(schema, entries) ?? null,
             label: (kind) => referenceDropRef.current?.label(kind) ?? referenceDrop.label(kind),
-            showHint: (owner, verdict, point) =>
-              referenceDropRef.current?.showHint(owner, verdict, point),
-            clearHint: (owner) => referenceDropRef.current?.clearHint(owner),
           }
         : undefined,
       wikilinkPaste: { catalog: () => wikilinkPasteCatalogRef.current?.() ?? null },

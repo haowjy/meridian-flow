@@ -38,14 +38,18 @@ export function toFileRef(
     sizeBytes: ref.sizeBytes,
     updatedAt: ref.updatedAt,
     readonly,
+    ...(ref.properties ? { properties: ref.properties } : {}),
+    ...(ref.aliases ? { aliases: ref.aliases } : {}),
   };
   return ref.kind === "binary"
     ? {
         ...base,
         kind: "binary",
         fileType: ref.fileType,
+        extension: ref.extension,
         storageUrl: ref.storageUrl,
         mimeType: ref.mimeType,
+        hasPreview: ref.hasPreview,
       }
     : { ...base, kind: "tracked", filetype: ref.filetype, schemaType: ref.schemaType };
 }

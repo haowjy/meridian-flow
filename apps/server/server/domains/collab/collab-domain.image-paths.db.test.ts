@@ -4,7 +4,6 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - one captured link scope per search operation
  */
-import { folderDocumentName } from "@meridian/contracts/protocol";
 import { createDb } from "@meridian/database";
 import { branchTreeChanges, documents, folders, modelResponses } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -60,7 +59,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: ASSETS_ID,
         contextSourceId: SOURCE_ID,
         name: "assets",
-        documentAlias: folderDocumentName("assets"),
       });
       await db.insert(documents).values({
         id: "00000000-0000-4000-8000-000000000712",

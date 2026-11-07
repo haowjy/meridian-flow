@@ -3,10 +3,13 @@
  *
  * Hosts compose this frame around viewer bodies and optional viewer-owned
  * footers. Header ownership is explicit: pass a file header when the surrounding
- * chrome does not name the file. The dock's title chip and phone document
- * screens' top bar already name it, so they omit the header.
+ * chrome does not name the file, as the trash record does. `ContextViewerHost`
+ * omits it: the Editor's path, the dock's title chip and the phone's top bar
+ * already name the file.
  */
 import type { ReactNode } from "react";
+
+import { cn } from "@/lib/utils";
 
 export type ReadOnlyViewerHeader = { name: string; path: string };
 
@@ -17,11 +20,18 @@ export type ReadOnlyViewerFrameProps = {
   children: ReactNode;
   /** Optional footer slot — viewer-specific actions/status. */
   footer?: ReactNode;
+  /** The frame's material; a host that paints its own passes `bg-transparent`. */
+  className?: string;
 };
 
-export function ReadOnlyViewerFrame({ header, children, footer }: ReadOnlyViewerFrameProps) {
+export function ReadOnlyViewerFrame({
+  header,
+  children,
+  footer,
+  className,
+}: ReadOnlyViewerFrameProps) {
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background">
+    <section className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
       {header ? (
         <header
           className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-4 pb-2.5 pt-2.5"

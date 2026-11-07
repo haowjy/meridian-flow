@@ -1,8 +1,8 @@
 /**
  * The app's half of image ingress: where a picture's bytes actually go.
  *
- * The editor owns the lifecycle — the slot, the progress, the failure, the
- * abort — and knows nothing about projects, figure endpoints, or CORS. This
+ * The editor owns the slot and the upload store owns the progress, the failure and
+ * the abort; neither knows projects, endpoints, or CORS. This
  * component is that seam, the same shape as `ProjectLinkRuntime`: it registers
  * the two ports the ingress asks for.
  *
@@ -13,26 +13,23 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
-import { uploadFigure } from "@/client/api/figures-api";
+import { uploadContextFile } from "@/client/api/context-upload-api";
 import {
   type ImageBytesPort,
   type ImageUploadPort,
-  imageAttrsFromUpload,
   registerImageIngressHost,
 } from "@/core/editor/images";
 
 export function ImageIngressRuntime({
   editor,
   projectId,
-  documentId,
 }: {
   editor: Editor | null;
   projectId: string | undefined;
-  documentId: string;
 }) {
   const upload = useMemo<ImageUploadPort | null>(
-    () => (projectId ? figureUploadPort(projectId, documentId) : null),
-    [documentId, projectId],
+    () => (projectId ? pictureUploadPort(projectId) : null),
+    [projectId],
   );
 
   useEffect(() => {
@@ -43,19 +40,23 @@ export function ImageIngressRuntime({
   return null;
 }
 
-/** One project's figure endpoint, as the port the ingress calls. */
-function figureUploadPort(projectId: string, hostDocumentId: string): ImageUploadPort {
-  return async ({ file, alt, signal, onProgress }) => {
-    const reference = await uploadFigure({
+/**
+ * One project's picture upload, as the port the ingress calls. A picture goes into
+ * `manuscript://assets/` whichever document holds it: bare picture sources are
+ * manuscript-relative.
+ */
+function pictureUploadPort(projectId: string): ImageUploadPort {
+  return async ({ id, file, alt, signal, onProgress }) => {
+    const stored = await uploadContextFile({
       projectId,
-      hostDocumentId,
+      scheme: "manuscript",
+      query: {},
+      intakeId: id,
       file,
-      alt,
       signal,
-      onProgress: ({ percent }) => onProgress(percent),
+      onProgress,
     });
-    const picture = imageAttrsFromUpload(reference);
-    return { src: picture.src, alt: picture.alt };
+    return { src: `asset:${stored.documentId}`, alt: alt || null };
   };
 }
 

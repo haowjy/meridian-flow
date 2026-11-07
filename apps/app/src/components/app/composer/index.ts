@@ -14,3 +14,4 @@ export {
   serializeComposerDraft,
 } from "./Composer";
 export type { ComposerChatCommand } from "./command";
+export { type DroppedEntry, useFileDrop } from "./use-file-drop";

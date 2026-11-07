@@ -1,4 +1,5 @@
 // Mutating and query write command handlers.
+import { type HolderLinkScope, settledAheads } from "@meridian/markup/links";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
@@ -7,7 +8,7 @@ import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { createPlanningView, planningSnapshot } from "../frontier.js";
-import { type BlockRef, toDocHandle } from "../handles.js";
+import { toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -153,9 +154,7 @@ export function createWriteCommands(deps: {
               ),
             ),
             revision: options.links.revision(room.doc, links.scope),
-            ...(context.includeNodes
-              ? { nodes: selection.selected.map((block) => block.node) }
-              : {}),
+            ...(context.includeNodes ? selectedCut(selection.selected, links.scope) : {}),
           },
           { projected: selection.projected },
         );
@@ -200,6 +199,15 @@ export function createWriteCommands(deps: {
     } finally {
       view?.destroy();
     }
+  }
+
+  /**
+   * What a copy takes from this read: the selected blocks as nodes and where their settled ahead
+   * refs point, both from the scope that spelled the read, so they describe one cut.
+   */
+  function selectedCut(selected: readonly ProjectedBlock[], scope: HolderLinkScope) {
+    const nodes = selected.map((block) => block.node);
+    return { nodes, aheadSettlements: settledAheads(nodes, scope) };
   }
 
   /**

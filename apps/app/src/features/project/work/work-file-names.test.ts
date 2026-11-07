@@ -23,8 +23,4 @@ describe("uniqueScratchNoteName", () => {
       "note (3).json",
     );
   });
-
-  it("counts a typed `.md` sibling as the same prose name", () => {
-    expect(uniqueScratchNoteName("Chapter 13", ["Chapter 13.md"])).toBe("Chapter 13 (2)");
-  });
 });

@@ -7,6 +7,7 @@ import "fake-indexeddb/auto";
 import {
   type NamespaceOutcome,
   type NamespaceRequest,
+  namespaceRequestId,
   planFolderDeletion,
   planResourceDeletion,
   planResourceLocation,
@@ -18,6 +19,7 @@ import {
   reconcileResourceNamespace,
   recordFolderNamespaceOutcome,
   settleFolderNamespaceOutcome,
+  untitledDestination,
 } from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
@@ -52,8 +54,15 @@ function resource(handle = "doc", revision = 1): ResourceRecord {
       revision,
       identity: { documentId: handle, revision: 1 },
       content: { kind: "exact", databaseName: `exact:${handle}`, schema: "0.5" },
-      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      classification: {
+        extension: "",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
+      materialization: { kind: "untitled", folderPath: "", provisionalName: "Untitled" },
       canonical: null,
+      serverHold: "local",
       lifecycle: { kind: "local" },
       aliases: {},
       obligations: { createEligibility: { eligibleAt: null } },
@@ -65,7 +74,11 @@ function resource(handle = "doc", revision = 1): ResourceRecord {
         intentId: `create-${handle}`,
         sequence: 1,
         identityRevision: 1,
-        desired: { kind: "create", folderPath: "" },
+        desired: {
+          kind: "set-location",
+          typedName: "Untitled",
+          destination: untitledDestination("", "Untitled"),
+        },
         attempts: [],
         state: "pending",
       },
@@ -91,7 +104,9 @@ it("serializes competing revisions without losing or partially publishing the lo
   const a = resource("doc", 2);
   const b = resource("doc", 2);
   a.resource.canonical = { scheme: "unfiled", path: "/A", name: "A", workId: null };
+  a.resource.serverHold = "held";
   b.resource.canonical = { scheme: "unfiled", path: "/B", name: "B", workId: null };
+  b.resource.serverHold = "held";
   const results = await Promise.all([
     left.commitResource({ expectedRevision: 1, next: a }),
     right.commitResource({ expectedRevision: 1, next: b }),
@@ -334,6 +349,7 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
     record.intents = [];
     record.resource.obligations = {};
     record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: generation };
+    record.resource.serverHold = "held";
     record.resource.canonical = {
       scheme: "manuscript",
       path: `/A/${handle}.md`,
@@ -375,13 +391,13 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
           operationId: "delete-folder",
           command: {
             kind: "delete",
-            uri: "manuscript://A",
             expected: { kind: "folder", nodeId: "parent" },
           },
           result: {
             ok: true,
             value: {
               status: "deleted",
+              uri: "manuscript://A",
               removed: ["one", "two", "newer", "unknown"].map((documentId) => ({
                 documentId,
                 removal: { time: "2026-01-01T00:00:00.000Z", locationVersion: "1" },
@@ -420,6 +436,7 @@ it.each([
   initial.intents = [];
   initial.resource.obligations = {};
   initial.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  initial.resource.serverHold = "held";
   initial.resource.canonical = {
     scheme: "manuscript",
     path: "/A/child.md",
@@ -476,13 +493,13 @@ it.each([
         operationId: "parent-delete",
         command: {
           kind: "delete",
-          uri: "manuscript://A",
           expected: { kind: "folder", nodeId: "parent" },
         },
         result: {
           ok: true,
           value: {
             status: "deleted",
+            uri: "manuscript://A",
             removed: [
               {
                 documentId: key.handle,
@@ -502,10 +519,9 @@ it.each([
   await store.commitFolder(settled);
   expect((await store.readResource(key))?.resource.lifecycle.kind).toBe("terminal");
   const refusal = (request: NamespaceRequest): NamespaceOutcome => {
-    if (request.kind === "create") throw new Error("Unexpected create");
     return {
       kind: "refusal",
-      operationId: request.body.operationId,
+      operationId: namespaceRequestId(request),
       error: { code: "conflict", message: "Refused", source: "system", retryable: false },
     };
   };

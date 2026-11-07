@@ -102,10 +102,12 @@ export function DocumentIdentityBar({
       ? resource.handle === tab.resourceHandle
       : resource.identity.documentId === tab.documentId,
   );
-  const repair = resource ? projectResourceNeedsRepair(projectId, resource) : null;
+  const failed = resource ? projectResourceNeedsRepair(projectId, resource) : null;
+  // A refused delete has no placement to repair here; a refused create and a refused move do.
+  const repair = failed?.kind === "delete" ? null : failed;
   const identityFailure =
-    location.provisional && repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
-      ? ({ kind: "error", name: repair.name } as const)
+    location.provisional && repair && repair.intentId !== dismissedRepairId
+      ? ({ kind: "error", name: repair.name, created: repair.kind === "create" } as const)
       : null;
   const repairMove = resource?.resource.canonical
     ? refusedMoveDestination(repair?.destination, placement.parentForResource(resource))
@@ -118,10 +120,9 @@ export function DocumentIdentityBar({
   const passiveFailure = failedFolder
     ? t`Couldn't move to ${failedFolder}. Use Move… in the file list to try again.`
     : t`Couldn't rename. Use Rename in the file list to try again.`;
-  const failureAt =
-    repair?.kind === "set-location"
-      ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
-      : undefined;
+  const failureAt = repair
+    ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+    : undefined;
   useRepairOnFreshFailure(identityFailure && !readOnly ? failureAt : undefined, () =>
     setFieldOpen(true),
   );
@@ -140,6 +141,8 @@ export function DocumentIdentityBar({
   const showChip =
     !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
+  // Only a provisional placement can be repaired here.
+  const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, tab);
 
   const renderRow = (version: ReactNode, controls: ReactNode) => (
@@ -187,7 +190,7 @@ export function DocumentIdentityBar({
                   // Leaving the field acknowledges any failure receipt — it must
                   // not reopen the editor it just closed.
                   setFieldOpen(false);
-                  if (repair?.kind === "set-location") setDismissedRepairId(repair.intentId);
+                  if (repair) setDismissedRepairId(repair.intentId);
                   if (reason === "escape") focusEditorProse(tab.documentId);
                 }}
                 onOpenExisting={onOpenExisting}
@@ -212,22 +215,12 @@ export function DocumentIdentityBar({
               <DraftReviewChip documentId={tab.documentId} />
             ) : null}
             <ManuscriptStateSlot state={manuscriptState} className="ml-1" />
-            {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
-            {repair?.kind === "set-location" && !placementOpen ? (
-              location.provisional && !readOnly ? (
-                <button
-                  type="button"
-                  className="focus-ring flex min-w-0 items-center rounded-md"
-                  onClick={() => {
-                    setDismissedRepairId(null);
-                    setFieldOpen(true);
-                  }}
-                >
-                  <NamespaceFailureMark failure="set-location" labelled />
-                </button>
-              ) : (
-                <NamespaceFailureMark failure="set-location" message={passiveFailure} />
-              )
+            {/* List failures are passive: an icon whose tooltip says where to act. */}
+            {repair && !placementOpen && !repairable ? (
+              <NamespaceFailureMark
+                failure={repair.kind}
+                message={repair.kind === "create" ? undefined : passiveFailure}
+              />
             ) : null}
             <IdentityChipSlot
               projectId={projectId}
@@ -247,6 +240,23 @@ export function DocumentIdentityBar({
         ) : null}
         {controls}
       </div>
+      {/* A provisional placement refusal offers repair here, in words on a line of its own so a
+          narrow bar never cuts the sentence. */}
+      {repair && repairable && !placementOpen ? (
+        <button
+          type="button"
+          className={cn(
+            "focus-ring flex w-full min-w-0 pb-1 text-left",
+            variant === "header" ? "pl-2" : "px-4",
+          )}
+          onClick={() => {
+            setDismissedRepairId(null);
+            setFieldOpen(true);
+          }}
+        >
+          <NamespaceFailureMark failure={repair.kind} labelled />
+        </button>
+      ) : null}
       {notice}
       {reviewItemKey ? (
         <DraftReviewFailureNotices

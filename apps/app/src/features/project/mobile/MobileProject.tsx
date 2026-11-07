@@ -15,6 +15,8 @@ import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "../context/context-schemes";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { useContextRemovalProject } from "../context/use-context-removal-project";
+import { useFollowOpenDocumentPlacement } from "../context/use-follow-open-document-placement";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
@@ -34,8 +36,8 @@ import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcru
 import { MobileChatHost } from "./MobileChatHost";
 import { MobileChatSheetHeader } from "./MobileChatSheetHeader";
 import { MobileContextBrowser } from "./MobileContextBrowser";
-import { MobileCreateEntryMenu } from "./MobileCreateEntryMenu";
 import { MobileDocumentHost } from "./MobileDocumentHost";
+import { MobileFilesActions } from "./MobileFilesActions";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
@@ -56,6 +58,17 @@ export function MobileProject(props: MobileProjectProps) {
   useDockReveal(openChatSheet);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
+  const { selection } = useContextRemovalProject(props.projectId);
+  useFollowOpenDocumentPlacement({
+    projectId: props.projectId,
+    editorWorkId: props.editorWorkId,
+    selection,
+    activeContextScheme: props.activeContextScheme,
+    activeContextPath: props.activeContextPath,
+    activeContextChat: props.activeContextChat,
+    routeDisplayed: props.activeScreen === "context",
+    onOpenContextTarget: props.onOpenContextTarget,
+  });
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
   const localTab =
     selectedLocal?.kind === "new" || selectedLocal?.kind === "tracked" ? selectedLocal : undefined;
@@ -69,7 +82,7 @@ export function MobileProject(props: MobileProjectProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}`;
   useEffect(() => setCreating(null), [contextLocation]);
-  const crumbs = contextBreadcrumbSegments(props);
+  const crumbs = contextBreadcrumbSegments(props, localTab?.name);
   const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
   const work = useWorkChrome(
     props.projectId,
@@ -191,7 +204,6 @@ export function MobileProject(props: MobileProjectProps) {
         activeContextScheme={props.activeContextScheme}
         activeContextPath={props.activeContextPath}
         onSelectScreen={props.onSelectScreen}
-        onSelectContextPath={props.onSelectContextPath}
         chatThreadId={displayedChatThreadId(props.chatDisplay)}
       />
     </div>
@@ -211,7 +223,15 @@ function trailingAction(
     !props.activeContextPath &&
     !props.activeLocalDocumentId
   ) {
-    return <MobileCreateEntryMenu onSelect={onRequestCreate} />;
+    return (
+      <MobileFilesActions
+        projectId={props.projectId}
+        editorWorkId={props.editorWorkId}
+        scheme={props.activeContextScheme}
+        folder={props.activeContextFolder}
+        onSelect={onRequestCreate}
+      />
+    );
   }
   return undefined;
 }
@@ -294,7 +314,10 @@ function renderActiveView(
   }
 }
 
-function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(
+  props: ReviewScopedProjectProps,
+  localName?: string,
+): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
   // `t` resolves at render time (this runs per render), matching how
   // schemeLabel localizes — both produce plain strings for the segment.
@@ -302,7 +325,7 @@ function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBread
   if (props.activeLocalDocumentId)
     return [
       { label: filesLabel, onSelect: () => props.onExitContextScheme() },
-      { label: t`Untitled` },
+      { label: localName ?? t`Untitled` },
     ];
   if (!props.activeContextScheme) {
     // Files root: nothing is drilled in, so "Files" is the current location.

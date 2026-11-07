@@ -173,7 +173,6 @@ export function createDrizzleApplyClick(
       const found = await tree.resolvePath(LIVE_TREE, {
         contextSourceId: node.target.contextSourceId,
         path: node.target.path,
-        as: "document",
       });
       if (found.kind !== "found" || found.node.kind !== "document") break;
       const occupant = found.node.document.id;
@@ -565,7 +564,6 @@ export function createDrizzleApplyClick(
                         const occupant = await tree.resolvePath(LIVE_TREE, {
                           contextSourceId: node?.target.contextSourceId ?? locked.contextSourceId,
                           path,
-                          as: "folder",
                         });
                         if (occupant.kind === "not_found") return "free";
                         return occupant.kind === "ambiguous" || occupant.node.kind === "document"

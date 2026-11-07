@@ -27,12 +27,30 @@
   z-index: 2;
 }
 
+/* The pane is the size container so a picture's height cap answers to the pane
+   the writer has, in any split or dock, rather than to the window. The cap is a
+   registered length so it resolves to pixels here and inherits as pixels: a
+   measured picture's frame is a size container of its own, and an unregistered
+   `60cqh` would resolve against that frame instead. On touch screens the pane
+   height comes from `holdPictureCapThroughKeyboard`, because a phone keyboard
+   shrinks this container. */
+@property --meridian-picture-cap {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+.meridian-editor {
+  container-type: size;
+}
+
 .meridian-editor .ProseMirror {
+  --meridian-picture-cap: calc(var(--meridian-pane-height, 100cqh) * 0.6);
   outline: none;
-  max-width: 68ch;
   /* Height, insets, and the scroll-past-end reserve are the prose column's,
      applied as utilities from `editor-column.ts` — one owner for the geometry
-     that decides where a click below the last line lands.
+     that decides where a click below the last line lands, and the reading
+     measure is in those insets too.
 
      Font family, reading scale, AND color inherit from `prose-tokens` — the
      editor must read identically to chat prose (one reading surface). A
@@ -65,13 +83,21 @@
   vertical-align: baseline;
 }
 
+/* A very tall picture pushes the writer's text out of view, so the view caps it.
+   Stored `width` is untouched: this cap depends on the viewer's pane, and the
+   stored picture doesn't. A picture is the size of its box, so this holds a
+   picture with no box of its own, up to the moment it draws and is measured
+   (`imageBoxStyle` narrows the box to keep the ratio). */
 .meridian-editor .ProseMirror .meridian-image-node {
   display: block;
   max-width: 100%;
+  max-height: var(--meridian-picture-cap);
 }
 
 .meridian-editor .ProseMirror .meridian-image-node > img {
   display: block;
+  max-height: var(--meridian-picture-cap);
+  object-fit: contain;
 }
 
 /* A picture the writer dragged to a size. The stored width lives on the wrapper
@@ -408,7 +434,7 @@
 .meridian-editor .ProseMirror .meridian-figure-node__media img {
   display: block;
   width: 100%;
-  max-height: 28rem;
+  max-height: var(--meridian-picture-cap);
   object-fit: contain;
   background: var(--color-card);
 }
@@ -523,4 +549,19 @@
   .ProseMirror
   .meridian-peer-mark--tick[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"] {
   box-shadow: 0 0 0 3px var(--color-review-warning-border);
+}
+
+/* The file card standing where a picture can't be drawn: a block-level box in the line. */
+.meridian-image-node__card {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+/* While the editor lifts a text selection (core/editor/landing/selection-drag.ts)
+   no native drag is running, so nothing sets the drag cursor: keep the I-beam
+   over everything the pointer crosses. */
+.selection-dragging,
+.selection-dragging * {
+  /* biome-ignore lint/complexity/noImportantStyles: beats every element's own cursor (links, handles) for the length of a drag. */
+  cursor: text !important;
 }

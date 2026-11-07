@@ -4,11 +4,13 @@ export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { guardWorkContextRestore } from "./adapters/context-fs/document-locations.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
+export { fileRefOfVisible } from "./adapters/context-fs/file-ref.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
+export { createDrizzleDocumentPropertiesReader } from "./adapters/drizzle-document-properties-reader.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
@@ -18,13 +20,20 @@ export {
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
-export { exportFilename, joinPath, renderFilename, splitPath } from "./context/paths.js";
+export { deleteCommand, moveCommand } from "./context/context-operation-receipts.js";
+export {
+  exportFilename,
+  joinPath,
+  renderFilename,
+  splitPath,
+} from "./context/paths.js";
 export {
   createRestoreRemovedDocuments,
   type RestoreRemovedDocuments,
 } from "./context/restore-removed-documents.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
+  contextAreaOf,
   parseContextUri,
   parseUnifiedContextUri,
   toCanonical,
@@ -44,11 +53,12 @@ export {
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
 } from "./context-source-provisioning.js";
-export * from "./corpus-import/index.js";
 export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
+export { parseDocumentProperties } from "./document-properties.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
+export { frontmatterAliases, readFrontmatter } from "./frontmatter.js";
 export { type AddressGlob, compileAddressGlob } from "./grep/address-glob.js";
 export { compileGrep, type GrepMatcher } from "./grep/matcher.js";
 export {
@@ -68,6 +78,7 @@ export type {
 export { schemeCapabilities } from "./ports/context-adapter.js";
 export type {
   ContextCatalog,
+  ContextCatalogFileMutationPort,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
   ProjectCatalogLifecyclePort,
@@ -79,17 +90,26 @@ export type {
   CreateDocumentInput,
 } from "./ports/context-document-store.js";
 export { ContextEntryConflictError } from "./ports/context-document-store.js";
+export type { ContextImportDestinationLookup } from "./ports/context-import-destination.js";
+export type {
+  ContextImportArea,
+  ContextImportDestination,
+  ContextImportLinkCandidate,
+  ContextImportRead,
+} from "./ports/context-import-read.js";
 export type {
   BinaryFileEntry,
   BinaryFileRef,
   ContextCreateUntitledDocumentOptions,
   ContextCreateUntitledDocumentResult,
+  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextFileEntry,
   ContextListEntry,
   ContextListing,
   ContextListOptions,
+  ContextLocationChange,
   ContextPort,
   ContextReadResult,
   ContextScheme,
@@ -110,6 +130,12 @@ export type {
   WorkScopedContextFsScheme,
   WriteProvenance,
 } from "./ports/context-port.js";
+export type {
+  ContextArea,
+  ContextPlacement,
+  ContextStage,
+  ContextStagedCreation,
+} from "./ports/context-staged-creation.js";
 export type { DocumentAddressResolver } from "./ports/document-address.js";
 export type { DocumentArrivals } from "./ports/document-arrivals.js";
 export type {
@@ -117,6 +143,7 @@ export type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+export type { DocumentPropertiesReader } from "./ports/document-properties-reader.js";
 export type {
   DocumentRemoval,
   DocumentRemovals,
@@ -129,6 +156,8 @@ export {
   RegistrationInsideTransactionError,
 } from "./ports/link-ahead-registry.js";
 export type {
+  HeldContextNode,
+  HeldContextNodeAddress,
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "./ports/project-context-availability.js";
@@ -153,7 +182,14 @@ export {
   scratchOwnerFor,
 } from "./scratch-owner.js";
 export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
+export { findForward } from "./tree/forwards.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
+export { createDrizzleContextImportDestinationLookup } from "./tree/import-destination.js";
+export { createDrizzleContextImportRead } from "./tree/import-read.js";
+export {
+  createDrizzleContextStagedCreation,
+  discardDrizzleContextStage,
+} from "./tree/import-staging.js";
 export {
   createDocumentRemoval,
   createRemovalRecords,

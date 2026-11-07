@@ -276,6 +276,9 @@
 .meridian-editor .ProseMirror .meridian-diagram svg {
   max-width: 100%;
   height: auto;
+  /* The diagram is one object: SVG internals must not steal dragover or leave
+     `relatedTarget` null (Chrome) so the caret and the drop disagree. */
+  pointer-events: none;
 }
 
 /* The answer a verb gives back, over the corner the writer just pressed.

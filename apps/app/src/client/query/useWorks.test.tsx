@@ -41,7 +41,6 @@ const account = vi.hoisted(() => ({ epoch: new AbortController() }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useOptionalAccountEpochSignal: () => account.epoch.signal,
 }));
-vi.mock("./useProjectCreation", () => ({ useIsProjectPendingCreation: () => false }));
 vi.mock("@/client/api/projects-api", () => ({
   archiveWork: vi.fn(),
   createProjectWork: vi.fn(),

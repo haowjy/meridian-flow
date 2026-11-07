@@ -6,6 +6,7 @@ import { loadProjectEntry } from "@/client/query/project-route-data";
 import {
   readPendingProjectCreation,
   useProjectCreationState,
+  useSettleConfirmedCreation,
 } from "@/client/query/useProjectCreation";
 import { useProject } from "@/client/query/useProjectList";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,7 @@ function ProjectRoute() {
   const { user } = AuthenticatedRoute.useLoaderData();
   const accountSignal = useAccountEpochSignal();
   const creation = useProjectCreationState(projectId, accountSignal);
+  useSettleConfirmedCreation(projectId, loaderData.data !== null);
   const project = useProject(projectId, loaderData.project ?? creation.project);
   // A project being created has no route data yet; the creation stands in.
   if (!project || (!loaderData.data && creation.status === "none")) return <PendingProject />;

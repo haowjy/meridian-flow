@@ -4,8 +4,8 @@
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
-import { sameServerContextTabLocator } from "@/client/stores";
 import { isProjectRouteMasked, type ProjectRouteMask } from "../routing/ProjectRouteBoundary";
+import { contextTabMatchesRoute } from "./context-tab-identity";
 
 export type OptimisticContextTab = { id: string; name: string };
 
@@ -48,7 +48,10 @@ export function deriveContextPaneState({
   if (activeTab && !isProjectRouteMasked(mask)) return { kind: "document", tab: activeTab };
   if (!destination || removalFenced) return { kind: "empty-workspace" };
 
+  const { workId } = destination;
   const settledTab =
-    tabs.find((tab) => tab.kind !== "new" && sameServerContextTabLocator(tab, destination)) ?? null;
+    (workId !== undefined &&
+      tabs.find((tab) => contextTabMatchesRoute(tab, { ...destination, workId }))) ||
+    null;
   return { kind: "optimistic-loading", tab: destination.optimisticTab, settledTab };
 }

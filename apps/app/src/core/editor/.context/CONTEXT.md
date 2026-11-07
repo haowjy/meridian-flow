@@ -137,7 +137,13 @@ identity in anchors or holds.
   capture at each Apply boundary, so nearby typing stays in separate native
   segments. History traversal is synchronous: Apply entries enqueue owner-held
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
-  boundary while skipping native no-ops. Destroying the editor is terminal and
+  boundary while skipping native no-ops. Undo gives back the range a change
+  started from (a drag, a cut, typing over a selection), captured by
+  `editor-history.ts` on `beforeTransaction` and carried through the stack items
+  that UndoManager generates. It is never read from y-tiptap's copy, which a
+  plugin's appended transaction makes wrong; Yjs alone would map the current
+  selection, and a moved range has just been removed. Redo and a caret keep
+  y-tiptap's mapped selection. Destroying the editor is terminal and
   discards only that mounted navigation history. Dock, Work, tree-only Apply, and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
@@ -189,26 +195,161 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 ### Pointer, keyboard, and drop policy
 
-- A press outside the prose is answered once by `pointer-boundary.ts`, not by
-  the layout component that caught it. Gutters, the page below the last block,
-  and the strip between blocks place a caret. An outside press never lands in
-  an opaque object's interior; at a seam prose beats source. Keyboard behavior
-  follows the same reading, so no input device places a caret in a body the
-  page is not showing.
+- **One walk answers every point.** `landing/point-landing.ts` walks the
+  document over its boxes and returns a landing for any point, including a
+  margin and the space below the last block: `inline` (a caret in writer
+  text), `seam` (between blocks, where a paragraph fits) or `source` (inside a
+  code block's text, and only a real code block's: a component block is an
+  object, so a point over it lands at the seam before or after it). Nothing is outside `view.dom`: the ProseMirror node spans
+  the whole pane and carries the margin as its own padding, so a press or a
+  drop anywhere on the pane reaches the walk. A press and a drop read the same
+  landing; they differ in what they do with it.
+- **A press** (`landing/press.ts`) is answered only when no text is under it:
+  `handleClick` takes a click on the pane or a container's own element, and
+  never one on text or an object. At a seam the nearer neighbour's line keeps
+  the pointer's column; a table gets a gap cursor; prose beats source and
+  objects, so a seam between a fence and a paragraph puts the caret in the
+  paragraph. A fence with no prose beside it takes the caret at its facing
+  edge. A press never makes a paragraph, with one exception: past the end of the
+  document, when the last block can't take a caret and no gap cursor fits (a
+  closed diagram), it appends an empty paragraph and puts the caret in it, the
+  only way to reach that spot. `pressSelection` stays pure; the write is in
+  `pressOnInertTarget`, so one undo removes the line. A document already ending
+  on an empty paragraph gets the caret there, and a press in a cell never makes
+  one. A press that lands
+  where the caret already stands is left to the browser, which knows the line
+  the caret is on. A press in a cell stays in that cell.
+- **A selection drag** (`landing/selection-drag.ts`) is the one press on text
+  the editor takes. The browser's own text drag refuses a press that counts as a
+  third click and, on macOS browsers, waits 150ms (from their source; not run
+  here), so the editor lifts the selection itself. ProseMirror's `mousedown`
+  runs first (it counts clicks), then a listener on `view.dom` prevents the
+  default when the press is on the highlight of a nonempty `TextSelection` or
+  `AllSelection` (the test ProseMirror's own `dragstart` applies: `posAtCoords`
+  at the pointer lies in the selection's range; at either end, its x-coordinate
+  must also be on the selected side of the caret, so half of the adjacent glyph
+  does not count). The space between lines and the blank past a covered line's
+  last word count; unselected text after the range does not. The view must
+  also be focused and editable, with no modifier and a chrome kernel.
+  `handleDoubleClick` and `handleTripleClick` claim a
+  second or third press there so neither the browser nor ProseMirror widens
+  the selection; the claim also records a third press for the no-travel case. The file has two halves:
+  `trackPress` (`chrome/track-press.ts`; follows a press, mouse or pointer,
+  and decides click or lift; it ends a `mousedown` on `mouseup` and a
+  `pointerdown` on `pointerup`, treats a `pointermove` with the left bit
+  clear as the release, and swallows the `click` after a lift) and
+  `liftSelection` pumps the drag events. The block gesture uses the same
+  tracker. The tracker's host has two callbacks: `lift` returns the move
+  handler, and `end(how, at)` is the one ending (`click`, `drop` or `cancel`;
+  the `stop` it returns is `end("cancel")`), so tearing the view down mid-drag
+  finishes the lift. A mouse-started press follows any pointer but touch, so a
+  pen lifts too. Past the slop (4px, `Math.hypot`, `pastSlop`, shared with the
+  chrome sweep and link clicks) it sends a synthetic
+  `dragstart` (at `view.dom`, positioned at the press, since a fast first move
+  may already be off the selection) with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
+  on a target change and `dragover` (so the caret, the 5s caret timeout and
+  autoscroll behave as in a native drag); release sends one more `dragover` at the
+  release point (a fast drag lands where it is let go), then `drop` only if
+  that one was cancelled, then `dragend`. It is a pump into the pipeline
+  below, not a second drop path: another surface mounting `LandingExtension`
+  (the composer, a second pane) reads it as it reads any drag and copies.
+  (A pnpm patch to `@tiptap/core` removed the delete its paste-rule plugin made
+  of a drag's source after a drop into another editor; the landing decides move
+  or copy.) A press that never travels
+  places a caret on release, or selects the textblock for a third press;
+  `click` after a lift is swallowed (the link surface would follow a link).
+  Escape goes through `chrome.beginDrag`; after a lift `pointermove` stops at
+  the window so other panes' hover chrome stays down; a peer edit that changes
+  what the selection holds cancels (checked again at release). Left native: presses with a modifier (so
+  Ctrl/Option-drag still carries text out of the window; Mac Option is
+  unrun), read-only views, editors with no kernel (code documents, the
+  composer as a source), cell selections, and objects (`ObjectPhysics`).
+- **A drop** (`landing/LandingExtension.ts`) picks the door for the drag once:
+  `view.dragging ? sliceDoor : doors[kind]`, where the kind comes from its
+  types (`landing/drag-payload.ts`: tree rows, files, or text). It asks the walk
+  for the landing, and the door returns one plan (`landing/drop-plan.ts`): the
+  caret, the hint and the drop all read it. This is the one caret for every
+  drag except a block move, which draws and lands its own top-level seam
+  (`block-geometry.ts`). A seam that no blank paragraph covers gets its own new
+  paragraph, including past the last block. Three doors take a payload: slices
+  (`landing/slice-drop.ts`: text and nodes moved or copied inside the editor,
+  or text from outside, read again by the host's text parser where it lands),
+  project-tree rows (`extensions/reference-drop/reference-drop-door.ts`, handed
+  in from `config.ts`) and files (`file-drop/file-drop-door.ts`, also handed in). The files door takes any
+  file: a picture goes through the picture lane, and every other file becomes a chip
+  (a plain link to a file uploading into `assets/` of the document's own source),
+  placed by the same `placeNodes` the row door uses. Files land in the order the drop
+  lists them, a run of chips as one edit; the drop point is an `anchorRange` pin, read back
+  with `resolveAnchorIn` when the chips go in, because a peer's update (a model streaming)
+  replaces the whole fragment and ProseMirror's mapping would land between blocks; a file over `MAX_UPLOAD_BYTES` is refused
+  alone, before anything is inserted for it. A chip's progress and failure are the upload
+  store's (`core/uploads/upload-store.ts`), as a Composer chip's and a picture slot's are: a
+  failed chip (or one taken back by undo and returned by redo) reads failed and a press retries
+  it on the same id. Another tab hears a chip's upload over presence (`upload-presence.ts`).
+  `landing/` imports neither lane. A host mounts only the doors it has; a
+  payload with no door is unclaimed at `dragover`, `drop` and `handleDrop`
+  alike, and the click route rides with the plugin, so a code file and the
+  Composer have it too. A nonempty slice still goes through the landing when
+  the types also list Files. A drag with a plan is claimed at `dragover`, and a
+  refusal sets `dropEffect = "none"`: an unclaimed file is opened by the
+  browser. `dragover` is a capture listener on `view.dom`, because a node view
+  stops it before `handleDOMEvents` and SVG children can stop the bubble.
+  `dragleave` with a null `relatedTarget` (Chrome crossing into SVG) still
+  checks the point, so the caret is not cleared while the pointer is in the
+  editor. A drag whose files the browser hides until the drop (Safari lists
+  none, Firefox `application/x-moz-file`) is taken, and the drop looks again.
+  The hint beside the pointer is `landing/drag-hint-store.ts`, drawn by
+  `DragHint` in the project feature.
+- **Snapping.** The walk takes the nearer side of a chip under the pointer.
+  Each door then snaps further on its own (`landing/inline-snap.ts`): a tree
+  row moves out of a code span, a chip (an atom or a link naming a file), then
+  a word; a picture moves out of a code span only; a slice stays where the walk
+  put it, so text dropped in inline code stays in the span. A diagram that is
+  not open is one object: a drop beside it lands at the seam before or after
+  it. A diagram is open when the editor is focused (`editor.isFocused`, the
+  answer the walk and the diagram's node view both read), the selection is not
+  a `NodeSelection`, and the caret is inside it.
+- **What refuses.** Text dropped into a fence becomes plain characters (a hard
+  break is a newline); a slice holding a picture or chip is refused (`Can’t put
+  that inside code`). A picture over a fence is refused (`Can’t put a picture
+  inside code`) and a tree row too (`Can’t mention inside code`), each with no
+  caret. Inline code is not a fence: a tree row or picture there snaps to the
+  span's edge; a text slice stays in the span. A file that is not a picture
+  shows `Only pictures can be dropped here` while dragging. A drop never changes
+  the rows or columns of any table (nested ones too) or spills out of its cell.
+  One that would is refused: `Can’t put that in a
+  table cell` when it lands in a cell, `Can’t move part of a table` when a
+  move's deletion would cut a table elsewhere. A slice that changes nothing is
+  refused with no hint. A picture or chip in an ordinary slice lands in a cell.
+  A move onto the selection's own range changes nothing and shows no hint; the
+  unselected part of a block the selection reaches into is an ordinary landing.
+- **A move keeps its lines.** Taking a text range out of several textblocks
+  never joins them (`landing/range-removal.ts`): a block the range reaches into
+  keeps its unselected text and type, with adjacent prose whitespace trimmed so
+  the remainder does not start or end with the moved line's space. Code keeps
+  its whitespace. A block the range covers whole goes, and so do the containers
+  that would be left empty. A block its parent can't lose (a list item's first
+  paragraph, the last block, or the last paragraph in a table cell) stays,
+  emptied; a fully covered table leaves as one block. A move inside one
+  textblock, a node move and a `CellSelection` still use `deleteSelection`.
+  Several carried lines land at a gap: before the landing textblock at its start,
+  after it at its end, or at a split inside it. The slice closes into blocks and
+  ProseMirror fits those blocks where the schema requires it. Lists keep their
+  container and order. A whole top-level textblock keeps its type; a top-level
+  textblock cut by the source selection takes the landing's type, and a cut last
+  block joins the landing's tail. This applies to copies because the door reads
+  their source selection too. A slice from outside has no source selection and
+  keeps its types. A single-line slice and a landing in code are unchanged.
+- StarterKit's dropcursor stays disabled; two landings answering one drag is
+  the bug this prevents. `landing/drop-caret.ts` draws the one caret.
+  Keyboard behavior follows the same reading, so no input device places a
+  caret in a body the page is not showing.
 - A key the editor owns is consumed on a refusal as well as on success. Undo
   and Tab cannot fall through to the browser: Tab would move DOM focus out of
   the manuscript and discard later keystrokes. Tab uses one ladder: table
   cells, indent in a fence, sink/lift in a list, then `\t` in prose. A leading
   prose tab is written `&#x9;`; the `packages/markup` codec test keeps it safe.
   Enter in cell prose splits the paragraph; Shift-Enter is the hard break.
-- A drop inside a table lands inside a cell, never between two. `table-drop.ts`
-  is the one landing for the dropcursor, node drag, OS-file drop, and tree-row
-  reference drop. StarterKit's dropcursor stays disabled; two landings answering
-  one drag is the bug this seam prevents. A reference drop treats an existing
-  identity link or inline atom as one unit, then snaps an inline landing to the
-  nearer word edge, refuses code, and inserts every reference in one
-  transaction. `drop-caret.ts` is the shared geometry for the generic drop
-  cursor and that reference caret.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows
   the source face without changing selection, whether it arrived by key,

@@ -11,7 +11,6 @@ import {
   documentAddressSchema,
   type ProjectContextTreeScheme,
   parseDocumentFilename,
-  renderFilename,
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
@@ -46,11 +45,12 @@ export async function resolveUri(
   raw: string,
   workOverride?: string,
   chatOverride?: string,
+  options: { allowRoot?: boolean } = {},
 ): Promise<ResolvedUri> {
   const parsed = parseContextUri(raw);
   if (!parsed.ok) throw usageError(`Invalid URI ${raw}: ${parsed.error.reason}`);
   const { scheme, authority, path } = parsed.value;
-  if (!path) throw usageError(`URI ${raw} has no path`);
+  if (!path && !options.allowRoot) throw usageError(`URI ${raw} has no path`);
   let workId: string | null = null;
   let chatRef: string | null = null;
   let rootRef: string | null = null;
@@ -92,14 +92,21 @@ export async function resolveUri(
     }
   }
   const slash = path.lastIndexOf("/");
+  if (!path) {
+    const uri = formatParsedContextUri(scheme, "", ownerAuthority);
+    const chatId = chatRef === null ? null : await resolveThreadId(session, chatRef, projectId);
+    const rootThreadId =
+      rootRef === null ? null : await resolveThreadId(session, rootRef, projectId);
+    return { scheme, path: "", uri, workId, chatRef, chatId, rootThreadId };
+  }
+  // The path goes to the server as typed: it tries the exact name before the alias, so a kept
+  // `binary.md` is reachable beside a document `binary`.
   const parsedName = parseDocumentFilename(path.slice(slash + 1));
   if (!parsedName.ok) throw usageError(parsedName.error.message);
-  const canonicalPath =
-    path.slice(0, slash + 1) + renderFilename(parsedName.value.name, parsedName.value.extension);
-  const uri = formatParsedContextUri(scheme, canonicalPath, ownerAuthority);
+  const uri = formatParsedContextUri(scheme, path, ownerAuthority);
   const chatId = chatRef === null ? null : await resolveThreadId(session, chatRef, projectId);
   const rootThreadId = rootRef === null ? null : await resolveThreadId(session, rootRef, projectId);
-  return { scheme, path: canonicalPath, uri, workId, chatRef, chatId, rootThreadId };
+  return { scheme, path, uri, workId, chatRef, chatId, rootThreadId };
 }
 
 /** Live documentId for a URI, or a not_found CliError. */
