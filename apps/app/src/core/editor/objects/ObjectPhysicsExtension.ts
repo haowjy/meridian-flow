@@ -17,6 +17,7 @@ import {
   typeBesideObjectTransaction,
 } from "./object-selection";
 import { isEditorObject, objectBody, objectTypeSpec } from "./object-types";
+import { pictureCapped } from "./picture-cap";
 
 const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
 
@@ -241,14 +242,28 @@ export const ObjectPhysicsExtension = Extension.create({
             return true;
           },
 
-          /**: a click reads. */
-          handleClickOn(view, _pos, node, nodePos, _event, direct) {
+          /** A click reads: it selects, and on a picture the cap is holding back it opens the rest. */
+          handleClickOn(view, _pos, node, nodePos, event, direct) {
             if (!direct || !isEditorObject(node)) return false;
             const transaction = selectObjectTransaction(view.state, nodePos);
             if (!transaction) return false;
             view.dispatch(transaction);
             view.focus();
+            // Selected first, as for a double-click: closing the surface lands here.
+            if (objectTypeSpec(node)?.clickEngages?.(event.target)) {
+              engage(editor, view.state, view.dispatch.bind(view));
+            }
             return true;
+          },
+
+          handleDOMEvents: {
+            /** Whether a picture is capped depends on the pane, so it is asked on approach. */
+            mouseover(_view, event) {
+              if (event.target instanceof HTMLImageElement) {
+                event.target.style.cursor = pictureCapped(event.target) ? "zoom-in" : "";
+              }
+              return false;
+            },
           },
 
           /** The pointer's twin of Enter: a double-click on an object engages it, with no click-to-select step in between. */
