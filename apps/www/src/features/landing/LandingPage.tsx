@@ -43,9 +43,12 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             <div className="sheets" id="sheets">
               {SEATED.map((key) => (
                 <div className="sys sheet" key={key}>
-                  {SHEETS[key].map((line) => (
-                    <p key={line}>{line}</p>
-                  ))}
+                  <p>{SHEETS[key].name}</p>
+                  <p>{SHEETS[key].kind}</p>
+                  <p>{SHEETS[key].who}</p>
+                  <p>{SHEETS[key].skill}</p>
+                  <p>{SHEETS[key].does}</p>
+                  <p>Status: {SHEETS[key].status}</p>
                 </div>
               ))}
             </div>
