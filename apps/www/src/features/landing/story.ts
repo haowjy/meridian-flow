@@ -539,6 +539,87 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
   },
 ];
 
+/** The writer's page of everything the reader doesn't know yet, at the Knowledge Base's root. */
+export const SERIES_BIBLE: WikiPage = {
+  lead: "Every spoiler in one place. What the reader doesn’t know yet, what the characters don’t, and what isn’t decided.",
+  facts: [
+    ["Series", "The Long Reckoning"],
+    ["Genre", "LitRPG, time loop"],
+    ["Arc 1", "Nine Days"],
+    ["Drafting", "Prologue"],
+  ],
+  sections: [
+    [
+      "The loop",
+      [
+        [
+          "Trigger:",
+          "The last one standing wakes on the first night of the Cold Fire with [Rekindle], forty days before the ninth night.",
+        ],
+        ["What carries over:", "Memory, and what they’ve learned to do. Levels reset."],
+        [
+          "Everyone else:",
+          "Alive again, and has never met them. The beast doesn’t remember either.",
+        ],
+        ["When it ends:", "When the beast dies. [Tutorial cleared]"],
+      ],
+    ],
+    [
+      "Who took hold of the System",
+      "Something wrote “Tutorial complete.” and gave the survivor Rekindle, and it wants the beast dead. It is the serial’s long mystery. Undecided: something from outside the world, or the System waking to what it was built for.",
+    ],
+    [
+      "The beast",
+      [
+        [
+          "The Cold Fire:",
+          "Its breath, but it isn’t what spreads it. Something is drawing the light north through it. Arc 1’s midpoint.",
+        ],
+        [
+          "The Greenlands:",
+          "The green under the ice is its breath, asleep. It has been there the whole time.",
+        ],
+        ["Undecided:", "Why the System can’t see it, and whether it has woken before."],
+      ],
+    ],
+    [
+      "What each of the four hides",
+      [
+        [
+          "Tam:",
+          "If the beast dies, he is the strongest person in Harl after the king, and the court has argued about whether to allow it.",
+        ],
+        [
+          "Sigrun:",
+          "The Moot’s sealed letter orders her to bring back the beast’s heart, whatever it costs the others.",
+        ],
+        [
+          "Maren:",
+          "The queen sang her the Kessa song’s last verse a thousand years ago. Vell knew.",
+        ],
+        ["Oskar:", "He has seen the beast before, asleep in the ice. That is what took his ear."],
+      ],
+    ],
+    [
+      "The world",
+      [
+        [
+          "The System:",
+          "Has never given a quest, a tutorial or an instruction. “Tutorial complete.” is the first box in history to talk about a game, and Rekindle the first skill with [Source: unknown].",
+        ],
+        [
+          "Cores:",
+          "A beast with no tag has a core nobody has ever priced. That is why Ansgard wants the heart.",
+        ],
+      ],
+    ],
+    [
+      "After the kill",
+      "Arc 2, The Game. The morning after, the System changes for everyone: new boxes, new rules, quests nobody understands. The world thinks the four saved it. The survivor knows the beast was the tutorial.",
+    ],
+  ],
+};
+
 export const characterName = (key: CharacterKey) =>
   CHARACTERS.find((character) => character.key === key)?.name ?? "";
 
