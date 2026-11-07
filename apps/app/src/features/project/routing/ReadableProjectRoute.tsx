@@ -494,9 +494,8 @@ function ReadableProjectDestination({
     workId,
   ]);
   // Discarding a draft's move leaves the review address cached at the destination it named;
-  // the server answers the live path once the metadata shows the move is gone. Inactive keys are
-  // removed, not invalidated: a stale answer at the live key points back at the scratch key and
-  // the two replace the URL at each other faster than either refetch lands.
+  // the server answers the live path once the metadata shows the move is gone. Review answers
+  // are dropped with their key (`documentAddressQueryOptions`), so only the visible one is stale.
   const queryClient = useQueryClient();
   const addressedHadTree = useRef(false);
   const addressedTree =
@@ -506,9 +505,9 @@ function ReadableProjectDestination({
     if (addressedTree) addressedHadTree.current = true;
     else if (addressedHadTree.current) {
       addressedHadTree.current = false;
-      const queryKey = projectQueryKeys.documentAddresses(projectId);
-      queryClient.removeQueries({ queryKey, type: "inactive" });
-      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.documentAddresses(projectId),
+      });
     }
   }, [addressedTree, projectId, queryClient]);
   const listedDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);

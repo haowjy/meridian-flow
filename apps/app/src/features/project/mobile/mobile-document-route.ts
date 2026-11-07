@@ -4,7 +4,12 @@ import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts
 import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { type ContextTab, type ServerContextTab, useContextTabs } from "@/client/stores";
+import {
+  type ContextTab,
+  editorTabsForWork,
+  type ServerContextTab,
+  useContextTabs,
+} from "@/client/stores";
 import { routeSelectionDocumentId } from "../context/context-removal-protocol";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { resolveRouteDocumentOwner } from "../context/route-document-owner";
@@ -50,9 +55,9 @@ export function resolveMobileDocumentRoute(input: {
    */
   boundDocumentId?: string | null;
   /**
-   * The Editor workspace's tabs. Only a draft-only review tab is read from it: a pending
-   * new-document draft is not in the live catalog, so the tab the review launch installed
-   * is the document's admission.
+   * The Editor workspace's tabs. Only this Work's tabs are read from it, and only for a draft-only
+   * review tab: a pending new-document draft is not in the live catalog, so the tab the review
+   * launch installed is the document's admission.
    */
   workspaceTabs?: readonly ContextTab[];
   /**
@@ -107,7 +112,7 @@ export function resolveMobileDocumentRoute(input: {
       : owner.kind === "draft-only"
         ? owner.tab
         : owner.kind === "pending" && input.reviewing
-          ? (input.workspaceTabs?.find(
+          ? (editorTabsForWork(input.workspaceTabs ?? [], input.workId).find(
               (tab) => tab.kind !== "new" && tab.documentId === input.boundDocumentId,
             ) ?? null)
           : null;
