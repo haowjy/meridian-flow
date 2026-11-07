@@ -7,7 +7,20 @@
   height: var(--filmh);
 }
 
+/* The stage's layers, back to front. dragon-actor.ts moves the dragon between them as it flies. */
 .cine .stage {
+  --z-far: 1;
+  --z-ground: 2;
+  --z-low: 3;
+  --z-product: 4;
+  --z-words: 5;
+  --z-over: 6;
+  --z-sub: 7;
+  --z-ask: 8;
+  --z-skill: 9;
+  --z-flame: 10;
+  --z-pass: 11;
+  --z-pass-words: 12;
   position: sticky;
   top: 0;
   height: 100svh;
@@ -23,7 +36,7 @@
 
 .cine .hero {
   position: absolute;
-  z-index: 5;
+  z-index: var(--z-words);
   padding: 0;
 }
 
@@ -59,7 +72,7 @@
 .cine .dawn {
   position: absolute;
   inset: 0;
-  z-index: 5;
+  z-index: var(--z-words);
   display: flex;
   flex-direction: column;
   padding-top: var(--bar);
@@ -116,7 +129,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: min(68vw, 960px);
-  z-index: 3;
+  z-index: var(--z-low);
   opacity: 0;
   pointer-events: none;
   background: linear-gradient(
@@ -135,7 +148,7 @@
   width: var(--home-w);
   height: calc(var(--home-w) * 0.625);
   padding: 0;
-  z-index: 4;
+  z-index: var(--z-product);
   pointer-events: none;
   container-type: size;
 }
@@ -165,7 +178,7 @@
   margin: 0 0 0 calc(var(--bigw) / -2);
   width: var(--bigw);
   padding: 0;
-  z-index: 3;
+  z-index: var(--z-low);
   opacity: 0;
   visibility: hidden;
 }
@@ -175,7 +188,7 @@
   left: 0;
   right: 0;
   bottom: clamp(24px, 8vh, 84px);
-  z-index: 7;
+  z-index: var(--z-sub);
   margin: 0 auto;
   padding: 0 20px;
   max-width: none;
@@ -212,7 +225,7 @@
   display: block;
   padding: 0;
   max-width: none;
-  z-index: 6;
+  z-index: var(--z-over);
   opacity: 0;
   visibility: hidden;
 }
@@ -325,7 +338,7 @@
   display: block;
   padding: 0;
   max-width: none;
-  z-index: 5;
+  z-index: var(--z-words);
   opacity: 0;
   visibility: hidden;
 }
@@ -385,7 +398,7 @@
   display: grid;
   place-items: center;
   padding: 12px;
-  z-index: 8;
+  z-index: var(--z-ask);
   opacity: 0;
   visibility: hidden;
 }
@@ -396,7 +409,7 @@
   display: grid;
   align-content: center;
   justify-items: center;
-  z-index: 6;
+  z-index: var(--z-over);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -631,7 +644,7 @@
 }
 
 .cine .flyer {
-  z-index: 5;
+  z-index: var(--z-words);
   width: 200px;
   height: 200px;
   opacity: 0;
@@ -662,7 +675,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 4;
+  z-index: var(--z-product);
   opacity: 0;
   pointer-events: none;
   mix-blend-mode: screen;
@@ -710,7 +723,7 @@
 }
 
 .cine .flame {
-  z-index: 10;
+  z-index: var(--z-flame);
   width: 100%;
   height: 100%;
 }
@@ -725,7 +738,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 3;
+  z-index: var(--z-low);
   gap: 12px;
   opacity: 0;
   pointer-events: none;
@@ -776,7 +789,7 @@
 
 /* Its size comes from GROUND in ground.ts. */
 .cine .forest {
-  z-index: 2;
+  z-index: var(--z-ground);
   bottom: 0;
   left: 0;
 }
@@ -788,7 +801,7 @@
 }
 
 .cine .walkers {
-  z-index: 2;
+  z-index: var(--z-ground);
   inset: 0;
   overflow: hidden;
 }
@@ -908,7 +921,7 @@
 .cine .skill {
   position: absolute;
   inset: var(--bar) 0 0;
-  z-index: 9;
+  z-index: var(--z-skill);
   padding: 20px;
   visibility: hidden;
 }

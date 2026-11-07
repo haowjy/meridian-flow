@@ -343,7 +343,7 @@ export function createDragonActor(root: HTMLElement) {
     const circled = beats.twist >= TWIST.pass.exits;
     const passing = beats.twist >= TWIST.pass.enters && !circled;
     const landing = beats.turn >= TURN.descends;
-    flyer.style.zIndex = passing ? "11" : now.onTop ? "6" : circled || landing ? "3" : "1";
+    flyer.style.zIndex = `var(--z-${passing ? "pass" : now.onTop ? "over" : circled || landing ? "low" : "far"})`;
     // It faces where it flies, except in the face-off, where it keeps its eyes on the party even
     // as it rears back.
     const facingThem = landing && beats.twist < TWIST.takesOff;
@@ -425,7 +425,7 @@ export function createDragonActor(root: HTMLElement) {
       const box = words.getBoundingClientRect();
       const burnt = clamp(((char + WORDS_HANDOVER) * H - box.left) / box.width);
       const edge = twist >= TWIST.pass.exits ? 1 : passing ? burnt : 0;
-      words.style.zIndex = passing ? "12" : "";
+      words.style.zIndex = passing ? "var(--z-pass-words)" : "";
       words.style.maskImage =
         edge > 0
           ? `linear-gradient(90deg,transparent ${edge * 106 - 3}%,black ${edge * 106 + 3}%)`
