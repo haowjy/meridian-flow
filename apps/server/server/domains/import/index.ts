@@ -11,12 +11,7 @@ import {
   discardDrizzleContextStage,
   type LinkAheadRegistry,
 } from "../context/index.js";
-import {
-  type EventSink,
-  emitEvent,
-  errorMessageOf,
-  unknownToEventPayload,
-} from "../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { ObjectStorePort } from "../storage/index.js";
 import { createContextImportTreeWriter } from "./adapters/context-tree-writer.js";
 import { createDrizzleImportRepository } from "./adapters/drizzle-import-repository.js";
@@ -93,7 +88,6 @@ export function createProductionImportOrganizer(deps: {
         name: "pass.failed",
         payload: {
           ...detail,
-          ...errorMessageOf(cause),
           ...unknownToEventPayload(cause),
         },
       }),
