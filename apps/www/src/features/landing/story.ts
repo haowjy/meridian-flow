@@ -141,52 +141,6 @@ export const CHARACTERS: readonly Character[] = [
     ],
   },
   {
-    key: "oskar",
-    name: "Oskar",
-    note: "Kessa guide. The only one who has walked to the ice and back.",
-    pitch: "He believed the songs.",
-    lastLine: "My name is Oskar. I told them the songs were true. I’ll have to tell them again.",
-    lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked to the edge of the ice and come back.",
-    facts: [
-      ["Race", "Beastkin, bear-blooded"],
-      ["Age", "38"],
-      ["Level", "66"],
-      ["Skill", "[Sense Fear]"],
-      ["Homeland", "The Kessa steppe"],
-      ["Sent by", "The clan mothers"],
-      ["First appears", "Prologue"],
-    ],
-    sections: [
-      ["Appearance", "Twice Sigrun’s height. Half his left ear is gone."],
-      ["Personality", "Quiet, dry, patient with Tam. Changes the subject with food."],
-      [
-        "Abilities",
-        "[Sense Fear]: he hears an animal’s fear a breath before it moves, and the choice right behind it. He calls the fights.",
-      ],
-      [
-        "History",
-        "Guided hunters to the edge of the Greenlands for twenty years. He came back from the last trip alone, without half his ear, and won’t say what took it.",
-      ],
-      [
-        "Relationships",
-        [
-          ["Tam", "Answers every question about the ear with “Eat your food.”"],
-          ["Sigrun", "She doesn’t believe him. He doesn’t argue."],
-          ["Maren", "Sang her the last verse again."],
-        ],
-      ],
-      [
-        NOTES,
-        [
-          [
-            "Secret",
-            "He has seen the beast once before, asleep in the ice. That is what took his ear, and why the clan mothers believed the song.",
-          ],
-        ],
-      ],
-    ],
-  },
-  {
     key: "maren",
     name: "Maren",
     note: "The queen of Vell’s healer. Blind for a thousand years.",
@@ -248,6 +202,52 @@ export const CHARACTERS: readonly Character[] = [
       ],
     ],
   },
+  {
+    key: "oskar",
+    name: "Oskar",
+    note: "Kessa guide. The only one who has walked to the ice and back.",
+    pitch: "He believed the songs.",
+    lastLine: "My name is Oskar. I told them the songs were true. I’ll have to tell them again.",
+    lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked to the edge of the ice and come back.",
+    facts: [
+      ["Race", "Beastkin, bear-blooded"],
+      ["Age", "38"],
+      ["Level", "66"],
+      ["Skill", "[Sense Fear]"],
+      ["Homeland", "The Kessa steppe"],
+      ["Sent by", "The clan mothers"],
+      ["First appears", "Prologue"],
+    ],
+    sections: [
+      ["Appearance", "Twice Sigrun’s height. Half his left ear is gone."],
+      ["Personality", "Quiet, dry, patient with Tam. Changes the subject with food."],
+      [
+        "Abilities",
+        "[Sense Fear]: he hears an animal’s fear a breath before it moves, and the choice right behind it. He calls the fights.",
+      ],
+      [
+        "History",
+        "Guided hunters to the edge of the Greenlands for twenty years. He came back from the last trip alone, without half his ear, and won’t say what took it.",
+      ],
+      [
+        "Relationships",
+        [
+          ["Tam", "Answers every question about the ear with “Eat your food.”"],
+          ["Sigrun", "She doesn’t believe him. He doesn’t argue."],
+          ["Maren", "Sang her the last verse again."],
+        ],
+      ],
+      [
+        NOTES,
+        [
+          [
+            "Secret",
+            "He has seen the beast once before, asleep in the ice. That is what took his ear, and why the clan mothers believed the song.",
+          ],
+        ],
+      ],
+    ],
+  },
 ];
 
 export const BEAST_PAGE: WikiPage = {
@@ -297,7 +297,7 @@ export const DRAGON_PAGE: WikiPage = {
   ],
 };
 
-/** Background pages after the party in the Knowledge Base. */
+/** The Knowledge Base's World folder, after The Beast. */
 export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }[] = [
   {
     key: "coldfire",
@@ -320,8 +320,8 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
     },
   },
   {
-    key: "missing",
-    name: "The Missing",
+    key: "armies",
+    name: "The First Armies",
     page: {
       lead: "The armies sent north before the four. None of them came back.",
       facts: [

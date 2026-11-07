@@ -43,16 +43,18 @@ export function ProductPlaceholder() {
           Prologue
         </RailDocument>
         <div className="s-h">KNOWLEDGE BASE</div>
+        <div className="s-f">{CHARACTERS_FOLDER}</div>
         {CHARACTERS.map(({ key, name }) => (
-          <RailDocument key={key} id={`d${key}`}>
+          <RailDocument key={key} id={`d${key}`} nested>
             {name}
           </RailDocument>
         ))}
-        <RailDocument id="dbeast" rowId="s-beast-row">
+        <div className="s-f">{WORLD_FOLDER}</div>
+        <RailDocument id="dbeast" rowId="s-beast-row" nested>
           The Beast
         </RailDocument>
         {WORLD_PAGES.map(({ key, name }) => (
-          <RailDocument key={key} id={`d${key}`}>
+          <RailDocument key={key} id={`d${key}`} nested>
             {name}
           </RailDocument>
         ))}
@@ -85,7 +87,7 @@ export function ProductPlaceholder() {
             <article
               className="s-doc"
               id={`d${character.key}`}
-              data-folder="Knowledge Base"
+              data-folder={`Knowledge Base › ${CHARACTERS_FOLDER}`}
               hidden
               key={character.key}
             >
@@ -93,11 +95,11 @@ export function ProductPlaceholder() {
               <PageBody page={character} statusId={`s-note-${character.key}`} />
             </article>
           ))}
-          <article className="s-doc" id="dbeast" data-folder="Knowledge Base" hidden>
+          <article className="s-doc" id="dbeast" data-folder={WORLD_PATH} hidden>
             <div className="name">The Beast</div>
             <PageBody page={BEAST_PAGE} />
           </article>
-          <article className="s-doc" id="ddragon" data-folder="Knowledge Base" hidden>
+          <article className="s-doc" id="ddragon" data-folder={WORLD_PATH} hidden>
             <div className="name">The Dragon</div>
             <figure className="s-fig">
               <i id="s-dragon" />
@@ -105,7 +107,7 @@ export function ProductPlaceholder() {
             <PageBody page={DRAGON_PAGE} />
           </article>
           {WORLD_PAGES.map(({ key, name, page }) => (
-            <article className="s-doc" id={`d${key}`} data-folder="Knowledge Base" hidden key={key}>
+            <article className="s-doc" id={`d${key}`} data-folder={WORLD_PATH} hidden key={key}>
               <div className="name">{name}</div>
               <PageBody page={page} />
             </article>
@@ -188,6 +190,10 @@ export function ProductPlaceholder() {
   );
 }
 
+const CHARACTERS_FOLDER = "Characters";
+const WORLD_FOLDER = "World";
+const WORLD_PATH = `Knowledge Base › ${WORLD_FOLDER}`;
+
 const CHARACTER_NAME = new RegExp(`\\b(${CHARACTERS.map(({ name }) => name).join("|")})\\b`);
 
 /** A page's text with the party's names linked to their pages, the way a wiki links them. */
@@ -252,15 +258,23 @@ function RailDocument({
   id,
   rowId,
   on,
+  nested,
   children,
 }: {
   id: string;
   rowId?: string;
   on?: boolean;
+  /** Inside a Knowledge Base folder. */
+  nested?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <button type="button" id={rowId} className={`s-n in ${on ? "on" : ""}`} data-doc={id}>
+    <button
+      type="button"
+      id={rowId}
+      className={`s-n in ${nested ? "deep" : ""} ${on ? "on" : ""}`}
+      data-doc={id}
+    >
       {children}
     </button>
   );
