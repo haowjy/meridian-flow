@@ -1,4 +1,4 @@
-import { CHARACTERS, type CharacterKey } from "./story";
+import type { CharacterKey } from "./story";
 
 /** Owns the visitor's story choice: the card and the product block both read it. */
 export function createCardStore() {
@@ -27,17 +27,16 @@ export function createCardStore() {
       update(key);
     },
     send,
-    /** Nobody is recommended, so Skip leaves the story with its first character. */
+    /** No answer means nobody survives, whether the visitor skipped or scrolled past. */
     skip() {
       touched = true;
-      update(CHARACTERS[0].key);
+      update(null);
       send();
     },
     /** Autoplay acting out the card. */
     demonstrate(key: CharacterKey | null) {
       if (!touched && answer !== key) update(key);
     },
-    protagonist: (): CharacterKey => answer ?? CHARACTERS[0].key,
     onSend(listener: () => void) {
       sendListeners.add(listener);
       return () => {

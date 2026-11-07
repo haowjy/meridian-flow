@@ -24,12 +24,6 @@ export function QuestionCard({ store }: { store: CardStore }) {
           <small>{character.pitch}</small>
         </button>
       ))}
-      <input
-        className="c-f"
-        placeholder="Or type your own answer"
-        aria-label="Your own answer"
-        readOnly
-      />
       <div className="c-b">
         <button type="button" onClick={store.skip}>
           Skip

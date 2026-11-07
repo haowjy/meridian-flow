@@ -10,7 +10,7 @@ const PLAY_LABELS: Record<AutoplayState, string> = {
   paused: "Resume",
   done: "Play again",
 };
-const GLIDE_SECONDS = 1.4;
+const GLIDE_SECONDS = 3;
 
 /**
  * Everything that moves the page for the visitor: autoplay, jump links and the
@@ -121,7 +121,7 @@ export function createTransport(options: {
     glide.active = true;
     glide.time = 0;
     glide.from = scrollY;
-    glide.to = getLayout().spans.ask[1] + 1;
+    glide.to = getLayout().spans.hints[1];
   });
   signal.addEventListener("abort", stopListening);
 

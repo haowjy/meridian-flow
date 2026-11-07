@@ -375,6 +375,10 @@
   top: 58cqh;
 }
 
+.cine .card {
+  transform-origin: 0 0;
+}
+
 .cine .ask {
   position: absolute;
   inset: var(--bar) 0 0;
@@ -601,8 +605,7 @@
     align-content: start;
   }
 
-  .cine .c-o small,
-  .cine .c-f {
+  .cine .c-o small {
     display: none;
   }
 }

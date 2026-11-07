@@ -18,12 +18,15 @@ const BEATS = [
   ["turn", 1.1, 7],
   ["twist", 2, 6],
   ["dawn", 1.5, 6],
-  ["lore", 2.2, 6],
-  ["ask", 1, 10],
+  ["lore", 1.4, 5],
+  ["ask", 3, 12],
   ["hints", 1.2, 9],
   ["roam", 3, 6],
   ["leave", 0.7, 3],
 ] as const;
+
+/** The share of the ask where the question lifts out of the chat, 2 swipes in. */
+export const ASK_LIFT = [0.5, 0.62] as const;
 
 type Beat = (typeof BEATS)[number][0];
 export type Span = readonly [start: number, end: number];
@@ -90,7 +93,7 @@ export const SECTIONS = [
     hash: "#your-decisions",
     label: "Your decisions",
     startsAt: (spans: BeatSpans, vh: number) => spans.ask[0] - vh * 0.05,
-    jumpTo: (spans: BeatSpans) => along(spans, "ask", 0.25),
+    jumpTo: (spans: BeatSpans) => along(spans, "ask", ASK_LIFT[1]),
   },
   {
     hash: "#the-workspace",
