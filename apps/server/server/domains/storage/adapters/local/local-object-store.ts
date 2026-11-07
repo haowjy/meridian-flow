@@ -19,7 +19,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { Readable, Transform } from "node:stream";
+import { type Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
@@ -133,7 +133,9 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     this.signingSecret = options.signingSecret;
     this.signedUrlTtlSeconds = options.signedUrlTtlSeconds;
     this.now = options.now ?? (() => new Date());
-    void this.clearStaleTemp();
+    void this.clearStaleTemp().catch((error: unknown) => {
+      console.error("object store: clearing stale temp files failed", error);
+    });
   }
 
   async put(
@@ -518,10 +520,14 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
   private async clearStaleTemp(): Promise<void> {
     const dir = path.join(this.rootDir, TEMP_DIR);
     const cutoff = this.now().getTime() - STALE_TEMP_MS;
-    for (const entry of await readdir(dir).catch(() => [])) {
-      const file = path.join(dir, entry);
-      const info = await stat(file).catch(() => null);
-      if (info && info.mtimeMs < cutoff) await rm(file, { force: true });
+    try {
+      for (const entry of await readdir(dir)) {
+        const file = path.join(dir, entry);
+        if ((await stat(file)).mtimeMs < cutoff) await rm(file, { force: true });
+      }
+    } catch (error) {
+      // No temp dir yet, or a file another process just finished with: nothing to clear.
+      if (!isMissingFile(error)) throw error;
     }
   }
 
