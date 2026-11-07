@@ -114,6 +114,9 @@ export const FIGHT = {
   ],
 } as const;
 
+/** How far the opening view has tipped down from straight overhead to the horizon, 0 to 1. */
+export const tilt = (beats: BeatProgress) => smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
+
 /** The dragon is on the ground from its landing until it takes off, but for the rear at the spark. */
 export const grounded = (beats: BeatProgress) =>
   beats.turn >= TURN.lands &&
