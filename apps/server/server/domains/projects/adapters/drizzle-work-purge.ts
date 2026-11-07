@@ -35,7 +35,7 @@ const WORK_PURGE_BATCH_LIMIT = 100;
 
 export function createDrizzleWorkPurger(deps: {
   db: Database;
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   branches: WorkBranchDisposal;
   now?: () => Date;

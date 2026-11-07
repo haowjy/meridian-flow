@@ -360,27 +360,12 @@ if (!RUN) {
         branches: collab.branches,
         catalogMutations: catalog,
       });
-      const unusedStore: ObjectStorePort = {
+      const unusedStore: Pick<ObjectStorePort, "put" | "delete"> = {
         async put() {
           return { ok: true, value: { storageUrl: "object://unused" } };
         },
         async delete() {
           return { ok: true, value: undefined };
-        },
-        async getStream() {
-          throw new Error("not used");
-        },
-        async copy() {
-          throw new Error("not used");
-        },
-        async get() {
-          return { ok: false, error: { code: "not_found", message: "missing" } };
-        },
-        async list() {
-          return { ok: true, value: { keys: [] } };
-        },
-        async getSignedUrl() {
-          return { ok: false, error: { code: "not_found", message: "missing" } };
         },
       };
       const service = createUploadIntake({

@@ -38,6 +38,7 @@ function document(id: string, uri: string, extra: Partial<ExportDocument> = {}):
     chatTitle: null,
     metadata: {},
     storageUrl: null,
+    sizeBytes: null,
     ...extra,
   };
 }

@@ -163,7 +163,7 @@ export async function makeImagePreview(bytes: Uint8Array): Promise<Uint8Array | 
  * now exists, which the caller records as the document's `has_preview`. Never throws.
  */
 export async function saveImagePreview(input: {
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "put">;
   storageUrl: string;
   bytes: Uint8Array;
   onFailure?: (reason: ImagePreviewFailureReason) => void;

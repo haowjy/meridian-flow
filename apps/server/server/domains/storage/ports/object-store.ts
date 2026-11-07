@@ -26,7 +26,8 @@ export interface ObjectStoreGetOutput {
 
 export interface ObjectStoreGetOptions {
   /**
-   * Refuses (`too_large`) an object above this many bytes without reading it. Whole-object
+   * Refuses (`too_large`) an object above this many bytes, or of unreported size, without reading
+   * it. Whole-object
    * reads are for bounded things such as previews; anything else uses `getStream` or `copy`.
    */
   maxBytes?: number;
