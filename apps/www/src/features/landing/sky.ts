@@ -67,7 +67,8 @@ float field(vec2 p,float fire,out float band){
   float cover=smoothstep(.4,.58,N(p*.13+vec2(FLOW*.015,3.)));
   // Where the Cold Fire is strong the sheet's gaps fill in.
   cover=max(cover,min(fire*.3,.5));
-  float sheet=n*cover*(.45+.55*N(q*9.+FLOW*.25));
+  // It thins with distance, as the real ones do: far off a few arcs, not a lit horizon.
+  float sheet=n*cover*(.45+.55*N(q*9.+FLOW*.25))*max(smoothstep(22.,4.,length(p)),min(fire,1.));
   // One great curtain from straight overhead away down the middle of the level view: thin from
   // below, folding side to side by a small angle so it keeps its line, and raked with fine rays,
   // which the slices stand up into a curtain. Looking up it crosses the sky; looking out it
