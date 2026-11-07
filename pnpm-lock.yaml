@@ -68,6 +68,9 @@ patchedDependencies:
   decode-named-character-reference@1.3.0:
     hash: 5b39cd8ff81f7eddeb30f5c2fb0aac770c535cd92dfa25c5de946ecb405af3b7
     path: patches/decode-named-character-reference@1.3.0.patch
+  micromark@4.0.2:
+    hash: 9c4f622cd823bf20814c3ae157a1feccf8c69f4fcf656a66e5d1997ce9b86f12
+    path: patches/micromark@4.0.2.patch
   yjs@13.6.31:
     hash: b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e
     path: patches/yjs@13.6.31.patch
@@ -832,7 +835,7 @@ importers:
         version: 2.1.2
       micromark:
         specifier: ^4.0.2
-        version: 4.0.2
+        version: 4.0.2(patch_hash=9c4f622cd823bf20814c3ae157a1feccf8c69f4fcf656a66e5d1997ce9b86f12)
       micromark-extension-gfm:
         specifier: ^3.0.0
         version: 3.0.0
@@ -11181,7 +11184,7 @@ snapshots:
       decode-named-character-reference: 1.3.0(patch_hash=5b39cd8ff81f7eddeb30f5c2fb0aac770c535cd92dfa25c5de946ecb405af3b7)
       devlop: 1.1.0
       mdast-util-to-string: 4.0.0
-      micromark: 4.0.2
+      micromark: 4.0.2(patch_hash=9c4f622cd823bf20814c3ae157a1feccf8c69f4fcf656a66e5d1997ce9b86f12)
       micromark-util-decode-numeric-character-reference: 2.0.2
       micromark-util-decode-string: 2.0.1
       micromark-util-normalize-identifier: 2.0.1
@@ -11598,7 +11601,7 @@ snapshots:
 
   micromark-util-types@2.0.2: {}
 
-  micromark@4.0.2:
+  micromark@4.0.2(patch_hash=9c4f622cd823bf20814c3ae157a1feccf8c69f4fcf656a66e5d1997ce9b86f12):
     dependencies:
       '@types/debug': 4.1.13
       debug: 4.4.3
