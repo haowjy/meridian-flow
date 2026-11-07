@@ -101,8 +101,8 @@ export function createFight(root: HTMLElement) {
     const reach = (target: Point, share: number) =>
       [lerp(mouth[0], target[0], share), lerp(mouth[1], target[1], share)] as const;
     const warded = envelope(fight, FIGHT.ward, 0.03, 0.04);
-    const front = party.rows[0];
-    const back = party.rows[party.rows.length - 1];
+    const front = party.rows[FIGHT.places.indexOf(0)];
+    const back = party.rows[FIGHT.places.indexOf(3)];
     if (warded > 0) return { aim: reach(front, 1), breath: warded * FIGHT_BREATH };
     const killing = envelope(fight, FIGHT.breath, 0.03, 0.04);
     if (killing <= 0) return null;

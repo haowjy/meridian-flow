@@ -94,9 +94,12 @@ export const ASK = { lift: [0.43, 0.55], assigns: 0.89 } as const;
  * first breath, then each of the four hits it. Sigrun throws a cut rune, Maren's song breaks on
  * it, Oskar charges its flank, and Tam's spark goes into the scales above its left foot, then
  * into its eye. Then one breath kills them: who falls when, and how. The one left is a shadow,
- * because the visitor hasn't said who survives yet. Rows are the walkers, front first.
+ * because the visitor hasn't said who survives yet. Rows are the walkers: Sigrun, Tam, Oskar,
+ * Maren, the order they walk in. `places` is where each stands in the fight, front first: Sigrun
+ * in front with her wards, Maren behind her, Oskar on the flank, Tam behind them all.
  */
 export const FIGHT = {
+  places: [0, 3, 2, 1],
   ward: [0.08, 0.22],
   rune: { row: 0, at: [0.23, 0.29] },
   song: { row: 3, at: [0.28, 0.37] },
@@ -105,8 +108,8 @@ export const FIGHT = {
   breath: [0.6, 0.86],
   fates: [
     { kind: "fall", at: 0.65 },
-    { kind: "flung", at: 0.71 },
     { kind: "stand", at: 0.86 },
+    { kind: "flung", at: 0.71 },
     { kind: "fall", at: 0.79 },
   ],
 } as const;
