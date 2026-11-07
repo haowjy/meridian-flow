@@ -176,6 +176,15 @@ export function spanBeats(viewportHeight: number) {
   return { spans, stops, subtitles, length: position };
 }
 
+/** How far through a run of beats, `first` to `last`, by scroll length: one curve across them all. */
+export function across(beats: BeatProgress, first: Beat, last: Beat) {
+  const from = BEATS.findIndex(([name]) => name === first);
+  const to = BEATS.findIndex(([name]) => name === last);
+  const run = BEATS.slice(from, to + 1);
+  const length = run.reduce((total, [, viewports]) => total + viewports, 0);
+  return run.reduce((done, [name, viewports]) => done + beats[name] * viewports, 0) / length;
+}
+
 export function beatProgress(at: number, spans: BeatSpans): BeatProgress {
   const result = {} as BeatProgress;
   for (const [name] of BEATS) result[name] = progress(at, spans[name][0], spans[name][1]);

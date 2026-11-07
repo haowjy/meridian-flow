@@ -527,16 +527,19 @@ h1 span {
   max-width: 640px;
 }
 
-.cap h2 {
+/* The film's caption shows the knowledge heading as a title; the stacked page uses its SectionHead. */
+.cap-title {
+  display: none;
+}
+
+.cine .cap-title {
+  display: block;
   font: 400 clamp(34px, 3.2vw, 50px) / 1.08 var(--mkt-font-title);
-  margin-bottom: 0.4em;
   text-wrap: pretty;
 }
 
-.cap p {
-  font-size: clamp(16px, 1.25vw, 18px);
-  line-height: 1.42;
-  text-wrap: pretty;
+.cap header.sect-head {
+  padding: 0;
 }
 
 header.sect-head {
@@ -555,8 +558,7 @@ header.sect-head {
   text-wrap: pretty;
 }
 
-.sect-head p,
-p.sect-head {
+.sect-head p {
   font-size: clamp(16px, 1.25vw, 18px);
   line-height: 1.42;
   text-wrap: pretty;
@@ -564,10 +566,6 @@ p.sect-head {
 
 /* The film tells each section as story; its plain heading stays for screen readers and crawlers,
    visible to them even while the film hides the section around it. */
-.cine .cap h2 {
-  visibility: visible;
-}
-
 .cine .sect-head {
   visibility: visible;
   position: absolute;
