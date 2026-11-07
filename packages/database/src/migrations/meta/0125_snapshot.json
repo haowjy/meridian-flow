@@ -6770,28 +6770,6 @@
         }
       },
       "indexes": {
-        "upload_intakes_source_path_exact_live": {
-          "name": "upload_intakes_source_path_exact_live",
-          "columns": [
-            {
-              "expression": "context_source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "final_path",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"upload_intakes\".\"state\" <> 'deleted'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "upload_intakes_owner_thread": {
           "name": "upload_intakes_owner_thread",
           "columns": [
@@ -11417,12 +11395,6 @@
         },
         "metadata": {
           "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "origin": {
-          "name": "origin",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true

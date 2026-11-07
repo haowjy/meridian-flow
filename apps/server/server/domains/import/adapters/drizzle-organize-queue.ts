@@ -1,6 +1,6 @@
 /** Postgres-backed organize claims with database-time leases and stale-owner fencing. */
 import type { Database } from "@meridian/database";
-import { imports, projects } from "@meridian/database/schema";
+import { imports } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { OrganizeClaim, OrganizeQueue } from "../ports/organize-queue.js";
@@ -64,11 +64,16 @@ export function createDrizzleOrganizeQueue(db: Database): OrganizeQueue {
           .returning({ id: imports.id });
         return rows.length === 1;
       }),
-    release: (claim) =>
+    release: (claim, retryAfterMs) =>
       runInDrizzleTransaction(db, async () => {
         await currentDrizzleDb(db)
           .update(imports)
-          .set({ leaseToken: null, leaseUntil: null })
+          .set({
+            leaseToken: null,
+            leaseUntil: retryAfterMs
+              ? sql`clock_timestamp() + ${retryAfterMs} * interval '1 millisecond'`
+              : null,
+          })
           .where(and(eq(imports.id, claim.importId), eq(imports.leaseToken, claim.token)));
       }),
   };

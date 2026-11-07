@@ -34,7 +34,6 @@ export const contextStagedDocuments = pgTable(
     extension: text("extension").notNull(),
     filetype: text("filetype").notNull(),
     metadata: jsonb("metadata").notNull(),
-    origin: jsonb("origin").notNull(),
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),

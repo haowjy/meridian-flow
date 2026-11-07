@@ -291,7 +291,7 @@ export async function prepareCopyAttempt(
 }
 
 /** Records transport evidence against the attempt it answers; the roots wait for `settleCopy`. */
-export function recordCopyOutcome(
+function recordCopyOutcome(
   record: OperationRecord,
   intentId: string,
   attemptId: string,
@@ -318,7 +318,7 @@ export function recordCopyOutcome(
  * What a Copy's answer created, roots first and then each root's subtree; null while the Copy has
  * no receipt. A notice that outlives the record keeps its own copy of the entries.
  */
-export function copyReceipt(
+function copyReceipt(
   intent: NamespaceIntent,
 ): { observationVersion: string; entries: readonly CopyContextEntryCreated[] } | null {
   const outcome = intent.attempts.at(-1)?.outcome;
