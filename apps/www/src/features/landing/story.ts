@@ -33,7 +33,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Tam",
     note: "Seventeen and Level 58: the strongest human his age ever recorded.",
     pitch: "The prodigy who has never failed at anything.",
-    lastLine: "I’d already picked out the field for my father.",
+    lastLine: "I didn’t know I could lose.",
     lead: "Tam is a farm boy from Harl who reached Level 58 at seventeen, higher than anyone his age has ever been.",
     facts: [
       ["Race", "Human"],
@@ -95,7 +95,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Sigrun",
     note: "Champion of the holds. She cuts her wards into her own arms.",
     pitch: "Her ward turns one blow. She has to choose which.",
-    lastLine: "One more stroke and that rune would have held.",
+    lastLine: "I chose wrong.",
     lead: "Sigrun is the champion of the dwarven holds, a runesmith who carves her wards into her own forearms.",
     facts: [
       ["Race", "Dwarf"],
@@ -205,7 +205,7 @@ export const CHARACTERS: readonly Character[] = [
     name: "Oskar",
     note: "Kessa guide. The only one who has walked into the ice and back.",
     pitch: "He believed the songs.",
-    lastLine: "I never got to change the end of the song.",
+    lastLine: "The song never said who won.",
     lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked into the ice and come back.",
     facts: [
       ["Race", "Beastkin, bear-blooded"],
@@ -363,7 +363,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
         ],
         [
           "Skills",
-          "A first skill comes at a moment of need. Every skill box names where it came from: [Source: practice], [Source: bloodline], [Source: rune]. No box in recorded history has said [Source: unknown].",
+          "A first skill comes at a moment of need. Every skill box names where it came from: [Source: need], [Source: practice], [Source: bloodline], [Source: rune]. No box in recorded history has said [Source: unknown].",
         ],
         ["What it never does", "It has never told anyone what to do, or talked like a game."],
         [
@@ -614,6 +614,14 @@ export const END = {
   placeholder: "A farm boy, a dragon, and nine days north…",
   start: "Start writing →",
 } as const;
+
+/** The System's status windows at the campfire, one over each of the four, before the turn. */
+export const SHEETS: Record<CharacterKey, readonly string[]> = {
+  tam: ["Tam", "Human · Level 58", "[Spark]", "[Source: need]"],
+  sigrun: ["Sigrun", "Dwarf · Level 74", "[Ward Rune]", "[Source: rune]"],
+  maren: ["Maren", "Elf · Level 70", "[Mending Hymn]", "[Source: practice]"],
+  oskar: ["Oskar", "Beastkin · Level 66", "[Sense Fear]", "[Source: bloodline]"],
+};
 
 /** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
 export const SYSTEM = {
