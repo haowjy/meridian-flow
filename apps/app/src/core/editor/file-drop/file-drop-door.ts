@@ -96,6 +96,8 @@ function chipFor(editor: Editor, name: string, documentId: string, scheme: strin
   });
 }
 
+type Started = { ok: true; send: UploadRun } | { ok: false; reason: unknown };
+
 /**
  * Text up to the text cap becomes an editable document, not a stored file, and the chip links to
  * it. The writer dropped a file and may expect a file: say what it became once the server has read
@@ -136,19 +138,19 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
   editor.on("transaction", follow);
 
   /** Chips waiting for the next picture or the end of the drop, so a run of them is one edit. */
-  let run: Array<{ file: File; documentId: string; sending: Promise<UploadRun> }> = [];
+  let run: Array<{ file: File; documentId: string; started: Promise<Started> }> = [];
 
   const flush = async () => {
     const entries = run;
     run = [];
     if (entries.length === 0 || !host) return;
-    const outcomes = await Promise.allSettled(entries.map(({ sending }) => sending));
+    const outcomes = await Promise.all(entries.map(({ started }) => started));
     if (editor.isDestroyed) return;
     const ready: Array<{ node: PMNode; documentId: string; send: UploadRun; file: File }> = [];
     outcomes.forEach((outcome, index) => {
       const entry = entries[index];
       if (!entry) return;
-      if (outcome.status === "rejected") {
+      if (!outcome.ok) {
         status?.refuse(
           outcome.reason instanceof Error ? outcome.reason.message : t`The upload didn’t start.`,
         );
@@ -156,7 +158,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       }
       const node = chipFor(editor, entry.file.name, entry.documentId, host.scheme);
       if (node)
-        ready.push({ node, documentId: entry.documentId, send: outcome.value, file: entry.file });
+        ready.push({ node, documentId: entry.documentId, send: outcome.send, file: entry.file });
     });
     if (ready.length === 0) return;
     const placed = placeNodes(
@@ -193,10 +195,13 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
         continue;
       }
       const documentId = crypto.randomUUID();
-      const sending = host.start({ documentId, file });
-      // Handled when the run is flushed; until then a refusal is not an unhandled rejection.
-      sending.catch(() => {});
-      run.push({ file, documentId, sending });
+      // Settled either way, so a refusal that lands while an earlier run is flushing is no
+      // unhandled rejection.
+      const started = host.start({ documentId, file }).then(
+        (send): Started => ({ ok: true, send }),
+        (reason: unknown): Started => ({ ok: false, reason }),
+      );
+      run.push({ file, documentId, started });
     }
     await flush();
   } finally {

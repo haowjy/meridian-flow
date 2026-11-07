@@ -4,7 +4,7 @@ import type { ContextSourceId } from "@meridian/contracts";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { type Filetype, firstFreeName, type UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, projects, threads, uploadIntakes } from "@meridian/database/schema";
+import { projects, threads, uploadIntakes } from "@meridian/database/schema";
 import { and, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
@@ -185,14 +185,11 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         // A source upload's id is the client's: the link to the file stands before the file does.
         // An id a document already holds would make that link name someone else's file.
         const documentId = requester.kind === "source" ? input.intakeId : crypto.randomUUID();
-        if (requester.kind === "source") {
-          const [held] = await activeDb
-            .select({ id: documents.id })
-            .from(documents)
-            .where(eq(documents.id, documentId as never))
-            .limit(1);
-          if (held) return { kind: "conflict" };
-        }
+        if (
+          requester.kind === "source" &&
+          (await createTreeReader(db).projectOfDocument(documentId as never))
+        )
+          return { kind: "conflict" };
         const [created] = await activeDb
           .insert(uploadIntakes)
           .values({

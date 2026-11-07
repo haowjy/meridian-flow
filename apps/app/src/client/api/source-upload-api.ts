@@ -60,10 +60,9 @@ export async function uploadSourceFile(
   },
 ): Promise<UploadIntakeResult> {
   let first: UploadStart | null = target.started;
-  const keepAlive = setInterval(
-    () => void startSourceUpload(target).catch(() => {}),
-    KEEP_ALIVE_MS,
-  );
+  // slop-lint: allow swallowed-error a missed refresh only lets the chip read gone in other tabs until the next one
+  const refresh = () => void startSourceUpload(target).catch(() => {});
+  const keepAlive = setInterval(refresh, KEEP_ALIVE_MS);
   try {
     return await uploadFileDirect({
       file: target.file,
