@@ -71,5 +71,5 @@ it("rejects a committed address different from the reservation", async () => {
       hasPreview: false,
       keptAsFile: false,
     }),
-  ).toEqual({ ok: false });
+  ).toEqual({ ok: false, conflict: false });
 });
