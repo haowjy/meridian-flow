@@ -18,10 +18,10 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "tam",
     name: "Tam",
-    note: "Mill boy from Harl. Accused of burning the town’s grain. Says he didn’t.",
+    note: "Mill hand from Harl. Accused of burning the town’s grain. Says he didn’t.",
     pitch: "He still has to prove he didn’t do it.",
     facts: [
-      ["Age", "16"],
+      ["Age", "20"],
       ["From", "Harl, a river town in the south"],
       ["Trade", "Miller’s apprentice"],
       ["Sent by", "The magistrate of Harl"],
