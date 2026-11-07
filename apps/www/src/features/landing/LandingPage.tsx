@@ -1,16 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { bindStoryChoice, createCardStore } from "./card-store";
-import { AUTOPLAY_MINUTES, startFilm } from "./film";
+import { startFilm } from "./film";
 import { createProductSlot, ProductPlaceholder } from "./ProductPlaceholder";
 import { QuestionCard } from "./QuestionCard";
+import { AUTOPLAY_MINUTES, SECTIONS } from "./timeline";
 
 const NIGHT = { "data-ui-theme": "dark" } as const;
-const SECTIONS = [
-  ["#the-world", "World"],
-  ["#the-team", "AI Team"],
-  ["#your-decisions", "Your decisions"],
-  ["#the-workspace", "Workspace"],
-] as const;
 
 export function LandingPage({ appOrigin }: { appOrigin: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -45,7 +40,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 Build a world.<span>Bring it to life with a team of agents.</span>
               </h1>
               <p className="plain">An AI writing app for Royal Road and web serial writers.</p>
-              <button type="button" className="play" data-play data-big>
+              <button type="button" className="play" data-play>
                 <PlayIcon />
                 <span>Play the story</span>
                 <small>{AUTOPLAY_MINUTES} min</small>
@@ -243,8 +238,8 @@ function TopBar({ signInUrl, startUrl }: { signInUrl: string; startUrl: string }
         </a>
         <PlayControl />
         <nav className="jumps" aria-label="Sections">
-          {SECTIONS.map(([href, label]) => (
-            <a key={href} href={href}>
+          {SECTIONS.map(({ hash, label }) => (
+            <a key={hash} href={hash}>
               {label}
             </a>
           ))}
@@ -276,8 +271,8 @@ function TopBar({ signInUrl, startUrl }: { signInUrl: string; startUrl: string }
         </button>
       </div>
       <nav className="menu jumps" id="menu" aria-label="Sections, phone" hidden={!menuOpen}>
-        {SECTIONS.map(([href, label]) => (
-          <a key={href} href={href} onClick={() => setMenuOpen(false)}>
+        {SECTIONS.map(({ hash, label }) => (
+          <a key={hash} href={hash} onClick={() => setMenuOpen(false)}>
             {label}
           </a>
         ))}

@@ -118,7 +118,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
   });
   let uniforms = gl ? connect(gl) : null;
   let resolution = 0.8;
-  let onRestored = () => {};
+  let lastDraw: [SkyFrame, number] | null = null;
 
   // A phone can discard a background tab's context. Without preventDefault it never returns.
   canvas.addEventListener(
@@ -135,7 +135,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
       if (!gl) return;
       uniforms = connect(gl);
       gl.viewport(0, 0, canvas.width, canvas.height);
-      onRestored();
+      if (lastDraw) draw(...lastDraw);
     },
     { signal },
   );
@@ -151,25 +151,24 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     gl.viewport(0, 0, width, height);
   };
 
+  const draw = (frame: SkyFrame, time: number) => {
+    lastDraw = [frame, time];
+    if (!gl || !uniforms) return;
+    gl.uniform2f(uniforms.size, canvas.width, canvas.height);
+    gl.uniform2f(uniforms.lamp, frame.lampX, frame.lampY);
+    gl.uniform1f(uniforms.time, time);
+    for (const [location, key] of uniforms.floats) gl.uniform1f(location, frame[key]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+
   return {
     resize,
+    draw,
     /** Called when frames run slow: the sky stays smooth by drawing fewer pixels. */
     lowerResolution() {
       if (resolution <= 0.45) return;
       resolution = Math.max(0.45, resolution - 0.1);
       resize();
-    },
-    /** For a static sky, which has no next frame to redraw it. */
-    onRestored(callback: () => void) {
-      onRestored = callback;
-    },
-    draw(frame: SkyFrame, time: number) {
-      if (!gl || !uniforms) return;
-      gl.uniform2f(uniforms.size, canvas.width, canvas.height);
-      gl.uniform2f(uniforms.lamp, frame.lampX, frame.lampY);
-      gl.uniform1f(uniforms.time, time);
-      for (const [location, key] of uniforms.floats) gl.uniform1f(location, frame[key]);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
   };
 }

@@ -4,11 +4,7 @@ import { QUESTIONS } from "./story";
 
 /** Same parts as the app's question card. It stays HTML because the visitor really presses it. */
 export function QuestionCard({ store }: { store: CardStore }) {
-  const { step, answers } = useSyncExternalStore(
-    store.subscribe,
-    store.getState,
-    store.getInitialState,
-  );
+  const { step, answers } = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const question = QUESTIONS[step];
   const answer = answers[step];
   const isLast = step === QUESTIONS.length - 1;

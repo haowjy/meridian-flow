@@ -12,6 +12,7 @@
 @import '@fontsource/im-fell-double-pica/400-italic.css';
 @import '@fontsource-variable/hanken-grotesk/wght.css';
 @import './landing.css';
+@import '../features/landing/product-placeholder.css';
 
 @layer base {
   :root {
