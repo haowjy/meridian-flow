@@ -624,28 +624,28 @@ export type Sheet = {
 export const SHEETS: Record<CharacterKey, Sheet> = {
   tam: {
     name: "Tam",
-    kind: "Human, level 58",
+    kind: "Human, Level 58",
     who: "A farm boy from Harl, sent north by the king. The strongest human his age ever recorded.",
     skill: "[Spark]",
     does: "Sets fire to what you touch or throw. Will not catch in deep cold.",
   },
   sigrun: {
     name: "Sigrun",
-    kind: "Dwarf, level 74",
+    kind: "Dwarf, Level 74",
     who: "Champion of the dwarven holds for forty years. She cuts her wards into her own arms.",
     skill: "[Ward Rune]",
     does: "Each rune cut into your skin turns one blow, then goes dark.",
   },
   maren: {
     name: "Maren",
-    kind: "Elf, level 70",
+    kind: "Elf, Level 70",
     who: "Healer to the queen of Vell for nine hundred years. Blind since she was six.",
     skill: "[Mending Hymn]",
     does: "While you sing, wounds near you close.",
   },
   oskar: {
     name: "Oskar",
-    kind: "Beastkin, level 66",
+    kind: "Beastkin, Level 66",
     who: "A bear-blooded guide from the Kessa steppe, and the only one who has walked into the ice and back.",
     skill: "[Sense Fear]",
     does: "Hear a creature’s fear a breath before it moves.",
