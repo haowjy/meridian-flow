@@ -17,11 +17,6 @@ combines the app and server. Portless dev keeps services on separate
 
 Reference ingress config: [`nginx.same-origin.example.conf`](./nginx.same-origin.example.conf).
 
-Chat attaches stream through the server, up to 200 MiB per file. The ingress
-must pass a body that size, forward it without buffering, and allow an hour for a
-slow uplink; the server raises Node's own 300 s request timeout to match
-(`apps/server/server/plugins/request-timeout.ts`).
-
 ## Build and start commands
 
 ```bash
