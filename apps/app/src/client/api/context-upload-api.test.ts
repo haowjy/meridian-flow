@@ -1,7 +1,7 @@
 /** Upload failures preserve their structured API identity through the intake adapter. */
 import { afterEach, expect, it, vi } from "vitest";
+import { chatUploadPort } from "./context-upload-api";
 import { MeridianApiError } from "./meridian-error";
-import { uploadIntakePort } from "./upload-intake-api";
 
 afterEach(() => vi.unstubAllGlobals());
 it("decodes the structured upload error response", async () => {
@@ -23,10 +23,11 @@ it("decodes the structured upload error response", async () => {
         headers: { "content-type": "application/json" },
       }),
   );
-  const result = uploadIntakePort.intake({
+  const result = chatUploadPort.intake({
     file: new File(["words"], "draft.txt"),
     intakeId: "intake",
     scope: { kind: "chat", projectId: "deleted", chatId: "chat" },
+    signal: new AbortController().signal,
   });
   await expect(result).rejects.toBeInstanceOf(MeridianApiError);
   await expect(result).rejects.toMatchObject({

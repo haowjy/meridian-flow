@@ -5,10 +5,11 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Stats } from "node:fs";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import {
   copyFile,
   mkdir,
+  open,
   readdir,
   readFile,
   rename,
@@ -18,14 +19,18 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import type { Readable } from "node:stream";
+import { type Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreCopyOutput,
   ObjectStoreErrorCode,
   ObjectStoreGetOptions,
+  ObjectStoreHead,
   ObjectStorePort,
   ObjectStoreResult,
+  ObjectStoreSignedPut,
+  ObjectStoreSignedPutOptions,
   ObjectStoreSignedUrlOptions,
   ObjectStoreStreamOutput,
 } from "../../ports/object-store.js";
@@ -54,11 +59,16 @@ export interface LocalSignedObject {
   stream: Readable;
 }
 
+/** A signed URL names one operation. A token with no `op` is a read. */
 interface SignedPayload {
   key: string;
   exp: number;
   /** `Content-Disposition` signed with the URL, so a link can't be re-pointed at another name. */
   cd?: string;
+  op?: "put";
+  /** The length and type a PUT must carry, as on an S3 signature. */
+  size?: number;
+  mime?: string;
 }
 
 /** Local stand-in for a bucket lifecycle rule: temp files older than this are crash leftovers. */
@@ -101,6 +111,9 @@ function decodePayload(encoded: string): SignedPayload | null {
       key: parsed.key,
       exp: parsed.exp,
       ...(typeof parsed.cd === "string" ? { cd: parsed.cd } : {}),
+      ...(parsed.op === "put" && typeof parsed.size === "number" && typeof parsed.mime === "string"
+        ? { op: "put" as const, size: parsed.size, mime: parsed.mime }
+        : {}),
     };
   } catch {
     return null;
@@ -232,6 +245,95 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     }
   }
 
+  async readHead(key: string, headBytes: number): Promise<ObjectStoreResult<ObjectStoreHead>> {
+    const target = this.objectPath(key);
+    if (!target.ok) return target;
+
+    try {
+      const file = await open(target.value, "r");
+      try {
+        const { size } = await file.stat();
+        const head = Buffer.alloc(Math.min(headBytes, size));
+        const { bytesRead } = await file.read(head, 0, head.length, 0);
+        return ok({ head: new Uint8Array(head.subarray(0, bytesRead)), sizeBytes: size });
+      } finally {
+        await file.close();
+      }
+    } catch (error) {
+      return isMissingFile(error)
+        ? err("not_found", "Object not found")
+        : ioError(error, "Failed to read object");
+    }
+  }
+
+  async signPut(
+    key: string,
+    options: ObjectStoreSignedPutOptions,
+  ): Promise<ObjectStoreResult<ObjectStoreSignedPut>> {
+    const target = this.objectPath(key);
+    if (!target.ok) return target;
+
+    const exp = Math.floor(this.now().getTime() / 1000) + this.signedUrlTtlSeconds;
+    const payload = encodePayload({
+      key,
+      exp,
+      op: "put",
+      size: options.sizeBytes,
+      mime: options.mimeType,
+    });
+    return ok({
+      url: `${this.signedUrlBasePath}/${payload}.${this.sign(payload)}`,
+      headers: { "Content-Type": options.mimeType },
+    });
+  }
+
+  /**
+   * Stores the body of a PUT to a `signPut` URL. The body is destroyed on every outcome, so the
+   * caller owes it nothing. A wrong length or type, an expired token or a token that is not a PUT
+   * stores nothing; a right one replaces any object at the key, as an S3 PUT does.
+   */
+  async writeSignedToken(
+    token: string,
+    request: { body: Readable; contentLength: number | null; contentType: string | null },
+  ): Promise<ObjectStoreResult<void>> {
+    const refuse = (error: ObjectStoreResult<never>) => {
+      request.body.destroy();
+      return error;
+    };
+    const payload = this.verify(token);
+    if (!payload.ok) return refuse(payload);
+    const { key, op, size, mime } = payload.value;
+    if (op !== "put" || size === undefined) return refuse(err("invalid_key", "Not a PUT URL"));
+    if (request.contentLength !== size || request.contentType !== mime)
+      return refuse(err("invalid_key", "The PUT's length or type is not the one signed"));
+    const target = this.objectPath(key);
+    if (!target.ok) return refuse(target);
+
+    const tempData = await this.tempPath();
+    try {
+      let received = 0;
+      const counter = new Transform({
+        transform(chunk: Buffer, _encoding, done) {
+          received += chunk.length;
+          done(received > size ? new Error("body is longer than signed") : null, chunk);
+        },
+      });
+      await pipeline(request.body, counter, createWriteStream(tempData));
+      if (received !== size) throw new Error("body is shorter than signed");
+      await this.commit(tempData, target.value, {
+        key,
+        mimeType: mime ?? "application/octet-stream",
+        sizeBytes: size,
+        updatedAt: this.now().toISOString(),
+      });
+      return ok(undefined);
+    } catch (error) {
+      request.body.destroy();
+      await rm(tempData, { force: true });
+      return ioError(error, "Failed to write object");
+    }
+  }
+
   async list(
     prefix: string,
     options?: { cursor?: string; limit?: number },
@@ -340,6 +442,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
   async readSignedToken(token: string): Promise<ObjectStoreResult<LocalSignedObject>> {
     const payload = this.verify(token);
     if (!payload.ok) return payload;
+    if (payload.value.op) return err("invalid_key", "Signed URL is not a read URL");
 
     const target = this.objectPath(payload.value.key);
     if (!target.ok) return target;

@@ -32,6 +32,7 @@ if (typeof globalThis.ClipboardEvent === "undefined") {
   Object.defineProperty(globalThis, "ClipboardEvent", { value: StubClipboardEvent });
 }
 
+import { uploads } from "@/core/uploads/upload-store";
 import type { ImageUploadPort, UploadedImage } from "./image-ingress-ports";
 import {
   imageIngressStatus,
@@ -57,6 +58,14 @@ import type { PendingImage } from "./pending-images";
  */
 function pendingImages(editor: Editor | null): readonly PendingImage[] {
   return Array.from(ingressState(editor).pending.values());
+}
+
+/** Each pending picture with how its upload stands, which the upload store holds. */
+function pendingUploads(editor: Editor | null) {
+  return pendingImages(editor).map((entry) => ({
+    filename: entry.filename,
+    status: uploads.read(entry.id),
+  }));
 }
 
 type HeldUpload = {
@@ -202,7 +211,7 @@ function slotStatus(editor: Editor, pos: number): string | null {
 
 /** What this client is announcing on the ephemeral channel: tokens and shapes. */
 function announced(awareness: { getLocalState: () => Record<string, unknown> | null }) {
-  return (awareness.getLocalState()?.imageUploads ?? []) as readonly {
+  return (awareness.getLocalState()?.uploads ?? []) as readonly {
     token: string;
     frame: { width: number; height: number } | null;
   }[];
@@ -218,7 +227,7 @@ describe("a picture in flight occupies its final slot", () => {
     held[0].progress(42);
     await settle();
 
-    expect(pendingImages(editor)).toMatchObject([{ status: { kind: "uploading", percent: 42 } }]);
+    expect(pendingUploads(editor)).toMatchObject([{ status: { kind: "uploading", percent: 42 } }]);
     expect(editor.state.doc.toJSON()).toEqual(beforeProgress);
   });
 
@@ -231,14 +240,14 @@ describe("a picture in flight occupies its final slot", () => {
     await settle();
 
     expect(imageNodes(editor)).toEqual([{ pos: 5, src: "", alt: "cover art" }]);
-    expect(pendingImages(editor)).toMatchObject([
+    expect(pendingUploads(editor)).toMatchObject([
       { status: { kind: "failed", message: "The connection dropped." } },
     ]);
 
     retryPendingImage(editor, 5);
     await settle();
     expect(held).toHaveLength(2);
-    expect(pendingImages(editor)).toMatchObject([{ status: { kind: "uploading" } }]);
+    expect(pendingUploads(editor)).toMatchObject([{ status: { kind: "uploading" } }]);
   });
 
   it("survives a peer's write, which replaces the whole document", async () => {
@@ -296,7 +305,7 @@ describe("two pictures arriving together are two lifecycles", () => {
     held[1].fail(new Error("second.png was refused."));
     await settle();
 
-    expect(pendingImages(editor)).toMatchObject([
+    expect(pendingUploads(editor)).toMatchObject([
       { filename: "first.png", status: { kind: "uploading", percent: 70 } },
       { filename: "second.png", status: { kind: "failed", message: "second.png was refused." } },
     ]);

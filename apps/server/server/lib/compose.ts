@@ -657,15 +657,10 @@ export async function createProductionAppPorts(input: {
     catalog: contextCatalog,
   });
   const uploadIdentity = createDrizzleUploadIdentityPort(db);
-  // Upload creates the asset as a context document, so the service needs the
-  // context ports.
   const figureAssets = createFigureAssetService({
     objectStore,
-    release: objectRelease,
     documents: createDrizzleFigureDocumentRepository({ db }),
-    contextPorts,
     signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    eventSink,
   });
   await seedGeneralAgent(agentRevisions, defaultModel);
   await seedLaunchAgentPackage(agentRevisions);
@@ -1869,8 +1864,14 @@ export function createInMemoryAppServices(): AppServices {
     objectStore: createInMemoryObjectStore(),
     localObjectStore: null,
     uploadIntake: {
-      async intake() {
+      async start() {
         throw new Error("in-memory upload intake is not implemented");
+      },
+      async finish() {
+        throw new Error("in-memory upload intake is not implemented");
+      },
+      async sweepAbandoned() {
+        return 0;
       },
       async deleteDraft() {
         return { kind: "identity_mismatch" };
@@ -1889,9 +1890,6 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     figureAssets: {
-      async uploadFigure() {
-        throw new Error("in-memory figure assets are not implemented");
-      },
       async getSignedFigureUrl() {
         throw new Error("in-memory figure assets are not implemented");
       },

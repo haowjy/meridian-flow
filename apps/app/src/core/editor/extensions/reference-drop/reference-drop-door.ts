@@ -13,6 +13,7 @@ import { yUndoPluginKey } from "@tiptap/y-tiptap";
 
 import type { DropDoor, DropPlan } from "../../landing/drop-plan";
 import { snapOutOfCode, snapOutOfIdentityLink, snapToWordEdge } from "../../landing/inline-snap";
+import type { Landing } from "../../landing/point-landing";
 
 export type ReferenceDropEntry = Readonly<{
   ref: Readonly<{ kind: "file" | "folder"; id: string }>;
@@ -40,35 +41,47 @@ export function referenceDropDoor(options: ReferenceDropOptions): DropDoor {
       const nodes = options.content(view.state.schema, entries);
       if (!nodes || nodes.length !== entries.length) return refuse("unavailable");
       if (landing.kind === "source") return refuse("code");
-
-      const hint = options.label("accept");
-      if (landing.kind === "seam") {
-        const paragraph = view.state.schema.nodes.paragraph;
-        const content = Fragment.fromArray(separated(view, nodes));
-        if (!paragraph?.validContent(content)) return refuse("unavailable");
-        const block = paragraph.create(null, content);
-        return {
-          kind: "accept",
-          pos: landing.pos,
-          hint,
-          effect: "copy",
-          commit: (target) => insert(target, landing.pos, block, (end) => end - 1),
-        };
-      }
-
-      const { doc } = view.state;
-      const pos = snapToWordEdge(doc, snapOutOfIdentityLink(doc, snapOutOfCode(doc, landing.pos)));
-      const content = spaced(view, pos, nodes);
-      if (!content) return refuse("unavailable");
+      const placed = placeNodes(view, landing, nodes);
+      if (!placed) return refuse("unavailable");
       return {
         kind: "accept",
-        pos,
-        hint,
+        pos: placed.pos,
+        hint: options.label("accept"),
         effect: "copy",
-        commit: (target) => insert(target, pos, content, (end) => end),
+        commit: placed.commit,
       };
     },
   };
+}
+
+/** Where inline nodes land at a landing, and how: one undo step, the caret after them. */
+export type NodePlacement = { pos: number; commit(view: EditorView): void };
+
+/**
+ * Inline nodes at a landing: in a paragraph of their own at a seam, beside (never inside) a
+ * word, a chip or a code span in text. Null where this content cannot stand there. The one
+ * placement for everything dropped as chips: rows, and files.
+ */
+export function placeNodes(
+  view: EditorView,
+  landing: Exclude<Landing, { kind: "source" }>,
+  nodes: readonly PMNode[],
+): NodePlacement | null {
+  if (landing.kind === "seam") {
+    const paragraph = view.state.schema.nodes.paragraph;
+    const content = Fragment.fromArray(separated(view, nodes));
+    if (!paragraph?.validContent(content)) return null;
+    const block = paragraph.create(null, content);
+    return {
+      pos: landing.pos,
+      commit: (target) => insert(target, landing.pos, block, (end) => end - 1),
+    };
+  }
+  const { doc } = view.state;
+  const pos = snapToWordEdge(doc, snapOutOfIdentityLink(doc, snapOutOfCode(doc, landing.pos)));
+  const content = spaced(view, pos, nodes);
+  if (!content) return null;
+  return { pos, commit: (target) => insert(target, pos, content, (end) => end) };
 }
 
 function separated(view: EditorView, nodes: readonly PMNode[]): PMNode[] {
@@ -104,7 +117,9 @@ function insert(
   const transaction = closeHistory(view.state.tr).insert(pos, content);
   const end = transaction.mapping.map(pos, 1);
   transaction.setSelection(TextSelection.create(transaction.doc, caretFrom(end)));
-  transaction.setMeta("uiEvent", "drop");
+  // A chip named like a host ("notes.zip", "a.io") is a link already. Neither autolink nor the
+  // paste rules a `uiEvent: "drop"` would wake may turn it into a website.
+  transaction.setMeta("preventAutolink", true);
   view.dispatch(transaction.scrollIntoView());
   yUndoPluginKey.getState(view.state)?.undoManager.stopCapturing();
   view.dispatch(closeHistory(view.state.tr));

@@ -4,8 +4,11 @@ import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
   ObjectStoreCopyOutput,
   ObjectStoreGetOptions,
+  ObjectStoreHead,
   ObjectStorePort,
   ObjectStoreResult,
+  ObjectStoreSignedPut,
+  ObjectStoreSignedPutOptions,
   ObjectStoreStreamOutput,
 } from "../../ports/object-store.js";
 
@@ -63,6 +66,23 @@ export class InMemoryObjectStoreAdapter implements ObjectStorePort {
       storageUrl: createObjectStorageUrl(toKey),
       mimeType: stored.mimeType,
       sizeBytes: stored.bytes.byteLength,
+    });
+  }
+
+  async readHead(key: string, headBytes: number): Promise<ObjectStoreResult<ObjectStoreHead>> {
+    const stored = this.objects.get(key);
+    if (!stored) return notFound();
+    return ok({ head: stored.bytes.slice(0, headBytes), sizeBytes: stored.bytes.byteLength });
+  }
+
+  /** Tests stand in for the browser with `put` at `key`. */
+  async signPut(
+    key: string,
+    options: ObjectStoreSignedPutOptions,
+  ): Promise<ObjectStoreResult<ObjectStoreSignedPut>> {
+    return ok({
+      url: `/memory-object-store/${encodeURIComponent(key)}`,
+      headers: { "Content-Type": options.mimeType },
     });
   }
 

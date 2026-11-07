@@ -56,13 +56,13 @@ export function ImageIngressOverlay({ editor }: { editor: Editor }) {
         <div className="meridian-editor-drop-overlay" aria-hidden>
           <UploadCloud className="size-8" />
           <span>
-            <Trans>Drop image to insert it</Trans>
+            <Trans>Drop to insert</Trans>
           </span>
         </div>
       ) : null}
       {status.notice ? (
         <div className="meridian-image-refusal">
-          <EditorNoticePill notice={{ tone: "failed", message: status.notice.message }} />
+          <EditorNoticePill notice={{ tone: status.notice.tone, message: status.notice.message }} />
         </div>
       ) : null}
     </>,

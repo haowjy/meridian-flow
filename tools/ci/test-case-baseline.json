@@ -1,9 +1,9 @@
 {
   "files": {
     "apps/app/dev/api-http-dev-proxy-plugin.test.ts": 3,
+    "apps/app/src/client/api/context-upload-api.test.ts": 1,
     "apps/app/src/client/api/figures-api.test.ts": 1,
     "apps/app/src/client/api/http-client.test.ts": 3,
-    "apps/app/src/client/api/upload-intake-api.test.ts": 1,
     "apps/app/src/client/chat-submissions/awaiting-creation.test.tsx": 2,
     "apps/app/src/client/chat-submissions/deleted-chat.test.ts": 17,
     "apps/app/src/client/chat-submissions/driver.test.ts": 22,
@@ -234,8 +234,8 @@
     "apps/server/server/domains/context/tree/live-surfaces.db.test.ts": 5,
     "apps/server/server/domains/context/tree/tree-view.db.test.ts": 5,
     "apps/server/server/domains/context/uploads/draft-upload-verifier.test.ts": 1,
-    "apps/server/server/domains/context/uploads/upload-intake.db.test.ts": 5,
-    "apps/server/server/domains/context/uploads/upload-intake.test.ts": 5,
+    "apps/server/server/domains/context/uploads/upload-intake.db.test.ts": 12,
+    "apps/server/server/domains/context/uploads/upload-intake.test.ts": 2,
     "apps/server/server/domains/export/domain/project-export.test.ts": 7,
     "apps/server/server/domains/file-intake/image-preview.test.ts": 3,
     "apps/server/server/domains/file-policy/adapters/drizzle-file-facts.db.test.ts": 2,

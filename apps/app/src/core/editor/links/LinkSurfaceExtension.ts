@@ -29,6 +29,8 @@ import {
 } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
+import { uploads } from "@/core/uploads/upload-store";
+
 import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { getEditorChrome, hoverOwner, pastSlop } from "../chrome";
 import { linkClipboardPlugin } from "./link-clipboard";
@@ -94,6 +96,16 @@ export function followLinkFrom(
   disposition: LinkFollowDisposition,
   at: LinkPoint,
 ): LinkFollowResult {
+  // A chip whose file is still on its way up has nothing to open; a failed one is sent again.
+  const pending = parseLinkRef(key.ref);
+  if (pending?.kind === "doc") {
+    const upload = uploads.of(pending.documentId);
+    if (upload?.kind === "failed") {
+      uploads.retry(pending.documentId);
+      return "navigated";
+    }
+    if (upload) return "unavailable";
+  }
   const surface = getLinkSurface(editor);
   const answer = getLinkAnswerCache(editor)?.read(key) ?? null;
   if (!surface || (answer?.state === "gone" && !goneLinkDocumentId(answer, key)))

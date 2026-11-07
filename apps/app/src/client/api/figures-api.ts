@@ -1,19 +1,14 @@
 /**
- * figures-api — HTTP client for figure asset upload and signed-URL retrieval.
+ * figures-api — HTTP client for a picture's signed read URLs.
  *
- * Wraps the project/document figure endpoints, seeds and reads a signed-URL
- * cache, and computes refresh timing. Owns the figure network surface; consumed
- * by the editor's figure node view and upload flow.
+ * Reads a signed-URL cache and fetches a fresh URL when it has expired. Pictures arrive by the
+ * direct upload in `context-upload-api.ts`; this is what draws them.
  */
-import {
-  deserializeTransport,
-  type GetFigureSignedUrlResponse,
-  type UploadFigureAssetResponse,
-} from "@meridian/contracts/protocol";
+import type { GetFigureSignedUrlResponse } from "@meridian/contracts/protocol";
 
 import { signedUrlRefreshDelayMs } from "@/core/editor/images";
 
-import { errorMessageFromPayload, getJson } from "./http-client";
+import { getJson } from "./http-client";
 
 type AssetRouteInput = {
   projectId: string;
@@ -27,21 +22,6 @@ type AssetRouteInput = {
 export function documentDownloadUrl(documentId: string): string {
   return `/api/documents/${encodeURIComponent(documentId)}/download`;
 }
-
-export type UploadFigureInput = {
-  projectId: string;
-  hostDocumentId: string;
-  file: File;
-  alt?: string | null;
-  label?: string | null;
-  caption?: string | null;
-  onProgress?: (progress: { loaded: number; total: number | null; percent: number | null }) => void;
-  /**
-   * Stops the request. A writer who deletes a picture mid-upload has cancelled
-   * it, and the bytes still going up would be paid for by their connection.
-   */
-  signal?: AbortSignal;
-};
 
 export type GetFigureSignedUrlInput = AssetRouteInput & {
   /**
@@ -89,16 +69,6 @@ function getCachedSignedUrl(input: GetFigureSignedUrlInput): GetFigureSignedUrlR
   return signedUrlRefreshDelayMs(cached.signedUrlExpiresAt) > 0 ? cached : null;
 }
 
-export function seedFigureSignedUrlCache(input: {
-  projectId: string;
-  reference: UploadFigureAssetResponse;
-}): void {
-  cacheSignedUrl(
-    { projectId: input.projectId, assetDocumentId: input.reference.assetDocumentId },
-    input.reference,
-  );
-}
-
 export async function getFigureSignedUrl(
   input: GetFigureSignedUrlInput,
 ): Promise<GetFigureSignedUrlResponse> {
@@ -123,73 +93,4 @@ export async function getFigureSignedUrl(
   } finally {
     if (inFlightSignedUrls.get(key) === request) inFlightSignedUrls.delete(key);
   }
-}
-
-function appendOptionalText(form: FormData, name: string, value: string | null | undefined): void {
-  const trimmed = value?.trim();
-  if (trimmed) form.append(name, trimmed);
-}
-
-function parseXhrPayload(xhr: XMLHttpRequest): unknown {
-  if (!xhr.responseText) return null;
-  try {
-    return JSON.parse(xhr.responseText) as unknown;
-  } catch {
-    return xhr.responseText;
-  }
-}
-
-export function uploadFigure(input: UploadFigureInput): Promise<UploadFigureAssetResponse> {
-  const form = new FormData();
-  form.append("file", input.file);
-  appendOptionalText(form, "alt", input.alt);
-  appendOptionalText(form, "label", input.label);
-  appendOptionalText(form, "caption", input.caption);
-
-  // XMLHttpRequest instead of fetch: the Fetch API has no upload-progress
-  // event, so there's no way to report bytes-sent to the caller without
-  // falling back to XHR. This is a known web-platform limitation.
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", figurePath(input.projectId, input.hostDocumentId));
-
-    if (input.signal) {
-      if (input.signal.aborted) {
-        reject(new DOMException("Figure upload was cancelled.", "AbortError"));
-        return;
-      }
-      input.signal.addEventListener("abort", () => xhr.abort(), { once: true });
-    }
-
-    xhr.upload.onprogress = (event) => {
-      const total = event.lengthComputable ? event.total : null;
-      input.onProgress?.({
-        loaded: event.loaded,
-        total,
-        percent: total && total > 0 ? Math.round((event.loaded / total) * 100) : null,
-      });
-    };
-
-    xhr.onerror = () =>
-      reject(new Error("Figure upload failed. Check your connection and try again."));
-    xhr.onabort = () => reject(new DOMException("Figure upload was cancelled.", "AbortError"));
-    xhr.onload = () => {
-      const payload = parseXhrPayload(xhr);
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(errorMessageFromPayload(payload, xhr.status)));
-        return;
-      }
-
-      const reference = deserializeTransport<UploadFigureAssetResponse>(
-        payload as UploadFigureAssetResponse,
-      );
-      seedFigureSignedUrlCache({
-        projectId: input.projectId,
-        reference,
-      });
-      resolve(reference);
-    };
-
-    xhr.send(form);
-  });
 }

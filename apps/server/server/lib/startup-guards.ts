@@ -5,7 +5,12 @@
  */
 import type { ObjectStoreProvider } from "./backend-policy.js";
 
-const DEFAULT_DEV_SECRETS = new Set(["", "dev-workos-key", "dev-workos-client"]);
+const DEFAULT_DEV_SECRETS = new Set([
+  "",
+  "dev-workos-key",
+  "dev-workos-client",
+  "dev-object-store-secret",
+]);
 const WORKOS_TEST_API_KEY_PATTERN = /^sk_test_/i;
 
 const PLACEHOLDER_SECRET_PATTERNS: Partial<Record<keyof ApiStartupEnv, RegExp[]>> = {
@@ -26,6 +31,8 @@ export type ApiStartupEnv = {
   OBJECT_STORE_PROVIDER: ObjectStoreProvider;
   S3_ACCESS_KEY?: string;
   S3_SECRET_KEY?: string;
+  OBJECT_STORE_SIGNING_SECRET?: string;
+  LOCAL_OBJECT_STORE_DIR?: string;
   WORKOS_API_KEY: string;
   WORKOS_CLIENT_ID: string;
   WORKOS_COOKIE_PASSWORD?: string;
@@ -98,6 +105,22 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
   }
 
   if (isProduction) {
+    // The local store's tokens now authorize writes, so a known secret would let anyone forge one.
+    if (config.OBJECT_STORE_PROVIDER === "local")
+      requireRealSecret(
+        errors,
+        "OBJECT_STORE_SIGNING_SECRET",
+        config.OBJECT_STORE_SIGNING_SECRET,
+        "must be set to a private secret in production with OBJECT_STORE_PROVIDER=local.",
+      );
+    // The default directory is the temp dir, which a restart can clear.
+    if (config.OBJECT_STORE_PROVIDER === "local")
+      requireValue(
+        errors,
+        "LOCAL_OBJECT_STORE_DIR",
+        config.LOCAL_OBJECT_STORE_DIR,
+        "must name a persistent directory in production with OBJECT_STORE_PROVIDER=local.",
+      );
     requireRealSecret(
       errors,
       "WORKOS_API_KEY",
@@ -150,6 +173,8 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     OBJECT_STORE_PROVIDER: backends.objectStore,
     S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
     S3_SECRET_KEY: process.env.S3_SECRET_KEY,
+    OBJECT_STORE_SIGNING_SECRET: process.env.OBJECT_STORE_SIGNING_SECRET,
+    LOCAL_OBJECT_STORE_DIR: process.env.LOCAL_OBJECT_STORE_DIR,
     WORKOS_API_KEY: env.WORKOS_API_KEY,
     WORKOS_CLIENT_ID: env.WORKOS_CLIENT_ID,
     WORKOS_COOKIE_PASSWORD: env.WORKOS_COOKIE_PASSWORD,

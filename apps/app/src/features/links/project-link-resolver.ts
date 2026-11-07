@@ -123,7 +123,10 @@ export function createProjectLinkResolver(
         // Rule 4 (an ahead ref not known settled, at its exact address) is
         // the server's to confirm; see `LocalLinkAnswer`.
         const confirmed = resolution.settled || parseLinkRef(ref)?.kind === "doc";
-        if (answer && confirmed) return answered(answer);
+        // A stored file's size is only the server's to say, so a chip for one asks once;
+        // a picture's size is never drawn.
+        const sizeUnknown = answer?.document.file && answer.document.file.fileType !== "image";
+        if (answer && confirmed && !sizeUnknown) return answered(answer);
         provisional = answer;
       }
       return { kind: "ask", provisional };
@@ -168,6 +171,7 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         workId: document.workId,
         rootThreadId: document.rootThreadId ?? undefined,
       });
+      if (found && document.file) found.document.file = document.file;
       // A hidden document is "in a draft": keep the destination the server named.
       return found && answer.inBranch && answer.branch
         ? { ...found, branch: answer.branch }
@@ -220,5 +224,6 @@ function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {
     uri: document.uri,
     workId: document.workId,
     ...(document.rootThreadId ? { rootThreadId: document.rootThreadId } : {}),
+    ...(document.file ? { file: { ...document.file, sizeBytes: null } } : {}),
   };
 }

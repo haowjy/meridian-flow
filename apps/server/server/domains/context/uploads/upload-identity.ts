@@ -4,7 +4,7 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { threads, uploadIntakes } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { LIVE_TREE, visibleDocumentFields, visibleDocuments } from "../tree/tree-view.js";
 
 export interface UploadIdentity {
@@ -46,7 +46,10 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
       .where(
         and(
           inArray(liveDocuments.id, [...ids] as never[]),
-          uploadsOnly ? eq(uploadIntakes.state, "finalized") : undefined,
+          // A source upload is no chat's attachment, so it is not an upload here.
+          uploadsOnly
+            ? and(eq(uploadIntakes.state, "finalized"), isNotNull(uploadIntakes.ownerThreadId))
+            : undefined,
         ),
       );
     return rows.map(
@@ -61,7 +64,7 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
         storageUrl: document.storageUrl,
         hasPreview: document.hasPreview,
         updatedAt: document.updatedAt.toISOString(),
-        uri: intake
+        uri: intake?.finalPath
           ? canonicalContextUri(
               "uploads",
               intake.finalPath,

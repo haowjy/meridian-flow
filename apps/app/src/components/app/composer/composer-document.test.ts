@@ -18,7 +18,7 @@ describe("restorable draft selection", () => {
     doc.content?.[0]?.content?.push(
       ...["a", "b"].map((intakeId) => ({
         type: "composerUpload",
-        attrs: { upload: { intakeId, name: "file", state: "pending", error: null } },
+        attrs: { upload: { intakeId, name: "file" } },
       })),
     );
     const restored = parseRestorableComposerDraft(
