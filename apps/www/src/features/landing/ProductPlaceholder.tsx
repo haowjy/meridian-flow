@@ -12,9 +12,9 @@ import {
   PLACE_PAGES,
   PROLOGUE,
   QUESTION,
-  SPOILERS_PAGE,
   SURVIVED,
   SYSTEM,
+  VOCAB_PAGE,
   type WikiPage,
   WORLD_PAGES,
 } from "./story";
@@ -46,29 +46,29 @@ export function ProductPlaceholder() {
         <RailSection label="Knowledge Base" icon={LIBRARY}>
           <RailFolder name={CHARACTERS_FOLDER}>
             {CHARACTERS.map(({ key, name }) => (
-              <RailDocument key={key} id={`d${key}`} nested>
+              <RailDocument key={key} id={`d${key}`} depth={2}>
                 {name}
               </RailDocument>
             ))}
           </RailFolder>
           <RailFolder name={WORLD_FOLDER}>
-            <RailDocument id="dbeast" rowId="s-beast-row" nested>
+            <RailDocument id="dbeast" rowId="s-beast-row" depth={2}>
               The Beast
             </RailDocument>
             {WORLD_PAGES.map(({ key, name }) => (
-              <RailDocument key={key} id={`d${key}`} nested>
+              <RailDocument key={key} id={`d${key}`} depth={2}>
                 {name}
               </RailDocument>
             ))}
+            <RailFolder name={PLACES_FOLDER} depth={2} closed>
+              {PLACE_PAGES.map(({ key, name }) => (
+                <RailDocument key={key} id={`d${key}`} depth={3}>
+                  {name}
+                </RailDocument>
+              ))}
+            </RailFolder>
           </RailFolder>
-          <RailFolder name={PLACES_FOLDER} closed>
-            {PLACE_PAGES.map(({ key, name }) => (
-              <RailDocument key={key} id={`d${key}`} nested>
-                {name}
-              </RailDocument>
-            ))}
-          </RailFolder>
-          <RailDocument id="dspoilers">{SPOILERS_NAME}</RailDocument>
+          <RailDocument id="dvocab">{VOCAB_NAME}</RailDocument>
         </RailSection>
       </aside>
       <div className="s-pane">
@@ -125,9 +125,9 @@ export function ProductPlaceholder() {
               <PageBody page={page} />
             </article>
           ))}
-          <article className="s-doc" id="dspoilers" data-folder="Knowledge Base" hidden>
-            <div className="name">{SPOILERS_NAME}</div>
-            <PageBody page={SPOILERS_PAGE} />
+          <article className="s-doc" id="dvocab" data-folder="Knowledge Base" hidden>
+            <div className="name">{VOCAB_NAME}</div>
+            <PageBody page={VOCAB_PAGE} />
           </article>
           {PLACE_PAGES.map(({ key, name, page }) => (
             <article className="s-doc" id={`d${key}`} data-folder={PLACES_PATH} hidden key={key}>
@@ -217,8 +217,8 @@ const CHARACTERS_FOLDER = "Characters";
 const WORLD_FOLDER = "World";
 const WORLD_PATH = `Knowledge Base › ${WORLD_FOLDER}`;
 const PLACES_FOLDER = "Places";
-const SPOILERS_NAME = "Spoilers";
-const PLACES_PATH = `Knowledge Base › ${PLACES_FOLDER}`;
+const VOCAB_NAME = "Vocab";
+const PLACES_PATH = `${WORLD_PATH} › ${PLACES_FOLDER}`;
 
 const CHARACTER_NAME = new RegExp(`\\b(${CHARACTERS.map(({ name }) => name).join("|")})\\b`);
 
@@ -280,25 +280,28 @@ function PageBody({ page, statusId }: { page: WikiPage; statusId?: string }) {
   );
 }
 
+/** The app's tree indent: 16px per level below a section head. */
+const indent = (depth: number) => ({ paddingLeft: depth * 16 });
+
 function RailDocument({
   id,
   rowId,
   on,
-  nested,
+  depth = 1,
   children,
 }: {
   id: string;
   rowId?: string;
   on?: boolean;
-  /** Inside a Knowledge Base folder. */
-  nested?: boolean;
+  depth?: number;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       id={rowId}
-      className={`s-n in ${nested ? "deep" : ""} ${on ? "on" : ""}`}
+      className={`s-n in ${on ? "on" : ""}`}
+      style={indent(depth)}
       data-doc={id}
     >
       <span className="s-tw" />
@@ -333,16 +336,18 @@ function RailSection({
 /** A folder the visitor can open and close, as in the app. `closed` folders start shut. */
 function RailFolder({
   name,
+  depth = 1,
   closed,
   children,
 }: {
   name: string;
+  depth?: number;
   closed?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <>
-      <button type="button" className="s-f" aria-expanded={!closed}>
+      <button type="button" className="s-f" style={indent(depth)} aria-expanded={!closed}>
         <Glyph paths={CHEVRON} twistie />
         <Glyph paths={FOLDER} shut />
         <Glyph paths={FOLDER_OPEN} />
