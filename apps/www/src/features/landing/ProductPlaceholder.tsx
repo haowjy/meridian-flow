@@ -90,7 +90,7 @@ export function ProductPlaceholder() {
               </p>
             ))}
             <p className="s-draft">{PROLOGUE.turn}</p>
-            <p className="s-draft sys s-sys">{SYSTEM.tutorial}</p>
+            <p className="s-draft sys s-sys">{SYSTEM.death}</p>
             <p className="s-only-hints">
               <span id="s-typing" />
               <i className="s-car" />
