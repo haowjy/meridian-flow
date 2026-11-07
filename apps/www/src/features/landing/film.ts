@@ -141,8 +141,8 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const revealed = beats.twist >= REVEAL_STARTS;
   // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
   const hurt =
-    smooth(beats.fight, FIGHT.spark.at[1], FIGHT.spark.at[1] + 0.02) *
-    (1 - smooth(beats.fight, FIGHT.spark.at[1] + 0.03, FIGHT.spark.at[1] + 0.09));
+    smooth(beats.fight, FIGHT.spark.eye[1], FIGHT.spark.eye[1] + 0.02) *
+    (1 - smooth(beats.fight, FIGHT.spark.eye[1] + 0.03, FIGHT.spark.eye[1] + 0.09));
   const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
   // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
   const breathing =
@@ -170,13 +170,8 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
       lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
       smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
       breathing * (1 - smooth(beats.twist, 0, 0.3)),
-    // Faint on the walk north, stronger every night, surging with each breath in the fight.
-    plume:
-      (smooth(beats.sky, 0.6, 1) * 0.3 +
-        smooth(beats.write, 0, 1) * 0.25 +
-        smooth(beats.turn, 0, 1) * 0.3 +
-        breathing * 1.6) *
-      (1 - smooth(beats.twist, 0, 0.3)),
+    // Low in the north behind the mountains, the same every night until the box burns.
+    plume: 0.9 * (1 - smooth(beats.twist, 0, 0.3)),
     pulse: Math.max(
       1 - smooth(beats.push, 0, 0.35),
       smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),
