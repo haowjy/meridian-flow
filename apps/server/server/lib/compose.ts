@@ -1629,7 +1629,7 @@ export function createInMemoryAppServices(): AppServices {
       documents: exportDocumentsFrom(documentSync),
       files: createAllowAllFileAccess(),
       objects: {
-        async get() {
+        async getStream() {
           throw new Error("No export objects in memory");
         },
       },
@@ -1873,6 +1873,12 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory object store is not implemented");
       },
       async get() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async getStream() {
+        throw new Error("in-memory object store is not implemented");
+      },
+      async copy() {
         throw new Error("in-memory object store is not implemented");
       },
       async list() {

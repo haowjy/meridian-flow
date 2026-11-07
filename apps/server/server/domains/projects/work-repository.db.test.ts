@@ -1097,6 +1097,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         put: backingStore.put.bind(backingStore),
         putStream: backingStore.putStream.bind(backingStore),
         get: backingStore.get.bind(backingStore),
+        getStream: backingStore.getStream.bind(backingStore),
+        copy: backingStore.copy.bind(backingStore),
         list: backingStore.list.bind(backingStore),
         getSignedUrl: backingStore.getSignedUrl.bind(backingStore),
         async delete() {
