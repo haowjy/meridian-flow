@@ -145,7 +145,7 @@ export const CHARACTERS: readonly Character[] = [
     note: "The queen of Vell’s healer. Blind for a thousand years.",
     pitch: "She has never seen anything. Not even a box.",
     lastLine:
-      "A thousand years blind, and the first thing I ever saw was a box telling me I was done. I’m not.",
+      "I’ve been blind since I was six. The first thing I ever saw was that box, and it said I was finished. I’m not.",
     lead: "Maren has been the queen of Vell’s healer for nine hundred years, and blind since she was six.",
     facts: [
       ["Race", "Elf"],
