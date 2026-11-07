@@ -229,14 +229,22 @@ keyboard, pointer, drop, or draft-recovery answer.
   at the pointer lies in the selection's range; at either end, its x-coordinate
   must also be on the selected side of the caret, so half of the adjacent glyph
   does not count). The space between lines and the blank past a covered line's
-  last word count, but not unselected text after the range, count. The view must
+  last word count; unselected text after the range does not. The view must
   also be focused and editable, with no modifier and a chrome kernel.
   `handleDoubleClick` and `handleTripleClick` claim a
   second or third press there so neither the browser nor ProseMirror widens
   the selection; the claim also records a third press for the no-travel case. The file has two halves:
-  `startGesture` follows the mouse (click or lift; ignores a `mouseup` from any
-  button but the left) and `liftSelection` pumps the drag events, so a block
-  gesture could reuse the first. Past 4px it sends a synthetic
+  `trackPress` (`chrome/track-press.ts`; follows a press, mouse or pointer,
+  and decides click or lift; it ends a `mousedown` on `mouseup` and a
+  `pointerdown` on `pointerup`, treats a `pointermove` with the left bit
+  clear as the release, and swallows the `click` after a lift) and
+  `liftSelection` pumps the drag events. The block gesture uses the same
+  tracker. The tracker's host has two callbacks: `lift` returns the move
+  handler, and `end(how, at)` is the one ending (`click`, `drop` or `cancel`;
+  the `stop` it returns is `end("cancel")`), so tearing the view down mid-drag
+  finishes the lift. A mouse-started press follows any pointer but touch, so a
+  pen lifts too. Past the slop (4px, `Math.hypot`, `pastSlop`, shared with the
+  chrome sweep and link clicks) it sends a synthetic
   `dragstart` (at `view.dom`, positioned at the press, since a fast first move
   may already be off the selection) with a real `DataTransfer`, then every 50ms `dragleave`/`dragenter`
   on a target change and `dragover` (so the caret, the 5s caret timeout and

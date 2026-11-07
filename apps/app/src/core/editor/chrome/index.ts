@@ -65,3 +65,4 @@ export {
   type KeymapScope,
 } from "./keymap";
 export { watchManuscriptLayout } from "./manuscript-layout";
+export { type PressStart, pastSlop, trackPress } from "./track-press";
