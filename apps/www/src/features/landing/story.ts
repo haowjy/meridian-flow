@@ -611,14 +611,13 @@ export const END = {
   start: "Start writing →",
 } as const;
 
-/** A System status window at the campfire. The page renders the "Status" label itself. */
+/** A System status window at the campfire. */
 export type Sheet = {
   name: string;
   kind: string;
   who: string;
   skill: string;
   does: string;
-  status: string;
 };
 
 /** The System's status windows at the campfire, one over each of the four, before the turn. */
@@ -629,7 +628,6 @@ export const SHEETS: Record<CharacterKey, Sheet> = {
     who: "A farm boy from Harl, sent north by the king. The strongest human his age ever recorded.",
     skill: "[Spark]",
     does: "Sets fire to what you touch or throw. Will not catch in deep cold.",
-    status: "Alive",
   },
   sigrun: {
     name: "Sigrun",
@@ -637,7 +635,6 @@ export const SHEETS: Record<CharacterKey, Sheet> = {
     who: "Champion of the dwarven holds for forty years. She cuts her wards into her own arms.",
     skill: "[Ward Rune]",
     does: "Each rune cut into your skin turns one blow, then goes dark.",
-    status: "Alive",
   },
   maren: {
     name: "Maren",
@@ -645,7 +642,6 @@ export const SHEETS: Record<CharacterKey, Sheet> = {
     who: "Healer to the queen of Vell for nine hundred years. Blind since she was six.",
     skill: "[Mending Hymn]",
     does: "While you sing, wounds near you close.",
-    status: "Alive",
   },
   oskar: {
     name: "Oskar",
@@ -653,7 +649,6 @@ export const SHEETS: Record<CharacterKey, Sheet> = {
     who: "A bear-blooded guide from the Kessa steppe, and the only one who has walked into the ice and back.",
     skill: "[Sense Fear]",
     does: "Hear a creature’s fear a breath before it moves.",
-    status: "Alive",
   },
 };
 
