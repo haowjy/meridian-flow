@@ -211,17 +211,32 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
         <section className="end" id="end" {...NIGHT}>
           <form className="book" action={startUrl}>
             <label htmlFor="book">{END.question}</label>
-            <div className="book-row">
-              <input
+            <div className="book-comp">
+              <textarea
                 id="book"
                 name="book"
+                rows={2}
                 placeholder={END.placeholder}
                 spellCheck={false}
                 autoComplete="off"
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing)
+                    return;
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }}
               />
-              <button type="submit" className="go big">
-                {END.start}
-              </button>
+              <div className="book-tools">
+                <span className="book-pill" aria-hidden="true">
+                  Muse
+                </span>
+                <span className="book-pill" aria-hidden="true">
+                  Auto-apply
+                </span>
+                <button type="submit" className="book-send">
+                  {END.start}
+                </button>
+              </div>
             </div>
           </form>
           <footer>Meridian Flow</footer>

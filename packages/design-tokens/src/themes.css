@@ -35,6 +35,10 @@
   --color-diff-removed: oklch(0.72 0.12 27);
 
   --color-border: oklch(0.38 0.014 84);
+  /* Aliases resolve where they're declared: a nested night region must re-point them, or it
+     inherits the light root's values. */
+  --color-composer-surface: var(--color-chat-interactive, var(--color-background));
+  --color-composer-border: var(--color-border);
   --color-border-subtle: oklch(0.335 0.012 84);
   --color-border-focus: oklch(0.55 0.07 175);
   --color-dropdown-focus-indicator: oklch(0.75 0.08 176);
