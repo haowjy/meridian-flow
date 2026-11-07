@@ -12,6 +12,7 @@ export type ExportDocument = {
   extension: string;
   fileType: string;
   storageUrl: string | null;
+  sizeBytes: number | null;
   metadata: unknown;
 };
 export type ExportSourceRoot = Pick<

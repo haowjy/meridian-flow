@@ -140,7 +140,10 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
       );
       const body = response.Body;
       if (!body) return err("not_found", "Object not found");
-      if (options?.maxBytes !== undefined && (response.ContentLength ?? 0) > options.maxBytes) {
+      if (
+        options?.maxBytes !== undefined &&
+        (response.ContentLength ?? Infinity) > options.maxBytes
+      ) {
         // Dropping the body unread abandons the transfer.
         (body as Readable).destroy();
         return err("too_large", "Object is too large to read");
@@ -183,15 +186,16 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     if (!ensured.ok) return ensured;
 
     try {
-      const head = await this.client.send(
-        new HeadObjectCommand({ Bucket: this.bucket, Key: fromKey }),
-      );
       await this.client.send(
         new CopyObjectCommand({
           Bucket: this.bucket,
           Key: toKey,
           CopySource: `${this.bucket}/${fromKey.split("/").map(encodeURIComponent).join("/")}`,
         }),
+      );
+      // Described from the destination: the source can be overwritten between a HEAD and the copy.
+      const head = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: toKey }),
       );
       return ok({
         storageUrl: createObjectStorageUrl(toKey),
