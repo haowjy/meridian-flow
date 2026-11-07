@@ -42,7 +42,7 @@ const BEATS = [
  * Shares of the camp beat: they sit down round the fire, then the System shows the four of them
  * at once, a status window each, before the ninth night.
  */
-export const CAMP = { sits: [0, 0.2], sheets: [0.2, 0.92] } as const;
+export const CAMP = { sits: [0, 0.2], sheets: [0.2, 0.72] } as const;
 /*
  * The story's moments, as shares of their beat. Every number that more than one layer has to
  * agree on is here; a layer keeps only the curves nothing else needs to match.
@@ -155,7 +155,8 @@ export function spanBeats(viewportHeight: number) {
     s1: [spans.open[0], write(0.2)],
     s2: [write(0.24), write(0.7)],
     s3: spans.out,
-    s4: [spans.turn[0] - viewportHeight * 0.3, spans.turn[0] + viewportHeight * 0.1],
+    // Only once the camp's sheets are down, so the two never share the stage.
+    s4: [along(spans, "camp", CAMP.sheets[1]), spans.turn[0] + viewportHeight * 0.15],
   } as Record<string, Span>;
   return { spans, stops, subtitles, length: position };
 }
