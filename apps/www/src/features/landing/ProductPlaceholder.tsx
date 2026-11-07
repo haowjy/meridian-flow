@@ -1,5 +1,5 @@
 import type { CardStore } from "./card-store";
-import { MUSE_REPLY, NEXT_LINE } from "./story";
+import { MUSE_REPLY, NEXT_LINE, QUESTIONS } from "./story";
 
 /**
  * A drawing of the real app, to be replaced by captured footage. The page only
@@ -166,16 +166,14 @@ export function ProductPlaceholder() {
           </div>
         </div>
         <div className="s-take s-only-team">
-          <b>Dell’s scar is on his right hand here. Chapter 9 says left. What’s going on?</b>
-          <div className="s-opt">
-            <b>He is not Dell</b>
-            <span className="s-rec">Recommended</span>
-            <small>Someone took his place. The wrong hand is the first clue.</small>
-          </div>
-          <div className="s-opt">
-            <b>The log is wrong</b>
-            <small>Ise rewrote that volume from memory. Now she has to doubt herself.</small>
-          </div>
+          <b>{QUESTIONS[0].text}</b>
+          {QUESTIONS[0].options.map((option) => (
+            <div className="s-opt" key={option.key}>
+              <b>{option.label}</b>
+              {option.recommended ? <span className="s-rec">Recommended</span> : null}
+              <small>{option.detail}</small>
+            </div>
+          ))}
           <div className="s-foot">
             <span>Skip</span>
             <span>Continues in 4 min</span>
@@ -300,23 +298,28 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
     { signal },
   );
 
+  const followAnswers = () => {
+    const words = MUSE_REPLY[store.whoIsHe()];
+    reply.textContent = words.chat;
+    note.textContent = words.note;
+  };
+  followAnswers();
+  signal.addEventListener("abort", store.subscribe(followAnswers));
+
   return {
     element: slot,
-    set(next: ProductState, progress: number, isPhone: boolean) {
+    set(next: ProductState, progress: number) {
       if (next !== state) {
         state = next;
         held = false;
         slot.dataset.state = next;
         open(next === "hints" ? "d413" : "d412");
-        view(next === "hints" && progress >= 0.3 ? "page" : "chat");
       }
+      // The view only exists on phones: on desktop every pane is on screen.
+      if (!held) view(next === "hints" && progress >= 0.45 ? "page" : "chat");
       if (next !== "hints") return;
       const line = NEXT_LINE[store.whoIsHe()][store.doesSheTell()];
-      const words = MUSE_REPLY[store.whoIsHe()];
       typing.textContent = line.slice(0, Math.round(line.length * progress));
-      reply.textContent = words.chat;
-      note.textContent = words.note;
-      if (isPhone && !held) view(progress < 0.45 ? "chat" : "page");
     },
   };
 }

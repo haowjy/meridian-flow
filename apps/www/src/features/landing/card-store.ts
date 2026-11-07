@@ -3,36 +3,35 @@ import { type AnswerKey, QUESTIONS } from "./story";
 export type CardState = {
   step: number;
   answers: readonly (AnswerKey | null)[];
-  /** Once the visitor touches the card, autoplay stops acting it out. */
-  touched: boolean;
-};
-
-const initialState: CardState = {
-  step: 0,
-  answers: QUESTIONS.map(() => null),
-  touched: false,
 };
 
 /** Owns the visitor's story choice: the card, the prose and the product block all read it. */
 export function createCardStore() {
-  let state = initialState;
+  let state: CardState = { step: 0, answers: QUESTIONS.map(() => null) };
+  // Once the visitor touches the card, autoplay stops acting it out.
+  let touched = false;
   const listeners = new Set<() => void>();
-  let onSend: (() => void) | null = null;
+  const sendListeners = new Set<() => void>();
 
   const update = (next: CardState) => {
     state = next;
     for (const listener of listeners) listener();
   };
 
-  const withAnswer = (key: AnswerKey | null, step: number): readonly (AnswerKey | null)[] =>
+  const withAnswer = (key: AnswerKey | null, step: number) =>
     state.answers.map((answer, index) => (index === step ? key : answer));
+
+  const act = (next: CardState) => {
+    touched = true;
+    update(next);
+  };
 
   const advance = () => {
     if (state.step < QUESTIONS.length - 1) {
-      update({ ...state, step: state.step + 1, touched: true });
+      act({ ...state, step: state.step + 1 });
       return;
     }
-    onSend?.();
+    for (const listener of sendListeners) listener();
   };
 
   return {
@@ -41,30 +40,32 @@ export function createCardStore() {
       return () => listeners.delete(listener);
     },
     getState: () => state,
-    getInitialState: () => initialState,
     choose(key: AnswerKey) {
-      update({ ...state, answers: withAnswer(key, state.step), touched: true });
+      act({ ...state, answers: withAnswer(key, state.step) });
     },
     advance,
     back() {
-      update({ ...state, step: state.step - 1, touched: true });
+      act({ ...state, step: state.step - 1 });
     },
     /** Skip takes the recommended answer, as the product does when its clock runs out. */
     skip() {
       const recommended = QUESTIONS[state.step].options[0].key;
-      update({ ...state, answers: withAnswer(recommended, state.step), touched: true });
+      act({ ...state, answers: withAnswer(recommended, state.step) });
       advance();
     },
     /** Autoplay acting out the card. */
     demonstrate(step: number, key: AnswerKey | null) {
-      if (state.touched) return;
+      if (touched) return;
       if (state.step === step && state.answers[step] === key) return;
-      update({ ...state, step, answers: withAnswer(key, step) });
+      update({ step, answers: withAnswer(key, step) });
     },
     whoIsHe: (): AnswerKey => state.answers[0] ?? "a",
     doesSheTell: (): AnswerKey => state.answers[1] ?? "a",
-    setOnSend(callback: () => void) {
-      onSend = callback;
+    onSend(listener: () => void) {
+      sendListeners.add(listener);
+      return () => {
+        sendListeners.delete(listener);
+      };
     },
   };
 }
