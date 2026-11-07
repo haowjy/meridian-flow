@@ -58,7 +58,7 @@ type Pose = { kind: "walk"; phase: number } | { kind: "fight"; lunge: number } |
 
 /** One of the party, facing right, standing on the bottom of its cell. */
 function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
-  const scale = [0.8, 1, 0.95, 0.92][row];
+  const scale = [0.8, 0.95, 1.12, 0.92][row];
   const x = FIGURE / 2;
   const ground = FIGURE - 6;
   const unit = (FIGURE * scale) / 8;
@@ -133,7 +133,20 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
       pen.stroke();
     }
   }
-  if (row === 1) {
+  if (row === 1 && pose.kind === "fight") {
+    const palm: [number, number] = [shoulderX + unit * 1.8, shoulder - unit * (0.6 + lunge * 1.4)];
+    line(unit * 0.22, [shoulderX, shoulder + unit * 0.2], palm);
+    pen.beginPath();
+    pen.arc(
+      palm[0] + unit * 0.2,
+      palm[1] - unit * 0.1,
+      unit * (0.32 + lunge * 0.26),
+      0,
+      Math.PI * 2,
+    );
+    pen.fill();
+  }
+  if (row === 2) {
     line(unit * 0.26, [headX - unit * 0.4, headY], [x - unit * 1.1, shoulder + unit * 1.3]);
     const grip: [number, number] =
       pose.kind === "fight"
@@ -146,19 +159,6 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
     line(unit * 0.2, [shoulderX, shoulder + unit * 0.2], grip, end);
     pen.beginPath();
     pen.arc(end[0], end[1], unit * 0.7, 0.3, Math.PI + 1.2);
-    pen.fill();
-  }
-  if (row === 2 && pose.kind === "fight") {
-    const palm: [number, number] = [shoulderX + unit * 1.8, shoulder - unit * (0.6 + lunge * 1.4)];
-    line(unit * 0.22, [shoulderX, shoulder + unit * 0.2], palm);
-    pen.beginPath();
-    pen.arc(
-      palm[0] + unit * 0.2,
-      palm[1] - unit * 0.1,
-      unit * (0.32 + lunge * 0.26),
-      0,
-      Math.PI * 2,
-    );
     pen.fill();
   }
   if (row === 3) {
@@ -359,13 +359,16 @@ export function createForest(root: HTMLElement) {
       forest.style.transform = `translate3d(${-drift}px,0,0)`;
       if (shown === 0) return null;
 
-      const size = H * 0.16;
+      // A phone's stage is narrow: the party shrinks with its width, so the dragon and all four fit.
+      const size = Math.min(H * 0.16, W * 0.22);
       const gap = size * 0.5;
       const down = smooth(beats.world, 0, 0.14);
       const leader = lerp(W * CLIFF_X - drift, road, down);
       const feet = lerp(H * CLIFF_TOP, H * GROUND.feet, down);
       // The camp is in the middle of the stage, and its fire stays on the ground as they leave.
       const campX = W * 0.5;
+      // On a phone they take the left of the stage for the fight, and leave the right to the dragon.
+      const standX = campX - (layout.isPhone ? walkOut * W * 0.25 : 0);
       const fireX = campX - (drift - W * walked(spans.camp[1], layout));
       const seated = smooth(beats.camp, ...CAMP.sits);
       const ring = [1.6, 0.6, -0.6, -1.6];
@@ -380,7 +383,9 @@ export function createForest(root: HTMLElement) {
         const joinsAt = lerp(spans.world[0], spans.world[1], JOINS[row]);
         const joined = row === 0 ? 1 : smooth(at, joinsAt, joinsAt + H * 0.5);
         figure.style.opacity = row === 0 || at > joinsAt ? "1" : "0";
-        const slot = lerp(leader - gap * row, campX + ring[row] * gap, seated);
+        // Up from the fire into the order they fight in as they walk onto the shore.
+        const stands = lerp(ring[row], ring[FIGHT.places[row]], walkOut);
+        const slot = lerp(leader - gap * row, standX + stands * gap, seated);
         // In the fight they give ground step by step, which also brings the fight to the middle.
         let x = (row === 0 ? slot : lerp(-W * 0.08, slot, joined)) - backed;
         const wolvesAttack = beats.out > 0 && beats.back <= 0;

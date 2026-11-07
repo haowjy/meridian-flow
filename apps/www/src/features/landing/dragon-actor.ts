@@ -44,7 +44,7 @@ const TURN_RATE = 0.16;
 const MAX_LEAN = 0.7;
 /** Its size on the ground, in shares of the stage's lesser side: it towers over the party. */
 const DESK_STANDING = 0.62;
-const PHONE_STANDING = 1;
+const PHONE_STANDING = 0.85;
 /** How far the burn runs ahead of the mouth, and how far its breath reaches, in stage heights. */
 const FRONT_AHEAD = 0.42;
 const BREATH_REACH = 0.5;
@@ -107,7 +107,7 @@ export function createDragonActor(root: HTMLElement) {
     unit = Math.min(H, W * 0.62);
     // Where it stands on the shore; phones have no room for the party to give ground, so it holds
     // its place there.
-    const fightX = (share: number) => (next.isPhone ? 0.84 : onTheShore(share));
+    const fightX = (share: number) => (next.isPhone ? 0.78 : onTheShore(share));
     // A phone's stage is narrow, so its lesser side is short beside the party: it stands bigger.
     const standing = next.isPhone ? PHONE_STANDING : DESK_STANDING;
     // Stood on the beach: its feet on the sand, whatever its size.
