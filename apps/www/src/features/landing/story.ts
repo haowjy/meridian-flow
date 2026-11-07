@@ -272,7 +272,7 @@ export const DRAGON_PAGE: WikiPage = {
     ["Status", "Alive"],
     ["Tag", "None"],
     ["Level", "Unknown"],
-    ["Range", "An ice basin under the brightest of the Cold Fire"],
+    ["Range", "The shore of a frozen lake under the brightest of the Cold Fire"],
     ["First appears", "Prologue"],
   ],
   sections: [
@@ -518,7 +518,7 @@ export const PLACE_PAGES: readonly { key: string; name: string; page: WikiPage }
         ],
         [
           "The last camp",
-          "The furthest north any clan pitches its tents. Nine days on is the basin where the beast lies.",
+          "The furthest north any clan pitches its tents. Nine days on is the frozen lake where the beast stands.",
         ],
       ],
     },
