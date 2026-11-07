@@ -14,6 +14,7 @@ import {
   smooth,
   TURN,
   TWIST,
+  tilt,
 } from "./timeline";
 
 const WALK_FRAMES = 6;
@@ -378,7 +379,10 @@ export function createForest(root: HTMLElement) {
       treeline.style.visibility = behind ? "" : "hidden";
       const walkOut = smooth(beats.turn, ...TURN.walksOut);
       const road = W * lerp(0.3, 0.62, progress(at, spans.world[0], spans.write[1]));
-      forest.style.transform = `translate3d(${-drift}px,0,0)`;
+      // Looking straight up there is no ground in view: the trees rise as the view tips to the horizon.
+      const sunk = (1 - tilt(beats)) * near.height;
+      forest.style.transform = `translate3d(${-drift}px,${sunk}px,0)`;
+      walkers.style.transform = sunk ? `translate3d(0,${sunk}px,0)` : "";
       if (shown === 0) return null;
 
       // A phone's stage is narrow: the party shrinks with its width, so the dragon and all four fit.
