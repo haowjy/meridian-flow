@@ -211,7 +211,7 @@ export function contextToolError(error: ContextError): ToolErrorOutput {
   return toolError({ code: error.code, message: contextErrorMessage(error), details: error });
 }
 
-// skills:// is model-only, so the shared context parser doesn't name it (D52).
+// skills:// is model-only, so the shared context parser doesn't name it.
 const MODEL_SCHEMES = [...CONTEXT_URI_SCHEMES, SKILLS_URI_ROOT.slice(0, -"://".length)];
 
 export function contextErrorMessage(error: ContextError): string {

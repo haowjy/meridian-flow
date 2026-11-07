@@ -618,7 +618,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   /** The one branches resolver: draft placements read and write through it (§2.3). */
   branches: Branches;
   /**
-   * The Work mutation boundary (decision D17): a branch command locks its branch's Work first
+   * The Work mutation boundary: a branch command locks its branch's Work first
    * and touches the Work's projection after it (§13.2, S3).
    */
   pendingBranch: {

@@ -97,7 +97,7 @@ function blockCount(count: number): string {
 }
 
 /**
- * A finished call's result in brief, for one history line (D48): the status
+ * A finished call's result in brief, for one history line: the status
  * when it isn't plain success, the write handle, `words` (the size of the
  * content the call sent, which only the host has), the draft it changed, what it
  * copied, and a read's block count.
@@ -126,7 +126,7 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
 }
 
 /**
- * The version a write changed, in `read`'s terms (D50): `live`, or `draft
+ * The version a write changed, in `read`'s terms: `live`, or `draft
  * (w3)` for a write held in a named Work's draft; No Work's draft has no
  * handle to name, so it is plain `draft`. Undo and redo name none.
  */

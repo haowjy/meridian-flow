@@ -592,7 +592,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
     async appendBatch(entries, precondition) {
       if (entries.length === 0) return [];
-      // Inside a reply's save the rows join its one transaction (D42) and stay
+      // Inside a reply's save the rows join its one transaction and stay
       // staged until it commits; otherwise this call owns a durable transaction.
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = await enterJournalSeam(
