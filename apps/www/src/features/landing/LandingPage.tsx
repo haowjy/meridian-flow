@@ -117,20 +117,20 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               <Agent
                 letter="C"
                 name="Critic"
-                live="Reading the scene"
-                report="“Beautiful” is doing the work. Leave it alone."
+                live="Reading the climax"
+                report="It’s night, but the sun shows through. Make it stars."
               />
               <Agent
                 letter="W"
                 name="Writer-helper"
-                live="Drafting two shorter endings"
-                report="Both endings are ready. The second stops on the dragon."
+                live="Drafting the four endings"
+                report="Four endings ready, one for each survivor."
               />
               <Agent
                 letter="C"
                 name="Continuity-checker"
-                live="Reading Maren"
-                report="Maren’s page says she’s blind. Here she sees the dragon first."
+                live="Reading Tam"
+                report="Tam’s page says his spark won’t catch in deep cold. Here it takes the dragon’s eye."
                 isKey
               />
             </div>
@@ -140,7 +140,8 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 <b>You</b>Have the team read it.
               </li>
               <li data-b="s4">
-                <b>Muse</b>Fixed Maren: she hears it first. Writing the ending now.
+                <b>Muse</b>Fixed it: Sigrun’s ward warms the air, so the spark catches. Writing the
+                ending now.
               </li>
             </ol>
 

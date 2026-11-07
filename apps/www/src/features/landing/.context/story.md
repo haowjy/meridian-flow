@@ -24,10 +24,10 @@ the sun comes up colder. The four peoples sent armies north first; none came
 back. Then each people sent its strongest, and those four are the party.
 
 On the ninth night they find the beast, and it is a dragon. They hurt it, and
-it kills three of them. As the breath comes down on the last one standing, a
-blue System box opens in front of them, the death box. Its text, "You died.",
-is `SYSTEM.death` in `story.ts`. The beast eats light, so it turns on the box,
-the brightest thing on the ice, and burns it and the survivor. The survivor wakes
+it kills three of them. Over the last one standing, a blue System box opens,
+the death box. Its text, "You died.", is `SYSTEM.death` in `story.ts`. The
+dragon eats light, so it turns to the box, the brightest thing on the ice, and
+breathes on it, burning the box and the survivor. The survivor wakes
 where they stood on the first night of the Cold Fire, with the unique skill
 Rekindle, `[Source: unknown]`.
 
@@ -65,9 +65,9 @@ hasn't picked yet; each ending switches to the survivor's "I".
 | Maren | Elf, Vell, 1,040 | `[Mending Hymn]` | Blind since she was six |
 | Oskar | Beastkin (bear-blooded), the Kessa steppe, 38 | `[Sense Fear]` | Half his left ear gone |
 
-The physical details carry the page's continuity catch: the Continuity-checker
-finds a draft line where blind Maren sees the dragon first, and Muse fixes it so
-she hears it first. Each of the four keeps a secret in their Writer's notes in
+The pages carry the film's continuity catch: Tam's page says his spark won't catch
+in deep cold, the Continuity-checker finds the draft putting one in the dragon's
+eye anyway, and Muse fixes it with Sigrun's ward, which warms the air it shields. Each of the four keeps a secret in their Writer's notes in
 `story.ts`; the survivor learns them by reliving the nine days.
 
 Each survivor's last line on the page is their reaction to dying, typed before
@@ -98,7 +98,7 @@ The beats are in [`timeline.ts`](../timeline.ts). In story order:
 2. The fight: the ward splits the first breath, they hurt it, three fall, and
    one stands as a shadow, because the visitor hasn't said who survives. Who
    does what, and when, is `FIGHT` in `timeline.ts`; nobody carries a bow.
-3. The death box opens as the last breath comes down, and the beast's fire
+3. The death box opens over the last one standing, and the dragon's fire
    burns it away, revealing the app. In the Knowledge Base, The Beast becomes The Dragon once
    the scene says what it is.
 4. The card asks who survives. It always arrives empty, never preselected.
