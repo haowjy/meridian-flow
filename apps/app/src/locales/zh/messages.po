@@ -3009,6 +3009,11 @@ msgstr "失败"
 msgid "Failed to load image"
 msgstr "图片加载失败"
 
+#. placeholder {0}: upload.name
+#: src/components/app/composer/composer-document.ts
+msgid "Failed upload: {0}"
+msgstr ""
+
 #: src/components/app/failure-toast.tsx
 msgid "Failures"
 msgstr ""
@@ -3073,9 +3078,13 @@ msgstr "不能向此文档添加文件。"
 msgid "Files move or copy out of Uploads; they can't be dropped into it"
 msgstr ""
 
+#: src/lib/upload-limit.ts
+msgid "Files over {LIMIT_MB} MB can't be added."
+msgstr ""
+
 #: src/client/api/upload-intake-api.ts
-msgid "Files over {LIMIT_MB} MB can't be attached."
-msgstr "无法附加超过 {LIMIT_MB} MB 的文件。"
+#~ msgid "Files over {LIMIT_MB} MB can't be attached."
+#~ msgstr "无法附加超过 {LIMIT_MB} MB 的文件。"
 
 #: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
@@ -5475,8 +5484,8 @@ msgid "That image could not be read."
 msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
-msgid "That image did not upload."
-msgstr ""
+#~ msgid "That image did not upload."
+#~ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "That link could not be checked"
@@ -5701,11 +5710,18 @@ msgstr ""
 msgid "The upload didn’t start."
 msgstr "上传未能开始。"
 
+#: src/core/uploads/upload-store.ts
+msgid "The upload failed."
+msgstr ""
+
 #: src/client/api/direct-upload.ts
 msgid "The upload to storage failed."
 msgstr ""
 
+#: src/components/app/composer/composer-document.ts
 #: src/components/app/composer/Composer.tsx
+#: src/core/editor/images/image-uploads.ts
+#: src/core/uploads/upload-store.ts
 msgid "The upload was stopped."
 msgstr ""
 
@@ -6386,6 +6402,11 @@ msgstr ""
 #: src/core/editor/links/link-chip.ts
 msgid "Uploading"
 msgstr "上传中"
+
+#. placeholder {0}: upload.name
+#: src/components/app/composer/composer-document.ts
+msgid "Uploading {0}"
+msgstr ""
 
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/ImageNodeView.tsx
