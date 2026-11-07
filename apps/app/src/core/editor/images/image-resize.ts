@@ -46,7 +46,8 @@ export type ImageResizeGesture = {
   /**
    * The narrowest box between the picture and the manuscript: the prose column,
    * or the cell and the scroller a table gives it instead. A picture is never
-   * wider than what the writer can see of the place it stands in.
+   * wider than what the writer can see of the place it stands in, and never
+   * wider than the height cap lets it be drawn.
    */
   maximum: number;
 };
@@ -130,14 +131,17 @@ export function imageWidthAttr(attrs: Record<string, unknown>): number | null {
  *
  * Every other attribute is carried across untouched, `uploadToken` included: a
  * picture still on its way is an ordinary node with an ordinary size, and a
- * resize that dropped the token would abandon the bytes in flight.
+ * resize that dropped the token would abandon the bytes in flight. Returns
+ * whether anything was written.
  */
-export function setImageWidth(editor: Editor, hold: NodeHold, width: number | null): void {
-  if (editor.isDestroyed || !editor.isEditable) return;
+export function setImageWidth(editor: Editor, hold: NodeHold, width: number | null): boolean {
+  if (editor.isDestroyed || !editor.isEditable) return false;
   const { state } = editor.view;
   const at = resolveNodeHold(state, hold);
-  if (!at) return;
+  if (!at) return false;
   const node = state.doc.nodeAt(at.from);
-  if (!node || imageWidthAttr(node.attrs) === width) return;
-  editor.view.dispatch(state.tr.setNodeMarkup(at.from, undefined, { ...node.attrs, width }));
+  if (!node || imageWidthAttr(node.attrs) === width) return false;
+  // `setNodeMarkup` replaces a leaf, which would drop the selection and its grips.
+  editor.view.dispatch(state.tr.setNodeAttribute(at.from, "width", width));
+  return true;
 }

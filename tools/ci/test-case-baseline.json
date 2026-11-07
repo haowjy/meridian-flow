@@ -50,7 +50,7 @@
     "apps/app/src/core/editor/links/link-clipboard.test.ts": 5,
     "apps/app/src/core/editor/links/link-policy.test.ts": 8,
     "apps/app/src/core/editor/local-presence.test.ts": 6,
-    "apps/app/src/core/editor/objects/ObjectPhysicsExtension.test.ts": 3,
+    "apps/app/src/core/editor/objects/ObjectPhysicsExtension.test.ts": 5,
     "apps/app/src/core/editor/objects/object-selection.test.ts": 2,
     "apps/app/src/core/editor/reading-position.test.ts": 4,
     "apps/app/src/core/editor/sanitize-paste.test.ts": 10,

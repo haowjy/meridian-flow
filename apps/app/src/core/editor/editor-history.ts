@@ -175,7 +175,9 @@ class MountedEditorHistory implements EditorHistoryHandle {
    * generates for later redo and undo runs. Redo leaves y-tiptap's mapped
    * selection alone. (y-tiptap saves its own copy on each item, but reads
    * it from the last transaction of a dispatch, which is the wrong range when a
-   * plugin appends one.) Carets and node selections keep the mapped result.
+   * plugin appends one.) Carets keep the mapped result, and so do node
+   * selections, unless their object has gone, which `ObjectPhysicsExtension`
+   * turns into a caret.
    */
   private restoreRange(popped: StackItem): void {
     const binding = ySyncPluginKey.getState(this.editor.state)?.binding;
