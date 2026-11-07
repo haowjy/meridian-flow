@@ -112,6 +112,7 @@ function startStill(root: HTMLElement, store: CardStore, signal: AbortSignal) {
     veil: 0.12,
     aurora: 1,
     pulse: 0,
+    plume: 0.5,
   };
   const render = () => {
     sky.resize();
@@ -169,6 +170,13 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
       lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
       smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
       breathing * (1 - smooth(beats.twist, 0, 0.3)),
+    // Faint on the walk north, stronger every night, surging with each breath in the fight.
+    plume:
+      (smooth(beats.sky, 0.6, 1) * 0.3 +
+        smooth(beats.write, 0, 1) * 0.25 +
+        smooth(beats.turn, 0, 1) * 0.3 +
+        breathing * 1.6) *
+      (1 - smooth(beats.twist, 0, 0.3)),
     pulse: Math.max(
       1 - smooth(beats.push, 0, 0.35),
       smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),
