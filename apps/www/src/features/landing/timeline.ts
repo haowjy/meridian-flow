@@ -18,6 +18,7 @@ const BEATS = [
   ["write", 2.2, 17],
   ["out", 0.7, 3.5],
   ["back", 0.9, 7],
+  ["camp", 1.4, 6],
   ["turn", 1.8, 9],
   ["fight", 3, 12],
   ["twist", 3, 9],
@@ -30,6 +31,11 @@ const BEATS = [
   ["leave", 0.7, 3],
 ] as const;
 
+/**
+ * Shares of the camp beat: they sit down round the fire, then the System shows the four of them
+ * at once, a status window each, before the ninth night.
+ */
+export const CAMP = { sits: [0, 0.2], sheets: [0.2, 0.92] } as const;
 /** The share of the ask where the question lifts out of the chat, 2 swipes in. */
 export const ASK_LIFT = [0.43, 0.55] as const;
 /**
@@ -94,7 +100,7 @@ export function spanBeats(viewportHeight: number) {
     s1: [spans.open[0], write(0.2)],
     s2: [write(0.24), write(0.7)],
     s3: spans.out,
-    s4: [spans.back[1] - viewportHeight * 0.2, spans.turn[0] + viewportHeight * 0.1],
+    s4: [spans.turn[0] - viewportHeight * 0.3, spans.turn[0] + viewportHeight * 0.1],
   } as Record<string, Span>;
   return { spans, stops, subtitles, length: position };
 }

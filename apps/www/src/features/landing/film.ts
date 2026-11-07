@@ -8,6 +8,7 @@ import {
   ASK_LIFT,
   type BeatProgress,
   beatProgress,
+  CAMP,
   clamp,
   ease,
   FIGHT,
@@ -405,7 +406,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       subtitle.style.transform = `translateY(${(1 - shown) * 8}px)`;
     }
 
-    const teamShown = smooth(out, 0, 0.3) * (1 - smooth(turn, 0, 0.1));
+    const teamShown = smooth(out, 0, 0.3) * (1 - smooth(beats.camp, 0, CAMP.sits[1]));
     show(team, teamShown);
     const reportWindows = [
       [0.1, 0.62],

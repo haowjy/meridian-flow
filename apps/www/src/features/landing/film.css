@@ -715,6 +715,53 @@
   height: 100%;
 }
 
+.sheets {
+  display: none;
+}
+
+/* The System's status windows over the camp, all four at once. */
+.cine .sheets {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  gap: 12px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cine .sheet {
+  padding: 0.55em 0.85em 0.6em;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.cine .sheet p {
+  margin: 0;
+}
+
+.cine .sheet p:first-child {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .cine .sheets {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: 8px;
+  }
+
+  .cine .sheet {
+    font-size: 11px;
+  }
+
+  .cine .sheet p:first-child {
+    font-size: 13px;
+  }
+}
+
 .forest,
 .walkers {
   display: none;
