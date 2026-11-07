@@ -146,7 +146,6 @@ export function ProductPlaceholder() {
           ))}
           <div className="s-foot">
             <span>Skip</span>
-            <span>Continues in 4 min</span>
           </div>
         </div>
         <div className="s-comp">

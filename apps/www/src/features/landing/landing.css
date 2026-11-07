@@ -394,13 +394,6 @@ h1 span {
   box-shadow: 0 0 110px color-mix(in oklab, var(--mkt-glow) 38%, transparent);
 }
 
-.c-top {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  color: var(--color-muted-foreground);
-}
-
 .c-q {
   font-weight: 600;
   font-size: 17px;
