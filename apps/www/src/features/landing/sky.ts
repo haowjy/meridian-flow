@@ -42,7 +42,8 @@ const LIGHT_SHADER = `${SHARED}
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
 float fbm(vec2 p){return .6*N(p)+.3*N(p*2.1+5.)+.1*N(p*4.3+9.);}
 const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
-// The sheet's folds, and how much of the sky they cover there: patchy, but for the Cold Fire.
+// The sheet's folds where it covers the sky, and in bare the same folds less patchy, for the
+// Cold Fire.
 float field(vec2 p,out float bare){
   vec2 w=vec2(N(p*.45+vec2(FLOW*.1,0.)),N(p*.45+vec2(4.,-FLOW*.08)))-.5;
   vec2 q=p+w*3.2;
@@ -50,7 +51,10 @@ float field(vec2 p,out float bare){
   n=max(pow(n,8.)-.05,0.)*1.5;
   float cover=max(smoothstep(.4,.58,N(p*.13+vec2(FLOW*.015,3.))),smoothstep(3.,1.,length(p)));
   bare=n*(.45+.55*N(q*9.+FLOW*.25));
-  return bare*cover;
+  float lit=bare*cover;
+  // Over the peak the gaps only thin it, so it stays curtains and not a haze.
+  bare*=max(cover,.4);
+  return lit;
 }
 // The aurora in rgb, and in alpha the Cold Fire over the dragon's peak: the same sheet, low in the
 // north, with no gaps in it, so the scene pass can swell it on each gulp without redrawing this.
@@ -58,7 +62,7 @@ vec4 aurora(vec3 rd){
   if(rd.y<.015) return vec4(0.);
   vec3 a=vec3(0.);
   float fire=0.,bare;
-  float b=(atan(rd.x,-rd.z)-AZ)/.5;
+  float b=(atan(rd.x,-rd.z)-AZ)/.32;
   float peak=exp(-b*b);
   float j=H(gl_FragCoord.xy*.013);
   for(int i=0;i<14;i++){
@@ -70,7 +74,7 @@ vec4 aurora(vec3 rd){
     a+=c*f*exp(-k*.1);
     fire+=bare*exp(-k*.1);
   }
-  return vec4(a*.31,fire*peak*1.1*exp(-rd.y*4.))*smoothstep(.015,.2,rd.y);
+  return vec4(a*.31,fire*peak*.6*exp(-rd.y*4.))*smoothstep(.015,.2,rd.y);
 }
 void main(){
   vec3 rd=ray();
