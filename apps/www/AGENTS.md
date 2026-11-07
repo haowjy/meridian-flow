@@ -17,6 +17,15 @@ authenticated.
 - CSS owns placement: `film.css` lays out the stage in container units, and
   `film-layout.ts` reads the result back. Don't compute geometry in script, or the first
   paint and the film disagree. Script only draws the SVG curves between what CSS placed.
+- On a phone the stage is `100lvh`, as tall as the screen with Safari's address bar
+  collapsed, and lays out in the `100svh` frame at its top. `--below` is the strip
+  between them: the scenery runs into it, while text, the product and the card stay in
+  the frame. Don't size the stage with `dvh`: Safari updates it only after a scroll ends,
+  so the film jumps ([WebKit bug 266835](https://bugs.webkit.org/show_bug.cgi?id=266835)).
+  Chromium can't collapse an address bar, so only a real iPhone shows this working.
+- Anything that can run wider than a phone, such as a glow, sets `overflow-x: clip` on
+  its own section. iOS Safari ignores that clip on `body` and zooms the whole page out
+  to fit.
 - `timeline.ts` owns the beats and sections, `film-layout.ts` positions, `transport.ts`
   everything that moves the page for the visitor, and `film.ts` paints.
 - The scenery is the exception to CSS placement: each layer draws itself every frame
