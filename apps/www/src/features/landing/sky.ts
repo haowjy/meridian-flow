@@ -41,36 +41,46 @@ float ripple(vec3 rd){
 const LIGHT_SHADER = `${SHARED}
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
 float fbm(vec2 p){return .6*N(p)+.3*N(p*2.1+5.)+.1*N(p*4.3+9.);}
-float field(vec2 p){
+const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
+// The sheet's folds, and how much of the sky they cover there: patchy, but for the Cold Fire.
+float field(vec2 p,out float bare){
   vec2 w=vec2(N(p*.45+vec2(FLOW*.1,0.)),N(p*.45+vec2(4.,-FLOW*.08)))-.5;
   vec2 q=p+w*3.2;
   float n=1.-abs(2.*fbm(q+vec2(FLOW*.03,-FLOW*.02))-1.);
   n=max(pow(n,8.)-.05,0.)*1.5;
   float cover=max(smoothstep(.4,.58,N(p*.13+vec2(FLOW*.015,3.))),smoothstep(3.,1.,length(p)));
-  return n*cover*(.45+.55*N(q*9.+FLOW*.25));
+  bare=n*(.45+.55*N(q*9.+FLOW*.25));
+  return bare*cover;
 }
-vec3 aurora(vec3 rd){
-  if(rd.y<.015) return vec3(0.);
+// The aurora in rgb, and in alpha the Cold Fire over the dragon's peak: the same sheet, low in the
+// north, with no gaps in it, so the scene pass can swell it on each gulp without redrawing this.
+vec4 aurora(vec3 rd){
+  if(rd.y<.015) return vec4(0.);
   vec3 a=vec3(0.);
+  float fire=0.,bare;
+  float b=(atan(rd.x,-rd.z)-AZ)/.5;
+  float peak=exp(-b*b);
   float j=H(gl_FragCoord.xy*.013);
   for(int i=0;i<14;i++){
     float k=float(i)*1.57;
     float t=(1.+(k+j*1.57)*.075)/rd.y;
-    float f=field(rd.xz*min(t,16.)*1.1);
+    float f=field(rd.xz*min(t,16.)*1.1,bare);
     vec3 c=mix(${vec3(C.auroraLow)},${vec3(C.auroraMid)},smoothstep(0.,8.,k));
     c=mix(c,${vec3(C.auroraHigh)},smoothstep(8.,21.,k));
     a+=c*f*exp(-k*.1);
+    fire+=bare*exp(-k*.1);
   }
-  return a*.31*smoothstep(.015,.2,rd.y);
+  return vec4(a*.31,fire*peak*1.1*exp(-rd.y*4.))*smoothstep(.015,.2,rd.y);
 }
 void main(){
-  vec3 rd=ray(),c;
+  vec3 rd=ray();
+  vec4 c;
   if(rd.y>=0.) c=aurora(rd);
   else{
     float d=-rd.y;
-    c=aurora(normalize(vec3(rd.x+ripple(rd)*d*.07,d,rd.z)))*.32*exp(-d*1.4);
+    c=vec4(aurora(normalize(vec3(rd.x+ripple(rd)*d*.07,d,rd.z))).rgb*.32*exp(-d*1.4),0.);
   }
-  gl_FragColor=vec4(sqrt(c/(1.+c)),1.);
+  gl_FragColor=sqrt(c/(1.+c));
 }`;
 
 const SCENE_SHADER = `${SHARED}
@@ -88,14 +98,6 @@ float peaks(float z,float s,float k,float h){
 }
 float farRange(float z){float b=(z-AZ)/.09;return peaks(z,3.1,3.,.17)+.1*exp(-b*b);}
 float nearRange(float z){return peaks(z,7.4,2.,.11);}
-// The Cold Fire low in the north: a wide band of curtains standing behind the far range, densest
-// around the dragon's peak and fading upward into the sheet. It is there every night.
-float behind(float az,float y){
-  float h=max(y-farRange(az)*.7,0.);
-  float b=(az-AZ)/.55;
-  float curtains=.45+.55*N(vec2(az*38.+FLOW*.2,y*2.-FLOW*.3));
-  return exp(-b*b)*exp(-h*5.)*smoothstep(0.,.04,h)*curtains;
-}
 vec3 stars(vec3 d){
   vec2 s=vec2(atan(d.x,-d.z),d.y)*56.;
   vec2 i=floor(s),f=fract(s)-.5;
@@ -108,13 +110,16 @@ void main(){
   float az=atan(rd.x,-rd.z),y=rd.y;
   float night=1.-DAWN;
   vec2 p=.5+(gl_FragCoord.xy/R-.5)*DRIFT.z+DRIFT.xy,t=2.4/R*${LIGHT_DIVISOR}.*.5;
-  vec3 e=texture2D(LIGHT,p).rgb*.2;
+  vec4 e4=texture2D(LIGHT,p)*.2;
   for(int i=0;i<4;i++){
     vec2 s=vec2(i<2?1.:-1.,mod(float(i),2.)<1.?1.:-1.);
-    e+=texture2D(LIGHT,p+s*t).rgb*.2;
+    e4+=texture2D(LIGHT,p+s*t)*.2;
   }
-  e*=e;
+  e4*=e4;
+  vec3 e=e4.rgb;
   vec3 light=e/max(1.-e,.001);
+  // The Cold Fire low in the north, there every night and swelling on each gulp.
+  float rising=e4.a/max(1.-e4.a,.001)*PLUME*night;
   float l=max(light.g,light.b);
   light*=smoothstep(.012,.22,l);
   light=(light+${vec3(C.auroraCore)}*l*l*l*1.4)*AU*night;
@@ -125,8 +130,8 @@ void main(){
   vec3 col;
   if(y>=0.){
     col=sky+stars(rd)*night+light+${vec3(C.auroraLow)}*.008*exp(-y*6.)*AU*night;
-    float rising=behind(az,y)*PLUME*night;
-    col+=(${vec3(C.auroraMid)}*.5+${vec3(C.auroraCore)}*rising*.6)*rising;
+    float glow=rising/(1.+rising*.7);
+    col+=(${vec3(C.auroraLow)}*.35+${vec3(C.auroraMid)}*.55+${vec3(C.auroraCore)}*glow*.18)*glow;
     float far=farRange(az),near=nearRange(az);
     vec3 lit=${vec3(C.sun)}*.04*DAWN;
     if(y<far) col=mix(col,${vec3(C.mountain)}*1.6+lit,smoothstep(far,far-.002,y));
@@ -220,8 +225,9 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
       lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
       smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
       breathing * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
-    // Low in the north behind the mountains, the same every night until the box burns.
-    plume: 0.9 * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
+    // Low in the north over the dragon's peak every night; what it sends up from the perch stays
+    // there, brighter, until the box burns.
+    plume: (0.9 + stirred * 1.4) * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
     surge: stirred,
     pulse: Math.max(
       1 - smooth(beats.push, 0, 0.35),
