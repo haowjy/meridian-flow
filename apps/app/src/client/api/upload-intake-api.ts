@@ -1,9 +1,10 @@
 /** Browser adapter for authoritative material intake; removing a reference never deletes the file. */
 import { t } from "@lingui/core/macro";
-import type {
-  DeleteDraftUploadInput,
-  DeleteDraftUploadResult,
-  UploadIntakeResult,
+import {
+  type DeleteDraftUploadInput,
+  type DeleteDraftUploadResult,
+  MAX_UPLOAD_BYTES,
+  type UploadIntakeResult,
 } from "@meridian/contracts/protocol";
 import type { ComposerUploadPort, ComposerUploadScope } from "@/components/app/composer";
 import { errorMessageFromPayload, readResponsePayload } from "./http-client";
@@ -13,6 +14,8 @@ import { meridianApiErrorFromPayload } from "./meridian-error";
 function url(scope: Pick<ComposerUploadScope, "projectId" | "chatId">) {
   return `/api/projects/${encodeURIComponent(scope.projectId)}/context/uploads/upload?chatId=${encodeURIComponent(scope.chatId)}`;
 }
+const LIMIT_MB = Math.round(MAX_UPLOAD_BYTES / 1024 / 1024);
+const tooLarge = () => t`Files over ${LIMIT_MB} MB can't be attached.`;
 async function response<T>(request: Promise<Response>): Promise<T> {
   const value = await request.catch((cause: unknown) => {
     // `fetch` rejects with a bare TypeError ("Failed to fetch") when the network is down.
@@ -32,6 +35,13 @@ async function response<T>(request: Promise<Response>): Promise<T> {
         t`This filename contains unsupported characters. Rename the file and attach it again.`,
       );
     }
+    if (
+      typeof payload === "object" &&
+      payload &&
+      "message" in payload &&
+      payload.message === "too_large"
+    )
+      throw new Error(tooLarge());
     throw (
       meridianApiErrorFromPayload(payload, value.status) ??
       new Error(errorMessageFromPayload(payload, value.status))
@@ -41,16 +51,16 @@ async function response<T>(request: Promise<Response>): Promise<T> {
 }
 export const uploadIntakePort: ComposerUploadPort = {
   async intake({ file, intakeId, scope }) {
-    const digest = [
-      ...new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())),
-    ]
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
-    const form = new FormData();
-    form.set("file", file);
-    form.set("intakeId", intakeId);
-    form.set("byteDigest", digest);
-    return response<UploadIntakeResult>(fetch(url(scope), { method: "POST", body: form }));
+    if (file.size > MAX_UPLOAD_BYTES) throw new Error(tooLarge());
+    // The file is the body, streamed from disk; the server reads name and chat from the query.
+    const query = `&intakeId=${encodeURIComponent(intakeId)}&filename=${encodeURIComponent(file.name)}`;
+    return response<UploadIntakeResult>(
+      fetch(url(scope) + query, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      }),
+    );
   },
 };
 

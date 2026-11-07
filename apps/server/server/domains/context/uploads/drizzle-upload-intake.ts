@@ -175,7 +175,6 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             contextSourceId: owner.sourceId,
             documentId,
             fingerprint: input.fingerprint,
-            byteDigest: input.byteDigest,
             filename: input.filename,
             mimeType: input.mimeType,
             finalPath,
@@ -195,6 +194,20 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             : { kind: "conflict" };
         }
         return { kind: "reserved", reservation: mapRow(created, owner.chatRef) };
+      });
+    },
+    async abandon(projectId, intakeId) {
+      await runInDrizzleTransaction(db, async () => {
+        await lockIntakeKey(db, projectId, intakeId);
+        await currentDrizzleDb(db)
+          .delete(uploadIntakes)
+          .where(
+            and(
+              eq(uploadIntakes.projectId, projectId as never),
+              eq(uploadIntakes.intakeId, intakeId),
+              eq(uploadIntakes.state, "reserved"),
+            ),
+          );
       });
     },
     async markObjectStored(projectId, intakeId, storageUrl) {

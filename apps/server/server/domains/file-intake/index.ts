@@ -92,6 +92,20 @@ export async function classifyUpload(input: {
   return documentFileTypeFor({ filetype: null, mimeType: mime }) ?? "binary";
 }
 
+/** Text above this size is kept as a binary file: the document pipeline binds it whole. */
+export const TRACKED_TEXT_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * The name of a text file kept as a binary row. It keeps its whole name, extension included, so
+ * Download gives back what was picked; a suffix with whitespace (`Vol. 2`) is part of the name.
+ */
+export function keptFileName(filename: string): { name: string; extension: string } {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 && !/\s/.test(filename.slice(dot + 1))
+    ? { name: filename.slice(0, dot), extension: filename.slice(dot + 1) }
+    : { name: filename, extension: "" };
+}
+
 export function intakeFilename(filename: string, fileType: Filetype, mimeType: string) {
   const tracked = classifyFiletype(fileType).kind === "tracked";
   const parsed = parseDocumentFilename(filename, {

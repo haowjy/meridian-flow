@@ -31,8 +31,7 @@ export function createContextUploadContentPort(
     classifyFiletype(reservation.fileType).kind === "tracked";
 
   return {
-    async bind({ reservation, actorUserId, bytes }) {
-      const text = Buffer.from(bytes).toString("utf8");
+    async bind({ reservation, actorUserId, text }) {
       if (!isTracked(reservation) || text.length === 0) return { ok: true, bound: null };
       const port = portFor(reservation, actorUserId);
       const bound = await port.bindTrackedDocument(writeUri(reservation), text);
@@ -60,7 +59,7 @@ export function createContextUploadContentPort(
               fileType: classification.kind === "unknown" ? "binary" : classification.fileType,
               storageUrl: input.storageUrl ?? "",
               mimeType: input.mimeType,
-              sizeBytes: input.bytes.byteLength,
+              sizeBytes: input.sizeBytes,
               hasPreview: input.hasPreview,
               origin,
             });

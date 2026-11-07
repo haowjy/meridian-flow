@@ -5,7 +5,7 @@
  * - MIME and extension precedence for canonical upload names and Markdown conversion
  */
 
-import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { Hocuspocus } from "@hocuspocus/server";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -111,7 +111,6 @@ if (!RUN) {
       filename: "chapter.md",
       documentFilename: { name: "chapter", extension: "", filetype: "markdown" as const },
       mimeType: "text/markdown",
-      byteDigest: "a".repeat(64),
       fingerprint,
       fileType: "markdown" as const,
     });
@@ -144,17 +143,17 @@ if (!RUN) {
           });
         };
         const content = new TextEncoder().encode("# Concurrent\n");
-        const request = {
+        const request = () => ({
           ...reservation("concurrent-service", NEW_CHAT),
-          bytes: content,
-          byteDigest: createHash("sha256").update(content).digest("hex"),
-        };
+          sizeBytes: content.byteLength,
+          body: Readable.from(Buffer.from(content)),
+        });
 
         // Settle both calls before `finally` deletes the user: a rejected
         // Promise.all would leave the other transaction running into the delete.
         const settled = await Promise.allSettled([
-          service(firstDb).intake(request),
-          service(waiterDb).intake(request),
+          service(firstDb).intake(request()),
+          service(waiterDb).intake(request()),
         ]);
         const [first, waiter] = settled.map((outcome) => {
           if (outcome.status === "rejected") throw outcome.reason;
@@ -316,8 +315,8 @@ if (!RUN) {
             ...reservation(filename, NEW_CHAT),
             filename,
             mimeType,
-            bytes: content,
-            byteDigest: createHash("sha256").update(content).digest("hex"),
+            sizeBytes: content.byteLength,
+            body: Readable.from(Buffer.from(content)),
           });
           expect(result).toMatchObject({
             ok: true,
@@ -391,8 +390,8 @@ if (!RUN) {
       const content = new TextEncoder().encode("# Chapter One\n\nIt began.");
       const result = await service.intake({
         ...reservation("tracked", NEW_CHAT),
-        bytes: content,
-        byteDigest: createHash("sha256").update(content).digest("hex"),
+        sizeBytes: content.byteLength,
+        body: Readable.from(Buffer.from(content)),
       });
       if (!result.ok) throw new Error(result.error.code);
       expect(await collab.readAsMarkdown(result.value.documentId as never)).toEqual({
