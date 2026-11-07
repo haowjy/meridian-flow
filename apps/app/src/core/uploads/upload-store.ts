@@ -62,7 +62,7 @@ type Entry = {
 };
 
 /** The ids a mounted surface's text holds now. */
-export type UploadsPresent = () => ReadonlySet<string>;
+type UploadsPresent = () => ReadonlySet<string>;
 
 export type UploadWatch = {
   /** The holder's text changed: ask again what it holds. */
