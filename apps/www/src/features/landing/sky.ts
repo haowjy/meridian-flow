@@ -59,7 +59,7 @@ float fbm(vec2 p){return .6*N(p)+.3*N(p*2.1+5.)+.1*N(p*4.3+9.);}
 const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
 uniform float PLUME;
 const float AHEAD=${HORIZON_YAW.toFixed(3)};
-float field(vec2 p,float fire){
+float field(vec2 p,float fire,out float band){
   vec2 w=vec2(N(p*.45+vec2(FLOW*.1,0.)),N(p*.45+vec2(4.,-FLOW*.08)))-.5;
   vec2 q=p+w*3.2;
   float n=1.-abs(2.*fbm(q+vec2(FLOW*.03,-FLOW*.02))-1.);
@@ -68,15 +68,18 @@ float field(vec2 p,float fire){
   // Where the Cold Fire is strong the sheet's gaps fill in.
   cover=max(cover,min(fire*.3,.5));
   float sheet=n*cover*(.45+.55*N(q*9.+FLOW*.25));
-  // One great ribbon straight overhead and away down the middle of the level view to the horizon:
-  // looking up it crosses the sky, looking out it narrows into the distance.
+  // One great curtain from straight overhead away down the middle of the level view: thin from
+  // below, folding side to side by a small angle so it keeps its line, and raked with fine rays,
+  // which the slices stand up into a curtain. Looking up it crosses the sky; looking out it
+  // narrows into the distance.
   vec2 ahead=vec2(sin(AHEAD),-cos(AHEAD));
   float along=dot(p,ahead);
-  // A ripple of a share of the distance, so from below it stays on its line.
-  float off=dot(p,vec2(-ahead.y,ahead.x))-(max(along,0.)*.025+.08)*sin(along*.3+FLOW*.06);
-  float ribbon=exp(-off*off*5.)*smoothstep(-4.,0.,along);
-  float rays=.35+.65*pow(N(vec2(along*1.4-FLOW*.12,off*2.)+w*2.),2.);
-  return sheet+ribbon*rays*.6;
+  float fold=.1*sin(along*.45+FLOW*.07)+.05*sin(along*1.2-FLOW*.05);
+  float off=dot(p,vec2(-ahead.y,ahead.x))-(max(along,0.)+.6)*fold;
+  float curtain=(exp(-off*off*36.)+.45*exp(-(off-.35)*(off-.35)*60.))*smoothstep(-4.,0.,along);
+  float rays=.2+.8*pow(N(vec2(along*7.-FLOW*.35,off*3.)),2.5);
+  band=curtain*rays;
+  return sheet;
 }
 // Over the dragon's peak, low in the north, the same ribbons burn brighter: the Cold Fire, which
 // swells on each gulp.
@@ -91,13 +94,16 @@ vec3 aurora(vec3 rd){
     float t=(1.+(k+j*1.57)*.075)/rd.y;
     // Far enough that the ribbons keep receding to the horizon instead of piling up into haze.
     vec2 at=rd.xz*min(t,44.)*1.1;
-    float f=field(at,fire);
+    float band;
+    float f=field(at,fire,band);
     vec3 c=mix(${vec3(C.auroraLow)},${vec3(C.auroraMid)},smoothstep(0.,8.,k));
-    // Whole curtains lean teal-blue, more so toward their thin tops; the rest stay green.
-    float blue=smoothstep(.45,.75,N(at*.07+vec2(11.,FLOW*.012)));
-    c=mix(c,${vec3(C.auroraBlue)},blue*(.3+.4*smoothstep(2.,14.,k)));
-    c=mix(c,${vec3(C.auroraHigh)},smoothstep(8.,21.,k));
-    a+=c*f*exp(-k*.1);
+    // Green low down; the rays turn purple toward their tops, and here and there lean blue.
+    float blue=smoothstep(.55,.8,N(at*.07+vec2(11.,FLOW*.012)));
+    c=mix(c,${vec3(C.auroraBlue)},blue*.3);
+    c=mix(c,${vec3(C.auroraHigh)},smoothstep(5.,17.,k));
+    a+=c*f*exp(-k*.075);
+    // The great curtain hangs from a bright green hem; its rays fade fast above it.
+    a+=mix(${vec3(C.auroraLow)},c,smoothstep(0.,6.,k))*band*(2.2*exp(-k*.35)+.12);
   }
   return a*.31*(1.+min(fire,1.6)*.5)*smoothstep(.006,.05,rd.y);
 }
