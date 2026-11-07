@@ -275,7 +275,17 @@ keyboard, pointer, drop, or draft-recovery answer.
   (`landing/slice-drop.ts`: text and nodes moved or copied inside the editor,
   or text from outside, read again by the host's text parser where it lands),
   project-tree rows (`extensions/reference-drop/reference-drop-door.ts`, handed
-  in from `config.ts`) and files (`images/image-drop-door.ts`, also handed in).
+  in from `config.ts`) and files (`file-drop/file-drop-door.ts`, also handed in). The files door takes any
+  file: a picture goes through the picture lane, and every other file becomes a chip
+  (a plain link to a file uploading into `assets/` of the document's own source),
+  placed by the same `placeNodes` the row door uses. Files land in the order the drop
+  lists them, a run of chips as one edit; the drop point is an `anchorRange` pin, read back
+  with `resolveAnchorIn` when the chips go in, because a peer's update (a model streaming)
+  replaces the whole fragment and ProseMirror's mapping would land between blocks; a file over `MAX_UPLOAD_BYTES` is refused
+  alone, before anything is inserted for it. A chip's progress and failure are the upload
+  store's (`core/uploads/upload-store.ts`), as a Composer chip's and a picture slot's are: a
+  failed chip (or one taken back by undo and returned by redo) reads failed and a press retries
+  it on the same id. Another tab hears a chip's upload over presence (`upload-presence.ts`).
   `landing/` imports neither lane. A host mounts only the doors it has; a
   payload with no door is unclaimed at `dragover`, `drop` and `handleDrop`
   alike, and the click route rides with the plugin, so a code file and the

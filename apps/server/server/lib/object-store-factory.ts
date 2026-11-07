@@ -5,6 +5,7 @@ import {
   type ObjectStorePort,
   S3ObjectStoreAdapter,
 } from "../domains/storage/index.js";
+import { resolveBackends } from "./backend-policy.js";
 
 function boolEnv(name: string, fallback = false): boolean {
   const value = process.env[name];
@@ -21,7 +22,9 @@ export function createObjectStoreFromEnv(): {
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
 } {
-  const provider = process.env.OBJECT_STORE_PROVIDER ?? "local";
+  // The provider comes from resolveBackends, as the startup guards read it: two readings of it would let a
+  // deployment pass the signing-secret guard and still build the local store.
+  const provider = resolveBackends(process.env).objectStore;
   if (provider === "local") {
     const localObjectStore = new LocalObjectStoreAdapter({
       rootDir: process.env.LOCAL_OBJECT_STORE_DIR ?? path.join(tmpdir(), "meridian-object-store"),
@@ -46,5 +49,5 @@ export function createObjectStoreFromEnv(): {
     });
     return { objectStore, localObjectStore: null };
   }
-  throw new Error(`Unsupported OBJECT_STORE_PROVIDER: ${provider}`);
+  throw new Error(`Unsupported OBJECT_STORE_PROVIDER: ${String(provider)}`);
 }

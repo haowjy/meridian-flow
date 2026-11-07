@@ -42,6 +42,8 @@ export type DocumentLinkAnswer =
         workId: string | null;
         rootThreadId?: string | null;
         chatThreadId?: string | null;
+        /** A stored file (not a tracked document): what a chip says of it. */
+        file?: { fileType: string; mimeType: string | null; sizeBytes: number | null };
       };
       inBranch: boolean;
       /** Present iff `inBranch`: the branch containing the draft the chip opens (the reader's own if it uses it, else the oldest). */

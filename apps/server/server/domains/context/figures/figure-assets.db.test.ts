@@ -11,7 +11,6 @@ import { createTestDocumentRemoval } from "../../../test-support/document-remova
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
-import { createObjectRelease } from "../../storage/object-release.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
@@ -99,16 +98,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const service = createFigureAssetService({
         objectStore,
-        release: createObjectRelease({ objectStore, onFailure() {} }),
         documents: createDrizzleFigureDocumentRepository({ db }),
-        contextPorts,
-        generateId: () => ASSET_KEY_ID,
         signedUrlExpiresAt: () => "2030-01-01T00:00:00.000Z",
-        eventSink: {
-          emit() {},
-          emitBatch() {},
-          async flush() {},
-        },
       });
       const [before] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
       const hostBefore = {
@@ -118,20 +109,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sizeBytes: before?.sizeBytes,
       };
 
-      const uploaded = await service.uploadFigure({
-        projectId: PROJECT_ID,
-        userId: USER_ID,
-        hostDocumentId: HOST_DOCUMENT_ID,
-        bytes: Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]),
-        mimeType: "image/png",
-        filename: "map.png",
-      });
+      const bytes = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
+      const stored = await objectStore.put(`figures/${ASSET_KEY_ID}`, bytes, "image/png");
+      if (!stored.ok) throw new Error(stored.error.message);
+      const written = await contextPorts
+        .forProject(PROJECT_ID, USER_ID, new Map())
+        .writeBinary("manuscript://assets/map.png", {
+          storageUrl: stored.value.storageUrl,
+          mimeType: "image/png",
+          fileType: "image",
+          sizeBytes: bytes.byteLength,
+          hasPreview: false,
+          origin: { type: "human", userId: USER_ID },
+        });
+      if (!written.ok) throw new Error(written.error.code);
+      const uploaded = { ok: true as const, value: { assetDocumentId: written.value.documentId } };
 
-      expect(uploaded.ok).toBe(true);
-      if (!uploaded.ok) throw new Error(uploaded.error.message);
       expect(uploaded.value.assetDocumentId).not.toBe(HOST_DOCUMENT_ID);
-      expect(uploaded.value.figure.src).toBe(`asset:${uploaded.value.assetDocumentId}`);
-      expect(uploaded.value.assetPath).toBe("assets/map.png");
 
       const [after] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
       expect(after).toEqual(before);

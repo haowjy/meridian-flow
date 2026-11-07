@@ -4,7 +4,7 @@
  *
  * Awareness carries two kinds of local fact — the caret y-prosemirror writes,
  * and fields the app publishes itself (which slots this browser is filling,
- * `images/image-upload-presence.ts`) — while something else entirely decides
+ * `upload-presence.ts`) — while something else entirely decides
  * whether this client should be visible right now: inline review hides the
  * writer's presence in the document behind it, and a schema fence hides a
  * client that may no longer write.

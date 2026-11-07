@@ -27,8 +27,12 @@ const TEXT_MIMES = new Set([
   "application/xml",
 ]);
 
+// type/subtype tokens only: the signed PUT echoes the type back as a header.
+const MIME_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
+
 export function normalizeMime(mimeType: string): string {
-  return mimeType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+  const mime = mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+  return MIME_TYPE.test(mime) ? mime : "application/octet-stream";
 }
 
 export function normalizeFilename(filename: string): string {
@@ -90,6 +94,20 @@ export async function classifyUpload(input: {
     }
   }
   return documentFileTypeFor({ filetype: null, mimeType: mime }) ?? "binary";
+}
+
+/** Text above this size is kept as a binary file: the document pipeline binds it whole. */
+export const TRACKED_TEXT_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * The name of a text file kept as a binary row. It keeps its whole name, extension included, so
+ * Download gives back what was picked; a suffix with whitespace (`Vol. 2`) is part of the name.
+ */
+export function keptFileName(filename: string): { name: string; extension: string } {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 && !/\s/.test(filename.slice(dot + 1))
+    ? { name: filename.slice(0, dot), extension: filename.slice(dot + 1) }
+    : { name: filename, extension: "" };
 }
 
 export function intakeFilename(filename: string, fileType: Filetype, mimeType: string) {

@@ -1,73 +1,37 @@
-/** Multipart transport adapter for authoritative UploadIntake. */
+/**
+ * Transport adapter for starting an authoritative upload (a chat attach, or a file dropped into a
+ * document): reserves it and returns a signed PUT
+ * for the bytes. The file never passes through here; `upload/finish` reads it back from the store.
+ */
 
-import type { ProjectId, ThreadId } from "@meridian/contracts";
-import type { UploadIntakeResult } from "@meridian/contracts/protocol";
-import {
-  createError,
-  defineEventHandler,
-  getQuery,
-  readMultipartFormData,
-  setResponseStatus,
-} from "nitro/h3";
-import type { FileTarget } from "../../../../../../domains/file-policy/index.js";
+import type { StartUploadInput, UploadStart } from "@meridian/contracts/protocol";
+import { createError, defineEventHandler, getQuery, readBody, setResponseStatus } from "nitro/h3";
 import { resolveContextRoute } from "./_helpers.js";
+import { uploadDestination, uploadErrorToHttp, uploadIntakeId } from "./upload/_shared.js";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function field(parts: Awaited<ReturnType<typeof readMultipartFormData>>, name: string): string {
-  const value = parts?.find((part) => part.name === name && !part.filename)?.data;
-  return value ? Buffer.from(value).toString("utf8").trim() : "";
-}
-
-export default defineEventHandler(async (event): Promise<UploadIntakeResult> => {
-  const { app, userId, projectId, scheme, edit } = await resolveContextRoute(event);
-  if (scheme !== "uploads")
-    throw createError({ statusCode: 400, message: "Upload intake requires uploads" });
-  const parts = await readMultipartFormData(event);
-  if ((parts?.filter((part) => part.name === "file").length ?? 0) > 1)
-    throw createError({ statusCode: 400, message: "Only one file part is allowed" });
-  const file = parts?.find((part) => part.name === "file" && part.filename);
-  if (!file?.filename)
-    throw createError({ statusCode: 400, message: "multipart field 'file' is required" });
-  const intakeId = field(parts, "intakeId");
-  const byteDigest = field(parts, "byteDigest").toLowerCase();
-  if (!intakeId || !/^[0-9a-f]{64}$/.test(byteDigest)) {
-    throw createError({ statusCode: 400, message: "intakeId and SHA-256 byteDigest are required" });
-  }
-  // The client mints the chat id at the first attach; the chat's row may not exist until Send.
-  const chatId = getQuery(event).chatId;
-  if (typeof chatId !== "string" || !UUID.test(chatId))
-    throw createError({ statusCode: 400, message: "chatId is required" });
-  const owner = { kind: "chat" as const, projectId, chatId };
-  const container: FileTarget = {
-    kind: "container",
-    scheme: "uploads",
-    owner: { scope: "chat", projectId: projectId as ProjectId, threadId: chatId as ThreadId },
-  };
-  const filename = file.filename;
-  const result = await edit([container], () =>
-    app.uploadIntake.intake({
+export default defineEventHandler(async (event): Promise<UploadStart> => {
+  const route = await resolveContextRoute(event);
+  const { app, userId, edit } = route;
+  const body = (await readBody<Partial<StartUploadInput>>(event)) ?? {};
+  const { filename, sizeBytes, mimeType } = body;
+  const intakeId = uploadIntakeId(body.intakeId);
+  if (typeof filename !== "string" || !filename)
+    throw createError({ statusCode: 400, message: "filename is required" });
+  const destination = uploadDestination(route, getQuery(event).chatId);
+  if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0)
+    throw createError({ statusCode: 400, message: "sizeBytes must be a whole number of bytes" });
+  const result = await edit([destination.container], () =>
+    app.uploadIntake.start({
       intakeId,
       actorUserId: userId,
-      owner,
+      owner: destination.owner,
+      ...("source" in destination ? { source: destination.source } : {}),
       filename,
-      mimeType: file.type ?? "application/octet-stream",
-      byteDigest,
-      bytes: file.data,
+      sizeBytes,
+      mimeType: typeof mimeType === "string" ? mimeType : "",
     }),
   );
-  if (!result.ok) {
-    if (result.error.code === "invalid_filename") {
-      throw createError({ statusCode: 400, message: "invalid_filename", data: result.error });
-    }
-    const statusCode =
-      result.error.code === "idempotency_conflict"
-        ? 409
-        : result.error.code === "owner_unavailable"
-          ? 404
-          : 502;
-    throw createError({ statusCode, message: result.error.code });
-  }
+  if (!result.ok) throw uploadErrorToHttp(result.error);
   setResponseStatus(event, 201);
   return result.value;
 });

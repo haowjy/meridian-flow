@@ -32,6 +32,18 @@ const CONVERTIBLE = new Set([
   "image/tiff",
 ]);
 
+/**
+ * Largest original a preview is made from. The decoder needs the whole file in memory, so a
+ * bigger convertible picture keeps its original and is drawn as a file card.
+ */
+export const PREVIEW_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
+
+/** Whether the file starting with `head` is a format a browser can't draw and the worker can convert. */
+export async function needsPreviewConversion(head: Uint8Array): Promise<boolean> {
+  const mime = await sniffMime(head);
+  return mime !== null && CONVERTIBLE.has(mime);
+}
+
 /** Why a preview was not made, safe to log: never a decoder message or file content. */
 export type ImagePreviewFailureReason =
   | "worker_unavailable"

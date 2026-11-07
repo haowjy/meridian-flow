@@ -45,6 +45,25 @@ export interface ObjectStoreCopyOutput {
   sizeBytes: number;
 }
 
+export interface ObjectStoreSignedPutOptions {
+  /** The exact byte length the URL accepts; any other length is refused by the store. */
+  sizeBytes: number;
+  /** The exact `Content-Type` the URL accepts. */
+  mimeType: string;
+}
+
+export interface ObjectStoreSignedPut {
+  url: string;
+  /** Headers the browser must send as given. `Content-Length` is not among them: the browser sets it. */
+  headers: Record<string, string>;
+}
+
+export interface ObjectStoreHead {
+  /** The object's first bytes, at most the requested count; empty for an empty object. */
+  head: Uint8Array;
+  sizeBytes: number;
+}
+
 export interface ObjectStoreSignedUrlOptions {
   /** A `Content-Disposition` value the store sends with the bytes (a download's filename). */
   contentDisposition?: string;
@@ -86,10 +105,25 @@ export interface ObjectStorePort {
   getStream(key: string): Promise<ObjectStoreResult<ObjectStoreStreamOutput>>;
   /** Duplicates an object inside the store, bytes never passing through the server. */
   copy(fromKey: string, toKey: string): Promise<ObjectStoreResult<ObjectStoreCopyOutput>>;
+  /**
+   * Reads an object's size and first `headBytes` bytes without reading the rest. An empty
+   * object answers size 0 and an empty head.
+   */
+  readHead(key: string, headBytes: number): Promise<ObjectStoreResult<ObjectStoreHead>>;
   list(
     prefix: string,
     options?: ObjectStoreListOptions,
   ): Promise<ObjectStoreResult<ObjectStoreListOutput>>;
+  /**
+   * A short-lived URL that lets a browser PUT one object of exactly `sizeBytes` and `mimeType`
+   * to `key`, with no object needing to exist first. A PUT of another length or type is
+   * refused, and the URL may be used again: a second PUT replaces the object, so the key
+   * must be one no row points at.
+   */
+  signPut(
+    key: string,
+    options: ObjectStoreSignedPutOptions,
+  ): Promise<ObjectStoreResult<ObjectStoreSignedPut>>;
   getSignedUrl(
     key: string,
     options?: ObjectStoreSignedUrlOptions,

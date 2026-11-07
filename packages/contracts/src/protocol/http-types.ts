@@ -852,14 +852,6 @@ export type BinaryDocumentFileType = "docx" | "image" | "pdf";
 
 export type DocumentFileType = BinaryDocumentFileType | "binary";
 
-export interface FigureNodeReference {
-  /** Stable asset identity. This is not an expiring render URL. */
-  src: string;
-  alt: string;
-  label: string | null;
-  caption: string | null;
-}
-
 /** A stored image document and the short-lived URLs that draw or download it. */
 export type GetFigureSignedUrlResponse = {
   assetDocumentId: string;
@@ -879,11 +871,3 @@ export type GetFigureSignedUrlResponse = {
   drawUrl?: string;
   signedUrlExpiresAt: string;
 };
-
-export interface FigureAssetReference extends GetFigureSignedUrlResponse {
-  /** Project-relative markdown path for codec and clipboard translation. */
-  assetPath: string;
-  figure: FigureNodeReference;
-}
-
-export type UploadFigureAssetResponse = FigureAssetReference;

@@ -1,0 +1,8 @@
+- A picture still uploading is lost when cut and pasted, even back into its own document.
+  `uploadToken` is not on the clipboard (`parseHTML: () => null`, nothing records it on copy), and
+  a slot has no `src`, so the paste parses no picture at all. Undo brings the slot back. Found in
+  the browser on `feat/file-drop` (p16134). A fix has to decide what a copy (not a cut) does with
+  the token, since two slots can't share one upload, and refuse a paste into another editor,
+  because a picture lands only through the editor that sent it. One shape: record the token on the
+  `<img>` in `link-clipboard.ts`'s serializer, and keep it on paste only when this editor still
+  has the upload's record and its text no longer holds the token.

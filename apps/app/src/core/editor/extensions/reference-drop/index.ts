@@ -1,4 +1,6 @@
 export {
+  type NodePlacement,
+  placeNodes,
   type ReferenceDropEntry,
   type ReferenceDropOptions,
   type ReferenceDropRefusalReason,

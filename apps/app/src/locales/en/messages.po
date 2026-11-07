@@ -227,6 +227,11 @@ msgstr "{0, plural, other {# Works have drafts for this}}"
 msgid "{0}"
 msgstr "{0}"
 
+#. placeholder {0}: upload.name
+#: src/components/app/composer/composer-document.ts
+msgid "{0} ({message} Click to retry, or remove it to send.)"
+msgstr "{0} ({message} Click to retry, or remove it to send.)"
+
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
 msgid "{0} additional balance"
@@ -264,8 +269,13 @@ msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 
 #. placeholder {0}: listed[0].name
 #: src/core/editor/images/image-drop-door.ts
-msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
-msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+#~ msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+#~ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+
+#. placeholder {0}: file.name
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "{0} is text, so it was added as a document in assets. The chip links to it."
+msgstr "{0} is text, so it was added as a document in assets. The chip links to it."
 
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
@@ -551,6 +561,10 @@ msgstr "{name} discarded {title} from the draft."
 msgid "{name} discarded this document from the draft."
 msgstr "{name} discarded this document from the draft."
 
+#: src/lib/upload-limit.ts
+msgid "{name} is over {LIMIT_MB} MB, so it can't be added."
+msgstr "{name} is over {LIMIT_MB} MB, so it can't be added."
+
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr "{name} source"
@@ -793,6 +807,10 @@ msgstr "A document blocks its folder path"
 msgid "A document blocks part of this location. Move or rename it, then apply again."
 msgstr "A document blocks part of this location. Move or rename it, then apply again."
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "A file can’t go there."
+msgstr "A file can’t go there."
+
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {name} already exists in this location."
 msgstr "A file named {name} already exists in this location."
@@ -809,7 +827,7 @@ msgstr "A folder named {name} already exists in this location."
 #~ msgid "A picture cannot go there"
 #~ msgstr "A picture cannot go there"
 
-#: src/core/editor/images/image-drop-door.ts
+#: src/core/editor/file-drop/file-drop-door.ts
 #: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
@@ -1336,9 +1354,13 @@ msgstr "Can’t move part of a table"
 msgid "Can't move these from here"
 msgstr "Can't move these from here"
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "Can’t put a file inside code"
+msgstr "Can’t put a file inside code"
+
 #: src/core/editor/images/image-drop-door.ts
-msgid "Can’t put a picture inside code"
-msgstr "Can’t put a picture inside code"
+#~ msgid "Can’t put a picture inside code"
+#~ msgstr "Can’t put a picture inside code"
 
 #: src/core/editor/landing/slice-drop.ts
 msgid "Can’t put that in a table cell"
@@ -2252,7 +2274,7 @@ msgstr "Couldn't open this folder."
 msgid "Couldn't queue the compaction."
 msgstr "Couldn't queue the compaction."
 
-#: src/client/api/upload-intake-api.ts
+#: src/client/api/upload-request.ts
 msgid "Couldn't reach the server. Check your connection."
 msgstr "Couldn't reach the server. Check your connection."
 
@@ -2800,8 +2822,12 @@ msgid "Drafts ({waiting})"
 msgstr "Drafts ({waiting})"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
-msgid "Drop image to insert it"
-msgstr "Drop image to insert it"
+#~ msgid "Drop image to insert it"
+#~ msgstr "Drop image to insert it"
+
+#: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
+msgid "Drop to insert"
+msgstr "Drop to insert"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
@@ -2988,6 +3014,11 @@ msgstr "Failed"
 msgid "Failed to load image"
 msgstr "Failed to load image"
 
+#. placeholder {0}: upload.name
+#: src/components/app/composer/composer-document.ts
+msgid "Failed upload: {0}"
+msgstr "Failed upload: {0}"
+
 #: src/components/app/failure-toast.tsx
 msgid "Failures"
 msgstr "Failures"
@@ -3044,9 +3075,21 @@ msgstr "Files"
 msgid "Files attached in chat, grouped by Work."
 msgstr "Files attached in chat, grouped by Work."
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "Files can’t be added to this document."
+msgstr "Files can’t be added to this document."
+
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Files move or copy out of Uploads; they can't be dropped into it"
 msgstr "Files move or copy out of Uploads; they can't be dropped into it"
+
+#: src/lib/upload-limit.ts
+msgid "Files over {LIMIT_MB} MB can't be added."
+msgstr "Files over {LIMIT_MB} MB can't be added."
+
+#: src/client/api/upload-intake-api.ts
+#~ msgid "Files over {LIMIT_MB} MB can't be attached."
+#~ msgstr "Files over {LIMIT_MB} MB can't be attached."
 
 #: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
@@ -4190,8 +4233,8 @@ msgid "Only part of this change could be reversed."
 msgstr "Only part of this change could be reversed."
 
 #: src/core/editor/images/image-drop-door.ts
-msgid "Only pictures can be dropped here"
-msgstr "Only pictures can be dropped here"
+#~ msgid "Only pictures can be dropped here"
+#~ msgstr "Only pictures can be dropped here"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "Open"
@@ -5446,8 +5489,8 @@ msgid "That image could not be read."
 msgstr "That image could not be read."
 
 #: src/core/editor/images/image-uploads.ts
-msgid "That image did not upload."
-msgstr "That image did not upload."
+#~ msgid "That image did not upload."
+#~ msgstr "That image did not upload."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "That link could not be checked"
@@ -5667,6 +5710,25 @@ msgstr "The text it edited was discarded, so the change wasn't kept. The AI will
 #: src/features/chat/tool-renderers.tsx
 msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
+
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "The upload didn’t start."
+msgstr "The upload didn’t start."
+
+#: src/core/uploads/upload-store.ts
+msgid "The upload failed."
+msgstr "The upload failed."
+
+#: src/client/api/direct-upload.ts
+msgid "The upload to storage failed."
+msgstr "The upload to storage failed."
+
+#: src/components/app/composer/composer-document.ts
+#: src/components/app/composer/Composer.tsx
+#: src/core/editor/images/image-uploads.ts
+#: src/core/uploads/upload-store.ts
+msgid "The upload was stopped."
+msgstr "The upload was stopped."
 
 #: src/features/import/reason-copy.ts
 msgid "The uploaded file is no longer available."
@@ -5967,8 +6029,12 @@ msgstr "This file is unavailable. Refresh and try again."
 #~ msgstr "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
 
 #: src/client/api/upload-intake-api.ts
-msgid "This filename contains unsupported characters. Rename the file and attach it again."
-msgstr "This filename contains unsupported characters. Rename the file and attach it again."
+#~ msgid "This filename contains unsupported characters. Rename the file and attach it again."
+#~ msgstr "This filename contains unsupported characters. Rename the file and attach it again."
+
+#: src/client/api/upload-request.ts
+msgid "This filename contains unsupported characters. Rename the file and try again."
+msgstr "This filename contains unsupported characters. Rename the file and try again."
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "This folder is empty."
@@ -6318,6 +6384,14 @@ msgstr "Updating a Work…"
 msgid "upload"
 msgstr "upload"
 
+#: src/core/editor/links/link-mark-view.ts
+msgid "Upload failed"
+msgstr "Upload failed"
+
+#: src/core/editor/links/link-chip.ts
+msgid "Upload failed. Click to retry"
+msgstr "Upload failed. Click to retry"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr "Upload figure"
@@ -6330,6 +6404,15 @@ msgstr "Upload or paste"
 msgid "Upload paused"
 msgstr "Upload paused"
 
+#: src/core/editor/links/link-chip.ts
+msgid "Uploading"
+msgstr "Uploading"
+
+#. placeholder {0}: upload.name
+#: src/components/app/composer/composer-document.ts
+msgid "Uploading {0}"
+msgstr "Uploading {0}"
+
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Uploading {0} ({percent}%)"
@@ -6339,6 +6422,11 @@ msgstr "Uploading {0} ({percent}%)"
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Uploading {0}…"
 msgstr "Uploading {0}…"
+
+#. placeholder {0}: upload.percent
+#: src/core/editor/links/link-chip.ts
+msgid "Uploading {0}%"
+msgstr "Uploading {0}%"
 
 #: src/features/import/import-presentation.ts
 msgid "Uploading {name}"
