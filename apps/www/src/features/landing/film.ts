@@ -146,10 +146,14 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
     smooth(beats.fight, FIGHT.spark.eye[1], FIGHT.spark.eye[1] + 0.02) *
     (1 - smooth(beats.fight, FIGHT.spark.eye[1] + 0.03, FIGHT.spark.eye[1] + 0.09));
   const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
+  // From the perch on, the Cold Fire it sent up stays in the sky and pulses until the box burns.
+  const stirred =
+    (beats.fight > 0 ? 1 : smooth(beats.turn, PERCH[0], PERCH[0] + 0.06)) *
+    (1 - smooth(beats.twist, 0, 0.3));
   // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
   const breathing =
-    flare(beats.turn, PERCH) * 0.5 +
-    smooth(beats.fight, 0, 0.08) * 0.35 +
+    stirred * 0.5 +
+    smooth(beats.fight, 0, 0.08) * 0.2 +
     flare(beats.fight, FIGHT.ward) * 0.45 +
     flare(beats.fight, FIGHT.breath) * 0.7;
   const toTwist = smooth(beats.twist, 0, 0.5);
@@ -179,7 +183,7 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
       breathing * (1 - smooth(beats.twist, 0, 0.3)),
     // Low in the north behind the mountains, the same every night until the box burns.
     plume: 0.9 * (1 - smooth(beats.twist, 0, 0.3)),
-    surge: flare(beats.turn, PERCH),
+    surge: stirred,
     pulse: Math.max(
       1 - smooth(beats.push, 0, 0.35),
       smooth(beats.sky, 0.3, 0.42) * (1 - smooth(beats.sky, 0.72, 0.85)),
@@ -480,15 +484,16 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     if (Math.abs(target - current) < 0.3) current = target;
 
     const beats = beatProgress(current, layout.spans);
+    // Before the night is kept: its still takes the trees from where they stand now.
+    const party = forest.update(current, beats);
     if (!nightKept && beats.twist > 0.2) {
       const [start, end] = layout.spans.twist;
       const lastNight = lerp(start, end, REVEAL_STARTS) - 1;
       sky.draw(skyFrame(beatProgress(lastNight, layout.spans), lastNight, layout), now / 1000);
-      actor.keepNight(skyCanvas);
+      actor.keepNight(forest.withTrees(skyCanvas));
       nightKept = true;
       needsPaint = true;
     }
-    const party = forest.update(current, beats);
     actor.update(now / 1000, current, beats, party);
     if (beats.ask >= ASSIGN_AFTER) store.assignIfUnanswered();
     else store.withdrawPass();

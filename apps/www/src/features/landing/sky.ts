@@ -163,7 +163,7 @@ export const gulpPhase = (seconds: number) => (seconds / GULP_SECONDS) % 1;
 /** The aurora's swell from the last gulp to reach it, 1 on arrival and decaying. */
 const gulpSwell = (seconds: number) => {
   const since = (gulpPhase(seconds) - GULP_RISE + 1) % 1;
-  return Math.exp(-since * 5);
+  return Math.exp(-since * 3);
 };
 
 const CAMERA_UNIFORMS = { PITCH: "pitch", YAW: "yaw", FOCAL: "focal", FLOW: "flow" } as const;
@@ -246,10 +246,10 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     camera(gl, scene.scenePass, frame, canvas.width, canvas.height);
     const swell = frame.surge * gulpSwell(seconds);
     for (const [location, key] of scene.floats) {
-      gl.uniform1f(location, key === "plume" ? frame.plume + swell * 1.2 : frame[key]);
+      gl.uniform1f(location, key === "plume" ? frame.plume + swell * 2.4 : frame[key]);
     }
     const wave = Math.sin(seconds * 0.9) * 0.65 + Math.sin(seconds * 2.3 + 1) * 0.35;
-    gl.uniform1f(scene.pulsedAurora, frame.aurora * (1 + frame.pulse * 0.28 * wave) + swell * 0.9);
+    gl.uniform1f(scene.pulsedAurora, frame.aurora * (1 + frame.pulse * 0.28 * wave) + swell * 2.2);
     // The aurora zooms in as it drifts, or the drift would pull its clamped edge into view.
     gl.uniform3f(
       scene.drift,
