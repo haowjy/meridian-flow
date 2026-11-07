@@ -87,7 +87,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
 
             <ol className="sub" {...NIGHT}>
               <li className="y" data-b="s1">
-                <b>You</b>Write the prologue. Four condemned strangers, one beast, no way home.
+                <b>You</b>Write the prologue. Four heroes, one beast, nine days north.
               </li>
               <li data-b="s2">
                 <b>Muse</b>Drafting it now. Keep typing, I’ll work around you.
@@ -104,7 +104,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 letter="R"
                 name="Reader-sim"
                 live="Reading as a serial reader"
-                report="Attention dips on the walk and comes back hard on the Cold Fire."
+                report="Attention dips on the party introductions and comes back hard at the frozen army."
               />
               <Agent
                 letter="C"
@@ -121,8 +121,8 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               <Agent
                 letter="C"
                 name="Continuity-checker"
-                live="Reading Oskar"
-                report="Oskar’s page says he lost two fingers. Here he’s casting ten-fingered storms."
+                live="Reading Maren"
+                report="Maren’s page says she’s blind. Here she sees the dragon first."
                 isKey
               />
             </div>
@@ -132,7 +132,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 <b>You</b>Have the team read it.
               </li>
               <li data-b="s4">
-                <b>Muse</b>Fixed Oskar’s hand. Writing the ending now.
+                <b>Muse</b>Fixed Maren: she hears it first. Writing the ending now.
               </li>
             </ol>
 

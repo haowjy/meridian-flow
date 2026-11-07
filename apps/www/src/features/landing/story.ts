@@ -31,52 +31,52 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "tam",
     name: "Tam",
-    note: "Youngest warden in Harl’s history. Accused of burning the town’s grain. Says he didn’t.",
-    pitch: "He still has to prove he didn’t do it.",
+    note: "Seventeen and Level 58: the strongest human his age ever recorded.",
+    pitch: "The prodigy who has never failed at anything.",
     lastLine:
-      "My name is Tam. I did not burn the grain. I walked out of the fire, and nobody believed that either.",
-    lead: "Tam is the youngest warden in Harl’s history, condemned for burning the town’s grain.",
+      "My name is Tam. I put my one spark in its eye, and it wasn’t enough. Next time it gets both.",
+    lead: "Tam is a farm boy from Harl who reached Level 58 at seventeen, higher than anyone his age has ever been.",
     facts: [
-      ["Age", "24"],
-      ["Homeland", "Harl, a river town in the south"],
-      ["Allegiance", "None since the trial"],
-      ["Occupation", "Warden of the Harl woods and grain road"],
-      ["Abilities", "Archery, tracking"],
-      ["Sent by", "The magistrate of Harl"],
+      ["Race", "Human"],
+      ["Age", "17"],
+      ["Level", "58"],
+      ["Skill", "[Spark]"],
+      ["Homeland", "Harl, the southern lowlands"],
+      ["Sent by", "The king of Harl"],
       ["First appears", "Prologue"],
     ],
     sections: [
       [
         "Appearance",
-        "Lean and sunburnt, a head shorter than Sigrun. Wears the warden’s green coat with the badge cut off.",
+        "Short and sunburnt. Burn scars run from his right hand to the elbow, from the first time [Spark] came, and he holds that arm a little away from his body.",
       ],
       [
         "Personality",
-        "Trusts people too fast. Counts things when he’s scared. Tells the truth badly, which is why nobody believed him.",
+        "Talks when he’s nervous and laughs when he isn’t. Trusts people before they’ve earned it.",
       ],
       [
         "Abilities",
-        "The best shot of the four and the quietest walker. He scouts, tracks and keeps the party fed. Up close he’s only adequate.",
+        "[Spark] puts fire into anything he can touch or throw at. It won’t catch in deep cold, so on the ice he fights with a knife, badly.",
       ],
       [
         "History",
         [
           [
             "Early life",
-            "A miller’s orphan, raised at the mill on the Harl. He won the crown’s archery at seventeen, and the town made him warden at twenty.",
+            "His father farms barley on the cliffs above the river. Tam worked the fields until his first skill came.",
           ],
           [
-            "The granary",
-            "It burned in a hungry winter with the whole harvest inside. As warden, Tam held the only key. He ran north before the hearing and was caught at the border, where the magistrate offered him the beast instead of the rope. He still isn’t sure he put the lamp out that night.",
+            "The court",
+            "Eighteen months from farm boy to Level 58. The king named him before the whole court, and he went red to the ears.",
           ],
         ],
       ],
       [
         "Relationships",
         [
-          ["Sigrun", "Teaching him to fight up close. He thinks she likes him."],
-          ["Oskar", "Owes him eleven silver, according to Oskar."],
-          ["Maren", "Stitched his arm after the wolves. The only one who has asked if he did it."],
+          ["Sigrun", "Told him his arm would ache in the cold. It did."],
+          ["Maren", "Describes things to her. He’s bad at it, and she likes it."],
+          ["Oskar", "Asks about the ear every day."],
         ],
       ],
       [
@@ -84,9 +84,9 @@ export const CHARACTERS: readonly Character[] = [
         [
           [
             "Secret",
-            "He can’t read. He signed the grain ledger that week without knowing it showed the stores already sold.",
+            "The king didn’t send Tam only to kill the beast. He wants to know how strong a boy can get under the Cold Fire, and what made him that way.",
           ],
-          ["If he survives", "He goes home to find who emptied the granary before it burned."],
+          ["Wants", "To buy his father the field next to theirs. He has already picked it out."],
         ],
       ],
     ],
@@ -94,64 +94,48 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "sigrun",
     name: "Sigrun",
-    note: "Sent by the northern clans. She killed a jarl and won’t say why.",
-    pitch: "She still hasn’t said why.",
-    lastLine:
-      "My name is Sigrun. I killed a jarl, and I will tell you why. I walked out of the fire because I had not finished.",
-    lead: "Sigrun held the bridge at Ansgard alone, and was Jarl Hakon’s sworn guard until she killed him at his own table.",
+    note: "Champion of the holds. She cuts her wards into her own arms.",
+    pitch: "Her ward turns one blow. She has to choose which.",
+    lastLine: "My name is Sigrun. My ward turns one blow. Next time I’ll know which one.",
+    lead: "Sigrun is the champion of the dwarven holds, a runesmith who carves her wards into her own forearms.",
     facts: [
-      ["Age", "34"],
-      ["Homeland", "The northern fjords"],
-      ["Allegiance", "Clan Vard"],
-      ["Occupation", "Sworn guard to Jarl Hakon"],
-      ["Abilities", "Axe and shield"],
-      ["Sent by", "The clan moot"],
+      ["Race", "Dwarf"],
+      ["Age", "140"],
+      ["Level", "74"],
+      ["Skill", "[Ward Rune]"],
+      ["Homeland", "The Ninth Hold, Ansgard"],
+      ["Sent by", "The council of the holds"],
       ["First appears", "Prologue"],
     ],
     sections: [
       [
         "Appearance",
-        "Tall, going grey early, with her left ear missing. Wears a mail shirt patched with rings from three clans.",
+        "Built like a millstone, beard frozen to her collar on the ice. Both forearms are scarred from wrist to elbow in rows of runes, the newest still scabbed.",
       ],
-      [
-        "Personality",
-        "Says little. Sleeps sitting up and takes the worst watch without being asked.",
-      ],
+      ["Personality", "Says little and means all of it. Believes nothing without bones."],
       [
         "Abilities",
-        "The best fighter of the four. She lets the other side make the first mistake, then ends it in a blow or two.",
+        "[Ward Rune]: each rune turns exactly one blow, then goes dark until she cuts another. She can cut one mid-fight. A shield can be dropped; an arm can’t.",
       ],
       [
         "History",
-        [
-          [
-            "Early life",
-            "Born to Clan Vard. She joined Hakon’s guard at twenty-two and carried his shield in three wars.",
-          ],
-          [
-            "Ansgard",
-            "She held the bridge alone for a morning until the clans came up. They still sing about it.",
-          ],
-          [
-            "The feast",
-            "At midwinter she stood up, killed Hakon in front of forty witnesses and sat back down. The moot can’t hang a sworn guard without a reason, and she won’t give one, so it gave her the beast.",
-          ],
-        ],
+        "Champion of the holds for forty years. She lives with her sister above the watch-ledge of the Ninth Hold.",
       ],
       [
         "Relationships",
         [
-          ["Tam", "Teaching him to stop running."],
-          ["Oskar", "Sits where she can see his hands."],
-          ["Maren", "The only one she lets stand behind her."],
-          ["Family", "A daughter of nine, raised by her sister."],
+          ["Tam", "Walked him away from the frozen army by his collar."],
+          ["Maren", "Stands in front of her in every fight."],
+          ["Oskar", "Doesn’t believe his song. Listens to it anyway."],
         ],
       ],
       [
         NOTES,
         [
-          ["Secret", "Hakon had promised her daughter to a southern lord to settle a debt."],
-          ["If she survives", "She goes south to find the lord."],
+          [
+            "Secret",
+            "The sealed letter from the Ninth Hold orders her to bring back the beast’s heart, whatever it costs the others.",
+          ],
         ],
       ],
     ],
@@ -159,60 +143,45 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "oskar",
     name: "Oskar",
-    note: "Stormcaller, sent by the king of the coast. He sold a fleet. Two fingers short.",
-    pitch: "He’d sell this story to anyone.",
-    lastLine:
-      "My name is Oskar. I have sold everything I ever owned. I walked out of the fire and started looking for a buyer.",
-    lead: "Oskar was stormcaller to the king’s fleet and the hero of Selle Sound, until he sold its sailing dates to the enemy.",
+    note: "Kessa guide. The only one who has walked to the ice and back.",
+    pitch: "He believed the songs.",
+    lastLine: "My name is Oskar. I told them the songs were true. I’ll have to tell them again.",
+    lead: "Oskar is a bear-blooded Kessa guide, and the only living person who has walked to the edge of the ice and come back.",
     facts: [
-      ["Age", "51"],
-      ["Homeland", "Port Selle, on the coast"],
-      ["Allegiance", "Whoever is paying"],
-      ["Occupation", "Stormcaller to the king’s fleet"],
-      ["Abilities", "Wind and lightning"],
-      ["Sent by", "The king of the coast"],
+      ["Race", "Beastkin, bear-blooded"],
+      ["Age", "38"],
+      ["Level", "66"],
+      ["Skill", "[Sense Fear]"],
+      ["Homeland", "The Kessa steppe"],
+      ["Sent by", "The clan mothers"],
       ["First appears", "Prologue"],
     ],
     sections: [
-      [
-        "Appearance",
-        "Broad and soft around the middle, with a well-kept beard. Two fingers gone from his right hand. Keeps the king’s ring on a cord.",
-      ],
-      [
-        "Personality",
-        "Charming, tired and always bargaining. Keeps a small ledger of what the others owe him, and it’s usually right.",
-      ],
+      ["Appearance", "Twice Sigrun’s height. Half his left ear is gone."],
+      ["Personality", "Quiet, dry, patient with Tam. Changes the subject with food."],
       [
         "Abilities",
-        "Calls storms with both hands. Since he lost the fingers they come bigger and harder to aim. Carries a boarding sword, and has been known to pay the other side to leave.",
+        "[Sense Fear]: he hears an animal’s fear a breath before it moves, and the choice right behind it. He calls the fights.",
       ],
       [
         "History",
-        [
-          ["Early life", "A chandler’s son, born able to pull wind out of a clear sky."],
-          [
-            "Selle Sound",
-            "He won the battle with one storm, and the king knighted him on the deck.",
-          ],
-          [
-            "Cape Ansel",
-            "He sold the sailing dates, and twenty-two ships burned. The king’s men took two fingers while they asked who else knew. A public trial would have shamed the crown, so the king sent him north.",
-          ],
-        ],
+        "Guided hunters to the edge of the Greenlands for twenty years. He came back from the last trip alone, without half his ear, and won’t say what took it.",
       ],
       [
         "Relationships",
         [
-          ["Tam", "Lends him money, mostly to see if he pays it back."],
-          ["Sigrun", "Afraid of her, and says so."],
-          ["Maren", "Asks her to look at his hand every night. It doesn’t need it."],
+          ["Tam", "Answers every question about the ear with “Eat your food.”"],
+          ["Sigrun", "She doesn’t believe him. He doesn’t argue."],
+          ["Maren", "Sang her the last verse again."],
         ],
       ],
       [
         NOTES,
         [
-          ["Secret", "The enemy held his son. He has heard nothing since the ships burned."],
-          ["If he survives", "He goes looking for his son with no fleet and no name."],
+          [
+            "Secret",
+            "He has seen the beast once before, asleep in the ice. That is what took his ear, and why the clan mothers believed the song.",
+          ],
         ],
       ],
     ],
@@ -220,60 +189,61 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "maren",
     name: "Maren",
-    note: "Healer and ward-mage, sent by the abbey at Vell for heresy. She doesn’t flinch at fire.",
-    pitch: "The fire didn’t burn her.",
+    note: "The queen of Vell’s healer. Blind for a thousand years.",
+    pitch: "She has never seen anything. Not even a box.",
     lastLine:
-      "My name is Maren. I walked out of the fire, and it did not burn me. I have stopped telling people that.",
-    lead: "Maren is a healer and ward-mage who saved the queen from the red fever, then was tried for heresy by her own abbey.",
+      "My name is Maren. I have been blind for a thousand years. The first thing I ever saw was a box that said I’d finished.",
+    lead: "Maren has been the queen of Vell’s healer for nine hundred years, and blind since she was six.",
     facts: [
-      ["Age", "29"],
-      ["Homeland", "The abbey at Vell, in the mountains"],
-      ["Allegiance", "The abbey, until the trial"],
-      ["Occupation", "Infirmarian"],
-      ["Abilities", "Wards, healing"],
-      ["Sent by", "The abbess of Vell"],
+      ["Race", "Elf"],
+      ["Age", "1,040"],
+      ["Level", "70"],
+      ["Skill", "[Mending Hymn]"],
+      ["Homeland", "Vell, the forest"],
+      ["Sent by", "The queen of Vell"],
       ["First appears", "Prologue"],
     ],
     sections: [
       [
         "Appearance",
-        "Small, with a shaved head and abbey grey. No burns anywhere, not even old ones.",
+        "Small and straight-backed, with white eyes and the queen’s ring on a cord around her neck.",
       ],
       [
         "Personality",
-        "Calm and blunt, with a dark sense of humour. Looks straight at what other people look away from.",
+        "Patient, exact and hard to surprise. Listens a long time before she speaks.",
       ],
       [
         "Abilities",
-        "She can hold a shield of light over all four for about as long as she can hold her breath, and close a wound while it’s still bleeding. Good with her staff, which surprises people.",
+        "[Mending Hymn]: while she sings, a wound closes, and she can sing a long time. She hears the ground, and knows a crevasse by the sound of the snow over it.",
       ],
       [
         "History",
         [
-          ["Early life", "Left at the abbey gate as a baby. She ran the infirmary by twenty-two."],
           [
-            "The red fever",
-            "She nursed the queen through it and was expected to be the next abbess.",
+            "Childhood",
+            "Went blind at six. The System has read her every box since, in a voice that sounds like her mother’s.",
           ],
           [
-            "The fire",
-            "The infirmary burned and she went back in for the patients. She walked out with her habit gone and no mark on her skin. When she told the village that fire wasn’t God’s judgement, the abbey tried her and gave her the north as penance. She has been trying to work out why she didn’t burn ever since.",
+            "The queen’s healer",
+            "Elves level slowly. Nine hundred years at court took her to Level 70.",
           ],
         ],
       ],
       [
         "Relationships",
         [
-          ["Tam", "The first to thank her."],
-          ["Sigrun", "Stands behind her in every fight."],
-          ["Oskar", "Knows his hand doesn’t need looking at, and looks anyway."],
+          ["Tam", "Lets him describe things to her."],
+          ["Sigrun", "Trusts her to stand in front."],
+          ["Oskar", "Asked him to sing the last verse again."],
         ],
       ],
       [
         NOTES,
         [
-          ["Secret", "She was born in the Greenlands. She doesn’t know."],
-          ["If she survives", "She finds out the dragon won’t attack her."],
+          [
+            "Secret",
+            "She heard the Kessa song once before, in Vell, the year she went blind. She means to tell the queen she was right about it.",
+          ],
         ],
       ],
     ],
@@ -281,51 +251,151 @@ export const CHARACTERS: readonly Character[] = [
 ];
 
 export const BEAST_PAGE: WikiPage = {
-  lead: "The reason they were sent north. Nobody who went under the Cold Fire has come back to say what it is.",
+  lead: "Whatever is breathing the Cold Fire. Every army sent north to find it is listed as Missing.",
   facts: [
-    ["Range", "The Greenlands"],
-    ["Seen by", "Nobody living"],
+    ["Tag", "None"],
+    ["Level", "Unknown"],
+    ["Range", "The ice north of the Kessa steppe"],
     ["First appears", "Prologue"],
   ],
   sections: [],
 };
 
 export const DRAGON_PAGE: WikiPage = {
-  lead: "The beast in the Greenlands. Nobody who went north was told what it was.",
+  lead: "The beast in the ice is a dragon. Its breath is the Cold Fire, and it eats light.",
   facts: [
     ["Status", "Alive"],
-    ["Kind", "Green dragon"],
-    ["Range", "The Greenlands"],
+    ["Tag", "None"],
+    ["Level", "Unknown"],
+    ["Range", "An ice basin under the brightest of the Cold Fire"],
     ["First appears", "Prologue"],
   ],
   sections: [
-    ["Appearance", "Green-black and longer than a longship, with a spined back and a barbed tail."],
-    ["Abilities", "Flies, and breathes fire that burns blue at the centre and green at the edge."],
+    [
+      "Appearance",
+      "The size of a hill. Its eye is as big as a door, and green inside, like the sky.",
+    ],
+    [
+      "Abilities",
+      "Breathes the Cold Fire into the sky. Where the breath goes, the light goes out of the air. Afraid of its left foot.",
+    ],
+    ["Wounds", "Lost an eye to Tam’s spark on the ninth night."],
     [
       "History",
-      "Every country in this story has sent people north to kill it. None of them came back.",
+      "The Kessa song says it sleeps in the ice, wakes when the sky burns, breathes the sky cold and eats the sun. Everyone but the Kessa called it a myth.",
     ],
     [
       NOTES,
       [
-        ["Secret", "It has never once left the Greenlands. Nobody has asked why."],
-        ["Undecided", "Whether it’s the last one."],
+        [
+          "Secret",
+          "It isn’t what spreads the Cold Fire. Something is drawing the light north through it.",
+        ],
+        ["Undecided", "Why the System can’t see it."],
       ],
     ],
   ],
 };
 
+/** Background pages after the party in the Knowledge Base. */
+export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }[] = [
+  {
+    key: "coldfire",
+    name: "The Cold Fire",
+    page: {
+      lead: "The green light that came over the north on a clear night in spring, seen in every country at once.",
+      facts: [
+        ["First seen", "The first night of spring"],
+        ["Spreads", "South, a little further each night"],
+        ["Effect", "The sun rises colder"],
+        ["First appears", "Prologue"],
+      ],
+      sections: [
+        [
+          "Effects",
+          "By the tenth day the barley in Harl had stopped growing. By the twentieth there was frost on the river at noon. The scholars agree on one thing: it eats the light.",
+        ],
+        [NOTES, [["Cause", "The dragon’s breath."]]],
+      ],
+    },
+  },
+  {
+    key: "missing",
+    name: "The Missing",
+    page: {
+      lead: "The armies sent north before the four. None of them came back.",
+      facts: [
+        ["Harl", "Two thousand spears under the king’s banner"],
+        ["Ansgard", "A hold’s whole garrison"],
+        ["Vell", "Its rangers"],
+        ["The Kessa", "Every hunter who would go"],
+        ["System status", "Missing"],
+      ],
+      sections: [
+        [
+          "Found",
+          "Harl’s army sits in the snow five days north of the last Kessa camp, in ranks, spears across their knees, frosted over like fur. They didn’t fight anything. The System still hasn’t decided they’re dead.",
+        ],
+        [NOTES, [["Undecided", "Whether someone could stop them leaving."]]],
+      ],
+    },
+  },
+  {
+    key: "system",
+    name: "The System",
+    page: {
+      lead: "Levels, skills and tags. Everyone has had them for as long as anyone remembers.",
+      facts: [
+        ["Who has it", "Everyone"],
+        ["Tags", "Every living thing, except the beast"],
+        ["Boxes", "Blue; read aloud to anyone who can’t see"],
+      ],
+      sections: [
+        [
+          "Levels",
+          "The strongest means the highest level alive. Elves level slowly; a seventeen-year-old at 58 is a record.",
+        ],
+        [
+          NOTES,
+          [
+            ["Secret", "Something has taken hold of it. It wrote “Tutorial complete.”"],
+            ["Undecided", "What took hold, and what it wants."],
+          ],
+        ],
+      ],
+    },
+  },
+  {
+    key: "song",
+    name: "The Kessa Song",
+    page: {
+      lead: "A long Kessa song, mostly about weather. The last verse is about a dragon in the ice.",
+      facts: [
+        ["Sung by", "The Kessa, and Oskar on the march"],
+        ["Believed by", "The Kessa"],
+      ],
+      sections: [
+        [
+          "The last verse",
+          "It sleeps in the ice and wakes when the sky burns, and breathes the sky cold, and eats the sun.",
+        ],
+        [NOTES, [["Note", "There is no verse about boxes."]]],
+      ],
+    },
+  },
+];
+
 export const characterName = (key: CharacterKey) =>
   CHARACTERS.find((character) => character.key === key)?.name ?? "";
 
 export const PROLOGUE = {
-  opening: "They sent us to the Greenlands to kill the beast under the Cold Fire.",
+  opening: "The Cold Fire came on a clear night in spring, and every country saw it.",
   lines: [
-    "Each of us had been condemned by our own country. Kill it, they said, and our “crimes” would be forgiven.",
-    "Nobody who went under the Cold Fire had ever come back to say what the beast was.",
-    "Every night the sky burned green above us. We thought it was beautiful.",
+    "Every night it reached a little further south, and the sun came up a little colder.",
+    "Four peoples sent their strongest north to kill whatever was breathing it.",
+    "We were the four.",
   ],
-  turn: "On the ninth night, the beast found us.",
+  turn: "On the ninth night, we found it.",
 } as const;
 
 export const QUESTION =
