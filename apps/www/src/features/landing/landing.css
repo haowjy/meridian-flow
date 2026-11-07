@@ -244,40 +244,6 @@ h1 span {
   text-wrap: pretty;
 }
 
-.play {
-  align-items: center;
-  gap: 10px;
-  margin-top: 22px;
-  padding: 10px 18px 10px 14px;
-  border: 1px solid var(--color-foreground);
-  border-radius: 999px;
-  font-weight: 600;
-  font-size: 16px;
-  cursor: pointer;
-  transition:
-    background 0.2s ease-out,
-    color 0.2s ease-out;
-}
-
-.cine .play {
-  display: inline-flex;
-}
-
-.play:hover {
-  background: var(--color-foreground);
-  color: var(--mkt-night);
-}
-
-.play small {
-  font-weight: 400;
-  font-size: 14px;
-  opacity: 0.8;
-}
-
-html[data-auto]:not([data-auto="idle"]) .play small {
-  display: none;
-}
-
 .slotwrap {
   padding: 0 clamp(10px, 4vw, 56px);
 }

@@ -32,7 +32,6 @@ const AUTOPLAY_TAIL_SECONDS = 2.5;
 const BEAT_SECONDS = BEATS.reduce((total, beat) => total + beat[2], 0);
 
 export const AUTOPLAY_SECONDS = BEAT_SECONDS + AUTOPLAY_TAIL_SECONDS;
-export const AUTOPLAY_MINUTES = Math.round((AUTOPLAY_SECONDS / 60) * 2) / 2;
 
 const along = (spans: BeatSpans, name: Beat, share: number) =>
   spans[name][0] + (spans[name][1] - spans[name][0]) * share;
