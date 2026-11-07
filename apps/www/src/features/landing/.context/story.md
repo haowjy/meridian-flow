@@ -8,8 +8,8 @@ page's story copy.
 
 [`story.ts`](../story.ts) holds every word the page shows: the four character
 pages with their Writer's notes, the world and place pages, the Prologue lines,
-the card's question, the System boxes and the end screen. Facts in it are
-canon. [`prologue.md`](prologue.md) is the Prologue the page excerpts. Where
+the card's question, the System boxes, the end screen and the section
+headings. Facts in it are canon. [`prologue.md`](prologue.md) is the Prologue the page excerpts. Where
 the two differ, `story.ts` is what ships; bring the prose in line.
 
 ## Premise
@@ -137,6 +137,9 @@ any new copy.
 - **`Status: Alive` on the campfire sheets.** Four Alive lines before the boss
   read as a promise they will change, so the visitor knows three die screens
   early.
+- **A `Source` line on a skill,** such as `[Source: unknown.]` under Rekindle.
+  The box says what the survivor got; where it came from is the serial's to
+  tell.
 - **Everyone rising undead when the visitor skips.** A skip assigns a survivor.
 - **"Tutorial complete." as the death box's text.** Halfway down a landing
   page it reads as the page's own walkthrough ending.

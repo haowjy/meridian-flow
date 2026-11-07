@@ -652,7 +652,7 @@ export const SHEETS: Record<CharacterKey, Sheet> = {
   },
 };
 
-/** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
+/** The System's windows: the death box, the card when the visitor doesn't pick, and the end. */
 export const SYSTEM = {
   death: "You died.",
   assigned: (key: CharacterKey) => `[No selection. Survivor assigned: ${characterName(key)}]`,
