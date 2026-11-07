@@ -33,6 +33,12 @@ const BEATS = [
 /** The share of the ask where the question lifts out of the chat, 2 swipes in. */
 export const ASK_LIFT = [0.43, 0.55] as const;
 /**
+ * Shares of the turn beat in which the dragon, perched, raises its head and breathes the Cold
+ * Fire up into the sky while the party backs away. Then the fight starts.
+ */
+export const PERCH = [0.6, 0.97] as const;
+
+/**
  * The ninth night, as shares of the fight beat, after the Prologue: Sigrun's ward splits the
  * first breath, then each of the four hits it. Sigrun throws a cut rune, Maren's song breaks on
  * it, Oskar charges its flank, and Tam's spark goes into the scales above its left foot, then
