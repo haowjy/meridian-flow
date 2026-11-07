@@ -1,6 +1,6 @@
 /** Postgres-backed organize claims with database-time leases and stale-owner fencing. */
 import type { Database } from "@meridian/database";
-import { imports, projects } from "@meridian/database/schema";
+import { imports } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { OrganizeClaim, OrganizeQueue } from "../ports/organize-queue.js";

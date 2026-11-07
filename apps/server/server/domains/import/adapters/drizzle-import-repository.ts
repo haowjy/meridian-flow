@@ -2,7 +2,7 @@
 import { IMPORT_NEEDS_LOOK_REASONS, type ImportCounts } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { importEntries, imports, projects } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockProjectLifecycleShared } from "../../../shared/project-lifecycle-lock.js";
 import type { FileReceipt } from "../domain/receipt.js";
@@ -316,6 +316,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
             eq(imports.projectId, record.projectId),
             ne(imports.id, record.id),
             eq(imports.state, "organizing"),
+            isNotNull(imports.leaseToken),
             sql`${imports.leaseUntil} > now()`,
           ),
         )
