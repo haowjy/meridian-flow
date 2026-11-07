@@ -192,5 +192,8 @@ function readPlace(): number | null {
 function savePlace(share: number) {
   try {
     sessionStorage.setItem(PLACE_KEY, String(share));
-  } catch {}
+  } catch {
+    // Storage can be blocked (private mode); losing the saved place is fine.
+    return;
+  }
 }
