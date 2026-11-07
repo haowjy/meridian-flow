@@ -38,6 +38,8 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             </div>
             <div className="walkers" id="walkers" aria-hidden="true">
               <b className="camp" />
+              <b className="ward" />
+              <b className="spark" />
               <i />
               <i />
               <i />

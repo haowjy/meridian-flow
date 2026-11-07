@@ -706,6 +706,36 @@
   background: radial-gradient(var(--walk-lantern), transparent 62%);
 }
 
+.cine .walkers .ward,
+.cine .walkers .spark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100px;
+  height: 100px;
+  opacity: 0;
+  transform-origin: 0 0;
+}
+
+/* Sigrun's rune: the first breath splits around it. */
+.cine .walkers .ward {
+  background: radial-gradient(
+    var(--walk-ward) 8%,
+    color-mix(in oklab, var(--walk-ward) 55%, transparent) 26%,
+    transparent 64%
+  );
+}
+
+.cine .walkers .spark {
+  width: 40px;
+  height: 40px;
+  background: radial-gradient(
+    var(--walk-lantern) 18%,
+    color-mix(in oklab, var(--walk-lantern) 40%, transparent) 40%,
+    transparent 70%
+  );
+}
+
 .cine .skill {
   position: absolute;
   inset: var(--bar) 0 0;

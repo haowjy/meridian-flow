@@ -1,6 +1,6 @@
 import { MARKETING_SKY } from "@meridian/design-tokens/marketing-sky";
 import type { Layout } from "./film-layout";
-import { type BeatProgress, clamp, lerp, progress, smooth } from "./timeline";
+import { type BeatProgress, clamp, FIGHT, lerp, progress, smooth } from "./timeline";
 
 const WALK_FRAMES = 6;
 const FIGHT_COLUMN = WALK_FRAMES;
@@ -15,6 +15,13 @@ const CLIFF_TOP = 0.64;
 const CLIFF_X = 0.11;
 /** Stage shares of the world beat at which the other three catch Tam up. */
 const JOINS = [0, 0.22, 0.4, 0.58];
+
+/** Where the party stands in the fight, for the dragon's aim: stage pixels. */
+export type Party = { front: readonly [number, number]; back: readonly [number, number] };
+
+/** Up and back down across a window: 0 outside it, 1 in its middle. */
+const flash = (value: number, [from, to]: readonly [number, number]) =>
+  smooth(value, from, from + 0.04) * (1 - smooth(value, to - 0.05, to));
 
 const noise = (seed: number) => {
   const value = Math.sin(seed * 12.9898) * 43758.5453;
@@ -230,9 +237,11 @@ export function createForest(root: HTMLElement) {
   const walkers = root.querySelector("#walkers") as HTMLElement;
   const figures = [...walkers.querySelectorAll("i")];
   const camp = walkers.querySelector(".camp") as HTMLElement;
+  const ward = walkers.querySelector(".ward") as HTMLElement;
   root.style.setProperty("--walk-sheet", `url(${partySheet().toDataURL()})`);
-  const [r, g, b] = MARKETING_SKY.sun;
-  root.style.setProperty("--walk-lantern", `rgb(${r * 255} ${g * 255} ${b * 255})`);
+  const rgb = ([r, g, b]: readonly number[]) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
+  root.style.setProperty("--walk-lantern", rgb(MARKETING_SKY.sun));
+  root.style.setProperty("--walk-ward", rgb(MARKETING_SKY.fireCore));
   let layout: Layout;
 
   const measure = (next: Layout) => {
@@ -268,19 +277,21 @@ export function createForest(root: HTMLElement) {
     size: number,
     column: number,
     row: number,
+    angle = 0,
   ) => {
-    figure.style.transform = `translate3d(${x - size / 2}px,${feet - size}px,0) scale(${size / FIGURE})`;
+    // Turns about the feet, so a figure falls where it stood.
+    figure.style.transform = `translate3d(${x}px,${feet}px,0) rotate(${angle}rad) scale(${size / FIGURE}) translate(-50%,-100%)`;
     figure.style.maskPosition = `${(column / (COLUMNS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
   };
 
   return {
     measure,
-    update(at: number, beats: BeatProgress) {
+    update(at: number, beats: BeatProgress): Party | null {
       const { spans, width: W, height: H } = layout;
       const shown = 1 - smooth(beats.twist, 0.12, 0.26);
       forest.style.opacity = String(shown);
       walkers.style.opacity = String(shown);
-      if (shown === 0) return;
+      if (shown === 0) return null;
       const drift = (at / H) * W * 0.025;
       forest.style.transform = `translate3d(${-drift}px,0,0)`;
 
@@ -293,6 +304,8 @@ export function createForest(root: HTMLElement) {
       const campX = leader - gap * 1.5;
       const seated = smooth(beats.back, 0, 0.3);
       const ring = [1.6, 0.6, -0.6, -1.6];
+      const fight = beats.fight;
+      const heads: number[] = [];
 
       figures.slice(0, WOLF_ROW).forEach((figure, row) => {
         const joinsAt = lerp(spans.world[0], spans.world[1], JOINS[row]);
@@ -307,8 +320,40 @@ export function createForest(root: HTMLElement) {
         if (inFight) column = FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
         if (seated > 0.5 && beats.turn <= 0) column = SIT_COLUMN;
         if (beats.turn > 0) column = 1;
-        place(figure, x, row === 0 ? feet : H * GROUND, size, column, row);
+        heads.push(x);
+        if (fight <= 0) {
+          figure.style.filter = "";
+          place(figure, x, row === 0 ? feet : H * GROUND, size, column, row);
+          return;
+        }
+        const fate = FIGHT.fates[row];
+        const hit = progress(fight, fate.at, fate.at + 0.07);
+        // The breath chars them as it passes; the one left standing is too dark to tell who.
+        const charred = smooth(fight, FIGHT.breath[0], FIGHT.breath[1]);
+        let angle = 0;
+        let feetY = H * GROUND;
+        let fx = x;
+        column = hit > 0 ? 1 : FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
+        if (fate.kind === "fall") angle = -smooth(hit, 0, 1) * 1.45;
+        if (fate.kind === "flung") {
+          const flight = progress(fight, fate.at, fate.at + 0.14);
+          fx = x - flight * W * 0.4;
+          feetY -= Math.sin(flight * Math.PI) * H * 0.3;
+          angle = -flight * 5;
+          figure.style.opacity = String(1 - smooth(flight, 0.6, 1));
+        }
+        const dark = charred * (fate.kind === "stand" ? 0.55 : 0.3);
+        figure.style.filter =
+          fate.kind === "stand"
+            ? `brightness(${1 - dark}) blur(${charred * 1.2}px)`
+            : `brightness(${1 - dark})`;
+        place(figure, fx, feetY, size, column, row, angle);
       });
+
+      const front = heads[0];
+      const glare = flash(fight, FIGHT.ward);
+      ward.style.opacity = String(glare * (0.8 + Math.sin(at / 9) * 0.2));
+      ward.style.transform = `translate3d(${front + size * 0.12}px,${H * GROUND - size * 0.55}px,0) scale(${(size / 100) * (0.7 + glare * 0.6)}) translate(-50%,-50%)`;
 
       const wolfIn = smooth(beats.out, 0, 0.35);
       const wolfGone = smooth(beats.out, 0.7, 0.95);
@@ -326,6 +371,10 @@ export function createForest(root: HTMLElement) {
       const glow = seated * (1 - smooth(beats.turn, 0.05, 0.3));
       camp.style.opacity = String(clamp(glow * (0.9 + Math.sin(at / 17) * 0.1)));
       camp.style.transform = `translate3d(${campX - size * 0.6}px,${H * GROUND - size * 0.86}px,0) scale(${size / 100})`;
+      return {
+        front: [front + size * 0.12, H * GROUND - size * 0.55],
+        back: [heads[3], H * GROUND - size * 0.6],
+      };
     },
   };
 }
