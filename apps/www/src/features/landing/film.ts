@@ -264,7 +264,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       typer.set(progress(worldP, from, from + 0.22), worldP >= from && worldP < from + 0.22);
       (worldNotes[index].firstElementChild as HTMLElement).style.opacity =
         worldP > from ? "1" : "0";
-      const line = layout.worldLines[index];
+      const line = layout.worldLines[index - 1];
       if (line) {
         line.path.style.strokeDashoffset = String(
           line.length * (1 - ease(progress(worldP, from, from + 0.2))),
