@@ -64,11 +64,16 @@ export function createDrizzleOrganizeQueue(db: Database): OrganizeQueue {
           .returning({ id: imports.id });
         return rows.length === 1;
       }),
-    release: (claim) =>
+    release: (claim, retryAfterMs) =>
       runInDrizzleTransaction(db, async () => {
         await currentDrizzleDb(db)
           .update(imports)
-          .set({ leaseToken: null, leaseUntil: null })
+          .set({
+            leaseToken: null,
+            leaseUntil: retryAfterMs
+              ? sql`clock_timestamp() + ${retryAfterMs} * interval '1 millisecond'`
+              : null,
+          })
           .where(and(eq(imports.id, claim.importId), eq(imports.leaseToken, claim.token)));
       }),
   };
