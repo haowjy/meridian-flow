@@ -6,6 +6,7 @@ import type { ProductSlot } from "./ProductPlaceholder";
 import { createSky, type SkyFrame } from "./sky";
 import { CHARACTERS } from "./story";
 import {
+  ASK_LIFT,
   type BeatProgress,
   beatProgress,
   clamp,
@@ -146,7 +147,7 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
 /** Autoplay acts out the card while it plays. */
 function demonstrateCard(store: CardStore, asked: number) {
   if (asked <= 0 || asked >= 0.86) return;
-  store.demonstrate(asked < 0.45 ? null : CHARACTERS[0].key);
+  store.demonstrate(asked < 0.72 ? null : CHARACTERS[0].key);
 }
 
 /**
@@ -179,6 +180,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const caption = one("#knowledge-base");
   const captionShade = one("#capshade");
   const ask = one("#your-decisions");
+  const question = one(".s-take");
   const card = one("#card");
   const world = one("#the-world");
   const worldNotes = all(".wn");
@@ -242,6 +244,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const { world: worldP, open, write, out, back, ask: asked, turn, twist: twistP } = beats;
     const { dawn: dawnP, hints, leave } = beats;
     const push = ease(beats.push);
+    const askLift = smooth(asked, ...ASK_LIFT);
 
     show(hero, 1 - clamp(push * 2.4));
     hero.style.transform = `translateY(${-push * 70}px)`;
@@ -258,7 +261,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       opacity = 1 - clamp((push - 0.25) / 0.55);
       grade = lerp(0.84, 0.3, push);
     } else {
-      const returned = 1 - ease(smooth(asked, 0, 0.16));
+      const returned = 1 - ease(smooth(asked, 0, 0.1));
       const settle = ease(smooth(dawnP, 0.3, 0.7)) * returned;
       const barHeight = 55;
       const fullWidth = Math.min(width * 0.94, (height - barHeight - 44) / BLOCK_ASPECT);
@@ -266,7 +269,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       x = lerp((width - fullWidth) / 2, workspace.x, settle);
       y = lerp((height + barHeight - fullWidth * BLOCK_ASPECT) / 2, workspace.y, settle);
       opacity = 1;
-      grade = 1 - smooth(asked, 0, 0.14) * (1 - smooth(asked, 0.9, 1)) * 0.3;
+      grade = 1 - askLift * (1 - smooth(asked, 0.9, 1)) * 0.3;
       if (isPhone) {
         // No room beside the headline, so the product fills the screen and then slides down for it.
         blockWidth = workspace.w;
@@ -324,9 +327,19 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     typers[1].set(progress(write, 0.42, 0.9), write >= 0.42 && write < 0.9);
     typers[2].set(progress(write, 0.5, 0.98), write >= 0.5 && write < 0.985);
 
-    const askShown = smooth(asked, 0, 0.14) * (1 - smooth(asked, 0.9, 1));
-    show(ask, askShown);
-    card.style.transform = `translateY(${(1 - askShown) * 18}px)`;
+    const askGone = smooth(asked, 0.9, 1);
+    show(ask, clamp(askLift * 5) * (1 - askGone));
+    block.classList.toggle("s-lifted", askLift > 0);
+    if (askLift > 0 && askLift < 1) {
+      const from = question.getBoundingClientRect();
+      const box = ask.getBoundingClientRect();
+      const offsetX = (from.left - box.left - card.offsetLeft) * (1 - askLift);
+      const offsetY = (from.top - box.top - card.offsetTop) * (1 - askLift);
+      const scale = lerp(from.width / card.offsetWidth, 1, askLift);
+      card.style.transform = `translate(${offsetX}px,${offsetY}px) scale(${scale})`;
+    } else {
+      card.style.transform = `translateY(${askGone * 18}px)`;
+    }
     turnTyper.set(progress(turn, 0.2, 0.7), turn > 0.15 && turn < 0.7);
 
     const fade = height * 0.035;
@@ -368,7 +381,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
     const captionShown =
       (isPhone ? smooth(beats.lore, 0.2, 0.4) : smooth(beats.lore, 0.08, 0.32)) *
-      (1 - smooth(asked, 0, 0.12));
+      (1 - smooth(asked, 0, 0.06));
     show(caption, captionShown);
     captionShade.style.opacity = String(captionShown);
     caption.style.transform = `translateY(${(1 - captionShown) * 14}px)`;

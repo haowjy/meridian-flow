@@ -309,9 +309,49 @@
   color: var(--color-card);
 }
 
+.s-take {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.s-lifted .s-take {
+  visibility: hidden;
+}
+
+.s-take > b {
+  font-weight: 600;
+}
+
+.s-opt {
+  display: grid;
+  gap: 0 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.s-opt small {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+.s-foot {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  padding: 0 3px;
+}
+
 .s-tabs,
 .s-only-hints,
 .s-only-start,
+.s-only-ask,
+.slot[data-state="ask"] .s-comp,
 .slot[data-state="start"] .s-only-team,
 .slot[data-state="start"] .s-draft,
 .slot[data-state="start"] .s-notes,
@@ -321,6 +361,10 @@
 
 .slot[data-state="start"] .s-only-start {
   display: block;
+}
+
+.slot[data-state="ask"] .s-only-ask {
+  display: grid;
 }
 
 .slot[data-state="hints"] .s-only-hints {

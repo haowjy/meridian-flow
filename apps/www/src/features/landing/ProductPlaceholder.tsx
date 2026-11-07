@@ -8,9 +8,13 @@ import {
   DRAGON_PAGE,
   FELL,
   museReply,
+  NOBODY_LINE,
   NOTES,
   PROLOGUE,
+  QUESTION,
+  SKIPPED,
   SURVIVED,
+  UNDEAD,
   type WikiPage,
 } from "./story";
 
@@ -130,6 +134,19 @@ export function ProductPlaceholder() {
               Undo
             </button>
             <small>Prologue, Tam, Sigrun, Oskar, Maren</small>
+          </div>
+        </div>
+        <div className="s-take s-only-ask">
+          <b>{QUESTION}</b>
+          {CHARACTERS.map(({ key, name, pitch }) => (
+            <div className="s-opt" key={key}>
+              <b>{name}</b>
+              <small>{pitch}</small>
+            </div>
+          ))}
+          <div className="s-foot">
+            <span>Skip</span>
+            <span>Continues in 4 min</span>
           </div>
         </div>
         <div className="s-comp">
@@ -330,11 +347,11 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   );
 
   const followAnswers = () => {
-    const protagonist = store.protagonist();
-    part("#s-choice").textContent = characterName(protagonist);
-    reply.textContent = museReply(protagonist);
+    const answer = store.getAnswer();
+    part("#s-choice").textContent = answer ? characterName(answer) : SKIPPED;
+    reply.textContent = museReply(answer);
     for (const { key } of CHARACTERS) {
-      const fate = key === protagonist ? SURVIVED : FELL;
+      const fate = !answer ? UNDEAD : key === answer ? SURVIVED : FELL;
       part(`#s-note-${key}`).textContent = state === "hints" ? fate : ALIVE;
     }
   };
@@ -360,8 +377,8 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
       // The view only exists on phones: on desktop every pane is on screen.
       if (!held) view((next === "hints" && progress >= 0.45) || arrived ? "page" : "chat");
       if (next !== "hints") return;
-      const protagonist = CHARACTERS.find(({ key }) => key === store.protagonist());
-      const line = protagonist?.lastLine ?? "";
+      const protagonist = CHARACTERS.find(({ key }) => key === store.getAnswer());
+      const line = protagonist?.lastLine ?? NOBODY_LINE;
       typing.textContent = line.slice(0, Math.round(line.length * progress));
     },
   };
