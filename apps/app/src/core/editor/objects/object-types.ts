@@ -3,6 +3,7 @@
 import type { Node as PMNode } from "@tiptap/pm/model";
 
 import { EDITOR_DIAGRAM_PROVIDERS } from "../diagrams/diagram-providers";
+import { pictureCapped } from "./picture-cap";
 
 /** What Enter does on a selected object. */
 export type ObjectEngageIntent =
@@ -38,6 +39,8 @@ export type ObjectTypeSpec = {
   body: ObjectBody;
   engage: ObjectEngageIntent;
   surfaceKind?: ObjectSurfaceKind;
+  /** Does a click on `target` open the surface, rather than only select the object? */
+  clickEngages?: (target: EventTarget | null) => boolean;
   /** Attributes the object's ⋮ offers, in the order it offers them. */
   surfaceFields?: readonly ObjectSurfaceField[];
 };
@@ -64,6 +67,7 @@ export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
     body: "block-drag",
     engage: "surface",
     surfaceKind: "image",
+    clickEngages: pictureCapped,
     // A figure shows a caption and a label under its picture, so both are verbs
     // on its surface; the node view only renders what they say.
     surfaceFields: ["alt", "caption", "label"],
@@ -74,6 +78,7 @@ export const EDITOR_OBJECT_TYPES: readonly ObjectTypeSpec[] = [
     body: "inline-drag",
     engage: "surface",
     surfaceKind: "image",
+    clickEngages: pictureCapped,
     surfaceFields: ["alt"],
   },
   { id: "table", nodeType: "table", body: "text", engage: "caret-inside" },
