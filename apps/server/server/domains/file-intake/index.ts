@@ -93,7 +93,7 @@ export async function classifyUpload(input: {
 }
 
 /** Text above this size is kept as a binary file: the document pipeline binds it whole. */
-export const TRACKED_TEXT_MAX_BYTES = 10 * 1024 * 1024;
+export const TRACKED_TEXT_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * The name of a text file kept as a binary row. It keeps its whole name, extension included, so

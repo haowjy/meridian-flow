@@ -243,6 +243,7 @@ it("rejects a committed address different from the reservation", async () => {
       mimeType: "text/plain",
       storageUrl: null,
       hasPreview: false,
+      keptAsFile: false,
     }),
   ).toEqual({ ok: false, definite: true });
 });
