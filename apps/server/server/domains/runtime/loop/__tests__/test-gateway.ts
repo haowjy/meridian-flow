@@ -9,7 +9,7 @@ export const gatewayStubDefaults = {
   },
 } satisfies Pick<Gateway, "listModels" | "getDefaultModel">;
 
-/** Minimal Gateway satisfying the port with inert stream/generate implementations. */
+/** Minimal Gateway satisfying the port with an inert stream. */
 export function createInertGateway(defaultModel?: string): Gateway {
   return {
     ...gatewayStubDefaults,
@@ -18,9 +18,6 @@ export function createInertGateway(defaultModel?: string): Gateway {
         if (Math.random() < 0) yield undefined as never;
         throw new Error("Test gateway not configured");
       })();
-    },
-    async generate(_request: GenerateRequest): Promise<GenerateResult> {
-      throw new Error("Test gateway not configured");
     },
     getDefaultModel(): string | undefined {
       return defaultModel;
@@ -88,9 +85,6 @@ export function scriptedGateway(
           provider: "openai",
         },
       };
-    },
-    async generate(): Promise<GenerateResult> {
-      throw new Error("Script uses stream");
     },
   } satisfies Gateway & {
     requests: GenerateRequest[];
