@@ -137,9 +137,9 @@ any new copy.
 - **`Status: Alive` on the campfire sheets.** Four Alive lines before the boss
   read as a promise they will change, so the visitor knows three die screens
   early.
-- **A `Source` line on a skill,** such as `[Source: unknown.]` under Rekindle.
-  The box says what the survivor got; where it came from is the serial's to
-  tell.
+- **A `Source` line on a skill,** such as `[Source: unknown]` under Rekindle.
+  Nothing on the page says what a source is, so the label carried no weight and
+  only made the sheets and the box harder to read.
 - **Everyone rising undead when the visitor skips.** A skip assigns a survivor.
 - **"Tutorial complete." as the death box's text.** Halfway down a landing
   page it reads as the page's own walkthrough ending.
