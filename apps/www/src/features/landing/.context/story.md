@@ -101,7 +101,7 @@ The beats are in [`timeline.ts`](../timeline.ts). In story order:
 
 1. The campfire: the four sit at the fire and the System opens a status window
    over each, `SHEETS` in `story.ts`: who they are, their skill and what it
-   does, and Status: Alive. It is the visitor's only meeting with them before
+   does. It is the visitor's only meeting with them before
    three die, and it sets up the fight: Tam's spark won't catch in deep cold,
    and a ward turns one blow.
 2. The turn line: "On the ninth night, we found it. It was a dragon."
