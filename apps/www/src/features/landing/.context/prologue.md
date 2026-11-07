@@ -68,7 +68,7 @@ Oskar had sung most days on the march. After that he stopped.
 
 On the ninth night, we found it. It was a dragon.
 
-The ice ended in a basin as wide as a city, and the dragon lay in the middle of it with its head raised to the sky, breathing. Every breath went up green. That was the Cold Fire.
+The ice ended at a frozen lake as wide as a city, and the dragon stood on the near shore with its head raised to the sky, breathing. Every breath went up green. That was the Cold Fire.
 
 Oskar said nothing. Sigrun, who knew bones, said nothing at all.
 
