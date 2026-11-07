@@ -107,7 +107,7 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
         put: test.put,
         delete: test.remove,
         readHead: vi.fn() as never,
-      signPut: vi.fn() as never,
+        signPut: vi.fn() as never,
         get: vi.fn() as never,
         getStream: vi.fn() as never,
         copy: vi.fn() as never,

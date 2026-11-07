@@ -1,6 +1,5 @@
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
 
-import { uploadBytes } from "./uploads/upload-test-support.js";
 import { randomUUID } from "node:crypto";
 import { aheadAddress } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -29,6 +28,7 @@ import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 import { createContextUploadContentPort } from "./uploads/context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./uploads/drizzle-upload-intake.js";
 import { createUploadIntake } from "./uploads/upload-intake.js";
+import { uploadBytes } from "./uploads/upload-test-support.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {

@@ -72,9 +72,7 @@ export const uploadIntakePort: ComposerUploadPort = {
       signal,
       start: () => response<UploadStart>(fetch(url(scope), jsonPost(start))),
       finish: () =>
-        response<UploadIntakeResult>(
-          fetch(url(scope, "/finish"), jsonPost({ intakeId })),
-        ),
+        response<UploadIntakeResult>(fetch(url(scope, "/finish"), jsonPost({ intakeId }))),
     });
   },
 };
