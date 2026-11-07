@@ -19,7 +19,7 @@ import {
   type ReviewChange,
   targetOfChanges,
 } from "@/features/draft-review/review-model";
-import { hasTreeLine } from "@/features/draft-review/tree-line";
+import { hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -113,7 +113,7 @@ export function useDraftDock({
     (file: DockFile, change?: ReviewChange) => {
       controller.dismissNotice();
       // A draft-only picture has no review room: it opens as a preview.
-      if (!file.row.draft.hasDraft && !hasTreeLine(file.row.draft)) {
+      if (!file.row.draft.hasDraft && !reviewHasNoRoom(file.row.draft)) {
         if (file.row.draft.binary)
           setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
         return;
