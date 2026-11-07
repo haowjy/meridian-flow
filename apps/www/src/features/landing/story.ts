@@ -363,7 +363,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
         ],
         [
           "Skills",
-          "A first skill comes at a moment of need. Every skill box names where it came from: [Source: need], [Source: practice], [Source: bloodline], [Source: rune]. No box in recorded history has said [Source: unknown].",
+          "Every skill box names where the skill came from: [Source: talent], [Source: practice], [Source: bloodline], [Source: rune]. No box in recorded history has said [Source: unknown].",
         ],
         ["What it never does", "It has never told anyone what to do, or talked like a game."],
         [
@@ -617,7 +617,7 @@ export const END = {
 
 /** The System's status windows at the campfire, one over each of the four, before the turn. */
 export const SHEETS: Record<CharacterKey, readonly string[]> = {
-  tam: ["Tam", "Human · Level 58", "[Spark]", "[Source: need]"],
+  tam: ["Tam", "Human · Level 58", "[Spark]", "[Source: talent]"],
   sigrun: ["Sigrun", "Dwarf · Level 74", "[Ward Rune]", "[Source: rune]"],
   maren: ["Maren", "Elf · Level 70", "[Mending Hymn]", "[Source: practice]"],
   oskar: ["Oskar", "Beastkin · Level 66", "[Sense Fear]", "[Source: bloodline]"],
