@@ -18,6 +18,11 @@ export const rgb = ([r, g, b]: LinearRgb) => `rgb(${r * 255} ${g * 255} ${b * 25
 
 /** The dragon's peak: its compass angle from the opening view. */
 const SUMMIT_AZIMUTH = 0.6;
+/** Where the level view looks: its compass angle from the opening view. */
+const HORIZON_YAW = 0.34;
+
+/** How fast the aurora waves on its own, in flow per second, scrolled or not. */
+const WAVE = 1.1;
 
 /** How much smaller the aurora pass is than the canvas, per side. It is soft, so this barely shows. */
 const LIGHT_DIVISOR = 3;
@@ -52,58 +57,63 @@ const LIGHT_SHADER = `${SHARED}
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
 float fbm(vec2 p){return .6*N(p)+.3*N(p*2.1+5.)+.1*N(p*4.3+9.);}
 const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
-// The sheet's folds where it covers the sky, and in bare the same folds less patchy, for the
-// Cold Fire.
-float field(vec2 p,out float bare){
+uniform float PLUME;
+const float AHEAD=${HORIZON_YAW.toFixed(3)};
+float field(vec2 p,float fire){
   vec2 w=vec2(N(p*.45+vec2(FLOW*.1,0.)),N(p*.45+vec2(4.,-FLOW*.08)))-.5;
   vec2 q=p+w*3.2;
   float n=1.-abs(2.*fbm(q+vec2(FLOW*.03,-FLOW*.02))-1.);
   n=max(pow(n,8.)-.05,0.)*1.5;
-  float cover=max(smoothstep(.4,.58,N(p*.13+vec2(FLOW*.015,3.))),smoothstep(3.,1.,length(p)));
-  bare=n*(.45+.55*N(q*9.+FLOW*.25));
-  float lit=bare*cover;
-  // Over the peak the gaps only thin it, so it stays curtains and not a haze.
-  bare*=max(cover,.4);
-  return lit;
+  float cover=smoothstep(.4,.58,N(p*.13+vec2(FLOW*.015,3.)));
+  // Where the Cold Fire is strong the sheet's gaps fill in.
+  cover=max(cover,min(fire*.3,.5));
+  float sheet=n*cover*(.45+.55*N(q*9.+FLOW*.25));
+  // One great ribbon straight overhead and away down the middle of the level view to the horizon:
+  // looking up it crosses the sky, looking out it narrows into the distance.
+  vec2 ahead=vec2(sin(AHEAD),-cos(AHEAD));
+  float along=dot(p,ahead);
+  // A ripple of a share of the distance, so from below it stays on its line.
+  float off=dot(p,vec2(-ahead.y,ahead.x))-(max(along,0.)*.025+.08)*sin(along*.3+FLOW*.06);
+  float ribbon=exp(-off*off*5.)*smoothstep(-4.,0.,along);
+  float rays=.35+.65*pow(N(vec2(along*1.4-FLOW*.12,off*2.)+w*2.),2.);
+  return sheet+ribbon*rays*.6;
 }
-// The aurora in rgb, and in alpha the Cold Fire over the dragon's peak: the same sheet, low in the
-// north, with no gaps in it, so the scene pass can swell it on each gulp without redrawing this.
-vec4 aurora(vec3 rd){
-  if(rd.y<.015) return vec4(0.);
+// Over the dragon's peak, low in the north, the same ribbons burn brighter: the Cold Fire, which
+// swells on each gulp.
+vec3 aurora(vec3 rd){
+  if(rd.y<.006) return vec3(0.);
   vec3 a=vec3(0.);
-  float fire=0.,bare;
-  float b=(atan(rd.x,-rd.z)-AZ)/.32;
-  float peak=exp(-b*b);
+  float b=(atan(rd.x,-rd.z)-AZ)/.4;
+  float fire=exp(-b*b)*exp(-rd.y*3.)*PLUME;
   float j=H(gl_FragCoord.xy*.013);
   for(int i=0;i<14;i++){
     float k=float(i)*1.57;
     float t=(1.+(k+j*1.57)*.075)/rd.y;
-    vec2 at=rd.xz*min(t,16.)*1.1;
-    float f=field(at,bare);
+    // Far enough that the ribbons keep receding to the horizon instead of piling up into haze.
+    vec2 at=rd.xz*min(t,44.)*1.1;
+    float f=field(at,fire);
     vec3 c=mix(${vec3(C.auroraLow)},${vec3(C.auroraMid)},smoothstep(0.,8.,k));
     // Whole curtains lean teal-blue, more so toward their thin tops; the rest stay green.
-    float blue=smoothstep(.38,.72,N(at*.07+vec2(11.,FLOW*.012)));
-    c=mix(c,${vec3(C.auroraBlue)},blue*(.45+.4*smoothstep(2.,14.,k)));
+    float blue=smoothstep(.45,.75,N(at*.07+vec2(11.,FLOW*.012)));
+    c=mix(c,${vec3(C.auroraBlue)},blue*(.3+.4*smoothstep(2.,14.,k)));
     c=mix(c,${vec3(C.auroraHigh)},smoothstep(8.,21.,k));
     a+=c*f*exp(-k*.1);
-    fire+=bare*exp(-k*.1);
   }
-  return vec4(a*.31,fire*peak*.6*exp(-rd.y*4.))*smoothstep(.015,.2,rd.y);
+  return a*.31*(1.+min(fire,1.6)*.5)*smoothstep(.006,.05,rd.y);
 }
 void main(){
-  vec3 rd=ray();
-  vec4 c;
+  vec3 rd=ray(),c;
   if(rd.y>=0.) c=aurora(rd);
   else{
     float d=-rd.y;
-    c=vec4(aurora(normalize(vec3(rd.x+ripple(rd)*d*.07,d,rd.z))).rgb*.32*exp(-d*1.4),0.);
+    c=aurora(normalize(vec3(rd.x+ripple(rd)*d*.07,d,rd.z)))*.32*exp(-d*1.4);
   }
-  gl_FragColor=sqrt(c/(1.+c));
+  gl_FragColor=vec4(sqrt(c/(1.+c)),1.);
 }`;
 
 const SCENE_SHADER = `${SHARED}
 uniform sampler2D LIGHT;
-uniform float DAWN,VEIL,AU,PLUME;
+uniform float DAWN,VEIL,AU;
 uniform vec3 DRIFT;
 const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
@@ -128,19 +138,16 @@ void main(){
   float az=atan(rd.x,-rd.z),y=rd.y;
   float night=1.-DAWN;
   vec2 p=.5+(gl_FragCoord.xy/R-.5)*DRIFT.z+DRIFT.xy,t=2.4/R*${LIGHT_DIVISOR}.*.5;
-  vec4 e4=texture2D(LIGHT,p)*.2;
+  vec3 e=texture2D(LIGHT,p).rgb*.2;
   for(int i=0;i<4;i++){
     vec2 s=vec2(i<2?1.:-1.,mod(float(i),2.)<1.?1.:-1.);
-    e4+=texture2D(LIGHT,p+s*t)*.2;
+    e+=texture2D(LIGHT,p+s*t).rgb*.2;
   }
-  e4*=e4;
-  vec3 e=e4.rgb;
+  e*=e;
   vec3 light=e/max(1.-e,.001);
-  // The Cold Fire low in the north, there every night and swelling on each gulp.
-  float rising=e4.a/max(1.-e4.a,.001)*PLUME*night;
   float l=max(light.g,light.b);
   light*=smoothstep(.012,.22,l);
-  light=(light+${vec3(C.auroraCore)}*l*l*l*1.4)*AU*night;
+  light=(light+${vec3(C.auroraCore)}*l*l*l*.5)*AU*night;
   vec3 sky=mix(${vec3(C.skyHorizon)},${vec3(C.skyTop)},smoothstep(0.,.5,abs(y)));
   vec3 dawn=mix(lin(${vec3(C.dawnSky)}),${vec3(C.sun)}*.5,exp(-max(y,0.)*7.));
   dawn=mix(dawn,${vec3(C.sun)}*1.2,exp(-max(y,0.)*18.)*exp(-abs(az-AZ+.2)*2.));
@@ -148,8 +155,6 @@ void main(){
   vec3 col;
   if(y>=0.){
     col=sky+stars(rd)*night+light+${vec3(C.auroraLow)}*.008*exp(-y*6.)*AU*night;
-    float glow=rising/(1.+rising*.7);
-    col+=(${vec3(C.auroraLow)}*.35+${vec3(C.auroraMid)}*.55+${vec3(C.auroraCore)}*glow*.18)*glow;
     float far=farRange(az),near=nearRange(az);
     vec3 lit=${vec3(C.sun)}*.04*DAWN;
     if(y<far) col=mix(col,${vec3(C.mountain)}*1.6+lit,smoothstep(far,far-.002,y));
@@ -195,7 +200,6 @@ const gulpSwell = (seconds: number) => {
 
 const OVERHEAD_PITCH = 0.8;
 const HORIZON_PITCH = 0.1;
-const HORIZON_YAW = 0.34;
 
 /**
  * The sky at a scroll position, `scrolled` in stage heights. It is a function of the scroll
@@ -219,7 +223,7 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
     envelope(beats.fight, FIGHT.ward, 0.04, 0.06) * 0.45 +
     envelope(beats.fight, FIGHT.breath, 0.04, 0.06) * 0.7;
   const toTwist = smooth(beats.twist, 0, 0.5);
-  let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
+  let veil = lerp(0, 0.36, smooth(beats.sky, 0.88, 1));
   // The veil keeps the chapter readable; once its text fades the perch and the fight are the
   // picture, so it lifts.
   const lifted = smooth(beats.turn, TURN.perch[0] - 0.08, TURN.perch[0] + 0.04);
@@ -240,7 +244,7 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
     dawn,
     veil,
     aurora:
-      lerp(0.72, 0.4, smooth(beats.sky, 0.7, 1)) +
+      lerp(0.72, 0.6, smooth(beats.sky, 0.7, 1)) +
       smooth(beats.twist, 0.05, 0.45) * (1 - smooth(beats.twist, 0.8, 1)) * 0.5 +
       breathing * (1 - smooth(beats.twist, ...TWIST.coldFireFades)),
     // Low in the north over the dragon's peak every night; what it sends up from the perch stays
@@ -270,7 +274,7 @@ export const STILL_SKY: SkyFrame = {
 };
 
 const CAMERA_UNIFORMS = { PITCH: "pitch", YAW: "yaw", FOCAL: "focal", FLOW: "flow" } as const;
-const SCENE_UNIFORMS = { DAWN: "dawn", VEIL: "veil", PLUME: "plume" } as const;
+const SCENE_UNIFORMS = { DAWN: "dawn", VEIL: "veil" } as const;
 
 /** Draws into `canvas`. Without WebGL every call is a no-op and the canvas's CSS gradient shows. */
 export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
@@ -336,21 +340,22 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
 
   const draw = (frame: SkyFrame, seconds: number) => {
     lastFrame = frame;
+    lastBreath = seconds;
     if (!gl || !scene) return;
+    const waving = { ...frame, flow: frame.flow + seconds * WAVE };
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene.lightTarget);
-    camera(gl, scene.lightPass, frame, scene.lightWidth, scene.lightHeight);
+    camera(gl, scene.lightPass, waving, scene.lightWidth, scene.lightHeight);
+    gl.uniform1f(scene.plume, frame.plume + frame.surge * gulpSwell(seconds) * 1.6);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    drawScene(frame, seconds);
+    drawScene(waving, seconds);
   };
 
   const drawScene = (frame: SkyFrame, seconds: number) => {
     if (!gl || !scene) return;
     camera(gl, scene.scenePass, frame, canvas.width, canvas.height);
     const swell = frame.surge * gulpSwell(seconds);
-    for (const [location, key] of scene.floats) {
-      gl.uniform1f(location, key === "plume" ? frame.plume + swell * 2.4 : frame[key]);
-    }
+    for (const [location, key] of scene.floats) gl.uniform1f(location, frame[key]);
     const wave = Math.sin(seconds * 0.9) * 0.65 + Math.sin(seconds * 2.3 + 1) * 0.35;
     gl.uniform1f(scene.pulsedAurora, frame.aurora * (1 + frame.pulse * 0.28 * wave) + swell * 2.2);
     // The aurora zooms in as it drifts, or the drift would pull its clamped edge into view.
@@ -366,11 +371,10 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
   return {
     resize,
     draw,
-    /** One still-page frame: reuses the aurora pass, so the pulse costs only the scene pass. */
+    /** A frame while the page is still: the aurora keeps waving, at up to 30 frames a second. */
     breathe(seconds: number) {
-      if (!(lastFrame?.pulse || lastFrame?.surge) || seconds - lastBreath < 1 / 30) return;
-      lastBreath = seconds;
-      drawScene(lastFrame, seconds);
+      if (!lastFrame || seconds - lastBreath < 1 / 30) return;
+      draw(lastFrame, seconds);
     },
     /** Called when frames run slow: the sky stays smooth by drawing fewer pixels. */
     lowerResolution() {
@@ -446,6 +450,7 @@ function connect(gl: WebGLRenderingContext) {
     scenePass,
     floats,
     pulsedAurora: gl.getUniformLocation(scenePass.program, "AU"),
+    plume: gl.getUniformLocation(lightPass.program, "PLUME"),
     drift: gl.getUniformLocation(scenePass.program, "DRIFT"),
     light,
     lightTarget,

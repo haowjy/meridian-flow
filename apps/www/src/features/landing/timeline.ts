@@ -19,7 +19,7 @@ export const envelope = (
 const BEATS = [
   ["hold", 0.5, 1.2],
   ["push", 0.9, 2],
-  ["sky", 1.6, 7],
+  ["sky", 2, 8.5],
   ["world", 2.1, 11],
   ["open", 0.4, 2.2],
   ["write", 2.2, 17],
@@ -114,8 +114,11 @@ export const FIGHT = {
   ],
 } as const;
 
-/** How far the opening view has tipped down from straight overhead to the horizon, 0 to 1. */
-export const tilt = (beats: BeatProgress) => smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
+/**
+ * How far the opening view has tipped down from straight overhead to the horizon, 0 to 1. It
+ * holds overhead for a while once the product has gone, then tips down before the world opens.
+ */
+export const tilt = (beats: BeatProgress) => smooth(beats.sky, 0.28, 0.86);
 
 /** The dragon is on the ground from its landing until it takes off, but for the rear at the spark. */
 export const grounded = (beats: BeatProgress) =>
