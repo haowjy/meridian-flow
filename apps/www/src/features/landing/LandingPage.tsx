@@ -183,8 +183,10 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
 
             <div className="dawn">
               <div className="cap" id="knowledge-base" {...NIGHT}>
-                <h2>{SECTION_HEADS.knowledge.heading}</h2>
-                <p className="sect-head">{SECTION_HEADS.knowledge.line}</p>
+                <p className="cap-title" aria-hidden="true">
+                  {SECTION_HEADS.knowledge.heading}
+                </p>
+                <SectionHead section="knowledge" />
               </div>
               <div className="workspot" id="the-workspace" />
             </div>

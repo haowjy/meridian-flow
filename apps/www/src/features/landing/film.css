@@ -571,7 +571,7 @@
     width: auto;
   }
 
-  .cine .cap h2 {
+  .cine .cap-title {
     font-size: min(27px, 7cqw);
     white-space: nowrap;
   }

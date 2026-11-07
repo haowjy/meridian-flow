@@ -1,5 +1,6 @@
 import { MARKETING_SKY as C, type LinearRgb } from "@meridian/design-tokens/marketing-sky";
 import {
+  across,
   type BeatProgress,
   coldFireLeft,
   DEATH,
@@ -15,8 +16,8 @@ import {
 /** A sky colour as a GLSL literal, and as a CSS colour for the layers drawn over the sky. */
 export const vec3 = ([r, g, b]: LinearRgb) =>
   `vec3(${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)})`;
-// Token values are display colours: the fire shader writes them as they are and the sky round-trips
-// them through lin(), so CSS uses them as they are too.
+// Written as they are. That matches the fire shader, which uses fireBody and fireCore unencoded;
+// sun and auroraMid are linear in the sky shader, so their CSS copies read a little darker.
 export const rgb = ([r, g, b]: LinearRgb) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
 
 /** The dragon's peak: its compass angle from the opening view. */
@@ -245,7 +246,7 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
   // picture, so it lifts.
   const lifted = smooth(beats.turn, TURN.perch[0] - 0.08, TURN.perch[0] + 0.04);
   veil = lerp(veil, 0.06, lifted);
-  veil = lerp(veil, 0.2, ease((beats.dies + beats.still + beats.flight) / 3));
+  veil = lerp(veil, 0.2, smooth(across(beats, "dies", "burn"), 0, 0.625));
   veil = lerp(veil, 0, dawn);
   return {
     pitch: lerp(OVERHEAD_PITCH, HORIZON_PITCH, tipped),
@@ -255,17 +256,16 @@ export function skyFrame(beats: BeatProgress, scrolled: number): SkyFrame {
       scrolled * 0.4 +
       ease(beats.push) * 2 +
       ease(beats.sky) * 1.5 +
-      ease(beats.dies) +
-      ease(beats.still) * 1.5 +
-      ease(beats.flight) * 1.5 +
-      ease(beats.burn) +
+      smooth(across(beats, "dies", "burn"), 0, 0.85) * 5 +
       ease(beats.fight) * 4 +
       dawn * 1.5,
     dawn,
     veil,
     aurora:
       lerp(0.72, 0.6, smooth(beats.sky, 0.7, 1)) +
-      ease(beats.dies) * (1 - smooth(beats.burn, 0.55, 1)) * 0.5 +
+      smooth(across(beats, "dies", "burn"), 0.0375, 0.5875) *
+        (1 - smooth(beats.burn, 0.55, 1)) *
+        0.5 +
       breathing * coldFireLeft(beats),
     // Low in the north over the dragon's peak every night; what it sends up from the perch stays
     // there, brighter, until the box burns.
