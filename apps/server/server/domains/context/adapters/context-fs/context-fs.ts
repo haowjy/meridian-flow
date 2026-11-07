@@ -821,7 +821,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const view = this.readView;
     if (!view) return null;
     const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
-    // Without a separate draft both versions are the same document (D3).
+    // Without a separate draft both versions are the same document.
     const drafted = sourceDestination(this.scheme, view.branchWork).kind === "draft";
     return view.version !== "live" && drafted && view.branchWork
       ? { ...reader, destination: "draft", workId: view.branchWork.id as WorkId }

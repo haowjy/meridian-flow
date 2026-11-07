@@ -30,7 +30,6 @@ export {
   hasRealApiKey,
   MODEL_REGISTRY,
 } from "./config/registry.js";
-export { consumeStream, GatewayStreamError } from "./consume-stream.js";
 export { createGateway } from "./create-gateway.js";
 export * from "./domain/index.js";
 export { assistant, system, text, toolResult, user } from "./helpers/messages.js";
@@ -40,5 +39,4 @@ export type { ProviderAdapter } from "./ports/provider-adapter.js";
 export {
   isCommittedOutputEvent,
   isFirstTokenEvent,
-  isPartialOutputEvent,
 } from "./stream-events.js";
