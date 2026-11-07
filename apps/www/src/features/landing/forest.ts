@@ -9,9 +9,10 @@ import {
   envelope,
   FIGHT,
   lerp,
-  PERCH,
   progress,
   smooth,
+  TURN,
+  TWIST,
 } from "./timeline";
 
 const WALK_FRAMES = 6;
@@ -357,11 +358,11 @@ export function createForest(root: HTMLElement) {
     },
     update(at: number, beats: BeatProgress): Party | null {
       const { spans, width: W, height: H } = layout;
-      const shown = 1 - smooth(beats.twist, 0.12, 0.26);
+      const shown = 1 - smooth(beats.twist, ...TWIST.partyGone);
       walkers.style.opacity = String(shown);
       // Gone before the film's stage scrolls away; the sky behind it stays.
       forest.style.opacity = String(1 - smooth(beats.leave, 0, 0.6));
-      const walkOut = smooth(beats.turn, 0.02, 0.5);
+      const walkOut = smooth(beats.turn, ...TURN.walksOut);
       // The ground moves only while they walk: along the road, then out of the woods onto the
       // shore. Camped, perched over or fighting, it holds still.
       const walked = progress(at, spans.world[0], spans.write[1]);
@@ -382,8 +383,7 @@ export function createForest(root: HTMLElement) {
       const ring = [1.6, 0.6, -0.6, -1.6];
       const fight = beats.fight;
       const backed =
-        (smooth(beats.turn, PERCH[0], PERCH[1]) * 0.05 +
-          smooth(fight, 0.05, FIGHT.breath[0]) * 0.14) *
+        (smooth(beats.turn, ...TURN.perch) * 0.05 + smooth(fight, 0.05, FIGHT.breath[0]) * 0.14) *
         W *
         (layout.isPhone ? 0.2 : 1);
       const heads: number[] = [];

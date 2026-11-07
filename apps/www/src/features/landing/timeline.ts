@@ -43,13 +43,51 @@ const BEATS = [
  * at once, a status window each, before the ninth night.
  */
 export const CAMP = { sits: [0, 0.2], sheets: [0.2, 0.92] } as const;
-/** The share of the ask where the question lifts out of the chat, 2 swipes in. */
-export const ASK_LIFT = [0.43, 0.55] as const;
-/**
- * Shares of the turn beat in which the dragon, perched, raises its head and breathes the Cold
- * Fire up into the sky while the party backs away. Then the fight starts.
+/*
+ * The story's moments, as shares of their beat. Every number that more than one layer has to
+ * agree on is here; a layer keeps only the curves nothing else needs to match.
  */
-export const PERCH = [0.6, 0.97] as const;
+
+/**
+ * The turn: they stand up and walk out of the woods onto the lake shore while the dragon comes
+ * down, lands in front of them and perches. Perched, it raises its head and sends the Cold Fire up
+ * into the sky while they back away; then the fight starts.
+ */
+export const TURN = {
+  walksOut: [0.02, 0.5],
+  /** From here it is low over the trees and keeps its eyes on them. */
+  descends: 0.45,
+  lands: 0.58,
+  perch: [0.6, 0.97],
+} as const;
+
+/** Where the fire starts uncovering the dawn and the product behind the night. */
+const REVEALS = 0.6;
+/**
+ * The twist: the last one standing goes, the box opens, the dragon takes off, loops once small in
+ * the far sky, and comes back across to burn the box away.
+ */
+export const TWIST = {
+  partyGone: [0.12, 0.26],
+  takesOff: 0.22,
+  /** The Cold Fire it sent up dies down as the box burns. */
+  coldFireFades: [0, 0.3],
+  reveals: REVEALS,
+  /** Out at the left, back in, and across the stage pushing the burn. */
+  pass: { leaves: 0.55, enters: REVEALS, exits: 0.92 },
+} as const;
+
+/** It comes back into the dawn, and reaches the knowledge base early in the lore. */
+export const DAWN = { returns: 0.1 } as const;
+export const LORE = { arrives: 0.05 } as const;
+
+/**
+ * The ask: the question lifts out of the chat two swipes in. Whenever the card is fully up it
+ * shows only what the visitor chose: nothing, autoplay included, answers for them, and a pass made
+ * by scrolling or jumping past comes off when they come back. Only as the card starts to leave
+ * does the System pick the survivor, so its notice shows on the card on the way out.
+ */
+export const ASK = { lift: [0.43, 0.55], assigns: 0.89 } as const;
 
 /**
  * The ninth night, as shares of the fight beat, after the Prologue: Sigrun's ward splits the
@@ -72,6 +110,12 @@ export const FIGHT = {
     { kind: "fall", at: 0.79 },
   ],
 } as const;
+
+/** The dragon is on the ground from its landing until it takes off, but for the rear at the spark. */
+export const grounded = (beats: BeatProgress) =>
+  beats.turn >= TURN.lands &&
+  beats.twist < TWIST.takesOff &&
+  (beats.fight < FIGHT.spark.eye[1] || beats.fight >= FIGHT.breath[0]);
 
 /** The share of the write and world beats spent typing; the rest is the hold. */
 export const WRITE_TYPED = 0.55;
@@ -143,7 +187,7 @@ export const SECTIONS = [
     hash: "#your-decisions",
     label: "Your decisions",
     startsAt: (spans: BeatSpans, vh: number) => spans.ask[0] - vh * 0.05,
-    jumpTo: (spans: BeatSpans) => along(spans, "ask", ASK_LIFT[1]),
+    jumpTo: (spans: BeatSpans) => along(spans, "ask", ASK.lift[1]),
   },
   {
     hash: "#the-workspace",

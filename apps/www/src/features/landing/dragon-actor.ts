@@ -18,13 +18,17 @@ import {
   along,
   type BeatProgress,
   clamp,
+  DAWN,
   ease,
   envelope,
   FIGHT,
+  grounded,
+  LORE,
   lerp,
-  PERCH,
   progress,
   smooth,
+  TURN,
+  TWIST,
 } from "./timeline";
 
 type Point = readonly [number, number, number];
@@ -38,14 +42,9 @@ const BOX = 200;
 const ROW_SIZE = 34;
 const TURN_RATE = 0.16;
 const MAX_LEAN = 0.7;
-/** The sweep, as shares of the twist: it leaves left, comes back and crosses, pushing the burn. */
-export const REVEAL_STARTS = 0.6;
 /** Its size on the ground, in shares of the stage's lesser side: it towers over the party. */
 const DESK_STANDING = 0.62;
 const PHONE_STANDING = 1;
-/** The share of the turn at which it lands in front of the party. */
-const LANDED = 0.58;
-const PASS = { leaves: 0.55, enters: REVEAL_STARTS, exits: 0.92 };
 /** How far the burn runs ahead of the mouth, and how far its breath reaches, in stage heights. */
 const FRONT_AHEAD = 0.42;
 const BREATH_REACH = 0.5;
@@ -57,8 +56,6 @@ const FIGHT_BREATH = 0.85;
 const HIT_LASTS = 0.035;
 /** How high the spark arcs, in stage heights. */
 const SPARK_ARC = 0.14;
-/** How far into the dawn it comes back. */
-const RETURN_STARTS = 0.1;
 /** Where the page's picture sits on a phone, in shares of the stage. */
 const PHONE_PICTURE_Y = 0.312;
 /** Share of the return where the phone dragon settles into the picture's pose (`.s-fig i`). */
@@ -78,8 +75,6 @@ const BOB = 0.1;
 const LEAST_BOB = 0.018;
 /** The share of the way back after which it comes in front of the product. */
 const ENTERS_PRODUCT = 0.93;
-/** How far through its beat the dragon reaches the knowledge base. */
-export const LORE_ARRIVES = 0.05;
 
 /** The film's dragon: a speck in the background that grows, burns the page away, then flies on. */
 export function createDragonActor(root: HTMLElement) {
@@ -155,7 +150,7 @@ export function createDragonActor(root: HTMLElement) {
       mark(along(spans, "out", 1), 0.4, 0.2, 0.1, -1),
       mark(along(spans, "back", 1), 0.7, 0.26, 0.13),
       mark(along(spans, "turn", 0.3), 0.9, 0.34, 0.2, -1),
-      mark(along(spans, "turn", LANDED), 0.84, onShore(standing), standing, -1),
+      mark(along(spans, "turn", TURN.lands), 0.84, onShore(standing), standing, -1),
       // It presses in as they give ground, rears back when the spark lands, then comes down
       // again for the breath that kills them.
       mark(along(spans, "fight", FIGHT.spark.eye[1]), fightX(0.8), onShore(standing), standing, -1),
@@ -167,14 +162,14 @@ export function createDragonActor(root: HTMLElement) {
         -1,
       ),
       mark(along(spans, "fight", FIGHT.breath[0]), fightX(0.76), onShore(standing), standing, -1),
-      mark(along(spans, "twist", 0.22), fightX(0.76), onShore(standing), standing, -1),
+      mark(along(spans, "twist", TWIST.takesOff), fightX(0.76), onShore(standing), standing, -1),
       // Up behind the box, one loop small in the far sky, and out at the left to turn.
       mark(along(spans, "twist", 0.31), 0.72, 0.4, 0.2, -1, true),
       mark(along(spans, "twist", 0.39), 0.5, 0.17, 0.1, -1, true),
       mark(along(spans, "twist", 0.46), 0.26, 0.2, 0.11, -1, true),
-      mark(along(spans, "twist", PASS.leaves), -0.18, 0.42, 0.3, -1, true),
-      mark(along(spans, "twist", PASS.enters), -0.35, 0.58, 0.66),
-      mark(along(spans, "twist", PASS.exits), 1.4, 0.46, 0.8),
+      mark(along(spans, "twist", TWIST.pass.leaves), -0.18, 0.42, 0.3, -1, true),
+      mark(along(spans, "twist", TWIST.pass.enters), -0.35, 0.58, 0.66),
+      mark(along(spans, "twist", TWIST.pass.exits), 1.4, 0.46, 0.8),
     ];
     way = wayBack(next);
   };
@@ -329,8 +324,9 @@ export function createDragonActor(root: HTMLElement) {
   const pose = (at: number) => {
     const placed = place(at);
     const { spans } = layout;
-    if (at < along(spans, "twist", PASS.exits)) return { ...placed, onTop: false, settled: 0 };
-    const t = progress(at, along(spans, "dawn", RETURN_STARTS), along(spans, "lore", LORE_ARRIVES));
+    if (at < along(spans, "twist", TWIST.pass.exits))
+      return { ...placed, onTop: false, settled: 0 };
+    const t = progress(at, along(spans, "dawn", DAWN.returns), along(spans, "lore", LORE.arrives));
     return {
       ...placed,
       ...returning(t),
@@ -345,42 +341,37 @@ export function createDragonActor(root: HTMLElement) {
     const dx = ahead.x - now.x;
     const dy = ahead.y - now.y;
     const moving = Math.hypot(dx, dy) > 0.6;
-    const { spans } = layout;
-    const circled = at >= along(spans, "twist", PASS.exits);
-    const passing = at >= along(spans, "twist", PASS.enters) && !circled;
-    const landing = at >= along(spans, "turn", 0.45);
+    const circled = beats.twist >= TWIST.pass.exits;
+    const passing = beats.twist >= TWIST.pass.enters && !circled;
+    const landing = beats.turn >= TURN.descends;
     flyer.style.zIndex = passing ? "11" : now.onTop ? "6" : circled || landing ? "3" : "1";
     // It faces where it flies, except in the face-off, where it keeps its eyes on the party even
     // as it rears back.
-    const facingThem = landing && at < along(spans, "twist", 0.22);
+    const facingThem = landing && beats.twist < TWIST.takesOff;
     const wanted = !facingThem && moving && Math.abs(dx) > 0.3 ? Math.sign(dx) : now.facing;
     facing += (wanted - facing) * TURN_RATE;
     const tilt = moving ? clamp(Math.atan2(dy, Math.abs(dx) + 1), -MAX_LEAN, MAX_LEAN) : 0;
     // On the ground it stands still with its wings folded; perched, its head rises to the sky.
-    const grounded =
-      at >= along(spans, "turn", LANDED) &&
-      at < along(spans, "twist", 0.22) &&
-      (at < along(spans, "fight", FIGHT.spark.eye[1]) ||
-        at >= along(spans, "fight", FIGHT.breath[0]));
-    flyer.classList.toggle("grounded", grounded);
-    const wantedLean = grounded
+    const onGround = grounded(beats);
+    flyer.classList.toggle("grounded", onGround);
+    const wantedLean = onGround
       ? 0
       : lerp(tilt * Math.sign(facing || 1), PICTURE_LEAN, now.settled);
     lean += (wantedLean - lean) * TURN_RATE;
     const beating = (1 - Math.cos(seconds * (moving ? 10 : 7))) / 2;
     const wave = lerp(beating, PICTURE_STROKE, now.settled);
     const beat = Math.max(now.size * BOB, layout.height * LEAST_BOB);
-    const bob = grounded ? 0 : Math.sin(seconds * 1.3) * 0.05 * now.size - (wave - 0.5) * 2 * beat;
+    const bob = onGround ? 0 : Math.sin(seconds * 1.3) * 0.05 * now.size - (wave - 0.5) * 2 * beat;
     const scale = now.size / BOX;
     const shown = Math.abs(facing) < 0.12 ? 0.12 * (facing < 0 ? -1 : 1) : facing;
-    const stretch = grounded ? 1 : 1 + (wave - 0.5) * 0.06;
+    const stretch = onGround ? 1 : 1 + (wave - 0.5) * 0.06;
     flyer.style.transform = `translate3d(${now.x - BOX / 2}px,${now.y + bob - BOX / 2}px,0) rotate(${lean}rad) scale(${shown * scale},${scale * stretch})`;
-    const raised = Math.round(envelope(beats.turn, PERCH, 0.03, 0.04) * (GROUND_POSES - 1));
-    const poses = grounded ? GROUND_POSES : DRAGON_POSES;
-    const cell = grounded ? raised : Math.round(wave * (DRAGON_POSES - 1));
+    const raised = Math.round(envelope(beats.turn, TURN.perch, 0.03, 0.04) * (GROUND_POSES - 1));
+    const poses = onGround ? GROUND_POSES : DRAGON_POSES;
+    const cell = onGround ? raised : Math.round(wave * (DRAGON_POSES - 1));
     const frame = cell / (poses - 1);
-    const [offsetX, offsetY] = grounded ? groundMouth(frame) : dragonMouth(frame);
-    headUp = grounded ? frame : 0;
+    const [offsetX, offsetY] = onGround ? groundMouth(frame) : dragonMouth(frame);
+    headUp = onGround ? frame : 0;
     const localX = offsetX * now.size * shown;
     const localY = offsetY * now.size * stretch;
     mouth = [
@@ -501,13 +492,13 @@ export function createDragonActor(root: HTMLElement) {
     update(seconds: number, at: number, beats: BeatProgress, party: Party | null) {
       const { twist, lore, fight } = beats;
       const { height: H } = layout;
-      const shown = lore < LORE_ARRIVES;
+      const shown = lore < LORE.arrives;
       flyer.style.opacity = shown ? "1" : "0";
       if (shown) fly(seconds, at, beats);
 
       const moved = Math.abs(at - lastAt);
       lastAt = at;
-      const passing = twist > PASS.enters && twist < PASS.exits;
+      const passing = twist > TWIST.pass.enters && twist < TWIST.pass.exits;
       const wanted = shown && passing ? Math.min(1, moved / 10) : 0;
       breath += (wanted - breath) * (wanted > breath ? 0.5 : 0.09);
       if (breath < 0.01) breath = 0;
@@ -516,7 +507,7 @@ export function createDragonActor(root: HTMLElement) {
       const char = (placed.x + placed.size * 0.43 + unit * FRONT_AHEAD) / H;
       const box = words.getBoundingClientRect();
       const burnt = clamp(((char + WORDS_HANDOVER) * H - box.left) / box.width);
-      const edge = twist >= PASS.exits ? 1 : passing ? burnt : 0;
+      const edge = twist >= TWIST.pass.exits ? 1 : passing ? burnt : 0;
       words.style.zIndex = passing ? "12" : "";
       words.style.maskImage =
         edge > 0
@@ -526,7 +517,10 @@ export function createDragonActor(root: HTMLElement) {
       attacks(fight, party, placed);
 
       const angle = lean + DRAGON_HEAD_ANGLE;
-      rise(seconds, shown ? smooth(headUp, 0.6, 1) * envelope(beats.turn, PERCH, 0.03, 0.04) : 0);
+      rise(
+        seconds,
+        shown ? smooth(headUp, 0.6, 1) * envelope(beats.turn, TURN.perch, 0.03, 0.04) : 0,
+      );
       const fighting = party ? fightBreath(fight, party) : null;
       fire?.draw(
         fighting

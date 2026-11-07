@@ -1,5 +1,4 @@
 import type { CardStore } from "./card-store";
-import { LORE_ARRIVES } from "./dragon-actor";
 import {
   ALIVE,
   BEAST_PAGE,
@@ -18,6 +17,7 @@ import {
   type WikiPage,
   WORLD_PAGES,
 } from "./story";
+import { LORE } from "./timeline";
 
 /**
  * A drawing of the real app, to be replaced by captured footage. The page only
@@ -519,7 +519,7 @@ export function createProductSlot(root: HTMLElement, store: CardStore, signal: A
   return {
     element: slot,
     set(next: ProductState, progress: number) {
-      const arrived = next === "lore" && progress >= LORE_ARRIVES;
+      const arrived = next === "lore" && progress >= LORE.arrives;
       const named = next === "ask" || next === "hints" || arrived;
       dragonName.textContent = named ? "The Dragon" : "The Beast";
       dragonRow.dataset.doc = named ? "ddragon" : "dbeast";
