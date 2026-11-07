@@ -199,12 +199,12 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         name: node.name,
         extension: node.extension,
         filetype: node.filetype,
-        origin: {
-          type: "import" as const,
-          userId: record.userId,
-          source: "upload",
-          filename: node.filename,
-        },
+      };
+      const origin = {
+        type: "import" as const,
+        userId: record.userId,
+        source: "upload",
+        filename: node.filename,
       };
       let document: (typeof documents)[number];
       if (node.kind === "binary") {
@@ -227,7 +227,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             documentId: node.id as DocumentId,
             projectId,
             content,
-            origin: base.origin,
+            origin,
           });
           document = { ...base, content: { kind: "tracked", seed, aheadMints: [] } };
         } else {
@@ -256,7 +256,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
             documentId: node.id as DocumentId,
             projectId,
             content: bound.content,
-            origin: base.origin,
+            origin,
           });
           document = {
             ...base,
