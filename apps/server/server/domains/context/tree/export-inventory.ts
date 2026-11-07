@@ -30,6 +30,7 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
       extension: documents.extension,
       fileType: documents.fileType,
       storageUrl: documents.storageUrl,
+      sizeBytes: documents.sizeBytes,
       metadata: documents.metadata,
       sourceId: documents.contextSourceId,
       folderId: documents.folderId,

@@ -421,7 +421,6 @@ export const uploadIntakes = pgTable(
       .$type<ContextSourceId>()
       .references(() => contextSources.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").$type<DocumentId>().notNull(),
-    fingerprint: text("fingerprint").notNull(),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull(),
     // The name and type are chosen when the stored bytes are read, at finish: null while reserved.
@@ -432,7 +431,6 @@ export const uploadIntakes = pgTable(
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     locationRevision: uuid("location_revision").notNull(),
     state: text("state").notNull().default("reserved"),
-    storageUrl: text("storage_url"),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

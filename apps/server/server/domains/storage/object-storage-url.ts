@@ -57,3 +57,12 @@ export function drawObjectKey(file: {
   if (file.hasPreview) return previewObjectKey(file.key);
   return file.mimeType && BROWSER_DRAWABLE.has(file.mimeType) ? file.key : null;
 }
+
+/**
+ * Where a browser's PUT lands. No row points at this key, so a late or repeated PUT through the
+ * signed URL can only change bytes nobody has read yet; finish copies it to `objectKey` before
+ * it reads anything. A bucket lifecycle rule on this prefix is the backstop for stray objects.
+ */
+export function incomingObjectKey(projectId: string, documentId: string): string {
+  return `incoming/${projectId}/${documentId}`;
+}

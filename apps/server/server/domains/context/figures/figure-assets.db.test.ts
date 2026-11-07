@@ -33,31 +33,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const ASSET_KEY_ID = "00000000-0000-4000-8000-000000000a05";
     const db = createDb(DATABASE_URL, { max: 4 });
     const storedObjects = new Map<string, { bytes: Uint8Array; mimeType: string }>();
-    const objectStore: ObjectStorePort = {
+    const objectStore: Pick<ObjectStorePort, "put" | "get" | "getSignedUrl" | "delete"> = {
       async put(key, bytes, mimeType) {
         storedObjects.set(key, { bytes, mimeType });
         return { ok: true, value: { storageUrl: createObjectStorageUrl(key) } };
-      },
-      async getStream() {
-        throw new Error("not used");
-      },
-      async readHead() {
-        throw new Error("not used");
-      },
-      async signPut() {
-        throw new Error("not used");
-      },
-      async copy() {
-        throw new Error("not used");
       },
       async get(key) {
         const stored = storedObjects.get(key);
         return stored
           ? { ok: true, value: stored }
           : { ok: false, error: { code: "not_found", message: "not found" } };
-      },
-      async list() {
-        return { ok: true, value: { keys: [] } };
       },
       async getSignedUrl(key) {
         return storedObjects.has(key)

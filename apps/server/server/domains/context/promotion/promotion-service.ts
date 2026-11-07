@@ -43,7 +43,7 @@ export interface PromotionService {
   promoteArtifact(input: PromoteArtifactInput): Promise<PromotionResult>;
 }
 export interface PromotionServiceDeps {
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "put" | "delete">;
   /** Deletes the stored object when the promotion fails after the put. */
   release: ObjectRelease;
   results: ResultRepository;

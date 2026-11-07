@@ -11,10 +11,12 @@ meaning such as figures or attachments belongs here.
 or `error`; the port does not throw. Errors use `invalid_key`, `not_found`,
 `too_large`, or `io_error`.
 
-A file can reach 200 MiB, so nothing outside a bounded read holds an object whole:
+A file can reach 200 MiB, so only a bounded read holds an object whole:
 
 - `get(key, { maxBytes })` reads a whole object into memory and refuses (`too_large`)
-  above the cap before reading. Only previews and model-sized images use it.
+  above the cap before reading, or when the store reports no length. Previews and
+  model-sized images pass a cap. The import organizer calls `get` uncapped; it is bounded by
+  the import size limit, so raise that limit only with a cap or a stream there.
 - `getStream` is for the export, which pipes it into a zip entry; destroying the
   stream abandons the read.
 - `copy(from, to)` duplicates inside the store (`CopyObject`, `copyFile`) and returns
@@ -28,11 +30,16 @@ A file can reach 200 MiB, so nothing outside a bounded read holds an object whol
   exist, and the URL can be used again: a second PUT replaces the object. So no row
   may point at a key a URL names (upload intake PUTs to `incoming/…` and copies).
   The result's `headers` are sent as given; the browser sets `Content-Length`. S3
-  signs both as headers on the public-endpoint client. Local signs them into the token and
+  signs both as headers on the public-endpoint client, after making sure the bucket exists
+  (`S3_CREATE_BUCKET_IF_MISSING` creates it once per process). Local signs them into the token and
   `PUT /api/object-store/local/<token>` (`writeSignedToken`) refuses a wrong length, a wrong
   type, an expired token and a read token, and replaces an existing object, as S3 does.
   A signed token authorizes writes, so production with `OBJECT_STORE_PROVIDER=local`
   requires a private `OBJECT_STORE_SIGNING_SECRET`.
+  Node cuts a request whose body takes over 300 s to arrive (408), and a local PUT is such a
+  request. `nitro dev` listens in its main thread, so `pnpm dev` preloads
+  `apps/server/scripts/dev-request-timeout.mjs`, which raises the limit to an hour. A
+  production server on the local provider keeps Node's 300 s; use S3 or R2 for uploads over a slow uplink.
 - `getSignedUrl(key, { contentDisposition })` lets a download carry its filename. S3
   signs it as `ResponseContentDisposition`; the local token carries it inside the
   signed payload, so the link can't be re-pointed at another name.

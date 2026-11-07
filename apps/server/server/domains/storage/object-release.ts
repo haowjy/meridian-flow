@@ -15,7 +15,7 @@ export type ObjectRelease = {
 };
 
 export function createObjectRelease(deps: {
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "delete">;
   /** A failed delete: the store's error, or a thrown error's message. */
   onFailure(key: string, error: ObjectStoreError | string): void;
 }): ObjectRelease {

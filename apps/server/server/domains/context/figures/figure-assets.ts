@@ -32,7 +32,7 @@ export interface GetFigureSignedUrlInput {
 }
 
 export interface FigureAssetServiceOptions {
-  objectStore: ObjectStorePort;
+  objectStore: Pick<ObjectStorePort, "getSignedUrl">;
   documents: FigureDocumentRepository;
   signedUrlExpiresAt: () => string;
 }

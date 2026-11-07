@@ -260,6 +260,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
                 expectedRevision: firstUpload.locationRevision,
               },
               userId,
+              { kind: "chat", projectId, chatId },
             ),
             filename,
           )
