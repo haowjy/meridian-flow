@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { type ContextTab, type ServerContextTab, useContextTabs } from "@/client/stores";
+import { routeSelectionDocumentId } from "../context/context-removal-protocol";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { resolveRouteDocumentOwner } from "../context/route-document-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
@@ -127,13 +128,13 @@ export function useMobileDocumentRoute(input: {
   const { tabs: workspaceTabs } = useContextTabs(input.projectId);
   const { selection } = useContextRemovalProject(input.projectId);
   const boundDocumentId =
-    selection.status === "bound" &&
-    selection.identity.kind === "server" &&
-    selection.locator.scheme === input.scheme &&
-    selection.locator.path === input.path &&
-    selection.locator.workId === input.workId &&
-    selection.locator.rootThreadId === (input.rootThreadId ?? undefined)
-      ? selection.identity.documentId
+    input.scheme !== null && input.path !== null && input.workId !== null
+      ? routeSelectionDocumentId(selection, {
+          scheme: input.scheme,
+          path: input.path,
+          workId: input.workId,
+          rootThreadId: input.rootThreadId ?? undefined,
+        })
       : null;
   const { catalog, isError, isFetching } = useContextCatalogView(
     input.projectId,

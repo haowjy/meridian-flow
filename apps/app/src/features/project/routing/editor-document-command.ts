@@ -252,6 +252,10 @@ export function prepareEditorDestination(
     if (resolved && resolved.kind !== "resolved") throw new Error("Local document is unavailable");
     state = { meridianProjectSelection: pointer };
   }
+  // The id the navigation knew rides this entry, so the route finds the document by it and
+  // not by the path, which another document may hold by the time the route reads it.
+  if (target.documentId && target.path)
+    state = { ...state, meridianNavigatedDocument: target.documentId };
   const destination: ProjectDestination = target.path
     ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
     : { kind: "editor" };

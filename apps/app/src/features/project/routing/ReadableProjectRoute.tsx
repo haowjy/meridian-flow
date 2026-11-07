@@ -230,6 +230,7 @@ function ReadableProjectDestination({
     tabs: workspaceTabs,
   });
   const localDocumentId = localDocument.kind === "resolved" ? localDocument.documentId : undefined;
+  const navigatedDocumentId = navigation?.navigatedDocumentId(location.state);
   const localResourceHandle =
     localDocument.kind === "resolved" ? localDocument.owner.tab.resourceHandle : undefined;
   const localPointer =
@@ -678,6 +679,27 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
+  const relocate = useCallback(
+    (documentId: string) => {
+      const { address, editorWorkId } = latest.current;
+      const document = address.destination;
+      if (document.kind !== "document" || !editorWorkId)
+        return Promise.resolve<NavigationSettlement>({ kind: "superseded" });
+      // Where the document is now may be this very address, when the answer for it is stale.
+      void documentLookup.refetch();
+      return openContext(
+        {
+          scheme: document.scheme,
+          path: `/${document.path}`,
+          workId: editorWorkId,
+          ...(address.lineage ? { rootThreadId: address.lineage } : {}),
+          documentId,
+        },
+        { replace: true, replaceIfSameDocument: true },
+      );
+    },
+    [openContext, documentLookup.refetch],
+  );
   // A document the server never accepted keeps its stable local identity when its placement is
   // refused, and the route bound to it follows that identity back to Unfiled. Its own tab already
   // went there; the path it was filed at no longer names it.
@@ -859,6 +881,7 @@ function ReadableProjectDestination({
   const editorDocument = {
     editorWorkId: workId,
     localDocumentId,
+    navigatedDocumentId,
     activeContextScheme: search.scheme ?? null,
     activeContextPath: search.path ?? null,
     activeContextChat: search.chat ?? null,
@@ -952,6 +975,8 @@ function ReadableProjectDestination({
               workId={workId}
               noWorkId={noWorkId}
               navigation={navigation}
+              navigatedDocumentId={navigatedDocumentId}
+              relocate={relocate}
               onAdmission={setAdmission}
             />
           ) : null}
@@ -997,6 +1022,7 @@ function ReadableProjectDestination({
                 }),
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
+            activeNavigatedDocumentId={editorDocument.navigatedDocumentId}
             activeContextScheme={editorDocument.activeContextScheme}
             activeContextFolder={search.folder ?? null}
             activeContextPath={editorDocument.activeContextPath}

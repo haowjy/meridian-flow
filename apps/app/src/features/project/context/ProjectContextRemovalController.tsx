@@ -15,6 +15,8 @@ export type ProjectContextRemovalControllerProps = {
   activeContextChat?: string | null;
   editorWorkId: string;
   localDocumentId?: string;
+  /** The document the navigation that reached this route named; the candidate selection carries it. */
+  navigatedDocumentId?: string;
   route: ContextRemovalRoutePort;
 };
 
@@ -26,6 +28,7 @@ export function ProjectContextRemovalController({
   activeContextChat,
   editorWorkId,
   localDocumentId,
+  navigatedDocumentId,
   route,
 }: ProjectContextRemovalControllerProps) {
   const coordinator = useContextRemovalCoordinator();
@@ -64,6 +67,7 @@ export function ProjectContextRemovalController({
             path: activeContextPath,
             workId: editorWorkId,
             ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
+            ...(navigatedDocumentId ? { documentId: navigatedDocumentId } : {}),
           }
         : null;
     if (registration.editorWorkId !== editorWorkId) {
@@ -86,6 +90,7 @@ export function ProjectContextRemovalController({
     editorWorkId,
     projectId,
     localDocumentId,
+    navigatedDocumentId,
   ]);
 
   return null;

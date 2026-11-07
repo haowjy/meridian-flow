@@ -137,7 +137,9 @@ returns it as `bound` and it outranks the server's answer for that path; admissi
 then repairs the URL (and, on the phone, the crumbs) to its projected path, and the
 phone host finds the same document by identity meanwhile. Desktop and phone also
 follow the replica's placement (`useFollowOpenDocumentPlacement`): a move or delete
-of the open document changes the URL at once. A document under a pending
+of the open document changes the URL at once. The route follows only while the selection is
+bound to that document at the current route and its projected locator or owner differs, so a
+pasted or traversed URL is never pulled back to an open tab. A document under a pending
 move carries `placementPending` for the same reason: a server alias for the path the
 writer just gave it cannot pull the route back.
 

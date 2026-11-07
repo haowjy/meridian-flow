@@ -57,20 +57,15 @@ export function MobileProject(props: MobileProjectProps) {
   };
   useDockReveal(openChatSheet);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { tabs, selectedTabIdByWork } = useContextTabs(props.projectId);
+  const { tabs } = useContextTabs(props.projectId);
   const { selection } = useContextRemovalProject(props.projectId);
-  const selectedDocumentId =
-    selection.status === "bound" && selection.identity.kind === "server"
-      ? selection.identity.documentId
-      : props.editorWorkId
-        ? selectedTabIdByWork[props.editorWorkId]
-        : undefined;
   useFollowOpenDocumentPlacement({
     projectId: props.projectId,
     editorWorkId: props.editorWorkId,
-    selectedDocumentId,
+    selection,
     activeContextScheme: props.activeContextScheme,
     activeContextPath: props.activeContextPath,
+    activeContextChat: props.activeContextChat,
     routeDisplayed: props.activeScreen === "context",
     onOpenContextTarget: props.onOpenContextTarget,
   });

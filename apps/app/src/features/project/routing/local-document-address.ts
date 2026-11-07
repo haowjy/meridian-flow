@@ -7,7 +7,10 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ContextRouteSelection } from "../context/context-removal-protocol";
+import {
+  type ContextRouteSelection,
+  routeSelectionDocumentId,
+} from "../context/context-removal-protocol";
 import { resolveLiveRouteDocument } from "../context/route-document-owner";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
 import { workSelectionFor } from "./project-address-resolution";
@@ -93,18 +96,14 @@ export function routeContinuityDocumentId(input: {
   rootThreadId?: string;
 }): string | null {
   const { selection, destination } = input;
-  if (
-    !destination ||
-    selection.status !== "bound" ||
-    selection.identity.kind !== "server" ||
-    selection.identity.documentId !== input.admittedDocumentId ||
-    selection.locator.scheme !== destination.scheme ||
-    canonicalDocumentPath(selection.locator.path) !== canonicalDocumentPath(destination.path) ||
-    selection.locator.workId !== input.editorWorkId ||
-    selection.locator.rootThreadId !== input.rootThreadId
-  )
-    return null;
-  return selection.identity.documentId;
+  if (!destination || selection.status !== "bound" || input.editorWorkId === null) return null;
+  const documentId = routeSelectionDocumentId(selection, {
+    scheme: destination.scheme,
+    path: destination.path,
+    workId: input.editorWorkId,
+    rootThreadId: input.rootThreadId,
+  });
+  return documentId !== null && documentId === input.admittedDocumentId ? documentId : null;
 }
 
 export function resolveLocalDocumentAddress(

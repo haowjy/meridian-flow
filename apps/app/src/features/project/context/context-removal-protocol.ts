@@ -1,6 +1,7 @@
 /** Pure selection and represented-removal obligation protocol. */
 
 import type { ContextTab } from "@/client/stores";
+import { canonicalDocumentPath } from "../routing/local-document-address";
 import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
 import {
   type ContextRemovalIntent,
@@ -66,6 +67,28 @@ export type SelectionTransition = {
 };
 
 export const sameLocator = sameContextTarget;
+
+/**
+ * The document a selection names for exactly this route: the one it is bound to, or the id the
+ * navigation that began the candidate carried in `locator.documentId`. A candidate from a URL
+ * with no id (paste, reload, history traversal) names none, and the path's occupant decides.
+ */
+export function routeSelectionDocumentId(
+  selection: ContextRouteSelection,
+  route: Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">,
+): string | null {
+  if (selection.status === "none" || selection.status === "rejected") return null;
+  const { locator } = selection;
+  if (
+    locator.scheme !== route.scheme ||
+    canonicalDocumentPath(locator.path) !== canonicalDocumentPath(route.path) ||
+    locator.workId !== route.workId ||
+    locator.rootThreadId !== route.rootThreadId
+  )
+    return null;
+  if (selection.status === "candidate") return locator.documentId ?? null;
+  return selection.identity.kind === "server" ? selection.identity.documentId : null;
+}
 
 export function continuityForSelection(selection: ContextRouteSelection): RouteContinuityVerdict {
   return selection.status === "bound"

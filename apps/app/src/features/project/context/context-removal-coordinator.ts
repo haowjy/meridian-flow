@@ -51,6 +51,7 @@ import {
   planContextRemoval,
   type RouteContinuityVerdict,
   routeTargetForTab,
+  tabForTarget,
   workingSetRouteForTab,
   workingSetRouteForTarget,
 } from "./context-removal-planner";
@@ -947,9 +948,7 @@ export class ContextRemovalCoordinator {
         selectedTab && targetInEditorOf(routeTargetForTab(selectedTab, activeWorkId), activeWorkId)
           ? selectedTab
           : null;
-      const fallbackTab = fallback
-        ? remainingTabs.find((tab) => sameLocator(routeTargetForTab(tab, activeWorkId), fallback))
-        : null;
+      const fallbackTab = fallback ? tabForTarget(remainingTabs, fallback, activeWorkId) : null;
       this.workspace.commit(projectId, {
         documentIds: [],
         ...(activeWorkId

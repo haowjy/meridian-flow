@@ -1,7 +1,7 @@
 /** The workspace tab rendered by an Editor pane, from its route props and removal binding. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
-import type { ContextRouteSelection } from "./context-removal-protocol";
+import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 export type VisibleEditorRoute = {
@@ -36,16 +36,7 @@ export function resolveVisibleEditorTab({
           ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
         }
       : null;
-  const boundDocumentId =
-    locator &&
-    selection.status === "bound" &&
-    selection.identity.kind === "server" &&
-    selection.locator.scheme === locator.scheme &&
-    selection.locator.path === locator.path &&
-    selection.locator.workId === locator.workId &&
-    selection.locator.rootThreadId === locator.rootThreadId
-      ? selection.identity.documentId
-      : null;
+  const boundDocumentId = locator ? routeSelectionDocumentId(selection, locator) : null;
   const workspaceRoute = resolveWorkspaceRoute({
     tabs,
     selectedDocumentId,
