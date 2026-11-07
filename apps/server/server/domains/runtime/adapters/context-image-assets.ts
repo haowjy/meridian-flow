@@ -68,9 +68,9 @@ export function createContextImageAssetPort(deps: {
           return null;
         const mediaType = asPreview ? PREVIEW_MIME_TYPE : storedType;
         const key = asPreview ? previewObjectKey(originalKey) : originalKey;
-        const object = await deps.objects.get(key);
+        const object = await deps.objects.get(key, { maxBytes: options.maxBytes });
         if (!object.ok) {
-          if (object.error.code === "not_found") return null;
+          if (object.error.code === "not_found" || object.error.code === "too_large") return null;
           throw new ImageAssetResolutionError(
             `Could not resolve image asset ${reference.uri}: ${object.error.message}`,
           );

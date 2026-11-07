@@ -5,7 +5,7 @@
  */
 import type { Readable } from "node:stream";
 
-export type ObjectStoreErrorCode = "invalid_key" | "not_found" | "io_error";
+export type ObjectStoreErrorCode = "invalid_key" | "not_found" | "too_large" | "io_error";
 
 export interface ObjectStoreError {
   code: ObjectStoreErrorCode;
@@ -22,6 +22,31 @@ export interface ObjectStorePutOutput {
 export interface ObjectStoreGetOutput {
   bytes: Uint8Array;
   mimeType: string;
+}
+
+export interface ObjectStoreGetOptions {
+  /**
+   * Refuses (`too_large`) an object above this many bytes without reading it. Whole-object
+   * reads are for bounded things such as previews; anything else uses `getStream` or `copy`.
+   */
+  maxBytes?: number;
+}
+
+export interface ObjectStoreStreamOutput {
+  stream: Readable;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface ObjectStoreCopyOutput {
+  storageUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface ObjectStoreSignedUrlOptions {
+  /** A `Content-Disposition` value the store sends with the bytes (a download's filename). */
+  contentDisposition?: string;
 }
 
 export interface ObjectStoreListEntry {
@@ -42,16 +67,6 @@ export interface ObjectStoreListOptions {
   limit?: number;
 }
 
-export interface ObjectStorePutStreamOptions {
-  /**
-   * Exact byte length of `body`, which the caller guarantees (S3 needs it before the first
-   * byte and can't tell a short stream from a slow one). Adapters that can count refuse a
-   * mismatch.
-   */
-  sizeBytes: number;
-  mimeType: string;
-}
-
 /**
  * Binary object storage. Callers persist only stable storage URLs; renderers ask
  * the store for short-lived read URLs when bytes are needed.
@@ -62,20 +77,21 @@ export interface ObjectStorePort {
     bytes: Uint8Array,
     mimeType: string,
   ): Promise<ObjectStoreResult<ObjectStorePutOutput>>;
-  /**
-   * Stores `body` without holding it whole. A stream that errors or is destroyed leaves no
-   * object under `key`, and an existing object stays as it was.
-   */
-  putStream(
+  get(
     key: string,
-    body: Readable,
-    options: ObjectStorePutStreamOptions,
-  ): Promise<ObjectStoreResult<ObjectStorePutOutput>>;
-  get(key: string): Promise<ObjectStoreResult<ObjectStoreGetOutput>>;
+    options?: ObjectStoreGetOptions,
+  ): Promise<ObjectStoreResult<ObjectStoreGetOutput>>;
+  /** Reads an object as a stream. Destroying the stream abandons the read. */
+  getStream(key: string): Promise<ObjectStoreResult<ObjectStoreStreamOutput>>;
+  /** Duplicates an object inside the store, bytes never passing through the server. */
+  copy(fromKey: string, toKey: string): Promise<ObjectStoreResult<ObjectStoreCopyOutput>>;
   list(
     prefix: string,
     options?: ObjectStoreListOptions,
   ): Promise<ObjectStoreResult<ObjectStoreListOutput>>;
-  getSignedUrl(key: string): Promise<ObjectStoreResult<string>>;
+  getSignedUrl(
+    key: string,
+    options?: ObjectStoreSignedUrlOptions,
+  ): Promise<ObjectStoreResult<string>>;
   delete(key: string): Promise<ObjectStoreResult<void>>;
 }

@@ -369,6 +369,12 @@ if (!RUN) {
         async delete() {
           return { ok: true, value: undefined };
         },
+        async getStream() {
+          throw new Error("not used");
+        },
+        async copy() {
+          throw new Error("not used");
+        },
         async get() {
           return { ok: false, error: { code: "not_found", message: "missing" } };
         },

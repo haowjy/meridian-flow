@@ -3,9 +3,9 @@
  * and presigned URLs for signed reads. Owns the S3-specific wiring (bucket,
  * client, presigning); depends inward on the port and URL helper.
  */
-
 import type { Readable } from "node:stream";
 import {
+  CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -18,10 +18,13 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createObjectStorageUrl } from "../../object-storage-url.js";
 import type {
+  ObjectStoreCopyOutput,
   ObjectStoreErrorCode,
+  ObjectStoreGetOptions,
   ObjectStorePort,
-  ObjectStorePutStreamOptions,
   ObjectStoreResult,
+  ObjectStoreSignedUrlOptions,
+  ObjectStoreStreamOutput,
 } from "../../ports/object-store.js";
 
 export interface S3ObjectStoreOptions {
@@ -122,43 +125,10 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     }
   }
 
-  async putStream(
+  async get(
     key: string,
-    body: Readable,
-    options: ObjectStorePutStreamOptions,
-  ): Promise<ObjectStoreResult<{ storageUrl: string }>> {
-    if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
-
-    const ensured = await this.ensureBucket();
-    if (!ensured.ok) return ensured;
-
-    // The SDK doesn't notice a body that errors or closes early: the request sits open until the
-    // store times it out (30s on MinIO), so the abort has to come from here.
-    const abort = new AbortController();
-    const stop = () => abort.abort();
-    body.once("error", stop);
-    body.once("close", () => {
-      if (!body.readableEnded) stop();
-    });
-    try {
-      await this.client.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-          Body: body,
-          ContentLength: options.sizeBytes,
-          ContentType: options.mimeType,
-        }),
-        { abortSignal: abort.signal },
-      );
-      return ok({ storageUrl: createObjectStorageUrl(key) });
-    } catch (error) {
-      body.destroy();
-      return err("io_error", error instanceof Error ? error.message : "Failed to write object");
-    }
-  }
-
-  async get(key: string): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
+    options?: ObjectStoreGetOptions,
+  ): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
     if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
 
     try {
@@ -167,6 +137,11 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
       );
       const body = response.Body;
       if (!body) return err("not_found", "Object not found");
+      if (options?.maxBytes !== undefined && (response.ContentLength ?? 0) > options.maxBytes) {
+        // Dropping the body unread abandons the transfer.
+        (body as Readable).destroy();
+        return err("too_large", "Object is too large to read");
+      }
       const bytes = await body.transformToByteArray();
       return ok({
         bytes,
@@ -175,6 +150,54 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     } catch (error) {
       if (isNotFound(error)) return err("not_found", "Object not found");
       return err("io_error", error instanceof Error ? error.message : "Failed to read object");
+    }
+  }
+
+  async getStream(key: string): Promise<ObjectStoreResult<ObjectStoreStreamOutput>> {
+    if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
+
+    try {
+      const response = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      if (!response.Body) return err("not_found", "Object not found");
+      return ok({
+        stream: response.Body as Readable,
+        mimeType: response.ContentType ?? "application/octet-stream",
+        sizeBytes: response.ContentLength ?? 0,
+      });
+    } catch (error) {
+      if (isNotFound(error)) return err("not_found", "Object not found");
+      return err("io_error", error instanceof Error ? error.message : "Failed to read object");
+    }
+  }
+
+  async copy(fromKey: string, toKey: string): Promise<ObjectStoreResult<ObjectStoreCopyOutput>> {
+    if (!isSafeKey(fromKey) || !isSafeKey(toKey))
+      return err("invalid_key", "Object key is invalid");
+
+    const ensured = await this.ensureBucket();
+    if (!ensured.ok) return ensured;
+
+    try {
+      const head = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: fromKey }),
+      );
+      await this.client.send(
+        new CopyObjectCommand({
+          Bucket: this.bucket,
+          Key: toKey,
+          CopySource: `${this.bucket}/${fromKey.split("/").map(encodeURIComponent).join("/")}`,
+        }),
+      );
+      return ok({
+        storageUrl: createObjectStorageUrl(toKey),
+        mimeType: head.ContentType ?? "application/octet-stream",
+        sizeBytes: head.ContentLength ?? 0,
+      });
+    } catch (error) {
+      if (isNotFound(error)) return err("not_found", "Object not found");
+      return err("io_error", error instanceof Error ? error.message : "Failed to copy object");
     }
   }
 
@@ -216,7 +239,10 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     }
   }
 
-  async getSignedUrl(key: string): Promise<ObjectStoreResult<string>> {
+  async getSignedUrl(
+    key: string,
+    options?: ObjectStoreSignedUrlOptions,
+  ): Promise<ObjectStoreResult<string>> {
     if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
 
     try {
@@ -229,7 +255,13 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     try {
       const url = await getSignedUrl(
         this.presignClient,
-        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ...(options?.contentDisposition
+            ? { ResponseContentDisposition: options.contentDisposition }
+            : {}),
+        }),
         { expiresIn: this.signedUrlTtlSeconds },
       );
       return ok(url);
