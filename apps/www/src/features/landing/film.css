@@ -764,8 +764,7 @@
   line-height: 1.15;
 }
 
-.cine .sheet-kind,
-.cine .sheet-label {
+.cine .sheet-kind {
   opacity: 0.7;
 }
 
@@ -780,12 +779,6 @@
 
 .cine .sheet-does {
   font-weight: 400;
-}
-
-.cine .sheet-status {
-  display: flex;
-  gap: 0.5em;
-  margin-top: 0.35em;
 }
 
 @media (max-width: 640px) {

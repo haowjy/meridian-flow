@@ -259,7 +259,7 @@ function PageBody({ page, statusId }: { page: WikiPage; statusId?: string }) {
       </ul>
       {page.sections.map(([heading, body]) => (
         <section className={heading === NOTES ? "s-notes" : undefined} key={heading}>
-          <h3>{heading}</h3>
+          <strong className="s-heading">{heading}</strong>
           {typeof body === "string" ? (
             <p>
               <Linked text={body} />

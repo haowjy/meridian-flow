@@ -3,7 +3,15 @@ import { createCardStore } from "./card-store";
 import { startFilm } from "./film";
 import { createProductSlot, ProductPlaceholder } from "./ProductPlaceholder";
 import { QuestionCard } from "./QuestionCard";
-import { CHARACTERS, type CharacterKey, END, PROLOGUE, SHEETS, SYSTEM } from "./story";
+import {
+  CHARACTERS,
+  type CharacterKey,
+  END,
+  PROLOGUE,
+  SECTION_HEADS,
+  SHEETS,
+  SYSTEM,
+} from "./story";
 import { SECTIONS } from "./timeline";
 
 const NIGHT = { "data-ui-theme": "dark" } as const;
@@ -88,6 +96,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             </div>
 
             <div className="world" id="the-world" {...NIGHT}>
+              <SectionHead section="world" />
               <svg className="wlines" id="wlines" aria-hidden="true" />
               {CHARACTERS.map((character, index) => (
                 <WorldNote key={character.key} id={`w${index}`} title={character.name}>
@@ -122,6 +131,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             </ol>
 
             <div className="team" id="the-team" {...NIGHT}>
+              <SectionHead section="team" />
               <svg className="lines" id="lines" aria-hidden="true" />
               <div className="hub" aria-hidden="true">
                 <b>Prologue</b>
@@ -173,12 +183,15 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
 
             <div className="dawn">
               <div className="cap" id="knowledge-base" {...NIGHT}>
-                <h2>Every dragon gets a page.</h2>
+                <h2>{SECTION_HEADS.knowledge.heading}</h2>
+                <p className="sect-head">{SECTION_HEADS.knowledge.line}</p>
               </div>
               <div className="workspot" id="the-workspace" />
+              <SectionHead section="workspace" />
             </div>
 
             <div className="ask" id="your-decisions">
+              <SectionHead section="decisions" />
               <QuestionCard store={store} />
             </div>
 
@@ -357,5 +370,19 @@ function Agent({
       <p className="live">{live}</p>
       <p className="rep">{report}</p>
     </div>
+  );
+}
+
+/**
+ * What the section is for, in plain words: the stacked layout shows it, the film tells it as story
+ * instead and keeps it for screen readers and crawlers.
+ */
+function SectionHead({ section }: { section: keyof typeof SECTION_HEADS }) {
+  const { heading, line } = SECTION_HEADS[section];
+  return (
+    <header className="sect-head">
+      <h2>{heading}</h2>
+      <p>{line}</p>
+    </header>
   );
 }
