@@ -22,7 +22,7 @@ We were the four.
 
 ---
 
-Tam came from Harl, the furthest south, so the road began with him. He was seventeen. Eighteen months earlier he had been a farm boy; now he was Level 58, higher than anyone his age had ever been, and when the king said so in front of the whole court Tam went red to the ears. His skill was [Spark], and the box that came with it had said [Source: talent]. The first spark had come out of his right hand and taken the skin off to the elbow, and he still held that arm a little away from his body, as if it belonged to someone he was being polite to. He talked when he was nervous, which was most of the first week.
+Tam came from Harl, the furthest south, so the road began with him. He was seventeen. Eighteen months earlier he had been a farm boy; now he was Level 58, higher than anyone his age had ever been, and when the king said so in front of the whole court Tam went red to the ears. His skill was [Spark]. The first spark had come out of his right hand and taken the skin off to the elbow, and he still held that arm a little away from his body, as if it belonged to someone he was being polite to. He talked when he was nervous, which was most of the first week.
 
 At the border fort under the mountains, Sigrun was waiting on the wall. She came down without being asked, looked at Tam's arm and said, "That'll ache in the cold." It did. She was the champion of the holds, a hundred and forty years old and built like a millstone, and both her forearms were scarred from wrist to elbow in neat rows of runes, the newest still scabbed. Tam asked about them that night. "A shield can be dropped," she said, which was not an answer until the wolves came. She carried a letter under the seal of the Ninth Hold and never opened it where anyone could see.
 
@@ -109,7 +109,6 @@ The fire went through the box and through me, colder than anything I have a word
 I was on the cliff above my father's barley. It was night, and the north was turning green for the first time. Down in the farmhouse my mother was laughing at something.
 
 [Unique skill acquired: Rekindle]
-[Source: unknown]
 
 ## If Maren survives
 
@@ -134,7 +133,6 @@ I have told all of this as if I saw it. I didn't. Tam told me the sky was green,
 I was at the edge of Vell. The wind was cold from the wrong direction, and somewhere north of me, I knew, the sky was turning green. The next box, the System read to me in my mother's voice.
 
 [Unique skill acquired: Rekindle]
-[Source: unknown]
 
 ## If Sigrun survives
 
@@ -157,7 +155,6 @@ Then the fire.
 I was on the watch-ledge of the Ninth Hold, the chisel still in my hand. In the north the sky was turning green for the first time, and behind me my sister was calling up the stairs to ask if I was coming in to eat.
 
 [Unique skill acquired: Rekindle]
-[Source: unknown]
 
 ## If Oskar survives
 
@@ -180,4 +177,3 @@ The fire took what the ice had left of my ear, and then the rest of me.
 I was on the ridge with my horses. The north was turning green, and the song had started.
 
 [Unique skill acquired: Rekindle]
-[Source: unknown]

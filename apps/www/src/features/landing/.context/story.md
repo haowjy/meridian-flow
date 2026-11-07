@@ -29,7 +29,7 @@ the death box. Its text, "You died.", is `SYSTEM.death` in `story.ts`. The
 dragon eats light, so it turns to the box, the brightest thing on the ice, and
 breathes on it, burning the box and the survivor. The survivor wakes
 where they stood on the first night of the Cold Fire, with the unique skill
-Rekindle, `[Source: unknown]`.
+Rekindle.
 
 The dragon reveal is not the twist. To this audience a dragon at the end of the
 road is expected. The twist is the box: a System that has never talked like a
@@ -47,8 +47,7 @@ game suddenly does, and the real story is the loop.
   learnable.
 - The loop ends when the beast dies. The loop count is unlimited and never
   shown.
-- Rekindle is unique. Nobody else has it, and no skill box in recorded history
-  has said `[Source: unknown]`. A loop power every System user had would take
+- Rekindle is unique: nobody else has it. A loop power every System user had would take
   away what makes the survivor special.
 
 ## The four
@@ -109,8 +108,7 @@ The beats are in [`timeline.ts`](../timeline.ts). In story order:
    random: `[No selection. Survivor assigned: …]`. Every path has one survivor.
 5. The survivor's last line types into the manuscript, after the death box's
    line.
-6. The Rekindle box: `[Unique skill acquired: Rekindle]`, `[Source: unknown]`,
-   with a **Rekindle** button that returns to the cliff scene and resets the
+6. The Rekindle box: `[Unique skill acquired: Rekindle]`, with a **Rekindle** button that returns to the cliff scene and resets the
    card, so the visitor can loop and pick someone else.
 7. The end question: "What will you write?", with an input for the visitor's
    own book and Start writing.
