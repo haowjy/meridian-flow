@@ -129,11 +129,14 @@ own file drag adds nothing to what the door reads. Read the rows from `upload_in
    and flips with no reload when the file finalizes. A reload mid-upload reads `Uploading` for as
    long as the server holds the intake, then `gone` if the page took the upload with it.
 5. Undo while it uploads. The chip leaves, and about ten seconds later the request is aborted: no
-   object and no intake row stay. Cut the chip and paste it back within a few seconds: the upload
+   object stays and the intake row stays `reserved` until the sweep, reading `gone` after three
+   minutes. Cut the chip and paste it back within a few seconds: the upload
    keeps going. Paste it into another document after the abort: it reads gone.
 6. While one uploads, rename `assets/`. The file lands in a fresh `assets/` and the chip follows
    it by id. Rename or move a finished file, then read the document through `./mf doc read`: the
    link shows the file's current path. Trash a finished file and click its chip: Trash opens at it.
+   Drop a text file (`.md`): it becomes a document in `assets/`, and a notice says so and that the
+   chip links to it. Several of one name dropped at once get `name`, `name (2)`, `name (3)`.
 7. A read-only editor (`setEditable(false)`) takes no file and starts no upload.
 8. Export the project: the files sit under their folders and the document's link points at the
    current path.

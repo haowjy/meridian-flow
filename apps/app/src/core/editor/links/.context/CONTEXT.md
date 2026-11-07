@@ -52,9 +52,11 @@ the file exists. What the chip says is drawn, never stored (`link-chip.ts`'s
   and an undo does not. A chip pasted into another document is not the uploader's: it
   hears the server, which answers `uploading` while an unfinalized intake holds the id and
   `gone` once the upload was taken back.
-- Another tab, or the same one after a reload, hears `uploading` from the resolve route. A
-  chip asked before the intake reserved its row (the first 8 KiB of the file) is answered
-  `gone` and is asked again only when the catalog changes, which the finalize does.
+- Another tab, or the same one after a reload, hears `uploading` from the resolve route. The
+  door asks the server to start the upload (`FileDropHost.start`) before it inserts the chip, so
+  the row exists when any tab first asks. The uploading tab starts again about once a minute, and
+  the route answers `uploading` only for a row touched in the last three minutes: a closed tab's
+  chip reads `gone` without waiting for the sweep.
 - A document answer carries `file` (type, MIME type, size) for a stored file, from the
   resolve route. The local index knows type and MIME but not size, so a stored file's chip
   asks the server once. The detail row is `PDF · 2.4 MB`; a picture's chip carries none.
