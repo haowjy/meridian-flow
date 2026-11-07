@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landing film map</title>
+<!--
+  How the landing page's scroll film is put together: the beats, the layers that read them, and
+  the cues they share. Open this file in a browser.
+
+  The numbers below are copied from ../timeline.ts (BEATS and the cue objects) and ../film.css
+  (the --z-* table). When they disagree, the code is right: update the BEATS and CUES arrays here
+  in the same change that retimes the film.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: CanvasText;
+    --page: Canvas;
+    --muted: GrayText;
+    --line: color-mix(in oklab, CanvasText 16%, Canvas);
+    --soft: color-mix(in oklab, CanvasText 5%, Canvas);
+    --accent: AccentColor;
+    --l-sky: color-mix(in oklab, AccentColor 70%, Canvas);
+    --l-ground: color-mix(in oklab, LinkText 55%, Canvas);
+    --l-dragon: color-mix(in oklab, CanvasText 55%, Canvas);
+    --l-fight: color-mix(in oklab, Mark 80%, CanvasText 10%);
+    --l-fire: color-mix(in oklab, VisitedText 60%, Canvas);
+    --l-product: color-mix(in oklab, AccentColor 30%, Canvas);
+    --l-text: color-mix(in oklab, CanvasText 25%, Canvas);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 19px; margin: 44px 0 8px; }
+  p { max-width: 70ch; margin: 0 0 12px; }
+  code { font: 13px ui-monospace, monospace; background: var(--soft); padding: 1px 4px; border-radius: 4px; }
+  .lede { color: var(--muted); }
+
+  /* Scrubber */
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0 10px; }
+  .controls label { display: inline-flex; gap: 6px; align-items: center; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0 14px; }
+  .readout div { background: var(--soft); border-radius: 8px; padding: 8px 10px; }
+  .readout b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .readout small { color: var(--muted); }
+
+  .chart { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 10px 10px 6px; overflow-x: auto; }
+  .rows { position: relative; min-width: 720px; }
+  .row { display: grid; grid-template-columns: 116px 1fr; align-items: center; min-height: 30px; }
+  .row > span { font-size: 12px; color: var(--muted); padding-right: 8px; }
+  .lane { position: relative; height: 24px; }
+  .beats .lane { height: 34px; }
+  .seg {
+    position: absolute; top: 2px; bottom: 2px; border-radius: 5px;
+    font-size: 11px; line-height: 1.15; padding: 2px 5px; overflow: hidden; white-space: nowrap;
+    text-overflow: ellipsis; cursor: pointer; border: 1px solid transparent;
+  }
+  .beats .seg { background: var(--soft); border-color: var(--line); }
+  .beats .seg.on { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 14%, Canvas); }
+  .cue { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); opacity: .55; }
+  .cue::after { content: attr(data-n); position: absolute; top: -2px; left: 4px; font-size: 10px; white-space: nowrap; }
+  .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; left: 116px; }
+  .now { margin-top: 12px; display: grid; gap: 6px; }
+  .now > div { display: grid; grid-template-columns: 116px 1fr; gap: 8px; }
+  .now span { color: var(--muted); font-size: 13px; }
+
+  /* Layers */
+  .stack { display: grid; gap: 6px; max-width: 760px; }
+  .stack .box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; }
+  .stack .box small { grid-column: 1 / -1; color: var(--muted); }
+  .stack .box code { justify-self: end; }
+  .stage { border: 2px solid var(--accent); border-radius: 12px; padding: 10px; display: grid; gap: 4px; }
+  .stage > b { font-size: 13px; }
+  .z { display: grid; grid-template-columns: 34px 120px 1fr; gap: 8px; font-size: 13px; padding: 3px 6px; border-radius: 6px; }
+  .z:nth-child(odd) { background: var(--soft); }
+  .z i { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Frame flow */
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+  .flow div { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; flex: 1 1 150px; font-size: 13px; }
+  .flow div b { display: block; font-size: 14px; }
+  .flow em { align-self: center; font-style: normal; color: var(--muted); }
+  ul.rules { padding-left: 18px; max-width: 72ch; }
+  ul.rules li { margin-bottom: 6px; }
+  .key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  @media (max-width: 640px) { h1 { font-size: 23px; } .flow em { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>How the landing film works</h1>
+  <p class="lede">The scroll position is the clock. <code>timeline.ts</code> cuts the page into beats; every frame, each layer reads how far through each beat the visitor is and draws itself from that.</p>
+
+  <h2>The timeline</h2>
+  <p>Drag the playhead, or click a beat. Each beat has a scroll length in viewport heights (what the visitor swipes) and an autoplay length in seconds (what the play button spends on it). Ticks are the named cues inside a beat.</p>
+  <div class="controls">
+    <label><input type="radio" name="unit" value="vh" checked> Scroll (viewport heights)</label>
+    <label><input type="radio" name="unit" value="s"> Autoplay (seconds)</label>
+  </div>
+  <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position in the film">
+  <div class="readout" aria-live="polite">
+    <div><small>Beat</small><b id="r-beat">hold</b></div>
+    <div><small>Through the beat</small><b id="r-p">0%</b></div>
+    <div><small>Scroll</small><b id="r-vh">0 vh</b></div>
+    <div><small>Autoplay</small><b id="r-s">0 s</b></div>
+  </div>
+  <div class="chart"><div class="rows" id="rows"><div class="playhead" id="head"></div></div></div>
+  <div class="now" id="now"></div>
+
+  <h2>The layers</h2>
+  <p>Back to front. Two canvases are fixed to the window; everything else sits on the sticky stage, stacked by the <code>--z-*</code> table on <code>.cine .stage</code> in <code>film.css</code>. The dragon changes layer as it flies: far behind the text, low over the trees, over the product, and in front of everything while it burns the box.</p>
+  <div class="stack">
+    <div class="box"><b>Sky</b><code>sky.ts</code><small>Fixed WebGL canvas. Stars, the aurora (one noise sheet sampled at 14 heights in a low-resolution light pass), the far range and the peak, the lake, the dawn. Keeps waving on a clock while the visitor is still.</small></div>
+    <div class="box"><b>Treeline</b><code>forest.ts</code><small>Fixed canvas. A still of the near trees, drawn once when the party leaves, so the trees stay as background at the end.</small></div>
+    <div class="stage" id="ztable"><b>Sticky stage (.stage), z from back to front</b></div>
+    <div class="box"><b>Top bar</b><code>LandingPage.tsx</code><small>Fixed above the stage: play, jump links, Sign in, Start writing.</small></div>
+  </div>
+
+  <h2>One frame</h2>
+  <div class="flow">
+    <div><b>Scroll</b>The real <code>scrollY</code>, or autoplay's target.</div><em>→</em>
+    <div><b>Smoothed position</b><code>film.ts</code> eases toward it, so a flick glides.</div><em>→</em>
+    <div><b>Beat progress</b><code>beatProgress()</code>: 0 to 1 for every beat at once.</div><em>→</em>
+    <div><b>Layers</b>Forest, dragon, fight and sky each update from it; the fight's breath or the dragon's burn goes to the one fire canvas.</div><em>→</em>
+    <div><b>DOM writes</b>Text, opacity and transforms on markup React rendered once.</div>
+  </div>
+  <p style="margin-top:12px">When nothing scrolls, the sky still redraws at 30fps so the aurora moves, and stops in a background tab.</p>
+
+  <h2>Changing it</h2>
+  <ul class="rules">
+    <li><b>A pause or a longer moment</b> is a row in <code>BEATS</code>. Split a beat whose parts need retiming on their own, as the death is split into dies, still, flight and burn, instead of remapping shares inside it.</li>
+    <li><b>A moment two layers must agree on</b> (when the dragon lands, when the party is gone) is a named cue in <code>timeline.ts</code>. A layer keeps only the curves nothing else matches.</li>
+    <li><b>Where text and the product sit</b> is CSS, in container units of the stage; <code>film-layout.ts</code> reads it back. Only the scenery places itself in script.</li>
+    <li><b>Ground lines</b> (the beach, the shore) are <code>ground.ts</code>. <b>Colours</b> are tokens: <code>marketing.css</code>, or <code>marketing-sky.ts</code> for the shaders.</li>
+    <li><b>Story copy</b> is <code>story.ts</code>; read <code>story.md</code> before changing it.</li>
+  </ul>
+</main>
+<script>
+// Copied from ../timeline.ts: [beat, scroll viewport heights, autoplay seconds].
+const BEATS = [
+  ["hold", 0.5, 0.8], ["push", 0.9, 1.4], ["sky", 2, 6], ["world", 2.1, 7.5], ["open", 0.4, 1.5],
+  ["write", 2.2, 12], ["out", 0.7, 2.5], ["back", 0.9, 5], ["camp", 1.4, 4], ["turn", 1.8, 6.5],
+  ["fight", 3, 8.5], ["dies", 0.8, 2], ["still", 1, 2], ["flight", 0.9, 2], ["burn", 1.3, 2.5],
+  ["dawn", 1.5, 4], ["lore", 1.5, 3.5], ["ask", 3, 8.5], ["hints", 1.2, 3.5], ["roam", 1.2, 2],
+  ["skill", 1.6, 4], ["leave", 0.7, 2],
+];
+// Named cues, as [beat, share, label].
+const CUES = [
+  ["sky", 0.28, "tilt starts"], ["sky", 0.86, "level"],
+  ["world", 0.52, "notes typed"], ["write", 0.55, "chapter typed"],
+  ["camp", 0.2, "sheets"], ["camp", 0.72, "sheets go"],
+  ["turn", 0.45, "descends"], ["turn", 0.58, "lands"], ["turn", 0.6, "perch"],
+  ["fight", 0.08, "ward"], ["fight", 0.23, "rune"], ["fight", 0.28, "song"], ["fight", 0.35, "charge"],
+  ["fight", 0.44, "spark"], ["fight", 0.6, "breath"], ["fight", 0.86, "one left"],
+  ["dies", 0.11, "box opens"], ["dies", 0.45, "party goes"],
+  ["flight", 0.14, "loop"], ["burn", 0.08, "dawn shows"], ["burn", 0.82, "dragon out"],
+  ["dawn", 0.1, "dragon returns"], ["lore", 0.05, "at the page"],
+  ["ask", 0.43, "card lifts"], ["ask", 0.89, "System picks"],
+];
+// What each layer does, by beat range [from beat, to beat (inclusive), label].
+const LANES = [
+  ["Sky", "--l-sky", [["hold", "sky", "overhead, then tips down"], ["world", "camp", "night, aurora waving"], ["turn", "still", "Cold Fire over the peak"], ["burn", "leave", "dawn"]]],
+  ["Trees, party", "--l-ground", [["world", "back", "walk north"], ["camp", "camp", "camp"], ["turn", "turn", "walk out, back away"], ["fight", "fight", "fight"], ["dies", "dies", "fall, go"], ["leave", "leave", "trees kept"]]],
+  ["Dragon", "--l-dragon", [["world", "camp", "small, far off"], ["turn", "turn", "lands, perches"], ["fight", "still", "fights, stands"], ["flight", "flight", "loop"], ["burn", "burn", "burns the box"], ["dawn", "lore", "to its page"]]],
+  ["Fight, fire", "--l-fight", [["fight", "fight", "ward, hits, breath"], ["burn", "burn", "burn wall"]]],
+  ["Product", "--l-product", [["hold", "push", "first screen"], ["burn", "dawn", "uncovered, settles"], ["lore", "skill", "story bible, card"], ["leave", "leave", "goes"]]],
+  ["Text", "--l-text", [["world", "world", "world notes"], ["open", "write", "chapter types"], ["out", "back", "team cards"], ["camp", "camp", "status sheets"], ["dies", "burn", "You died."], ["lore", "lore", "caption"], ["ask", "ask", "question card"], ["skill", "skill", "Rekindle"]]],
+];
+// Copied from ../film.css: the stage's z table, with what sits on each layer.
+const Z = [
+  [1, "far", "the dragon, far behind the text"], [2, "ground", "trees and the party"],
+  [3, "low", "chapter, status sheets, caption shade; the dragon low over the trees"],
+  [4, "product", "the app drawing; the Cold Fire updraft"], [5, "words", "hero, world notes, dawn caption; the flying dragon"],
+  [6, "over", "team cards, the death box; the dragon over the product"], [7, "sub", "You/Muse subtitles"],
+  [8, "ask", "the question card"], [9, "skill", "the Rekindle window"], [10, "flame", "the fire canvas"],
+  [11, "pass", "the dragon while it burns the box"], [12, "pass-words", "the box while the burn crosses it"],
+];
+
+const units = { vh: 1, s: 2 };
+let unit = "vh";
+const total = (u) => BEATS.reduce((t, b) => t + b[units[u]], 0);
+const spans = (u) => { let at = 0; return BEATS.map((b) => { const s = [at, at + b[units[u]]]; at = s[1]; return s; }); };
+const rows = document.getElementById("rows");
+const head = document.getElementById("head");
+const scrub = document.getElementById("scrub");
+const LABEL_W = 116;
+
+function lane(name, cls) {
+  const row = document.createElement("div");
+  row.className = "row " + (cls || "");
+  row.innerHTML = `<span>${name}</span><div class="lane"></div>`;
+  rows.appendChild(row);
+  return row.querySelector(".lane");
+}
+function draw() {
+  rows.querySelectorAll(".row").forEach((r) => r.remove());
+  const T = total(unit), S = spans(unit), pct = (x) => (x / T) * 100;
+  const index = Object.fromEntries(BEATS.map((b, i) => [b[0], i]));
+  const beatLane = lane("Beats", "beats");
+  BEATS.forEach((b, i) => {
+    const seg = document.createElement("div");
+    seg.className = "seg"; seg.dataset.i = i; seg.textContent = b[0];
+    seg.title = `${b[0]}: ${b[1]} vh, ${b[2]} s`;
+    seg.style.left = pct(S[i][0]) + "%"; seg.style.width = pct(S[i][1] - S[i][0]) + "%";
+    seg.onclick = () => { scrub.value = ((S[i][0] + (S[i][1] - S[i][0]) * 0.5) / T) * 1000; update(); };
+    beatLane.appendChild(seg);
+  });
+  const cueLane = lane("Cues");
+  CUES.forEach(([beat, share, n]) => {
+    const s = S[index[beat]], c = document.createElement("div");
+    c.className = "cue"; c.dataset.n = ""; c.title = `${beat} ${share}: ${n}`;
+    c.style.left = pct(s[0] + (s[1] - s[0]) * share) + "%";
+    cueLane.appendChild(c);
+  });
+  for (const [name, color, items] of LANES) {
+    const l = lane(name);
+    for (const [from, to, label] of items) {
+      const seg = document.createElement("div");
+      seg.className = "seg"; seg.textContent = label; seg.title = `${name}: ${label} (${from}–${to})`;
+      seg.style.background = `var(${color})`;
+      const a = S[index[from]][0], b = S[index[to]][1];
+      seg.style.left = pct(a) + "%"; seg.style.width = pct(b - a) + "%";
+      l.appendChild(seg);
+    }
+  }
+  update();
+}
+function update() {
+  const t = scrub.value / 1000;
+  const S = spans(unit), T = total(unit), at = t * T;
+  let i = S.findIndex((s) => at < s[1]); if (i < 0) i = S.length - 1;
+  const share = Math.min(1, (at - S[i][0]) / (S[i][1] - S[i][0]));
+  // The same moment in the other unit: same beat, same share.
+  const other = unit === "vh" ? "s" : "vh", O = spans(other)[i];
+  const inOther = O[0] + (O[1] - O[0]) * share;
+  const vh = unit === "vh" ? at : inOther, s = unit === "s" ? at : inOther;
+  document.getElementById("r-beat").textContent = BEATS[i][0];
+  document.getElementById("r-p").textContent = Math.round(share * 100) + "%";
+  document.getElementById("r-vh").textContent = vh.toFixed(1) + " vh";
+  document.getElementById("r-s").textContent = s.toFixed(1) + " s";
+  rows.querySelectorAll(".beats .seg").forEach((el) => el.classList.toggle("on", +el.dataset.i === i));
+  const laneW = rows.clientWidth - LABEL_W;
+  head.style.left = LABEL_W + laneW * t + "px";
+  const index = Object.fromEntries(BEATS.map((b, k) => [b[0], k]));
+  const now = document.getElementById("now");
+  now.innerHTML = "";
+  for (const [name, color, items] of LANES) {
+    const hit = items.find(([f, to]) => index[f] <= i && i <= index[to]);
+    const d = document.createElement("div");
+    d.innerHTML = `<span><i class="key" style="background:var(${color})"></i>${name}</span><div>${hit ? hit[2] : "—"}</div>`;
+    now.appendChild(d);
+  }
+  const cues = CUES.filter((c) => c[0] === BEATS[i][0]);
+  const d = document.createElement("div");
+  d.innerHTML = `<span>Cues in ${BEATS[i][0]}</span><div>${cues.length ? cues.map((c) => `${c[2]} <code>${c[1]}</code>`).join(", ") : "—"}</div>`;
+  now.appendChild(d);
+}
+const zt = document.getElementById("ztable");
+for (const [z, name, what] of Z) {
+  const row = document.createElement("div");
+  row.className = "z";
+  row.innerHTML = `<i>${z}</i><code>--z-${name}</code><span>${what}</span>`;
+  zt.appendChild(row);
+}
+document.querySelectorAll("input[name=unit]").forEach((r) => (r.onchange = () => { unit = r.value; draw(); }));
+scrub.oninput = update;
+addEventListener("resize", update);
+draw();
+</script>
+</body>
+</html>

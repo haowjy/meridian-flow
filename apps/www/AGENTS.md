@@ -28,6 +28,8 @@ authenticated.
   the beach and the shore are is `ground.ts`. A layer keeps only the curves nothing else
   matches. Their elements are drawn in `scenery.css`; stacking order is the `--z-*` table on
   `.cine .stage` in `film.css`.
+  [`film.html`](src/features/landing/.context/film.html) maps the beats, cues and layers;
+  update its arrays when you retime the film.
 - A pause or a longer moment is a row in `BEATS`, not a remapping of shares: split a beat whose
   parts need retiming on their own, as the death is split into `dies`, `still`, `flight` and
   `burn`.
