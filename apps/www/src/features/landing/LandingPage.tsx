@@ -143,7 +143,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
 
             <div className="twist" id="the-twist" {...NIGHT}>
               <div className="sys sys-big">
-                <p>{SYSTEM.tutorial}</p>
+                <p>{SYSTEM.death}</p>
               </div>
             </div>
             <canvas className="flame" id="flame" />

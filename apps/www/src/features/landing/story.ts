@@ -360,7 +360,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
         ],
         [
           "What it never says",
-          "Levels, skills, tags and cores, and nothing else. No quests, no tutorials, no instructions. It has never told anyone what to do.",
+          "Levels, skills, tags and cores, and nothing else. It has never told anyone what to do, or talked like a game.",
         ],
         [
           NOTES,
@@ -371,7 +371,7 @@ export const WORLD_PAGES: readonly { key: string; name: string; page: WikiPage }
             ],
             [
               "Rekindle",
-              "The survivor wakes on the first night of the Cold Fire, forty days back, remembering everything. Levels reset, and everyone else, the beast included, forgets. It ends when the beast dies: [Tutorial cleared].",
+              "The survivor wakes on the first night of the Cold Fire, forty days back, remembering everything. Levels reset, and everyone else, the beast included, forgets. It ends when the beast dies.",
             ],
             ["Undecided", "What took hold, and why it needs the beast dead."],
           ],
@@ -611,7 +611,7 @@ export const END = {
 
 /** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
 export const SYSTEM = {
-  tutorial: "Tutorial complete.",
+  death: "You died.",
   assigned: (key: CharacterKey) => `[No selection. Survivor assigned: ${characterName(key)}.]`,
   skill: ["[Unique skill acquired: Rekindle]", "[Source: unknown]"],
   rekindle: "Rekindle",
