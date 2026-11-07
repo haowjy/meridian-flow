@@ -27,6 +27,8 @@ const PICTURE_LEAN = -0.38;
 const PICTURE_STROKE = 0.4;
 /** The burning words' resolution, per stage pixel. */
 const WORDS_SCALE = 2;
+/** Matches the `.sys` frame's outer glow in `landing.css`, in CSS pixels. */
+const SYSTEM_GLOW = 22;
 /** How far ahead of the wall the page's own words hand over to the burning ones, in stage heights. */
 const WORDS_HANDOVER = 0.2;
 /** The header's height, which the top of the way back stays under. */
@@ -153,6 +155,31 @@ export function createDragonActor(root: HTMLElement) {
     const scaled = words.style.transform;
     words.style.transform = "none";
     const stage = flyer.parentElement?.getBoundingClientRect();
+    const left = stage?.left ?? 0;
+    const top = stage?.top ?? 0;
+    // The System window under the words, so the fire chars its frame and field too.
+    for (const frame of words.querySelectorAll<HTMLElement>(".sys")) {
+      const style = getComputedStyle(frame);
+      const box = frame.getBoundingClientRect();
+      const border = Number.parseFloat(style.borderTopWidth);
+      const inset = border / 2;
+      pen.beginPath();
+      pen.roundRect(
+        box.left - left + inset,
+        box.top - top + inset,
+        box.width - border,
+        box.height - border,
+        Number.parseFloat(style.borderTopLeftRadius),
+      );
+      pen.fillStyle = style.backgroundColor;
+      pen.fill();
+      pen.shadowColor = style.borderTopColor;
+      pen.shadowBlur = SYSTEM_GLOW;
+      pen.lineWidth = border;
+      pen.strokeStyle = style.borderTopColor;
+      pen.stroke();
+      pen.shadowBlur = 0;
+    }
     const nodes = document.createTreeWalker(words, NodeFilter.SHOW_TEXT);
     while (nodes.nextNode()) {
       const node = nodes.currentNode as Text;
@@ -166,7 +193,7 @@ export function createDragonActor(root: HTMLElement) {
         text.setEnd(node, word.index + word[0].length);
         const box = text.getBoundingClientRect();
         const baseline = box.top + (box.height - tall) / 2 + metrics.fontBoundingBoxAscent;
-        pen.fillText(word[0], box.left - (stage?.left ?? 0), baseline - (stage?.top ?? 0));
+        pen.fillText(word[0], box.left - left, baseline - top);
       }
     }
     words.style.transform = scaled;

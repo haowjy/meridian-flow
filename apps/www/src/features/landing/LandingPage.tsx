@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { createCardStore } from "./card-store";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type CardStore, createCardStore } from "./card-store";
 import { startFilm } from "./film";
 import { createProductSlot, ProductPlaceholder } from "./ProductPlaceholder";
 import { QuestionCard } from "./QuestionCard";
-import { CHARACTERS, PROLOGUE } from "./story";
+import { CHARACTERS, END, PROLOGUE, SYSTEM } from "./story";
 import { SECTIONS } from "./timeline";
 
 const NIGHT = { "data-ui-theme": "dark" } as const;
@@ -137,7 +137,9 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
             </ol>
 
             <div className="twist" id="the-twist" {...NIGHT}>
-              <blockquote>We had to fight a dragon.</blockquote>
+              <div className="sys sys-big">
+                <p>{SYSTEM.tutorial}</p>
+              </div>
             </div>
             <canvas className="flame" id="flame" />
 
@@ -154,18 +156,38 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
           </div>
         </section>
 
-        <section className="end" id="end" {...NIGHT}>
-          <h2>Chapter One</h2>
-          <div className="blank">
-            <input aria-label="Your first line" placeholder=" " spellCheck={false} />
-          </div>
-          <a className="go big" href={startUrl}>
-            Start writing
-          </a>
-          <footer>Meridian Flow</footer>
-        </section>
+        <EndScreen store={store} startUrl={startUrl} />
       </main>
     </div>
+  );
+}
+
+function EndScreen({ store, startUrl }: { store: CardStore; startUrl: string }) {
+  const choice = useSyncExternalStore(store.subscribe, store.getChoice, store.getChoice);
+  const survivor = CHARACTERS.find(({ key }) => key === choice?.key);
+
+  return (
+    <section className="end" id="end" {...NIGHT}>
+      <p className="last">{survivor?.lastLine}</p>
+      <div className="sys sys-skill">
+        {SYSTEM.skill.map((line) => (
+          <p key={line}>{line}</p>
+        ))}
+        <button type="button" className="sys-act" data-rekindle>
+          {SYSTEM.rekindle}
+        </button>
+      </div>
+      <form className="book" action={startUrl}>
+        <label>
+          <span>{END.question}</span>
+          <input name="book" placeholder={END.placeholder} spellCheck={false} autoComplete="off" />
+        </label>
+        <button type="submit" className="go big">
+          {END.start}
+        </button>
+      </form>
+      <footer>Meridian Flow</footer>
+    </section>
   );
 }
 

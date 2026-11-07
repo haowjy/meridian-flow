@@ -404,12 +404,21 @@ export const QUESTION =
 export const ALIVE = "Alive";
 export const SURVIVED = "Alive, protagonist";
 export const FELL = "Died in the prologue";
-export const UNDEAD = "Undead";
-export const SKIPPED = "Skipped";
-/** The prologue's last line when nobody was chosen. */
-export const NOBODY_LINE = "We all died on the ninth night. At dawn, all four of us got up.";
 
-export const museReply = (key: CharacterKey | null) =>
-  key
-    ? `The prologue ends with ${characterName(key)} now, and all four pages are up to date.`
-    : "Nobody survives, then. They all die and they all get back up. All four pages are up to date.";
+export const museReply = (key: CharacterKey) =>
+  `The prologue ends with ${characterName(key)} now, and all four pages are up to date.`;
+
+/** The end, under the Rekindle window. Draft wording until the muse sends the line. */
+export const END = {
+  question: "What book do you want to write?",
+  placeholder: "A tower that grows a floor every time someone dies in it",
+  start: "Write your first chapter →",
+} as const;
+
+/** The System's windows: the twist, the card when the visitor doesn't pick, and the end. */
+export const SYSTEM = {
+  tutorial: "Tutorial complete.",
+  assigned: (key: CharacterKey) => `[No selection. Survivor assigned: ${characterName(key)}.]`,
+  skill: ["[Unique skill acquired: Rekindle]", "[Source: unknown]"],
+  rekindle: "Rekindle",
+} as const;
