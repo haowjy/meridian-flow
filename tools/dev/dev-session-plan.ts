@@ -81,13 +81,14 @@ function appRuntimeEnv(
   mode: DevMode,
   worktreePrefix: string | undefined,
 ): NodeJS.ProcessEnv {
+  const proxyPort = resolvePortlessProxyPort(env);
   return {
     ...env,
     MERIDIAN_API_ORIGIN: internalApiOrigin,
-    MERIDIAN_APP_ORIGIN: `https://${expectedServiceHost("app", worktreePrefix)}`,
+    MERIDIAN_APP_ORIGIN: expectedServiceOrigin("app", worktreePrefix, proxyPort),
     // Local mode runs no www, so the app keeps sending signed-out people to sign-in.
     MERIDIAN_WWW_ORIGIN:
-      mode === "local" ? undefined : `https://${expectedServiceHost("www", worktreePrefix)}`,
+      mode === "local" ? undefined : expectedServiceOrigin("www", worktreePrefix, proxyPort),
     // Local dev opts into debug paths (./mf, debug routes, model capture) unless .env says otherwise.
     APP_DEBUG: env.APP_DEBUG ?? "1",
   };
