@@ -3048,6 +3048,10 @@ msgstr ""
 msgid "Files move or copy out of Uploads; they can't be dropped into it"
 msgstr ""
 
+#: src/client/api/upload-intake-api.ts
+msgid "Files over {LIMIT_MB} MB can't be attached."
+msgstr "无法附加超过 {LIMIT_MB} MB 的文件。"
+
 #: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx

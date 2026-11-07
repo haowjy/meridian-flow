@@ -57,6 +57,14 @@ function isMissingFile(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
+async function removeIfPresent(file: string): Promise<void> {
+  try {
+    await unlink(file);
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+}
+
 function ioError(error: unknown, fallback: string): ObjectStoreResult<never> {
   return err("io_error", error instanceof Error ? error.message : fallback);
 }
@@ -149,7 +157,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
       await mkdir(path.dirname(target.value), { recursive: true });
       await rename(incoming, target.value);
     } catch (error) {
-      await unlink(incoming).catch(() => undefined);
+      await removeIfPresent(incoming);
       return ioError(error, "Failed to write object");
     }
     try {
@@ -163,7 +171,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
         } satisfies LocalObjectMetadata),
       );
     } catch (error) {
-      await unlink(target.value).catch(() => undefined);
+      await removeIfPresent(target.value);
       return ioError(error, "Failed to write object metadata");
     }
     return ok({ storageUrl: createObjectStorageUrl(key) });
@@ -259,26 +267,8 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     if (!target.ok) return target;
 
     try {
-      await unlink(target.value).catch((error: unknown) => {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "ENOENT"
-        )
-          return;
-        throw error;
-      });
-      await unlink(this.metadataPath(target.value)).catch((error: unknown) => {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "ENOENT"
-        )
-          return;
-        throw error;
-      });
+      await removeIfPresent(target.value);
+      await removeIfPresent(this.metadataPath(target.value));
       return ok(undefined);
     } catch (error) {
       return err("io_error", error instanceof Error ? error.message : "Failed to delete object");

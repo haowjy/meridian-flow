@@ -5,7 +5,7 @@ import { Readable } from "node:stream";
  * as the ordinary overwrite and certified for one holder.
  */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
