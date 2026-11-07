@@ -537,14 +537,9 @@ h1 span {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: clamp(80px, 12vh, 132px) 20px 28px;
+  justify-content: center;
+  padding: 80px 20px 96px;
   text-align: center;
-}
-
-.end .last {
-  font: italic 400 clamp(22px, 2.2vw, 32px) / 1.35 var(--mkt-font-story);
-  max-width: 26em;
-  text-wrap: balance;
 }
 
 .sys-skill {
@@ -577,52 +572,66 @@ h1 span {
   outline-offset: 3px;
 }
 
+.skill {
+  display: grid;
+  place-items: center;
+  padding: 12vh 20px;
+}
+
 .book {
   display: grid;
   justify-items: center;
-  gap: 26px;
-  width: min(34em, 100%);
-  margin-top: clamp(28px, 5vh, 52px);
+  gap: 28px;
+  position: relative;
+  isolation: isolate;
+  width: min(40em, 100%);
 }
 
 /* The dawn's horizon glows right behind the question: the same night scrim as the twist. */
-.book {
-  position: relative;
-  isolation: isolate;
-}
-
 .book::before {
   content: "";
   position: absolute;
-  inset: -70px -160px -60px;
+  inset: -90px -180px -80px;
   z-index: -1;
   background: radial-gradient(
     closest-side,
-    color-mix(in oklab, var(--mkt-scrim) 78%, transparent),
-    color-mix(in oklab, var(--mkt-scrim) 52%, transparent) 62%,
+    color-mix(in oklab, var(--mkt-scrim) 80%, transparent),
+    color-mix(in oklab, var(--mkt-scrim) 55%, transparent) 62%,
     transparent
   );
   pointer-events: none;
 }
 
 .book label {
-  display: grid;
-  gap: 12px;
-  width: 100%;
-  font: 400 clamp(28px, 2.9vw, 42px) / 1.1 var(--mkt-font-title);
+  font: 400 clamp(40px, 5vw, 76px) / 1.05 var(--mkt-font-title);
   text-wrap: balance;
 }
 
-.book input {
+.book-row {
+  display: flex;
+  gap: 10px;
   width: 100%;
-  padding: 6px 2px;
+  padding: 6px;
+  border: 1px solid color-mix(in oklab, var(--color-foreground) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--mkt-scrim) 72%, transparent);
+  box-shadow: 0 10px 40px var(--mkt-shadow);
+  transition: border-color 0.15s ease-out;
+}
+
+.book-row:focus-within {
+  border-color: var(--color-foreground);
+}
+
+.book input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px 0 20px;
   border: 0;
-  border-bottom: 1px solid var(--color-border);
   outline: 0;
   background: none;
   color: inherit;
-  font: italic 400 clamp(18px, 1.8vw, 24px) / 1.3 var(--mkt-font-story);
-  text-align: center;
+  font: italic 400 clamp(17px, 1.5vw, 21px) / 1.3 var(--mkt-font-story);
   caret-color: var(--color-foreground);
 }
 
@@ -630,8 +639,8 @@ h1 span {
   color: var(--color-muted-foreground);
 }
 
-.book input:focus {
-  border-bottom-color: var(--color-foreground);
+.book .go.big {
+  flex: none;
 }
 
 .end footer {
@@ -646,6 +655,16 @@ h1 span {
 }
 
 @media (max-width: 819px), (max-height: 499px) {
+  .book-row {
+    flex-direction: column;
+    border-radius: 22px;
+  }
+
+  .book input {
+    padding: 12px 14px;
+    text-align: center;
+  }
+
   :root {
     --bar: 52px;
     --lw: 390px;
