@@ -544,11 +544,21 @@ function ReadableProjectDestination({
       : null;
   useEffect(() => {
     if (!heldAttempt || !boundDocumentId || !documentDestination || !workId) return;
-    const current = captureNavigation();
+    // A plain ticket: a delayed repair must not retire the writer's pending navigation.
+    const navigation = latest.current.navigation;
+    const ticket = navigation?.capture();
+    const current = () => !!ticket && !!navigation?.isCurrent(ticket);
+    const unbind = () =>
+      contextRemoval.unbindRoute(projectId, boundDocumentId, {
+        scheme: documentDestination.scheme,
+        path: documentDestination.path,
+        workId,
+        rootThreadId: address.lineage ?? undefined,
+      });
     void availability.resolveForOpen(projectId, boundDocumentId).then((answer) => {
-      if (!current()) return;
       const located = answer.kind === "available" ? parseContextUri(answer.entry.uri) : null;
-      if (!located) return contextRemoval.unbindRoute(projectId, boundDocumentId);
+      if (!located) return unbind();
+      if (!current()) return;
       if (
         located.scheme === documentDestination.scheme &&
         canonicalDocumentPath(located.path) === canonicalDocumentPath(documentDestination.path)
@@ -569,7 +579,7 @@ function ReadableProjectDestination({
         },
         { replace: true, isCurrent: current },
       );
-    });
+    }, unbind);
   }, [heldAttempt]);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,

@@ -234,10 +234,11 @@ function useMobileRouteBinding({
       })
     )
       return;
-    // The live catalog says nothing about a pending draft: its tab is the identity.
+    // A draft-only tab is never live at its cached path, so the path doesn't identify it: a
+    // review binds on arrival, and a plain URL there waits for the address answer.
     const catalogSettled = !isFetching && !isError;
     const draftOnly = activeTab !== null && isDraftOnly(activeTab);
-    if (activeTab && (draftOnly || catalogSettled)) {
+    if (activeTab && !draftOnly && catalogSettled) {
       contextRemoval.bindRouteSelection(
         projectId,
         selection.revision,

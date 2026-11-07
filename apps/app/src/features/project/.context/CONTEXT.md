@@ -53,9 +53,14 @@ still has to be repaired to the live one.
 
 A bound document the address catalog does not list holds (`holdsBoundDocument`): the answer naming
 another document is the path's occupant, so the route waits. The hold asks `resolveForOpen` once:
-`available` goes to that location, anything else drops the binding (`unbindRoute`) so the address
-answer decides. A failed catalog during a hold shows the error with Retry.
-Draft-only tabs are the exception: no catalog lists them, so their cached path still matches.
+`available` goes to that location; anything else, a rejected lookup included, drops the binding
+(`unbindRoute`, only while the selection is still bound to that document at this route) so the
+address answer decides. The lookup takes a plain navigation ticket, never the writer's intent. A
+failed catalog during a hold shows the error with Retry. A draft-only tab is not found by its
+cached path on the phone either (`useMobileRouteBinding`): its review binds on arrival, and a
+plain URL there waits for the address answer. The phone resolves a review's document by identity
+from the Editor's tabs when the destination area's catalog lacks it (a draft that moves it to
+another area).
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload
 keep it.

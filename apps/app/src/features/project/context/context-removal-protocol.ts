@@ -75,7 +75,7 @@ export type SelectionTransition = {
 
 export const sameLocator = sameContextTarget;
 
-type RouteOwner = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
+export type RouteOwner = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
 
 /** Whether the selection is about exactly this route (paths compare without the leading slash). */
 export function selectionAtRoute(

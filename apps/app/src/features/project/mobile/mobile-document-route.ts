@@ -55,6 +55,11 @@ export function resolveMobileDocumentRoute(input: {
    * is the document's admission.
    */
   workspaceTabs?: readonly ContextTab[];
+  /**
+   * The route is a review address: its document is the one the review is of, which the
+   * destination's own catalog lacks when the draft moves it to another area.
+   */
+  reviewing?: boolean;
   addressState?: AddressState;
   catalog: CatalogContextView | null;
   isError: boolean;
@@ -101,7 +106,11 @@ export function resolveMobileDocumentRoute(input: {
         })()
       : owner.kind === "draft-only"
         ? owner.tab
-        : null;
+        : owner.kind === "pending" && input.reviewing
+          ? (input.workspaceTabs?.find(
+              (tab) => tab.kind !== "new" && tab.documentId === input.boundDocumentId,
+            ) ?? null)
+          : null;
   return {
     requested: true,
     scheme: input.scheme,
@@ -136,6 +145,8 @@ export function useMobileDocumentRoute(input: {
           rootThreadId: input.rootThreadId ?? undefined,
         })
       : null;
+  const reviewing =
+    boundDocumentId !== null && selection.status === "bound" && selection.by === "review";
   const { catalog, isError, isFetching } = useContextCatalogView(
     input.projectId,
     input.scheme ?? "kb",
@@ -151,6 +162,7 @@ export function useMobileDocumentRoute(input: {
         rootThreadId: input.rootThreadId,
         boundDocumentId,
         workspaceTabs,
+        reviewing,
         addressState: input.addressState,
         catalog,
         isError,
@@ -159,6 +171,7 @@ export function useMobileDocumentRoute(input: {
     [
       boundDocumentId,
       workspaceTabs,
+      reviewing,
       catalog,
       input.addressState,
       input.enabled,

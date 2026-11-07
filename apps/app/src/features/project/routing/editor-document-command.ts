@@ -157,7 +157,12 @@ export function createEditorDocumentCommand({
         options?.replaceIfSameDocument === true &&
         sameDocument
       ) {
-        const result = await navigation.replaceIfCurrent(ticket, next.address);
+        // The address already carries this review: the owner that settles its path may have
+        // moved the URL since this command read it, and writing the stale path back would flip it.
+        const carriesReview = !!itemKey && itemKey === current.address.itemKey;
+        const result = carriesReview
+          ? { kind: "replaced" as const }
+          : await navigation.replaceIfCurrent(ticket, next.address);
         if (result.kind !== "replaced")
           return result.kind === "failed"
             ? { ...result, stage: "before-acceptance" }
