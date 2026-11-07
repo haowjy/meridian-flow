@@ -102,7 +102,7 @@ export function createLsHandler(deps: ToolWiringDeps) {
   };
 }
 
-/** A file row's model-facing fields; IDs and schema details stay behind (D61). */
+/** A file row's model-facing fields; IDs and schema details stay behind. */
 function lsFile(entry: ContextFileEntry, verbose: boolean): Omit<LsEntry, "readonly"> {
   const text = entry.editable;
   return {

@@ -776,7 +776,7 @@ async function runDrainTurn(
                   preflight.assembled,
                   deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
                 );
-              // A reply holds the run claim, so the chat's mode can't change under it (D62).
+              // A reply holds the run claim, so the chat's mode can't change under it.
               reservedTurn.writeMode = setupThread.aiWriteMode;
               return {
                 result: undefined,
@@ -1211,7 +1211,7 @@ function stagedWriteResult(block: Block): AgentEditResultV1 | undefined {
   return isAgentEditResultEnvelope(result) ? (result as AgentEditResultV1) : undefined;
 }
 
-/** A write's tool-result fields: the model's text and the typed result beside it (D43). */
+/** A write's tool-result fields: the model's text and the typed result beside it. */
 function writeResultContent(result: AgentEditResultV1): { output: string; result: JsonValue } {
   return { output: renderAgentEditResult(result), result: toJsonValue(result) };
 }
@@ -2460,7 +2460,7 @@ async function executeLoop({
           } catch (flushError) {
             // The flush is this stream scope's durable boundary. It replaces
             // normal control flow, but never an error already in flight.
-            // biome-ignore lint/correctness/noUnsafeFinally: required failure precedence
+            // biome-ignore lint/correctness/noUnsafeFinally: required failure precedence. slop-lint: allow suppression the reason is stated in this comment
             if (streamFailure === undefined) throw flushError;
             emitEvent(eventSink, {
               level: "error",

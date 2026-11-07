@@ -430,7 +430,7 @@ export function ContextViewerSurfaceController({
           } as typeof target);
         } else if (ownership.isLatest && target) {
           // Any commit through the identity bar is an explicit writer save:
-          // the document graduates out of provisional naming (D8).
+          // the document graduates out of provisional naming.
           updateTrackedTab(projectId, target, {
             scheme: next.scheme,
             path: next.path,

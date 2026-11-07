@@ -214,7 +214,7 @@ export function EntrySelectionProvider({
   };
   return (
     <SelectionContext.Provider value={selection}>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape clears the selection made by the rows inside. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape clears the selection made by the rows inside. slop-lint: allow suppression the reason is stated in this comment */}
       <div ref={selection.root} className="contents" onKeyDown={onKeyDown}>
         {children}
       </div>
