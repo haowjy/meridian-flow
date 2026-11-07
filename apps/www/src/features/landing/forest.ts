@@ -108,6 +108,14 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
     pen.closePath();
     pen.fill();
     pen.fillRect(x - unit * 1.75, shoulder + unit * 0.1, unit * 1.2, unit * 1.5);
+    if (pose.kind === "fight") {
+      const hand = shoulderX + unit * 1.7;
+      line(unit * 0.2, [shoulderX, shoulder + unit * 0.2], [hand, shoulder]);
+      pen.lineWidth = unit * 0.13;
+      pen.beginPath();
+      pen.arc(hand - unit * 1.1, shoulder, unit * 2, -0.95, 0.95);
+      pen.stroke();
+    }
   }
   if (row === 1) {
     line(unit * 0.26, [headX - unit * 0.4, headY], [x - unit * 1.1, shoulder + unit * 1.3]);
@@ -124,19 +132,18 @@ function person(pen: CanvasRenderingContext2D, row: number, pose: Pose) {
     pen.arc(end[0], end[1], unit * 0.7, 0.3, Math.PI + 1.2);
     pen.fill();
   }
-  if (row === 2) {
-    pen.lineWidth = unit * 0.14;
+  if (row === 2 && pose.kind === "fight") {
+    const palm: [number, number] = [shoulderX + unit * 1.8, shoulder - unit * (0.6 + lunge * 1.4)];
+    line(unit * 0.22, [shoulderX, shoulder + unit * 0.2], palm);
     pen.beginPath();
-    pen.arc(x - unit * 1.5, shoulder + unit * 0.8, unit * 2, -1.1, 1.1);
-    pen.stroke();
-    if (pose.kind === "fight") {
-      line(unit * 0.2, [shoulderX, shoulder + unit * 0.2], [shoulderX + unit * 2.1, shoulder]);
-      line(
-        unit * 0.12,
-        [shoulderX + unit * 2.1, shoulder - unit],
-        [shoulderX + unit * 2.1, shoulder + unit],
-      );
-    }
+    pen.arc(
+      palm[0] + unit * 0.2,
+      palm[1] - unit * 0.1,
+      unit * (0.32 + lunge * 0.26),
+      0,
+      Math.PI * 2,
+    );
+    pen.fill();
   }
   if (row === 3) {
     const top = seated ? ground - unit * 5 : shoulder - unit * 1.8;
