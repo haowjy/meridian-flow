@@ -3,6 +3,7 @@ import type { Editor, JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createCollabPair } from "@/test-support/collab-editors";
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
 import {
@@ -150,5 +151,50 @@ describe("a printable character beside a selected object", () => {
 
     expect(nodeCount(instance, "image")).toBe(1);
     expect(instance.state.doc.firstChild?.textContent).toBe("look Q");
+  });
+});
+
+describe("a peer deleting the selected object", () => {
+  // The rebuild restores a node selection by position alone, so it used to land
+  // on what followed the object, and one letter replaced that text.
+  it.each<[string, JSONContent[], string]>([
+    [
+      "image",
+      [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Opening" },
+            { type: "image", attrs: { src: "manuscript://assets/a.png" } },
+            { type: "text", text: " line" },
+          ],
+        },
+      ],
+      "OpeningZ line",
+    ],
+    [
+      "figure",
+      [
+        paragraph("One"),
+        { type: "figure", attrs: { src: "manuscript://assets/a.png" } },
+        paragraph("Must survive"),
+      ],
+      "One\nZMust survive",
+    ],
+  ])("leaves the next letter typing beside a %s's text", (type, content, expected) => {
+    const pair = createCollabPair({ type: "doc", content });
+    select(pair.local, positionOf(pair.local, type));
+    const at = positionOf(pair.peer, type);
+    const object = pair.peer.state.doc.nodeAt(at);
+    pair.peer.view.dispatch(pair.peer.state.tr.delete(at, at + (object?.nodeSize ?? 0)));
+
+    pair.sync();
+    // The letter a keystroke commits, not a keypress: jsdom can't type at a caret.
+    pair.local.view.dispatch(pair.local.state.tr.insertText("Z"));
+
+    expect(pair.local.state.doc.textBetween(0, pair.local.state.doc.content.size, "\n")).toBe(
+      expected,
+    );
+    pair.destroy();
   });
 });

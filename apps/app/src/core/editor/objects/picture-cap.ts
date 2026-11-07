@@ -23,9 +23,7 @@ export function pictureCapped(target: EventTarget | null): boolean {
  * width while the writer is typing here is the keyboard, and the height from
  * before it stands until the pane is back to full height or changes width.
  */
-export function holdPictureCapThroughKeyboard(view: EditorView): () => void {
-  const pane = view.dom.closest<HTMLElement>(".meridian-editor");
-  if (!pane) return () => {};
+export function holdPictureCapThroughKeyboard(view: EditorView, pane: HTMLElement): () => void {
   let held = { width: 0, height: 0 };
   const observer = new ResizeObserver(([entry]) => {
     const { width, height } = entry.contentRect;

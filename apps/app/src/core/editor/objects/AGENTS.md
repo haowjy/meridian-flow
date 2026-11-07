@@ -31,6 +31,10 @@ tables use the full-cell `CellSelection` spelling consumed by
   possible. Click selection still uses ProseMirror's normal mouse path.
 - Selection rings are decorations derived from current selection. Node-view
   `selectNode`/`deselectNode` cannot survive a remote whole-document rebuild.
+- A rebuild restores a node selection by position alone. When it lands on a
+  different node type, the object has gone and physics turns it into a caret,
+  because a keystroke would replace the text it landed on. An adjacent object
+  of the same type takes the selection: the ring shows it.
 - The arrow walk lands on an object or prose, never inside an opaque rendered
   body. Esc and printable input step over an opaque object to the next writable
   position; a dead end is a refusal rather than a backward jump. A press or drop beside a fence is not a dead end: its facing edge takes the caret when no prose is on the other side.

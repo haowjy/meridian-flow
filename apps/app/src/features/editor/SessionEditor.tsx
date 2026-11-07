@@ -8,7 +8,7 @@ import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
   type ReactNode,
-  type Ref,
+  type RefObject,
   type UIEventHandler,
   useCallback,
   useEffect,
@@ -502,13 +502,16 @@ function EditorCanvas({
   editor: Editor | null;
   notices?: ReactNode;
   toolbar?: ReactNode;
-  scrollRef?: Ref<HTMLDivElement>;
+  scrollRef?: RefObject<HTMLDivElement | null>;
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
   const touch = useCoarsePointer();
   useEffect(
-    () => (editor && touch ? holdPictureCapThroughKeyboard(editor.view) : undefined),
-    [editor, touch],
+    () =>
+      editor && touch && scrollRef?.current
+        ? holdPictureCapThroughKeyboard(editor.view, scrollRef.current)
+        : undefined,
+    [editor, touch, scrollRef],
   );
 
   return (
