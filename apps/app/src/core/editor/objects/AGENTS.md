@@ -21,6 +21,9 @@ tables use the full-cell `CellSelection` spelling consumed by
 - Surface-bearing rows register their engagement handler by registration ID,
   not node type. Enter and double-click use the same engagement door; a newly
   created object may open ready to edit, while an existing one shows its state.
+  A row's `clickEngages` lets a click use that door too: a capped picture opens
+  on click, because the page is showing less than the picture has. Every other
+  object, a picture shown whole included, only selects.
 - Object keymaps register with Chrome's scope and `appliesTo`; they do not
   inspect selection again or create a priority-based TipTap extension.
 - A pointer on a non-editable object body selects on press so hidden source is
