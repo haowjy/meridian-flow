@@ -103,7 +103,7 @@ export function ContextViewerSurfaceController({
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = editorWorkId ? editorTabsForWork(tabs, editorWorkId) : [];
   const removalState = useContextRemovalProject(projectId);
-  const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
+  const { workspaceRoute, tab: activeTab } = resolvedEditor;
 
   const {
     catalog: routeCatalog,
@@ -294,9 +294,10 @@ export function ContextViewerSurfaceController({
   useFollowOpenDocumentPlacement({
     projectId,
     editorWorkId: routeWorkId,
-    selectedDocumentId,
+    selection: removalState.selection,
     activeContextScheme,
     activeContextPath,
+    activeContextChat,
     routeDisplayed,
     onOpenContextTarget,
   });

@@ -6,7 +6,6 @@ import {
   isProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { isRecord } from "@/client/storage/browser-record";
-import { sameServerContextTabLocator } from "./context-tab-locator";
 import {
   type ContextTab,
   isDraftOnly,
@@ -221,20 +220,13 @@ export function durableContextTab(tab: ContextTab): ContextTab {
   return { ...persisted, tabInstanceId };
 }
 
+/** A tab is its document; the scheme, path and owner it carries are a refreshed display cache. */
 function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
   return (
     left.tabInstanceId === right.tabInstanceId &&
     left.documentId === right.documentId &&
     left.kind === right.kind &&
-    (left.kind !== "new" ||
-      (right.kind === "new" && left.resourceHandle === right.resourceHandle)) &&
-    (left.kind === "new" ||
-      (right.kind !== "new" &&
-        left.scheme === right.scheme &&
-        left.path === right.path &&
-        left.workId === right.workId &&
-        left.rootThreadId === right.rootThreadId &&
-        left.chatId === right.chatId))
+    (left.kind !== "new" || left.resourceHandle === right.resourceHandle)
   );
 }
 
@@ -271,9 +263,7 @@ function canonicalizeTabs(tabs: readonly ContextTab[]): ContextTab[] {
     const index = canonical.findIndex(
       (candidate) =>
         candidate.documentId === tab.documentId ||
-        (candidate.kind !== "new" &&
-          tab.kind !== "new" &&
-          sameServerContextTabLocator(candidate, tab)),
+        (candidate.resourceHandle !== undefined && candidate.resourceHandle === tab.resourceHandle),
     );
     if (index < 0) canonical.push(tab);
     else {
@@ -351,10 +341,7 @@ export function reduceEditorWorkspace(
         (tab, candidateIndex) =>
           candidateIndex !== index &&
           (tab.documentId === incoming.documentId ||
-            (tab.resourceHandle !== undefined && tab.resourceHandle === incoming.resourceHandle) ||
-            (tab.kind !== "new" &&
-              incoming.kind !== "new" &&
-              sameServerContextTabLocator(tab, incoming))),
+            (tab.resourceHandle !== undefined && tab.resourceHandle === incoming.resourceHandle)),
       );
       if (conflictIndex >= 0) {
         const winner = tabs[conflictIndex] as ContextTab;
@@ -451,13 +438,11 @@ export function reduceEditorWorkspace(
   if (command.kind === "reconcile-resource") {
     const workspace = current.projects[command.projectId];
     if (!workspace) return outcome("not-referenced", current);
-    const byHandle = workspace.tabs.findIndex(
-      (tab) => tab.resourceHandle === command.resourceHandle,
-    );
-    const index =
-      byHandle >= 0
-        ? byHandle
-        : workspace.tabs.findIndex((tab) => tab.documentId === command.tab.documentId);
+    // The tab the caller projected comes first: its id may have become an alias of another tab's.
+    const find = (matches: (tab: ContextTab) => boolean) => workspace.tabs.findIndex(matches);
+    let index = find((tab) => tab.tabInstanceId === command.tab.tabInstanceId);
+    if (index < 0) index = find((tab) => tab.resourceHandle === command.resourceHandle);
+    if (index < 0) index = find((tab) => tab.documentId === command.tab.documentId);
     if (index < 0) return outcome("not-referenced", current);
     if (
       command.tab.resourceHandle !== undefined &&
@@ -465,19 +450,13 @@ export function reduceEditorWorkspace(
     )
       return outcome("stale", current);
     const prior = workspace.tabs[index] as ContextTab;
-    const conflicts = workspace.tabs.filter(
-      (tab, candidateIndex) =>
-        candidateIndex !== index &&
-        (tab.documentId === command.tab.documentId ||
-          (tab.kind !== "new" &&
-            command.tab.kind !== "new" &&
-            sameServerContextTabLocator(tab, command.tab))),
-    );
     // The join re-identifies one document: whatever other tab already shows
     // that document (the draft-only tab, or its promoted successor) is the same
     // document, so the resource's tab absorbs it.
-    const absorbed = conflicts.filter((tab) => tab.documentId === command.tab.documentId);
-    if (conflicts.length > absorbed.length) return outcome("stale", current);
+    const absorbed = workspace.tabs.filter(
+      (tab, candidateIndex) =>
+        candidateIndex !== index && tab.documentId === command.tab.documentId,
+    );
     const next = durableContextTab({
       ...command.tab,
       tabInstanceId: prior.tabInstanceId,
@@ -504,29 +483,17 @@ export function reduceEditorWorkspace(
           tabInstanceId: command.tab.tabInstanceId ?? crypto.randomUUID(),
         } as ContextTab)
       : durableContextTab(command.tab);
-    const sameDocumentIndex = workspace.tabs.findIndex(
+    const index = workspace.tabs.findIndex(
       (candidate) =>
         candidate.tabInstanceId === incoming.tabInstanceId ||
         candidate.documentId === incoming.documentId,
     );
-    const sameDocument = sameDocumentIndex >= 0 ? workspace.tabs[sameDocumentIndex] : undefined;
+    const existing = index >= 0 ? workspace.tabs[index] : undefined;
     // A review launch never turns an ordinary tab back into a draft-only one.
     const tab =
-      isDraftOnly(incoming) && sameDocument && !isDraftOnly(sameDocument)
+      isDraftOnly(incoming) && existing && !isDraftOnly(existing)
         ? durableContextTab(incoming)
         : incoming;
-    const occupiedLocatorIndex =
-      tab.kind === "new"
-        ? -1
-        : workspace.tabs.findIndex(
-            (candidate) =>
-              candidate.kind !== "new" &&
-              !isDraftOnly(candidate) &&
-              candidate.documentId !== tab.documentId &&
-              sameServerContextTabLocator(candidate, tab),
-          );
-    const index = sameDocumentIndex >= 0 ? sameDocumentIndex : occupiedLocatorIndex;
-    const existing = index >= 0 ? workspace.tabs[index] : undefined;
     // The opened tab states its owner: a stale tab for the document must not
     // keep a Work or lineage the opened tab no longer names.
     const existingWithoutResourceOwnership = existing
@@ -562,11 +529,6 @@ export function reduceEditorWorkspace(
       normalizeProject({
         ...workspace,
         tabs,
-        selectedTabIdByWork: rewriteSelections(
-          workspace.selectedTabIdByWork,
-          occupiedLocatorIndex >= 0 ? workspace.tabs[occupiedLocatorIndex]?.documentId : undefined,
-          tab.documentId,
-        ),
       }),
     );
   }

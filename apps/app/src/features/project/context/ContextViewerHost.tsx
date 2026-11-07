@@ -84,7 +84,7 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
           footer={imageViewerFooter({ url: binary.url, name: tab.name })}
         >
           <ImageViewer
-            key={`${tab.scheme}:${tab.path}`}
+            key={tab.documentId}
             url={binary.url}
             drawUrl={binary.drawUrl}
             name={tab.name}

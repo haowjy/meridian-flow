@@ -138,9 +138,7 @@ export function planCandidateRejection(input: {
   recentRoutes: readonly WorkingSetRoute[];
 }): CandidateRejectionPlan {
   const fallback = chooseAdmittedFallback({ ...input, excluded: input.rejected });
-  const fallbackTab = fallback
-    ? input.tabs.find((tab) => sameTarget(routeTargetForTab(tab, fallback.workId), fallback))
-    : null;
+  const fallbackTab = fallback ? tabForTarget(input.tabs, fallback, fallback.workId) : null;
   const rejectedRoute = input.recentRoutes.find((route) =>
     workingSetRouteMatchesTarget(route, input.rejected),
   );
@@ -215,6 +213,7 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
       path: tab.path,
       workId: activeWorkId,
       rootThreadId: tab.rootThreadId,
+      documentId: tab.documentId,
     };
   const reviewers = Object.keys(reviewEntriesOf(tab));
   let workId = reviewEntryOf(tab, activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
@@ -222,7 +221,22 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
     workId = tab.workId;
   }
-  return { scheme: tab.scheme, path: tab.path, workId };
+  return { scheme: tab.scheme, path: tab.path, workId, documentId: tab.documentId };
+}
+
+/** The tab a target names: by its document when it carries one, else by locator. */
+export function tabForTarget(
+  tabs: readonly ContextTab[],
+  target: ContextRouteTarget,
+  activeWorkId: string,
+): ContextTab | null {
+  return (
+    tabs.find((tab) =>
+      target.documentId !== undefined
+        ? tab.documentId === target.documentId
+        : sameTarget(routeTargetForTab(tab, activeWorkId), target),
+    ) ?? null
+  );
 }
 
 function adjacentSurvivor(
@@ -311,8 +325,15 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     !survives(input.route.cleanup.identity.documentId);
 
   const admitted = input.admitted;
+  // The bound document's own tab: another tab may cache the same locator.
   const admittedTab = admitted
-    ? (input.tabs.find((tab) => sameTarget(routeTargetForTab(tab, activeWorkId), admitted)) ?? null)
+    ? tabForTarget(
+        input.tabs,
+        boundSelection && sameTarget(boundSelection.locator, admitted)
+          ? { ...admitted, documentId: boundSelection.identity.documentId }
+          : admitted,
+        activeWorkId,
+      )
     : null;
   const admittedRoute = admittedTab
     ? workingSetRouteForTab(admittedTab)

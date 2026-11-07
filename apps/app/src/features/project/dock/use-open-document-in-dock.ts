@@ -23,6 +23,7 @@ export function useOpenDocumentInDock() {
           scheme: tab.scheme,
           path: tab.path,
           workId: tab.workId,
+          documentId: tab.documentId,
           ...(tab.rootThreadId ? { rootThreadId: tab.rootThreadId } : {}),
         },
         { replace: false },

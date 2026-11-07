@@ -34,6 +34,15 @@ for canonical, entry-guarded replacement.
 Rename or move prepares the open tab's new locator and the replacement address as one navigation
 commit, so the old address keeps its identity continuity until the new one is accepted.
 
+A tab is its document id; its path, name and owner are a display cache the replica refreshes. A
+navigation that knew the document (a tab click, a tree open) carries the id in its history entry
+(`meridianNavigatedDocument`), and `ProjectNavigation.navigatedDocumentId` honors it only for the
+entry the latest navigation of this page load created. The candidate selection carries it, so the
+route finds the tab by id; a pasted URL, a reload and Back/Forward carry none, and the path's
+occupant decides there. When the address answers a different document than the one carried,
+`ProjectAddressDocument` relocates the carried id (once per address) and never opens the occupant.
+Draft-only tabs are the exception: no catalog lists them, so their cached path still matches.
+
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload
 keep it.
 
