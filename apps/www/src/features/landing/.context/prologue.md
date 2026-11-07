@@ -98,9 +98,9 @@ Then there was only me on the ice, with one spark left and a right arm that woul
 
 A box opened in the air in front of me. It was the same blue as every box I had ever seen, and it said:
 
-**Tutorial complete.**
+**You died.**
 
-I read it three times. As if the nine days had been practice.
+I read it three times. I was still standing.
 
 The beast turned its head toward the box, the brightest thing left on the ice. Its one eye narrowed, and it breathed. That's it? I was just getting good at this.
 
@@ -119,7 +119,7 @@ Then there was only me on the ice.
 
 Something was in front of me. I did not know what it was. I had not seen anything since I was six years old, and at first I did not understand that I was seeing. It was blue. It was shaped like nothing in the world, perfectly square, and it had words on it, and I could read them.
 
-**Tutorial complete.**
+**You died.**
 
 The System had read me ten thousand boxes in my mother's voice. It had never shown me one.
 
@@ -146,9 +146,9 @@ Then there was only me on the ice, with the chisel in my hand and half a rune cu
 
 A box opened in the air in front of me.
 
-**Tutorial complete.**
+**You died.**
 
-I am a dwarf. I know what *complete* means. It means there is nothing left to do.
+I am a dwarf. I keep exact accounts, and I was still breathing. The System has never been wrong.
 
 The beast swung its head round to the box, the brightest thing on the ice. I raised the arm with the half-cut rune, and it did nothing at all.
 
@@ -171,7 +171,7 @@ Then there was only me on the ice.
 
 A box opened in the air in front of me.
 
-**Tutorial complete.**
+**You died.**
 
 The song has no verse about boxes. I have sung it all my life, and I would know.
 

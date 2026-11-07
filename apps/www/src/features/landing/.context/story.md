@@ -25,16 +25,16 @@ back. Then each people sent its strongest, and those four are the party. They
 are heroes, the best of four peoples.
 
 On the ninth night they find the beast, and it is a dragon. They hurt it, and
-it kills three of them. A blue System box opens over the last one standing,
-the tutorial box: its current text, "Tutorial complete.", is `SYSTEM.tutorial`
-in `story.ts`. The beast eats light, so it turns on the box, the brightest
-thing on the ice, and burns it and the survivor. The survivor wakes
+it kills three of them. As the breath comes down on the last one standing, a
+blue System box opens in front of them, the death box. Its text, "You died.",
+is `SYSTEM.death` in `story.ts`. The beast eats light, so it turns on the box,
+the brightest thing on the ice, and burns it and the survivor. The survivor wakes
 where they stood on the first night of the Cold Fire, with the unique skill
 Rekindle, `[Source: unknown]`.
 
 The dragon reveal is not the twist. To this audience a dragon at the end of the
-road is expected. The twist is the box: a System that has never told anyone
-anything says the hunt was only the start, and the real story is the loop.
+road is expected. The twist is the box: a System that has never talked like a
+game suddenly does, and the real story is the loop.
 
 ## The loop
 
@@ -46,8 +46,8 @@ anything says the hunt was only the start, and the real story is the loop.
 - Everyone else is alive again and has never met the survivor. Only the
   survivor remembers. The beast doesn't remember either, which makes it
   learnable.
-- The loop ends when the beast dies, with `[Tutorial cleared]`. The loop
-  count is unlimited and never shown.
+- The loop ends when the beast dies. The loop count is unlimited and never
+  shown.
 - Rekindle is unique. Nobody else has it, and no skill box in recorded history
   has said `[Source: unknown]`. A loop power every System user had would take
   away what makes the survivor special.
@@ -79,7 +79,7 @@ says who they are.
 
 - **The System** has always existed. Everyone has a level, skills and a tag;
   blue boxes announce them, read aloud to anyone who can't see. It has never
-  given a quest, a tutorial or an instruction, so the tutorial box is the first
+  told anyone what to do or talked like a game, so the death box is the first
   of its kind. Something has taken hold of it, wrote that box, and wants the
   beast dead.
 - **The beast** has no tag and no level: the System doesn't see it. Its breath
@@ -98,14 +98,14 @@ The beats are in [`timeline.ts`](../timeline.ts). In story order:
 1. The turn line: "On the ninth night, we found it. It was a dragon."
 2. The fight: the ward splits the first breath, they hurt it, three fall, and
    one stands as a shadow, because the visitor hasn't said who survives.
-3. The tutorial box opens and the beast's fire burns it away,
-   revealing the app. In the Knowledge Base, The Beast becomes The Dragon once
+3. The death box opens as the last breath comes down, and the beast's fire
+   burns it away, revealing the app. In the Knowledge Base, The Beast becomes The Dragon once
    the scene says what it is.
 4. The card asks who survives. It always arrives empty, never preselected.
    Skipping it, or scrolling past it, has the System assign one of the four at
    random: `[No selection. Survivor assigned: …]`. Every path has one survivor.
-5. The survivor's last line types into the manuscript, after the tutorial
-   box's line.
+5. The survivor's last line types into the manuscript, after the death box's
+   line.
 6. The Rekindle box: `[Unique skill acquired: Rekindle]`, `[Source: unknown]`,
    with a **Rekindle** button that returns to the cliff scene and resets the
    card, so the visitor can loop and pick someone else.
@@ -124,6 +124,8 @@ any new copy.
 - **"We had to fight a dragon." as the burning line.** It is no twist for this
   audience. The System box burns instead of a headline.
 - **Everyone rising undead when the visitor skips.** A skip assigns a survivor.
+- **"Tutorial complete." as the death box's text.** Halfway down a landing
+  page it reads as the page's own walkthrough ending.
 - **A loop counter, or "Survivors: 1/4"** in any box. The loop is unlimited and
   uncounted.
 - **Ending on "Chapter 1: ____".** The end asks what book the visitor wants to
@@ -137,7 +139,7 @@ any new copy.
 ## Open
 
 - Who or what took hold of the System, and why it needs the beast dead.
-- The tutorial box's text, which may change.
+- What the System says when the beast dies.
 - Why the System can't see the beast.
 - Whether the beast has woken before.
 - The names Tam, Maren, Sigrun and Oskar are working names.
