@@ -4,7 +4,6 @@
  * as the ordinary overwrite and certified for one holder.
  */
 
-import { uploadBytes } from "../context/uploads/upload-test-support.js";
 import { randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { createDb } from "@meridian/database";
@@ -28,6 +27,7 @@ import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { unloadHocuspocus } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { entryAt, moveTo } from "../../test-support/entry-ref.js";
+import { uploadBytes } from "../context/uploads/upload-test-support.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";

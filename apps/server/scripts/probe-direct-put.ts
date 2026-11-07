@@ -12,8 +12,8 @@
 import { createServer } from "node:http";
 import {
   CreateBucketCommand,
-  type PutBucketCorsCommandInput,
   PutBucketCorsCommand,
+  type PutBucketCorsCommandInput,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { createS3ObjectStore } from "../server/domains/storage/index.js";
@@ -110,13 +110,22 @@ async function main() {
   const empty = `uploads/probe-${run}/empty`;
   unwrap(await main.put(empty, new Uint8Array(), type));
   const emptyHead = unwrap(await main.readHead(empty, 8192));
-  check("readHead of an empty object is size 0", emptyHead.sizeBytes === 0 && emptyHead.head.length === 0);
+  check(
+    "readHead of an empty object is size 0",
+    emptyHead.sizeBytes === 0 && emptyHead.head.length === 0,
+  );
   const big = `uploads/probe-${run}/big`;
   unwrap(await main.put(big, bytes(20_000, 0x44), type));
   const bigHead = unwrap(await main.readHead(big, 8192));
-  check("readHead reads only the head", bigHead.sizeBytes === 20_000 && bigHead.head.length === 8192);
+  check(
+    "readHead reads only the head",
+    bigHead.sizeBytes === 20_000 && bigHead.head.length === 8192,
+  );
   const missing = await main.readHead(`uploads/probe-${run}/none`, 8192);
-  check("readHead of a missing object is not_found", !missing.ok && missing.error.code === "not_found");
+  check(
+    "readHead of a missing object is not_found",
+    !missing.ok && missing.error.code === "not_found",
+  );
 
   const preflight = await fetch(signed.url, {
     method: "OPTIONS",
@@ -142,7 +151,9 @@ async function main() {
   );
 
   const short = store(1);
-  const expiring = unwrap(await short.signPut(`incoming/probe-${run}/exp`, { sizeBytes: 3, mimeType: type }));
+  const expiring = unwrap(
+    await short.signPut(`incoming/probe-${run}/exp`, { sizeBytes: 3, mimeType: type }),
+  );
   await new Promise((resolve) => setTimeout(resolve, 2500));
   const expired = await put(expiring.url, bytes(3, 1), { ...expiring.headers, Origin: origin });
   check("an expired URL is refused", expired.status === 403, `status ${expired.status}`);
@@ -150,7 +161,8 @@ async function main() {
     `INFO  expired response allow-origin: ${expired.headers.get("access-control-allow-origin")} (R2 sends none; the browser then sees an opaque failure)`,
   );
 
-  for (const key of [incoming, final, empty, big, `incoming/probe-${run}/cors`]) await main.delete(key);
+  for (const key of [incoming, final, empty, big, `incoming/probe-${run}/cors`])
+    await main.delete(key);
 
   const serve = process.argv.indexOf("--serve");
   if (serve >= 0) await browserCheck(main, Number(process.argv[serve + 1]) || 5190);
@@ -162,7 +174,10 @@ async function main() {
 async function browserCheck(main: ReturnType<typeof store>, port: number) {
   const size = 5 * 1024 * 1024;
   const signed = unwrap(
-    await main.signPut(`incoming/probe-${run}/browser`, { sizeBytes: size, mimeType: "application/pdf" }),
+    await main.signPut(`incoming/probe-${run}/browser`, {
+      sizeBytes: size,
+      mimeType: "application/pdf",
+    }),
   );
   const page = `<!doctype html><title>direct put</title><pre id=out>working</pre><script>
 const file = new File([new Uint8Array(${size}).fill(7)], "x.pdf", { type: "application/pdf" });

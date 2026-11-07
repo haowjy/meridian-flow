@@ -4,13 +4,7 @@
  */
 
 import type { StartUploadInput, UploadStart } from "@meridian/contracts/protocol";
-import {
-  createError,
-  defineEventHandler,
-  getQuery,
-  readBody,
-  setResponseStatus,
-} from "nitro/h3";
+import { createError, defineEventHandler, getQuery, readBody, setResponseStatus } from "nitro/h3";
 import { resolveContextRoute } from "./_helpers.js";
 import { uploadErrorToHttp, uploadSubject } from "./upload/_shared.js";
 

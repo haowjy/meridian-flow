@@ -6,7 +6,11 @@
  * What a destination changes is `start` and `finish`; this function is the same for all of them.
  */
 import { t } from "@lingui/core/macro";
-import type { UploadIntakeResult, UploadSignedPut, UploadStart } from "@meridian/contracts/protocol";
+import type {
+  UploadIntakeResult,
+  UploadSignedPut,
+  UploadStart,
+} from "@meridian/contracts/protocol";
 
 export type DirectUpload = {
   file: File;
