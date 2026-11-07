@@ -31,7 +31,7 @@ import {
   PREVIEW_SOURCE_MAX_BYTES,
   saveImagePreview,
 } from "../../file-intake/image-preview.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import { openUploadBody, type UploadBody, UploadSizeError } from "./upload-body.js";

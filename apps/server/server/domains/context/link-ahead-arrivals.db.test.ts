@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { aheadAddress } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
