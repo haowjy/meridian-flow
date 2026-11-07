@@ -60,7 +60,8 @@ const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
 // SETTLED is the flow without the clock: where the aurora lies follows the scroll alone, so time
 // away from the page can't drift it all into a gap.
 uniform float PLUME,SETTLED;
-const float AHEAD=${HORIZON_YAW.toFixed(3)};
+// Right of the middle of the level view, toward the peak: the text sits on the left.
+const float AHEAD=${((HORIZON_YAW + SUMMIT_AZIMUTH) / 2 + 0.08).toFixed(3)};
 float field(vec2 p,float fire,out float band){
   vec2 w=vec2(N(p*.45+vec2(FLOW*.1,0.)),N(p*.45+vec2(4.,-FLOW*.08)))-.5;
   vec2 q=p+w*3.2;
@@ -75,7 +76,8 @@ float field(vec2 p,float fire,out float band){
   // below, folding side to side by a small angle so it keeps its line, and raked with fine rays,
   // which the slices stand up into a curtain. Looking up it crosses the sky; looking out it
   // narrows into the distance.
-  vec2 ahead=vec2(sin(AHEAD),-cos(AHEAD));
+  // The sheet is sampled mirrored, so its heading is too.
+  vec2 ahead=vec2(-sin(AHEAD),-cos(AHEAD));
   float along=dot(p,ahead);
   float fold=.1*sin(along*.45+FLOW*.07)+.05*sin(along*1.2-FLOW*.05);
   float off=dot(p,vec2(-ahead.y,ahead.x))-(max(along,0.)+.6)*fold;
@@ -98,7 +100,8 @@ vec3 aurora(vec3 rd){
     // Far enough that the ribbons keep receding to the horizon instead of piling up into haze.
     vec2 at=rd.xz*min(t,44.)*1.1;
     float band;
-    float f=field(at,fire,band);
+    // Mirrored, so its heaviest curtains fall on the right, away from the text.
+    float f=field(vec2(-at.x,at.y),fire,band);
     vec3 c=mix(${vec3(C.auroraLow)},${vec3(C.auroraMid)},smoothstep(0.,8.,k));
     // Green low down; the rays turn purple toward their tops, and here and there lean blue.
     float blue=smoothstep(.55,.8,N(at*.07+vec2(11.,FLOW*.012)));
