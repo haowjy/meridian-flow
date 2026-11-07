@@ -6363,10 +6363,13 @@ msgstr ""
 msgid "upload"
 msgstr ""
 
-#: src/core/editor/links/link-chip.ts
 #: src/core/editor/links/link-mark-view.ts
 msgid "Upload failed"
 msgstr "上传失败"
+
+#: src/core/editor/links/link-chip.ts
+msgid "Upload failed. Click to retry"
+msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"

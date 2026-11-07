@@ -6,7 +6,8 @@
  * (`file-drop-door.ts`) starts uploads through it; the chips draw from
  * `link-uploads.ts`. This file also owns the one rule that ends an upload the
  * writer no longer wants: its chip has left the document (undo, delete, a cut
- * that was never pasted back) for long enough that no paste is coming.
+ * that was never pasted back) for long enough that no paste is coming. The
+ * upload stops then, and its file is let go after a longer wait.
  */
 
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
@@ -43,6 +44,8 @@ declare module "@tiptap/core" {
  * does not.
  */
 export const ABSENT_UPLOAD_GRACE_MS = 10_000;
+/** How long a taken-back or failed upload keeps its file for a chip that returns to retry. */
+export const ABSENT_KEPT_MS = 10 * 60_000;
 /** Doc changes in a burst cost one scan. */
 const SCAN_DEBOUNCE_MS = 1_000;
 
@@ -106,11 +109,23 @@ export const FileDropExtension = Extension.create({
               }
               const since = absentSince.get(documentId) ?? now;
               absentSince.set(documentId, since);
-              const left = since + ABSENT_UPLOAD_GRACE_MS - now;
+              // Sending: taken back after the grace, its file kept. Already not sending: dropped
+              // after the longer wait.
+              const sending = linkUploads.read(documentId)?.kind === "uploading";
+              const left = since + (sending ? ABSENT_UPLOAD_GRACE_MS : ABSENT_KEPT_MS) - now;
+              let wait = left;
               if (left <= 0) {
-                absentSince.delete(documentId);
-                linkUploads.cancel(documentId);
-              } else nextCheck = Math.min(nextCheck ?? left, left);
+                if (sending) {
+                  linkUploads.cancel(documentId);
+                  absentSince.set(documentId, now);
+                  wait = ABSENT_KEPT_MS;
+                } else {
+                  absentSince.delete(documentId);
+                  linkUploads.discard(documentId);
+                  continue;
+                }
+              }
+              nextCheck = Math.min(nextCheck ?? wait, wait);
             }
             if (nextCheck !== null) timer = setTimeout(scan, nextCheck);
           };

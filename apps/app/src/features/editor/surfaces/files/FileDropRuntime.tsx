@@ -9,6 +9,7 @@
  */
 
 import { parseContextUri } from "@meridian/contracts/context-uri";
+import type { UploadStart } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useEffect } from "react";
 
@@ -40,8 +41,13 @@ export function FileDropRuntime({
       scheme,
       start: async ({ documentId: fileDocumentId, file }) => {
         const target = { projectId, scheme, owner, documentId: fileDocumentId, file };
-        const started = await startSourceUpload(target);
-        return (signal, onProgress) => uploadSourceFile({ ...target, started, signal, onProgress });
+        let started: UploadStart | undefined = await startSourceUpload(target);
+        // The reservation answers the first send only; a retry reserves again on the same id.
+        return (signal, onProgress) => {
+          const first = started;
+          started = undefined;
+          return uploadSourceFile({ ...target, started: first, signal, onProgress });
+        };
       },
     });
   }, [editor, documentId, projectId, scheme, workId, rootThreadId]);

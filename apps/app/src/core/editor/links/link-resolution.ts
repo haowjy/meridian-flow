@@ -307,6 +307,9 @@ type Generation = {
   running: number;
 };
 
+/** The server calls an upload sending for 3 minutes after its last touch; ask again inside that. */
+const UPLOADING_REASK_MS = 2 * 60 * 1000;
+
 export function createLinkAnswerCache(): LinkAnswerCache {
   const listeners = new Set<() => void>();
   /** The only generation anyone can read. Null until a port registers. */
@@ -345,6 +348,26 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     if (generation !== current) return;
     request.settle(entry);
     if (entry !== previous) publish();
+    if (entry?.state === "uploading") askAgainLater(generation, key, request.question, entry);
+  };
+
+  /**
+   * An upload that dies changes no document index, so nothing else would ask again and its chip
+   * would read "uploading" for good. The answer stands while the new question is out.
+   */
+  const askAgainLater = (
+    generation: Generation,
+    key: string,
+    question: LinkQuestion,
+    entry: LinkResolutionEntry,
+  ) => {
+    setTimeout(() => {
+      if (generation !== current || generation.answers.get(key) !== entry) return;
+      if (generation.asking.has(key)) return;
+      void ask(generation, key, question);
+      generation.answers.set(key, entry);
+      pump(generation);
+    }, UPLOADING_REASK_MS);
   };
 
   const pump = (generation: Generation) => {
