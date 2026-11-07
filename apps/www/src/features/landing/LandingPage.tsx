@@ -3,7 +3,7 @@ import { bindStoryChoice, createCardStore } from "./card-store";
 import { startFilm } from "./film";
 import { createProductSlot, ProductPlaceholder } from "./ProductPlaceholder";
 import { QuestionCard } from "./QuestionCard";
-import { AUTOPLAY_MINUTES, SECTIONS } from "./timeline";
+import { SECTIONS } from "./timeline";
 
 const NIGHT = { "data-ui-theme": "dark" } as const;
 
@@ -40,11 +40,6 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 Build a world.<span>Bring it to life with a team of agents.</span>
               </h1>
               <p className="plain">An AI writing app for Royal Road and web serial writers.</p>
-              <button type="button" className="play" data-play>
-                <PlayIcon />
-                <span>Play the story</span>
-                <small>{AUTOPLAY_MINUTES} min</small>
-              </button>
             </div>
 
             <div className="slotwrap">

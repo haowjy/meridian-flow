@@ -51,8 +51,6 @@ export function createTransport(options: {
     for (const button of playButtons) {
       button.setAttribute("aria-label", label);
       button.title = label;
-      const text = button.querySelector("span");
-      if (text) text.textContent = label;
     }
     html.dataset.auto = state;
   };
