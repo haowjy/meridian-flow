@@ -1,11 +1,15 @@
 import { catmullRom, DRAGON_HEAD_ANGLE, DRAGON_POSES, dragonMouth, dragonSheet } from "./dragon";
 import type { Layout } from "./film-layout";
 import { createFire } from "./fire";
-import { type BeatProgress, clamp, ease, lerp, progress, smooth } from "./timeline";
+import type { Party } from "./forest";
+import { type BeatProgress, clamp, ease, FIGHT, lerp, progress, smooth } from "./timeline";
 
 type Point = readonly [number, number, number];
-/** One point of the dragon's path, in stage pixels at a scroll position. */
-type Mark = { at: number; x: number; y: number; size: number; facing: number };
+/**
+ * One point of the dragon's path, in stage pixels at a scroll position. A gliding mark is reached
+ * on a curve at an even pace, so a run of them flies without stopping at each.
+ */
+type Mark = { at: number; x: number; y: number; size: number; facing: number; glide?: boolean };
 
 const BOX = 200;
 const ROW_SIZE = 34;
@@ -17,6 +21,12 @@ const PASS = { leaves: 0.55, enters: REVEAL_STARTS, exits: 0.92 };
 /** How far the burn runs ahead of the mouth, and how far its breath reaches, in stage heights. */
 const FRONT_AHEAD = 0.42;
 const BREATH_REACH = 0.5;
+/** A wall past the right edge of the stage: the fire draws only the breath. */
+const NO_WALL = 100;
+/** The fight's breaths: how hard, and what share of the way to the party they reach. */
+const FIGHT_BREATH = 0.85;
+/** How high the spark arcs, in stage heights. */
+const SPARK_ARC = 0.14;
 /** How far into the dawn it comes back. */
 const RETURN_STARTS = 0.1;
 /** Where the page's picture sits on a phone, in shares of the stage. */
@@ -44,6 +54,9 @@ export const LORE_ARRIVES = 0.05;
 const span = (spans: Layout["spans"], name: keyof Layout["spans"], share: number) =>
   spans[name][0] + (spans[name][1] - spans[name][0]) * share;
 
+const fightWindow = (value: number, [from, to]: readonly [number, number]) =>
+  smooth(value, from, from + 0.03) * (1 - smooth(value, to - 0.04, to));
+
 /** The film's dragon: a speck in the background that grows, burns the page away, then flies on. */
 export function createDragonActor(root: HTMLElement) {
   const flyer = root.querySelector("#flyer") as HTMLElement;
@@ -53,6 +66,7 @@ export function createDragonActor(root: HTMLElement) {
   const text = document.createRange();
   const words = root.querySelector("#the-twist") as HTMLElement;
   const row = root.querySelector("#s-beast-row") as HTMLElement;
+  const spark = root.querySelector("#walkers .spark") as HTMLElement;
   root.style.setProperty("--dragon-sheet", `url(${dragonSheet().toDataURL()})`);
 
   let marks: Mark[] = [];
@@ -70,12 +84,20 @@ export function createDragonActor(root: HTMLElement) {
     const { spans, width: W, height: H } = next;
     unit = Math.min(H, W * 0.62);
     fire?.resize(W, H);
-    const mark = (at: number, x: number, y: number, size: number, turn = 1): Mark => ({
+    const mark = (
+      at: number,
+      x: number,
+      y: number,
+      size: number,
+      turn = 1,
+      glide = false,
+    ): Mark => ({
       at,
       x: x * W,
       y: y * H,
       size: size * unit,
       facing: turn,
+      glide,
     });
     marks = [
       mark(0, 0.37, 0.13, 0.01, -1),
@@ -91,8 +113,16 @@ export function createDragonActor(root: HTMLElement) {
       mark(span(spans, "back", 1), 0.7, 0.26, 0.13),
       mark(span(spans, "turn", 0.45), 0.9, 0.34, 0.2, -1),
       mark(span(spans, "turn", 1), 0.84, 0.76, 0.4, -1),
-      mark(span(spans, "twist", 0.42), 0.82, 0.77, 0.4, -1),
-      mark(span(spans, "twist", PASS.leaves), -0.2, 0.3, 0.34, -1),
+      // The spark lands and it rears back, then comes down again for the breath that kills them.
+      mark(span(spans, "fight", FIGHT.spark[1]), 0.84, 0.76, 0.4, -1),
+      mark(span(spans, "fight", FIGHT.spark[1] + 0.05), 0.9, 0.66, 0.44, -1),
+      mark(span(spans, "fight", FIGHT.breath[0]), 0.85, 0.75, 0.41, -1),
+      mark(span(spans, "twist", 0.22), 0.84, 0.76, 0.4, -1),
+      // Up behind the box, one loop small in the far sky, and out at the left to turn.
+      mark(span(spans, "twist", 0.31), 0.72, 0.4, 0.2, -1, true),
+      mark(span(spans, "twist", 0.39), 0.5, 0.17, 0.1, -1, true),
+      mark(span(spans, "twist", 0.46), 0.26, 0.2, 0.11, -1, true),
+      mark(span(spans, "twist", PASS.leaves), -0.18, 0.42, 0.3, -1, true),
       mark(span(spans, "twist", PASS.enters), -0.35, 0.58, 0.66),
       mark(span(spans, "twist", PASS.exits), 1.4, 0.46, 0.8),
     ];
@@ -205,6 +235,17 @@ export function createDragonActor(root: HTMLElement) {
     while (index < marks.length - 1 && marks[index].at < at) index += 1;
     const from = marks[index - 1];
     const to = marks[index];
+    if (to.glide) {
+      const t = progress(at, from.at, to.at);
+      const before = marks[Math.max(0, index - 2)];
+      const after = marks[Math.min(marks.length - 1, index + 1)];
+      return {
+        x: catmullRom(before.x, from.x, to.x, after.x, t),
+        y: catmullRom(before.y, from.y, to.y, after.y, t),
+        size: lerp(from.size, to.size, t),
+        facing: lerp(from.facing, to.facing, t),
+      };
+    }
     const t = ease(progress(at, from.at, to.at));
     return {
       x: lerp(from.x, to.x, t),
@@ -282,6 +323,22 @@ export function createDragonActor(root: HTMLElement) {
     wings.style.maskPosition = `${frame * 100}% 0`;
   };
 
+  /** The ward breath stops at the front of the party; the killing one sweeps it front to back. */
+  const fightBreath = (fight: number, party: Party) => {
+    const reach = (target: readonly [number, number], share: number) =>
+      [lerp(mouth[0], target[0], share), lerp(mouth[1], target[1], share)] as const;
+    const ward = fightWindow(fight, FIGHT.ward);
+    if (ward > 0) return { aim: reach(party.front, 1), breath: ward * FIGHT_BREATH };
+    const killing = fightWindow(fight, FIGHT.breath);
+    if (killing <= 0) return null;
+    const along = progress(fight, ...FIGHT.breath);
+    const target = [
+      lerp(party.front[0], party.back[0], along),
+      lerp(party.front[1], party.back[1], along),
+    ] as const;
+    return { aim: reach(target, 1.1), breath: killing * FIGHT_BREATH };
+  };
+
   return {
     measure,
     keepNight: (sky: HTMLCanvasElement) => {
@@ -289,8 +346,8 @@ export function createDragonActor(root: HTMLElement) {
       fire?.keepWords(wordsStill());
     },
     /** Runs every frame: the scroll position picks the scene, the clock animates it. */
-    update(seconds: number, at: number, beats: BeatProgress) {
-      const { twist, lore } = beats;
+    update(seconds: number, at: number, beats: BeatProgress, party: Party | null) {
+      const { twist, lore, fight } = beats;
       const { height: H } = layout;
       const shown = lore < LORE_ARRIVES;
       flyer.style.opacity = shown ? "1" : "0";
@@ -314,20 +371,33 @@ export function createDragonActor(root: HTMLElement) {
           ? `linear-gradient(90deg,transparent ${edge * 106 - 3}%,black ${edge * 106 + 3}%)`
           : "none";
 
+      const sparkFlight = progress(fight, ...FIGHT.spark);
+      spark.style.opacity = party && sparkFlight > 0 && sparkFlight < 1 ? "1" : "0";
+      if (party && sparkFlight > 0 && sparkFlight < 1) {
+        const x = lerp(party.back[0], mouth[0], sparkFlight);
+        const y =
+          lerp(party.back[1], mouth[1], sparkFlight) -
+          Math.sin(sparkFlight * Math.PI) * H * SPARK_ARC;
+        spark.style.transform = `translate3d(${x}px,${y}px,0) translate(-50%,-50%)`;
+      }
+
       const angle = lean + DRAGON_HEAD_ANGLE;
+      const fighting = party ? fightBreath(fight, party) : null;
       fire?.draw(
-        passing
-          ? {
-              mouth,
-              aim: [
-                mouth[0] + unit * BREATH_REACH * Math.cos(angle),
-                mouth[1] + unit * BREATH_REACH * Math.sin(angle),
-              ],
-              breath,
-              char,
-              time: at / H + seconds * 0.5,
-            }
-          : null,
+        fighting
+          ? { mouth, ...fighting, char: NO_WALL, time: at / H + seconds * 0.5 }
+          : passing
+            ? {
+                mouth,
+                aim: [
+                  mouth[0] + unit * BREATH_REACH * Math.cos(angle),
+                  mouth[1] + unit * BREATH_REACH * Math.sin(angle),
+                ],
+                breath,
+                char,
+                time: at / H + seconds * 0.5,
+              }
+            : null,
       );
     },
   };

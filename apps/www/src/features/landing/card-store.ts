@@ -6,8 +6,10 @@ export type Choice = { key: CharacterKey; assigned: boolean } | null;
 /** Owns the visitor's story choice: the card, the product block and the end all read it. */
 export function createCardStore() {
   let choice: Choice = null;
-  // Once the visitor touches the card, autoplay stops acting it out.
-  let touched = false;
+  // The System's pick holds until Rekindle, so leaving the card twice can't change the survivor.
+  let systemPick: CharacterKey | null = null;
+  // The System answered because the visitor went past, not because they pressed Skip.
+  let passed = false;
   const listeners = new Set<() => void>();
   const sendListeners = new Set<() => void>();
 
@@ -19,8 +21,8 @@ export function createCardStore() {
     for (const listener of sendListeners) listener();
   };
   const assign = () => {
-    const pick = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
-    update({ key: pick.key, assigned: true });
+    systemPick ??= CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)].key;
+    update({ key: systemPick, assigned: true });
   };
 
   return {
@@ -31,28 +33,32 @@ export function createCardStore() {
     getChoice: () => choice,
     getAnswer: () => choice?.key ?? null,
     choose(key: CharacterKey) {
-      touched = true;
+      passed = false;
       update({ key, assigned: false });
     },
     send,
     /** Every path has one survivor: skipping hands the pick to the System. */
     skip() {
-      touched = true;
+      passed = false;
       assign();
       send();
     },
     /** The visitor went past the card without answering. */
     assignIfUnanswered() {
-      if (!choice) assign();
+      if (choice) return;
+      passed = true;
+      assign();
+    },
+    /** Back on the card: an answer the visitor never gave comes off it. */
+    withdrawPass() {
+      if (passed) update(null);
+      passed = false;
     },
     /** Rekindle: time goes back to before the question. */
     reset() {
-      touched = false;
+      systemPick = null;
+      passed = false;
       update(null);
-    },
-    /** Autoplay acting out the card. */
-    demonstrate(key: CharacterKey | null) {
-      if (!touched && choice?.key !== key) update(key ? { key, assigned: false } : null);
     },
     onSend(listener: () => void) {
       sendListeners.add(listener);

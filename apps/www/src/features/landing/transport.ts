@@ -139,8 +139,17 @@ export function createTransport(options: {
     );
   }
 
+  // The browser restores a reload's offset while the page is still short, and scroll
+  // anchoring then drags it to the end once the film is full height. The film keeps
+  // the visitor's place itself, as a share of the story.
+  history.scrollRestoration = "manual";
+  const scrollEnd = () => getLayout().documentHeight - getLayout().height;
+  addEventListener("pagehide", () => savePlace(scrollY / scrollEnd()), { signal });
+
   setState("idle");
+  const place = readPlace();
   if (location.hash) scrollTo(0, jumpPosition(location.hash));
+  else if (place !== null) scrollTo(0, place * scrollEnd());
 
   return {
     isPlaying: () => state === "playing",
@@ -167,4 +176,22 @@ export function createTransport(options: {
       }
     },
   };
+}
+
+const PLACE_KEY = "landing-place";
+
+/** Storage may be blocked (private windows, previews); a reload then starts at the top. */
+function readPlace(): number | null {
+  try {
+    const saved = Number.parseFloat(sessionStorage.getItem(PLACE_KEY) ?? "");
+    return Number.isFinite(saved) ? Math.min(Math.max(saved, 0), 1) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePlace(share: number) {
+  try {
+    sessionStorage.setItem(PLACE_KEY, String(share));
+  } catch {}
 }

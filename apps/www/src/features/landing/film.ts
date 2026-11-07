@@ -4,13 +4,13 @@ import { type FilmParts, type Layout, measureLayout } from "./film-layout";
 import { createForest } from "./forest";
 import type { ProductSlot } from "./ProductPlaceholder";
 import { createSky, type SkyFrame } from "./sky";
-import { CHARACTERS } from "./story";
 import {
   ASK_LIFT,
   type BeatProgress,
   beatProgress,
   clamp,
   ease,
+  FIGHT,
   lerp,
   progress,
   SECTIONS,
@@ -134,7 +134,11 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const tilt = smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
   // The fire uncovers a finished dawn, so the sky is already there behind it.
   const revealed = beats.twist >= REVEAL_STARTS;
-  const dawn = revealed ? 1 : ease(beats.dawn);
+  // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
+  const hurt =
+    smooth(beats.fight, FIGHT.spark[1], FIGHT.spark[1] + 0.02) *
+    (1 - smooth(beats.fight, FIGHT.spark[1] + 0.03, FIGHT.spark[1] + 0.09));
+  const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
   const toTwist = smooth(beats.twist, 0, 0.5);
   let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
   veil = lerp(veil, 0.2, toTwist);
@@ -162,14 +166,13 @@ function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   };
 }
 
-/** Past the card without an answer, the System picks the survivor while the card is still up. */
-const ASSIGN_AFTER = 0.8;
-
-/** Autoplay acts out the card while it plays. */
-function demonstrateCard(store: CardStore, asked: number) {
-  if (asked <= 0 || asked >= 0.86) return;
-  store.demonstrate(asked < 0.72 ? null : CHARACTERS[0].key);
-}
+/**
+ * Whenever the card is fully up it shows only what the visitor chose: nothing,
+ * autoplay included, answers for them, and a pass made by scrolling or jumping
+ * past comes off when they come back. Only as the card starts to leave does the
+ * System pick the survivor, so its notice shows on the card on the way out.
+ */
+const ASSIGN_AFTER = 0.89;
 
 /**
  * The scroll film. The stage is pinned while the page scrolls through it, and
@@ -340,7 +343,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
 
     const chapterIn = smooth(open, 0, 0.7);
     const chapterDim = turn > 0 ? smooth(turn, 0, 0.16) : 1 - smooth(out, 0, 0.28);
-    show(chapter, chapterIn * chapterDim * (1 - smooth(twistP, 0.02, 0.2)));
+    show(chapter, chapterIn * chapterDim * (1 - smooth(beats.fight, 0, 0.1)));
     const chapterOffset = lerp(
       lerp(layout.chapterFrom, layout.chapterTo, ease(write) * 0.3 + write * 0.7),
       layout.turn,
@@ -351,7 +354,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     typers[1].set(progress(write, 0.42, 0.9), write >= 0.42 && write < 0.9);
     typers[2].set(progress(write, 0.5, 0.98), write >= 0.5 && write < 0.985);
 
-    const askGone = smooth(asked, 0.89, 1);
+    const askGone = smooth(asked, ASSIGN_AFTER, 1);
     show(ask, clamp(askLift * 5) * (1 - askGone));
     block.classList.toggle("s-lifted", askLift > 0);
     if (askLift > 0 && askLift < 1) {
@@ -402,9 +405,12 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     // The System window doesn't fade in: it opens all at once, the way a status window does.
     skill.classList.toggle("on", beats.skill > 0.04 && leave < 0.5);
 
-    const twistShown = smooth(twistP, 0.07, 0.27) * (1 - smooth(twistP, 0.95, 1));
-    show(twist, twistShown);
-    twist.style.transform = `scale(${1.06 - twistShown * 0.06})`;
+    // The box opens the way the System's windows do: from a bright line, all at once.
+    const opened = smooth(twistP, 0.03, 0.1);
+    show(twist, smooth(twistP, 0.02, 0.04) * (1 - smooth(twistP, 0.95, 1)));
+    twist.style.transform =
+      opened < 1 ? `scale(${lerp(0.03, 1, opened)},${lerp(0.4, 1, opened)})` : "";
+    twist.style.filter = opened < 1 ? `brightness(${lerp(2.4, 1, opened)})` : "";
 
     const captionShown =
       (isPhone ? smooth(beats.lore, 0.2, 0.4) : smooth(beats.lore, 0.08, 0.32)) *
@@ -458,10 +464,10 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
       nightKept = true;
       needsPaint = true;
     }
-    actor.update(now / 1000, current, beats);
-    forest.update(current, beats);
-    if (transport.isPlaying()) demonstrateCard(store, beats.ask);
+    const party = forest.update(current, beats);
+    actor.update(now / 1000, current, beats, party);
     if (beats.ask >= ASSIGN_AFTER) store.assignIfUnanswered();
+    else store.withdrawPass();
     if (current !== previous || needsPaint) {
       needsPaint = false;
       paint(current, beats);
