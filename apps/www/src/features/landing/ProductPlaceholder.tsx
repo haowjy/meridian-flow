@@ -52,11 +52,25 @@ export function ProductPlaceholder() {
               <i className="s-car" />
             </p>
           </article>
-          {CHARACTERS.map(({ key, name, note }) => (
+          {CHARACTERS.map(({ key, name, note, facts, sections }) => (
             <article className="s-doc" id={`d${key}`} data-folder="Knowledge Base" hidden key={key}>
               <div className="name">{name}</div>
+              <p className="s-only-hints s-status" id={`s-note-${key}`} />
               <p>{note}</p>
-              <p className="s-only-hints" id={`s-note-${key}`} />
+              <dl className="s-facts">
+                {facts.map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {sections.map(([heading, text]) => (
+                <section key={heading}>
+                  <h3>{heading}</h3>
+                  <p>{text}</p>
+                </section>
+              ))}
             </article>
           ))}
           <article className="s-doc" id="ddragon" data-folder="Knowledge Base" hidden>
