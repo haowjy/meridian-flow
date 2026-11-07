@@ -39,6 +39,17 @@ describe("markdown codec round-trip corpus", () => {
     expectStable(codec, wire);
   });
 
+  // `_[]()\na_` parses to an emphasised "\na". `*\na*` does not open the mark,
+  // so serializing threw and every read and export of the document failed.
+  it("carries a line ending that starts marked text", () => {
+    for (const mark of ["em", "strong", "strike"] as const) {
+      const doc = [paragraph(t("\na", [m(mark)]))];
+      const wire = codec.serialize(doc, UNSCOPED_DOCUMENT_LINKS);
+      expect(codec.parse(wire).blocks[0]?.toJSON()).toEqual(doc[0]?.toJSON());
+      expectStable(codec, wire);
+    }
+  });
+
   it.each([
     "a(b.md",
     "folder\\ notes.md",
