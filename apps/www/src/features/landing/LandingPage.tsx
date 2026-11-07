@@ -39,7 +39,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
               <h1>
                 Build a world.<span>Bring it to life with a team of agents.</span>
               </h1>
-              <p className="plain">An AI writing app for Royal Road and web serial writers.</p>
+              <p className="plain">AI writing app for serial storytellers.</p>
             </div>
 
             <div className="slotwrap">
