@@ -40,7 +40,8 @@ A file dropped into a document is a source upload: the same route with any schem
 Scratch). It belongs to no chat: `owner_thread_id` and `context_source_id` are null, and the
 `source` destination carries the port the route resolved for the host's scope. The client mints
 the document id and it doubles as the intake id, so the link to the file stands in the document
-before the file exists; an id a document already holds is refused (`idempotency_conflict`).
+before the file exists. A second intake under an id with another name or size is refused
+(`idempotency_conflict`); an id some document already holds fails at `persist` and releases the object.
 Reservation fixes no name. `persist` writes `<scheme>://assets/<name>` through the port and, on
 `conflict`, takes the next free copy (`name (2).ext`, the file's own extension kept), then
 `finalize` records the name it took. `assets/` is created by that write wherever it has gone
