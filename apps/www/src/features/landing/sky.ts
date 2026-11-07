@@ -71,7 +71,7 @@ void main(){
 
 const SCENE_SHADER = `${SHARED}
 uniform sampler2D LIGHT;
-uniform float DAWN,VEIL,AU;
+uniform float DAWN,VEIL,AU,PLUME;
 uniform vec3 DRIFT;
 const float AZ=${SUMMIT.azimuth.toFixed(3)};
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
@@ -84,6 +84,15 @@ float peaks(float z,float s,float k,float h){
 }
 float farRange(float z){float b=(z-AZ)/.09;return peaks(z,3.1,3.,.17)+.1*exp(-b*b);}
 float nearRange(float z){return peaks(z,7.4,2.,.11);}
+// The Cold Fire's source: a column of light rising from behind the dragon's peak into the sheet,
+// brightest where it leaves the mountain, swaying and streaked as it climbs.
+float plume(float az,float y){
+  float h=max(y-farRange(AZ)*.85,0.);
+  float sway=(N(vec2(y*5.-FLOW*.5,1.))-.5)*h*.25;
+  float b=(az-AZ-sway)/(.018+h*.3);
+  float streaks=.5+.5*N(vec2((az-AZ)*70.,y*3.-FLOW*1.1));
+  return exp(-b*b)*exp(-h*2.6)*smoothstep(0.,.03,h)*streaks;
+}
 vec3 stars(vec3 d){
   vec2 s=vec2(atan(d.x,-d.z),d.y)*56.;
   vec2 i=floor(s),f=fract(s)-.5;
@@ -113,6 +122,8 @@ void main(){
   vec3 col;
   if(y>=0.){
     col=sky+stars(rd)*night+light+${vec3(C.auroraLow)}*.008*exp(-y*6.)*AU*night;
+    float rising=plume(az,y)*PLUME*night;
+    col+=(${vec3(C.auroraMid)}*.5+${vec3(C.auroraCore)}*rising*.6)*rising;
     float far=farRange(az),near=nearRange(az);
     vec3 lit=${vec3(C.sun)}*.04*DAWN;
     if(y<far) col=mix(col,${vec3(C.mountain)}*1.6+lit,smoothstep(far,far-.002,y));
@@ -137,12 +148,14 @@ export type SkyFrame = {
   dawn: number;
   veil: number;
   aurora: number;
+  /** The column of Cold Fire rising from behind the peak, 0 (none) and up. */
+  plume: number;
   /** How strongly the aurora breathes while the page is still, 0 to 1. */
   pulse: number;
 };
 
 const CAMERA_UNIFORMS = { PITCH: "pitch", YAW: "yaw", FOCAL: "focal", FLOW: "flow" } as const;
-const SCENE_UNIFORMS = { DAWN: "dawn", VEIL: "veil" } as const;
+const SCENE_UNIFORMS = { DAWN: "dawn", VEIL: "veil", PLUME: "plume" } as const;
 
 /** Draws into `canvas`. Without WebGL every call is a no-op and the canvas's CSS gradient shows. */
 export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
