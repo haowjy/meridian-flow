@@ -7,7 +7,6 @@ type Line = { path: SVGPathElement; dot: SVGCircleElement; length: number };
 
 export type FilmParts = {
   stage: HTMLElement;
-  end: HTMLElement;
   blockHome: HTMLElement;
   workspaceSpot: HTMLElement;
   block: HTMLElement;
@@ -36,7 +35,6 @@ export type Layout = {
   spans: BeatSpans;
   stops: { y: number; t: number }[];
   subtitles: Record<string, Span>;
-  endTop: number;
   documentHeight: number;
   teamLines: Line[];
   worldLines: Line[];
@@ -138,7 +136,6 @@ export function measureLayout(parts: FilmParts): Layout {
     spans,
     stops,
     subtitles,
-    endTop: parts.end.offsetTop,
     documentHeight,
     teamLines,
     worldLines,

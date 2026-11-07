@@ -1,7 +1,5 @@
-import { MARKETING_SKY as C, type LinearRgb } from "@meridian/design-tokens/marketing-sky";
-import { linkProgram, NOISE } from "./sky";
-
-const vec3 = ([r, g, b]: LinearRgb) => `vec3(${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)})`;
+import { MARKETING_SKY as C } from "@meridian/design-tokens/marketing-sky";
+import { coverCanvas, linkProgram, NOISE, vec3 } from "./sky";
 
 export type FireFrame = {
   /** Where the jet starts and where it points, in stage pixels from the top left. */
@@ -103,11 +101,7 @@ export function createFire(canvas: HTMLCanvasElement) {
   if (!gl) return null;
   const program = linkProgram(gl, FIRE_SHADER);
   gl.useProgram(program);
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const a = gl.getAttribLocation(program, "a");
-  gl.enableVertexAttribArray(a);
-  gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+  coverCanvas(gl);
   const at = (name: string) => gl.getUniformLocation(program, name);
   const u = {
     R: at("R"),

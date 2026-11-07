@@ -11,6 +11,7 @@ import {
   CAMP,
   clamp,
   ease,
+  envelope,
   FIGHT,
   lerp,
   PERCH,
@@ -133,35 +134,27 @@ const OVERHEAD_PITCH = 0.8;
 const HORIZON_PITCH = 0.1;
 const HORIZON_YAW = 0.34;
 
-/** Up and back down across a window: 0 outside it, 1 in its middle. */
-const flare = (value: number, [from, to]: readonly [number, number]) =>
-  smooth(value, from, from + 0.04) * (1 - smooth(value, to - 0.06, to));
-
 /** The sky is a function of the scroll position, so it holds still when the page does. */
 function skyFrame(beats: BeatProgress, raw: number, layout: Layout): SkyFrame {
   const tilt = smooth(beats.push * 0.4 + beats.sky * 0.6, 0, 0.62);
   // The fire uncovers a finished dawn, so the sky is already there behind it.
   const revealed = beats.twist >= REVEAL_STARTS;
   // Tam's spark in its eye: the Cold Fire flickers and for a moment the sun shows through.
-  const hurt =
-    smooth(beats.fight, FIGHT.spark.eye[1], FIGHT.spark.eye[1] + 0.02) *
-    (1 - smooth(beats.fight, FIGHT.spark.eye[1] + 0.03, FIGHT.spark.eye[1] + 0.09));
+  const hurt = envelope(beats.fight, [FIGHT.spark.eye[1], FIGHT.spark.eye[1] + 0.09], 0.02, 0.06);
   const dawn = revealed ? 1 : Math.max(ease(beats.dawn), hurt * 0.4);
   // From the perch on, the Cold Fire it sent up stays in the sky and pulses until the box burns.
-  const stirred =
-    (beats.fight > 0 ? 1 : smooth(beats.turn, PERCH[0], PERCH[0] + 0.06)) *
-    (1 - smooth(beats.twist, 0, 0.3));
+  const stirred = smooth(beats.turn, PERCH[0], PERCH[0] + 0.06) * (1 - smooth(beats.twist, 0, 0.3));
   // Every breath it takes goes up green: the Cold Fire swells and churns while they fight.
   const breathing =
     stirred * 0.5 +
     smooth(beats.fight, 0, 0.08) * 0.2 +
-    flare(beats.fight, FIGHT.ward) * 0.45 +
-    flare(beats.fight, FIGHT.breath) * 0.7;
+    envelope(beats.fight, FIGHT.ward, 0.04, 0.06) * 0.45 +
+    envelope(beats.fight, FIGHT.breath, 0.04, 0.06) * 0.7;
   const toTwist = smooth(beats.twist, 0, 0.5);
   let veil = lerp(0, 0.5, smooth(beats.sky, 0.88, 1));
   // The veil keeps the chapter readable; once its text fades the perch and the fight are the
   // picture, so it lifts.
-  const lifted = beats.fight > 0 ? 1 : smooth(beats.turn, PERCH[0] - 0.08, PERCH[0] + 0.04);
+  const lifted = smooth(beats.turn, PERCH[0] - 0.08, PERCH[0] + 0.04);
   veil = lerp(veil, 0.06, lifted);
   veil = lerp(veil, 0.2, toTwist);
   veil = lerp(veil, 0, dawn);
@@ -242,7 +235,6 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
   const sectionLabel = one("#herel");
   const parts: FilmParts = {
     stage: one(".stage"),
-    end: one("#end"),
     blockHome: one(".slotwrap"),
     workspaceSpot: one(".workspot"),
     block: slot.element,
@@ -371,7 +363,7 @@ export function startFilm(root: HTMLElement, store: CardStore, slot: ProductSlot
     const chapterIn = smooth(open, 0, 0.7);
     const chapterDim = turn > 0 ? smooth(turn, 0, 0.16) : 1 - smooth(out, 0, 0.28);
     // The chapter gives way just before it breathes, so the perch has the screen.
-    const chapterGone = beats.fight > 0 ? 1 : smooth(turn, PERCH[0] - 0.08, PERCH[0]);
+    const chapterGone = smooth(turn, PERCH[0] - 0.08, PERCH[0]);
     show(chapter, chapterIn * chapterDim * (1 - chapterGone));
     const chapterOffset = lerp(
       lerp(layout.chapterFrom, layout.chapterTo, ease(write) * 0.3 + write * 0.7),

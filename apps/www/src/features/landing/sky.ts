@@ -1,9 +1,12 @@
 import { MARKETING_SKY as C, type LinearRgb } from "@meridian/design-tokens/marketing-sky";
 
-const vec3 = ([r, g, b]: LinearRgb) => `vec3(${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)})`;
+/** A sky colour as a GLSL literal, and as a CSS colour for the layers drawn over the sky. */
+export const vec3 = ([r, g, b]: LinearRgb) =>
+  `vec3(${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)})`;
+export const rgb = ([r, g, b]: LinearRgb) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
 
-/** Where the dragon's peak stands: its compass angle from the opening view, and its height. */
-export const SUMMIT = { azimuth: 0.6, elevation: 0.2 };
+/** The dragon's peak: its compass angle from the opening view. */
+const SUMMIT_AZIMUTH = 0.6;
 
 /** How much smaller the aurora pass is than the canvas, per side. It is soft, so this barely shows. */
 const LIGHT_DIVISOR = 3;
@@ -73,7 +76,7 @@ const SCENE_SHADER = `${SHARED}
 uniform sampler2D LIGHT;
 uniform float DAWN,VEIL,AU,PLUME;
 uniform vec3 DRIFT;
-const float AZ=${SUMMIT.azimuth.toFixed(3)};
+const float AZ=${SUMMIT_AZIMUTH.toFixed(3)};
 float H(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract((p.x+p.y)*p.x);}
 vec3 lin(vec3 c){return pow(c,vec3(2.2));}
 float ridged(float x,float s){return 1.-abs(2.*N(vec2(x,s))-1.);}
@@ -313,13 +316,18 @@ function texture(gl: WebGLRenderingContext) {
   return handle;
 }
 
-function connect(gl: WebGLRenderingContext) {
+/** One triangle that covers the canvas, at attribute 0: every pass draws the whole frame. */
+export function coverCanvas(gl: WebGLRenderingContext) {
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const lightPass = pass(gl, LIGHT_SHADER);
-  const scenePass = pass(gl, SCENE_SHADER);
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+}
+
+function connect(gl: WebGLRenderingContext) {
+  coverCanvas(gl);
+  const lightPass = pass(gl, LIGHT_SHADER);
+  const scenePass = pass(gl, SCENE_SHADER);
 
   const light = texture(gl);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);

@@ -1,10 +1,12 @@
 import { MARKETING_SKY } from "@meridian/design-tokens/marketing-sky";
 import type { Layout } from "./film-layout";
+import { rgb } from "./sky";
 import {
   type BeatProgress,
   CAMP,
   clamp,
   ease,
+  envelope,
   FIGHT,
   lerp,
   PERCH,
@@ -37,12 +39,6 @@ const JOINS = [0, 0.22, 0.4, 0.58];
 
 /** Where the party stands in the fight, for the dragon's aim: stage pixels. */
 export type Party = { rows: readonly (readonly [number, number])[] };
-
-/** Up and back down across a window: 0 outside it, 1 in its middle. */
-const flash = (value: number, [from, to]: readonly [number, number]) =>
-  smooth(value, from, from + 0.04) * (1 - smooth(value, to - 0.05, to));
-
-const rgb = ([r, g, b]: readonly number[]) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
 
 const noise = (seed: number) => {
   const value = Math.sin(seed * 12.9898) * 43758.5453;
@@ -376,7 +372,7 @@ export function createForest(root: HTMLElement) {
       const size = H * 0.16;
       const gap = size * 0.5;
       const down = smooth(beats.world, 0, 0.14);
-      const road = W * lerp(0.3, 0.62, progress(at, spans.world[0], spans.write[1]));
+      const road = W * lerp(0.3, 0.62, walked);
       const leader = lerp(W * CLIFF_X - drift, road, down);
       const feet = lerp(H * CLIFF_TOP, H * GROUND, down);
       // The camp is in the middle of the stage, and its fire stays on the ground as they leave.
@@ -399,11 +395,11 @@ export function createForest(root: HTMLElement) {
         const slot = lerp(leader - gap * row, campX + ring[row] * gap, seated);
         // In the fight they give ground step by step, which also brings the fight to the middle.
         let x = (row === 0 ? slot : lerp(-W * 0.08, slot, joined)) - backed;
-        const inFight = beats.out > 0 && beats.back <= 0;
+        const wolvesAttack = beats.out > 0 && beats.back <= 0;
         const walking = Math.floor(x / (size * 0.16) + row * 2) % WALK_FRAMES;
         const moving = down > 0 || row > 0;
         let column = moving ? Math.abs(walking) : 0;
-        if (inFight) column = FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
+        if (wolvesAttack) column = FIGHT_COLUMN + (Math.floor(at / 46 + row) % 2);
         if (seated > 0.5 && beats.turn <= 0) column = SIT_COLUMN;
         // Out of the woods onto the shore, then still as it lands.
         if (beats.turn > 0) {
@@ -449,7 +445,7 @@ export function createForest(root: HTMLElement) {
       });
 
       const front = heads[0];
-      const glare = flash(fight, FIGHT.ward);
+      const glare = envelope(fight, FIGHT.ward, 0.04, 0.05);
       // Flares to full the instant the breath lands, then shudders under it.
       const flare = Math.min(1, glare * 2.5);
       ward.style.opacity = String(flare * (0.85 + Math.sin(at / 5) * 0.15));
@@ -472,7 +468,7 @@ export function createForest(root: HTMLElement) {
       const glow = seated * (1 - smooth(beats.turn, 0.45, 0.55));
       camp.style.opacity = String(clamp(glow * (0.9 + Math.sin(at / 17) * 0.1)));
       camp.style.transform = `translate3d(${fireX - size * 0.6}px,${H * GROUND - size * 0.86}px,0) scale(${size / 100})`;
-      const sheetsUp = flash(beats.camp, CAMP.sheets);
+      const sheetsUp = envelope(beats.camp, CAMP.sheets, 0.04, 0.05);
       sheets.style.opacity = String(sheetsUp);
       sheets.style.transform = `translate3d(${campX}px,${H * GROUND - size * 1.15 + (1 - sheetsUp) * H * 0.03}px,0) translate(-50%,-100%)`;
       return { rows: heads.map((head) => [head + size * 0.1, H * GROUND - size * 0.6] as const) };
