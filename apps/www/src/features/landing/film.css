@@ -489,6 +489,16 @@
     margin: calc(var(--bar) + 18px) 20px 0;
   }
 
+  /* The drawing needs the height more than the hero needs its third line. */
+  .cine .hero .plain {
+    display: none;
+  }
+
+  .cine .hero h1 {
+    font-size: min(44px, 11.5cqw);
+    margin-bottom: 0;
+  }
+
   .cine .slotwrap {
     position: relative;
     inset: auto;
