@@ -67,6 +67,10 @@ import { TURN_GRAPH, type TurnGraph } from "../../ports/turn-graph.js";
 import { createInMemoryExecutionReportRepository } from "./execution-report-repository.js";
 import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
+function hasMeteredUsage(response: { inputTokens: number; outputTokens: number }): boolean {
+  return response.inputTokens > 0 || response.outputTokens > 0;
+}
+
 // USD rollups are display-side only; integer millicredits in the billing
 // ledger are the money truth. Keep this local float helper out of billing
 // decisions.
@@ -1207,7 +1211,9 @@ export function createInMemoryRepositories(
       const latest = [...modelResponses.values()]
         .flatMap((response) => {
           const turn = turnById.get(response.turnId);
-          return turn && turn.role === "assistant" ? [{ response, turn }] : [];
+          return turn && turn.role === "assistant" && hasMeteredUsage(response)
+            ? [{ response, turn }]
+            : [];
         })
         .sort(
           (left, right) =>
@@ -1234,7 +1240,9 @@ export function createInMemoryRepositories(
       const latest = [...modelResponses.values()]
         .flatMap((response) => {
           const turn = turnById.get(response.turnId);
-          return turn && turn.role === "assistant" ? [{ response, turn }] : [];
+          return turn && turn.role === "assistant" && hasMeteredUsage(response)
+            ? [{ response, turn }]
+            : [];
         })
         .sort(
           (left, right) =>
@@ -1287,11 +1295,13 @@ export function createInMemoryRepositories(
     },
     async cacheResetContext(threadId) {
       const responses = await this.listByThread(threadId);
-      const ordered = responses.sort(
-        (a, b) =>
-          (turns.get(b.turnId)?.position ?? 0) - (turns.get(a.turnId)?.position ?? 0) ||
-          b.sequence - a.sequence,
-      );
+      const ordered = responses
+        .filter(hasMeteredUsage)
+        .sort(
+          (a, b) =>
+            (turns.get(b.turnId)?.position ?? 0) - (turns.get(a.turnId)?.position ?? 0) ||
+            b.sequence - a.sequence,
+        );
       return {
         hasCacheActivity: responses.some(
           (response) => (response.cacheReadTokens ?? 0) > 0 || (response.cacheWriteTokens ?? 0) > 0,

@@ -22,7 +22,7 @@ export type LlmCallSummary = {
   provider?: string;
   model?: string;
   outcome: LlmCallOutcome;
-  /** Gateway error code from the close record, kept when a stop is shown as cancelled. */
+  /** Gateway error code from the close record. */
   errorCode?: string;
   firstOutputMs?: number;
   durationMs?: number;
@@ -46,34 +46,6 @@ export type LlmCallCacheComparison = {
 };
 
 export type LlmCallTurn = { status: TurnStatus; responses: readonly ModelResponse[] };
-
-/**
- * A stop before any output reaches the gateway as an `invalid_request` error, the same
- * code a real bad request gets, and the gateway records carry nothing else to tell them
- * apart. The turn does: a rejected request ends its turn as `error`, so an
- * `invalid_request` on the last call of a `cancelled` turn is the writer's stop.
- */
-export function settleStoppedCalls(
-  calls: readonly LlmCallSummary[],
-  turns: Readonly<Record<string, LlmCallTurn>>,
-): LlmCallSummary[] {
-  const lastStartByTurn = new Map<string, string>();
-  for (const call of calls) {
-    if (!call.turnId) continue;
-    const last = lastStartByTurn.get(call.turnId);
-    if (last === undefined || call.startedAt > last)
-      lastStartByTurn.set(call.turnId, call.startedAt);
-  }
-  return calls.map((call) =>
-    call.outcome === "error" &&
-    call.errorCode === "invalid_request" &&
-    call.turnId &&
-    turns[call.turnId]?.status === "cancelled" &&
-    lastStartByTurn.get(call.turnId) === call.startedAt
-      ? { ...call, outcome: "cancelled" }
-      : call,
-  );
-}
 
 /** Pair finished gateway calls with persisted responses and compare prediction to observation. */
 export function pairLlmCallResponses(

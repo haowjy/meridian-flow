@@ -11,6 +11,9 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { markRunStateChanged, readRunStateAtHead } from "../adapters/drizzle-run-state.js";
+import { streamProvider } from "../gateway/adapters/provider-stream.js";
+import { streamWithRetry } from "../gateway/attempt-stream.js";
+import type { GenerateRequest, ModelInfo, StreamEvent } from "../gateway/domain/index.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
@@ -967,5 +970,66 @@ else
       expect(await summary.done).toMatchObject({ status: "complete" });
       await processDetachedWork.drain();
       expect(JSON.stringify(held.summarizer.calls.at(-1))).not.toContain("M1 pinned words");
+    });
+
+    it("a stop before the provider output leaves a response row with no finish reason and missing usage", async () => {
+      // Risk: the stop stamp lives in streamWithRetry, so only the real envelope and retry driver show it.
+      const arrived = gate();
+      const model: ModelInfo = {
+        id: "gpt-5.6-luna",
+        provider: "openai",
+        tokenizer: "o200k",
+        displayName: "Fixture",
+        contextWindow: 128000,
+        maxOutputTokens: 100,
+        promptCache: { kind: "automatic", shortTtlSeconds: 60, longTtlSeconds: 60 },
+        reasoning: { efforts: ["low", "medium", "high", "max"] },
+        capabilities: new Set(),
+      };
+      const base = scriptedGateway({ usage: lowUsage });
+      const adapter = {
+        stream: (request: GenerateRequest) =>
+          streamProvider<never>({
+            start: { type: "start", provider: "openai", model: "gpt-5.6-luna" },
+            signal: request.signal,
+            open: () => new Promise(() => {}),
+            events: () => [],
+            result: () => ({
+              content: [],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 0, outputTokens: 0 },
+              model: "gpt-5.6-luna",
+              provider: "openai",
+            }),
+          }),
+      };
+      const rig = await rigWith({
+        gateway: {
+          ...base,
+          untilGatewayBoundary: () => arrived.promise,
+          async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+            base.requests.push(request);
+            arrived.open();
+            yield* streamWithRetry(adapter, request, model, undefined, {
+              stallMs: 0,
+              ceilingMs: 0,
+            });
+          },
+        },
+      });
+      const { run, done } = await heldReply(rig, "stop me early");
+      await press(rig);
+      expect(await done).toMatchObject({ status: "cancelled" });
+      await processDetachedWork.drain();
+      const [row, ...rest] = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(rest).toEqual([]);
+      expect(row).toMatchObject({
+        finishReason: null,
+        inputTokens: 0,
+        outputTokens: 0,
+        priceSource: "unknown",
+        pricingSnapshot: { usageMeteringStatus: "missing_usage" },
+      });
     });
   });
