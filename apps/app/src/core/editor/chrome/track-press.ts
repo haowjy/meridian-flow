@@ -28,6 +28,9 @@ export type PressHost = {
   end(): void;
 };
 
+/** What the tracker reads of the press: a DOM `mousedown` or `pointerdown`, or React's `pointerdown`. */
+export type PressStart = Pick<MouseEvent, "type" | "clientX" | "clientY"> & { pointerId?: number };
+
 /**
  * Follows one press and decides click or lift, knowing nothing of drags or
  * ProseMirror. A `mousedown` ends on `mouseup` and a `pointerdown` on
@@ -37,15 +40,13 @@ export type PressHost = {
  * one. After a lift's release the `click` that follows is swallowed.
  * Returns `stop`, which ends tracking without calling the lift.
  */
-export function trackPress(press: MouseEvent | PointerEvent, host: PressHost): () => void {
+export function trackPress(press: PressStart, host: PressHost): () => void {
   const ac = new AbortController();
   const listen = (type: string, handler: (event: never) => void, capture = false) =>
     window.addEventListener(type, handler as EventListener, { capture, signal: ac.signal });
   const byPointer = press.type === "pointerdown";
   const mine = (event: PointerEvent) =>
-    byPointer
-      ? event.pointerId === (press as PointerEvent).pointerId
-      : event.pointerType === "mouse";
+    byPointer ? event.pointerId === press.pointerId : event.pointerType === "mouse";
   let lift: PressLift | null = null;
   let over = false;
 
