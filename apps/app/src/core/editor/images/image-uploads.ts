@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Fragment } from "@tiptap/pm/model";
-import { TextSelection } from "@tiptap/pm/state";
+import { Selection, TextSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 import {
   anchorRange,
@@ -76,7 +76,9 @@ export type ImagePickerTarget =
 /** A new picture where the caret is now, pinned before the chooser opens. */
 export function imageCaretTarget(editor: Editor | null): ImagePickerTarget | null {
   if (!editor || editor.isDestroyed) return null;
-  const at = editor.state.selection.from;
+  // Select-all leaves a selection that starts at the document's edge, outside
+  // every block; the nearest place a caret can stand is where the picture goes.
+  const at = Selection.near(editor.state.selection.$from).from;
   return { kind: "insert", at: anchorRange(editor.state, { from: at, to: at }) };
 }
 
@@ -301,7 +303,9 @@ function writeSlot(
 ): void {
   const node = editor.state.doc.nodeAt(pos);
   if (!node) return;
-  const transaction = editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs });
+  // Attribute steps, because `setNodeMarkup` replaces a leaf and a selected slot would lose its grips.
+  const transaction = editor.state.tr;
+  for (const [name, value] of Object.entries(attrs)) transaction.setNodeAttribute(pos, name, value);
   if (!options.history) transaction.setMeta("addToHistory", false);
   if (options.closes) {
     transaction.setMeta(imageIngressPluginKey, {
