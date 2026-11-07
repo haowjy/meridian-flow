@@ -229,7 +229,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   at the pointer lies in the selection's range; at either end, its x-coordinate
   must also be on the selected side of the caret, so half of the adjacent glyph
   does not count). The space between lines and the blank past a covered line's
-  last word count, but not unselected text after the range, count. The view must
+  last word count; unselected text after the range does not. The view must
   also be focused and editable, with no modifier and a chrome kernel.
   `handleDoubleClick` and `handleTripleClick` claim a
   second or third press there so neither the browser nor ProseMirror widens
