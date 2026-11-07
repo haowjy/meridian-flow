@@ -24,7 +24,15 @@ export function anchorRange(state: EditorState, range: AnchorRange): EditorAncho
   const runtime = relativePositionRuntimeFromState(state);
   const start = runtime && relativePositionForIndex(runtime, range.from);
   const end = runtime && relativePositionForIndex(runtime, range.to);
-  return { from: range.from, to: range.to, relative: start && end ? { start, end } : null };
+  const relative = start && end ? { start, end } : null;
+  // The binding writes nothing for a document's first empty paragraph, so a
+  // position inside it has no Yjs seat and resolves to the fragment's edge,
+  // outside every block. A pin is kept only when it resolves back to where it
+  // was taken; the numbers, carried through each transaction, stand in for the
+  // rest.
+  const held = runtime && relative && resolveRelativeRange(runtime, relative);
+  const faithful = held?.from === range.from && held.to === range.to;
+  return { from: range.from, to: range.to, relative: faithful ? relative : null };
 }
 
 /** Carry the anchor's fallback numbers across one mapping. */

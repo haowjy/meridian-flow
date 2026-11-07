@@ -122,7 +122,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
     if (lightbox === null) setSourceOpen(false);
   }, [lightbox]);
 
-  // Enter and a double-click both engage the selected object (§4, §5.2).
+  // Enter, a double-click, and a click on a capped picture engage the object (§4, §5.2).
   // Registered per registration, from the mounted component, because the surface
   // they open is React's — and per registration rather than per node type so two
   // diagram dialects can each have their own.

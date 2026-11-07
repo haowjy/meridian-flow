@@ -11,7 +11,7 @@
  * **It writes as the writer types.** These are attributes on a node every peer
  * can see, and a form with a Save button would hold a second copy of the truth
  * for as long as it stayed open — the failure the figure's old node-view form
- * had. Each keystroke is one `setNodeMarkup`, so undo takes an edit back and a
+ * had. Each keystroke is one attribute step, so undo takes an edit back and a
  * collaborator watches the caption arrive.
  *
  * It holds the object the way every surface in this lane does: a `NodeHold`
