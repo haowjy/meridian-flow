@@ -122,7 +122,7 @@ export function LandingPage({ appOrigin }: { appOrigin: string }) {
                 letter="C"
                 name="Continuity-checker"
                 live="Reading Oskar"
-                report="Oskar’s page says he lost two fingers. Here he draws a bow."
+                report="Oskar’s page says he lost two fingers. Here he’s casting ten-fingered storms."
                 isKey
               />
             </div>

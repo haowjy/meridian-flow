@@ -23,14 +23,14 @@ export const CHARACTERS: readonly Character[] = [
     facts: [
       ["Age", "20"],
       ["From", "Harl, a river town in the south"],
-      ["Trade", "Miller’s apprentice"],
+      ["Trade", "Miller’s apprentice, poacher by night"],
       ["Sent by", "The magistrate of Harl"],
-      ["Carries", "A hatchet and a sling"],
+      ["Carries", "A hunting bow and a hatchet"],
     ],
     sections: [
       [
         "Before",
-        "Raised by his uncle at the mill after the river took his parents. Can’t read, but he can weigh a sack by hand and tell you the price of grain in any month of the last ten years.",
+        "Raised by his uncle at the mill after the river took his parents. Can’t read, but he can weigh a sack by hand. In the lean years he kept the mill fed by poaching the lord’s woods, and nobody ever caught him at it.",
       ],
       [
         "How he got here",
@@ -38,7 +38,7 @@ export const CHARACTERS: readonly Character[] = [
       ],
       [
         "How he fights",
-        "Never trained. He’s small and quick, throws straight, and runs first. Sigrun is teaching him to stop running.",
+        "Ten years of poaching made him the best shot of the four and the quietest walker. He scouts ahead, tracks, and keeps them fed. Up close he’s a beginner, and Sigrun is fixing that.",
       ],
       [
         "Personality",
@@ -88,19 +88,19 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "oskar",
     name: "Oskar",
-    note: "Sent by the king of the coast. He sold a fleet. Two fingers short.",
+    note: "Stormcaller, sent by the king of the coast. He sold a fleet. Two fingers short.",
     pitch: "He’d sell this story to anyone.",
     facts: [
       ["Age", "51"],
       ["From", "Port Selle, on the coast"],
-      ["Trade", "Purser to the king’s fleet"],
+      ["Trade", "Stormcaller to the king’s fleet"],
       ["Sent by", "The king of the coast"],
-      ["Carries", "A crossbow on a strap and a thin knife"],
+      ["Carries", "A boarding sword and a small ledger"],
     ],
     sections: [
       [
         "Before",
-        "A chandler’s son who talked his way up to keeping the accounts for sixty ships. He knew every captain’s debts and spent his evenings collecting on them.",
+        "A chandler’s son who was born able to pull wind out of a clear sky. For twenty years he stood on the flagship’s deck calling weather for sixty ships, and he knew every captain’s debts.",
       ],
       [
         "How he got here",
@@ -108,7 +108,7 @@ export const CHARACTERS: readonly Character[] = [
       ],
       [
         "How he fights",
-        "Badly, and from behind something. With two fingers gone he can’t draw a bow, so he uses a crossbow and shoots first. He has also been known to pay the other side to leave.",
+        "Wind and lightning, called with both hands. With two fingers gone he’s lost the fine work, so what he calls now is big and hard to aim. He’s also been known to pay the other side to leave.",
       ],
       [
         "Personality",
@@ -123,19 +123,19 @@ export const CHARACTERS: readonly Character[] = [
   {
     key: "maren",
     name: "Maren",
-    note: "Sent by the abbey at Vell for heresy. She doesn’t flinch at fire.",
+    note: "Healer and ward-mage, sent by the abbey at Vell for heresy. She doesn’t flinch at fire.",
     pitch: "The fire didn’t burn her.",
     facts: [
       ["Age", "29"],
       ["From", "The abbey at Vell, in the mountains"],
-      ["Trade", "Infirmarian"],
+      ["Trade", "Infirmarian and ward-mage"],
       ["Sent by", "The abbess of Vell"],
       ["Carries", "A staff, a lantern and a bag of needles"],
     ],
     sections: [
       [
         "Before",
-        "Left at the abbey gate as a baby. She ran the infirmary by twenty-two and spent fever seasons walking the valley villages, setting bones and sitting with the dying.",
+        "Left at the abbey gate as a baby. The abbey trains its healers in wards, the old magic that holds a wound shut or a door closed. She ran the infirmary by twenty-two and spent fever seasons walking the valley villages.",
       ],
       [
         "How she got here",
@@ -143,7 +143,7 @@ export const CHARACTERS: readonly Character[] = [
       ],
       [
         "How she fights",
-        "She doesn’t, if she can help it. She stands in front of whoever is hurt with her staff, and she keeps the other three alive afterwards.",
+        "Wards. She can hold a shield of light over all four of them for about as long as she can hold her breath, and she closes wounds while they’re still bleeding. Good with the staff too, which surprises people.",
       ],
       [
         "Personality",
