@@ -73,10 +73,10 @@ it trails the last move by one `dragover`.
 14. **Empty document.** Over any point of a blank document: the chip lands in
     the one empty paragraph and no second paragraph appears.
 15. **Files.** Drag a PNG over each of 8-14: it lands at the same place as the
-    chip would, and the dashed **Drop image to insert it** overlay shows. Drag
-    a video: the hint reads **Only pictures can be dropped here**, no caret
-    draws, the overlay stays away, the drop changes nothing, and the browser
-    does not open the file.
+    chip would, and the dashed **Drop to insert** overlay shows. A PDF lands
+    there too, as a chip (see [Files dropped on a document](#files-dropped-on-a-document)).
+    Over a fenced code block no caret draws and the hint reads **Can’t put a
+    file inside code**.
 
 ## Text dropped in a table cell
 
@@ -107,3 +107,36 @@ it trails the last move by one `dragover`.
 Record the commit, date, app URL, screenshots of the composer caret/result,
 editor caret/result, and both refusal states, plus browser errors, in the active
 work directory or the PR asset directory.
+
+## Files dropped on a document
+
+Use a prose document in each of Manuscript and Knowledge Base, one with a heading, a list and a
+table. A synthetic `DragEvent` carrying a `DataTransfer` with `File`s works for these: the browser's
+own file drag adds nothing to what the door reads. Read the rows from `upload_intakes` or the tree.
+
+1. Drop a PDF at a word, in a heading, in a list item and in a table cell. Each lands a chip at
+   the caret reading the name, then `PDF · 2 KB` once it finalizes. The file is a row in
+   `<source>://assets/` of the document's own source (Knowledge Base: `kb://assets/`), and the chip
+   opens it the way the tree's row does. Drop the same name again: `name (2).pdf`; a `.zip` keeps its
+   extension (`notes (2).zip`).
+2. Drop a PDF, a picture and a second PDF together. They land in that order, the picture in its own
+   lane (`manuscript://assets/`). The two PDFs and any run of chips between pictures are one edit:
+   one Undo.
+3. Include a file over 200 MB with others. Only that one is refused, with
+   **name is over 200 MB, so it can't be added.**; nothing is inserted or sent for it.
+4. Drop a 200 MB file and watch the chip: it fills left to right and reads `Uploading n%`, and
+   settles to `BIN · 200 MB`. In a second tab, the chip reads `Uploading` while the bytes arrive
+   and flips with no reload when the file finalizes. A reload mid-upload reads `Uploading` for as
+   long as the server holds the intake, then `gone` if the page took the upload with it.
+5. Undo while it uploads. The chip leaves, and about ten seconds later the request is aborted: no
+   object and no intake row stay. Cut the chip and paste it back within a few seconds: the upload
+   keeps going. Paste it into another document after the abort: it reads gone.
+6. While one uploads, rename `assets/`. The file lands in a fresh `assets/` and the chip follows
+   it by id. Rename or move a finished file, then read the document through `./mf doc read`: the
+   link shows the file's current path. Trash a finished file and click its chip: Trash opens at it.
+7. A read-only editor (`setEditable(false)`) takes no file and starts no upload.
+8. Export the project: the files sit under their folders and the document's link points at the
+   current path.
+
+Not covered by a live run: Scratch of a chat's lineage (the route builds the lineage container the
+create route uses, but no chat in the probe project had a lineage to write to).

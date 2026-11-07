@@ -107,6 +107,7 @@
   color: var(--color-muted-foreground);
   content: attr(data-link-detail);
   font-size: 0.85em;
+  white-space: nowrap;
 }
 
 /* The fill grows left to right with the bytes sent. */

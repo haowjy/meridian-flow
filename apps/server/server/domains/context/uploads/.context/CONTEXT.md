@@ -33,6 +33,25 @@ binary content remains object-backed. Definite failure compensates storage,
 while an unknown outcome retains the key for recovery. A same-key retry returns
 the original result only when the actor/owner/name/size fingerprint matches.
 
+## Source uploads
+
+A file dropped into a document is a source upload: the same route with any scheme but `uploads`
+(`POST /context/<scheme>/upload?documentId=…&filename=…`, plus `workId` or `rootThreadId` for
+Scratch). It belongs to no chat: `owner_thread_id` and `context_source_id` are null, and the
+`source` destination carries the port the route resolved for the host's scope. The client mints
+the document id and it doubles as the intake id, so the link to the file stands in the document
+before the file exists; an id a document already holds is refused (`idempotency_conflict`).
+Reservation fixes no name. `persist` writes `<scheme>://assets/<name>` through the port and, on
+`conflict`, takes the next free copy (`name (2).ext`, the file's own extension kept), then
+`finalize` records the name it took. `assets/` is created by that write wherever it has gone
+missing, so renaming it mid-upload only makes a new one. Chat-only paths (`lockForDelete`,
+`consume`, `lookupUpload`) skip these rows.
+
+`inFlight` answers which document ids are unfinished uploads (reserved or object-stored, touched
+within two hours) of the asking account; the link resolve route turns a `doc:` ref that names
+nothing into `uploading` with it. A crash leaves a row no one sweeps; the two-hour window is what
+stops its chip saying `uploading` forever.
+
 Uploads are flat and cannot be created through general ContextFS operations.
 Catalog visibility and finalized intake state commit in the ambient ContextFS
 transaction. `consume()` is the singular admission seam for defeating

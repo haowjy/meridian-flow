@@ -264,8 +264,8 @@ msgstr ""
 
 #. placeholder {0}: listed[0].name
 #: src/core/editor/images/image-drop-door.ts
-msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
-msgstr ""
+#~ msgid "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+#~ msgstr ""
 
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
@@ -551,6 +551,10 @@ msgstr "{name} 从草稿中放弃了{title}。"
 msgid "{name} discarded this document from the draft."
 msgstr "{name} 从草稿中放弃了这份文档。"
 
+#: src/lib/upload-limit.ts
+msgid "{name} is over {LIMIT_MB} MB, so it can't be added."
+msgstr "{name} 超过 {LIMIT_MB} MB，无法添加。"
+
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr ""
@@ -793,6 +797,10 @@ msgstr ""
 msgid "A document blocks part of this location. Move or rename it, then apply again."
 msgstr ""
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "A file can’t go there."
+msgstr "文件不能放在那里。"
+
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {name} already exists in this location."
 msgstr ""
@@ -809,7 +817,7 @@ msgstr ""
 #~ msgid "A picture cannot go there"
 #~ msgstr "图片不能放在这里"
 
-#: src/core/editor/images/image-drop-door.ts
+#: src/core/editor/file-drop/file-drop-door.ts
 #: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
 msgstr "图片不能放在这里。"
@@ -1336,9 +1344,13 @@ msgstr ""
 msgid "Can't move these from here"
 msgstr ""
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "Can’t put a file inside code"
+msgstr "不能把文件放进代码里"
+
 #: src/core/editor/images/image-drop-door.ts
-msgid "Can’t put a picture inside code"
-msgstr "无法将图片放入代码中"
+#~ msgid "Can’t put a picture inside code"
+#~ msgstr "无法将图片放入代码中"
 
 #: src/core/editor/landing/slice-drop.ts
 msgid "Can’t put that in a table cell"
@@ -2252,6 +2264,7 @@ msgstr ""
 msgid "Couldn't queue the compaction."
 msgstr ""
 
+#: src/client/api/source-upload-api.ts
 #: src/client/api/upload-intake-api.ts
 msgid "Couldn't reach the server. Check your connection."
 msgstr ""
@@ -3043,6 +3056,10 @@ msgstr ""
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Files attached in chat, grouped by Work."
 msgstr ""
+
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "Files can’t be added to this document."
+msgstr "不能向此文档添加文件。"
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Files move or copy out of Uploads; they can't be dropped into it"
@@ -4194,8 +4211,8 @@ msgid "Only part of this change could be reversed."
 msgstr ""
 
 #: src/core/editor/images/image-drop-door.ts
-msgid "Only pictures can be dropped here"
-msgstr "这里只能放入图片"
+#~ msgid "Only pictures can be dropped here"
+#~ msgstr "这里只能放入图片"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "Open"
@@ -5974,6 +5991,10 @@ msgstr ""
 msgid "This filename contains unsupported characters. Rename the file and attach it again."
 msgstr ""
 
+#: src/client/api/source-upload-api.ts
+msgid "This filename contains unsupported characters. Rename the file and try again."
+msgstr "此文件名含有不受支持的字符。请重命名文件后重试。"
+
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "This folder is empty."
 msgstr ""
@@ -6322,6 +6343,11 @@ msgstr ""
 msgid "upload"
 msgstr ""
 
+#: src/core/editor/links/link-chip.ts
+#: src/core/editor/links/link-mark-view.ts
+msgid "Upload failed"
+msgstr "上传失败"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr ""
@@ -6334,6 +6360,10 @@ msgstr ""
 msgid "Upload paused"
 msgstr ""
 
+#: src/core/editor/links/link-chip.ts
+msgid "Uploading"
+msgstr "上传中"
+
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Uploading {0} ({percent}%)"
@@ -6343,6 +6373,11 @@ msgstr ""
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Uploading {0}…"
 msgstr ""
+
+#. placeholder {0}: upload.percent
+#: src/core/editor/links/link-chip.ts
+msgid "Uploading {0}%"
+msgstr "上传中 {0}%"
 
 #: src/features/import/import-presentation.ts
 msgid "Uploading {name}"

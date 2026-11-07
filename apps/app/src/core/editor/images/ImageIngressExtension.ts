@@ -4,7 +4,7 @@
  * Four doors (the toolbar and slash picker, a drop, a pasted file, a pasted
  * address), one lifecycle, and this file is only the wiring: the storage the
  * app registers its ports into, the plugin that holds what is in flight, the
- * clipboard prop (a drop lands through `image-drop-door.ts`), and the decorations the manuscript draws from.
+ * clipboard prop (a drop lands through `file-drop/file-drop-door.ts`), and the decorations the manuscript draws from.
  *
  * The lifecycle itself is next door — [`image-uploads.ts`](image-uploads.ts) for
  * a picture from this machine, [`image-imports.ts`](image-imports.ts) for one the
