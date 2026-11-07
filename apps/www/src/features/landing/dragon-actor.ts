@@ -309,7 +309,10 @@ export function createDragonActor(root: HTMLElement) {
     const passing = at >= span(spans, "twist", PASS.enters) && !circled;
     const landing = at >= span(spans, "turn", 0.45);
     flyer.style.zIndex = passing ? "11" : now.onTop ? "6" : circled || landing ? "3" : "1";
-    const wanted = circled && moving && Math.abs(dx) > 0.3 ? Math.sign(dx) : now.facing;
+    // It faces where it flies, except in the face-off, where it keeps its eyes on the party even
+    // as it rears back.
+    const facingThem = landing && at < span(spans, "twist", 0.22);
+    const wanted = !facingThem && moving && Math.abs(dx) > 0.3 ? Math.sign(dx) : now.facing;
     facing += (wanted - facing) * TURN_RATE;
     const tilt = moving ? clamp(Math.atan2(dy, Math.abs(dx) + 1), -MAX_LEAN, MAX_LEAN) : 0;
     const wantedLean = lerp(tilt * Math.sign(facing || 1), PICTURE_LEAN, now.settled);
