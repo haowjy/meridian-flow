@@ -5,14 +5,16 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { type Filetype, firstFreeName, type UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { projects, threads, uploadIntakes } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
 import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
-import type {
-  ReserveUploadResult,
-  UploadIntakeRepository,
-  UploadReservation,
+import {
+  type ClaimedUpload,
+  claimedOf,
+  type ReserveUploadResult,
+  type UploadIntakeRepository,
+  type UploadReservation,
 } from "./upload-intake.js";
 
 type IntakeRow = typeof uploadIntakes.$inferSelect;
@@ -62,14 +64,17 @@ function mapRow(row: IntakeRow, chatRef: string | null): UploadReservation {
   return {
     projectId: row.projectId,
     intakeId: row.intakeId,
+    actorUserId: row.actorUserId,
     documentId: row.documentId,
     fingerprint: row.fingerprint,
     filename: row.filename,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes,
     finalPath: row.finalPath,
     objectKey: row.objectKey,
-    canonicalUri: uploadUri(chatRef, row.finalPath),
+    canonicalUri: row.finalPath ? uploadUri(chatRef, row.finalPath) : null,
     locationRevision: row.locationRevision,
-    fileType: row.fileType as Filetype,
+    fileType: row.fileType as Filetype | null,
     state: row.state as UploadReservation["state"],
     storageUrl: row.storageUrl,
     consumed: row.consumedAt !== null,
@@ -138,32 +143,22 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         await lockIntakeKey(db, input.owner.projectId, input.intakeId);
         const existing = await readReservation(db, input.owner.projectId, input.intakeId);
         if (existing) {
-          return existing.fingerprint === input.fingerprint
-            ? { kind: "existing", reservation: existing }
-            : { kind: "conflict" };
+          if (existing.fingerprint !== input.fingerprint) return { kind: "conflict" };
+          // A start again is the browser saying it is still uploading: the sweep leaves it be.
+          if (existing.state === "reserved" || existing.state === "object_stored")
+            await activeDb
+              .update(uploadIntakes)
+              .set({ updatedAt: new Date() })
+              .where(
+                and(
+                  eq(uploadIntakes.projectId, input.owner.projectId as never),
+                  eq(uploadIntakes.intakeId, input.intakeId),
+                ),
+              );
+          return { kind: "existing", reservation: existing };
         }
         const owner = await resolveOwner(db, input.owner, input.actorUserId);
         if (!owner) return { kind: "owner_unavailable" };
-        await activeDb.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${owner.sourceId}, 0))`,
-        );
-        const [liveNames, reservedNames] = await Promise.all([
-          createTreeReader(db).namesAt(LIVE_TREE, {
-            contextSourceId: owner.sourceId as ContextSourceId,
-            parentId: null,
-          }),
-          activeDb
-            .select({ path: uploadIntakes.finalPath })
-            .from(uploadIntakes)
-            .where(
-              and(
-                eq(uploadIntakes.contextSourceId, owner.sourceId),
-                sql`${uploadIntakes.state} <> 'deleted'`,
-              ),
-            ),
-        ]);
-        const used = new Set([...liveNames, ...reservedNames.map((row) => row.path)]);
-        const finalPath = firstFreeName(input.documentFilename, used).filename;
         const documentId = crypto.randomUUID();
         const [created] = await activeDb
           .insert(uploadIntakes)
@@ -177,61 +172,91 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             fingerprint: input.fingerprint,
             filename: input.filename,
             mimeType: input.mimeType,
-            finalPath,
+            sizeBytes: input.sizeBytes,
             objectKey: `uploads/${input.owner.projectId}/${documentId}`,
-            fileType: input.fileType,
             locationRevision: crypto.randomUUID(),
           })
-          .onConflictDoNothing({
-            target: [uploadIntakes.projectId, uploadIntakes.intakeId],
-          })
           .returning();
-        if (!created) {
-          const winner = await readReservation(db, input.owner.projectId, input.intakeId);
-          if (!winner) throw new Error("Upload intake winner was not readable");
-          return winner.fingerprint === input.fingerprint
-            ? { kind: "existing", reservation: winner }
-            : { kind: "conflict" };
-        }
+        if (!created) throw new Error("Upload intake was not created under its lock");
         return { kind: "reserved", reservation: mapRow(created, owner.chatRef) };
       });
     },
-    async abandon(projectId, intakeId) {
-      await runInDrizzleTransaction(db, async () => {
-        await lockIntakeKey(db, projectId, intakeId);
-        await currentDrizzleDb(db)
-          .delete(uploadIntakes)
+    async readOwned(projectId, intakeId, actorUserId, chatId) {
+      const reservation = await readReservation(db, projectId, intakeId);
+      return reservation?.actorUserId === actorUserId && reservation.owner.chatId === chatId
+        ? reservation
+        : null;
+    },
+    async claim(input) {
+      return runInDrizzleTransaction(db, async () => {
+        const activeDb = currentDrizzleDb(db);
+        const owner = await readIntakeOwner(
+          db,
+          and(
+            eq(uploadIntakes.projectId, input.projectId as never),
+            eq(uploadIntakes.intakeId, input.intakeId),
+          ),
+        );
+        if (!owner) return { kind: "gone" };
+        await lockChat(db, owner.projectId, owner.chatId);
+        await lockIntakeKey(db, input.projectId, input.intakeId);
+        const [row] = await activeDb
+          .select()
+          .from(uploadIntakes)
           .where(
             and(
-              eq(uploadIntakes.projectId, projectId as never),
-              eq(uploadIntakes.intakeId, intakeId),
+              eq(uploadIntakes.projectId, input.projectId as never),
+              eq(uploadIntakes.intakeId, input.intakeId),
+            ),
+          )
+          .limit(1);
+        if (!row) return { kind: "gone" };
+        if (row.state !== "reserved")
+          return { kind: "existing", reservation: mapRow(row, await chatRefOf(row.ownerThreadId)) };
+        // The name is taken now, after the bytes are read: serialised per source against every
+        // other writer of that source's names.
+        await activeDb.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${row.contextSourceId}, 0))`,
+        );
+        const [liveNames, reservedNames] = await Promise.all([
+          createTreeReader(db).namesAt(LIVE_TREE, {
+            contextSourceId: row.contextSourceId as ContextSourceId,
+            parentId: null,
+          }),
+          activeDb
+            .select({ path: uploadIntakes.finalPath })
+            .from(uploadIntakes)
+            .where(
+              and(
+                eq(uploadIntakes.contextSourceId, row.contextSourceId),
+                sql`${uploadIntakes.state} <> 'deleted'`,
+              ),
+            ),
+        ]);
+        const used = new Set([...liveNames, ...reservedNames.flatMap((r) => r.path ?? [])]);
+        const [claimed] = await activeDb
+          .update(uploadIntakes)
+          .set({
+            state: "object_stored",
+            fileType: input.fileType,
+            finalPath: firstFreeName(input.documentFilename, used).filename,
+            storageUrl: input.storageUrl,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(uploadIntakes.projectId, input.projectId as never),
+              eq(uploadIntakes.intakeId, input.intakeId),
               eq(uploadIntakes.state, "reserved"),
             ),
-          );
+          )
+          .returning();
+        if (!claimed) throw new Error("Upload intake changed under its lock");
+        return {
+          kind: "claimed",
+          reservation: mapRow(claimed, await chatRefOf(claimed.ownerThreadId)),
+        };
       });
-    },
-    async markObjectStored(projectId, intakeId, storageUrl) {
-      await currentDrizzleDb(db)
-        .update(uploadIntakes)
-        .set({ state: "object_stored", storageUrl, updatedAt: new Date() })
-        .where(
-          and(
-            eq(uploadIntakes.projectId, projectId as never),
-            eq(uploadIntakes.intakeId, intakeId),
-          ),
-        );
-    },
-    async resetObjectStored(projectId, intakeId) {
-      await currentDrizzleDb(db)
-        .update(uploadIntakes)
-        .set({ state: "reserved", storageUrl: null, updatedAt: new Date() })
-        .where(
-          and(
-            eq(uploadIntakes.projectId, projectId as never),
-            eq(uploadIntakes.intakeId, intakeId),
-            eq(uploadIntakes.state, "object_stored"),
-          ),
-        );
     },
     async lockForFinalize(projectId, intakeId) {
       const owner = await readIntakeOwner(
@@ -244,10 +269,15 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
       if (!reservation) throw new Error("Upload reservation unavailable during finalize");
       return reservation;
     },
-    async finalize(projectId, intakeId) {
+    async finalize(projectId, intakeId, tracked) {
       const [row] = await currentDrizzleDb(db)
         .update(uploadIntakes)
-        .set({ state: "finalized", updatedAt: new Date() })
+        .set({
+          state: "finalized",
+          updatedAt: new Date(),
+          // Tracked text lives in its document: the object it was read from goes with finish.
+          ...(tracked ? { storageUrl: null } : {}),
+        })
         .where(
           and(
             eq(uploadIntakes.projectId, projectId as never),
@@ -257,7 +287,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         )
         .returning();
       if (!row) throw new Error("Upload reservation unavailable during finalize");
-      return mapRow(row, await chatRefOf(row.ownerThreadId));
+      return claimedOf(mapRow(row, await chatRefOf(row.ownerThreadId)));
     },
     async lockForDelete(input, actorUserId) {
       const identity = and(
@@ -283,7 +313,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         return {
           kind: "refused",
           result: { kind: "already_deleted" },
-          objectKey: row.storageUrl ? row.objectKey : undefined,
+          reservation: mapRow(row, null),
         };
       }
       if (row.consumedAt) return { kind: "refused", result: { kind: "already_used" } };
@@ -319,6 +349,38 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         )
         .returning({ contextSourceId: uploadIntakes.contextSourceId });
       return [...new Set(consumed.map((row) => row.contextSourceId as string))];
+    },
+    async listAbandoned(cutoff, limit) {
+      return currentDrizzleDb(db)
+        .select({
+          projectId: uploadIntakes.projectId,
+          intakeId: uploadIntakes.intakeId,
+          documentId: uploadIntakes.documentId,
+          objectKey: uploadIntakes.objectKey,
+        })
+        .from(uploadIntakes)
+        .where(
+          and(
+            sql`${uploadIntakes.state} IN ('reserved', 'object_stored')`,
+            lt(uploadIntakes.updatedAt, cutoff),
+          ),
+        )
+        .orderBy(uploadIntakes.updatedAt)
+        .limit(limit);
+    },
+    async dropAbandoned(projectId, intakeId, cutoff) {
+      const dropped = await currentDrizzleDb(db)
+        .delete(uploadIntakes)
+        .where(
+          and(
+            eq(uploadIntakes.projectId, projectId as never),
+            eq(uploadIntakes.intakeId, intakeId),
+            sql`${uploadIntakes.state} IN ('reserved', 'object_stored')`,
+            lt(uploadIntakes.updatedAt, cutoff),
+          ),
+        )
+        .returning({ intakeId: uploadIntakes.intakeId });
+      return dropped.length > 0;
     },
   };
 }

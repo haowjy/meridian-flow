@@ -61,7 +61,7 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
         storageUrl: document.storageUrl,
         hasPreview: document.hasPreview,
         updatedAt: document.updatedAt.toISOString(),
-        uri: intake
+        uri: intake?.finalPath
           ? canonicalContextUri(
               "uploads",
               intake.finalPath,

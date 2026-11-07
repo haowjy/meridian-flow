@@ -27,6 +27,7 @@ it("decodes the structured upload error response", async () => {
     file: new File(["words"], "draft.txt"),
     intakeId: "intake",
     scope: { kind: "chat", projectId: "deleted", chatId: "chat" },
+    signal: new AbortController().signal,
   });
   await expect(result).rejects.toBeInstanceOf(MeridianApiError);
   await expect(result).rejects.toMatchObject({

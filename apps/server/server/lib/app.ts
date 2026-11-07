@@ -54,6 +54,11 @@ async function createAppServices(): Promise<AppServices> {
         run: createImportObjectSweeper(db, ports.objectStore, ports.documentSync),
       },
       {
+        name: "upload-sweep",
+        delayMs: RETENTION_PURGE_INTERVAL_MS,
+        run: () => app.uploadIntake.sweepAbandoned(),
+      },
+      {
         name: "import-organize",
         delayMs: WAKE_SWEEP_INTERVAL_MS,
         run: app.importOrganizer.runPass,

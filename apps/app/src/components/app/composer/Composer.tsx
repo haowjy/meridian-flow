@@ -113,6 +113,8 @@ export type ComposerUploadPort = Readonly<{
     file: File;
     intakeId: string;
     scope: ComposerUploadScope;
+    /** Aborts when the writer removes the chip, so a 200 MB PUT stops with it. */
+    signal: AbortSignal;
   }) => Promise<UploadIntakeResult>;
 }>;
 
@@ -232,6 +234,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const disabledReasonId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const intakeFilesRef = useRef(new Map<string, File>());
+  const uploadAbortsRef = useRef(new Map<string, AbortController>());
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ hardBreak: {}, dropcursor: false }),
@@ -456,6 +459,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
+  // Removing a pending chip stops its upload.
+  useEffect(() => {
+    if (!editor) return;
+    const stopRemoved = () => {
+      const present = new Set<string>();
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === "composerUpload")
+          present.add((node.attrs.upload as ComposerPendingUploadAttrs).intakeId);
+      });
+      for (const [intakeId, abort] of uploadAbortsRef.current)
+        if (!present.has(intakeId)) abort.abort();
+    };
+    editor.on("update", stopRemoved);
+    return () => {
+      editor.off("update", stopRemoved);
+    };
+  }, [editor]);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -518,8 +538,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
     setPending((n) => n + 1);
     const scope = scopeRef.current;
+    const abort = new AbortController();
+    uploadAbortsRef.current.set(intakeId, abort);
     try {
-      const ready = await resolvedUploadPort.intake({ file, intakeId, scope });
+      const ready = await resolvedUploadPort.intake({
+        file,
+        intakeId,
+        scope,
+        signal: abort.signal,
+      });
       let position = -1;
       editor.state.doc.descendants((node, pos) => {
         if (
@@ -567,6 +594,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             .run();
       });
     } finally {
+      uploadAbortsRef.current.delete(intakeId);
       setPending((n) => Math.max(0, n - 1));
     }
   }
