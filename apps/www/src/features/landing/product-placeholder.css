@@ -476,6 +476,35 @@
   outline-offset: 1px;
 }
 
+.s-facts {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.s-facts div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.s-facts dt {
+  color: var(--color-muted-foreground);
+}
+
+.s-doc h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 14px 0 3px;
+}
+
+.s-status {
+  font-weight: 500;
+}
+
 .s-fig {
   height: 200px;
   margin: 12px 0 18px;
