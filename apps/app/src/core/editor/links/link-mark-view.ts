@@ -16,11 +16,12 @@
 import { t } from "@lingui/core/macro";
 import { parseLinkRef } from "@meridian/contracts";
 
+import { type UploadState, uploads } from "@/core/uploads/upload-store";
+
 import { linkChip, linkChipAttributes, linkChipDetail } from "./link-chip";
 import { goneLinkDocumentId, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import type { MountedLinks } from "./link-storage";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
-import { linkUploads } from "./link-uploads";
 
 /**
  * Keeps a link element's chip and accessible state in step with its answer,
@@ -40,15 +41,11 @@ export function drawLinkAnswer(
   const uploadOf = ref?.kind === "doc" ? ref.documentId : null;
 
   const sync = () => {
-    const entry = resolution.read(key);
-    const upload = uploadOf === null ? null : linkUploads.read(uploadOf);
-    const detail = linkChipDetail(entry, upload);
-    draw(element, "data-link-detail", detail);
-    draw(
-      element,
-      "data-link-upload",
-      upload?.kind ?? (entry?.state === "uploading" ? "uploading" : null),
-    );
+    const upload = uploadOf === null ? null : uploadOn(uploadOf);
+    // A file on its way up has no answer yet worth drawing: the server calls it gone until it lands.
+    const entry = upload ? null : resolution.read(key);
+    draw(element, "data-link-detail", linkChipDetail(entry, upload));
+    draw(element, "data-link-upload", upload?.kind ?? null);
     element.style.setProperty(
       "--link-upload-progress",
       upload?.kind === "uploading" && upload.percent !== null ? `${upload.percent}%` : "0%",
@@ -87,13 +84,27 @@ export function drawLinkAnswer(
 
   sync();
   const unsubscribe = resolution.subscribe(sync);
-  const unsubscribeUploads = uploadOf === null ? () => {} : linkUploads.subscribe(sync);
+  const unsubscribeUploads =
+    uploadOf === null
+      ? () => {}
+      : uploads.subscribe((changed) => {
+          if (changed.has(uploadOf)) sync();
+        });
   const release = requester.watch(key);
   return () => {
     release();
     unsubscribe();
     unsubscribeUploads();
   };
+}
+
+/** This tab's upload of the file, else another client's as presence reports it. */
+function uploadOn(documentId: string): UploadState | null {
+  const local = uploads.read(documentId);
+  if (local) return local;
+  return uploads.peerSending(documentId) === undefined
+    ? null
+    : { kind: "uploading", percent: null };
 }
 
 // Every publish reaches every link on the page; only a changed value touches the DOM.

@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect, useMemo, useRef } from "react";
-import { uploadIntakePort } from "@/client/api/upload-intake-api";
+import { chatUploadPort } from "@/client/api/context-upload-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
@@ -152,7 +152,7 @@ export function CreationComposer({
           if (!canOpenReference(reference.uri)) return;
           void openDocument({ documentId: reference.documentId, disposition: "current" });
         }}
-        uploadPort={uploadIntakePort}
+        uploadPort={chatUploadPort}
         uploadScope={{ kind: "chat", projectId, chatId: creation.draft.chatId }}
         submitDisabled={!choicesReady}
         submitDisabledReason={

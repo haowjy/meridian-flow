@@ -76,7 +76,6 @@ const GONE: Extract<LinkAnswer, { state: "gone" }> = Object.freeze({
   document: null,
 });
 const MISSING: LinkAnswer = Object.freeze({ state: "missing", document: null });
-const UPLOADING: LinkAnswer = Object.freeze({ state: "uploading", document: null });
 const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
 const answered = (answer: LinkAnswer): LocalLinkAnswer => ({ kind: "answered", answer });
@@ -194,8 +193,6 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         : GONE;
     case "missing":
       return MISSING;
-    case "uploading":
-      return UPLOADING;
     case "unresolvable":
       return null;
   }

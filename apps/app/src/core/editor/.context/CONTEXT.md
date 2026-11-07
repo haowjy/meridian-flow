@@ -282,10 +282,10 @@ keyboard, pointer, drop, or draft-recovery answer.
   lists them, a run of chips as one edit; the drop point is an `anchorRange` pin, read back
   with `resolveAnchorIn` when the chips go in, because a peer's update (a model streaming)
   replaces the whole fragment and ProseMirror's mapping would land between blocks; a file over `MAX_UPLOAD_BYTES` is refused
-  alone, before anything is inserted for it. A chip with nothing sending (a failed send, or
-  an upload taken back after undo whose chip returned by redo) reads failed and a press
-  retries it on the same id (`link-uploads.ts`); the file is kept ten minutes while its chip
-  is away. A chip that reads `uploading` from the server is asked again every two minutes.
+  alone, before anything is inserted for it. A chip's progress and failure are the upload
+  store's (`core/uploads/upload-store.ts`), as a Composer chip's and a picture slot's are: a
+  failed chip (or one taken back by undo and returned by redo) reads failed and a press retries
+  it on the same id. Another tab hears a chip's upload over presence (`upload-presence.ts`).
   `landing/` imports neither lane. A host mounts only the doors it has; a
   payload with no door is unclaimed at `dragover`, `drop` and `handleDrop`
   alike, and the click route rides with the plugin, so a code file and the

@@ -5,7 +5,7 @@ import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
 import { FileImage, FileText, FileType, PanelRightOpen, Paperclip, Trash2 } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { deleteChatUpload } from "@/client/api/upload-intake-api";
+import { deleteChatUpload } from "@/client/api/context-upload-api";
 import { type ChatUpload, useChatUploads } from "@/client/query/useChatUploads";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { topChatOf } from "@/client/query/useTopChat";

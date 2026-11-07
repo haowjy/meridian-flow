@@ -5,6 +5,7 @@ import type { Editor } from "@tiptap/core";
 import { Fragment } from "@tiptap/pm/model";
 import { Selection, TextSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
+import { uploads } from "@/core/uploads/upload-store";
 import {
   anchorRange,
   type EditorAnchor,
@@ -14,6 +15,7 @@ import {
   resolveNodeHold,
 } from "../anchors";
 import type { Landing } from "../landing/point-landing";
+
 import { objectSurfaceKind } from "../objects";
 import { sweepReplaceLanding } from "../table-sweep-paste";
 import type { ImageIngressHost, UploadedImage } from "./image-ingress-ports";
@@ -22,7 +24,6 @@ import {
   imageIngressPluginKey,
   imageIngressStorage,
   ingressState,
-  nextIngressId,
   patchUpload,
   sendIngressMessage,
   uploadEntry,
@@ -140,15 +141,15 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
   // wrote one; a slot that never had one takes the new file's name, as an insert
   // does.
   const existing = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
-  const upload = beginUpload(editor, {
+  const id = openUpload(editor, {
     file,
     alt: existing || imageAltFromFilename(file.name),
     landing: "replace",
   });
   // Bookkeeping rather than an edit, so it stays out of the writer's undo stack:
   // what they will undo is the picture, and that is the landing's business.
-  writeSlot(editor, at.from, { [UPLOAD_TOKEN_ATTR]: upload.id }, { history: false });
-  void runUpload(editor, host, upload.id, upload.signal);
+  writeSlot(editor, at.from, { [UPLOAD_TOKEN_ATTR]: id }, { history: false });
+  sendUpload(editor, host, id, file);
 }
 
 /** Put this picture in the document and start sending it. */
@@ -190,41 +191,32 @@ function openImageFileUpload(
   const host = ingressHost(editor);
   if (!host) return;
   const alt = imageAltFromFilename(file.name);
-  const upload = beginUpload(editor, { file, alt, landing: "insert" });
-  const at = place(editor, alt, upload.id);
+  const id = openUpload(editor, { file, alt, landing: "insert" });
+  const at = place(editor, alt, id);
   if (at === null) {
-    cancelUpload(editor, upload);
+    sendIngressMessage(editor, { drop: id });
     storage.status.refuse(t`A picture cannot go there.`);
     return;
   }
-  void runUpload(editor, host, upload.id, upload.signal);
+  sendUpload(editor, host, id, file);
 }
 
 /** Send a failed picture again, from the same slot with the same bytes. */
 export function retryPendingImage(editor: Editor | null, pos: number): void {
-  const storage = imageIngressStorage(editor);
-  if (!editor || !storage?.host) return;
+  if (!editor || editor.isDestroyed) return;
   const entry = pendingImageAt(ingressState(editor).pending, editor.state, pos);
-  if (entry?.kind !== "upload" || entry.status.kind !== "failed") return;
-  const controller = new AbortController();
-  const retried: PendingImageUpload = {
-    ...entry,
-    status: { kind: "uploading", percent: null },
-    abort: () => controller.abort(),
-  };
-  sendIngressMessage(editor, { set: retried });
-  void runUpload(editor, storage.host, retried.id, controller.signal);
+  if (entry?.kind === "upload") uploads.retry(entry.id);
 }
 
-/** Take the picture back out. Whatever was in flight for it stops. */
+/**
+ * Take the picture back out. Its upload stops as any slot's does when it leaves the text, so an
+ * undo brings it back still sending, or ready to retry.
+ */
 export function removePendingImage(editor: Editor | null, pos: number): void {
   if (!editor || editor.isDestroyed) return;
   const entry = pendingImageAt(ingressState(editor).pending, editor.state, pos);
   if (entry?.kind !== "upload") return;
-  entry.abort();
-  const transaction = editor.state.tr.delete(pos, pos + 1);
-  transaction.setMeta(imageIngressPluginKey, { drop: entry.id } satisfies ImageIngressMessage);
-  editor.view.dispatch(transaction);
+  editor.view.dispatch(editor.state.tr.delete(pos, pos + 1));
 }
 
 /**
@@ -315,25 +307,19 @@ function writeSlot(
   editor.view.dispatch(transaction);
 }
 
-type OpenUpload = { id: string; signal: AbortSignal };
-
-/** Open one upload's lifecycle: its token, its entry, and the owner signal every peer reads through it. */
-function beginUpload(
+/** Open one picture's record in this editor: its token, which is its intake id, and its shape. */
+function openUpload(
   editor: Editor,
   input: { file: File; alt: string; landing: PendingImageUpload["landing"] },
-): OpenUpload {
-  const controller = new AbortController();
-  const id = nextIngressId("image-upload");
+): string {
+  const id = crypto.randomUUID();
   const entry: PendingImageUpload = {
     kind: "upload",
     id,
     filename: input.file.name,
     alt: input.alt,
-    file: input.file,
     frame: null,
     landing: input.landing,
-    status: { kind: "uploading", percent: null },
-    abort: () => controller.abort(),
   };
   sendIngressMessage(editor, { set: entry });
 
@@ -342,68 +328,30 @@ function beginUpload(
     patchUpload(editor, id, (current) => ({ ...current, frame }));
   });
 
-  return { id, signal: controller.signal };
+  return id;
 }
 
-/** The slot never opened, so neither did the upload. */
-function cancelUpload(editor: Editor, upload: OpenUpload): void {
-  uploadEntry(editor, upload.id)?.abort();
-  sendIngressMessage(editor, { drop: upload.id });
-}
-
-async function runUpload(
-  editor: Editor,
-  host: ImageIngressHost,
-  id: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const entry = uploadEntry(editor, id);
-  if (!entry) return;
-  try {
-    const uploaded = await host.upload({
-      file: entry.file,
-      alt: entry.alt,
-      signal,
-      onProgress: (percent) =>
-        patchUpload(editor, id, (current) =>
-          current.status.kind === "uploading" && current.status.percent === percent
-            ? current
-            : { ...current, status: { kind: "uploading", percent } },
-        ),
-    });
-    if (signal.aborted) return;
+/** Hand the bytes to the upload store, which sends them, holds the progress and any retry. */
+function sendUpload(editor: Editor, host: ImageIngressHost, id: string, file: File): void {
+  const storage = imageIngressStorage(editor);
+  if (!storage) return;
+  uploads.begin(id, storage.holder, async (signal, onProgress) => {
+    const entry = uploadEntry(editor, id);
+    const uploaded = await host.upload({ id, file, alt: entry?.alt ?? "", signal, onProgress });
     landUpload(editor, id, uploaded);
-  } catch (error) {
-    // An abort is the writer taking the picture back, not a failure to report.
-    if (signal.aborted) return;
-    patchUpload(editor, id, (current) => ({
-      ...current,
-      status: {
-        kind: "failed",
-        message: error instanceof Error ? error.message : t`That image did not upload.`,
-      },
-    }));
-  }
+  });
 }
 
-/** The bytes arrived: the picture's own node becomes the picture. */
+/**
+ * The bytes arrived: the picture's own node becomes the picture. Throws when it cannot, which the
+ * store shows on the slot as a failure: a slot out of the text that comes back retries, and
+ * resuming a finished upload lands at once.
+ */
 function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
-  const entry = uploadEntry(editor, id);
-  if (!editor || editor.isDestroyed || !entry) return;
-  const at = resolvePendingImage(editor.state, entry);
-  // The slot is gone, so there is nothing to land in. The asset stays in the
-  // project, which is where the writer put it.
-  if (!at) {
-    sendIngressMessage(editor, { drop: id });
-    return;
-  }
-  if (!editor.isEditable) {
-    patchUpload(editor, id, (current) => ({
-      ...current,
-      status: { kind: "failed", message: t`This document is not taking changes right now.` },
-    }));
-    return;
-  }
+  const entry = editor.isDestroyed ? null : uploadEntry(editor, id);
+  const at = entry && resolvePendingImage(editor.state, entry);
+  if (!entry || !at) throw new Error(t`The upload was stopped.`);
+  if (!editor.isEditable) throw new Error(t`This document is not taking changes right now.`);
   const picture = { src: uploaded.src, alt: uploaded.alt ?? entry.alt };
 
   if (entry.landing === "insert") {

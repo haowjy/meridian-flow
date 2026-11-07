@@ -1,62 +1,62 @@
 /**
- * FileDropExtension — where a dropped file's bytes go, and who takes the upload back.
+ * FileDropExtension — where a dropped file's bytes go.
  *
- * The app registers one host per mounted editor (`registerFileDropHost`): the
- * source `assets/` is in, and the function that sends a file. The door
- * (`file-drop-door.ts`) starts uploads through it; the chips draw from
- * `link-uploads.ts`. This file also owns the one rule that ends an upload the
- * writer no longer wants: its chip has left the document (undo, delete, a cut
- * that was never pasted back) for long enough that no paste is coming. The
- * upload stops then, and its file is let go after a longer wait.
+ * The app registers one host per mounted editor (`registerFileDropHost`): the source `assets/` is
+ * in, and how to send a file there. The door (`file-drop-door.ts`) starts uploads through it into
+ * the upload store (`core/uploads/upload-store.ts`), which the chips draw from and which decides
+ * when the writer has taken one back. This file tells the store which uploads the document's text
+ * still links to.
  */
 
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
+import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import { type Editor, Extension } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 
-import { linkUploads, type UploadRun } from "../links/link-uploads";
+import { type UploadWatch, uploads } from "@/core/uploads/upload-store";
 
 export const FILE_DROP_NAME = "meridianFileDrop";
 
 export type FileDropHost = {
-  /** The document whose text holds the chips: the editor's own, which the sweep reads. */
+  /** The document whose text holds the chips: the uploads' holder, which outlives this editor. */
   hostDocumentId: string;
   /** The source of that document: a dropped file lands in its `assets/`. */
   scheme: ContextUriScheme;
   /**
-   * Reserves the upload on the server and answers with the function that sends the bytes. It
-   * resolves before the chip is inserted, so no tab can ask about a file the server has not
-   * heard of; a refusal (a name, a size) rejects with the message to show, and no chip stands.
+   * Reserves the upload on the server. It resolves before the chip is inserted, so no tab can ask
+   * about a file the server has not heard of; a refusal (a name, a size) rejects with the message
+   * to show, and no chip stands.
    */
-  start(input: { documentId: string; file: File }): Promise<UploadRun>;
+  reserve(input: { documentId: string; file: File }): Promise<void>;
+  /** Sends the bytes and finishes; calling again resumes. */
+  send(input: {
+    documentId: string;
+    file: File;
+    signal: AbortSignal;
+    onProgress: (percent: number | null) => void;
+  }): Promise<UploadIntakeResult>;
 };
+
+type FileDropStorage = { host: FileDropHost | null; watch: UploadWatch | null };
 
 declare module "@tiptap/core" {
   interface Storage {
-    meridianFileDrop: { host: FileDropHost | null };
+    meridianFileDrop: FileDropStorage;
   }
 }
 
-/**
- * How long a chip may be out of the document before its upload is taken back.
- * A cut and paste inside one document puts it back within moments; an undo
- * does not.
- */
-export const ABSENT_UPLOAD_GRACE_MS = 10_000;
-/** How long a taken-back or failed upload keeps its file for a chip that returns to retry. */
-export const ABSENT_KEPT_MS = 10 * 60_000;
-/** Doc changes in a burst cost one scan. */
-const SCAN_DEBOUNCE_MS = 1_000;
-
-const docRefs = (doc: PMNode): Set<string> => {
-  const refs = new Set<string>();
+/** The documents this text links to by `doc:` ref. */
+function linkedDocuments(doc: PMNode): Set<string> {
+  const ids = new Set<string>();
   doc.descendants((node) => {
-    for (const mark of node.marks)
-      if (mark.type.name === "link" && mark.attrs.ref) refs.add(mark.attrs.ref);
+    for (const mark of node.marks) {
+      const ref = mark.type.name === "link" ? mark.attrs.ref : null;
+      if (typeof ref === "string" && ref.startsWith("doc:")) ids.add(ref.slice(4));
+    }
   });
-  return refs;
-};
+  return ids;
+}
 
 /** The host registered on this editor, or null where files cannot be dropped. */
 export function fileDropHost(editor: Editor): FileDropHost | null {
@@ -67,85 +67,37 @@ export function fileDropHost(editor: Editor): FileDropHost | null {
 export function registerFileDropHost(editor: Editor, host: FileDropHost): () => void {
   const storage = editor.storage[FILE_DROP_NAME];
   if (!storage) return () => {};
+  storage.watch?.release();
   storage.host = host;
+  const watch = uploads.watch(host.hostDocumentId, () =>
+    editor.isDestroyed ? new Set() : linkedDocuments(editor.state.doc),
+  );
+  storage.watch = watch;
   return () => {
-    if (storage.host === host) storage.host = null;
+    watch.release();
+    if (storage.host !== host) return;
+    storage.host = null;
+    storage.watch = null;
   };
 }
 
 export const FileDropExtension = Extension.create({
   name: FILE_DROP_NAME,
 
-  addStorage() {
-    return { host: null as FileDropHost | null };
+  addStorage(): FileDropStorage {
+    return { host: null, watch: null };
   },
 
   addProseMirrorPlugins() {
-    const editor = this.editor;
+    const storage = this.storage;
     return [
       new Plugin({
-        key: new PluginKey("fileDropSweep"),
-        view: () => {
-          /** When each upload's chip was first seen missing. */
-          const absentSince = new Map<string, number>();
-          let timer: ReturnType<typeof setTimeout> | null = null;
-
-          const scan = () => {
-            timer = null;
-            const host = fileDropHost(editor);
-            if (!host || editor.isDestroyed) return;
-            const waiting = linkUploads.forHolder(host.hostDocumentId);
-            if (waiting.length === 0) {
-              absentSince.clear();
-              return;
-            }
-            const refs = docRefs(editor.state.doc);
-            const now = Date.now();
-            let nextCheck: number | null = null;
-            for (const documentId of waiting) {
-              if (refs.has(`doc:${documentId}`)) {
-                absentSince.delete(documentId);
-                continue;
-              }
-              const since = absentSince.get(documentId) ?? now;
-              absentSince.set(documentId, since);
-              // Sending: taken back after the grace, its file kept. Already not sending: dropped
-              // after the longer wait.
-              const sending = linkUploads.read(documentId)?.kind === "uploading";
-              const left = since + (sending ? ABSENT_UPLOAD_GRACE_MS : ABSENT_KEPT_MS) - now;
-              let wait = left;
-              if (left <= 0) {
-                if (sending) {
-                  linkUploads.cancel(documentId);
-                  absentSince.set(documentId, now);
-                  wait = ABSENT_KEPT_MS;
-                } else {
-                  absentSince.delete(documentId);
-                  linkUploads.discard(documentId);
-                  continue;
-                }
-              }
-              nextCheck = Math.min(nextCheck ?? wait, wait);
-            }
-            if (nextCheck !== null) timer = setTimeout(scan, nextCheck);
-          };
-          const schedule = () => {
-            if (timer !== null) clearTimeout(timer);
-            timer = setTimeout(scan, SCAN_DEBOUNCE_MS);
-          };
-
-          return {
-            update(view, previous) {
-              if (view.state.doc === previous.doc) return;
-              const host = fileDropHost(editor);
-              if (host && linkUploads.forHolder(host.hostDocumentId).length > 0) schedule();
-            },
-            destroy() {
-              // The upload outlives the editor that started it; only the watching stops.
-              if (timer !== null) clearTimeout(timer);
-            },
-          };
-        },
+        key: new PluginKey("fileDropWatch"),
+        view: () => ({
+          update(view, previous) {
+            if (view.state.doc !== previous.doc) storage.watch?.changed();
+          },
+        }),
       }),
     ];
   },

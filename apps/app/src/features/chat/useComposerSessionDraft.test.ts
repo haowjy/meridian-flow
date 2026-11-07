@@ -76,7 +76,7 @@ describe("session composer drafts", () => {
     doc.content?.[0]?.content?.push({
       type: "composerUpload",
       attrs: {
-        upload: { intakeId: "pending", name: "pending.png", state: "pending", error: null },
+        upload: { intakeId: "pending", name: "pending.png" },
       },
     });
     const submitted = serializeComposerDraft(doc, 7);
