@@ -74,7 +74,7 @@ export interface FileAccess {
     options?: { branchViews?: ReadonlyMap<DocumentId, TreeView> },
   ): Promise<Map<DocumentId, FileDecision>>;
   /**
-   * History reads (change-trail detail) keep a deleted document's captured
+   * History reads keep a deleted document's captured
    * evidence: the person term alone decides whether they may see it, and the
    * answer says whether the document is still there. Null when they may not.
    */

@@ -1,4 +1,4 @@
-/** Active destination editors used by passage and change-trail navigation. */
+/** Active destination editors used by passage navigation. */
 import type { Editor } from "@tiptap/core";
 import type * as Y from "yjs";
 import type { DocumentSession } from "./document-session";

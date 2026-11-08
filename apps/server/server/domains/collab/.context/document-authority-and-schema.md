@@ -107,7 +107,7 @@ under test and emits a diagnostic in production.
 A whole-document write aligns assigned nodes against the runtime copy through
 agent-edit, so unchanged items retain identity and concurrent admissions merge
 as peers. Do not lower it with a whole-fragment state-vector diff: that loses
-provenance and can reattribute kept prose. Durable projection and trail actions
+provenance and can reattribute kept prose. Durable projection actions
 serialize a private scratch document from the committed update, never a warm
 live room that a WebSocket may mutate during serialization. Atomic Apply
 records that committed live projection in its own transaction; see [Apply](apply.md).

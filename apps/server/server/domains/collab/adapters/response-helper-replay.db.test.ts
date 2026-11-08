@@ -16,7 +16,7 @@ import {
   schema,
   THREAD_ID,
   WORK_ID,
-} from "../test-support/change-trail-postgres-harness.js";
+} from "../test-support/collab-postgres-harness.js";
 import {
   createResponse,
   responseContext,

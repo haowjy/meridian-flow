@@ -44,13 +44,6 @@ export { bodyRange, destinationFreeBlocks, grepBlockText } from "./model/grep-te
 export type { Hashline } from "./model/hashline.js";
 export { splitHashline, toHashline } from "./model/hashline.js";
 export { markdownPlainText, markdownTextView } from "./model/markdown-text-view.js";
-export type { LiveBlockRangeTarget } from "./model/navigation-target.js";
-export {
-  decodeNavigationPosition,
-  encodeNavigationPosition,
-  isBlockItemId,
-  validateLiveBlockRange,
-} from "./model/navigation-target.js";
 export {
   markdownSections,
   normalizeRequestedSlug,

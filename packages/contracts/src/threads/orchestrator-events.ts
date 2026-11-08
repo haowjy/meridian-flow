@@ -225,29 +225,6 @@ export type OrchestratorEvent =
     }
   | { type: "turn.completed"; turn: Turn }
   | { type: "turn.cancelled"; turn: Turn }
-  | {
-      type: "turn.change_trail_updated";
-      eventId: string;
-      threadId: string;
-      trailId: string;
-      turnId: string | null;
-      version: number;
-      counts: { changes: number; documents: number };
-    }
-  | {
-      type: "turn.change_trail_settled";
-      eventId: string;
-      threadId: string;
-      trailId: string;
-      turnId: string | null;
-      version: number;
-      shell: {
-        counts: { changes: number; documents: number };
-        documents: Array<{ documentId: string; title: string }>;
-        wordsAdded: number | null;
-        wordsRemoved: number | null;
-      };
-    }
   | { type: "turn.error"; turn: Turn; error: MeridianError };
 
 export type { AgentReport, SpawnResult };

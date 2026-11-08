@@ -49,7 +49,7 @@ import {
   TURN_ID,
   USER_ID,
   WORK_ID,
-} from "./test-support/change-trail-postgres-harness.js";
+} from "./test-support/collab-postgres-harness.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import { readResolvedDraft } from "./test-support/draft-store-seam.js";
 

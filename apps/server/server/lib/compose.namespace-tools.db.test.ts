@@ -407,9 +407,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await placement(CH1)).toMatchObject({ name: "intro" });
       expect(await script.text("intro")).toContain("Chapter One.");
 
-      // The writer's card Undo of the first turn moves it back; its human row has no thread,
-      // and still dirties that turn's trail.
-      await db.delete(schema.changeTrailDirtyLog);
+      // The writer's card Undo of the first turn moves it back.
       const reversed = await script.runtime.ports.documentSync.reverseThreadContext({
         threadId: THREAD.threadId as never,
         userId: USER_ID as never,
@@ -418,11 +416,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(reversed.status, JSON.stringify(reversed)).toMatch(/reversed|partial/);
       expect(await placement(CH1)).toMatchObject({ name: "ch1 (2)" });
-      const dirty = await db
-        .select({ turnId: schema.changeTrailDirtyLog.turnId })
-        .from(schema.changeTrailDirtyLog)
-        .where(eq(schema.changeTrailDirtyLog.threadId, THREAD.threadId));
-      expect(dirty.map((row) => row.turnId)).toContain(THREAD.turnId);
 
       // A compound Undo authorizes the restored live document for the older text step.
       const compound = await runtimes

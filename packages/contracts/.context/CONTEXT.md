@@ -25,9 +25,8 @@ stay with their emitting transport.
   URLs are render-time details only.
 - Blocks describe the writer transcript. Model-only document-text elisions belong in
   compaction metadata, never in transcript block lifecycle fields.
-- Durable trail contracts stay lifecycle-neutral. Receiving-writer attention is computed
-  per connection as `ChangeEventProjection.swept`, a live-session hint that never enters
-  `TrailChangeV1` or persisted projections.
+- Receiving-writer attention is computed per connection as `ChangeEventProjection.swept`,
+  a live-session hint that never enters persisted projections.
 - Thread snapshots compose the canonical `threadSchema` and `turnSchema`. Identity lookups
   are explicit projections and cannot stand in for full DTO validation.
 

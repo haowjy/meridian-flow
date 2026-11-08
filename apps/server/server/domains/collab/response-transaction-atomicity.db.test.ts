@@ -17,7 +17,7 @@ import {
   runInDrizzleTransaction,
   schema,
   WORK_ID,
-} from "./test-support/change-trail-postgres-harness.js";
+} from "./test-support/collab-postgres-harness.js";
 
 const _DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workHandle: "w1" } as const;
 
@@ -29,7 +29,7 @@ if (!enabled || !process.env.DATABASE_URL) {
 // A live write records its authoring response, so this reply is a real response row.
 const MIXED_RETRY_RESPONSE = "00000000-0000-4000-8000-000000000831";
 
-describe("change trail (postgres)", () => {
+describe("response transaction atomicity (postgres)", () => {
   const db = createTestDatabase();
   beforeEach(() => resetDatabase(db));
   afterAll(() => closeDatabase(db));

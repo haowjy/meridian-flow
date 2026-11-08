@@ -11,7 +11,7 @@ import {
   THREAD_ID,
   TURN_ID,
   WORK_ID,
-} from "./change-trail-postgres-harness.js";
+} from "./collab-postgres-harness.js";
 export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) {
   const harness = createHarness(db),
     view = harness.crossWorkProbeFixture(),

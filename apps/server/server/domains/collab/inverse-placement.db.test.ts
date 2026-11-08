@@ -11,7 +11,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
-} from "./test-support/change-trail-postgres-harness.js";
+} from "./test-support/collab-postgres-harness.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();

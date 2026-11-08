@@ -41,7 +41,7 @@ the subscription. A first send keeps the subscriber inactive while the chat is p
 creation.
 
 Activity and durable-projection subscribers without a cursor start at the server's
-current head. `useThreadDurableProjections` reads trails and Work binding on mount and
+current head. `useThreadWorkProjections` reads the Work binding on mount and
 on each acknowledgment, because events between the mount read and head sampling are
 omitted from replay. Mount reads also cover joining an already active shared lease,
 which produces no new acknowledgment.

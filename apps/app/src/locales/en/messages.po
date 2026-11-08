@@ -973,8 +973,8 @@ msgstr "Adding {name} to {area}"
 
 #: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "After"
-msgstr "After"
+#~ msgid "After"
+#~ msgstr "After"
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
@@ -1230,8 +1230,8 @@ msgstr "Back to workspace"
 
 #: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
-msgid "Before"
-msgstr "Before"
+#~ msgid "Before"
+#~ msgstr "Before"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #. placeholder {1}: formatPreset(amountOptions.maxUsd)
@@ -2151,8 +2151,8 @@ msgid "Couldn't load agents."
 msgstr "Couldn't load agents."
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Couldn't load change details."
-msgstr "Couldn't load change details."
+#~ msgid "Couldn't load change details."
+#~ msgstr "Couldn't load change details."
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "Couldn't load chats."
@@ -5501,8 +5501,8 @@ msgid "That location does not exist"
 msgstr "That location does not exist"
 
 #: src/features/chat/ChangeViewRows.tsx
-msgid "That part of the chapter is no longer available."
-msgstr "That part of the chapter is no longer available."
+#~ msgid "That part of the chapter is no longer available."
+#~ msgstr "That part of the chapter is no longer available."
 
 #: src/features/editor/PassageNotice.tsx
 msgid "That passage changed after this search."
@@ -5841,16 +5841,16 @@ msgid "This change only applies together with the rest of the document. Apply th
 msgstr "This change only applies together with the rest of the document. Apply the whole document instead."
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "This chapter is no longer available, so its change details can't be shown."
-msgstr "This chapter is no longer available, so its change details can't be shown."
+#~ msgid "This chapter is no longer available, so its change details can't be shown."
+#~ msgstr "This chapter is no longer available, so its change details can't be shown."
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "This chapter is no longer available. Copy any saved text you want to keep."
-msgstr "This chapter is no longer available. Copy any saved text you want to keep."
+#~ msgid "This chapter is no longer available. Copy any saved text you want to keep."
+#~ msgstr "This chapter is no longer available. Copy any saved text you want to keep."
 
 #: src/features/chat/ChangeViewRows.tsx
-msgid "This chapter is no longer available. The saved excerpts remain below."
-msgstr "This chapter is no longer available. The saved excerpts remain below."
+#~ msgid "This chapter is no longer available. The saved excerpts remain below."
+#~ msgstr "This chapter is no longer available. The saved excerpts remain below."
 
 #: src/features/editor/EditorView.tsx
 #: src/features/editor/SessionEditor.tsx
@@ -6222,7 +6222,6 @@ msgstr "Trash"
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
-#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"

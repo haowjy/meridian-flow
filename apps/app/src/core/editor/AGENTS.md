@@ -1,6 +1,6 @@
 # core/editor — collaborative editor runtime
 
-This directory owns the browser TipTap schema, Yjs document-session binding, and editor-only projections. It is not the server persistence or change-trail authority;
+This directory owns the browser TipTap schema, Yjs document-session binding, and editor-only projections. It is not the server persistence authority;
 feature surfaces consume the headless seams here.
 
 ## Mental model

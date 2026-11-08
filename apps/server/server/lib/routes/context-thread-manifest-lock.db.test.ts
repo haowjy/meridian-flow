@@ -133,10 +133,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await deleteDrizzleRows(db, [
-        schema.changeTrailDeliveryOutbox,
-        schema.changeTrailDocumentDetails,
-        schema.changeTrailDocumentOccurrences,
-        schema.changeTrailShells,
         schema.pendingNotices,
         schema.agentEditWidCounters,
         schema.draftWriteJournal,

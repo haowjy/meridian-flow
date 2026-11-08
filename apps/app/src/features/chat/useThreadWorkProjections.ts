@@ -1,4 +1,4 @@
-/** Persistent owner for durable thread projections, including Work binding and trails. */
+/** Persistent owner for a thread's Work-binding subscription: projected signals, receipts and gap resync. */
 import { EventType } from "@meridian/contracts/protocol";
 import {
   decodeWorkHandle,
@@ -7,13 +7,7 @@ import {
   type WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  applyTrailShellTransition,
-  emptyTrailShellState,
-  listChangeTrailShells,
-  reconcileTrailShells,
-} from "@/client/change-trails";
+import { useCallback, useEffect, useRef } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import {
   convergeThreadWorkBinding,
@@ -23,20 +17,6 @@ import { convergeWorkProjection } from "@/client/query/work-projection-cache";
 import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
-
-type TrailEventValue = {
-  threadId: string;
-  trailId: string;
-  turnId: string | null;
-  version: number;
-  counts?: { changes: number; documents: number };
-  shell?: {
-    counts: { changes: number; documents: number };
-    documents: Array<{ documentId: string; title: string }>;
-    wordsAdded: number | null;
-    wordsRemoved: number | null;
-  };
-};
 
 function decodeWorkProjection(
   threadId: string,
@@ -83,7 +63,7 @@ function decodeWorkReceipt(event: { type: string; metadata?: unknown }) {
   return parseWorkReceipt((metadata as Record<string, unknown>).workReceipt);
 }
 
-export function useThreadDurableProjections({
+export function useThreadWorkProjections({
   threadId,
   projectId,
 }: {
@@ -94,69 +74,23 @@ export function useThreadDurableProjections({
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   const queryClient = useQueryClient();
   const accountSignal = useOptionalAccountEpochSignal();
-  const [state, setState] = useState(emptyTrailShellState);
   /**
    * Subscription identity, bumped when the thread changes or the hook unmounts.
    * Only responses belonging to the current subscription may commit.
    *
    * Deliberately NOT bumped per trigger: doing that made every trigger cancel
-   * the request the previous one started, so a burst of gaps or settled events
-   * left the list permanently empty — each response arrived to find its own
-   * counter already superseded. Freshness is handled by coalescing below.
+   * the request the previous one started, so a burst of gaps left the binding
+   * stale — each response arrived to find its own counter already superseded.
+   * Freshness is handled by coalescing below.
    */
   const generation = useRef(0);
-  const reconciled = useRef(false);
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /**
-   * At most one list request is in flight per generation. Triggers arriving
-   * during one ask for a single follow-up instead of racing it, so a burst of N
-   * triggers costs two requests rather than N, and every request that starts is
-   * allowed to commit. `listChangeTrailShells` returns whole server state, so
-   * the follow-up subsumes everything the burst would have asked for.
-   */
-  const inFlight = useRef(false);
-  const again = useRef(false);
   /**
    * The Work-binding resync fetches threads + works and
    * invalidates the thread namespace. A gap burst must not run it per gap, so it
-   * coalesces like the trail list above: one in flight, one follow-up.
+   * coalesces: one in flight, one follow-up.
    */
   const bindingInFlight = useRef(false);
   const bindingAgain = useRef(false);
-  const reconcile = useCallback(
-    async (requestGeneration: number) => {
-      if (generation.current !== requestGeneration) return;
-      if (inFlight.current) {
-        again.current = true;
-        return;
-      }
-      inFlight.current = true;
-      let failed = false;
-      try {
-        const shells = await listChangeTrailShells(threadId);
-        if (generation.current !== requestGeneration) return;
-        setState((current) => reconcileTrailShells(current, shells));
-        reconciled.current = true;
-      } catch {
-        failed = true;
-      } finally {
-        inFlight.current = false;
-      }
-      if (generation.current !== requestGeneration) return;
-      if (failed) {
-        again.current = false;
-        if (retryTimer.current) clearTimeout(retryTimer.current);
-        retryTimer.current = setTimeout(() => void reconcile(requestGeneration), 1_000);
-        return;
-      }
-      if (again.current) {
-        again.current = false;
-        void reconcile(requestGeneration);
-      }
-    },
-    [threadId],
-  );
-
   const resyncBinding = useCallback(
     async (requestGeneration: number) => {
       if (!projectId || generation.current !== requestGeneration) return;
@@ -191,21 +125,14 @@ export function useThreadDurableProjections({
 
   useEffect(() => {
     if (isPendingCreation) return;
-    setState(emptyTrailShellState());
-    reconciled.current = false;
-    inFlight.current = false;
-    again.current = false;
     bindingInFlight.current = false;
     bindingAgain.current = false;
     const threadGeneration = ++generation.current;
-    void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
-    void reconcile(threadGeneration);
     void resyncBinding(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
       onLiveState: () => {
         if (accountSignal?.aborted) return;
         // Head subscriptions omit events between the mount reads and acknowledgment.
-        void reconcile(threadGeneration);
         void resyncBinding(threadGeneration);
       },
       onEvent: ({ seq, event }) => {
@@ -226,55 +153,24 @@ export function useThreadDurableProjections({
             { source: "projected", ...projection },
             accountSignal ?? undefined,
           );
-          return;
         }
-        if (
-          event.type !== EventType.CUSTOM ||
-          (event.name !== "meridian.turn_change_trail.updated" &&
-            event.name !== "meridian.turn_change_trail.settled")
-        )
-          return;
-        const value = event.value as TrailEventValue;
-        if (!value || value.threadId !== threadId || typeof value.version !== "number") return;
-        if (!reconciled.current || event.name.endsWith("settled")) {
-          void reconcile(threadGeneration);
-        }
-        setState((current) => {
-          return applyTrailShellTransition(current, {
-            ...value,
-            kind: event.name.endsWith("settled") ? "settled" : "updated",
-          });
-        });
       },
       onGap: () => {
         if (accountSignal?.aborted) return;
-        reconciled.current = false;
-        setState((current) => (current.gapPending ? current : { ...current, gapPending: true }));
-        // Deliberately NOT dropping change-trail detail here. Detail is immutable
-        // for a given (trailId, version) and the detail query is keyed by version,
-        // so a changed trail refetches on its own once the reconcile below lands.
-        // Dropping it per gap destroyed in-flight fetches, and threads whose
-        // journal outgrows the server's replay window gap continuously — there,
-        // an expanded card's change rows could never finish loading at all.
-        void reconcile(threadGeneration);
         void resyncBinding(threadGeneration);
       },
     });
     return () => {
       generation.current += 1;
-      if (retryTimer.current) clearTimeout(retryTimer.current);
       unsubscribe();
-      void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     };
   }, [
     accountSignal,
     projectId,
     queryClient,
-    reconcile,
     resyncBinding,
     threadId,
     transport,
     isPendingCreation,
   ]);
-  return { changeTrails: state };
 }

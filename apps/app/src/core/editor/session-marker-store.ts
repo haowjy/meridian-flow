@@ -1,6 +1,5 @@
 /** Ephemeral, session-owned AI change markers and their replace-set lifecycle. */
-import type { NavigationTargetV1 } from "@meridian/contracts";
-import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
+import type { ChangeEventWsMessage, NavigationTargetV1 } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 
 export type MarkerGroup = { trailId: string; documentId: string };
