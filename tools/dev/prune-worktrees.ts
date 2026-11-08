@@ -60,8 +60,9 @@ const USAGE = `Usage:
   pnpm dev:prune-worktrees -- -h|--help
 
 Target values may be a Meridian work id, worktree path, local branch name, or PR number (123 or #123).
---force permits shells/tmux in the target directory after stopping its managed dev stack and Nx daemon.
-It never kills those shells/panes, discards changes, or bypasses merge proof. Other live processes still block.
+Shells and tmux panes sitting in the target directory never block; they are left alive and listed.
+--force also stops the target's managed dev stack and Nx daemon when their processes would block.
+It never discards changes or bypasses merge proof. Other live processes still block.
 Batch cleanup via --auto is advanced and not yet trusted for routine use.
 --orphans stops managed dev sessions for missing checkouts; it never deletes branches or databases.`;
 
@@ -195,7 +196,7 @@ function printPlan(plan: CleanupPlan, force: boolean): void {
   );
   if (force)
     console.log(
-      "Force policy: stop managed services, preserve shells/tmux, refuse other remaining processes.",
+      "Force policy: stop managed services, then refuse any process other than shells/tmux.",
     );
   for (const target of plan.targets) {
     console.log(`\n- worktree: ${target.worktree.path}`);
@@ -853,11 +854,8 @@ async function revalidateCleanupReadiness(
       return { ready: false, reasons: ["worktree branch or HEAD changed since planning"] };
     }
     const workItems = await collectMeridianWorkItems(primaryCwd);
-    const policy = !force
-      ? "idle"
-      : action.kind === "stop-dev" || action.kind === "stop-nx"
-        ? "stop-managed"
-        : "preserve-shells";
+    const policy =
+      force && (action.kind === "stop-dev" || action.kind === "stop-nx") ? "stop-managed" : "idle";
     const readiness = inspectAutoCleanupReadiness(target.worktree.path, workItems, policy);
     if (action.kind === "remove-worktree" && readiness.ready) {
       for (const warning of readiness.evidence.warnings ?? [])

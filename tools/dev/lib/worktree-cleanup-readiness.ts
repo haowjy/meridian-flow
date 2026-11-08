@@ -45,6 +45,8 @@ interface TmuxPane {
   readonly sessionName: string;
   readonly paneId: string;
   readonly cwd: string;
+  /** On the `pnpm dev` socket rather than the human's own server. */
+  readonly dev: boolean;
 }
 
 function tmuxSocketPath(): string | undefined {
@@ -102,8 +104,11 @@ export interface AutoCleanupReadiness {
   readonly warnings?: readonly string[];
 }
 
-/** Force permits managed shutdown first, then only shells/tmux may remain. */
-export type CleanupReadinessPolicy = "idle" | "stop-managed" | "preserve-shells";
+/**
+ * Shells and the human's tmux panes never block: they are left alive with a warning.
+ * `stop-managed` additionally lets --force run its dev-stack and Nx shutdown first.
+ */
+export type CleanupReadinessPolicy = "idle" | "stop-managed";
 
 export type AutoCleanupReadinessDecision =
   | { readonly ready: true; readonly evidence: AutoCleanupReadiness }
@@ -150,7 +155,7 @@ export function decideAutoCleanupReadiness(
   if (policy === "idle" && input.liveDevSessionNames.length > 0) {
     reasons.push(`live dev sessions: ${input.liveDevSessionNames.join(", ")}`);
   }
-  const preserved = new Set(policy === "preserve-shells" ? input.preservableProcessIds : []);
+  const preserved = new Set(input.preservableProcessIds);
   const blockingPids = input.liveProcessIds.filter((pid) => !preserved.has(pid));
   if (policy !== "stop-managed" && blockingPids.length > 0) {
     reasons.push(`live processes have cwd under worktree: ${blockingPids.join(", ")}`);
@@ -162,20 +167,14 @@ export function decideAutoCleanupReadiness(
   }
   reasons.push(...input.inspectionFailures);
 
-  const warnings =
-    policy === "preserve-shells"
-      ? [
-          ...input.liveProcessIds
-            .filter((pid) => preserved.has(pid))
-            .map(
-              (pid) =>
-                `shell/tmux PID ${pid} remains in ${input.worktreePath}; cd out after removal`,
-            ),
-          ...(input.preservedPaneDescriptions ?? []).map(
-            (pane) => `tmux ${pane} remains in ${input.worktreePath}; cd out after removal`,
-          ),
-        ]
-      : [];
+  const warnings = [
+    ...input.liveProcessIds
+      .filter((pid) => preserved.has(pid))
+      .map((pid) => `shell/tmux PID ${pid} remains in ${input.worktreePath}; cd out after removal`),
+    ...(input.preservedPaneDescriptions ?? []).map(
+      (pane) => `tmux ${pane} remains in ${input.worktreePath}; cd out after removal`,
+    ),
+  ];
 
   return reasons.length === 0
     ? {
@@ -261,13 +260,15 @@ function currentUserProcessCwds(): {
 
 const PANE_FORMAT = "#{session_name}\t#{pane_id}\t#{pane_current_path}";
 
-function parsePanes(stdout: string): TmuxPane[] {
+function parsePanes(stdout: string, dev: boolean): TmuxPane[] {
   return stdout
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
       const [sessionName, paneId, paneCwd] = line.split("\t", 3);
-      return sessionName && paneId && paneCwd ? { sessionName, paneId, cwd: paneCwd } : undefined;
+      return sessionName && paneId && paneCwd
+        ? { sessionName, paneId, cwd: paneCwd, dev }
+        : undefined;
     })
     .filter((entry): entry is TmuxPane => entry !== undefined);
 }
@@ -298,7 +299,7 @@ function devSocketPanes(cwd: string): {
       failures: [`could not inspect tmux dev sessions${detail ? `: ${detail}` : ""}`],
     };
   }
-  return { entries: parsePanes(result.stdout ?? ""), failures: [] };
+  return { entries: parsePanes(result.stdout ?? "", true), failures: [] };
 }
 
 /** The human's own server (`$TMUX` or the default socket) plus the dev socket. */
@@ -345,7 +346,7 @@ function humanServerPanes(cwd: string): {
     };
   }
 
-  const entries = parsePanes(result.stdout ?? "");
+  const entries = parsePanes(result.stdout ?? "", false);
   return { entries, failures: [] };
 }
 
@@ -451,9 +452,10 @@ function decideForWorktree(
     )
     .map((workItem) => workItem.id);
   const metadata = readDevSessionName(worktreePath);
-  const paneSessions = liveness.tmuxPanes
-    .filter((pane) => isWithinPath(pane.cwd, normalizedPath))
-    .map((pane) => pane.sessionName);
+  const panesInWorktree = liveness.tmuxPanes.filter((pane) =>
+    isWithinPath(pane.cwd, normalizedPath),
+  );
+  const paneSessions = panesInWorktree.filter((pane) => pane.dev).map((pane) => pane.sessionName);
   const metadataSessionIsLive =
     metadata.sessionName &&
     liveness.tmuxPanes.some((pane) => pane.sessionName === metadata.sessionName)
@@ -486,8 +488,8 @@ function decideForWorktree(
       preservableProcessIds: liveness.processCwds
         .filter((entry) => entry.preservable)
         .map((entry) => entry.pid),
-      preservedPaneDescriptions: liveness.tmuxPanes
-        .filter((pane) => isWithinPath(pane.cwd, normalizedPath))
+      preservedPaneDescriptions: panesInWorktree
+        .filter((pane) => !pane.dev)
         .map((pane) => `${pane.sessionName} pane ${pane.paneId}`),
     },
     policy,
