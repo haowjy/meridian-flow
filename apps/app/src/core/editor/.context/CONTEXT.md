@@ -109,8 +109,9 @@ desired map, nested suspension republished only at the outer boundary. Draft
 review rotates the document client while migrating suspended fields. A second
 presence write path or cached client ID creates ghost carets.
 
-Live peer marks, session markers, and review decorations are projections, never
-manuscript content. The session marker store is ephemeral and group revisions
+Peer marks, session markers, and review decorations are projections, never
+manuscript content. Peer marks are dormant: no server code sends `change_event`,
+so the marker store stays empty ([peer-marks](../../../features/editor/surfaces/peer-marks/AGENTS.md)). The session marker store is ephemeral and group revisions
 fence delayed replays. Peer-mark popovers open the owning conversation;
 Undo/Redo of an AI change remains the producing-turn receipt's authority.
 

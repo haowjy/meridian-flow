@@ -111,6 +111,9 @@ and reports a refusal on that excerpt; a pending Copied reset never erases it.
 
 ## Peer marks
 
+Dormant: no server code sends `change_event`, so no mark renders
+([peer-marks](../surfaces/peer-marks/AGENTS.md)). The rules below describe the code as it stands.
+
 The peer-mark surface reads the projection plugin's click/Enter/caret state.
 The editor feature holds no duplicate mark state. Review drafts without a
 projection naturally stand down. Receipt Undo/Redo is the sole reversal authority
