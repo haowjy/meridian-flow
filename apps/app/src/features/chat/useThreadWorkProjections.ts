@@ -153,7 +153,6 @@ export function useThreadWorkProjections({
             { source: "projected", ...projection },
             accountSignal ?? undefined,
           );
-          return;
         }
       },
       onGap: () => {
