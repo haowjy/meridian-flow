@@ -181,6 +181,9 @@ export function convergeThreadWorkBinding(
       refreshLists: false,
       workIds: ids.size ? ids : "all",
       contextTrees: "work-scoped",
+      // Runs on every mount: the snapshot already carries the Work (`patchSnapshot`), and its
+      // reads belong to the thread sync alone.
+      skipSnapshot: true,
     });
     convergeWorkProjection(client, { kind: "binding", projectId });
   });
