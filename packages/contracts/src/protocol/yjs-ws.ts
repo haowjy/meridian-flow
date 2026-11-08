@@ -29,23 +29,20 @@ export type NavigationTargetV1 =
     }
   | { kind: "unavailable"; reason: string };
 
-export const navigationTargetV1Schema: z.ZodType<NavigationTargetV1> = z.discriminatedUnion(
-  "kind",
-  [
-    z.object({
-      kind: z.literal("live_block_range"),
-      relStart: z.string(),
-      relEnd: z.string(),
-      targetBlockId: z.object({ clientID: yjsIntegerSchema, clock: yjsIntegerSchema }),
-    }),
-    z.object({
-      kind: z.literal("deletion_boundary"),
-      position: z.string(),
-      affinity: z.enum(["before_next", "after_previous", "document_start"]),
-    }),
-    z.object({ kind: z.literal("unavailable"), reason: z.string() }),
-  ],
-);
+const navigationTargetV1Schema: z.ZodType<NavigationTargetV1> = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("live_block_range"),
+    relStart: z.string(),
+    relEnd: z.string(),
+    targetBlockId: z.object({ clientID: yjsIntegerSchema, clock: yjsIntegerSchema }),
+  }),
+  z.object({
+    kind: z.literal("deletion_boundary"),
+    position: z.string(),
+    affinity: z.enum(["before_next", "after_previous", "document_start"]),
+  }),
+  z.object({ kind: z.literal("unavailable"), reason: z.string() }),
+]);
 
 export type ChangeEventProjection = {
   changeId: string;
@@ -64,13 +61,14 @@ export interface ChangeEventWsMessage {
   threadId: string;
   trailId: string;
   /**
-   * Changes are a REPLACE-SET for `(trailId, documentId)`; `trailId` groups the changes of one turn. Revisions increase
-   * monotonically for that key; clients replace the set and drop stale messages.
+   * Changes are a REPLACE-SET for `(trailId, documentId)`; `trailId` groups the changes of one
+   * turn. Revisions increase monotonically for that key; clients replace the set and drop stale
+   * messages.
    */
   projectionRevision: number;
   /**
-   * Authorship drives identity and the conversation link. The writer arm is reserved for future writer-push
-   * broadcasts; current change-event producers emit only agent ownership.
+   * Authorship drives identity and the conversation link. The writer arm is reserved for future
+   * writer-push broadcasts. No server producer emits change events today.
    */
   author:
     | { kind: "agent"; threadId: string; turnId: string | null }
