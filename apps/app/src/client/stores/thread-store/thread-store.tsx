@@ -176,7 +176,8 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               turnChanged(threadId, observation.turnId, observation.status, { snapshot: false });
               break;
             case "read":
-              if (observation.applied) readApplied(threadId, observation.read);
+              if (observation.applied && !observation.cached)
+                readApplied(threadId, observation.read);
               break;
             case "error":
               announceError(observation.error.message || "Thread stream failed");
