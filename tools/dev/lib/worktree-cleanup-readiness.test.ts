@@ -104,12 +104,12 @@ describe("decideAutoCleanupReadiness", () => {
     }
   });
 
-  it("force permits shutdown then preserves only known shells without bypassing ownership gates", () => {
+  it("leaves only known shells alive, and force permits shutdown, without bypassing ownership gates", () => {
     const input = {
       worktreePath: "/repo/wt/merged",
       clean: true,
       activeWorkItemIds: [],
-      liveDevSessionNames: ["user-session"],
+      liveDevSessionNames: [],
       liveProcessIds: [123, 456],
       preservableProcessIds: [123],
       preservedPaneDescriptions: ["user-session pane %7"],
@@ -117,18 +117,18 @@ describe("decideAutoCleanupReadiness", () => {
       inspectionFailures: [],
     };
     expect(decideAutoCleanupReadiness(input, "stop-managed").ready).toBe(true);
-    expect(decideAutoCleanupReadiness(input, "preserve-shells")).toMatchObject({
+    expect(decideAutoCleanupReadiness(input)).toMatchObject({
       ready: false,
       reasons: ["live processes have cwd under worktree: 456"],
     });
     const afterShutdown = { ...input, liveProcessIds: [123] };
-    expect(decideAutoCleanupReadiness(afterShutdown, "preserve-shells")).toMatchObject({
+    expect(decideAutoCleanupReadiness(afterShutdown)).toMatchObject({
       ready: true,
       evidence: {
         warnings: [expect.stringContaining("PID 123"), expect.stringContaining("pane %7")],
       },
     });
-    for (const policy of ["stop-managed", "preserve-shells"] as const) {
+    for (const policy of ["stop-managed", "idle"] as const) {
       expect(decideAutoCleanupReadiness({ ...afterShutdown, clean: false }, policy).ready).toBe(
         false,
       );
