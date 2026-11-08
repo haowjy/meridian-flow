@@ -1,6 +1,9 @@
 [dependencies.meridian-dev-workflow]
 url = "https://github.com/haowjy/meridian-dev-workflow"
 
+[dependencies.creative-writing-skills]
+url = "https://github.com/haowjy/creative-writing-skills"
+
 [settings]
 targets = [
     ".opencode",
