@@ -31,7 +31,7 @@ import {
   THREAD_ID,
   USER_ID,
   WORK_ID,
-} from "./test-support/change-trail-postgres-harness.js";
+} from "./test-support/collab-postgres-harness.js";
 import { seedSecondWork, THREAD_B_ID, WORK_B_ID } from "./test-support/cross-work-probe-harness.js";
 import {
   createResponse,

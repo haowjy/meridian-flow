@@ -10,7 +10,6 @@ import type { Database } from "@meridian/database";
 import {
   agentEditWidCounters,
   applyCommandEffects,
-  changeTrailDocumentDetails,
   documentBlockRooms,
   documentDrafts,
   documentEdits,
@@ -217,9 +216,6 @@ export async function releaseDocumentStorage(
       ),
     );
   await tx.delete(applyCommandEffects).where(inArray(applyCommandEffects.documentId, list));
-  await tx
-    .delete(changeTrailDocumentDetails)
-    .where(inArray(changeTrailDocumentDetails.documentId, list));
   await tx.delete(pushLineage).where(inArray(pushLineage.documentId, list));
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));

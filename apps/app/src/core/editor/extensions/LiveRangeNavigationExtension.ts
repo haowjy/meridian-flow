@@ -1,4 +1,4 @@
-/** Imperative, temporary highlighting for a validated Yjs trail range or deletion boundary. */
+/** Imperative, temporary highlighting for a validated Yjs range or deletion boundary. */
 
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";

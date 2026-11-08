@@ -17,7 +17,7 @@ import {
   createTestDatabase,
   resetDatabase,
   THREAD_ID,
-} from "./test-support/change-trail-postgres-harness.js";
+} from "./test-support/collab-postgres-harness.js";
 import { commitDraftEdit } from "./test-support/draft-review-requests.js";
 
 const db = createTestDatabase();

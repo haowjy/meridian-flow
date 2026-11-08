@@ -10,7 +10,7 @@ import {
   ALPHA_ID,
   closeDatabase,
   runInDrizzleTransaction,
-} from "../test-support/change-trail-postgres-harness.js";
+} from "../test-support/collab-postgres-harness.js";
 import { createDrizzleDraftReplayJournalReads } from "./drizzle-draft-journal-reads.js";
 
 const { createDb } = await import("@meridian/database");

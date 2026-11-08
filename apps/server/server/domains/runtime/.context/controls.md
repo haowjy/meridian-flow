@@ -79,7 +79,7 @@ starts in the mode the writer sees (`effectiveWriteMode`: the pending switch's,
 else the applied one); a subagent keeps its parent's applied mode, which is the
 running reply's.
 
-**Undo seam.** The switch turn owns no document edits: no change-trail rows, no
+**Undo seam.** The switch turn owns no document edits: no edit rows, no
 receipt, nothing undoable. Because the yield ends the execution, writes before and
 after a switch always belong to different turns and responses, so no edit or receipt
 spans a mode change. Keep both true.

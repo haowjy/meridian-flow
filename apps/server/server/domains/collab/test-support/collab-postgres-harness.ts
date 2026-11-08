@@ -1,4 +1,4 @@
-/** Focused real-Postgres harness for change-trail durability tests. */
+/** Focused real-Postgres harness for collab durability tests. */
 
 import {
   createAgentEditCodecFactory,
@@ -71,7 +71,6 @@ export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import
 const { createDrizzleWorkBranchPendingStore } = await import(
   "../adapters/drizzle-work-branch-pending.js"
 );
-const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
 const { createBranchReviewItems } = await import("../domain/branch-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
 const { createFixtureDraftStore } = await import("./fixture-draft-store.js");
@@ -151,7 +150,7 @@ export const DEFAULT_SCENARIO_IDS = {
   THREAD_ID,
   TURN_ID,
 };
-export type ChangeTrailScenarioIds = typeof DEFAULT_SCENARIO_IDS;
+export type CollabScenarioIds = typeof DEFAULT_SCENARIO_IDS;
 
 export async function resetDatabase(db: Database): Promise<void> {
   // Clear the graph in this runner-owned disposable database using FK-ordered deletes.
@@ -162,7 +161,7 @@ export async function resetDatabase(db: Database): Promise<void> {
 /** Independent rows let warm and cold runs coexist without wiping durable evidence. */
 export async function seedDatabase(
   db: Database,
-  ids: ChangeTrailScenarioIds = DEFAULT_SCENARIO_IDS,
+  ids: CollabScenarioIds = DEFAULT_SCENARIO_IDS,
 ): Promise<void> {
   const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = ids;
   await db
@@ -261,8 +260,8 @@ export function markdownFromUpdate(update: Uint8Array): string {
     doc.destroy();
   }
 }
-export type ChangeTrailHarnessOptions = {
-  ids?: ChangeTrailScenarioIds;
+export type CollabHarnessOptions = {
+  ids?: CollabScenarioIds;
   /** Default: every grant is confirmed. */
   fileAccess?: import("../../file-policy/index.js").FileAccess;
   /** Default: a static scope, whose tokens ignore the tree. */
@@ -280,7 +279,7 @@ export type MatrixDraftStep = {
   transientInsertDelete?: string;
 };
 
-export function createHarness(db: Database, options: ChangeTrailHarnessOptions = {}) {
+export function createHarness(db: Database, options: CollabHarnessOptions = {}) {
   // One link scope for every door the harness assembles, as composition shares one.
   const links = options.links ?? createStaticDocumentLinkScopes();
   const { ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
@@ -395,17 +394,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       seq: 0,
     });
   };
-  const deliveredEvents: unknown[] = [];
-  const trailDelivery = createChangeTrailWorker({
-    db,
-    journalWriter: {
-      async appendEvent(_threadId: string, event: unknown) {
-        deliveredEvents.push(event);
-        return deliveredEvents.length;
-      },
-    } as never,
-    eventHub: { invalidateCommittedJournal() {} },
-  });
   const resolveDocumentUri = async (documentId: string) =>
     `manuscript/${documentName(documentId as DocumentId)}.md`;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
@@ -560,10 +548,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
     applyClick: async () => {
-      throw new Error("Apply click is not configured in the trail fixture");
+      throw new Error("Apply click is not configured in the collab fixture");
     },
     unapplyClick: async () => {
-      throw new Error("Un-Apply click is not configured in the trail fixture");
+      throw new Error("Un-Apply click is not configured in the collab fixture");
     },
     branches: workBranches,
     reviewItems,
@@ -1390,14 +1378,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       draftCoordinator,
       draftMarkdown: (draftId: string) =>
         draftCoordinator.readDraft(draftId, async (doc) => serializeMarkdown(doc)),
-      trailDelivery,
       hocuspocus,
       model,
       markupCodec,
       agentEditCodec,
-      deliveredEvents,
     }),
-    pollTrails: () => trailDelivery.drain(),
     /** Stop producers and join their work before test reset or pool shutdown. */
     async dispose() {
       await Promise.all([draftPulls.shutdown(), draftEffects.dispose()]);
@@ -1570,34 +1555,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           ),
         ),
     noticeRows: () => db.select().from(schema.pendingNotices),
-    async trailRowMembership() {
-      return {
-        shells: await db
-          .select()
-          .from(schema.changeTrailShells)
-          .orderBy(schema.changeTrailShells.id),
-        details: await db
-          .select()
-          .from(schema.changeTrailDocumentDetails)
-          .orderBy(
-            schema.changeTrailDocumentDetails.trailId,
-            schema.changeTrailDocumentDetails.documentId,
-          ),
-        outbox: await db
-          .select()
-          .from(schema.changeTrailDeliveryOutbox)
-          .orderBy(schema.changeTrailDeliveryOutbox.eventId),
-      };
-    },
-    trailEventSequence: () =>
-      db
-        .select()
-        .from(schema.changeTrailDeliveryOutbox)
-        .orderBy(
-          schema.changeTrailDeliveryOutbox.trailId,
-          schema.changeTrailDeliveryOutbox.version,
-          schema.changeTrailDeliveryOutbox.eventKind,
-        ),
     threadPeerMarkdown: () => markdownByKind("thread_peer"),
     workDraftMarkdown: () => markdownByKind("work_draft"),
     async databaseDraftHashes() {

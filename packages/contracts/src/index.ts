@@ -1,7 +1,6 @@
 // Shared types — branded IDs, enums, JSONB shapes, wire DTOs, WebSocket protocol, streaming events
 
 export * from "./branches/index.js";
-export * from "./change-trails.js";
 export * from "./context-entry-validation.js";
 export * from "./context-uri.js";
 export * from "./document-href.js";

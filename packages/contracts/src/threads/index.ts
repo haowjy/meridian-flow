@@ -285,8 +285,6 @@ export type JournalEventType =
   | "thread.created"
   | "thread.branched"
   | "notification.delivered"
-  | "turn.change_trail_updated"
-  | "turn.change_trail_settled"
   | "file.written";
 
 /** JSON-natural thread — survives JSON.parse/stringify unchanged. */

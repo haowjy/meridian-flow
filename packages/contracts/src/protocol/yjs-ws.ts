@@ -4,7 +4,6 @@
  */
 
 import { z } from "zod";
-import { type TrailChangeV1, trailChangeV1Schema } from "../change-trails.js";
 import type { DocumentId } from "../runtime/index.js";
 
 export const YJS_WS_PATH_PREFIX = "/ws/yjs";
@@ -14,7 +13,44 @@ export type YjsRoomName =
   | { kind: "live"; documentId: DocumentId }
   | { kind: "draft"; draftId: string };
 
-export type ChangeEventProjection = Pick<TrailChangeV1, "changeId" | "kind" | "navigation"> & {
+const yjsIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
+export type NavigationTargetV1 =
+  | {
+      kind: "live_block_range";
+      relStart: string;
+      relEnd: string;
+      targetBlockId: { clientID: number; clock: number };
+    }
+  | {
+      kind: "deletion_boundary";
+      position: string;
+      affinity: "before_next" | "after_previous" | "document_start";
+    }
+  | { kind: "unavailable"; reason: string };
+
+export const navigationTargetV1Schema: z.ZodType<NavigationTargetV1> = z.discriminatedUnion(
+  "kind",
+  [
+    z.object({
+      kind: z.literal("live_block_range"),
+      relStart: z.string(),
+      relEnd: z.string(),
+      targetBlockId: z.object({ clientID: yjsIntegerSchema, clock: yjsIntegerSchema }),
+    }),
+    z.object({
+      kind: z.literal("deletion_boundary"),
+      position: z.string(),
+      affinity: z.enum(["before_next", "after_previous", "document_start"]),
+    }),
+    z.object({ kind: z.literal("unavailable"), reason: z.string() }),
+  ],
+);
+
+export type ChangeEventProjection = {
+  changeId: string;
+  kind: "insert" | "modify" | "delete";
+  navigation: NavigationTargetV1;
   admittedByUserId: string | null;
   /** Recipient-specific attention severity; the server targets each connection. */
   swept: boolean;
@@ -28,13 +64,12 @@ export interface ChangeEventWsMessage {
   threadId: string;
   trailId: string;
   /**
-   * Changes are a REPLACE-SET for `(trailId, documentId)`. Revisions increase
+   * Changes are a REPLACE-SET for `(trailId, documentId)`; `trailId` groups the changes of one turn. Revisions increase
    * monotonically for that key; clients replace the set and drop stale messages.
    */
   projectionRevision: number;
   /**
-   * Authorship comes from durable trail ownership and drives identity and the
-   * conversation link. The writer arm is reserved for future writer-push
+   * Authorship drives identity and the conversation link. The writer arm is reserved for future writer-push
    * broadcasts; current change-event producers emit only agent ownership.
    */
   author:
@@ -50,14 +85,15 @@ type YjsStatelessMessageByType = {
 
 export type YjsStatelessMessage = YjsStatelessMessageByType[keyof YjsStatelessMessageByType];
 
-const changeEventProjectionSchema: z.ZodType<ChangeEventProjection> = trailChangeV1Schema
-  .pick({ changeId: true, kind: true, navigation: true })
-  .extend({
-    swept: z.boolean(),
-    admittedByUserId: z.string().nullable(),
-    excerpt: z.string().max(500).nullable(),
-    pureDeletionOffset: z.number().int().nonnegative().nullable(),
-  });
+const changeEventProjectionSchema: z.ZodType<ChangeEventProjection> = z.object({
+  changeId: z.string(),
+  kind: z.enum(["insert", "modify", "delete"]),
+  navigation: navigationTargetV1Schema,
+  swept: z.boolean(),
+  admittedByUserId: z.string().nullable(),
+  excerpt: z.string().max(500).nullable(),
+  pureDeletionOffset: z.number().int().nonnegative().nullable(),
+});
 
 const changeEventWsMessageSchema: z.ZodType<ChangeEventWsMessage> = z
   .object({

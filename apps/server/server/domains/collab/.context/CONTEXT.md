@@ -2,7 +2,7 @@
 
 This page records the contracts that cross collab's Yjs, persistence, review,
 and transport boundaries. The focused pages hold draft vocabulary, authority,
-reversal, committed trail, and WebSocket details; this page keeps their shared rules.
+reversal, and WebSocket details; this page keeps their shared rules.
 
 ## Boundary and destinations
 
@@ -23,7 +23,7 @@ The composition root wires required services and provider ports. It owns no
 business behavior, mutable runtime state, or optional capability matrix.
 `collab-facade.ts` only assembles the domain surface. Agent-edit owns the
 memory-only mutation kernel; collab owns authorization, persistence,
-coordination and trail projection.
+and coordination.
 
 ## Draft review admission and Apply clicks
 
@@ -43,7 +43,7 @@ certificates are not written into journal metadata.
 
 Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
 snapshot off-lock, then commits live, the prefix-authored review base and Apply
-record, lineage, trail and terminal command outcome atomically. A stored result
+record, lineage and terminal command outcome atomically. A stored result
 wins over every fresh refusal, including a retry after close. See [Apply](apply.md)
 for the storage boundary and diagnostic timing contract. Work Apply all is a
 browser loop of per-document clicks; there is no settlement executor or recovery
@@ -182,8 +182,7 @@ one Work may differ. A draft write never pushes itself live: a draft
 that an auto-apply chat leaves behind, or another chat keeps writing, waits
 there like a kept change, and the dock shows it. Switching a chat to
 auto-apply touches no draft; Apply stays the writer's command. Drafts carry
-no push policy. Trail reconciliation consumes transactional dirty signals and
-never applies a draft. Active unapplied rows do not delay a terminal receipt.
+no push policy. Active unapplied rows do not delay a terminal receipt.
 
 A reply's save resolves exactly the peer each document was pinned to and
 refuses that document stale when the pin no longer holds (closed peer or
@@ -289,10 +288,8 @@ back inside a reply's transaction too. Nothing judged before the lock is
 written as truth: the frame's pre-lock containment and authorship checks are
 early exits only. `waitMs` and `holdMs` of every append are the
 `collab.draft` `append_committed` debug event. The hold (about 6 ms at the
-median) includes the change-trail triggers that fire on each journal and
-receipt insert, three per keystroke; a slower trigger or `change_trail_owners`
-query there is keystroke latency for every writer on the draft (see
-[change-trail.md](change-trail.md)).
+median) is the append's whole row-locked transaction: a slower step there is
+keystroke latency for every writer on the draft.
 
 Every rewrite is fenced by the row's `revision`, under one of two policies.
 An **exact** rewrite commits only at the revision it was computed at: a
@@ -680,7 +677,6 @@ retires the addressed peer and does not roll back unrelated documents in the rep
 - [Draft model and durable records](draft-model-and-records.md)
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
 - [Reversal](reversal.md)
-- [Committed change trail](change-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 
@@ -691,7 +687,7 @@ retires the addressed peer and does not roll back unrelated documents in the rep
 
 `DraftPullService.shutdown`, ahead-reference registration `shutdown`, and
 `DraftProjection.dispose` stop scheduling and join their running work. Callers await collaboration disposal before destroying
-warm documents or resetting fixture rows. The PostgreSQL change-trail harness
+warm documents or resetting fixture rows. The PostgreSQL collab harness
 owns that ordering in `dispose`; its mid-case `cancelScheduledPulls` and
 `destroyWarmState` controls are not teardown. `flush` remains assertion-time
 convergence, not shutdown.

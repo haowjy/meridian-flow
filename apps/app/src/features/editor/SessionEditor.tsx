@@ -15,7 +15,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
@@ -30,7 +29,6 @@ import {
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
 import { holdPictureCapThroughKeyboard } from "@/core/editor/objects";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
-import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useLinkableDocuments } from "@/features/links";
 import {
   useAccountEpochSignal,
@@ -192,28 +190,6 @@ function ActiveSessionEditorView({
   const scope = useMemo<EditorScope>(
     () => ({ projectId: projectId ?? null, workId: linkWorkId, rootThreadId: linkRootThreadId }),
     [projectId, linkWorkId, linkRootThreadId],
-  );
-
-  // Marks render before anyone clicks one. Warming their trail detail here is
-  // what lets the popover open with its Before/After disclosure already
-  // available instead of filling it in after the first fetch lands.
-  const markers = useSyncExternalStore(
-    session.markerStore.subscribe,
-    session.markerStore.getSnapshot,
-    session.markerStore.getSnapshot,
-  );
-  usePrefetchTrailDetails(
-    useMemo(
-      () =>
-        inReview
-          ? []
-          : markers.flatMap((marker) =>
-              marker.author.kind === "agent" && !marker.dismissed
-                ? [{ threadId: marker.author.threadId, trailId: marker.group.trailId }]
-                : [],
-            ),
-      [inReview, markers],
-    ),
   );
 
   // A fence has to withdraw the catalog, not just the surface's editability:

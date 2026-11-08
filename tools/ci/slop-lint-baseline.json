@@ -63,11 +63,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/core/editor/change-trail-navigation.ts",
-        "line": "const opened = await input.openDocument(input.documentId).catch(() => null);",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/core/editor/document-session-authority-store.ts",
         "line": "} catch {",
         "count": 1
@@ -243,7 +238,7 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/chat/useThreadDurableProjections.ts",
+        "path": "apps/app/src/features/chat/useThreadWorkProjections.ts",
         "line": "} catch {",
         "count": 1
       },

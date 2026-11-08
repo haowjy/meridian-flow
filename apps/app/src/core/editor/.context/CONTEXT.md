@@ -111,7 +111,7 @@ presence write path or cached client ID creates ghost carets.
 
 Live peer marks, session markers, and review decorations are projections, never
 manuscript content. The session marker store is ephemeral and group revisions
-fence delayed replays. Peer-mark popovers navigate to durable trail receipts;
+fence delayed replays. Peer-mark popovers open the owning conversation;
 Undo/Redo of an AI change remains the producing-turn receipt's authority.
 
 ## Anchors and holds
@@ -154,10 +154,9 @@ identity in anchors or holds.
   delimiters remain input rules. Do not duplicate either mechanism.
 - Draft inline review is a projection-only extension installed for review
   mounts. It owns decorations and relative-anchor resolution, never browser
-  mutation origins or collaborative history. Change-trail navigation retains a
-  session until item-ID validation and mounted-editor acceptance. Passage
-  navigation uses block identity plus text, and refuses ambiguous fallback.
-  Both acquire one exact container registration; hiding, holding, replacing, or
+  mutation origins or collaborative history. Passage navigation retains a
+  session until mounted-editor acceptance, uses block identity plus text, and
+  refuses ambiguous fallback. It acquires one exact container registration; hiding, holding, replacing, or
   destroying that editor revokes the target and ends the jump without
   reacquiring another editor.
 - Search-passage navigation lands by block hash (from the block's immutable Yjs

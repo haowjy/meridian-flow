@@ -26,7 +26,7 @@ import {
   TURN_ID,
   USER_ID,
   WORK_ID,
-} from "./test-support/change-trail-postgres-harness.js";
+} from "./test-support/collab-postgres-harness.js";
 import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture, readDraftId } from "./test-support/turn-inverse-fixture.js";
 

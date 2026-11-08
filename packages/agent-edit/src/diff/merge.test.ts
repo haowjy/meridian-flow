@@ -82,14 +82,6 @@ describe("rebase", () => {
       base[0].textContent,
       base[2].textContent,
     ]);
-    expect(merged.correspondence.find((entry) => entry.output === 0)?.sources).toEqual(
-      expect.arrayContaining([
-        { side: "base", index: 1 },
-        { side: "live", index: 0 },
-        { side: "draft", index: 1 },
-      ]),
-    );
-    expect(merged.correspondence.find((entry) => entry.output === 1)?.sources).toHaveLength(3);
     expect(merged.overrode).toBe(0);
   });
   it("coalesces a shared insertion beside a replacement, then preserves a dependent deletion", () => {
