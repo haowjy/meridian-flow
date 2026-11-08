@@ -88,11 +88,11 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
         }
       },
     }),
-    // Always revalidate on activation: the thread may have advanced while the
-    // writer was elsewhere (for example a background child's report waking the
-    // parent). Cached turns still render first, so this stays navigate-first.
-    staleTime: 0,
-    refetchOnMount: "always",
+    // Mounting never reads by itself: the sync asks for a read when it needs one. A cached
+    // snapshot joins the stream and its replay brings it up to date (for example a background
+    // child's report waking the parent), so a warm switch downloads nothing.
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: false,
     enabled: !isPendingCreation && !accountSignal.aborted,
     retry: (_failureCount, error) => error instanceof StaleThreadSnapshot && !accountSignal.aborted,
     retryDelay: SNAPSHOT_RETRY_MS,
@@ -135,18 +135,15 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
   );
   useLayoutEffect(() => {
     if (isPendingCreation) return;
-    binding.sync.start();
     // A read the cache already holds never runs the queryFn, so it is offered here on every
-    // mount. The sync decides: it joins only if it is newer than every frame the cell holds.
+    // mount. The sync decides: it joins only if it is newer than every frame the cell holds,
+    // and asks for a read otherwise.
     const cached = latest.current;
-    if (
-      cached &&
-      cached.thread.id === threadId &&
-      cached.thread.userId === accountId &&
-      binding.sync.receive(cached) === "applied"
-    ) {
-      rerender();
-    }
+    const held =
+      cached && cached.thread.id === threadId && cached.thread.userId === accountId
+        ? cached
+        : undefined;
+    if (binding.sync.start(held)) rerender();
   }, [accountId, binding, isPendingCreation, threadId]);
 
   const accepted =

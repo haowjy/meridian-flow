@@ -96,8 +96,11 @@ export type ThreadSyncPorts = {
 };
 
 export type ThreadSync = {
-  /** Begin a generation and ask for the read it joins from. Idempotent. */
-  start(): void;
+  /**
+   * Begin a generation. With `held` (a read the host already has), join from it when `receive` takes it and
+   * ask for nothing; otherwise ask for the read to join from. Returns whether `held` applied. Idempotent.
+   */
+  start(held?: ThreadSnapshotResponse): boolean;
   /** End it: flush, cancel timers, remove the handler. */
   stop(): void;
   /**
@@ -385,12 +388,15 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
   };
 
   return {
-    start() {
-      if (started || signal.aborted) return;
+    start(held) {
+      if (started || signal.aborted) return false;
       started = true;
       markHeldTurnsRewritten();
-      // No handler yet: the first read applied after this joins the stream (see `receive`).
+      // No handler yet: the first read applied after this joins the stream (see `receive`). A held read
+      // that joins is caught up by the stream's replay, so it needs no new read.
+      if (held && this.receive(held) === "applied") return true;
       requestSnapshot("any");
+      return false;
     },
 
     stop() {
