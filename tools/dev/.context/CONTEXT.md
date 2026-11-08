@@ -179,12 +179,13 @@ too rather than risking two owners; an interrupted run can leave a stale lock
 that the refusal's message names for deletion. Batch cleanup needs explicit risk
 acknowledgement and an exact merged PR into the base branch, and keeps refusing
 duplicate exact records (ancestry alone is not enough).
-Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
-occupants, then rechecks that only known shell/tmux executables remain before
-dropping the database and removing the checkout. It never signals those user
-shells/panes and prints their PIDs and tmux pane IDs so owners can `cd` out of
-the deleted directory. Unknown processes, unreadable attributed processes,
-inspection failures, active work items and dirty state still block. Force does
+A shell or a pane on the human's tmux server whose cwd is in the checkout never
+blocks cleanup: the tool leaves it alive and prints its PID or pane ID so its
+owner can `cd` out of the deleted directory. Target-only `--force` also permits
+managed dev-stack and Nx shutdown despite cwd occupants, then rechecks that only
+known shell/tmux executables remain before dropping the database and removing
+the checkout. Unknown processes, unreadable attributed processes, live dev
+sessions, inspection failures, active work items and dirty state still block. Force does
 not bypass merge evidence, branch/HEAD revalidation or structural protections,
 and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
 Never infer staleness from a branch name, and add no cleanup
