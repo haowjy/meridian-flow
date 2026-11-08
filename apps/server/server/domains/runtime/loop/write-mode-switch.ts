@@ -1,7 +1,7 @@
 /**
  * The applied write-mode switch: its model-facing notice and the Work-side
  * collaborators the switch commands need. The switch turn owns no document
- * edits, so it has no change trail, receipt or undo candidate.
+ * edits, so it has no receipt or undo candidate.
  */
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";

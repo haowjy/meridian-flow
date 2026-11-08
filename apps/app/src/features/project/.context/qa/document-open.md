@@ -43,7 +43,7 @@ open. Run it on an owned mock stack with a fresh database and a named
 2. With a dirty rename field, click another row. The prompt appears from that
    click. Cancel leaves the address and tabs unchanged. Discard commits the
    requested destination.
-3. Open a search passage and a change-trail receipt for server-only and
+3. Open a search passage for server-only and
    exact-local documents, including exact-local while offline. When the same
    document is mounted in Editor and dock, each door lands in the container it
    committed. Rapid A then B land only B.

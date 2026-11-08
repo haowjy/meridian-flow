@@ -1,8 +1,8 @@
 /** Seeds a second Work (with its primary chat and one assistant turn) beside the harness's first. */
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import type { createHarness } from "./change-trail-postgres-harness.js";
-import { PROJECT_ID, USER_ID } from "./change-trail-postgres-harness.js";
+import type { createHarness } from "./collab-postgres-harness.js";
+import { PROJECT_ID, USER_ID } from "./collab-postgres-harness.js";
 
 type CrossWorkProbeFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 

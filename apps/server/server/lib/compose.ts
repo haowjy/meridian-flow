@@ -18,8 +18,6 @@ import {
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
-import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
-import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
 import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
@@ -374,8 +372,6 @@ export type AppServices = {
   /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
   fileAccessChanges: FileAccessChanges;
   notices: NoticePort;
-  changeTrails: ReturnType<typeof createDrizzleChangeTrailReader>;
-  changeTrailDelivery: ReturnType<typeof createChangeTrailWorker>;
 };
 
 function stripeReady(env: NodeJS.ProcessEnv): boolean {
@@ -810,12 +806,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
     scheduleAfterCommit: runAfterDrizzleCommit,
-  });
-  const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.fileAccess);
-  const changeTrailDelivery = createChangeTrailWorker({
-    db: ports.db,
-    journalWriter: ports.journalWriter,
-    eventHub: threadEventHub,
   });
   const importOrganizer = createProductionImportOrganizer({
     db: ports.db,
@@ -1290,8 +1280,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     fileAccess: ports.fileAccess,
     fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
-    changeTrails,
-    changeTrailDelivery,
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
@@ -1900,19 +1888,6 @@ export function createInMemoryAppServices(): AppServices {
     notices,
     modelRequestDebug,
     mockModelScript: null,
-    changeTrails: {
-      async listShells() {
-        return [];
-      },
-      async readDetails() {
-        return [];
-      },
-    },
-    changeTrailDelivery: {
-      async drain() {
-        return 0;
-      },
-    },
     async shutdown() {
       await backgroundTasks.drain();
     },

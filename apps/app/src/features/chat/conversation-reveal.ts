@@ -2,14 +2,13 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import {
-  type ChangeRevealRequest,
   type ConversationRevealTarget,
   type ConversationRevealView,
   conversationRevealController,
   type TurnRevealRequest,
 } from "./conversation-reveal-controller";
 
-export type { ChangeRevealRequest, ConversationRevealTarget, TurnRevealRequest };
+export type { ConversationRevealTarget, TurnRevealRequest };
 
 export function requestConversationReveal(target: ConversationRevealTarget): void {
   conversationRevealController.request(target);
@@ -39,13 +38,4 @@ export function useConversationRevealRouting(revealConversation: (threadId: stri
 /** The turn this thread's transcript must land on, or null when none is owed. */
 export function useTurnReveal(threadId: string): TurnRevealRequest | null {
   return useRevealStage((current) => (current.turn?.threadId === threadId ? current.turn : null));
-}
-
-/** The change row this turn's receipt must bring into view, or null. */
-export function useChangeReveal(threadId: string, turnId: string): ChangeRevealRequest | null {
-  return useRevealStage((current) =>
-    current.change?.threadId === threadId && current.change.turnId === turnId
-      ? current.change
-      : null,
-  );
 }

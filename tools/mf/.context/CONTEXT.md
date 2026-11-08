@@ -65,7 +65,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   Work receipts and occurrences; `--json` is the versioned `chatView: 3` envelope
   whose `inputs` states what the view was computed from (no local records,
   stand-ins, opening seed or live activity, inherited history omitted, background
-  report bodies and change trails not fetched). `--full --json` is the inspectable
+  report bodies not fetched). `--full --json` is the inspectable
   form. Outside `cards`, raw `row.error`, failure reasons and provider errors are
   diagnostics, not the app's failure text or evidence of which failure the writer sees.
   A reply's `finalText` reads the same view model's visible text items.

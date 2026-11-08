@@ -155,7 +155,7 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   handoff brief, delivery bodies and writer occurrences; text mode summarizes and omits
   them). Its `inputs` field says what the view was computed from: the snapshot only, with
   no local records, stand-ins, opening seed or live activity, inherited history omitted,
-  and background report bodies and change trails not fetched. Card wording and failure
+  and background report bodies not fetched. Card wording and failure
   copy are drawn by React, so compare cards as raw props only. The app draws
   the same function's output, so compare a chat in the browser by row identity, row
   kind, item kinds and visible text with [the chat-session recipe](../apps/app/src/features/chat/.context/qa/chat-session.md). `send` and `tail --until-idle` run the app's

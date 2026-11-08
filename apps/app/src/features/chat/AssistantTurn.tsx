@@ -10,7 +10,6 @@ import {
   type ViewRun,
 } from "@meridian/thread-client";
 import { memo, useMemo } from "react";
-import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock, parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { AssistantTurnActions } from "./AssistantTurnActions";
@@ -27,7 +26,6 @@ import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
 import { thinkingDigest } from "./thinking-digest";
-import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -60,8 +58,6 @@ export type AssistantTurnProps = {
   continuesResponse?: boolean;
   /** A Retry's new reply before the server has it: nothing to read or act on yet. */
   standIn?: boolean;
-  changeTrail?: ChangeTrailShell;
-  navigateToChange?: NavigateToTrailChange;
 };
 
 function AssistantTurnComponent({
@@ -75,8 +71,6 @@ function AssistantTurnComponent({
   movedPast = false,
   continuesResponse = false,
   standIn = false,
-  changeTrail,
-  navigateToChange,
 }: AssistantTurnProps) {
   const isSettled = isTerminalTurnStatus(turn.status);
   const { items } = view;
@@ -115,8 +109,6 @@ function AssistantTurnComponent({
           view={view}
           isLive={isLive}
           standIn={standIn}
-          changeTrail={changeTrail}
-          navigateToChange={navigateToChange}
         />
 
         <AnchoredCards anchor={{ turn: turn.id }} />
@@ -144,16 +136,12 @@ const TurnLineageReceipt = memo(function TurnLineageReceipt({
   view,
   isLive,
   standIn,
-  changeTrail,
-  navigateToChange,
 }: {
   threadId: string;
   turn: Turn;
   view: AssistantView;
   isLive: boolean;
   standIn: boolean;
-  changeTrail?: ChangeTrailShell;
-  navigateToChange?: NavigateToTrailChange;
 }) {
   const liveLineage = useTurnLiveLineage(threadId, turn.id, {
     enabled: !isLive && !standIn,
@@ -167,15 +155,13 @@ const TurnLineageReceipt = memo(function TurnLineageReceipt({
   // Gated on settlement like document lineage: a receipt is a record of a
   // finished turn, and mid-stream it would offer Undo on a turn still writing.
   const workReceipts = isLive ? NO_WORK_RECEIPTS : view.workReceipts;
-  return hasTurnEditsReceiptContent(editedDocuments, changeTrail, workReceipts) ? (
+  return hasTurnEditsReceiptContent(editedDocuments, workReceipts) ? (
     <TurnEditsReceipt
       threadId={threadId}
       turn={turn}
       documents={editedDocuments}
       receipt={liveLineage.receipt}
       workReceipts={workReceipts}
-      changeTrail={changeTrail}
-      navigateToChange={navigateToChange}
     />
   ) : null;
 });

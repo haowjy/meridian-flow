@@ -223,14 +223,10 @@ export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]
 }
 
 /**
- * Anchors for committed suites that write documents, drafts, change trails
+ * Anchors for committed suites that write documents, drafts
  * and threads. `deleteDrizzleRows` adds their dependents.
  */
 export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
-  schema.changeTrailDeliveryOutbox,
-  schema.changeTrailDocumentDetails,
-  schema.changeTrailDocumentOccurrences,
-  schema.changeTrailShells,
   schema.pendingNotices,
   schema.agentEditWidCounters,
   schema.draftWriteJournal,

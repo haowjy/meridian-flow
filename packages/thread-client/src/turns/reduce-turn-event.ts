@@ -971,12 +971,10 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           return;
         }
         // Durable custom projections are consumed by live listeners — the
-        // useThreadDurableProjections trail/Work-binding listener — so they are not transcript
+        // useThreadWorkProjections Work-binding listener — so they are not transcript
         // content. Falling through here rendered each one as an "Unknown
         // component" note under the digest for the duration of the turn.
         if (
-          event.name === "meridian.turn_change_trail.updated" ||
-          event.name === "meridian.turn_change_trail.settled" ||
           event.name === WORK_CONTEXT_PROJECTION_EVENT ||
           // The run-state record is the chat's run-state slice's.
           event.name === RUN_STATE_EVENT

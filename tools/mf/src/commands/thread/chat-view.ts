@@ -71,8 +71,6 @@ export type ChatViewInputs = {
   queued: "snapshot run state";
   /** The browser fetches each child's report for its card; the snapshot has none, so no card here carries one. */
   backgroundReports: "not fetched";
-  /** The browser fetches a reply's change trails; none are carried. */
-  changeTrails: "not fetched";
 };
 
 /** A tool call the writer sees in a fold. `--full` adds what the app's tool row is drawn from. */
@@ -294,7 +292,6 @@ export function projectChatView(
       liveActivity: "none",
       queued: "snapshot run state",
       backgroundReports: "not fetched",
-      changeTrails: "not fetched",
     },
     cards: cards.cards,
     asks: snapshot.asks,
@@ -693,7 +690,7 @@ export function renderChatView(view: ChatViewEnvelope): string {
     `  project ${thread.projectId}  work ${thread.workId ?? "(none)"}  agent ${thread.agentName ?? "?"}`,
     `  live ${live.status}${live.runningTurnId ? ` running ${live.runningTurnId}` : ""}  pending ${live.pending}  mode ${live.mode}${live.switchQueued ? ` (switching to ${live.switchQueued})` : ""}${live.actionRequired ? "  ACTION REQUIRED" : ""}  cost $${thread.totalCostUsd}`,
     `  chatView ${view.chatView}  rows: showing ${view.showing} of ${view.total}${view.showing < view.total ? " (--full or --turn for more)" : ""}`,
-    `  inputs: turns from ${inputs.turns}; inherited history ${inputs.inherited}; local records ${inputs.localRecords}, cards from ${inputs.cards}, stand-ins ${inputs.standIns}, live activity ${inputs.liveActivity}; queued from ${inputs.queued}; background reports ${inputs.backgroundReports}, change trails ${inputs.changeTrails}`,
+    `  inputs: turns from ${inputs.turns}; inherited history ${inputs.inherited}; local records ${inputs.localRecords}, cards from ${inputs.cards}, stand-ins ${inputs.standIns}, live activity ${inputs.liveActivity}; queued from ${inputs.queued}; background reports ${inputs.backgroundReports}`,
   ];
   const queued = view.rows.filter((row) => row.queued).length;
   for (const card of view.cards) lines.push(cardLine(card));

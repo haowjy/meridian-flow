@@ -41,9 +41,6 @@ type DocumentDraftKind = "work_draft" | "thread_peer";
 type DocumentDraftStatus = "active" | "closed";
 type DraftWriteJournalSource = "agent" | "writer" | "server";
 type DraftWriteJournalStatus = "active" | "rollback_pending";
-type ChangeTrailOwnerKind = "turn" | "shared";
-type ChangeTrailState = "building" | "settling" | "settled";
-type ChangeTrailEventKind = "updated" | "settled";
 
 export const documentDrafts = pgTable(
   "document_drafts",
@@ -204,131 +201,6 @@ export const pushLineage = pgTable(
     index("push_lineage_draft").on(table.draftId),
     index("push_lineage_turn").on(table.threadId, table.turnId),
     index("push_lineage_receipt").on(table.receiptId),
-  ],
-);
-
-/** Thread-owned aggregate history; intentionally independent of document lifetime. */
-export const changeTrailShells = pgTable(
-  "change_trail_shells",
-  {
-    id: uuid("id").primaryKey(),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "cascade" }),
-    ownerKind: text("owner_kind").$type<ChangeTrailOwnerKind>().notNull(),
-    state: text("state").$type<ChangeTrailState>().notNull().default("building"),
-    version: integer("version").notNull().default(1),
-    changeCount: integer("change_count").notNull(),
-    documentCount: integer("document_count").notNull(),
-    documents: jsonb("documents")
-      .$type<Array<{ documentId: string; title: string }>>()
-      .notNull()
-      .default([]),
-    wordsAdded: integer("words_added"),
-    wordsRemoved: integer("words_removed"),
-    settledAt: timestamp("settled_at", { withTimezone: true }),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    uniqueIndex("change_trail_shells_turn_owner")
-      .on(table.threadId, table.turnId)
-      .where(sql`${table.ownerKind} = 'turn'`),
-    uniqueIndex("change_trail_shells_shared_owner")
-      .on(table.threadId)
-      .where(sql`${table.ownerKind} = 'shared'`),
-    check("change_trail_shells_owner_kind_valid", sql`${table.ownerKind} IN ('turn', 'shared')`),
-    check(
-      "change_trail_shells_owner_shape",
-      sql`(${table.ownerKind} = 'turn' AND ${table.turnId} IS NOT NULL) OR (${table.ownerKind} = 'shared' AND ${table.turnId} IS NULL)`,
-    ),
-    check(
-      "change_trail_shells_state_counts_valid",
-      sql`${table.state} IN ('building', 'settling', 'settled') AND ${table.version} > 0 AND ${table.changeCount} >= 0 AND ${table.documentCount} >= 0 AND ((${table.state} = 'settled') = (${table.settledAt} IS NOT NULL))`,
-    ),
-  ],
-);
-
-/** Non-sensitive document occurrence retained after manuscript hard deletion. */
-export const changeTrailDocumentOccurrences = pgTable(
-  "change_trail_document_occurrences",
-  {
-    trailId: uuid("trail_id")
-      .notNull()
-      .references(() => changeTrailShells.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id").$type<DocumentId>().notNull(),
-    /**
-     * Durable replace-set cursor for marker delivery. This lives on the
-     * non-sensitive occurrence so an empty refinement cannot reset the cursor.
-     */
-    projectionRevision: integer("projection_revision").notNull().default(0),
-  },
-  (table) => [primaryKey({ columns: [table.trailId, table.documentId] })],
-);
-
-/** Manuscript-bearing detail; document deletion deliberately cascades only this layer. */
-export const changeTrailDocumentDetails = pgTable(
-  "change_trail_document_details",
-  {
-    trailId: uuid("trail_id")
-      .notNull()
-      .references(() => changeTrailShells.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    documentTitle: text("document_title").notNull(),
-    wordsAdded: integer("words_added"),
-    wordsRemoved: integer("words_removed"),
-    changes: jsonb("changes").$type<unknown[]>().notNull(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [primaryKey({ columns: [table.trailId, table.documentId] })],
-);
-
-/** Transactional handoff to the thread event journal; drained by the slice-3 dispatcher. */
-export const changeTrailDeliveryOutbox = pgTable(
-  "change_trail_delivery_outbox",
-  {
-    eventId: uuid("event_id").primaryKey(),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    trailId: uuid("trail_id")
-      .notNull()
-      .references(() => changeTrailShells.id, { onDelete: "cascade" }),
-    version: integer("version").notNull(),
-    eventKind: text("event_kind").$type<ChangeTrailEventKind>().notNull(),
-    changeCount: integer("change_count").notNull(),
-    documentCount: integer("document_count").notNull(),
-    documents: jsonb("documents")
-      .$type<Array<{ documentId: string; title: string }>>()
-      .notNull()
-      .default([]),
-    wordsAdded: integer("words_added"),
-    wordsRemoved: integer("words_removed"),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("change_trail_delivery_outbox_version").on(
-      table.trailId,
-      table.version,
-      table.eventKind,
-    ),
-    index("change_trail_delivery_outbox_pending").on(table.createdAt),
-    check(
-      "change_trail_delivery_outbox_event_kind_valid",
-      sql`${table.eventKind} IN ('updated', 'settled')`,
-    ),
-    check(
-      "change_trail_delivery_outbox_counts_valid",
-      sql`${table.changeCount} >= 0 AND ${table.documentCount} >= 0`,
-    ),
   ],
 );
 
@@ -497,24 +369,6 @@ export const documentBlocks = pgTable(
     contentHash: byteaColumn("content_hash").notNull(),
   },
   (table) => [primaryKey({ columns: [table.roomId, table.blockId] })],
-);
-
-/** Transaction-local dirty signals; sequence is identity, never commit order. */
-export const changeTrailDirtyLog = pgTable(
-  "change_trail_dirty_log",
-  {
-    seq: bigint("seq", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "cascade" }),
-  },
-  (table) => [
-    index("change_trail_dirty_log_owner_seq").on(table.threadId, table.turnId, table.seq),
-  ],
 );
 
 /**

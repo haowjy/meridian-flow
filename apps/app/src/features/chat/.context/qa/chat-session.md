@@ -20,7 +20,7 @@ handoff rows by `brief`, and delivery groups by child, title and outcome.
 
 Do not compare React `renderKey`. It may change when a local turn receives its
 server id. The browser may additionally show local Retry/unsent records,
-background report bodies, inherited fork history, change trails, receipt rows
+background report bodies, inherited fork history, receipt rows
 and card presentation text; compare those only with their durable source when
 the source exists.
 
@@ -179,8 +179,7 @@ must not acquire a listener or emit an acknowledgment; a current read failure is
 retryable and a later request succeeds. A 64-character request id succeeds;
 empty and 65-character ids return `bad_request` without mutating the target.
 
-In the browser, hold the target subscribe while the trail list is read, finish a
-document write, and rebind the chat to a Work from another client. Release the
-subscribe: the receipt and Work name appear without reload, with a later trail
-read rather than replayed old trail events. Reconnect and send again; settled
+In the browser, hold the target subscribe, finish a document write, and rebind
+the chat to a Work from another client. Release the subscribe: the receipt and Work
+name appear without reload. Reconnect and send again; settled
 text, child activity and tools do not duplicate.

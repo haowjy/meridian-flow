@@ -95,7 +95,7 @@ structured authoring snapshot before navigation; acceptance retires it,
 rejection stays on its row, and ambiguity retains it for replay. See the
 [submission guide](../src/client/chat-submissions/AGENTS.md).
 
-Trail evidence and peer marks are read-only; receipt Undo/Redo is the AI reversal
+Peer marks are read-only; receipt Undo/Redo is the AI reversal
 authority. `DocumentSession` owns collaboration state only, with no parallel
 safety-notice presentation model. Collaboration self-suppression uses internal Meridian `UserId`, not
 the WorkOS external identity.
@@ -158,7 +158,7 @@ independent.
 
 First-send creation stays pending through admission, then activates the mounted
 projection before attaching the run controller. Cached turns render first.
-Activity, run-state, and Work/trail listeners join only after pending creation
+Activity, run-state, and Work-binding listeners join only after pending creation
 clears; none subscribe or fetch a missing thread.
 The first snapshot that shows work in progress re-subscribes from its cursor; there is no per-run resume.
 Account replacement fences the old lifetime and stale Query responses.
