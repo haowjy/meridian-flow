@@ -69,7 +69,8 @@ export type SyncObservation =
   /** The `subscribed` state, after catch-up. */
   | { kind: "live"; state: ThreadLiveState }
   | { kind: "gap"; gap: ThreadGapEvent }
-  | { kind: "read"; read: ThreadSnapshotResponse; applied: boolean }
+  /** `cached`: the host already held this read and projected it when it arrived; the copy is no newer than that. */
+  | { kind: "read"; read: ThreadSnapshotResponse; applied: boolean; cached: boolean }
   | { kind: "check"; turnId: string; rewritten: boolean; diffs: readonly Diff[] }
   /** A stream write that started a turn or changed its status. */
   | { kind: "turn"; turnId: string; status: TurnStatus }
@@ -387,6 +388,49 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
     return checks;
   };
 
+  const accept = (read: ThreadSnapshotResponse, cached: boolean): "applied" | "stale" => {
+    if (signal.aborted) return "stale";
+    // Fix 1: a delta buffered before this read belongs before it, not appended to its text.
+    flush();
+    // A generation with no handler joins on this read, so it must be newer than every frame the
+    // value holds: its turns become the spine, and a turn the stream created would be dropped.
+    const joining = started && unsubscribe === null;
+    const held = state.get().deliveryCursor;
+    if (
+      !acceptsSnapshot(state.get(), read.nextSeq) ||
+      (joining && held !== null && compareSeq(read.nextSeq, held) <= 0)
+    ) {
+      observe({ kind: "read", read, applied: false, cached });
+      return "stale";
+    }
+    // The checks compare the cell as the stream left it, so they run before the read lands.
+    const checks = checkRead(read);
+    const runState = read.liveState.runState;
+    const next = applyRead(state.get(), {
+      turns: read.turns,
+      asks: read.asks,
+      nextSeq: read.nextSeq,
+      runningTurnId: runState.execution?.currentTurnId ?? null,
+      runState,
+    });
+    if (!next) return "stale";
+    state.set(next);
+    for (const check of checks) observe(check);
+    observe({ kind: "read", read, applied: true, cached });
+    noteRecord(runState);
+    if (joining) {
+      // Every frame the value reflects is at or below the later of the read's position and the
+      // cursor; every frame above it is delivered once.
+      const resume = read.liveState.resumeAfterSeq;
+      const expected = generation;
+      const after = held !== null && compareSeq(held, resume) > 0 ? held : resume;
+      const acquired = subscribe(expected, after);
+      if (current(expected)) unsubscribe = acquired;
+      else acquired();
+    }
+    return "applied";
+  };
+
   return {
     start(held) {
       if (started || signal.aborted) return false;
@@ -394,7 +438,7 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       markHeldTurnsRewritten();
       // No handler yet: the first read applied after this joins the stream (see `receive`). A held read
       // that joins is caught up by the stream's replay, so it needs no new read.
-      if (held && this.receive(held) === "applied") return true;
+      if (held && accept(held, true) === "applied") return true;
       requestSnapshot("any");
       return false;
     },
@@ -410,48 +454,7 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       unsubscribe = null;
     },
 
-    receive(read) {
-      if (signal.aborted) return "stale";
-      // Fix 1: a delta buffered before this read belongs before it, not appended to its text.
-      flush();
-      // A generation with no handler joins on this read, so it must be newer than every frame the
-      // value holds: its turns become the spine, and a turn the stream created would be dropped.
-      const joining = started && unsubscribe === null;
-      const held = state.get().deliveryCursor;
-      if (
-        !acceptsSnapshot(state.get(), read.nextSeq) ||
-        (joining && held !== null && compareSeq(read.nextSeq, held) <= 0)
-      ) {
-        observe({ kind: "read", read, applied: false });
-        return "stale";
-      }
-      // The checks compare the cell as the stream left it, so they run before the read lands.
-      const checks = checkRead(read);
-      const runState = read.liveState.runState;
-      const next = applyRead(state.get(), {
-        turns: read.turns,
-        asks: read.asks,
-        nextSeq: read.nextSeq,
-        runningTurnId: runState.execution?.currentTurnId ?? null,
-        runState,
-      });
-      if (!next) return "stale";
-      state.set(next);
-      for (const check of checks) observe(check);
-      observe({ kind: "read", read, applied: true });
-      noteRecord(runState);
-      if (joining) {
-        // Every frame the value reflects is at or below the later of the read's position and the
-        // cursor; every frame above it is delivered once.
-        const resume = read.liveState.resumeAfterSeq;
-        const expected = generation;
-        const after = held !== null && compareSeq(held, resume) > 0 ? held : resume;
-        const acquired = subscribe(expected, after);
-        if (current(expected)) unsubscribe = acquired;
-        else acquired();
-      }
-      return "applied";
-    },
+    receive: (read) => accept(read, false),
 
     refresh() {
       schedule(generation);

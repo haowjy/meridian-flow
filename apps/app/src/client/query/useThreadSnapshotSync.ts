@@ -137,14 +137,18 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     if (isPendingCreation) return;
     // A read the cache already holds never runs the queryFn, so it is offered here on every
     // mount. The sync decides: it joins only if it is newer than every frame the cell holds,
-    // and asks for a read otherwise.
+    // and asks for a read otherwise. An invalidated snapshot is never offered: something marked it
+    // out of date while this chat was unmounted, and mounting no longer reads on its own.
     const cached = latest.current;
     const held =
-      cached && cached.thread.id === threadId && cached.thread.userId === accountId
+      cached &&
+      cached.thread.id === threadId &&
+      cached.thread.userId === accountId &&
+      !queryClient.getQueryState(threadQueryKeys.snapshot(threadId))?.isInvalidated
         ? cached
         : undefined;
     if (binding.sync.start(held)) rerender();
-  }, [accountId, binding, isPendingCreation, threadId]);
+  }, [accountId, binding, isPendingCreation, queryClient, threadId]);
 
   const accepted =
     !accountSignal.aborted &&
