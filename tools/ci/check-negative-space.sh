@@ -99,7 +99,7 @@ while IFS= read -r hit; do
   [[ -n "$hit" ]] && report_only_sediment+=("$hit")
 done < <(
   git grep -n -E \
-    'historicalBodySchema|canonicalBlockIdentityV1Schema|navigationTargetV1Schema|changeTrailShellV1Schema' \
+    'historicalBodySchema' \
     -- 'packages/contracts/src/**/*.ts' 2>/dev/null || true
 )
 while IFS= read -r hit; do

@@ -79,7 +79,7 @@ export type TextPatch = { from: number; to: number; text: string };
  *
  * A pane that replaced the whole fence on every keystroke would hand Yjs a
  * delete-and-reinsert of the entire diagram per character: peer carets inside
- * it would be flung to the end, and the change trail would read as a rewrite.
+ * it would be flung to the end, and the edit would read as a rewrite.
  * Common prefix and suffix is all it takes to make the edit look like what the
  * writer actually did.
  */

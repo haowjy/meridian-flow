@@ -1,4 +1,4 @@
-/** Shared peer-edit labels for editor marks and durable trail rows. */
+/** Shared peer-edit labels for editor marks. */
 import { i18n } from "@/lib/i18n";
 
 export function changeKindLabel(kind: "insert" | "modify" | "delete"): string {

@@ -1,4 +1,4 @@
-/** Durable inverse delivery to live rooms and review trails. */
+/** Durable inverse delivery to live rooms and drafts. */
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -12,7 +12,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
-} from "./test-support/change-trail-postgres-harness.js";
+} from "./test-support/collab-postgres-harness.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();

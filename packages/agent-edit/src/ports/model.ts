@@ -45,7 +45,7 @@ export interface DocumentModel {
   /** Derive a stable hash for one already-known block. */
   getBlockId(block: BlockRef): string;
 
-  /** Full immutable identity used by provenance and trail authority. */
+  /** Full immutable identity used by provenance. */
   getCanonicalBlockIdentity(block: BlockRef): CanonicalBlockIdentity;
 
   /** Canonical ordered hash list for a full document. */

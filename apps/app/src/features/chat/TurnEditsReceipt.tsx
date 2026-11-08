@@ -15,18 +15,14 @@ import type { WorkReceipt } from "@meridian/thread-client";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
-import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
-import { DraftStatsLabel } from "@/features/draft-review/draft-stats";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
-import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
-import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
 import {
   describeModelMove,
@@ -43,32 +39,17 @@ import {
   skipCauseCopy,
   treeFaultLocation,
 } from "./turn-receipt-copy";
-import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
-import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 import { workReceiptLine } from "./work-receipt-copy";
 
 /** One document a turn edited: where the edit landed (a draft names its Work), and what it did to the document's place. */
 export type TurnEditDocument = TurnLiveLineageDocumentItem;
 
-function hasTurnEditsReceiptDocuments(
-  documents: TurnEditDocument[],
-  changeTrail?: ChangeTrailShell,
-): boolean {
-  return (
-    documents.length > 0 || (changeTrail?.state === "settled" && changeTrail.documents.length > 0)
-  );
-}
-
 /** Whether this turn has a receipt to show at all: document edits, or a reversible Work mutation receipt. */
 export function hasTurnEditsReceiptContent(
   documents: TurnEditDocument[],
-  changeTrail: ChangeTrailShell | undefined,
   workReceipts: readonly WorkReceipt[],
 ): boolean {
-  return (
-    hasTurnEditsReceiptDocuments(documents, changeTrail) ||
-    workReceipts.some(isReversibleWorkReceipt)
-  );
+  return documents.length > 0 || workReceipts.some(isReversibleWorkReceipt);
 }
 
 export type TurnEditsReceiptProps = {
@@ -78,8 +59,6 @@ export type TurnEditsReceiptProps = {
   receipt: TurnReceiptChip | null;
   /** Work receipts carried by this turn's tool results (`AssistantView.workReceipts`). */
   workReceipts?: readonly WorkReceipt[];
-  changeTrail?: ChangeTrailShell;
-  navigateToChange?: NavigateToTrailChange;
 };
 
 export function TurnEditsReceipt({
@@ -88,14 +67,11 @@ export function TurnEditsReceipt({
   documents,
   receipt,
   workReceipts = [],
-  changeTrail,
-  navigateToChange,
 }: TurnEditsReceiptProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
   const canOpenContextUri = useChatContextRoutability();
   const [expanded, setExpanded] = useState(false);
-  const changeReveal = useChangeReveal(threadId, turn.id);
   const [pending, setPending] = useState(false);
   // The parts the writer's last Undo or Redo left, with the command that left them.
   const [actionSkips, setActionSkips] = useState<{
@@ -118,8 +94,7 @@ export function TurnEditsReceipt({
   const guardCopy = commandRefusal
     ? reversalRefusalCopy(commandRefusal, names)
     : undoGuardCopy(receipt);
-  const trailDocuments = changeTrail?.documents ?? [];
-  const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
+  const hasEditedDocuments = documents.length > 0;
   // Reversible Work mutation receipts are content in their own right: their
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
@@ -128,52 +103,14 @@ export function TurnEditsReceipt({
   // disclosure toggle, competing for the click at the moment the writer is
   // reaching to open it — and the names it would compete with are the ones in
   // the expanded rows below, which already navigate.
-  const trailDocumentIds = new Set(trailDocuments.map((document) => document.documentId));
-  const headerDocumentCount = new Set([
-    ...trailDocumentIds,
-    ...documents.map((document) => document.documentId),
-  ]).size;
-  const showTrailDetail =
-    changeTrail?.state === "settled" && trailDocuments.length > 0 && navigateToChange;
-  const documentRows = showTrailDetail
-    ? documents.filter((document) => !trailDocumentIds.has(document.documentId))
-    : documents;
-  const wordStats =
-    changeTrail &&
-    (typeof changeTrail.wordsAdded === "number" || typeof changeTrail.wordsRemoved === "number")
-      ? {
-          kind: "words" as const,
-          added: changeTrail.wordsAdded ?? 0,
-          removed: changeTrail.wordsRemoved ?? 0,
-        }
-      : null;
+  const headerDocumentCount = new Set(documents.map((document) => document.documentId)).size;
   const undoUnavailable = receipt == null || receipt.control === "view_change";
-
-  // The change stage of a conversation reveal — only a reveal naming a change
-  // row inside THIS turn reaches here. The request is never copied into local
-  // state: display without the lifecycle is what let a request outlive
-  // everything that could finish it.
-  useEffect(() => {
-    if (!changeReveal) return;
-    // Change rows are durable trail evidence; without an authorized trail this
-    // receipt has no row to reveal, and the writer stays on the turn.
-    if (
-      !hasEditedDocuments ||
-      changeTrail?.state !== "settled" ||
-      changeTrail.documents.length === 0 ||
-      !navigateToChange
-    ) {
-      changeReveal.unavailable();
-      return;
-    }
-    setExpanded(true);
-  }, [changeReveal, changeTrail, hasEditedDocuments, navigateToChange]);
 
   useEffect(() => {
     if (receipt?.control !== "view_change") setCommandRefusal(null);
   }, [receipt?.control]);
 
-  if (!hasTurnEditsReceiptContent(documents, changeTrail, workReceipts)) return null;
+  if (!hasTurnEditsReceiptContent(documents, workReceipts)) return null;
 
   async function reverseTurn() {
     if (pending || !receipt || receipt.control === "view_change") return;
@@ -295,12 +232,6 @@ export function TurnEditsReceipt({
                   )
                 : workCountLabel(reversibleWorkReceipts.length)}
             </span>
-            {wordStats ? (
-              <span className="ml-2 shrink-0">
-                {" "}
-                <DraftStatsLabel stats={wordStats} />
-              </span>
-            ) : null}
           </span>
         </button>
         {undoUnavailable ? (
@@ -370,20 +301,9 @@ export function TurnEditsReceipt({
               {guardCopy}
             </p>
           ) : null}
-          {showTrailDetail && changeTrail && navigateToChange ? (
-            <ChangeViewDetail
-              threadId={threadId}
-              shell={changeTrail}
-              navigateToChange={navigateToChange}
-              reveal={changeReveal}
-              documents={documents}
-              onOpenContextUri={openContextUri}
-              canOpenContextUri={canOpenContextUri}
-            />
-          ) : null}
-          {documentRows.length > 0 ? (
+          {documents.length > 0 ? (
             <ul className="flex flex-col">
-              {documentRows.map((doc) => (
+              {documents.map((doc) => (
                 <li key={doc.uri}>
                   <DocumentRow
                     document={doc}
@@ -409,106 +329,6 @@ export function TurnEditsReceipt({
       ) : null}
     </div>
   );
-}
-
-/** Authorized durable evidence for one settled trail, and the change stage's
- * settle point. Private: the receipt is the only surface that owns it. */
-function ChangeViewDetail({
-  threadId,
-  shell,
-  navigateToChange,
-  reveal,
-  documents = [],
-  onOpenContextUri = null,
-  canOpenContextUri = null,
-}: {
-  threadId: string;
-  shell: ChangeTrailShell;
-  navigateToChange: NavigateToTrailChange;
-  reveal: ChangeRevealRequest | null;
-  documents?: TurnEditDocument[];
-  onOpenContextUri?: ((uri: string) => void) | null;
-  canOpenContextUri?: ((uri: string) => boolean) | null;
-}) {
-  const { detail } = useAuthorizedChangeTrailDetail(threadId, shell, true);
-
-  // Where the change stage settles: a row can be revealed only if the loaded
-  // evidence carries it. A failed request or a trail that no longer holds the
-  // change both leave the writer on the turn instead of waiting forever.
-  useEffect(() => {
-    if (!reveal) return;
-    if (detail.isError) {
-      reveal.unavailable();
-      return;
-    }
-    if (!detail.data) return;
-    const rowExists = detail.data.some(
-      (document) =>
-        !("unavailable" in document) &&
-        document.changes.some((change) => change.changeId === reveal.changeId),
-    );
-    if (!rowExists) reveal.unavailable();
-  }, [detail.data, detail.isError, reveal]);
-
-  if (shell.state !== "settled") return null;
-  if (detail.isError) {
-    return (
-      <div className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted">
-        <p>
-          <Trans>Couldn't load change details.</Trans>
-        </p>
-        <Button size="sm" onClick={() => void detail.refetch()}>
-          <Trans>Try again</Trans>
-        </Button>
-      </div>
-    );
-  }
-  return detail.data?.map((document) => {
-    if ("unavailable" in document) {
-      return (
-        <p
-          key={document.documentId}
-          className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted"
-        >
-          <Trans>This chapter is no longer available, so its change details can't be shown.</Trans>
-        </p>
-      );
-    }
-    if (document.changes.length === 0) return null;
-    const editedDocument = documents.find(
-      (candidate) => candidate.documentId === document.documentId,
-    );
-
-    return (
-      <section key={document.documentId} aria-label={document.documentTitle}>
-        {editedDocument ? (
-          <DocumentRow
-            document={editedDocument}
-            onOpenContextUri={onOpenContextUri}
-            canOpenContextUri={canOpenContextUri}
-          />
-        ) : (
-          <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
-            {document.documentTitle}
-          </span>
-        )}
-        {document.anchorState === "deleted" ? (
-          <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted">
-            <Trans>
-              This chapter is no longer available. Copy any saved text you want to keep.
-            </Trans>
-          </p>
-        ) : null}
-        <ChangeViewRows
-          documentId={document.documentId}
-          changes={document.changes}
-          navigateToChange={navigateToChange}
-          anchorUnavailable={document.anchorState === "deleted"}
-          reveal={reveal}
-        />
-      </section>
-    );
-  });
 }
 
 function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {

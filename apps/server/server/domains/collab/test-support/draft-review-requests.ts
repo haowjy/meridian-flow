@@ -12,7 +12,7 @@ import {
   TURN_ID,
   USER_ID,
   WORK_ID,
-} from "./change-trail-postgres-harness.js";
+} from "./collab-postgres-harness.js";
 import { commitDraftRows } from "./draft-update-writes.js";
 import { captureHistoricalDraftRow } from "./historical-draft-row.js";
 

@@ -419,38 +419,6 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      case "turn.change_trail_updated":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: "meridian.turn_change_trail.updated",
-            value: {
-              eventId: event.eventId,
-              threadId: event.threadId,
-              trailId: event.trailId,
-              turnId: event.turnId,
-              version: event.version,
-              counts: event.counts,
-            },
-          }),
-        ];
-
-      case "turn.change_trail_settled":
-        return [
-          parseAguiEvent({
-            type: EventType.CUSTOM,
-            name: "meridian.turn_change_trail.settled",
-            value: {
-              eventId: event.eventId,
-              threadId: event.threadId,
-              trailId: event.trailId,
-              turnId: event.turnId,
-              version: event.version,
-              shell: event.shell,
-            },
-          }),
-        ];
-
       case "agent.spawn":
         return [
           parseAguiEvent({

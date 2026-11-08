@@ -10,7 +10,7 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
 
 ## Identity and targeting
 
-- Trail and navigation store a block's canonical Yjs item tuple, never the displayed
+- Navigation targets store a block's canonical Yjs item tuple, never the displayed
   hash, which is the shortest sibling-unique prefix and can change width.
 - Echo targeting and deletion anchors carry Yjs item identities, not display hashes:
   the same block can have a different unique prefix among the room's siblings. Only

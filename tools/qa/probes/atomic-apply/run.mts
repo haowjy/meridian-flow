@@ -15,12 +15,10 @@ import {
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-apply-click.ts";
 import { createDrizzleBranchCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-commands.ts";
 import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts";
-import { createDrizzleChangeTrailAggregateWriter } from "../../../../apps/server/server/domains/collab/adapters/drizzle-change-trail-aggregate.ts";
 import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleTreeHistory } from "../../../../apps/server/server/domains/collab/adapters/drizzle-tree-history.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
-import { createStaticDocumentLinkScopes } from "../../../../apps/server/server/domains/collab/adapters/in-memory/static-document-link-scopes.ts";
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import type { CommandLookupKey } from "../../../../apps/server/server/domains/collab/domain/branch-commands.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
@@ -55,11 +53,6 @@ import {
   rebase,
   writeBlocks,
 } from "../../../../packages/agent-edit/src/diff/index.ts";
-import {
-  createAgentEditCodecFactory,
-  yProsemirrorModel,
-} from "../../../../packages/agent-edit/src/integration.ts";
-import { mdxCodec } from "../../../../packages/markup/src/index.ts";
 import {
   createScratchDatabase,
   gate,
@@ -136,10 +129,6 @@ async function fixture(
         recovered++;
       },
     },
-    model: yProsemirrorModel(schema),
-    codec: createAgentEditCodecFactory(mdxCodec({ schema })),
-    links: createStaticDocumentLinkScopes(),
-    trail: createDrizzleChangeTrailAggregateWriter(h.db),
     catalog: { refreshSources: async () => "0" },
     arrivals: { settle: async () => 0 },
     removal: createTestDocumentRemoval(h.db),
@@ -864,145 +853,6 @@ try {
     assert.deepEqual(await f.liveText(), ["Created content."]);
     f.close();
   });
-  await row(
-    "AI membership writes committed trail navigation and explicit owner signals",
-    async () => {
-      const f = await fixture(["Base."]);
-      await f.type(["Changed."], true);
-      const c = f.click();
-      await h.raw`delete from change_trail_dirty_log where thread_id=${f.threadId}`;
-      await applied(f, c);
-      const rows =
-        await h.raw`select d.changes from change_trail_document_details d join change_trail_shells s on s.id=d.trail_id where s.thread_id=${f.threadId}`;
-      assert.equal(rows.length, 1);
-      assert.equal(rows[0].changes.length, 1);
-      assert.match(rows[0].changes[0].beforeText, /Base/);
-      assert.match(rows[0].changes[0].afterTextAtReceipt, /Changed/);
-      assert.ok(rows[0].changes[0].navigation);
-      assert.ok(
-        (
-          await h.raw`select 1 from change_trail_dirty_log where thread_id=${f.threadId} and turn_id=${f.turnId}`
-        ).length,
-      );
-      f.close();
-    },
-  );
-
-  for (const mode of [
-    "independent",
-    "live move",
-    "draft move",
-    "shared paragraph",
-    "deletion",
-  ] as const) {
-    await row(`multi-author correspondence: ${mode}`, async () => {
-      const original = [
-        "First old words stay here.",
-        "Second paragraph keeps all these old words staying over there.",
-        "Last unchanged paragraph remains.",
-      ];
-      const f = await fixture(original);
-      const other = await h.seedWork(`other-author-${client++}`);
-      const first = "First AI words stay here.";
-      const second =
-        mode === "shared paragraph"
-          ? "First AI words shine here."
-          : "Second paragraph keeps all these AI words staying over there.";
-      await f.type(
-        mode === "draft move"
-          ? [original[1], first, original[2]]
-          : [first, original[1], original[2]],
-        true,
-      );
-      f.room.clientID = client++;
-      await f.type(
-        mode === "shared paragraph"
-          ? [second, original[1], original[2]]
-          : mode === "draft move"
-            ? [second, first, original[2]]
-            : mode === "deletion"
-              ? [first, original[2]]
-              : [first, second, original[2]],
-        true,
-        other,
-      );
-      const c = f.click();
-      if (mode === "live move") await f.liveWrite([original[1], original[0], original[2]]);
-      await applied(f, c);
-      for (const [owner, expected, forbidden] of mode === "shared paragraph"
-        ? ([
-            [f, second, original[1]],
-            [other, second, original[1]],
-          ] as const)
-        : ([
-            [f, first, "Second"],
-            [other, mode === "deletion" ? original[1] : second, "First"],
-          ] as const)) {
-        const rows =
-          await h.raw`select d.changes from change_trail_document_details d join change_trail_shells s on s.id=d.trail_id where s.thread_id=${owner.threadId} and s.turn_id=${owner.turnId}`;
-        assert.equal(rows.length, 1);
-        const changes = rows[0].changes as {
-          beforeText: string | null;
-          afterTextAtReceipt: string | null;
-          navigation: unknown;
-        }[];
-        assert.equal(
-          changes.length,
-          mode === "draft move" && owner === f ? 2 : 1,
-          JSON.stringify(changes),
-        );
-        const text = changes
-          .map((change) => `${change.beforeText ?? ""} ${change.afterTextAtReceipt ?? ""}`)
-          .join(" ");
-        assert.ok(text.includes(expected), text);
-        assert.ok(!text.includes(forbidden), text);
-        assert.ok(changes.every((change) => change.navigation));
-      }
-      f.close();
-    });
-  }
-
-  await row("multi-author unrelated replacement retains deleted-block ownership", async () => {
-    const original = [
-      "Alpha orchard blooms.",
-      "Beta ocean roars.",
-      "An unchanged spacer separates these authors completely.",
-      "Third paragraph keeps all these old words standing over there.",
-    ];
-    const f = await fixture(original);
-    const other = await h.seedWork(`replacement-author-${client++}`);
-    const replacement = "New mountains shine.";
-    await f.type([replacement, original[2], original[3]], true);
-    f.room.clientID = client++;
-    await f.type([replacement, original[2], original[3].replace("old", "AI")], true, other);
-    await applied(f, f.click());
-    for (const owner of [f, other]) {
-      const rows =
-        await h.raw`select d.changes from change_trail_document_details d join change_trail_shells s on s.id=d.trail_id where s.thread_id=${owner.threadId} and s.turn_id=${owner.turnId}`;
-      assert.equal(rows.length, 1);
-      const changes = rows[0].changes as {
-        beforeText: string | null;
-        afterTextAtReceipt: string | null;
-        navigation: unknown;
-      }[];
-      const text = changes
-        .map((change) => `${change.beforeText ?? ""} ${change.afterTextAtReceipt ?? ""}`)
-        .join(" ");
-      if (owner === f) {
-        assert.ok(
-          text.includes(original[0]) && text.includes(original[1]) && text.includes(replacement),
-          text,
-        );
-        assert.ok(!text.includes("Third"), text);
-      } else {
-        assert.ok(text.includes("Third") && text.includes("AI"), text);
-        assert.ok(!/Alpha|Beta|New mountains/.test(text), text);
-      }
-      assert.ok(changes.every((change) => change.navigation));
-    }
-    f.close();
-  });
-
   await row(
     "paused before compile, retry applies then closes; original returns stored applied",
     async () => {

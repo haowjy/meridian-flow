@@ -118,8 +118,8 @@ import { useReplyRetry } from "./useReplyRetry";
 import { useSendNow } from "./useSendNow";
 import { useShared } from "./useShared";
 import { useThreadActivity } from "./useThreadActivity";
-import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
+import { useThreadWorkProjections } from "./useThreadWorkProjections";
 
 const EMPTY_TURNS: Turn[] = [];
 const NO_ITEMS: PendingInboxItem[] = [];
@@ -167,7 +167,7 @@ export function ChatView({
   active = true,
 }: ChatViewProps) {
   const actions = useThreadActions();
-  const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
+  useThreadWorkProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
   useRegisterChatComposer(threadId, composerRef);
   // The transcript takes desktop files for the composer, so the whole chat is one drop zone.
@@ -717,7 +717,6 @@ export function ChatView({
                           historySettled={historySettled}
                           tailFollowRevision={tailFollowRevision}
                           ariaLabel={t`Chat`}
-                          changeTrails={changeTrails.byId}
                           submissionRecoveryByTurnId={submissions.presentation}
                           controls={controls}
                           chatStop={chatStop}

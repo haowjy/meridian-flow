@@ -112,13 +112,10 @@ and reports a refusal on that excerpt; a pending Copied reset never erases it.
 ## Peer marks
 
 The peer-mark surface reads the projection plugin's click/Enter/caret state.
-The editor feature holds no duplicate mark state. Trail evidence is read-only;
-review drafts without a projection naturally stand down. Action controls wait
-for trail detail instead of rendering a partial action row. Receipt Undo/Redo
-is the sole reversal authority for AI changes. *Open conversation* routes
-through `requestConversationReveal`, so the chat side expands the owning turn
-receipt; trail-row navigation addresses a matching live session mark first and
-falls back to temporary range navigation once it has cleared. Popover focus
+The editor feature holds no duplicate mark state. Review drafts without a
+projection naturally stand down. Receipt Undo/Redo is the sole reversal authority
+for AI changes. *Open conversation* routes through `requestConversationReveal`
+with the owning turn, so the chat side lands on that turn. Popover focus
 follows activation: a pointer open leaves the caret in the prose and a
 pointer close restores the held selection; keyboard activation moves focus into
 the popover, and Escape or close returns it to the mark's current span. Neither

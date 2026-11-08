@@ -31,6 +31,6 @@ Durable Yjs coordination and persistence for live documents and Work drafts.
 [`.context/CONTEXT.md`](.context/CONTEXT.md) holds the contracts. Focused pages:
 [Apply](.context/apply.md), [draft records](.context/draft-model-and-records.md),
 [document authority](.context/document-authority-and-schema.md),
-[reversal](.context/reversal.md), [committed trail](.context/change-trail.md),
+[reversal](.context/reversal.md),
 [WebSocket concurrency](.context/websocket-concurrency.md). Deferred work:
 [TODO](.context/TODO.md), [FUTURE](.context/FUTURE.md).

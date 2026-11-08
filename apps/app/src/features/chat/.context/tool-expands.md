@@ -24,7 +24,7 @@ The caller knows the tool, so it calls that tool's normalizer.
 |---|---|---|---|
 | Process | What did the agent do? | Tool rows in the fold | Turn blocks |
 | Intent | What did it look at, or mean to write? | Row expands | Tool input and the typed read result |
-| Outcome | What changed in my manuscript? | Turn edits receipt | Change trail |
+| Outcome | What changed in my manuscript? | Turn edits receipt | Lineage and inverse receipts |
 
 A write expand reads `tool.input.content`, never the output: the output is the model's
 text, the typed result is a receipt, and a write can succeed as a tool call and still be

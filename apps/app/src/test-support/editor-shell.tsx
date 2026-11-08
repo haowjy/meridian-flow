@@ -7,7 +7,6 @@ import * as threads from "@/client/query/useProjectThreads";
 import * as works from "@/client/query/useWorks";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import * as trail from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import * as chrome from "@/features/editor/chrome/chrome-surfaces";
 import { EditorView } from "@/features/editor/EditorView";
@@ -47,7 +46,6 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
       status: "empty",
       refetch: () => undefined,
     }),
-    vi.spyOn(trail, "usePrefetchTrailDetails").mockImplementation(() => {}),
     vi.spyOn(phoneShell, "usePhoneShell").mockReturnValue(false),
     vi.spyOn(account, "useContextRemovalCoordinator").mockReturnValue(removal),
     vi.spyOn(account, "useOptionalAccountResourceReplica").mockReturnValue(null),

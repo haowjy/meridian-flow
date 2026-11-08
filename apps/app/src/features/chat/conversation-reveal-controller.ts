@@ -20,11 +20,10 @@ export type ConversationRevealTarget =
       subagentBlock?: SubagentRevealBlock;
       /** A tool call inside the turn to bring into view: its row, or the fold that holds it. */
       toolCallId?: string;
-    }
-  | { kind: "change"; threadId: string; turnId: string; changeId: string };
+    };
 
 /** Stage names ARE target kinds, shallowest first. */
-const STAGES = ["thread", "turn", "change"] as const;
+const STAGES = ["thread", "turn"] as const;
 type Stage = (typeof STAGES)[number];
 
 /**
@@ -48,11 +47,6 @@ export type TurnRevealRequest = StageOutcome & {
   subagentBlock?: SubagentRevealBlock;
   toolCallId?: string;
 };
-export type ChangeRevealRequest = StageOutcome & {
-  threadId: string;
-  turnId: string;
-  changeId: string;
-};
 type ThreadRevealRequest = { threadId: string; landed: () => void };
 
 /**
@@ -63,13 +57,12 @@ type ThreadRevealRequest = { threadId: string; landed: () => void };
 export type ConversationRevealView = {
   thread: ThreadRevealRequest | null;
   turn: TurnRevealRequest | null;
-  change: ChangeRevealRequest | null;
 };
 
 type Pending = { id: number; target: ConversationRevealTarget; stage: Stage };
 type Listener = () => void;
 
-const IDLE: ConversationRevealView = { thread: null, turn: null, change: null };
+const IDLE: ConversationRevealView = { thread: null, turn: null };
 
 type ConversationRevealController = {
   request: (target: ConversationRevealTarget) => void;
@@ -121,7 +114,7 @@ function createConversationRevealController(): ConversationRevealController {
     const landed = () => settle(id, stage, "landed");
     const unavailable = () => settle(id, stage, "unavailable");
     // A stage never runs deeper than its target (see `deeperStage`), so the
-    // mismatched arms below are unreachable — they keep union narrowing total.
+    // mismatched arm below is unreachable — it keeps union narrowing total.
     switch (stage) {
       case "thread":
         return { ...IDLE, thread: { threadId: target.threadId, landed } };
@@ -133,32 +126,17 @@ function createConversationRevealController(): ConversationRevealController {
               turn: {
                 threadId: target.threadId,
                 turnId: target.turnId,
-                ...(target.kind === "turn" && target.subagentThreadId
+                ...(target.subagentThreadId
                   ? {
                       subagentThreadId: target.subagentThreadId,
                       ...(target.subagentBlock ? { subagentBlock: target.subagentBlock } : {}),
                     }
                   : {}),
-                ...(target.kind === "turn" && target.toolCallId
-                  ? { toolCallId: target.toolCallId }
-                  : {}),
+                ...(target.toolCallId ? { toolCallId: target.toolCallId } : {}),
                 landed,
                 unavailable,
               },
             };
-      case "change":
-        return target.kind === "change"
-          ? {
-              ...IDLE,
-              change: {
-                threadId: target.threadId,
-                turnId: target.turnId,
-                changeId: target.changeId,
-                landed,
-                unavailable,
-              },
-            }
-          : IDLE;
     }
   };
 

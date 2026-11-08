@@ -15,7 +15,7 @@ import {
   TURN_ID,
   USER_ID,
   WORK_ID,
-} from "./change-trail-postgres-harness.js";
+} from "./collab-postgres-harness.js";
 
 export async function stageDraft(
   db: ReturnType<typeof createTestDatabase>,

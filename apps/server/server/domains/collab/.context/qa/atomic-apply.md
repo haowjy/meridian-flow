@@ -8,8 +8,7 @@ pnpm exec tsx tools/qa/probes/atomic-apply/run.mts
 
 The runner creates, migrates, and drops its own `lfd_probe_*` PostgreSQL
 database. It drives the production Apply route core with real file policy,
-command claim, draft identity, committed live journal, prefix append, and trail
-writer. It uses fresh seeded client-1 `review_base` and ProseMirror fragments;
+command claim, draft identity, committed live journal, and prefix append. It uses fresh seeded client-1 `review_base` and ProseMirror fragments;
 it does not open a browser or network listener.
 
 The runner must pass its frozen Apply, Un-Apply, restore/`needs_restore`,
@@ -32,8 +31,6 @@ particular, verify that:
   with `restore` restores it, and a taken path returns a `renamed` note.
 - Ordinary text Apply does not need the source namespace lock. Hidden-create
   reveal and restore use the tree lock.
-- Independent AI receipts retain only their own passages, navigation, and owner
-  signals.
 
 ## Late closure at the append door
 

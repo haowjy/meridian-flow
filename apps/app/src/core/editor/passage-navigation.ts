@@ -1,15 +1,14 @@
 /**
  * Open a document and land on the passage a search result promised.
  *
- * Same shape as `change-trail-navigation`: retain the session, wait for this
+ * Retain the session, wait for this
  * document's Yjs sync, then resolve against live state — because an anchor is
  * only meaningful once the document the writer is looking at is the document
  * the anchor was made against. Opening is deliberately not part of it: a
  * search row is a document door first, and the door opens whether or not the
  * passage inside it can still be found.
  *
- * What differs is the anchor. A trail change carries encoded relative
- * positions; a search hit carries a block hash and the term that matched.
+ * A search hit carries a block hash and the term that matched.
  * The hash is Yjs-durable at block granularity — it derives from the block's
  * immutable item id, so it survives every edit inside the block and dangles
  * only when the block itself goes. The term is what turns "a block" into "the

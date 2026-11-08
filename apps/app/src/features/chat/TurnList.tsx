@@ -12,7 +12,6 @@ import type {
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
-import type { ChangeTrailShell } from "@/client/change-trails";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -31,7 +30,6 @@ import type { QueuedControl } from "./thread-controls/thread-controls";
 import type { ThreadControls } from "./thread-controls/useThreadControls";
 import { AppliedWriteModeNotice } from "./thread-controls/WriteModeNotice";
 import { UserTurn } from "./UserTurn";
-import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import type { ChatStop } from "./useChatStop";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
@@ -55,7 +53,6 @@ export type TurnListProps = {
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
   ariaLabel: string;
-  changeTrails?: Record<string, ChangeTrailShell>;
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   /** Writer commands: queued `/compact` and switches with their Stop, and Stop on a running divider. */
@@ -111,7 +108,6 @@ export function TurnList({
   historySettled,
   tailFollowRevision,
   ariaLabel,
-  changeTrails = {},
   submissionRecoveryByTurnId,
   controls = null,
   chatStop = null,
@@ -124,7 +120,6 @@ export function TurnList({
   threadUsage = null,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
   const { rows } = view;
   const visibleTurns = useMemo(() => rows.map((row) => row.turn), [rows]);
@@ -183,14 +178,6 @@ export function TurnList({
     (listIdx: number) => listIdx - rowOffset - (noticeAt >= 0 && listIdx > noticeAt ? 1 : 0),
     [rowOffset, noticeAt],
   );
-  const byTurnId = useMemo(() => {
-    const byTurnId = new Map<string, ChangeTrailShell>();
-    for (const shell of Object.values(changeTrails)) {
-      if (shell.owner.kind === "turn") byTurnId.set(shell.owner.turnId, shell);
-    }
-    return byTurnId;
-  }, [changeTrails]);
-
   const virtualizer = useVirtualizer({
     count: listRows.length,
     getScrollElement: () => viewportRef.current,
@@ -318,8 +305,6 @@ export function TurnList({
           brief={handoff ? brief : null}
           destinationBusy={handoff && busy}
           owners={row.inherited ? (inherited?.owners ?? null) : null}
-          changeTrail={assistant && local ? byTurnId.get(row.turn.id) : undefined}
-          navigateToChange={assistant ? navigateToChange : undefined}
           // Thread cache stats follow the active run, or the latest settled
           // action row once no assistant row is live. Passing the snapshot to
           // every historical model-step row defeats the row memo boundary.
@@ -334,14 +319,12 @@ export function TurnList({
     [
       brief,
       busy,
-      byTurnId,
       chatStop,
       controls,
       inherited?.owners,
       isStandIn,
       lastAssistantIdx,
       lastQueuedTurnId,
-      navigateToChange,
       onRetryInherited,
       queue,
       queuedCount,
@@ -474,8 +457,6 @@ const TranscriptRow = memo(function TranscriptRow({
   brief,
   destinationBusy,
   owners,
-  changeTrail,
-  navigateToChange,
   threadUsage,
 }: {
   row: ViewRow;
@@ -494,8 +475,6 @@ const TranscriptRow = memo(function TranscriptRow({
   brief?: HandoffBrief | null;
   destinationBusy: boolean;
   owners: InheritedView["owners"] | null;
-  changeTrail?: ChangeTrailShell;
-  navigateToChange?: ReturnType<typeof useChangeTrailNavigation>;
   threadUsage: TurnListProps["threadUsage"];
 }) {
   const { turn } = row;
@@ -551,8 +530,6 @@ const TranscriptRow = memo(function TranscriptRow({
         movedPast={row.movedPast}
         continuesResponse={row.continuing}
         standIn={standIn}
-        changeTrail={changeTrail}
-        navigateToChange={navigateToChange}
       />
     );
   } else {
