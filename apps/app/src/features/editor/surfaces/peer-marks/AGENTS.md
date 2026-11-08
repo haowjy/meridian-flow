@@ -1,6 +1,10 @@
 # surfaces/peer-marks — the popover a peer mark opens
 
 The marks are [`PeerMarkerExtension.ts`](../../../../core/editor/extensions/PeerMarkerExtension.ts).
+
+**Dormant.** No server code sends `change_event`, so no mark renders and nothing here is exercised by
+a running app. The lane is kept for the history feature, which will decide what marks show and where their
+data comes from ([KB](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/receipts/change-visibility-not-warnings.md#ai-authorship-marks-are-kept-dormant)). Don't extend it for new work, and don't delete it.
 `PeerMarkSurface` reads the press the plugin writes and listens to no DOM event of its own.
 
 - A press is not a marker. The marker is looked up live on every render, so a mark the writer's own edit
