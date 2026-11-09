@@ -47,7 +47,7 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuItem aria-current="true" className="gap-2 font-medium">
-          <Check aria-hidden className="size-3.5 text-primary" />
+          <Check aria-hidden className="size-3.5" />
           <Trans>Live</Trans>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

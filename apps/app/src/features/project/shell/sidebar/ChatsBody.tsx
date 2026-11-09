@@ -125,7 +125,12 @@ export function ChatsBody({
                 >
                   <Layers className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
                   <span className="min-w-0 flex-1 truncate">{workName(other.workId)}</span>
-                  <span className="shrink-0 text-[11px] text-primary">
+                  <span
+                    className={cn(
+                      "shrink-0 text-[11px]",
+                      other.needsYou > 0 ? "text-primary" : "text-ink-muted",
+                    )}
+                  >
                     {other.needsYou > 0 ? (
                       <Trans>{other.needsYou} needs you</Trans>
                     ) : (
@@ -211,7 +216,7 @@ function StateMark({ state }: { state: RowState }) {
       <span
         role="img"
         aria-label={t`Running`}
-        className="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-primary/25 border-t-primary motion-reduce:animate-none"
+        className="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-ink-muted/25 border-t-ink-muted motion-reduce:animate-none"
       />
     );
   if (state === "needs-you")

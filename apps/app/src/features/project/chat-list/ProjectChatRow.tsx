@@ -141,7 +141,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
               // hit area extends past the 32px button instead of growing it.
               "pointer-events-auto relative [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-1.5 [@media(hover:none)]:after:content-[''] [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-1.5 [@media(pointer:coarse)]:after:content-['']",
               item.isFavorite
-                ? "text-primary hover:text-primary"
+                ? "text-gold hover:text-gold"
                 : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100",
             )}
           >
