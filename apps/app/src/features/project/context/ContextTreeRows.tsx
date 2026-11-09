@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronRight, FileText, Folder, FolderOpen, LoaderCircle } from "lucide-react";
+import { ChevronRight, type Folder, LoaderCircle } from "lucide-react";
 import {
   createContext,
   type KeyboardEvent,
@@ -30,7 +30,6 @@ import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
-import { fileKindIcon } from "./context-file-icon";
 import {
   contextTreeFileRowClassName,
   contextTreeRowClassName,
@@ -99,8 +98,17 @@ function useTreeEnv(): TreeEnv {
 }
 
 /** A visible child group, which may span more than one catalog. */
-export function TreeGroup({ children }: { children: ReactNode }) {
-  return <div className="relative isolate">{children}</div>;
+export function TreeGroup({ depth, children }: { depth: number; children: ReactNode }) {
+  return (
+    <div className="relative isolate">
+      {children}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -inset-y-1 z-10 border-l border-border-subtle"
+        style={{ left: rowPaddingLeft(depth) }}
+      />
+    </div>
+  );
 }
 
 /** The sole catalog child renderer; standalone lists start at depth zero. */
@@ -197,29 +205,6 @@ export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   );
 }
 
-// A folder or a plain document needs no glyph; images, PDFs and code keep theirs.
-const PLAIN_KINDS: ReadonlySet<typeof Folder> = new Set([Folder, FolderOpen, FileText]);
-
-function KindGlyph({ icon }: { icon: typeof Folder }) {
-  return PLAIN_KINDS.has(icon) ? null : <RowIcon icon={icon} />;
-}
-
-const NUMBERED_NAME = /^(\d+)\s*·\s*(.+)$/;
-
-/** "87 · The Vermilion Seal" reads as a muted number column, then the title. */
-function NumberedName({ name }: { name: string }) {
-  const match = NUMBERED_NAME.exec(name);
-  if (!match) return <span className="truncate">{name}</span>;
-  return (
-    <span className="flex min-w-0 items-baseline gap-1.5">
-      <span className="w-6 shrink-0 text-right text-xs text-ink-muted tabular-nums">
-        {match[1]}
-      </span>
-      <span className="truncate">{match[2]}</span>
-    </span>
-  );
-}
-
 // Edge bands, as a share of the row's height. A file's centre only re-files it
 // into its own folder, so its edges get more room than a folder's, whose centre
 // moves rows into it.
@@ -276,9 +261,7 @@ function DirRow({
     env.toggleEntry(dir.entryId);
   };
   if (interaction.renaming) {
-    return (
-      <RenameRow options={interaction.rename} depth={depth} icon={isOpen ? FolderOpen : Folder} />
-    );
+    return <RenameRow options={interaction.rename} depth={depth} />;
   }
 
   return (
@@ -333,7 +316,7 @@ function DirRow({
         </div>
       </EntryInteractionShell>
       {isOpen ? (
-        <TreeGroup>
+        <TreeGroup depth={depth + 1}>
           <TreeChildren
             parentId={dir.entryId}
             parentPath={dir.path}
@@ -411,7 +394,7 @@ function FileRow({
   const entry = useMemo(() => dragEntry(file), [file]);
   const row = useEntryRow(entry, active);
   if (interaction.renaming) {
-    return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;
+    return <RenameRow options={interaction.rename} depth={depth} />;
   }
 
   return (
@@ -429,9 +412,8 @@ function FileRow({
       >
         <InsertionLine edge={drop.edge} inset={rowPaddingLeft(depth)} />
         <span className="h-7 w-4 shrink-0" aria-hidden />
-        <KindGlyph icon={fileKindIcon(file)} />
         <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-          <NumberedName name={file.name} />
+          <span className="truncate">{file.name}</span>
           <LinkUpdateNote
             projectId={env.projectId}
             subject={{ kind: "file", id: file.documentId }}
@@ -462,11 +444,9 @@ function FileRow({
 function RenameRow({
   options,
   depth,
-  icon,
 }: {
   options: Parameters<typeof useRenameEntryForm>[0];
   depth: number;
-  icon: typeof Folder;
 }) {
   const form = useRenameEntryForm(options);
   return (
@@ -475,7 +455,6 @@ function RenameRow({
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
       <span className="h-7 w-4 shrink-0" aria-hidden />
-      <KindGlyph icon={icon} />
       <EntryNameField form={form} label={t`Rename`} className="ml-0.5" />
     </div>
   );
@@ -510,7 +489,6 @@ function CreateRow({
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
       <span className="h-7 w-4 shrink-0" aria-hidden />
-      <KindGlyph icon={form.icon} />
       <EntryNameField
         form={form}
         label={form.placeholder}
