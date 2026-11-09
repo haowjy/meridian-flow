@@ -125,10 +125,10 @@ changes included. Before a merge, CI is green, the regressions the change could 
 tested, and the PR body is reread against the final diff, with evidence from the commit being
 merged. A big fix or refactor also needs an independent review.
 
-Big means impact, not size: a change is big when it alters the wire protocol or a stored
-format, spans more than one server domain or app, or changes behavior others rely on. A schema
-change, a migration or a change to `packages/contracts` is not big by itself; the migration
-invariant and its lint still apply.
+A change is big when it changes how a part of the system is designed: a new architecture, a
+reorganization, or a rewrite of how a subsystem works. What it touches doesn't make it big: a
+schema change, a migration, a contract, the wire protocol, a stored format or several domains
+can each be a small change. The invariants above still apply to every change.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with
