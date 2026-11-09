@@ -15,7 +15,6 @@ export type ReviewToast = {
 };
 export type DraftReviewState = {
   surface: { kind: "none" } | InlineDraftReview;
-  marksVisible: boolean;
   toast: ReviewToast | null;
   toastSeq: number;
 };
@@ -23,13 +22,11 @@ export type DraftReviewAction =
   | (DraftReviewSelection & { type: "enterInline" })
   | (DraftReviewSelection & { type: "inlineShown"; shown: boolean })
   | (DraftReviewSelection & { type: "changeFocused"; focus: ReviewFocus | null })
-  | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error"; unsentText?: string | null }
   | { type: "toastDismissed"; id: number }
   | { type: "exitInline" | "exitReview" };
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
-  marksVisible: true,
   toast: null,
   toastSeq: 0,
 };
@@ -46,11 +43,7 @@ export function draftReviewReducer(
       };
     case "exitInline":
     case "exitReview":
-      return { ...state, surface: { kind: "none" }, marksVisible: true };
-    case "marksVisible":
-      return state.marksVisible === action.visible
-        ? state
-        : { ...state, marksVisible: action.visible };
+      return { ...state, surface: { kind: "none" } };
     case "toast":
       return {
         ...state,

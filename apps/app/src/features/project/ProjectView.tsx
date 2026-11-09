@@ -123,6 +123,7 @@ import {
   reviewAddressWorkId,
 } from "./presented-document";
 import { useSelectedOpenDocument } from "./open-documents";
+import { useReviewAddressSync } from "./use-review-address-sync";
 import { ReviewAddressOwner, type ReviewAddressPort } from "./ReviewAddressOwner";
 import {
   type ChatDisplay,
@@ -577,19 +578,43 @@ function HydratedReviewControllers({
       : reviewWorkId === noWork?.id
         ? noWork
         : (works?.find((work) => work.id === reviewWorkId) ?? null);
+  const selectedKey = selected ? tabKey(selected.tab) : null;
+  const showChanges = selected?.view.showChanges ?? true;
+  const marks = useMemo(
+    () => ({
+      visible: showChanges,
+      set: (visible: boolean) => {
+        if (selectedKey)
+          useContextTabsStore
+            .getState()
+            .setTabState(props.projectId, selectedKey, { view: { showChanges: visible } });
+      },
+    }),
+    [props.projectId, selectedKey, showChanges],
+  );
   const presentedReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     work: reviewWork,
     stateOwner: presentedReviewState,
     threadId: null,
+    marks,
   });
+  // An explicit review address is the scope's: a scope switch drops every pin, and each tab
+  // re-resolves from its view.
+  const scopeWorkId = props.editorWorkId;
+  const priorScope = useRef(scopeWorkId);
+  useEffect(() => {
+    if (priorScope.current === scopeWorkId) return;
+    if (priorScope.current !== null)
+      useContextTabsStore.getState().clearReviewPins(props.projectId);
+    priorScope.current = scopeWorkId;
+  }, [props.projectId, scopeWorkId]);
   const draftCommands = useDraftCommandOwner();
   const queryClient = useQueryClient();
   const addressedItemKey = presented?.review?.itemKey ?? "";
   const generation = () => draftCommands.generation(addressedItemKey);
   // A new generation of the addressed item is a new port: the owner retries what it refused.
   const addressedGeneration = useSyncExternalStore(draftCommands.subscribe, generation, generation);
-  const selectedKey = selected ? tabKey(selected.tab) : null;
   const port = useMemo<ReviewAddressPort>(() => {
     return {
       write: (review) => {
@@ -630,6 +655,20 @@ function HydratedReviewControllers({
     queryClient,
     addressedGeneration,
   ]);
+  useReviewAddressSync({
+    projectId: props.projectId,
+    selected,
+    writing: props.activeScreen === "context" && !usePhone,
+    locationKey: props.routeLocationKey,
+    editorWorkId: props.editorWorkId,
+    address: {
+      itemKey: props.reviewItemKey,
+      changeId: props.reviewChangeId,
+      documentId: props.reviewAddressDocumentId,
+      admission: props.reviewAddressAdmission,
+    },
+    writeItemKey: props.onSetEditorReviewItemKey,
+  });
   const scopedProps = { ...props, chatCommands, presentedReview, mobileDocumentRoute };
   return (
     <PresentedDocumentContext.Provider value={presented}>

@@ -14,6 +14,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { showDocumentLive } from "@/features/project/tab-view-commands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useDraftReview } from "./DraftReviewProvider";
 import type { BranchCommandFailure } from "./review-command-types";
@@ -131,7 +132,8 @@ export function useReviewHeader({
   const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
-  const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
+  const showLive = () =>
+    (onCloseDraftOnly ?? (() => showDocumentLive(controller.projectId, documentId)))();
 
   // Local Discard stays in this draft. Only Apply may advance to another file.
   const dispose = (mode: "apply" | "discard") => {

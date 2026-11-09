@@ -95,6 +95,7 @@ export function useDraftReviewScopeValue({
   work,
   stateOwner,
   threadId = null,
+  marks,
 }: {
   projectId: string | null;
   /** The Work whose drafts this scope reviews; its archived state freezes them (D30). */
@@ -102,6 +103,8 @@ export function useDraftReviewScopeValue({
   stateOwner?: DraftReviewStateOwner;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
+  /** The presented tab's Show changes. */
+  marks: { visible: boolean; set: (visible: boolean) => void };
 }): DraftReviewContextValue {
   const workId = work?.id ?? null;
   const queryClient = useQueryClient();
@@ -122,6 +125,7 @@ export function useDraftReviewScopeValue({
     work,
     threadId,
     stateOwner: scopeChanged ? { ...reviewState, state: EMPTY_DRAFT_REVIEW_STATE } : reviewState,
+    marks,
   });
   const roomOwner = useReviewRoomOwner({
     projectId: effectiveProjectId,

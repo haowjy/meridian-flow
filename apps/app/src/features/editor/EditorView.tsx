@@ -1,4 +1,5 @@
 /** Review composition over a warm live editor and the scope owner's addressed branch binding. */
+import { showDocumentLive } from "@/features/project/tab-view-commands";
 import { Trans } from "@lingui/react/macro";
 import { canonicalContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
@@ -249,7 +250,9 @@ function ReviewError({ props }: { props: EditorViewProps }) {
   const { controller, roomOwner } = useDraftReview();
   // Desktop draft-only failures retain review until Close. Phone server documents
   // can return to live; phone draft-only destinations reuse the desktop close policy.
-  const closeUnavailable = props.draftOnly ? props.onCloseDraftOnly : controller.exitInlineReview;
+  const closeUnavailable = props.draftOnly
+    ? props.onCloseDraftOnly
+    : () => showDocumentLive(controller.projectId, props.documentId);
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
       <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
