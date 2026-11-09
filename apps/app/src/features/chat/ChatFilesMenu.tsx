@@ -12,6 +12,7 @@ import { topChatOf } from "@/client/query/useTopChat";
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
+  dropdownGroupLabelClass,
   dropdownResultsClass,
   dropdownRowContainerClass,
   dropdownRowVariants,
@@ -178,7 +179,7 @@ function FilesDropdown({
           aria-label={t`Files`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [@media(pointer:coarse)]:min-h-11"
+          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground [@media(pointer:coarse)]:min-h-11"
         >
           <Paperclip className="size-3.5" aria-hidden />
           <span aria-hidden="true">
@@ -192,7 +193,7 @@ function FilesDropdown({
         align="end"
         className={cn(
           dropdownSurfaceVariants({ measure: "catalog" }),
-          "text-tier-chat w-[min(22rem,calc(100vw-1.5rem))] p-0",
+          "text-tier-chat w-[min(22rem,calc(100vw-1.5rem))]",
         )}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -209,22 +210,22 @@ function FilesDropdown({
         }}
       >
         {continuesFrom ? (
-          <p className="px-3 pt-3 text-sm text-ink-muted" onClickCapture={() => close(false)}>
+          <p className="px-2 py-1.5 text-sm text-ink-muted" onClickCapture={() => close(false)}>
             <ContinuesFrom source={continuesFrom} />
           </p>
         ) : null}
-        <div className={cn(dropdownResultsClass, "max-h-72 px-1 py-2")}>
+        <div className={cn(dropdownResultsClass, "max-h-72")}>
           <MenuScratchSection
             projectId={projectId}
             threadId={threadId}
             onPicked={() => close(false)}
           />
           <UploadsRefuseDrops>
-            <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">
+            <h3 className={dropdownGroupLabelClass}>
               <Trans>Uploads</Trans>
             </h3>
             {rows.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-muted-foreground">
+              <p className="px-2 py-1.5 text-sm text-muted-foreground">
                 <Trans>No files attached in this chat yet.</Trans>
               </p>
             ) : (

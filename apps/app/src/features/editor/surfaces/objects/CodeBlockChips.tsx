@@ -1,5 +1,5 @@
 /**
- * The code block's chip cluster — `[language ▾ | copy | ⋮]` inside the block's
+ * The code block's chip cluster — `[language ▾ | copy | ⋯]` inside the block's
  * top-right bounds (ruling 15, `refs/notion-code-block.png`).
  *
  * A code block is the partial exception to object physics: its rendering IS its
@@ -26,7 +26,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { ChevronsUpDown, Copy, MoreVertical } from "lucide-react";
+import { ChevronsUpDown, Copy, Ellipsis } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -134,7 +134,7 @@ export function CodeBlockChips({
         align="end"
         trigger={
           <IconButton type="button" size="xs" variant="ghost" aria-label={t`More`}>
-            <MoreVertical aria-hidden />
+            <Ellipsis aria-hidden />
           </IconButton>
         }
       >

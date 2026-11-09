@@ -91,7 +91,7 @@ export const FileSuggestionList = forwardRef<
     <div ref={rootRef} onKeyDown={handleKeyDown}>
       {header}
       <div role="listbox" aria-label={t`File suggestions`}>
-        <ul className="flex flex-col gap-0.5 p-1">
+        <ul className="flex flex-col p-1.5">
           {onNavigateUp ? (
             <li>
               <button

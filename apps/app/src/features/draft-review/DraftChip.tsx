@@ -18,10 +18,10 @@ import { cn } from "@/lib/utils";
 export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
 
 const TONE: Record<DraftChipState, string> = {
-  live: "border-border-subtle text-ink-muted group-hover/chip:bg-muted group-hover/chip:text-foreground group-data-[state=open]/chip:bg-muted",
+  live: "border-border-subtle text-ink-muted group-hover/chip:bg-muted group-hover/chip:text-foreground group-popup-open/chip:bg-dropdown-hover group-popup-open/chip:text-foreground",
   pending: "border-primary/30 bg-primary/10 text-jade-text group-hover/chip:bg-primary/15",
   reviewing:
-    "border-primary/40 bg-primary/15 text-jade-text group-hover/chip:bg-primary/20 group-data-[state=open]/chip:bg-primary/25",
+    "border-primary/40 bg-primary/15 text-jade-text group-hover/chip:bg-primary/20 group-popup-open/chip:bg-primary/20",
   failed: "border-destructive/40 bg-destructive/10 text-destructive",
 };
 

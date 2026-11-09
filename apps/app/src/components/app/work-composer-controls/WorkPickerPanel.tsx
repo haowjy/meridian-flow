@@ -7,17 +7,17 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { Check, LoaderCircle, Search } from "lucide-react";
+import { LoaderCircle, Search } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, type RefObject, useId } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
+  dropdownGroupLabelClass,
   dropdownResultsClass,
   dropdownRowVariants,
   dropdownSearchClass,
 } from "@/components/ui/dropdown-presentation";
 import { Input } from "@/components/ui/input";
-import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 export type WorkPickerFailure =
@@ -175,16 +175,15 @@ export function WorkPickerPanel({
             ref={operation.currentWorkId === view.noWork.id ? focusRefs?.selected : undefined}
             type="button"
             variant="ghost"
-            className={cn(dropdownRowVariants(), "w-full justify-start")}
+            aria-current={operation.currentWorkId === view.noWork.id ? "true" : undefined}
+            className={cn(
+              dropdownRowVariants({ selected: operation.currentWorkId === view.noWork.id }),
+              "w-full justify-start",
+            )}
             data-work-choice
             disabled={!view.enabled}
             onClick={() => onChoose(view.noWork)}
           >
-            {operation.currentWorkId === view.noWork.id ? (
-              <Check className="size-4" aria-hidden />
-            ) : (
-              <span className="size-4" />
-            )}
             <Trans>None</Trans>
           </Button>
         ) : null}
@@ -253,14 +252,7 @@ function WorkSection({
 }) {
   return (
     <section aria-label={label}>
-      <h3
-        className={sectionLabelVariants({
-          variant: "group",
-          className: "mb-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)]",
-        })}
-      >
-        {label}
-      </h3>
+      <h3 className={dropdownGroupLabelClass}>{label}</h3>
       <div className="space-y-[var(--chat-space-row)]">
         {works.map((work) => {
           const current = work.id === operation.currentWorkId;
@@ -306,11 +298,7 @@ function WorkSection({
                     </span>
                   ) : null}
                 </span>
-                {changing ? (
-                  <LoaderCircle className="size-4 animate-spin" aria-hidden />
-                ) : current ? (
-                  <Check className="size-4" aria-hidden />
-                ) : null}
+                {changing ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : null}
                 {hasHelp ? (
                   <span id={helpId} className="sr-only">
                     {changing && work.goal ? t`Goal: ${work.goal}. ` : null}

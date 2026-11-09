@@ -10,7 +10,7 @@
  * choice; the row only wears it.
  *
  * Each button is its own compact rounded-square card chip so it reads over
- * diagram lines, with its label in a tooltip and the row ending in ⋮. They are
+ * diagram lines, with its label in a tooltip and the row ending in ⋯. They are
  * the dense `xs` size because the row may not stand taller than one line of
  * the text it decorates (see overlay-icon-row.css). The occlusion trade is
  * accepted (the human's "literally basically inside the diagram").
@@ -24,7 +24,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { MoreVertical } from "lucide-react";
+import { Ellipsis } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -56,7 +56,7 @@ export type OverlayIconRowProps = {
   visible: boolean;
   items: readonly OverlayIconRowItem[];
   /**
-   * The ⋮ menu that ends the row, given the chip to use as its trigger. The
+   * The ⋯ menu that ends the row, given the chip to use as its trigger. The
    * menu's items differ per object so they belong to the lane; the chip stays
    * the row's, so every object's overflow looks the same.
    */
@@ -106,7 +106,7 @@ export function OverlayIconRow({
         ))}
         {overflow?.(
           <OverlayIconChip label={t`More`} asTrigger chromeAttributes={chromeAttributes}>
-            <MoreVertical aria-hidden />
+            <Ellipsis aria-hidden />
           </OverlayIconChip>,
         )}
       </div>
@@ -126,7 +126,7 @@ function OverlayIconChip({
 }: ComponentProps<"button"> & {
   label: string;
   onSelect?: () => void;
-  /** The ⋮ chip is a menu trigger, so the lane's menu owns its press. */
+  /** The ⋯ chip is a menu trigger, so the lane's menu owns its press. */
   asTrigger?: boolean;
   /**
    * The tooltip is portalled out of the row, so it carries the row's mark
@@ -139,7 +139,7 @@ function OverlayIconChip({
   const chip = (
     // The rest props are the menu's: a lane hands this chip to Radix as its
     // trigger, and Radix opens on the `onPointerDown` it injects here. Dropping
-    // them leaves a ⋮ that cannot be pressed.
+    // them leaves a ⋯ that cannot be pressed.
     <IconButton
       {...rest}
       type="button"

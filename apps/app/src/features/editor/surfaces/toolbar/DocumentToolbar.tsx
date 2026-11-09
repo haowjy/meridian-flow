@@ -21,7 +21,7 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
-  ChevronDown,
+  ChevronsUpDown,
   Code,
   Heading1,
   ImageUp,
@@ -312,7 +312,7 @@ function AlignmentTrigger({
         )}
       >
         <Icon className="size-3.5" aria-hidden />
-        <ChevronDown className="size-2.5" aria-hidden />
+        <ChevronsUpDown className="size-2.5" aria-hidden />
       </Button>
     </ToolbarControlTooltip>
   );
