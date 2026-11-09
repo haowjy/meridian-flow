@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentDraftHint } from "@meridian/contracts/branches";
-import { Check, ChevronDown } from "lucide-react";
+import { Check } from "lucide-react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DraftChipFace, draftChipHitClass } from "@/features/draft-review/DraftChip";
 import { tabLocation } from "@/features/project/context/identity-location";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { workDisplayName } from "@/lib/work-name";
@@ -39,20 +40,15 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={t`Document version`}
-        className="focus-ring flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[13px] text-ink-muted hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
-      >
-        <Trans>Live</Trans>
-        {hints.length > 0 ? (
-          <span
-            className="rounded-full bg-primary/12 px-1.5 text-[11px] font-medium text-primary tabular-nums"
-            title={t`${hints.length} drafts`}
-          >
-            {hints.length}
-          </span>
-        ) : null}
-        <ChevronDown aria-hidden className="size-3.5 opacity-70" />
+      <DropdownMenuTrigger aria-label={t`Document version`} className={draftChipHitClass(false)}>
+        <DraftChipFace state="pending" menu>
+          <Trans>Live</Trans>
+          {hints.length > 0 ? (
+            <span className="ml-1 tabular-nums opacity-80" title={t`${hints.length} drafts`}>
+              {hints.length}
+            </span>
+          ) : null}
+        </DraftChipFace>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuItem aria-current="true" className="gap-2 font-medium">
