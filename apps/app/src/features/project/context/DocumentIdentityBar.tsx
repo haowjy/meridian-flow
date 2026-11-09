@@ -13,7 +13,7 @@ import { refusedMoveDestination } from "@/client/query/context-catalog-projectio
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
+import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
@@ -181,11 +181,6 @@ export function DocumentIdentityBar({
               onOpenExisting={onOpenExisting}
             />
           ) : null}
-          {controls ? null : version}
-          {!reviewItemKey && !reviewPending ? (
-            <DraftReviewChip documentId={tab.documentId} />
-          ) : null}
-          <DocumentDraftHint projectId={projectId} tab={tab} variant="inline" />
           <ManuscriptStateSlot state={manuscriptState} />
           {repair && !placementOpen ? (
             repairable ? (
@@ -212,6 +207,9 @@ export function DocumentIdentityBar({
             show={showChip && !placementOpen}
             onChooseHome={() => setFieldOpen(true)}
           />
+          {controls || reviewItemKey || reviewPending ? null : (
+            <DocumentVersionMenu projectId={projectId} tab={tab} />
+          )}
         </div>
       </DocumentStatePortal>
     </>

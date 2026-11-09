@@ -11,7 +11,6 @@ import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, type RefObject, useRef, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
-import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
   dropdownResultsClass,
@@ -303,12 +302,12 @@ function ThreadSwitchItem({
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        <WorkIdentity
-          className="max-w-24 shrink-0 text-ink-muted"
-          name={thread.agentName}
-          unavailableLabel="General"
-          aria-label={t`Agent: ${agentName}`}
-        />
+        <span className="min-w-0 max-w-24 shrink-0 truncate text-xs font-medium text-ink-muted">
+          <span className="sr-only">
+            <Trans>Agent:</Trans>{" "}
+          </span>
+          {agentName}
+        </span>
         {rel ? (
           <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">{rel}</span>
         ) : null}
