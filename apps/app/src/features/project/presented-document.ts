@@ -24,6 +24,12 @@ export type PresentedDocument = {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   review: ReviewAddress | null;
+  /**
+   * The tab asks for Draft: an open review of this document outlives its draft's row in the
+   * Work's list, so the writer who applied the last change keeps that editor (its Undo, "No
+   * changes left") until they choose Live.
+   */
+  draftView: boolean;
   draftOnly: boolean;
 };
 
@@ -46,6 +52,7 @@ export function resolvePresentedDocument(input: {
     scheme: tab.kind === "new" ? null : tab.scheme,
     path: tab.kind === "new" ? null : tab.path,
     review: selected.review,
+    draftView: selected.view.version === "draft",
     draftOnly: isDraftOnly(tab),
   };
 }

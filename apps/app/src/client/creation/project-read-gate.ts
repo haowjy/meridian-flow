@@ -26,6 +26,7 @@ export function isProjectReadPaused(queryKey: readonly unknown[]): boolean {
 
 /** The `enabled` for a read whose caller can also switch it off. */
 export function projectReadEnabled(callerEnabled = true) {
+  // biome-ignore lint/suspicious/noExplicitAny: TanStack's `enabled` takes the query's own types, which are invariant. slop-lint: allow suppression the reason is stated in this comment
   return (query: Query<any, any, any, any>) =>
     callerEnabled && !isProjectReadPaused(query.queryKey);
 }

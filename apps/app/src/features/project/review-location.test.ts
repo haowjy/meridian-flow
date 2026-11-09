@@ -48,6 +48,7 @@ it("requests a warm Editor before admission, retaining only admitted review afte
     scheme: "kb" as const,
     path: "/Hero",
     review: null,
+    draftView: false,
     draftOnly: false,
   };
   expect(requestedReviewItemKey(host, { intent, presented, inlineReview: null })).toBe("draft");

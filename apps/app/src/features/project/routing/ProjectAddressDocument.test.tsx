@@ -209,6 +209,13 @@ it("keeps a draft-only document out of the live view and repairs only its review
       }}
       result={result}
       reviewItemKey="draft-1"
+      draftOnly={{
+        documentId: "doc-id",
+        documentName: "doc",
+        contextLocation: { scheme: "manuscript", path: "/doc" },
+        draft: {} as never,
+        draftOnly: true,
+      }}
       workId={noWorkId}
       noWorkId={noWorkId}
       navigation={navigation}
@@ -216,7 +223,12 @@ it("keeps a draft-only document out of the live view and repairs only its review
     />,
     async () => {
       await act(async () => {});
-      expect(openTab).not.toHaveBeenCalled();
+      // An arriving review address opens the draft-only document's tab, never a live one.
+      expect(openTab).toHaveBeenCalledOnce();
+      expect(openTab.mock.calls[0]?.[1]).toMatchObject({
+        documentId: "doc-id",
+        reviews: expect.any(Object),
+      });
       expect(onAdmission).not.toHaveBeenCalled();
       expect(replaceEntry).toHaveBeenCalledOnce();
       // A No Work review address names its Work itself, so a copy opens the same draft.

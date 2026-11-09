@@ -43,7 +43,11 @@ A tab carries its own `view` (Live/Draft, Show changes), `preview` flag and opti
 persisted in tab session v2 with draft-only tabs. The review controller follows the selected tab
 (`ReviewAddressOwner`): it enters, keeps or leaves the review the tab names. The focused change
 moves both ways: a change the writer focuses is written to the pin, and a pin that moves by itself
-(reload, shared link, Back) focuses the change it names, or the first when that change is gone. A launch carries `ReviewFocus`: a group id with its
+(reload, shared link, Back) focuses the change it names, or the first when that change is gone. An address arriving in Write (link, reload, Back) wins over the persisted selection:
+`use-review-address-sync.ts` selects the tab of the document the address names, and a review
+address with no tab installs one (`ProjectAddressDocument`). A review stays open after its draft
+leaves the Work's list while the tab's view is Draft, so the last Apply keeps its editor, Undo and
+"No changes left" until the writer chooses Live. A launch carries `ReviewFocus`: a group id with its
 immutable projection frame. `FocusOpenedReview` waits for review paint and resolves only within
 that same projection. A stale frame or a persisted bare id opens without that selection.
 Launchers live in `../review-launch.tsx`.

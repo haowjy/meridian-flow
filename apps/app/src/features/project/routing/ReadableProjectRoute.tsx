@@ -1040,6 +1040,7 @@ function ReadableProjectDestination({
               result={documentResult}
               localFile={reconciledDocumentAddress.localFile}
               reviewItemKey={reviewItemKey}
+              draftOnly={draftOnly}
               workId={workId}
               noWorkId={noWorkId}
               navigation={navigation}
