@@ -1630,7 +1630,6 @@ msgstr ""
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/shell/sidebar/SourcesBody.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Chats"
 msgstr ""
@@ -3206,8 +3205,8 @@ msgstr ""
 
 #. placeholder {0}: modeLabel(mode)
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Focus: {0}"
-msgstr ""
+#~ msgid "Focus: {0}"
+#~ msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
@@ -3845,8 +3844,8 @@ msgid "missing kind"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ModeSwitch.tsx
-#~ msgid "Mode"
-#~ msgstr ""
+msgid "Mode"
+msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
