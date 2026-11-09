@@ -15,6 +15,7 @@
  * tooltip and accessible name rather than a line of text.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder } from "lucide-react";
@@ -29,6 +30,7 @@ import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { RailPaneHeader } from "../context/RailPaneHeader";
+import { SourceHeading } from "../context/SourceHeading";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntry } from "../context/use-delete-context-entry";
@@ -109,6 +111,53 @@ export function RailScratchSection({
         </EntryList>
       )}
     </DockedRailSection>
+  );
+}
+
+/**
+ * The Scratch source in Write mode's sidebar: always open, under the same plain
+ * heading as Manuscript and Knowledge Base. With no chat to own one, it says so.
+ */
+export function ScratchSource({
+  projectId,
+  threadId,
+  editorWorkId,
+}: {
+  projectId: string;
+  threadId: string | null;
+  editorWorkId: string | null;
+}) {
+  const scratch = useChatScratchSource(projectId, threadId);
+  const { list, primary } = useChatScratchList(projectId, scratch);
+  if (!scratch)
+    return (
+      <>
+        <SourceHeading label={schemeLabel("scratch")} />
+        <p className="px-4 py-1 text-[13px] text-ink-muted">
+          <Trans>Open a chat to see its Scratch.</Trans>
+        </p>
+      </>
+    );
+  return (
+    <EntryList list={list}>
+      <AreaDropRegion
+        scheme="scratch"
+        catalogRootId={primary.catalog?.root.entryId ?? null}
+        reveal={() => {}}
+        className="flex min-h-0 flex-1 flex-col"
+        header={(dropProps) => (
+          <SourceHeading
+            label={schemeLabel("scratch")}
+            title={scratch.heading}
+            dropProps={dropProps}
+          />
+        )}
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-1">
+          <ChatScratchTree projectId={projectId} threadId={threadId} editorWorkId={editorWorkId} />
+        </div>
+      </AreaDropRegion>
+    </EntryList>
   );
 }
 
