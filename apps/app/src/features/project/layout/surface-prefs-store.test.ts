@@ -23,7 +23,7 @@ it("keeps layout actions usable in memory when storage fails", async () => {
   expect(() => {
     useProjectSurfacePrefsStore.getState().setRailExpanded("scratch", true);
     useProjectSurfacePrefsStore.getState().setRailHeight("scratch", 200);
-    useProjectSurfacePrefsStore.getState().setDockWidth(400);
+    useProjectSurfacePrefsStore.getState().setSlotWidth("dock", 400);
   }).not.toThrow();
   expect(useProjectSurfacePrefsStore.getState().railPrefs.scratchHeight).toBe(200);
 });

@@ -351,4 +351,14 @@
 
 :root {
   --motion-pulse-duration: 2.4s;
+  /* Shell motion. One ease for everything that moves the layout; panels slide
+     their content (never the grid columns, which would reflow the chapter on
+     every frame); a held frame and the load bar wait before they show, so a
+     fast load never flickers. Off under prefers-reduced-motion. */
+  --motion-ease-shell: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --motion-duration-mode: 240ms;
+  --motion-duration-panel: 220ms;
+  --motion-duration-menu: 140ms;
+  --motion-delay-hold-dim: 150ms;
+  --motion-delay-load-bar: 120ms;
 }

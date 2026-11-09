@@ -11,7 +11,6 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
@@ -24,7 +23,7 @@ import {
   type ProjectRouteMask,
 } from "../routing/ProjectRouteBoundary";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
-import { PanelToggleButton } from "../shell/PanelToggleButton";
+import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
@@ -263,8 +262,7 @@ function railToggleNode(
   side: "left" | "right",
 ): ReactNode {
   if (!toggle || toggle.open) return null;
-  const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
-  return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
+  return <PanelToggleSpacer key={side} />;
 }
 
 // Re-export the tab-keyed type for callers (notably the controller and
