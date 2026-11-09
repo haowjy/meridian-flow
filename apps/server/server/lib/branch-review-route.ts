@@ -60,7 +60,6 @@ import {
   documentTarget,
   isFileAccessRefusal,
   requireFileGrant,
-  throwFileAccessDenied,
   withEditGrants,
 } from "./file-access-http.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
