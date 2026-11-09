@@ -935,8 +935,8 @@ msgid "Active Work"
 msgstr "Active Work"
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "Active Works"
-msgstr "Active Works"
+#~ msgid "Active Works"
+#~ msgstr "Active Works"
 
 #: src/components/app/ToastRegion.tsx
 #~ msgid "Activity"
@@ -1008,6 +1008,11 @@ msgstr "Adding {name} to {area}"
 msgid "Agent"
 msgstr "Agent"
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Agent:"
+msgstr "Agent:"
+
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent: {0}"
@@ -1015,8 +1020,8 @@ msgstr "Agent: {0}"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Agent: {agentName}"
-msgstr "Agent: {agentName}"
+#~ msgid "Agent: {agentName}"
+#~ msgstr "Agent: {agentName}"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
@@ -2721,6 +2726,10 @@ msgstr "Deleted Work {name}"
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 
+#: src/features/editor/DocumentVersionMenu.tsx
+msgid "Deletes this document"
+msgstr "Deletes this document"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting"
 msgstr "Deleting"
@@ -2835,6 +2844,7 @@ msgid "Document name and location"
 msgstr "Document name and location"
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Document version"
 msgstr "Document version"
 
@@ -2875,6 +2885,10 @@ msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
 msgstr "Draft review"
+
+#: src/features/editor/DocumentVersionMenu.tsx
+msgid "Drafts"
+msgstr "Drafts"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Drafts ({waiting})"
@@ -3634,6 +3648,7 @@ msgid "litrpg"
 msgstr "litrpg"
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Live"
 msgstr "Live"
 
@@ -3973,6 +3988,11 @@ msgstr "Moved to the message box"
 msgid "Moved to the message box."
 msgstr "Moved to the message box."
 
+#. placeholder {0}: hint.tree.movedTo.path
+#: src/features/editor/DocumentVersionMenu.tsx
+msgid "Moves it to {0}"
+msgstr "Moves it to {0}"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Moving"
 msgstr "Moving"
@@ -4120,6 +4140,10 @@ msgstr "No column has been resized yet."
 #: src/features/project/context/ContextTreePanel.tsx
 #~ msgid "No context files yet."
 #~ msgstr "No context files yet."
+
+#: src/features/editor/DocumentVersionMenu.tsx
+msgid "No drafts"
+msgstr "No drafts"
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "No favorite chats yet."
@@ -6494,6 +6518,7 @@ msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
 #: src/features/editor/DocumentDraftHint.tsx
+#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Unnamed Work"
 msgstr "Unnamed Work"
 
