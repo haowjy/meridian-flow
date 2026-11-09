@@ -53,11 +53,7 @@ import {
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
-import {
-  type BranchOwnerLifecycle,
-  LineageDraftsUnavailableError,
-  ownerKeyOfColumns,
-} from "../shared/draft-owner.js";
+import { type BranchOwnerLifecycle, ownerKeyOfColumns } from "../shared/draft-owner.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
 import {
@@ -340,23 +336,24 @@ async function requireReviewItemGrant<N extends FileNeed>(
  * The edit grants an Apply needs (TM "Authorization", §13.3): the draft's grant on each item,
  * and the live grant on one live readers see. A document deleted live authorizes at its final
  * location's source through the draft's destination (F9). A Discard changes only the draft,
- * so it needs the draft's grants alone (`live: false`).
+ * so it needs the draft's grants alone, at the `discard` need: a trashed chat's frozen lineage
+ * refuses Apply and edits but not throwing its drafts away.
  */
 async function applyGrants(
   deps: BranchRouteServices,
   input: CommandScope & { owner: DraftOwner; items: readonly DraftReviewItem[] },
-  options: { live: boolean } = { live: true },
-): Promise<FileGrant<"edit">[]> {
-  const grants: FileGrant<"edit">[] = [];
+  need: "edit" | "discard" = "edit",
+): Promise<FileGrant<"edit" | "discard">[]> {
+  const grants: FileGrant<"edit" | "discard">[] = [];
   for (const item of input.items) {
     if (item.deletedLive) {
-      grants.push(await restoreGrant(deps, input, item));
+      grants.push(await restoreGrant(deps, input, item, need));
       continue;
     }
     grants.push(
-      await requireReviewItemGrant(deps, { ...input, documentId: item.documentId }, item, "edit"),
+      await requireReviewItemGrant(deps, { ...input, documentId: item.documentId }, item, need),
     );
-    if (options.live && !item.isNew)
+    if (need === "edit" && !item.isNew)
       grants.push(
         await requireFileGrant(
           deps.fileAccess,
@@ -537,7 +534,7 @@ async function commandItem(
 /** What a command's pre-effect phase decided: refuse it, or run its effect under these grants. */
 type PreparedCommand =
   | { refusal: () => CommandRouteResult }
-  | { grants: FileGrant<"edit">[]; effect: () => Promise<CommandOutcome> };
+  | { grants: FileGrant<"edit" | "discard">[]; effect: () => Promise<CommandOutcome> };
 
 /**
  * The one ingress every branch command goes through. After authenticated project and branch
@@ -789,7 +786,7 @@ export async function handleDiscardWorkDraftRequest(
     const item = request.branchId === input.branchId ? await commandItem(deps, input) : null;
     if (!item || !owner) return { refusal: goneItem(request) };
     return {
-      grants: await applyGrants(deps, { ...input, owner, items: [item] }, { live: false }),
+      grants: await applyGrants(deps, { ...input, owner, items: [item] }, "discard"),
       effect: () =>
         deps.documentSync.draftReview.discardItem({
           item,
@@ -823,7 +820,7 @@ export async function handleDiscardAllWorkBranchRequest(
     const listed = await deps.documentSync.draftReview.listItems({ owner });
     if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
     return {
-      grants: await applyGrants(deps, { ...input, owner, items: listed.items }, { live: false }),
+      grants: await applyGrants(deps, { ...input, owner, items: listed.items }, "discard"),
       effect: () =>
         deps.documentSync.draftReview.discardAll({
           branchId,
@@ -875,8 +872,6 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
-    if (cause instanceof LineageDraftsUnavailableError)
-      throwFileAccessDenied({ reason: "chat_frozen" });
     if (cause instanceof Error && cause.message === "draft_not_found") {
       throw createError({ statusCode: 404, message: "Draft not found" });
     }

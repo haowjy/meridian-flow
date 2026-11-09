@@ -57,6 +57,7 @@ export function testFileGrant(
         : {}),
     },
     destination,
+    need: "edit",
   } as unknown as FileGrant<"edit">;
 }
 
