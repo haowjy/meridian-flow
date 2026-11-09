@@ -450,3 +450,16 @@ file drag skips `targetAt`, so a drop on a row's edge or centre alike imports in
 and lands by the folder's order rule (name order in a default parent, the end of a manual one), never
 at the edge's position. Import can't place an arbitrary position for a batch, and an edge that
 appeared to accept but landed elsewhere would mislead.
+
+## Trash rows dragged onto the tree
+
+A Trash row starts its drag as source `trash` (`useEntryRow(entry, active, true, "trash")`), carrying
+the document's id. The entries route recognises it before `resolveDrop`: `planRestore`
+(`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
+`restoreInto` on `DocumentTrashRestoreProvider`, which posts one restore request with the destination.
+A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
+refuses with the hint. The rows leave Trash and appear in the destination at once through
+`client/trash-restore/pending-restores.ts`, an in-memory overlay on the catalog view (not a replica
+journal entry: a reload shows the server). A refused item goes back to Trash with its reason; the
+notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
+list never takes a trash drag (the rows are already deleted).

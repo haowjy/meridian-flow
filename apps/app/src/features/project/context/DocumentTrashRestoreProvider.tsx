@@ -150,42 +150,45 @@ export function DocumentTrashRestoreProvider({
           destination: index === 0 ? destination : { parent: destination.parent },
         })),
       );
-      void restoreTrashedDocuments(queryClient, projectId, entries, destination)
-        .catch(() => null)
-        .then(async (outcomes) => {
-          const restored: DocumentTrashEntry[] = [];
-          for (const entry of entries) {
-            const outcome = outcomes?.get(entry.documentId) ?? "network";
-            if (await settle(entry, outcome)) restored.push(entry);
-            else putBackInTrash(queryClient, projectId, entry, places.get(entry.documentId) ?? 0);
-          }
-          const restoredIds = new Set(restored.map(({ documentId }) => documentId));
-          dropPendingRestores(
-            projectId,
-            ids.filter((id) => !restoredIds.has(id)),
-          );
-          settlePendingRestores(projectId, [...restoredIds]);
-          if (restored.length < entries.length)
-            await queryClient.invalidateQueries({
-              queryKey: projectQueryKeys.documentTrash(projectId),
-            });
-          if (restored.length === 0) return;
-          setNotice({
-            id: Date.now(),
-            text: restoredText(restored, entries.length, destinationName),
-            ...(resources
-              ? {
-                  undo: () => {
-                    for (const entry of restored)
-                      void runDelete(
-                        { resources, projectId, notices: removedNotices },
-                        { kind: "file", id: entry.documentId, name: entry.name },
-                      );
-                  },
-                }
-              : {}),
+      const finish = async (
+        outcomes: Awaited<ReturnType<typeof restoreTrashedDocuments>> | null,
+      ) => {
+        const restored: DocumentTrashEntry[] = [];
+        for (const entry of entries) {
+          const outcome = outcomes?.get(entry.documentId) ?? "network";
+          if (await settle(entry, outcome)) restored.push(entry);
+          else putBackInTrash(queryClient, projectId, entry, places.get(entry.documentId) ?? 0);
+        }
+        const restoredIds = new Set(restored.map(({ documentId }) => documentId));
+        dropPendingRestores(
+          projectId,
+          ids.filter((id) => !restoredIds.has(id)),
+        );
+        settlePendingRestores(projectId, [...restoredIds]);
+        if (restored.length < entries.length)
+          await queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.documentTrash(projectId),
           });
-        })
+        if (restored.length === 0) return;
+        setNotice({
+          id: Date.now(),
+          text: restoredText(restored, entries.length, destinationName),
+          ...(resources
+            ? {
+                undo: () => {
+                  for (const entry of restored)
+                    void runDelete(
+                      { resources, projectId, notices: removedNotices },
+                      { kind: "file", id: entry.documentId, name: entry.name },
+                    );
+                },
+              }
+            : {}),
+        });
+      };
+      // A request that never answered fails every entry the same way: "Try again."
+      void restoreTrashedDocuments(queryClient, projectId, entries, destination)
+        .then(finish, () => finish(null))
         .finally(() => {
           for (const id of ids) restoring.current.delete(id);
         });
