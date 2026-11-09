@@ -37,6 +37,7 @@ import {
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import { claimOpenIntent, isCurrentOpenIntent } from "../context/open-intent";
+import { reviewAddress } from "../presented-document";
 import { useReviewingLinkDestination } from "../review-launch";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
@@ -155,10 +156,7 @@ export function ProjectChatContextNavigationProvider({
           draftOnly: true,
         });
         if (tab)
-          besideChat(tab, door.claim, undefined, {
-            workId: review.workId,
-            itemKey: review.itemKey,
-          });
+          besideChat(tab, door.claim, undefined, reviewAddress(review.workId, review.itemKey));
         return Promise.resolve();
       }
       return openReviewing(document, gesture);

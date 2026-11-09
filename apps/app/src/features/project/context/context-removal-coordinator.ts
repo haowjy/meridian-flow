@@ -20,6 +20,7 @@ import {
   type ServerContextTab,
   selectedDocumentIdOf,
   selectingDocument,
+  workReviewOwner,
 } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
@@ -294,7 +295,7 @@ export class ContextRemovalCoordinator {
       }
       const reviews: ReviewEntries = {};
       for (const draft of this.drafts.boundDrafts(projectId, tab.documentId))
-        reviews[draft.workId] = { itemKey: draft.itemKey, tabInstanceToken: crypto.randomUUID() };
+        reviews[workReviewOwner(draft.workId)] = { itemKey: draft.itemKey, tabInstanceToken: crypto.randomUUID() };
       if (Object.keys(reviews).length === 0) continue;
       this.workspace.holdForDrafts(projectId, tab.documentId, reviews);
       held.add(tab.documentId);

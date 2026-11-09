@@ -22,7 +22,7 @@ function draftTab(token = "tab-a", workId = "work-a", itemKey = "draft-a") {
     editable: true as const,
     filetype: "markdown" as const,
     schemaType: "document" as const,
-    reviews: { [workId]: { itemKey, tabInstanceToken: token } },
+    reviews: { [`work:${workId}`]: { itemKey, tabInstanceToken: token } },
   };
 }
 
@@ -116,7 +116,11 @@ describe("draft tab settlement", () => {
     const route = {
       readSearch: () => search,
       updateSearch,
-      transition: async () => ({ kind: "applied" as const }),
+      // The one selection moves with the route: closing the selected tab commits when the route does.
+      transition: async (_id: string, _target: unknown, prepared: { commit: () => void }) => {
+        prepared.commit();
+        return { kind: "applied" as const };
+      },
     };
     const coordinator = new ContextRemovalCoordinator("account-a", { route });
     coordinator.registerRoutePort("project-a", route, "work-b");
@@ -130,8 +134,8 @@ describe("draft tab settlement", () => {
     expect(inWork("work-b")).toEqual(["document-a"]);
     expect(tabs[0]).toMatchObject({
       reviews: {
-        "work-a": { itemKey: "draft-a", tabInstanceToken: "tab-a" },
-        "work-b": { itemKey: "draft-b", tabInstanceToken: "tab-b" },
+        "work:work-a": { itemKey: "draft-a", tabInstanceToken: "tab-a" },
+        "work:work-b": { itemKey: "draft-b", tabInstanceToken: "tab-b" },
       },
     });
 
@@ -175,7 +179,7 @@ describe("draft tab settlement", () => {
     if (shared?.kind !== "tracked") throw new Error("Expected tracked draft tab");
     await coordinator.promoteAppliedDraft("project-a", {
       ...shared,
-      reviews: { "work-a": shared.reviews!["work-a"]! },
+      reviews: { "work:work-a": shared.reviews!["work:work-a"]! },
     });
     expect(getContextTabs("project-a").tabs).toHaveLength(1);
     expect(isDraftOnly(getContextTabs("project-a").tabs[0] as ContextTab)).toBe(false);
@@ -183,7 +187,7 @@ describe("draft tab settlement", () => {
     expect(inWork("work-b")).toEqual(["document-a"]);
   });
 
-  it("never persists a draft-only tab, so a reload reopens it from its review address", async () => {
+  it("persists a draft-only tab with its review entries, so a reload restores it", async () => {
     await rehydrateEditorWorkspace("account-persist");
     const store = useContextTabsStore.getState();
     store.openTab("project-a", draftTab());
@@ -191,7 +195,8 @@ describe("draft tab settlement", () => {
     const stored = JSON.stringify(
       Object.values(sessionStorage).map((value) => JSON.parse(value as string)),
     );
-    expect(stored).not.toContain("document-a");
+    expect(stored).toContain("document-a");
+    expect(stored).toContain("work:work-a");
     expect(stored).toContain("document-b");
   });
 

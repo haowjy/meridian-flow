@@ -120,6 +120,7 @@ import {
   PresentedDocumentContext,
   type ReviewAddressAdmission,
   resolvePresentedDocument,
+  reviewAddressWorkId,
 } from "./presented-document";
 import { useSelectedOpenDocument } from "./open-documents";
 import { ReviewAddressOwner, type ReviewAddressPort } from "./ReviewAddressOwner";
@@ -568,7 +569,8 @@ function HydratedReviewControllers({
     selected,
   });
   const { works, noWork } = useWorks(props.projectId);
-  const reviewWorkId = presented?.review?.workId ?? props.editorWorkId;
+  const reviewWorkId =
+    (presented?.review && reviewAddressWorkId(presented.review)) ?? props.editorWorkId;
   const reviewWork =
     reviewWorkId === props.editorWork?.id
       ? props.editorWork

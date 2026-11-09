@@ -5,6 +5,7 @@ import {
   type ContextTab,
   getContextTabs,
   isDraftOnly,
+  workIdOfReviewOwner,
   useContextTabsStore,
 } from "@/client/stores";
 import {
@@ -37,16 +38,23 @@ export interface DraftOnlyContainer {
 
 function presentations(projectId: string, tab: ContextTab, container: "editor") {
   if (tab.kind !== "tracked") return [];
-  return Object.entries(tab.reviews ?? {}).map(([workId, entry]) => ({
-    projectId,
-    documentId: tab.documentId,
-    workId,
-    itemKey: entry.itemKey,
-    draftOnly: isDraftOnly(tab),
-    token: entry.tabInstanceToken,
-    container,
-    contextLocation: { scheme: tab.scheme, path: tab.path },
-  }));
+  return Object.entries(tab.reviews ?? {}).flatMap(([owner, entry]) => {
+    const workId = workIdOfReviewOwner(owner);
+    return workId === null
+      ? []
+      : [
+          {
+            projectId,
+            documentId: tab.documentId,
+            workId,
+            itemKey: entry.itemKey,
+            draftOnly: isDraftOnly(tab),
+            token: entry.tabInstanceToken,
+            container,
+            contextLocation: { scheme: tab.scheme, path: tab.path },
+          },
+        ];
+  });
 }
 
 export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {

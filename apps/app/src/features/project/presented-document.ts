@@ -1,13 +1,23 @@
 /** The document the selected tab presents, and where: the Editor in Write, the dock beside Chat. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createContext, useContext } from "react";
-import { isDraftOnly } from "@/client/stores";
+import { isDraftOnly, type ReviewPin, workIdOfReviewOwner, workReviewOwner } from "@/client/stores";
 import type { OpenDocumentTab } from "./open-documents";
 import type { ScreenKey } from "./shell/screens";
 
 /** The route's verdict on an explicit review selector, asked of the server by `{ workId, itemKey }`. */
 export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
-export type ReviewAddress = { workId: string; itemKey: string; changeId?: string };
+/** A review by owner key (`work:<id>` today). Convert to and from a Work id only here. */
+export type ReviewAddress = ReviewPin;
+
+export function reviewAddress(workId: string, itemKey: string, changeId?: string): ReviewAddress {
+  return { owner: workReviewOwner(workId), itemKey, ...(changeId ? { changeId } : {}) };
+}
+
+/** The Work whose branch holds the review; null for an owner that is not a Work. */
+export function reviewAddressWorkId(address: ReviewAddress): string | null {
+  return workIdOfReviewOwner(address.owner);
+}
 export type PresentedDocument = {
   container: "editor" | "dock";
   documentId: string | null;

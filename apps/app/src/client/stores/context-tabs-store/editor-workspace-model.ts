@@ -302,9 +302,9 @@ export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): bool
       !isDraftOnly(addressed) ||
       (tab.kind !== "new" &&
         Object.entries(reviewEntriesOf(addressed)).some(
-          ([workId, entry]) =>
-            reviewEntryOf(tab, workId)?.itemKey === entry.itemKey &&
-            reviewEntryOf(tab, workId)?.tabInstanceToken === entry.tabInstanceToken,
+          ([owner, entry]) =>
+            reviewEntriesOf(tab)[owner]?.itemKey === entry.itemKey &&
+            reviewEntriesOf(tab)[owner]?.tabInstanceToken === entry.tabInstanceToken,
         )))
   );
 }

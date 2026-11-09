@@ -6,7 +6,13 @@
  */
 import { useEffect, useRef } from "react";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
-import type { PresentedDocument, ReviewAddress, ReviewAddressAdmission } from "./presented-document";
+import {
+  type PresentedDocument,
+  type ReviewAddress,
+  type ReviewAddressAdmission,
+  reviewAddress,
+  reviewAddressWorkId,
+} from "./presented-document";
 import type { AiDraftLaunchTarget } from "./review-launch";
 
 export type ReviewAddressPort = {
@@ -35,6 +41,7 @@ export function ReviewAddressOwner({
    */
   const refused = useRef<{ itemKey: string; port: ReviewAddressPort } | null>(null);
   const requested = presented?.review ?? null;
+  const requestedWorkId = requested ? reviewAddressWorkId(requested) : null;
 
   useEffect(() => {
     const inline = review.controller.inlineReview;
@@ -43,7 +50,7 @@ export function ReviewAddressOwner({
       const names =
         requested !== null &&
         presented?.documentId === inline.documentId &&
-        requested.workId === review.controller.workId &&
+        requestedWorkId === review.controller.workId &&
         requested.itemKey === inline.itemKey;
       if (!names) {
         review.controller.exitInlineReview();
@@ -51,7 +58,7 @@ export function ReviewAddressOwner({
       }
       const changeId = review.controller.focus?.id;
       if (changeId && admission === "admitted" && requested.changeId !== changeId)
-        port.write({ workId: requested.workId, itemKey: requested.itemKey, changeId });
+        port.write(reviewAddress(requestedWorkId as string, requested.itemKey, changeId));
       return;
     }
     if (!requested || !presented?.documentId || !presented.scheme || !presented.path) {
@@ -59,7 +66,8 @@ export function ReviewAddressOwner({
       refused.current = null;
       return;
     }
-    if (admission !== "admitted" || review.controller.workId !== requested.workId) return;
+    if (admission !== "admitted" || !requestedWorkId || review.controller.workId !== requestedWorkId)
+      return;
     const itemKey = requested.itemKey;
     if (
       restoring.current === itemKey ||
@@ -71,7 +79,7 @@ export function ReviewAddressOwner({
     restoring.current = itemKey;
     void port
       .admit({
-        workId: requested.workId,
+        workId: requestedWorkId,
         documentId: presented.documentId,
         itemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },

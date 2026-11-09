@@ -175,7 +175,7 @@ describe("device-local tab validation", () => {
           origin: "local-resource",
         }),
       ],
-      selectedTabKey: "local-instance",
+      selectedTabKey: "member",
     });
   });
 });
