@@ -197,7 +197,6 @@ export async function seedDatabase(
     name: "Manuscript",
     slug: "manuscript",
     scope: "project",
-    isPrimary: true,
   });
   await db.insert(schema.documents).values([
     {

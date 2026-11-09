@@ -81,7 +81,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Manuscript",
         slug: "manuscript",
         scope: "project",
-        isPrimary: true,
       });
     });
 
@@ -569,7 +568,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "Manuscript",
           slug: "manuscript",
           scope: "project",
-          isPrimary: true,
         });
         await committed.insert(folders).values({
           id: parentId,
@@ -678,7 +676,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Manuscript",
         slug: "manuscript",
         scope: "project",
-        isPrimary: true,
       });
     });
     afterAll(async () => {

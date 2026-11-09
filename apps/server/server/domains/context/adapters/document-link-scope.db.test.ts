@@ -118,7 +118,7 @@ if (!RUN) {
         { id: OTHER_PROJECT, userId: USER, name: "Other", slug: "other" },
       ]);
       await db.insert(contextSources).values([
-        { id: SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript", isPrimary: true },
+        { id: SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript" },
         { id: OTHER_SOURCE, projectId: OTHER_PROJECT, name: "Manuscript", slug: "manuscript" },
       ]);
       // A retired lineage Scratch source keeps its documents.

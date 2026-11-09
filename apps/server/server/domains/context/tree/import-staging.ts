@@ -244,8 +244,8 @@ export function createDrizzleContextStagedCreation(deps: {
       }
 
       // Provision only after every placement check. No later namespace acquisition.
-      await tx.execute(sql`insert into context_sources (project_id, slug, name, scope, adapter_type)
-        select ${projectId}::uuid, area, case area when 'kb' then 'Knowledge Base' when 'manuscript' then 'Manuscript' else 'Unfiled' end, 'project', 'local'
+      await tx.execute(sql`insert into context_sources (project_id, slug, name, scope)
+        select ${projectId}::uuid, area, case area when 'kb' then 'Knowledge Base' when 'manuscript' then 'Manuscript' else 'Unfiled' end, 'project'
         from (select distinct area from context_staged_folders where staging_id = ${stagingId}
           union select distinct area from context_staged_documents where staging_id = ${stagingId}) areas
         on conflict (project_id, slug) where work_id is null and root_thread_id is null and chat_thread_id is null and deleted_at is null do nothing`);

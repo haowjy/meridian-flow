@@ -102,7 +102,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "Manuscript",
           slug: "manuscript",
           scope: "project",
-          isPrimary: true,
         });
         await db.insert(documents).values({
           id: DOC_ID,

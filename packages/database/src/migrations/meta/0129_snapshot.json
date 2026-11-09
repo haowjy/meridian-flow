@@ -5137,38 +5137,11 @@
           "notNull": true,
           "default": "'project'"
         },
-        "adapter_type": {
-          "name": "adapter_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'local'"
-        },
-        "adapter_config": {
-          "name": "adapter_config",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "sync_state": {
-          "name": "sync_state",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "description": {
           "name": "description",
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "is_primary": {
-          "name": "is_primary",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "sort_order": {
           "name": "sort_order",
@@ -5403,10 +5376,6 @@
         "context_sources_scope_project_fk": {
           "name": "context_sources_scope_project_fk",
           "value": "\"context_sources\".\"scope\" = 'work' OR \"context_sources\".\"work_id\" IS NULL"
-        },
-        "context_sources_adapter_type_valid": {
-          "name": "context_sources_adapter_type_valid",
-          "value": "\"context_sources\".\"adapter_type\" IN ('local', 'google_drive', 'dropbox', 'notion')"
         },
         "context_sources_order_policy_valid": {
           "name": "context_sources_order_policy_valid",

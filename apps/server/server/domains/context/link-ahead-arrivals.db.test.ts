@@ -63,7 +63,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         name: "Manuscript",
         slug: "manuscript",
         scope: "project",
-        isPrimary: true,
       },
       { workId, name: "Scratch", slug: "scratch", scope: "work" },
     ]);
