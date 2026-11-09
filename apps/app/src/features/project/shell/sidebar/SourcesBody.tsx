@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { MoreHorizontal } from "lucide-react";
-import { type RefObject, useEffect, useState } from "react";
+import { MoreHorizontal, Trash2 } from "lucide-react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import {
   DropdownMenu,
@@ -14,11 +14,15 @@ import { cn } from "@/lib/utils";
 import { ScratchSource } from "../../chat/ChatScratch";
 import { ContextTreePanel } from "../../context/ContextTreePanel";
 import { schemeIcon, schemeLabel } from "../../context/context-schemes";
+import { activeDragSession } from "../../context/entry-drag/drag-session";
+import { useDeleteContextEntry } from "../../context/use-delete-context-entry";
+import { TrashSource } from "./TrashSource";
+import { acceptEntryDrag, draggedEntries } from "./trash-drop";
 
-type SourceKey = "manuscript" | "kb" | "scratch" | "unfiled";
+type SourceKey = "manuscript" | "kb" | "scratch" | "user" | "trash" | "unfiled";
 
 /** Fixed slots, then the "…" slot. A source picked from "…" shows in that slot, so no tab moves. */
-const TAB_SOURCES: readonly SourceKey[] = ["manuscript", "kb", "scratch"];
+const TAB_SOURCES: readonly SourceKey[] = ["manuscript", "kb", "scratch", "user", "trash"];
 const OVERFLOW_SOURCES: readonly SourceKey[] = ["unfiled"];
 
 /**
@@ -54,6 +58,7 @@ export function SourcesBody({
     if (activeScheme && isSourceKey(activeScheme)) setSource(activeScheme);
   }, [activeScheme]);
   const overflowShown = OVERFLOW_SOURCES.includes(source);
+  const deletion = useDeleteContextEntry(projectId);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -68,6 +73,13 @@ export function SourcesBody({
             source={key}
             active={key === source}
             onSelect={() => setSource(key)}
+            onDropTrash={
+              key === "trash"
+                ? () => {
+                    deletion.deleteEntries(draggedEntries());
+                  }
+                : undefined
+            }
           />
         ))}
         <span className="flex-1" />
@@ -91,14 +103,16 @@ export function SourcesBody({
             {OVERFLOW_SOURCES.map((key) => (
               <DropdownMenuItem key={key} onSelect={() => setSource(key)}>
                 <SourceIcon source={key} />
-                {schemeLabel(key)}
+                {sourceLabel(key)}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
       <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
-        {source === "scratch" ? (
+        {source === "trash" ? (
+          <TrashSource projectId={projectId} />
+        ) : source === "scratch" ? (
           <ScratchSource
             projectId={projectId}
             threadId={chatThreadId}
@@ -119,15 +133,28 @@ export function SourcesBody({
   );
 }
 
+/** How long a drag rests on a tab before the tab opens, as on a closed folder. */
+const SPRING_OPEN_MS = 600;
+
 function SourceTab({
   source,
   active,
   onSelect,
+  onDropTrash,
 }: {
   source: SourceKey;
   active: boolean;
   onSelect: () => void;
+  onDropTrash?: () => void;
 }) {
+  const spring = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [over, setOver] = useState(false);
+  const cancelSpring = () => {
+    if (spring.current) clearTimeout(spring.current);
+    spring.current = null;
+    setOver(false);
+  };
+  useEffect(() => cancelSpring, []);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -135,28 +162,56 @@ function SourceTab({
           type="button"
           role="tab"
           aria-selected={active}
-          aria-label={schemeLabel(source)}
+          aria-label={sourceLabel(source)}
           onClick={onSelect}
+          onDragOver={(event) => {
+            if (!activeDragSession()) return;
+            if (onDropTrash) acceptEntryDrag(event);
+            if (spring.current || active) return;
+            setOver(true);
+            spring.current = setTimeout(() => {
+              spring.current = null;
+              onSelect();
+            }, SPRING_OPEN_MS);
+          }}
+          onDragLeave={cancelSpring}
+          onDrop={(event) => {
+            cancelSpring();
+            if (!onDropTrash) return;
+            event.preventDefault();
+            onDropTrash();
+          }}
           className={cn(
             "focus-ring grid h-7 w-8 place-items-center rounded-md transition-colors",
             active
               ? "bg-sidebar-accent text-foreground"
               : "text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
+            over && "bg-sidebar-accent ring-1 ring-border-focus ring-inset",
           )}
         >
           <SourceIcon source={source} />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{schemeLabel(source)}</TooltipContent>
+      <TooltipContent side="bottom">{sourceLabel(source)}</TooltipContent>
     </Tooltip>
   );
 }
 
 function SourceIcon({ source }: { source: SourceKey }) {
-  const Icon = schemeIcon(source);
+  const Icon = source === "trash" ? Trash2 : schemeIcon(source);
   return <Icon className="size-4" aria-hidden />;
 }
 
-function isSourceKey(scheme: ProjectContextTreeScheme): scheme is SourceKey {
-  return scheme === "manuscript" || scheme === "kb" || scheme === "scratch" || scheme === "unfiled";
+function sourceLabel(source: SourceKey): string {
+  return source === "trash" ? t`Trash` : schemeLabel(source);
+}
+
+function isSourceKey(scheme: ProjectContextTreeScheme): scheme is Exclude<SourceKey, "trash"> {
+  return (
+    scheme === "manuscript" ||
+    scheme === "kb" ||
+    scheme === "scratch" ||
+    scheme === "user" ||
+    scheme === "unfiled"
+  );
 }

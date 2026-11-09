@@ -84,7 +84,10 @@ const ALWAYS_OPEN: PaneState = { expanded: true, setExpanded: () => {} };
 export function ContextTreePanel(props: ContextTreePanelProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const imports = useOptionalImports();
-  const { list, renderScheme } = useSchemeTree(props, PROJECT_TREE_SCHEMES);
+  const { list, renderScheme } = useSchemeTree(
+    props,
+    props.only === "user" ? USER_SCHEMES : PROJECT_TREE_SCHEMES,
+  );
   const dropImport = imports?.drop;
   const files = useMemo<FilesRoute>(
     () => ({
@@ -139,12 +142,6 @@ export function UserRailSection({
       {(pane) => <EntryList list={list}>{renderScheme("user", pane)}</EntryList>}
     </DockedRailSection>
   );
-}
-
-/** The writer's own files, always open, for a pane of their own (the Your files popup). */
-export function UserFilesTree(props: ContextTreePanelProps) {
-  const { list, renderScheme } = useSchemeTree(props, USER_SCHEMES);
-  return <EntryList list={list}>{renderScheme("user", ALWAYS_OPEN, "source")}</EntryList>;
 }
 
 type PaneState = { expanded: boolean; setExpanded: (next: boolean) => void };
