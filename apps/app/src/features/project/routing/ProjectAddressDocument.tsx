@@ -58,7 +58,7 @@ export function ProjectAddressDocument({
       !!result &&
       result.kind !== "unavailable" &&
       tab.documentId === result.document.documentId &&
-      matchesReviewItem(tab, { reviewWorkId: workId ?? "", reviewItemKey: reviewItemKey }),
+      matchesReviewItem(tab, { reviewOwner: workId ?? "", reviewItemKey: reviewItemKey }),
   );
   const reviewLocatorFingerprint = JSON.stringify(
     reviewTab ? { scheme: reviewTab.scheme, path: reviewTab.path, name: reviewTab.name } : null,

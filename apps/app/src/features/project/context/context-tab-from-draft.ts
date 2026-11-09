@@ -20,7 +20,7 @@ import type { ContextTab } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
 
 export function contextTabFromDraftGroup(group: {
-  workId: string;
+  ownerKey: string;
   documentId: string;
   itemKey: string;
   contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
@@ -56,7 +56,7 @@ export function contextTabFromDraftGroup(group: {
     ...(group.draftOnly
       ? {
           reviews: {
-            [group.workId]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
+            [group.ownerKey]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
           },
         }
       : {}),

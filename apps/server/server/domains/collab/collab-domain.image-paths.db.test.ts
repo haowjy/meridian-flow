@@ -147,7 +147,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         threadView: {
           threadId: THREAD_ID,
-          branchWork: { id: WORK_ID as never, handle: "w1" },
+          branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
         },
         documentSync: {
           ...collab,
@@ -224,7 +224,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // The Work's branch created this chapter: a hidden row and the branch's created row,
       // as ContextFS leaves a model's create in a draft-mode Work.
       const branch = await collab.branches.ensureActiveForWrite({
-        workId: WORK_ID as never,
+        owner: { kind: "work", workId: WORK_ID as never },
         projectId: PROJECT_ID as never,
         threadId: THREAD_ID as never,
         userId: USER_ID as never,
@@ -309,7 +309,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID as never,
         responseId: RESPONSE_ID,
         destination: "draft" as const,
-        workId: WORK_ID as never,
+        owner: { kind: "work", workId: WORK_ID as never } as const,
       };
       const read = await core.read(
         { file: "chapter", documentId: DOC_ID },
@@ -329,7 +329,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadView: {
           threadId: THREAD_ID,
           responseId: RESPONSE_ID,
-          branchWork: { id: WORK_ID as never, handle: "w1" },
+          branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
         },
         documentSync: collab,
       }).grep(grepQuery("See created"));
@@ -365,7 +365,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         destination: "draft" as const,
-        workId: WORK_ID as never,
+        owner: { kind: "work", workId: WORK_ID as never } as const,
       };
       // Read back (pulling the thread's peer) before the process goes away.
       const before = await collab.readEffectiveHashlines(draftRead);

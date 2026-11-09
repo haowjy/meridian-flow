@@ -33,7 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const {
       handleApplyClickRequest,
       handleDiscardWorkDraftRequest,
-      handleWorkBranchListRequest,
+      handleOwnerDraftListRequest,
       selectBranchRouteServices,
     } = await import("./branch-review-route.js");
 
@@ -622,16 +622,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     /** The Work's review routes over the composed app, as the writer's clicks reach them. */
     function review(script: Awaited<ReturnType<typeof start>>) {
       const routes = selectBranchRouteServices(script.runtime.app);
-      const scope = { userId: USER_ID, projectId: PROJECT_ID, workId: OTHER_WORK_ID } as never;
+      const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
       const item = async (documentId: string) =>
-        (await handleWorkBranchListRequest(routes, scope)).items.find(
-          (row) => row.documentId === documentId,
-        );
+        (
+          await handleOwnerDraftListRequest(routes, {
+            ...scope,
+            owner: `work:${OTHER_WORK_ID}`,
+          } as never)
+        ).items.find((row) => row.documentId === documentId);
       return {
         item,
         apply: async (documentId: string, extra: Record<string, unknown> = {}) =>
           handleApplyClickRequest(routes, {
-            ...(scope as object),
+            ...scope,
+            branchId: await branchOf(OTHER_WORK_ID),
             documentId: documentId as never,
             request: {
               commandId: randomUUID(),
@@ -644,7 +648,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         discard: async (documentId: string) => {
           const row = await item(documentId);
           return handleDiscardWorkDraftRequest(routes, {
-            ...(scope as object),
+            ...scope,
+            branchId: row?.branchId,
             documentId: documentId as never,
             request: { branchId: row?.branchId, itemKey: row?.itemKey, commandId: randomUUID() },
           } as never);

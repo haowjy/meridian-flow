@@ -38,6 +38,7 @@ import {
   type WorkShowResult,
 } from "../../domains/runtime/index.js";
 import { RebindThreadWorkError, switchThreadWork } from "../../domains/threads/index.js";
+import { chatOwner } from "../../shared/draft-owner.js";
 import {
   isToolError,
   type ToolErrorOutput,
@@ -412,7 +413,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
   async show(deps, thread, { work }) {
     const [threads, drafts] = await Promise.all([
       deps.threads.listRecentByWork(thread.projectId, work.id, 10),
-      deps.branches.draftReview.list({ projectId: thread.projectId, workId: work.id }),
+      deps.branches.draftReview.list({ owner: chatOwner(thread, work) }),
     ]);
     return {
       work: modelWork(work),

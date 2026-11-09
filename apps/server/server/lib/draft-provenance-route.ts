@@ -1,11 +1,13 @@
 /** Authenticated draft evidence read; a transport address never supplies file authority. */
+
+import type { BranchId } from "@meridian/contracts";
 import type { DraftProvenanceResponse } from "@meridian/contracts/branches";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { z } from "zod";
 import type { AppServices } from "./app.js";
-import { requireBranchWorkAccess, selectBranchRouteServices } from "./branch-review-route.js";
+import { requireBranchAccess, selectBranchRouteServices } from "./branch-review-route.js";
 import { requireFileGrant } from "./file-access-http.js";
 
 const clock = z.number().int().nonnegative().safe();
@@ -22,16 +24,17 @@ export async function handleDraftProvenance(
   input: {
     userId: UserId;
     projectId: ProjectId;
-    workId: WorkId;
+    branchId: BranchId;
     documentId: DocumentId;
     body: unknown;
   },
 ): Promise<DraftProvenanceResponse> {
-  await requireBranchWorkAccess(selectBranchRouteServices(app), input);
+  const { owner } = await requireBranchAccess(selectBranchRouteServices(app), input);
+  if (!owner) throw createError({ statusCode: 404, message: "Draft not found" });
   await requireFileGrant(
     app.fileAccess,
     input.userId,
-    { kind: "draft", documentId: input.documentId, workId: input.workId },
+    { kind: "draft", documentId: input.documentId, owner },
     "read",
   );
   const parsed = request.safeParse(input.body);
@@ -40,7 +43,7 @@ export async function handleDraftProvenance(
     throw createError({ statusCode: 400, message: "Invalid draft evidence request" });
   const evidence = await app.documentSync.readDraftProvenance({
     draftId: room.draftId,
-    workId: input.workId,
+    owner,
     documentId: input.documentId,
     writerRanges: parsed.data.writerRanges,
   });

@@ -7,7 +7,7 @@ import type { ScreenKey } from "./shell/screens";
 
 /** The route's verdict on an explicit review selector, asked of the server by `{ workId, itemKey }`. */
 export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
-export type ReviewAddress = { workId: string; itemKey: string; changeId?: string };
+export type ReviewAddress = { ownerKey: string; itemKey: string; changeId?: string };
 export type PresentedDocument = {
   container: "editor" | "dock";
   documentId: string | null;
@@ -41,7 +41,7 @@ export function resolvePresentedDocument(input: {
       draftOnly: editor.draftOnly,
       review:
         editor.workId && editor.itemKey
-          ? { workId: editor.workId, itemKey: editor.itemKey, changeId: editor.changeId }
+          ? { ownerKey: editor.workId, itemKey: editor.itemKey, changeId: editor.changeId }
           : null,
     };
   }

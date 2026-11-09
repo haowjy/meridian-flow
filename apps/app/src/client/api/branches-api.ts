@@ -1,4 +1,5 @@
 /** HTTP client for draft-review read endpoints. */
+import { parseDraftItemKey } from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
@@ -14,23 +15,24 @@ import type {
   UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
 import {
+  apiProjectBranchCommandPath,
+  apiProjectBranchDiscardPath,
+  apiProjectBranchDocumentDraftApplyPath,
+  apiProjectBranchDocumentDraftDiscardPath,
+  apiProjectBranchDocumentDraftPath,
+  apiProjectBranchDocumentDraftUnapplyPath,
   apiProjectDocumentBranchesPath,
-  apiProjectWorkBranchCommandPath,
-  apiProjectWorkBranchesDiscardPath,
-  apiProjectWorkBranchesPath,
-  apiProjectWorkDocumentDraftApplyPath,
-  apiProjectWorkDocumentDraftDiscardPath,
-  apiProjectWorkDocumentDraftPath,
-  apiProjectWorkDocumentDraftUnapplyPath,
+  apiProjectDraftsPath,
 } from "@meridian/contracts/protocol";
 
 import { getJson, postJson } from "./http-client";
 
-export async function listWorkBranchDrafts(
+/** The drafts one owner (`work:<id>` or `lineage:<root>`) has pending, one row per document. */
+export async function listOwnerDrafts(
   projectId: string,
-  workId: string,
+  owner: string,
 ): Promise<ThreadDraftListResponse> {
-  return getJson<ThreadDraftListResponse>(apiProjectWorkBranchesPath(projectId, workId));
+  return getJson<ThreadDraftListResponse>(apiProjectDraftsPath(projectId, owner));
 }
 
 export function listDocumentDraftHints(
@@ -43,17 +45,21 @@ export function listDocumentDraftHints(
 /** SQL-only addressed lookup. This also resolves drafts with no current text differences. */
 export type DraftMetadata = DraftMetadataResponse;
 export function getDraftMetadata(
-  draft: { projectId: string; workId: string; documentId: string; itemKey: string },
+  draft: { projectId: string; documentId: string; itemKey: string },
   signal?: AbortSignal,
 ) {
   return getJson<DraftMetadata>(
-    `${apiProjectWorkDocumentDraftPath(draft.projectId, draft.workId, draft.documentId)}?itemKey=${encodeURIComponent(draft.itemKey)}`,
+    `${apiProjectBranchDocumentDraftPath(draft.projectId, branchOf(draft.itemKey), draft.documentId)}?itemKey=${encodeURIComponent(draft.itemKey)}`,
     { signal },
   );
 }
 export function applyDraftClick(draft: DraftAddress, body: ApplyClick) {
   return postJson<ApplyClickAnswer>(
-    apiProjectWorkDocumentDraftApplyPath(draft.projectId, draft.workId, draft.documentId),
+    apiProjectBranchDocumentDraftApplyPath(
+      draft.projectId,
+      branchOf(draft.itemKey),
+      draft.documentId,
+    ),
     body,
     { signal: AbortSignal.timeout(10_000) },
   );
@@ -64,27 +70,41 @@ export function observeDraftClick(
 ): Promise<ApplyClickObservation> {
   // Only the typed `none` answer proves absence. A 404 may be lost Work access, not an unclaimed id.
   return getJson<ApplyClickObservation>(
-    apiProjectWorkBranchCommandPath(draft.projectId, draft.workId, body.commandId),
+    apiProjectBranchCommandPath(draft.projectId, branchOf(draft.itemKey), body.commandId),
     { signal: AbortSignal.timeout(10_000) },
   );
 }
 export function unapplyDraftClick(draft: DraftAddress, body: UnapplyClick) {
   return postJson<UnapplyClickAnswer>(
-    apiProjectWorkDocumentDraftUnapplyPath(draft.projectId, draft.workId, draft.documentId),
+    apiProjectBranchDocumentDraftUnapplyPath(
+      draft.projectId,
+      branchOf(draft.itemKey),
+      draft.documentId,
+    ),
     body,
     { signal: AbortSignal.timeout(10_000) },
   );
 }
 export function discardCreatedDraft(draft: DraftAddress, body: DraftDiscardRequest) {
   return postJson<DraftDiscardResponse>(
-    apiProjectWorkDocumentDraftDiscardPath(draft.projectId, draft.workId, draft.documentId),
+    apiProjectBranchDocumentDraftDiscardPath(
+      draft.projectId,
+      branchOf(draft.itemKey),
+      draft.documentId,
+    ),
     body,
   );
 }
-export function discardWorkDrafts(draft: DraftAddress, body: BranchDiscardAllRequest) {
+export function discardBranchDrafts(draft: DraftAddress, body: BranchDiscardAllRequest) {
   return postJson<BranchDiscardAllResponse>(
-    apiProjectWorkBranchesDiscardPath(draft.projectId, draft.workId),
+    apiProjectBranchDiscardPath(draft.projectId, body.branchId),
     body,
   );
 }
-type DraftAddress = { projectId: string; workId: string; documentId: string };
+/** A draft's branch, named by its item key (`${branchId}:${documentId}`). */
+export function branchOf(itemKey: string): string {
+  const parsed = parseDraftItemKey(itemKey);
+  if (!parsed) throw new Error(`Not a draft item key: ${itemKey}`);
+  return parsed.branchId;
+}
+type DraftAddress = { projectId: string; documentId: string; itemKey: string };

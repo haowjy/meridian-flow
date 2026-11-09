@@ -131,7 +131,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       branches,
       fileAccess,
       removals,
-      lockWorks: async () => {},
+      lockOwners: async () => {},
       lockLiveDocuments: async () => {},
     }),
     commitThreadResponseAtomically: (operation) => operation(),
@@ -142,7 +142,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
     fileAccess,
-    lockWorks: async () => {},
+    lockOwners: async () => {},
     lockLiveDocuments: async () => {},
   });
   const projections = { refresh: runDocumentWriteHook };
@@ -371,7 +371,13 @@ function createInMemoryBranchStub(): CollabBranches {
       async items() {
         return { branchId: null, items: [] };
       },
+      async branchOwner() {
+        return null;
+      },
       async resolveItem() {
+        return null;
+      },
+      async resolveItemInBranch() {
         return null;
       },
       async resolveItemByDocument() {

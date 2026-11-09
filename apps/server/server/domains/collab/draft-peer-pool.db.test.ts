@@ -64,7 +64,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
     scope: "project",
   });
   const branch = await branches.ensureActiveForWrite({
-    workId: workId as never,
+    owner: { kind: "work", workId: workId as never },
     projectId: projectId as never,
     threadId: null,
     userId: userId as never,

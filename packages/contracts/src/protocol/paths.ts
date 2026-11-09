@@ -10,9 +10,9 @@ import type { ProjectContextTreeScheme } from "./http-types.js";
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
-/** Review URLs name the Work and the item (`itemKey`); a draft id or `branches.id` alone never selects one. */
+/** Review URLs name the owner (`work:<id>` or `lineage:<root>`) and the item (`itemKey`); a draft id or `branches.id` alone never selects one. */
 export type DocumentAddressReviewSelector = {
-  workId: string;
+  owner: string;
   itemKey: string;
 };
 export type DocumentAddressRequestOptions = ProjectContextRequestOptions & {
@@ -69,7 +69,7 @@ export function apiProjectDocumentAddressPath(
   const query = new URLSearchParams({ path });
   setOwnerQuery(query, scheme, opts);
   if (opts?.review) {
-    query.set("reviewWorkId", opts.review.workId);
+    query.set("reviewOwner", opts.review.owner);
     query.set("itemKey", opts.review.itemKey);
   }
   return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
@@ -121,54 +121,60 @@ export function apiProjectDocumentBranchesPath(projectId: string, documentId: st
   return `${apiProjectPath(projectId)}/documents/${documentId}/branches`;
 }
 
-export function apiProjectWorkBranchesPath(projectId: string, workId: string): string {
-  return `${apiProjectWorksPath(projectId)}/${workId}/branches`;
+/** An owner's active branch's reviewable drafts: `owner` is `work:<id>` or `lineage:<rootThreadId>`. */
+export function apiProjectDraftsPath(projectId: string, owner: string): string {
+  return `${apiProjectPath(projectId)}/drafts?owner=${encodeURIComponent(owner)}`;
+}
+
+/** Commands address the branch; the server reads its owner from the branch row. */
+export function apiProjectBranchPath(projectId: string, branchId: string): string {
+  return `${apiProjectPath(projectId)}/branches/${branchId}`;
 }
 
 /** Observes one Apply or Discard command by its client `commandId`. */
-export function apiProjectWorkBranchCommandPath(
+export function apiProjectBranchCommandPath(
   projectId: string,
-  workId: string,
+  branchId: string,
   commandId: string,
 ): string {
-  return `${apiProjectWorkBranchesPath(projectId, workId)}/commands/${commandId}`;
+  return `${apiProjectBranchPath(projectId, branchId)}/commands/${commandId}`;
 }
 
-/** Discard all: one command over the Work's whole branch. */
-export function apiProjectWorkBranchesDiscardPath(projectId: string, workId: string): string {
-  return `${apiProjectWorkBranchesPath(projectId, workId)}/discard`;
+/** Discard all: one command over the whole branch. */
+export function apiProjectBranchDiscardPath(projectId: string, branchId: string): string {
+  return `${apiProjectBranchPath(projectId, branchId)}/discard`;
 }
 
-export function apiProjectWorkDocumentDraftPath(
+export function apiProjectBranchDocumentDraftPath(
   projectId: string,
-  workId: string,
+  branchId: string,
   documentId: string,
 ): string {
-  return `${apiProjectWorksPath(projectId)}/${workId}/documents/${documentId}/draft`;
+  return `${apiProjectBranchPath(projectId, branchId)}/documents/${documentId}/draft`;
 }
 
-export function apiProjectWorkDocumentDraftApplyPath(
+export function apiProjectBranchDocumentDraftApplyPath(
   projectId: string,
-  workId: string,
+  branchId: string,
   documentId: string,
 ): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply`;
+  return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/apply`;
 }
 
-export function apiProjectWorkDocumentDraftUnapplyPath(
+export function apiProjectBranchDocumentDraftUnapplyPath(
   projectId: string,
-  workId: string,
+  branchId: string,
   documentId: string,
 ): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/unapply`;
+  return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/unapply`;
 }
 
-export function apiProjectWorkDocumentDraftDiscardPath(
+export function apiProjectBranchDocumentDraftDiscardPath(
   projectId: string,
-  workId: string,
+  branchId: string,
   documentId: string,
 ): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/discard`;
+  return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/discard`;
 }
 
 /** (user, project)-scoped UI preferences — user resolved from auth. */

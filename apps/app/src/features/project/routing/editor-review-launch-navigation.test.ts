@@ -86,7 +86,9 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: { [workId]: { itemKey: "branch-hidden:doc-hidden", tabInstanceToken: "token" } },
+      reviews: {
+        [`work:${workId}`]: { itemKey: "branch-hidden:doc-hidden", tabInstanceToken: "token" },
+      },
     } as never;
     useContextTabsStore.getState().openTab(projectId, hidden, undefined, workId);
     const { open, history } = setup(
@@ -113,7 +115,7 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: { [workId]: { itemKey: "branch-1:doc-1", tabInstanceToken: "token" } },
+      reviews: { [`work:${workId}`]: { itemKey: "branch-1:doc-1", tabInstanceToken: "token" } },
       tabInstanceId: "tab-1",
     } as never;
     const result = await open(
@@ -165,7 +167,7 @@ describe("review launch navigation", () => {
         editable: true,
         filetype: "markdown" as const,
         schemaType: "document" as const,
-        reviews: { [workId]: { itemKey: "branch-c:doc-c", tabInstanceToken: "token" } },
+        reviews: { [`work:${workId}`]: { itemKey: "branch-c:doc-c", tabInstanceToken: "token" } },
       } as never;
       useContextTabsStore.getState().openTab(projectId, tab, undefined, workId);
       const history = repair("gone.md", "fallback.md", undefined);

@@ -123,7 +123,12 @@ export type TreeNode =
   | { kind: "document"; document: VisibleDocument }
   | { kind: "folder"; folder: VisibleFolder };
 
-export type BranchUse = { branchId: BranchId; originWorkId: WorkId | null; createdAt: Date };
+export type BranchUse = {
+  branchId: BranchId;
+  originWorkId: WorkId | null;
+  originRootThreadId: string | null;
+  createdAt: Date;
+};
 
 export type IdentityStatus =
   /**
@@ -997,5 +1002,10 @@ function rowLocation(
 }
 
 function branchUse(use: Awaited<ReturnType<typeof loadActiveBranchUses>>[number]): BranchUse {
-  return { branchId: use.branchId, originWorkId: use.originWorkId, createdAt: use.branchCreatedAt };
+  return {
+    branchId: use.branchId,
+    originWorkId: use.originWorkId,
+    originRootThreadId: use.originRootThreadId,
+    createdAt: use.branchCreatedAt,
+  };
 }

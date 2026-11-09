@@ -347,9 +347,9 @@ export const branchCommands = pgTable(
   "branch_commands",
   {
     id: uuid("id").$type<BranchCommandId>().primaryKey(),
+    /** Set on rows written before commands addressed the branch; new rows leave it null. */
     workId: uuid("work_id")
       .$type<WorkId>()
-      .notNull()
       .references(() => works.id, { onDelete: "cascade" }),
     branchId: uuid("branch_id")
       .$type<BranchId>()
@@ -371,6 +371,10 @@ export const branchCommands = pgTable(
     check(
       "branch_commands_kind_valid",
       sql`${table.kind} IN ('apply_click', 'unapply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,
+    ),
+    check(
+      "branch_commands_target",
+      sql`${table.branchId} IS NOT NULL OR ${table.workId} IS NOT NULL`,
     ),
     check("branch_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
     check(

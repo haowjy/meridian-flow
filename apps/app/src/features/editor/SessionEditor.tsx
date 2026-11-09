@@ -2,6 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
+import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import type { Editor, EditorOptions } from "@tiptap/core";
@@ -82,6 +83,12 @@ type SessionEditorProps = {
   onReopen?: () => void;
   container: LiveEditorContainer;
 };
+
+/** The Work an owner key names; a lineage names none. */
+function workOfOwner(ownerKey: string): string | null {
+  const owner = parseDraftOwnerKey(ownerKey);
+  return owner?.kind === "work" ? owner.id : null;
+}
 
 export function SessionEditor(props: SessionEditorProps) {
   const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
@@ -180,7 +187,7 @@ function ActiveSessionEditorView({
   const linkRootThreadId = location?.rootThreadId ?? null;
   const linkWorkId = !location
     ? identity.surface === "review"
-      ? identity.workId
+      ? (workOfOwner(identity.ownerKey) ?? noWork?.id ?? null)
       : null
     : linkRootThreadId
       ? (noWork?.id ?? null)

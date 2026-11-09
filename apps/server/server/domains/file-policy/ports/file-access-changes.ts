@@ -4,8 +4,16 @@
  */
 import type { WorkId } from "@meridian/contracts/runtime";
 
-/** Archive, unarchive, delete or restore of a Work: its own files (drafts, scratch). */
-export type FileAccessChange = { workId: WorkId };
+/**
+ * Archive, unarchive, delete or restore of a Work: its own files (drafts, scratch). Or a
+ * lineage gaining or losing its last live chat: its drafts freeze and thaw.
+ */
+export type FileAccessChange = { workId: WorkId } | { rootThreadId: string };
+
+/** The key a room registers under for this change: a Work id, or `lineage:<root>`. */
+export function fileAccessChangeKey(change: FileAccessChange): string {
+  return "workId" in change ? change.workId : `lineage:${change.rootThreadId}`;
+}
 
 export interface FileAccessChanges {
   /**

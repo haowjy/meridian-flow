@@ -1,5 +1,6 @@
 /** Batched stored-link resolution request and answers, shared by the resolve route and the app. */
 import { z } from "zod";
+import type { DraftOwnerKey } from "./branches/owner.js";
 
 export const ResolveDocumentLinksRequestSchema = z
   .object({
@@ -47,7 +48,7 @@ export type DocumentLinkAnswer =
       };
       inBranch: boolean;
       /** Present iff `inBranch`: the branch containing the draft the chip opens (the reader's own if it uses it, else the oldest). */
-      branch?: { branchId: string; workId: string | null };
+      branch?: { branchId: string; owner: DraftOwnerKey };
       /** An ahead ref answered through its settlement: it never answers by address again. */
       settled?: true;
     }

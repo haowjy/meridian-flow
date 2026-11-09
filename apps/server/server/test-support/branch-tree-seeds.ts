@@ -273,7 +273,7 @@ export function branchTreeWorldOver(
 
   function branchOf(work: ScenarioWork): Promise<Branch> {
     return branches.ensureActiveForWrite({
-      workId: work.id,
+      owner: { kind: "work", workId: work.id },
       projectId,
       threadId: work.threadId,
       userId,

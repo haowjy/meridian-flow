@@ -122,12 +122,12 @@ export function useReviewHeader({
     void queryClient.prefetchQuery(
       draftMetadataQueryOptions({
         projectId: controller.projectId,
-        workId: controller.workId,
+        ownerKey: controller.ownerKey,
         documentId: nextDocumentId,
         itemKey: nextItemKey,
       }),
     );
-  }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.workId, queryClient]);
+  }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.ownerKey, queryClient]);
   const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });

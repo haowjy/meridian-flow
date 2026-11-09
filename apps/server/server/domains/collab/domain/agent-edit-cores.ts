@@ -9,6 +9,7 @@ import type {
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
+import { draftOwnerKey } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
@@ -118,5 +119,5 @@ export function asThreadPeerAgentEditCore(
 
 export function sameDestination(left: FileDestination, right: FileDestination): boolean {
   if (left.kind === "live" || right.kind === "live") return left.kind === right.kind;
-  return left.workId === right.workId;
+  return draftOwnerKey(left.owner) === draftOwnerKey(right.owner);
 }

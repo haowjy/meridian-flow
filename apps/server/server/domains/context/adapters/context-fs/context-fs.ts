@@ -15,7 +15,7 @@ import {
   type RetractionCause,
   storedFilename,
 } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { compareCatalogSiblings } from "@meridian/resource-replica";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
@@ -819,9 +819,9 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!view) return null;
     const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
     // Without a separate draft both versions are the same document.
-    const drafted = sourceDestination(this.scheme, view.branchWork).kind === "draft";
-    return view.version !== "live" && drafted && view.branchWork
-      ? { ...reader, destination: "draft", workId: view.branchWork.id as WorkId }
+    const drafted = sourceDestination(this.scheme, view.branchOwner).kind === "draft";
+    return view.version !== "live" && drafted && view.branchOwner
+      ? { ...reader, destination: "draft", owner: view.branchOwner.owner }
       : { ...reader, destination: "live" };
   }
 

@@ -9,6 +9,7 @@
 import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchCommandId, BranchId, DraftItemKey } from "../ids.js";
+import type { DraftOwnerKey } from "./owner.js";
 
 /** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
 export const BranchCommandIdSchema = z.string().uuid();
@@ -165,8 +166,7 @@ export interface ThreadDraftListItem {
 
 /**
  * One document's draft in an active branch, for the hint on an open document. The branch is
- * named by its own `label`; `originWorkId` is the branch's origin Work, which today's review
- * address still needs and a branch without an origin Work will not have.
+ * named by its own `label`; `owner` is who owns it, which the review address names.
  */
 export interface DocumentDraftHint {
   branchId: BranchId;
@@ -174,7 +174,7 @@ export interface DocumentDraftHint {
   itemKey: DraftItemKey;
   /** How the branch is named to the writer; null when it has no name (the client words that). */
   label: string | null;
-  originWorkId: string | null;
+  owner: DraftOwnerKey;
   /**
    * The branch's move or delete of the document, which live doesn't show until Apply (D26):
    * where the branch puts it, or that it deletes it. Null when the branch only edits its text.

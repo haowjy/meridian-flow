@@ -1,5 +1,6 @@
 /** Pure eligibility and continuity planning for one exact context-removal intent. */
 
+import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
@@ -34,7 +35,7 @@ export type ContextRemovalIntent = {
   /** Writer close and draft settlement address a mounted tab, not every document representation. */
   tabInstanceId?: string;
   /** Discard and a writer's close of a draft-only tab are one Work's: the tab stays while another Work still reviews the document. */
-  reviewWorkId?: string;
+  reviewOwner?: string;
 };
 
 export type ContextRouteIdentity = { kind: "server" | "local"; documentId: string };
@@ -215,8 +216,11 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
       rootThreadId: tab.rootThreadId,
       documentId: tab.documentId,
     };
-  const reviewers = Object.keys(reviewEntriesOf(tab));
-  let workId = reviewEntryOf(tab, activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
+  const reviewers = Object.keys(reviewEntriesOf(tab)).flatMap((key) => {
+    const owner = parseDraftOwnerKey(key);
+    return owner?.kind === "work" ? [owner.id] : [];
+  });
+  let workId = reviewers.includes(activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
   if (isWorkScopedScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
     workId = tab.workId;
@@ -266,10 +270,10 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const removedIds = new Set(removed.map((tab) => tab.documentId));
   // The membership after the removal, decided once: a review removal can leave
   // the tab in place for the Works that still present it.
-  const reviewWorkId = input.intent.reviewWorkId;
+  const reviewOwner = input.intent.reviewOwner;
   const remaining = input.tabs.flatMap((tab) => {
     if (!removedIds.has(tab.documentId)) return [tab];
-    return (reviewWorkId && withoutReviewEntry(tab, reviewWorkId)) || [];
+    return (reviewOwner && withoutReviewEntry(tab, reviewOwner)) || [];
   });
   if (input.activeWorkId === null) {
     // Before any route port registers there is no Editor locator to repair.

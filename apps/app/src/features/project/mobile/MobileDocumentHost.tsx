@@ -173,7 +173,7 @@ function PhoneDocument({
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const reviewing = review?.documentId === tab.documentId && review.shown;
-  const archived = useDockArchivedWork(projectId, tab, reviewing ? controller.workId : null);
+  const archived = useDockArchivedWork(projectId, tab, reviewing ? controller.ownerKey : null);
   return (
     <>
       {/* The archived Work's line, as above a desktop document: it also explains a review's

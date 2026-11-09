@@ -39,10 +39,10 @@ export interface DraftOnlyContainer {
 
 function presentations(projectId: string, tab: ContextTab, container: "editor" | "dock") {
   if (tab.kind !== "tracked") return [];
-  return Object.entries(tab.reviews ?? {}).map(([workId, entry]) => ({
+  return Object.entries(tab.reviews ?? {}).map(([ownerKey, entry]) => ({
     projectId,
     documentId: tab.documentId,
-    workId,
+    ownerKey,
     itemKey: entry.itemKey,
     draftOnly: isDraftOnly(tab),
     token: entry.tabInstanceToken,
@@ -63,7 +63,10 @@ function settleDock(draft: DraftRef, promote: boolean): ContextTab | null {
     return null;
   const holds = promote
     ? isDraftOnly(occupant.tab) && occupant.tab.documentId === draft.documentId
-    : matchesReviewItem(occupant.tab, { reviewWorkId: draft.workId, reviewItemKey: draft.itemKey });
+    : matchesReviewItem(occupant.tab, {
+        reviewOwner: draft.ownerKey,
+        reviewItemKey: draft.itemKey,
+      });
   if (!holds) return null;
   const { reviews: _, ...tab } = occupant.tab;
   useDockDocumentStore.setState((state) =>
@@ -111,7 +114,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
       },
       remove: (draft) => {
         if (epoch?.aborted) return;
-        const editor = removal.discardDraft(draft.projectId, draft.workId, draft.itemKey);
+        const editor = removal.discardDraft(draft.projectId, draft.ownerKey, draft.itemKey);
         if (editor.kind !== "noop")
           notices?.presentedRemoved(draft.projectId, "editor", editor.removed);
         const dock = settleDock(draft, false);

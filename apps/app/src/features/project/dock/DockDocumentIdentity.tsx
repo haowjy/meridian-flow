@@ -92,16 +92,16 @@ function DockIdentityBody({
 
 /**
  * The archived Work that freezes a document, if any: the Work that owns its file, or the
- * Work whose draft of it is under review (`reviewWorkId`), as the Editor freezes both.
+ * Work whose draft of it is under review (`reviewOwner`), as the Editor freezes both.
  */
 export function useDockArchivedWork(
   projectId: string,
   tab: ContextTab,
-  reviewWorkId: string | null = null,
+  reviewOwner: string | null = null,
 ): Work | null {
   const { works } = useWorks(projectId);
   const workId =
-    tab.kind !== "new" && tab.workId && isWorkScopedScheme(tab.scheme) ? tab.workId : reviewWorkId;
+    tab.kind !== "new" && tab.workId && isWorkScopedScheme(tab.scheme) ? tab.workId : reviewOwner;
   const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
   return work && isWorkArchived(work) ? work : null;
 }

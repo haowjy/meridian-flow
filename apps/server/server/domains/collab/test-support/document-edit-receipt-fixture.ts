@@ -90,7 +90,11 @@ export function responseContext(responseId: string) {
     turnId: TURN_ID,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     grant: inProject(
-      testFileGrant({ kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" }),
+      testFileGrant({
+        kind: "draft",
+        owner: { kind: "work", workId: WORK_ID },
+        ownerHandle: "atomicity-work",
+      }),
     ),
   };
 }
@@ -121,7 +125,7 @@ export async function setupResponseDraft(
         ],
   );
   const resolved = await fixture.collab.draftReview.resolveItemByDocument({
-    workId: WORK_ID,
+    owner: { kind: "work", workId: WORK_ID },
     documentId: ALPHA_ID,
   });
   if (!resolved) throw new Error("staged draft has no review item");

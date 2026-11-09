@@ -14,7 +14,11 @@ export function createTestWorkProjectionMutation(db: Database): WorkProjectionMu
   return createWorkProjectionMutation({
     db,
     availability: { advance: async () => "0" },
-    catalog: { refreshProject: async () => {}, upsertWorkAuthorities: async () => {} },
+    catalog: {
+      refreshProject: async () => {},
+      upsertWorkAuthorities: async () => {},
+      publishDraftOwnerHints: () => {},
+    },
     pendingCounts: createDrizzleWorkBranchPendingStore(db),
   });
 }

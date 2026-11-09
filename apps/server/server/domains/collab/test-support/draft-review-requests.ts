@@ -1,6 +1,6 @@
 /** Snapshot-owned draft edits and explicit preview-fenced request envelopes. */
 import { randomUUID } from "node:crypto";
-import type { BranchCommandId, BranchId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchCommandId, BranchId, DraftOwner, UserId, WorkId } from "@meridian/contracts";
 import type { BranchCommandKind } from "@meridian/contracts/branches";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -64,9 +64,8 @@ export async function commitDraftEdit(
 
 /** A fresh command envelope for facade-level suites; the route builds its own from the body. */
 export function testEnvelope(input: {
-  workId: WorkId;
   kind: BranchCommandKind;
-  branchId: BranchId | null;
+  branchId: BranchId;
   userId?: UserId;
   commandId?: BranchCommandId;
   body?: unknown;
@@ -74,14 +73,13 @@ export function testEnvelope(input: {
   const accountId = input.userId ?? (USER_ID as UserId);
   return {
     commandId: input.commandId ?? (randomUUID() as BranchCommandId),
-    workId: input.workId,
     accountId,
     kind: input.kind,
     branchId: input.branchId,
     digest: commandDigest({
       accountId,
       projectId: "",
-      workId: input.workId,
+      branchId: input.branchId,
       kind: input.kind,
       selectors: { branchId: input.branchId },
       body: input.body ?? null,
@@ -91,21 +89,21 @@ export function testEnvelope(input: {
 
 export function reviewDriver(
   review: DraftReviewApi,
-  scope: { workId?: WorkId; userId?: UserId } = {},
+  scope: { owner?: DraftOwner; userId?: UserId } = {},
 ) {
-  const workId = scope.workId ?? (WORK_ID as WorkId);
+  const owner = scope.owner ?? { kind: "work", workId: WORK_ID as WorkId };
   const userId = scope.userId ?? (USER_ID as UserId);
   const body = (outcome: Awaited<ReturnType<DraftReviewApi["discardItem"]>>) =>
     outcome.kind === "result" ? outcome.result : outcome;
   async function resolved(documentId: string) {
-    const found = await review.resolveItemByDocument({ workId, documentId: documentId as never });
+    const found = await review.resolveItemByDocument({ owner, documentId: documentId as never });
     if (!found) throw new Error(`No review item for ${documentId}`);
     return found;
   }
   const driver = {
     resolved,
     async actorThreads(documentId: string) {
-      const listed = await review.listItems({ workId });
+      const listed = await review.listItems({ owner });
       const item = listed.items.find((candidate) => candidate.documentId === documentId);
       return (item?.actorThreadIds ?? []).map((threadId) => ({
         threadId,
@@ -113,29 +111,27 @@ export function reviewDriver(
       }));
     },
     async list() {
-      return (await review.items({ workId })).items;
+      return (await review.items({ owner })).items;
     },
     async discardItem(documentId: string) {
       const { item, branchId } = await resolved(documentId);
       return body(
         await review.discardItem({
-          workId,
           item,
           userId,
-          envelope: testEnvelope({ workId, kind: "discard_items", branchId, userId }),
+          envelope: testEnvelope({ kind: "discard_items", branchId, userId }),
         }),
       );
     },
     /** Discard all of the Work's active branch. */
     async discardAll() {
-      const { branchId } = await review.items({ workId });
+      const { branchId } = await review.items({ owner });
       if (!branchId) throw new Error("No active branch");
       return body(
         await review.discardAll({
-          workId,
           branchId,
           userId,
-          envelope: testEnvelope({ workId, kind: "discard_branch", branchId, userId }),
+          envelope: testEnvelope({ kind: "discard_branch", branchId, userId }),
         }),
       );
     },

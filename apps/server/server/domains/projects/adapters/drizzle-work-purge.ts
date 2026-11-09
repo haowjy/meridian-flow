@@ -66,7 +66,9 @@ export function createDrizzleWorkPurger(deps: {
   async function purgeLocked(
     workId: WorkId,
     cutoff: Date,
-    disposeDrafts: () => Promise<{ releasedObjects: readonly string[] }>,
+    disposeDrafts: (
+      lineageRootIds: readonly string[],
+    ) => Promise<{ releasedObjects: readonly string[] }>,
   ): Promise<{ purged: boolean; objectKeys: string[] }> {
     return runInDrizzleTransaction(deps.db, async () => {
       const lockedTree = await lockWorkThreadTree(deps.db, workId, { includeMarked: true });
@@ -156,7 +158,20 @@ export function createDrizzleWorkPurger(deps: {
       ]);
       // F10: the Work's branches end through the Discard kernel, after this proof and before
       // their rows go, so nothing they created stays live and their storage is released.
-      const disposed = await disposeDrafts();
+      const purgedRoots = lockedTree.threadIds.length
+        ? (
+            await activeDb
+              .select({ id: threads.id })
+              .from(threads)
+              .where(
+                and(
+                  inArray(threads.id, lockedTree.threadIds),
+                  eq(threads.rootThreadId, threads.id),
+                ),
+              )
+          ).map((row) => row.id)
+        : [];
+      const disposed = await disposeDrafts(purgedRoots);
       const objectKeys = [
         // The incoming object is where an upload's PUT lands; one never finished is still there.
         ...uploads.flatMap((upload) => [
@@ -193,8 +208,15 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
       }
-      // The disposed branches' rows go with the Work; their closed drafts cascade.
-      await activeDb.delete(branches).where(eq(branches.originWorkId, workId));
+      // The disposed branches' rows go with the Work and its purged lineages; their closed drafts cascade.
+      await activeDb
+        .delete(branches)
+        .where(
+          or(
+            eq(branches.originWorkId, workId),
+            purgedRoots.length ? inArray(branches.originRootThreadId, purgedRoots) : undefined,
+          ),
+        );
       const deleted = await activeDb
         .delete(works)
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))

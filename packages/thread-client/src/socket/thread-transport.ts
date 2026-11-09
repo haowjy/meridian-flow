@@ -3,7 +3,7 @@ import type { FailureOccurrence } from "@meridian/contracts/failures";
 import type {
   AskAnswerReply,
   CancelTurnResponse,
-  CatalogWakeHint,
+  CatalogChannelMessage,
   SequencedEvent,
   ThreadLiveState,
   WsGapCause,
@@ -87,7 +87,7 @@ export interface ThreadTransport {
   ): () => void;
 
   /** Receive truth-free catalog wake hints over the existing authenticated socket. */
-  subscribeCatalog(projectId: string, listener: (hint: CatalogWakeHint) => void): () => void;
+  subscribeCatalog(projectId: string, listener: (hint: CatalogChannelMessage) => void): () => void;
 
   /** Answer an open ask over the socket; resolves once, never rejects. */
   answerAsk(input: AskAnswerInput): Promise<AskAnswerOutcome>;

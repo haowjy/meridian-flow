@@ -1,5 +1,6 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
+import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { LiveDocumentSessionAuthority, WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
@@ -17,6 +18,7 @@ import {
   type ProjectTabsSlice,
   type ReviewEntries,
   reviewEntryOf,
+  reviewOwnerOfTab,
   type ServerContextTab,
 } from "@/client/stores";
 import {
@@ -123,7 +125,7 @@ export type BoundDraftsPort = {
   boundDrafts(
     projectId: string,
     documentId: string,
-  ): readonly { workId: string; itemKey: string }[];
+  ): readonly { ownerKey: string; itemKey: string }[];
 };
 
 type RemovalFence = {
@@ -292,7 +294,7 @@ export class ContextRemovalCoordinator {
       }
       const reviews: ReviewEntries = {};
       for (const draft of this.drafts.boundDrafts(projectId, tab.documentId))
-        reviews[draft.workId] = { itemKey: draft.itemKey, tabInstanceToken: crypto.randomUUID() };
+        reviews[draft.ownerKey] = { itemKey: draft.itemKey, tabInstanceToken: crypto.randomUUID() };
       if (Object.keys(reviews).length === 0) continue;
       this.workspace.holdForDrafts(projectId, tab.documentId, reviews);
       held.add(tab.documentId);
@@ -901,8 +903,9 @@ export class ContextRemovalCoordinator {
   private closingReview(
     state: { activeWorkId: string | null },
     tab: ContextTab,
-  ): { reviewWorkId?: string } {
-    return isDraftOnly(tab) && state.activeWorkId ? { reviewWorkId: state.activeWorkId } : {};
+  ): { reviewOwner?: string } {
+    const reviewOwner = isDraftOnly(tab) ? reviewOwnerOfTab(tab, state.activeWorkId) : undefined;
+    return reviewOwner ? { reviewOwner } : {};
   }
 
   private commitWriterClose(
@@ -1041,13 +1044,13 @@ export class ContextRemovalCoordinator {
    */
   discardDraft(
     projectId: string,
-    reviewWorkId: string,
+    reviewOwner: string,
     reviewItemKey: string,
   ): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
     const tab = slice.tabs.find((candidate) =>
-      matchesReviewItem(candidate, { reviewWorkId, reviewItemKey }),
+      matchesReviewItem(candidate, { reviewOwner, reviewItemKey }),
     );
     if (tab === undefined || tab.kind !== "tracked" || !tab.tabInstanceId) return { kind: "noop" };
     if (this.unavailable()) return { kind: "noop" };
@@ -1056,7 +1059,7 @@ export class ContextRemovalCoordinator {
       cause: "draft-discard",
       documentIds: [tab.documentId],
       tabInstanceId: tab.tabInstanceId,
-      reviewWorkId,
+      reviewOwner,
     });
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, transition.planning);
@@ -1072,10 +1075,13 @@ export class ContextRemovalCoordinator {
   admitDraftReview(
     projectId: string,
     tab: Extract<ContextTab, { kind: "tracked" }>,
-    workId: string,
+    ownerKey: string,
   ): void {
     const state = this.projects.get(projectId);
-    if (!state || !reviewEntryOf(tab, workId)) return;
+    if (!state || !reviewEntryOf(tab, ownerKey)) return;
+    const owner = parseDraftOwnerKey(ownerKey);
+    const workId = owner?.kind === "work" ? owner.id : state.activeWorkId;
+    if (!workId) return;
     state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, workId)));
   }
 
@@ -1193,7 +1199,7 @@ export class ContextRemovalCoordinator {
 
     this.workspace.commit(projectId, {
       documentIds: plan.outcome.removed.map((tab) => tab.documentId),
-      ...(intent.reviewWorkId ? { dropReviewOf: intent.reviewWorkId } : {}),
+      ...(intent.reviewOwner ? { dropReviewOf: intent.reviewOwner } : {}),
       ...(state.activeWorkId
         ? {
             workspaceSelection: {

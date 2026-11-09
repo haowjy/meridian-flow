@@ -9,7 +9,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
@@ -50,11 +50,11 @@ export function useDraftDock({
     if (!active) dismiss.current();
     return () => dismiss.current();
   }, [active, threadId]);
-  const listedFiles = useWorkBranchDrafts(controller.projectId, controller.workId).files ?? [];
+  const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
   const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
-  const { projectId, workId } = controller;
+  const { projectId, ownerKey } = controller;
 
   const candidates = useMemo(
     () =>
@@ -69,11 +69,11 @@ export function useDraftDock({
         .filter((row) => row.draft.hasDraft && row.draft.tree?.deleted !== true)
         .map((row) => ({
           projectId,
-          workId,
+          ownerKey,
           documentId: row.documentId,
           itemKey: row.draft.itemKey,
         })),
-    [candidates, projectId, workId],
+    [candidates, projectId, ownerKey],
   );
   // The open review keeps its own refresh; the strip refreshes the rest.
   const reads = useRoomReviews(targets);
@@ -115,12 +115,17 @@ export function useDraftDock({
       // A draft-only picture has no review room: it opens as a preview.
       if (!file.row.draft.hasDraft && !reviewHasNoRoom(file.row.draft)) {
         if (file.row.draft.binary)
-          setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
+          setImagePreview({
+            projectId,
+            ownerKey,
+            documentId: file.row.documentId,
+            name: file.name,
+          });
         return;
       }
-      openReviewFile(file.row, workId, change ?? file.changes[0]);
+      openReviewFile(file.row, ownerKey, change ?? file.changes[0]);
     },
-    [openReviewFile, projectId, workId],
+    [openReviewFile, projectId, ownerKey],
   );
 
   const applicable = actionableFiles.filter(
@@ -171,7 +176,7 @@ export function useDraftDock({
     ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
-    workId,
+    ownerKey,
     fileFailures,
     review,
     imagePreview,

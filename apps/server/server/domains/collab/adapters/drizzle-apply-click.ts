@@ -42,6 +42,7 @@ import {
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -194,7 +195,7 @@ export function createDrizzleApplyClick(
             eq(documentDrafts.documentId, command.documentId),
             eq(documentDrafts.kind, "work_draft"),
             eq(documentDrafts.status, "active"),
-            eq(branches.originWorkId, command.workId),
+            eq(branches.id, command.branchId),
             eq(branches.status, "active"),
           ),
         );
@@ -220,7 +221,7 @@ export function createDrizzleApplyClick(
       });
       try {
         return await deps.workProjection.mutate(
-          { works: [command.workId] },
+          { branches: [prepared.branchId] },
           async (): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer> => {
             const tx = currentDrizzleDb(db);
             const found = await lookupCommand(tx, command.envelope);
@@ -412,6 +413,9 @@ export function createDrizzleApplyClick(
         );
       } catch (cause) {
         if (cause instanceof DraftStaleUpdateError) return closed();
+        // A lineage with no live member refuses like an archived Work.
+        if (cause instanceof LineageDraftsUnavailableError)
+          throw new ApplyClickRefused("work_archived");
         if (cause instanceof WorkLifecycleUnavailableError)
           throw new ApplyClickRefused(
             cause.state === "archived"
@@ -444,8 +448,8 @@ export function createDrizzleApplyClick(
               { commandId: command.envelope.commandId, measured: deps.measured },
               () =>
                 deps.workProjection.mutate(
-                  // A tree cut writes the branch's row: its branch too, as Discard holds it.
-                  { works: [command.workId], ...(cut ? { branches: [branchId] } : {}) },
+                  // The branch's owner enters the boundary as Discard's does.
+                  { branches: [branchId] },
                   async (): Promise<ApplyClickAnswer> => {
                     // mutate awaits post-commit delivery too; stop the boundary clock at
                     // root commit, before room recovery and document projections run.
@@ -828,6 +832,9 @@ export function createDrizzleApplyClick(
         // The append door alone locks and rechecks the addressed draft. Closure rolls
         // back the claim and live half with it before the service reads a stored outcome.
         if (cause instanceof DraftStaleUpdateError) return closed(command);
+        // A lineage with no live member refuses like an archived Work.
+        if (cause instanceof LineageDraftsUnavailableError)
+          throw new ApplyClickRefused("work_archived");
         if (cause instanceof WorkLifecycleUnavailableError)
           throw new ApplyClickRefused(
             cause.state === "archived"

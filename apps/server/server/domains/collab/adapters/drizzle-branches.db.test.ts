@@ -55,8 +55,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("makes one active branch when two first writes in a Work race, and serves its lifecycle (T-2)", async () => {
       const scenario = await branchTreeScenario(root);
       const work = await scenario.work("Ascension", "draft");
+      const owner = { kind: "work", workId: work.id } as const;
       const input = {
-        workId: work.id,
+        owner,
         projectId: scenario.project.id,
         threadId: work.threadId,
         userId: scenario.project.userId,
@@ -106,16 +107,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       // The rest of the public surface, through the same resolver object.
       const resolver = resolverOn(root);
-      expect(await resolver.activeForWork(work.id)).toMatchObject({ id: made.id });
-      expect(await resolver.viewForWork(work.id)).toEqual({ kind: "branch", branchId: made.id });
+      expect(await resolver.activeForOwner(owner)).toMatchObject({ id: made.id });
+      expect(await resolver.viewForOwner(owner)).toEqual({ kind: "branch", branchId: made.id });
       expect(await resolver.byIds([made.id])).toMatchObject([{ id: made.id, status: "active" }]);
       await runInRootDrizzleTransaction(root, async () => {
         expect(await resolver.shareActive(made.id)).toMatchObject({ id: made.id });
         expect(await resolver.lockActive(made.id)).toMatchObject({ id: made.id });
         await resolver.close(made.id, new Date());
       });
-      expect(await resolver.activeForWork(work.id)).toBeNull();
-      expect(await resolver.viewForWork(work.id)).toEqual({ kind: "live" });
+      expect(await resolver.activeForOwner(owner)).toBeNull();
+      expect(await resolver.viewForOwner(owner)).toEqual({ kind: "live" });
       expect(await resolver.shareActive(made.id)).toBeNull();
       expect(await resolver.lockActive(made.id)).toBeNull();
       expect(await resolver.byOriginWork(work.id)).toMatchObject([

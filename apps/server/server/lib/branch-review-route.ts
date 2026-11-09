@@ -6,8 +6,13 @@
  * outcome to HTTP. Nothing here decides an effect.
  */
 
-import type { BranchCommandId, BranchId } from "@meridian/contracts";
-import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
+import type { BranchCommandId, BranchId, DraftOwner } from "@meridian/contracts";
+import {
+  type DraftOwnerKey,
+  draftItemKey,
+  draftOwnerFromKey,
+  parseDraftItemKey,
+} from "@meridian/contracts";
 import {
   type ApplyClick,
   type ApplyClickAnswer,
@@ -29,8 +34,7 @@ import {
 } from "@meridian/contracts/branches";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { z } from "zod";
 import type { CommandOutcome } from "../domains/collab/contracts.js";
@@ -49,6 +53,11 @@ import {
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
+import {
+  type BranchOwnerLifecycle,
+  LineageDraftsUnavailableError,
+  ownerKeyOfColumns,
+} from "../shared/draft-owner.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
 import {
@@ -78,28 +87,64 @@ export function selectBranchRouteServices(app: AppServices): BranchRouteServices
   };
 }
 
-async function requireBranchWorkIdentity(
-  deps: Pick<BranchRouteServices, "projects" | "works">,
-  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
-): Promise<Work> {
+/** A branch in the writer's project, with its owner and the owner's lifecycle as it reads now. */
+export type BranchAccess = {
+  branchId: BranchId;
+  /** Null for a closed branch whose owner is gone. */
+  owner: DraftOwner | null;
+  lifecycle: BranchOwnerLifecycle;
+};
+
+async function requireProjectOwned(
+  deps: Pick<BranchRouteServices, "projects">,
+  input: { projectId: ProjectId; userId: UserId },
+): Promise<void> {
   const project = await deps.projects.findById(input.projectId);
   if (!project || project.userId !== input.userId || project.deletedAt) {
-    throw createError({ statusCode: 404, message: "Work not found" });
+    throw createError({ statusCode: 404, message: "Branch not found" });
   }
-  const work = await deps.works.findById(input.workId);
-  if (!work || work.projectId !== input.projectId) {
-    throw createError({ statusCode: 404, message: "Work not found" });
-  }
-  return work;
 }
 
-export async function requireBranchWorkAccess(
+/** The branch the URL names: this writer's project, whatever its status or owner's state. */
+async function requireBranchIdentity(
+  deps: Pick<BranchRouteServices, "projects" | "documentSync">,
+  input: { projectId: ProjectId; branchId: BranchId; userId: UserId },
+): Promise<BranchAccess> {
+  await requireProjectOwned(deps, input);
+  const found = await deps.documentSync.draftReview.branchOwner(input.branchId);
+  if (!found || found.branch.projectId !== input.projectId) {
+    throw createError({ statusCode: 404, message: "Branch not found" });
+  }
+  return { branchId: input.branchId, owner: found.owner, lifecycle: found.lifecycle };
+}
+
+/** `requireBranchIdentity`, and the owner is not deleted. */
+export async function requireBranchAccess(
+  deps: Pick<BranchRouteServices, "projects" | "documentSync">,
+  input: { projectId: ProjectId; branchId: BranchId; userId: UserId },
+): Promise<BranchAccess> {
+  const access = await requireBranchIdentity(deps, input);
+  if (access.lifecycle === "deleted") {
+    throw createError({ statusCode: 404, message: "Branch not found" });
+  }
+  return access;
+}
+
+/** The owner a list names: a Work of this project that is not deleted, or a lineage of it. */
+async function requireListedOwner(
   deps: Pick<BranchRouteServices, "projects" | "works">,
-  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
-): Promise<Work> {
-  const work = await requireBranchWorkIdentity(deps, input);
-  if (work.deletedAt) throw createError({ statusCode: 404, message: "Work not found" });
-  return work;
+  input: { projectId: ProjectId; owner: string; userId: UserId },
+): Promise<DraftOwner> {
+  await requireProjectOwned(deps, input);
+  const owner = draftOwnerFromKey(input.owner, input.projectId);
+  if (!owner) throw createError({ statusCode: 400, message: "Invalid draft owner" });
+  if (owner.kind === "work") {
+    const work = await deps.works.findById(owner.workId);
+    if (!work || work.projectId !== input.projectId || work.deletedAt) {
+      throw createError({ statusCode: 404, message: "Work not found" });
+    }
+  }
+  return owner;
 }
 
 // --- Request bodies ----------------------------------------------------------------------------
@@ -148,7 +193,7 @@ export const parseDraftDiscardItem = (body: unknown) => parseBody(DiscardBody, b
 
 // --- Commands: envelope, lookup, outcome -------------------------------------------------------
 
-type CommandScope = { projectId: ProjectId; workId: WorkId; userId: UserId };
+type CommandScope = { projectId: ProjectId; branchId: BranchId; userId: UserId };
 
 function envelopeOf(
   scope: CommandScope,
@@ -162,14 +207,13 @@ function envelopeOf(
 ): BranchCommandEnvelope {
   return {
     commandId: command.commandId as BranchCommandId,
-    workId: scope.workId,
     accountId: scope.userId,
     kind: command.kind,
-    branchId: command.branchId as BranchId,
+    branchId: scope.branchId,
     digest: commandDigest({
       accountId: scope.userId,
       projectId: scope.projectId,
-      workId: scope.workId,
+      branchId: scope.branchId,
       kind: command.kind,
       selectors: { branchId: command.branchId, ...command.selectors },
       body: command.body,
@@ -211,7 +255,7 @@ function respond(
   }
 }
 
-/** The stored answer of a command id this Work already knows, looked up before any grant. */
+/** The stored answer of a command id this branch already knows, looked up before any grant. */
 async function recorded(
   deps: BranchRouteServices,
   envelope: BranchCommandEnvelope,
@@ -224,20 +268,20 @@ async function recorded(
       : found.kind === "conflict"
         ? { kind: "conflict" }
         : { kind: "pending" };
-  return respond(outcome, { branchId: envelope.branchId ?? "", commandId: envelope.commandId });
+  return respond(outcome, { branchId: envelope.branchId, commandId: envelope.commandId });
 }
 
-/** GET …/branches/commands/:commandId: what a command settled as, never a guess from the list. */
+/** GET …/branches/:branchId/commands/:commandId: what a command settled as, never a guess from the list. */
 export async function handleBranchCommandObservation(
   deps: BranchRouteServices,
   input: CommandScope & { commandId: string },
 ): Promise<ApplyClickObservation | UnapplyClickAnswer | BranchCommandObservation> {
-  await requireBranchWorkIdentity(deps, input);
+  await requireBranchIdentity(deps, input);
   const id = BranchCommandIdSchema.safeParse(input.commandId);
   if (!id.success) throw createError({ statusCode: 404, message: BRANCH_COMMAND_UNKNOWN_CODE });
   const found = await deps.documentSync.draftReview.lookupCommand({
     commandId: id.data as BranchCommandId,
-    workId: input.workId,
+    branchId: input.branchId,
     accountId: input.userId,
   });
   switch (found.kind) {
@@ -262,13 +306,13 @@ export async function handleBranchCommandObservation(
  */
 async function authorizeReviewItem<N extends FileNeed>(
   deps: BranchRouteServices,
-  input: { workId: WorkId; documentId: DocumentId; userId: UserId },
+  input: { owner: DraftOwner; documentId: DocumentId; userId: UserId },
   item: Pick<DraftReviewItem, "isNew">,
   need: N,
 ): Promise<FileGrant<N> | FileAccessDenied> {
   const draft = await deps.fileAccess.authorize(
     { accountId: input.userId },
-    { kind: "draft", documentId: input.documentId, workId: input.workId },
+    { kind: "draft", documentId: input.documentId, owner: input.owner },
     need,
   );
   if (!isFileAccessDenied(draft)) return draft;
@@ -282,7 +326,7 @@ async function authorizeReviewItem<N extends FileNeed>(
 
 async function requireReviewItemGrant<N extends FileNeed>(
   deps: BranchRouteServices,
-  input: { workId: WorkId; documentId: DocumentId; userId: UserId },
+  input: { owner: DraftOwner; documentId: DocumentId; userId: UserId },
   item: Pick<DraftReviewItem, "isNew">,
   need: N,
 ): Promise<FileGrant<N>> {
@@ -299,7 +343,7 @@ async function requireReviewItemGrant<N extends FileNeed>(
  */
 async function applyGrants(
   deps: BranchRouteServices,
-  input: CommandScope & { items: readonly DraftReviewItem[] },
+  input: CommandScope & { owner: DraftOwner; items: readonly DraftReviewItem[] },
   options: { live: boolean } = { live: true },
 ): Promise<FileGrant<"edit">[]> {
   const grants: FileGrant<"edit">[] = [];
@@ -308,7 +352,6 @@ async function applyGrants(
       grants.push(await restoreGrant(deps, input, item));
       continue;
     }
-    await requireBranchWorkAccess(deps, input);
     grants.push(
       await requireReviewItemGrant(deps, { ...input, documentId: item.documentId }, item, "edit"),
     );
@@ -327,7 +370,7 @@ async function applyGrants(
 
 async function restoreGrant<N extends FileNeed = "edit">(
   deps: BranchRouteServices,
-  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
+  input: { projectId: ProjectId; owner: DraftOwner; userId: UserId },
   item: DraftReviewItem,
   need?: N,
 ): Promise<FileGrant<N>> {
@@ -342,7 +385,7 @@ async function restoreGrant<N extends FileNeed = "edit">(
       scheme: parsed.value.scheme,
       owner: { scope: "project", projectId: input.projectId },
     },
-    { kind: "draft", workId: input.workId, workHandle: null },
+    { kind: "draft", owner: input.owner, ownerHandle: null },
     need,
   );
   if (isFileAccessDenied(grant)) throw createError({ statusCode: 404, message: "Draft not found" });
@@ -351,12 +394,12 @@ async function restoreGrant<N extends FileNeed = "edit">(
 
 // --- Reads -------------------------------------------------------------------------------------
 
-export async function handleWorkBranchListRequest(
+export async function handleOwnerDraftListRequest(
   deps: BranchRouteServices,
-  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
+  input: { projectId: ProjectId; owner: string; userId: UserId },
 ): Promise<ThreadDraftListResponse> {
-  await requireBranchWorkAccess(deps, input);
-  const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+  const owner = await requireListedOwner(deps, input);
+  const listed = await deps.documentSync.draftReview.listItems({ owner });
   // Readable in the branch's view, where its created documents are (file-access §6); a
   // document deleted live is no longer readable anywhere, but stays the branch's item.
   const readable = listed.branchId
@@ -402,12 +445,18 @@ export async function handleDraftMetadataRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; itemKey: string },
 ): Promise<DraftMetadataResponse> {
-  await requireBranchWorkAccess(deps, input);
+  const access = await requireBranchAccess(deps, input);
   if (parseDraftItemKey(input.itemKey)?.documentId !== input.documentId)
     throw createError({ statusCode: 404, message: "Draft not found" });
-  const resolved = await deps.documentSync.draftReview.resolveItem(input);
-  if (!resolved || resolved.documentId !== input.documentId) return { status: "gone" };
-  await requireReviewItemGrant(deps, input, resolved.item, "read");
+  const resolved = await deps.documentSync.draftReview.resolveItem({ itemKey: input.itemKey });
+  if (
+    !resolved ||
+    resolved.documentId !== input.documentId ||
+    resolved.branchId !== input.branchId ||
+    !access.owner
+  )
+    return { status: "gone" };
+  await requireReviewItemGrant(deps, { ...input, owner: access.owner }, resolved.item, "read");
   if (!resolved.draftId) return { status: "tree-only", item: toWireItem(resolved.item, new Map()) };
   return {
     status: "active",
@@ -440,25 +489,28 @@ export async function handleDocumentDraftHintsRequest(
       branches.map(async (branch) => ({
         branchId: branch.branchId,
         itemKey: draftItemKey(branch.branchId, input.documentId),
-        label: branch.originWorkName,
-        originWorkId: branch.originWorkId,
+        label: branch.originLabel,
+        owner: ownerKeyOfColumns({
+          workId: branch.originWorkId,
+          rootThreadId: branch.originRootThreadId,
+        }) as DraftOwnerKey,
         tree: await pendingTreeChange(deps, branch, input.documentId),
       })),
     ),
   };
 }
 
-/** What the branch's row does to the document's placement, for the Work notice on live. */
+/** What the branch's row does to the document's placement, for the draft notice on live. */
 async function pendingTreeChange(
   deps: BranchRouteServices,
   branch: DocumentBranchOrigin,
   documentId: DocumentId,
 ): Promise<DocumentDraftHint["tree"]> {
-  const resolved = await deps.documentSync.draftReview.resolveItemByDocument({
-    workId: branch.originWorkId,
+  const resolved = await deps.documentSync.draftReview.resolveItemInBranch({
+    branchId: branch.branchId,
     documentId,
   });
-  const tree = resolved?.branchId === branch.branchId ? resolved.item.tree : null;
+  const tree = resolved?.item.tree ?? null;
   if (tree?.deleted) return { deleted: true };
   const movedTo = tree?.movedFrom ? reviewContextLocation(resolved?.item.path ?? null) : null;
   return movedTo ? { movedTo } : null;
@@ -469,10 +521,9 @@ async function pendingTreeChange(
 /** Resolves a command's item for a URL document, or null when it is not that document's item. */
 async function commandItem(
   deps: BranchRouteServices,
-  input: { workId: WorkId; documentId: DocumentId; request: { branchId: string; itemKey: string } },
+  input: { documentId: DocumentId; request: { branchId: string; itemKey: string } },
 ): Promise<DraftReviewItem | null> {
   const resolved = await deps.documentSync.draftReview.resolveItem({
-    workId: input.workId,
     itemKey: input.request.itemKey,
   });
   return resolved &&
@@ -488,7 +539,7 @@ type PreparedCommand =
   | { grants: FileGrant<"edit">[]; effect: () => Promise<CommandOutcome> };
 
 /**
- * The one ingress every branch command goes through. After authenticated project and Work
+ * The one ingress every branch command goes through. After authenticated project and branch
  * access the id is looked up (a resend answers its stored outcome, §4.6); `prepare` then
  * resolves the item and acquires grants, and the grants are confirmed again before the
  * effect. A refusal at either point, a missing item or a grant that has become unavailable,
@@ -500,9 +551,9 @@ async function commandIngress(
   deps: BranchRouteServices,
   input: CommandScope,
   envelope: BranchCommandEnvelope,
-  prepare: () => Promise<PreparedCommand>,
+  prepare: (access: BranchAccess) => Promise<PreparedCommand>,
 ): Promise<CommandRouteResult> {
-  await requireBranchWorkAccess(deps, input);
+  const access = await requireBranchAccess(deps, input);
   const replay = await recorded(deps, envelope);
   if (replay) return replay;
   const replayOr = async (cause: unknown): Promise<CommandRouteResult> => {
@@ -514,7 +565,7 @@ async function commandIngress(
   };
   let prepared: PreparedCommand;
   try {
-    prepared = await prepare();
+    prepared = await prepare(access);
   } catch (cause) {
     return replayOr(cause);
   }
@@ -527,7 +578,7 @@ async function commandIngress(
   } catch (cause) {
     return replayOr(cause);
   }
-  return respond(outcome, { branchId: envelope.branchId ?? "", commandId: envelope.commandId });
+  return respond(outcome, { branchId: envelope.branchId, commandId: envelope.commandId });
 }
 
 /** One immutable Apply click. Until execution lands, a valid click is refused as unavailable. */
@@ -537,7 +588,7 @@ export async function handleApplyClickRequest(
   /** Set on the one re-run after a live delete overtook this click's admission. */
   overtaken = false,
 ): Promise<ApplyClickAnswer> {
-  const work = await requireBranchWorkIdentity(deps, input);
+  const access = await requireBranchIdentity(deps, input);
   const parsedId = BranchCommandIdSchema.safeParse(
     input.request && typeof input.request === "object" && "commandId" in input.request
       ? input.request.commandId
@@ -548,13 +599,12 @@ export async function handleApplyClickRequest(
   const envelope: BranchCommandEnvelope = {
     commandId,
     accountId: input.userId,
-    workId: input.workId,
     kind: "apply_click",
-    branchId: null,
+    branchId: input.branchId,
     digest: commandDigest({
       accountId: input.userId,
       projectId: input.projectId,
-      workId: input.workId,
+      branchId: input.branchId,
       kind: "apply_click",
       selectors: { documentId: input.documentId },
       body: input.request,
@@ -586,7 +636,7 @@ export async function handleApplyClickRequest(
       if (removed) return (await lookup()) ?? { status: "closed", commandId };
     }
     return refuse(
-      grant.facts?.branchWork?.deleted || grant.facts?.ownerWork?.deleted
+      grant.facts?.branchOwner?.deleted || grant.facts?.ownerWork?.deleted
         ? "work_deleted"
         : grant.reason === "work_archived"
           ? "work_archived"
@@ -595,10 +645,14 @@ export async function handleApplyClickRequest(
   }
   const parsed = ApplyClickBody.safeParse(input.request);
   if (!parsed.success) return refuse("malformed");
-  if (work.deletedAt) return refuse("work_deleted");
-  if (work.archivedAt) return refuse("work_archived");
-  const item = await deps.documentSync.draftReview.resolveItemByDocument({
-    workId: input.workId,
+  const { owner } = access;
+  if (!owner) return refuse("not_found");
+  if (access.lifecycle === "deleted") return refuse("work_deleted");
+  // A lineage with no live member refuses like an archived Work.
+  if (access.lifecycle === "archived" || access.lifecycle === "frozen")
+    return refuse("work_archived");
+  const item = await deps.documentSync.draftReview.resolveItemInBranch({
+    branchId: input.branchId,
     documentId: input.documentId,
   });
   const grants: FileGrant<"edit">[] = [];
@@ -618,7 +672,7 @@ export async function handleApplyClickRequest(
   // settles the branch's row, authorized like a restore through the draft's destination.
   const settlesOnly = deletedLive && item?.item.tree?.deleted === true;
   if (!settlesOnly && item) {
-    const grant = await authorizeReviewItem(deps, input, item.item, "edit");
+    const grant = await authorizeReviewItem(deps, { ...input, owner }, item.item, "edit");
     if (isFileAccessDenied(grant)) return denied(grant);
     grants.push(grant);
   }
@@ -631,10 +685,10 @@ export async function handleApplyClickRequest(
     if (isFileAccessDenied(live)) return denied(live);
     grants.push(live);
   }
-  if (item && deletedLive) grants.push(await restoreGrant(deps, input, item.item));
+  if (item && deletedLive) grants.push(await restoreGrant(deps, { ...input, owner }, item.item));
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
     deps.documentSync.draftReview.applyClick({
-      workId: input.workId,
+      branchId: input.branchId,
       documentId: input.documentId,
       request: parsed.data as ApplyClick,
       envelope,
@@ -648,20 +702,19 @@ export async function handleUnapplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; request: unknown },
 ): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer> {
-  await requireBranchWorkIdentity(deps, input);
+  await requireBranchIdentity(deps, input);
   const parsed = UnapplyClickBody.safeParse(input.request);
   if (!parsed.success) throw createError({ statusCode: 400, message: "Invalid Un-Apply request" });
   const request = parsed.data as import("@meridian/contracts/branches").UnapplyClick;
   const envelope: BranchCommandEnvelope = {
     commandId: request.commandId,
     accountId: input.userId,
-    workId: input.workId,
     kind: "unapply_click",
-    branchId: null,
+    branchId: input.branchId,
     digest: commandDigest({
       accountId: input.userId,
       projectId: input.projectId,
-      workId: input.workId,
+      branchId: input.branchId,
       kind: "unapply_click",
       selectors: { documentId: input.documentId },
       body: request,
@@ -690,7 +743,7 @@ export async function handleUnapplyClickRequest(
     return (await lookup()) ?? { status: "refused", commandId: request.commandId };
   const result = await runWithEditGrants(deps.fileAccess, [grant], () =>
     deps.documentSync.draftReview.unapplyClick({
-      workId: input.workId,
+      branchId: input.branchId,
       documentId: input.documentId,
       request,
       envelope,
@@ -707,7 +760,7 @@ const goneItem = (request: { branchId: string; itemKey: string }) => (): Command
   body: { status: "gone", branchId: request.branchId as BranchId, itemKey: request.itemKey },
 });
 
-/** A branch that is not the Work's active one, as a 200 body status. */
+/** A branch that is not active any more, as a 200 body status. */
 const goneBranch = (branchId: BranchId) => (): CommandRouteResult => ({
   httpStatus: 200,
   body: { status: "gone", branchId },
@@ -732,14 +785,13 @@ export async function handleDiscardWorkDraftRequest(
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
-  return commandIngress(deps, input, envelope, async () => {
-    const item = await commandItem(deps, input);
-    if (!item) return { refusal: goneItem(request) };
+  return commandIngress(deps, input, envelope, async ({ owner }) => {
+    const item = request.branchId === input.branchId ? await commandItem(deps, input) : null;
+    if (!item || !owner) return { refusal: goneItem(request) };
     return {
-      grants: await applyGrants(deps, { ...input, items: [item] }, { live: false }),
+      grants: await applyGrants(deps, { ...input, owner, items: [item] }, { live: false }),
       effect: () =>
         deps.documentSync.draftReview.discardItem({
-          workId: input.workId,
           item,
           userId: input.userId,
           envelope,
@@ -750,7 +802,7 @@ export async function handleDiscardWorkDraftRequest(
 
 /**
  * Discard all (§12.3): the whole branch, one server command; it always closes the branch. The
- * request's branch must be the Work's active one (else `gone`).
+ * request's branch must be the URL's active one (else `gone`).
  */
 export async function handleDiscardAllWorkBranchRequest(
   deps: BranchRouteServices,
@@ -766,14 +818,14 @@ export async function handleDiscardAllWorkBranchRequest(
     body,
   });
   const branchId = request.branchId as BranchId;
-  return commandIngress(deps, input, envelope, async () => {
-    const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+  return commandIngress(deps, input, envelope, async ({ owner }) => {
+    if (!owner || branchId !== input.branchId) return { refusal: goneBranch(branchId) };
+    const listed = await deps.documentSync.draftReview.listItems({ owner });
     if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
     return {
-      grants: await applyGrants(deps, { ...input, items: listed.items }, { live: false }),
+      grants: await applyGrants(deps, { ...input, owner, items: listed.items }, { live: false }),
       effect: () =>
         deps.documentSync.draftReview.discardAll({
-          workId: input.workId,
           branchId,
           userId: input.userId,
           envelope,
@@ -823,6 +875,8 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
+    if (cause instanceof LineageDraftsUnavailableError)
+      throw createError({ statusCode: 409, message: "This chat's drafts are read-only" });
     if (cause instanceof Error && cause.message === "draft_not_found") {
       throw createError({ statusCode: 404, message: "Draft not found" });
     }

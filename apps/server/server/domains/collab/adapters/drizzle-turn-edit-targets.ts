@@ -8,11 +8,11 @@
  * read and reversed. Final address liveness stays with the lineage reader.
  */
 
-import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentEditParts, documentEdits } from "@meridian/database";
-import { branches, documentDrafts, works } from "@meridian/database/schema";
+import { branches, documentDrafts } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { branchOwnerSql, ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import { livingOrOutlivedSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId } from "../domain/turn-live-lineage.js";
@@ -21,6 +21,7 @@ export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
   query: TurnInverseQuery,
 ): Promise<TurnEditedDocumentId[]> {
+  const owner = branchOwnerSql(branches);
   const rows = await db
     .selectDistinct({
       documentId: documentEdits.documentId,
@@ -29,9 +30,10 @@ export async function readTurnEditTargets(
         "live" | "draft" | null
       >`${documentEdits.treeChange}->'destination'->>'kind'`,
       branchId: branches.id,
-      workId: works.id,
-      workHandle: works.handle,
-      isNoWork: works.isNoWork,
+      workId: owner.workId,
+      rootThreadId: owner.rootThreadId,
+      projectId: branches.projectId,
+      handle: owner.handle,
     })
     .from(documentEdits)
     .leftJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
@@ -42,7 +44,6 @@ export async function readTurnEditTargets(
       branches,
       sql`${branches.id} = coalesce(${documentDrafts.branchId}, (${documentEdits.treeChange}->'destination'->>'branchId')::uuid)`,
     )
-    .leftJoin(works, eq(works.id, branches.originWorkId))
     .where(
       and(
         or(
@@ -83,8 +84,9 @@ export async function readTurnEditTargets(
       targets.set(`${row.documentId}:live`, { documentId: row.documentId, scope: "live" });
       continue;
     }
-    if (!row.workId || !row.branchId) continue;
-    const key = `${row.documentId}:draft:${row.workId}`;
+    const ownerKey = ownerKeyOfColumns(row);
+    if (!ownerKey || !row.branchId) continue;
+    const key = `${row.documentId}:draft:${ownerKey}`;
     const known = targets.get(key);
     if (known?.scope === "draft") {
       if (!known.branchIds.includes(row.branchId)) known.branchIds.push(row.branchId);
@@ -93,7 +95,14 @@ export async function readTurnEditTargets(
     targets.set(key, {
       documentId: row.documentId,
       scope: "draft",
-      work: { id: row.workId as WorkId, handle: row.isNoWork ? null : row.workHandle },
+      owner: row.workId
+        ? { kind: "work", workId: row.workId }
+        : {
+            kind: "lineage",
+            projectId: row.projectId as string,
+            rootThreadId: row.rootThreadId as string,
+          },
+      ownerHandle: row.handle,
       branchIds: [row.branchId],
     });
   }

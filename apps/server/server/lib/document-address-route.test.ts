@@ -8,6 +8,9 @@ import type { DocumentAddressResolver } from "../domains/context/ports/document-
 import type { FileDestination } from "../domains/file-policy/index.js";
 import { handleDocumentAddressRequest } from "./document-address-route.js";
 
+const WORK_ID = "00000000-0000-4000-8000-0000000000a1";
+const OTHER_WORK_ID = "00000000-0000-4000-8000-0000000000a2";
+
 function fixture() {
   const input = {
     projectId: "project" as never,
@@ -18,7 +21,7 @@ function fixture() {
   };
   const state = {
     work: {
-      id: "work",
+      id: WORK_ID,
       handle: "w1",
       isNoWork: false,
       projectId: "project",
@@ -52,13 +55,23 @@ function fixture() {
     workRepo: {
       findById: async (id: string) => (id === state.work.id ? (state.work as never) : null),
     },
-    draftReview: { resolveItem: async () => state.resolved },
+    draftReview: {
+      resolveItem: async () => state.resolved,
+      branchOwner: async () =>
+        ({
+          branch: { projectId: "project" },
+          owner: { kind: "work", workId: state.work.id },
+        }) as never,
+    },
     documentAddresses,
     fileAccess: {
       authorize: async () =>
         state.denied ? ({ denied: true } as never) : ({ kind: "granted" } as never),
       authorizeAt: async (_actor: unknown, _target: unknown, destination: FileDestination) =>
-        destination.kind === "draft" && destination.workId === state.work.id && !state.denied
+        destination.kind === "draft" &&
+        destination.owner.kind === "work" &&
+        destination.owner.workId === state.work.id &&
+        !state.denied
           ? ({ kind: "granted" } as never)
           : ({ denied: true } as never),
     },
@@ -67,7 +80,7 @@ function fixture() {
     input,
     state,
     deps,
-    review: { workId: "work", itemKey: "whole-branch:hidden" },
+    review: { owner: `work:${WORK_ID}`, itemKey: "whole-branch:hidden" },
   };
 }
 
@@ -80,7 +93,7 @@ it.each([
   "missing identity",
 ])("answers unavailable for %s", async (reason) => {
   const { input, state, deps, review } = fixture();
-  if (reason === "another Work") review.workId = "other";
+  if (reason === "another Work") review.owner = `work:${OTHER_WORK_ID}`;
   if (reason === "foreign project") state.work.projectId = "other";
   if (reason === "deleted Work") state.work.deletedAt = new Date();
   if (reason === "inactive branch") state.resolved = null;
