@@ -53,6 +53,12 @@ export function useOpenReviewChanges(
       : command.applying
         ? ("apply" as const)
         : null,
-    finished: read.status === "ready" && !items.length && !command.pending && !command.discarding,
+    // A listed new file is still its own change once its text is gone: Apply draft creates it.
+    finished:
+      read.status === "ready" &&
+      !items.length &&
+      !item?.isNew &&
+      !command.pending &&
+      !command.discarding,
   };
 }

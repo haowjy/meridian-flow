@@ -1,19 +1,13 @@
 /** One draft-only lifecycle across Editor membership and the dock slot. */
 
 import { useMemo } from "react";
-import {
-  type ContextTab,
-  getContextTabs,
-  isDraftOnly,
-  matchesReviewItem,
-  useContextTabsStore,
-} from "@/client/stores";
+import { type ContextTab, getContextTabs, isDraftOnly, useContextTabsStore } from "@/client/stores";
 import {
   useContextRemovalCoordinator,
   useOptionalAccountEpochSignal,
   useOptionalRemovedNotices,
 } from "@/features/project/context/account-feature-context";
-import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
+import { settleDockDraft, useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 import type { ContextUri } from "@/lib/context-uri";
 import type { DraftRef } from "./review-command-types";
 
@@ -51,30 +45,6 @@ function presentations(projectId: string, tab: ContextTab, container: "editor" |
   }));
 }
 
-/**
- * The dock holds one review (its admission kept a single entry). Discard is that
- * review's address alone; becoming live is document-wide and keeps the dock's
- * chosen review. Exact occupant identity fences replacement instances. Returns
- * the tab it settled, or null.
- */
-function settleDock(draft: DraftRef, promote: boolean): ContextTab | null {
-  const occupant = useDockDocumentStore.getState().occupant;
-  if (!occupant || occupant.projectId !== draft.projectId || occupant.tab.kind !== "tracked")
-    return null;
-  const holds = promote
-    ? isDraftOnly(occupant.tab) && occupant.tab.documentId === draft.documentId
-    : matchesReviewItem(occupant.tab, {
-        reviewOwner: draft.ownerKey,
-        reviewItemKey: draft.itemKey,
-      });
-  if (!holds) return null;
-  const { reviews: _, ...tab } = occupant.tab;
-  useDockDocumentStore.setState((state) =>
-    state.occupant === occupant ? { occupant: promote ? { ...occupant, tab } : null } : state,
-  );
-  return occupant.tab;
-}
-
 export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
   const epoch = useOptionalAccountEpochSignal();
   const removal = useContextRemovalCoordinator();
@@ -109,7 +79,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
           tab?.kind === "tracked"
             ? removal.promoteAppliedDraft(draft.projectId, tab)
             : Promise.resolve(false);
-        const dock = settleDock(draft, true) !== null;
+        const dock = settleDockDraft(draft, true) !== null;
         return (await editor) || dock;
       },
       remove: (draft) => {
@@ -117,7 +87,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
         const editor = removal.discardDraft(draft.projectId, draft.ownerKey, draft.itemKey);
         if (editor.kind !== "noop")
           notices?.presentedRemoved(draft.projectId, "editor", editor.removed);
-        const dock = settleDock(draft, false);
+        const dock = settleDockDraft(draft, false);
         if (dock && isDraftOnly(dock)) notices?.presentedRemoved(draft.projectId, "dock", [dock]);
       },
     }),

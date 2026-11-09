@@ -616,16 +616,21 @@ function HydratedReviewControllers({
   const queryClient = useQueryClient();
   const addressedItemKey = presented?.review?.itemKey ?? "";
   const generation = () => draftCommands.generation(addressedItemKey);
+  const hidden = () => draftCommands.state(addressedItemKey).hidden;
   // A new generation of the addressed item is a new port: the owner retries what it refused.
+  // So is the end of a command that hid it: a refused Discard leaves the draft pending.
   const addressedGeneration = useSyncExternalStore(draftCommands.subscribe, generation, generation);
+  const addressedHidden = useSyncExternalStore(draftCommands.subscribe, hidden, hidden);
   const port = useMemo<ReviewAddressPort>(() => {
-    // A closed draft (Discard, here or on another device) has already ended its review; a
-    // draft-only address keeps naming it until settlement closes the tab, and admitting it
-    // again would re-open what the room owner just closed, every render. The address names
-    // an item, not a draft: the server decides whether a newer draft replaced the closed one.
+    // A hidden draft (a Discard in flight) or a closed one (Discard, here or on another
+    // device) has already ended its review: the room owner exits it. The address keeps naming
+    // it until settlement closes the presentation, and admitting it again would re-open what
+    // the room owner just closed, every render. The address names an item, not a draft: the
+    // server decides whether a newer draft replaced the closed one.
     const open =
       (admit: (target: AiDraftLaunchTarget) => unknown): ReviewAddressPort["admit"] =>
       async (target) => {
+        if (draftCommands.state(target.itemKey).hidden) return false;
         if (draftCommands.state(target.itemKey).closed) {
           const ref = {
             projectId: props.projectId,
@@ -662,6 +667,7 @@ function HydratedReviewControllers({
     draftCommands,
     queryClient,
     addressedGeneration,
+    addressedHidden,
   ]);
   const scopedProps = { ...props, chatCommands, presentedReview, mobileDocumentRoute };
   return (
