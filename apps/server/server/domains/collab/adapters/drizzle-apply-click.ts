@@ -413,9 +413,8 @@ export function createDrizzleApplyClick(
         );
       } catch (cause) {
         if (cause instanceof DraftStaleUpdateError) return closed();
-        // A lineage with no live member refuses like an archived Work.
         if (cause instanceof LineageDraftsUnavailableError)
-          throw new ApplyClickRefused("work_archived");
+          throw new ApplyClickRefused("chat_frozen");
         if (cause instanceof WorkLifecycleUnavailableError)
           throw new ApplyClickRefused(
             cause.state === "archived"
@@ -832,9 +831,8 @@ export function createDrizzleApplyClick(
         // The append door alone locks and rechecks the addressed draft. Closure rolls
         // back the claim and live half with it before the service reads a stored outcome.
         if (cause instanceof DraftStaleUpdateError) return closed(command);
-        // A lineage with no live member refuses like an archived Work.
         if (cause instanceof LineageDraftsUnavailableError)
-          throw new ApplyClickRefused("work_archived");
+          throw new ApplyClickRefused("chat_frozen");
         if (cause instanceof WorkLifecycleUnavailableError)
           throw new ApplyClickRefused(
             cause.state === "archived"

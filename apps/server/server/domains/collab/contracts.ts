@@ -427,6 +427,8 @@ export type DraftReviewApi = {
     items: DraftReviewItem[];
     threadTitles: ReadonlyMap<string, string>;
   }>;
+  /** Pending documents summed over the project's active branches. */
+  pendingDocumentCount(projectId: ProjectId): Promise<number>;
   /** Every active branch in the project with changes to the document, oldest first. */
   branchesChangingDocument(input: {
     projectId: ProjectId;

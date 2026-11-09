@@ -1,6 +1,7 @@
 /** Hocuspocus-backed Yjs gateway orchestration behind the thin CrossWS route. */
 import { Hocuspocus, type WebSocketLike } from "@hocuspocus/server";
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
+import { draftOwnerKey } from "@meridian/contracts/branches";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import {
@@ -97,7 +98,7 @@ type YjsConnectionAdmission =
       /** The file the room serves, asked again once the room is registered. */
       fileTarget: FileTarget;
       access: YjsRoomAccess;
-      /** The owners whose lifecycle decides this access: the file's owner, the draft's owner (a Work id, or `lineage:<root>`). */
+      /** The owners whose lifecycle decides this access: the file's owner, the draft's owner (its `draftOwnerKey`). */
       accessKeys: string[];
     }
   | {
@@ -366,10 +367,13 @@ async function classifyYjsConnectionAdmission(input: {
   };
 }
 
-/** Room access follows these owners: Work ids, and each lineage under `lineage:<root>`. */
+/** Room access follows these owners, each under its `draftOwnerKey`. */
 function accessKeys(facts: FileFacts): string[] {
   const { workIds, lineageRootIds } = grantOwnerLocks(facts);
-  return [...workIds, ...lineageRootIds.map((root) => `lineage:${root}`)];
+  return [
+    ...workIds.map((workId) => draftOwnerKey({ kind: "work", workId })),
+    ...lineageRootIds.map((rootThreadId) => draftOwnerKey({ kind: "lineage", rootThreadId })),
+  ];
 }
 
 async function enforceDraftHandshake(input: {

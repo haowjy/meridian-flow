@@ -38,6 +38,14 @@ function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never 
         meridianErrorFromSystem("work_archived", "This Work is archived and read-only."),
         403,
       );
+    case "chat_frozen":
+      return throwHttpInterrupt(
+        meridianErrorFromSystem(
+          "chat_frozen",
+          "This chat is in the trash, so its drafts are read-only. Restore the chat to change them.",
+        ),
+        403,
+      );
     case "agent_read_only":
     case "uploads_read_only":
       // Agent terms; a person never meets them.
@@ -58,7 +66,10 @@ export function isFileAccessRefusal(cause: unknown): boolean {
   if (message === "agent_read_only" || message === "uploads_read_only") return true;
   const data = (cause as { data?: Record<string, unknown> }).data;
   const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY];
-  return isHttpInterruptEnvelope(envelope) && envelope.error.code === "work_archived";
+  return (
+    isHttpInterruptEnvelope(envelope) &&
+    (envelope.error.code === "work_archived" || envelope.error.code === "chat_frozen")
+  );
 }
 
 /** The person's grant on a target, or the route's refusal. */

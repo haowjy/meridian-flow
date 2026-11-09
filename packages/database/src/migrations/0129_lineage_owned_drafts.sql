@@ -11,19 +11,22 @@
 -- subagents). Each active No Work branch is closed when it has nothing pending, moved to its
 -- lineage when every recorded author sits in one lineage, and otherwise left on the No Work row
 -- (the legacy branch: still reviewable and discardable, no new writes). Only owner columns and
--- counts change; no draft, journal or tree row is rewritten.
+-- counts change (and the unused branch_commands.work_id goes); no draft, journal or tree row
+-- is rewritten.
 BEGIN;
 SET LOCAL lock_timeout = '2s';
 --> statement-breakpoint
-ALTER TABLE "branch_commands" ALTER COLUMN "work_id" DROP NOT NULL;
+ALTER TABLE "branch_commands" DROP COLUMN IF EXISTS "work_id";
 --> statement-breakpoint
 ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "origin_root_thread_id" uuid;
 --> statement-breakpoint
 ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "pending_document_count" integer DEFAULT 0 NOT NULL;
 --> statement-breakpoint
-ALTER TABLE "branches" ADD CONSTRAINT "branches_one_owner" CHECK (num_nonnulls("branches"."origin_work_id", "branches"."origin_root_thread_id") <= 1 AND ("branches"."status" = 'closed' OR num_nonnulls("branches"."origin_work_id", "branches"."origin_root_thread_id") = 1)) NOT VALID;
---> statement-breakpoint
-ALTER TABLE "branch_commands" ADD CONSTRAINT "branch_commands_target" CHECK ("branch_commands"."branch_id" IS NOT NULL OR "branch_commands"."work_id" IS NOT NULL) NOT VALID;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'branches'::regclass AND conname = 'branches_one_owner') THEN
+    ALTER TABLE "branches" ADD CONSTRAINT "branches_one_owner" CHECK (num_nonnulls("branches"."origin_work_id", "branches"."origin_root_thread_id") <= 1 AND ("branches"."status" = 'closed' OR num_nonnulls("branches"."origin_work_id", "branches"."origin_root_thread_id") = 1)) NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
 -- The reviewable-pending predicate (tree-view-sql.ts `pendingIn`) as of this release, over every
 -- active branch.
@@ -116,6 +119,12 @@ COMMIT;
 --> statement-breakpoint
 ALTER TABLE "branches" VALIDATE CONSTRAINT "branches_one_owner";
 --> statement-breakpoint
-ALTER TABLE "branch_commands" VALIDATE CONSTRAINT "branch_commands_target";
+-- A failed concurrent build leaves an invalid index that IF NOT EXISTS would then skip.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+             WHERE c.relname = 'branches_active_origin_lineage' AND NOT i.indisvalid) THEN
+    DROP INDEX "branches_active_origin_lineage";
+  END IF;
+END $$;
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "branches_active_origin_lineage" ON "branches" USING btree ("project_id","origin_root_thread_id","created_at") WHERE "branches"."status" = 'active' AND "branches"."origin_root_thread_id" IS NOT NULL;
