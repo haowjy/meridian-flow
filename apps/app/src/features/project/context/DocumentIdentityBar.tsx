@@ -149,12 +149,11 @@ export function DocumentIdentityBar({
   const manuscriptState = useManuscriptState(projectId, tab);
 
   // Reviewing a draft is a mode, not a notice: its controls take a line of their own
-  // above the toolbar. Everything else is state on the toolbar row.
+  // above the toolbar. The version chip and other state stay on the toolbar row.
   const renderState = (version: ReactNode, controls: ReactNode) => (
     <>
       {controls ? (
         <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-dock-surface px-4 text-[13px] text-ink-muted">
-          {version}
           {controls}
         </div>
       ) : null}
@@ -206,9 +205,11 @@ export function DocumentIdentityBar({
             show={showChip && !placementOpen}
             onChooseHome={() => setFieldOpen(true)}
           />
-          {controls || reviewItemKey || reviewPending ? null : (
-            <DocumentVersionMenu projectId={projectId} tab={tab} />
-          )}
+          {/* The version chip holds one place: Live, or Draft while reviewing. */}
+          {version ??
+            (reviewItemKey || reviewPending ? null : (
+              <DocumentVersionMenu projectId={projectId} tab={tab} />
+            ))}
         </div>
       </DocumentStatePortal>
     </>
