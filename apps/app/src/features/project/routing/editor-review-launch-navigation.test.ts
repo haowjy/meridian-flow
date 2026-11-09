@@ -86,7 +86,9 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: { [`work:${workId}`]: { itemKey: "branch-hidden:doc-hidden", tabInstanceToken: "token" } },
+      reviews: {
+        [`work:${workId}`]: { itemKey: "branch-hidden:doc-hidden", tabInstanceToken: "token" },
+      },
     } as never;
     useContextTabsStore.getState().openTab(projectId, hidden, undefined, workId);
     const { open, history } = setup(

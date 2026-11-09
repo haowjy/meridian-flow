@@ -1,6 +1,6 @@
 /** Desktop owns the Write pane's presentation of the selected tab and the rail's mode switch; routes own addresses. */
 import { useLayoutEffect, useRef } from "react";
-import { selectedDocumentIdOf, useContextTabs } from "@/client/stores";
+import { selectedDocumentIdOf, useContextTabs, useSelectedContextTab } from "@/client/stores";
 import { useAccountResourceProjection } from "./context/account-feature-context";
 import { projectResourceTab } from "./context/context-tab-from-file";
 import { resolveEditorPresentation } from "./context/editor-presentation";
@@ -16,7 +16,6 @@ import {
 } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import { openDocumentInEditor } from "./routing/use-open-document-in-editor";
-import { useSelectedContextTab } from "@/client/stores";
 import type { ScreenKey } from "./shell/screens";
 
 export function useDesktopProjectController<

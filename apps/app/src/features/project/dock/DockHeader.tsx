@@ -5,11 +5,11 @@ import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
+import type { OpenDocumentTab } from "../open-documents";
 import { PaneTitle } from "../PaneTitle";
 import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import type { ScreenKey } from "../shell/screens";
 import { DockDocumentIdentity } from "./DockDocumentIdentity";
-import type { OpenDocumentTab } from "../open-documents";
 
 export type DockHeaderSlotArgs = {
   screen: ScreenKey;

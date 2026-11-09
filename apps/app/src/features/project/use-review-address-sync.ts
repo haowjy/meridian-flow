@@ -49,7 +49,11 @@ export function useReviewAddressSync({
       address.itemKey && editorWorkId
         ? reviewAddress(editorWorkId, address.itemKey, address.changeId)
         : null;
-    if (next?.owner === pin?.owner && next?.itemKey === pin?.itemKey && next?.changeId === pin?.changeId)
+    if (
+      next?.owner === pin?.owner &&
+      next?.itemKey === pin?.itemKey &&
+      next?.changeId === pin?.changeId
+    )
       return;
     useContextTabsStore
       .getState()
@@ -66,5 +70,14 @@ export function useReviewAddressSync({
     if (!writing || key === null || arrived.current !== locationKey) return;
     if ((address.itemKey ?? null) === pinnedItem && address.changeId === pinnedChange) return;
     writeItemKey(pinnedItem, pinnedChange);
-  }, [writing, key, locationKey, address.itemKey, address.changeId, pinnedItem, pinnedChange, writeItemKey]);
+  }, [
+    writing,
+    key,
+    locationKey,
+    address.itemKey,
+    address.changeId,
+    pinnedItem,
+    pinnedChange,
+    writeItemKey,
+  ]);
 }

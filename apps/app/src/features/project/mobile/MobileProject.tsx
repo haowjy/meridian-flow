@@ -17,9 +17,9 @@ import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice"
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useFollowOpenDocumentPlacement } from "../context/use-follow-open-document-placement";
-import { EditorReviewIntentClaimant } from "../review-launch";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
+import { EditorReviewIntentClaimant } from "../review-launch";
 import {
   chatSurfaceThreadId,
   displayedChatThreadId,

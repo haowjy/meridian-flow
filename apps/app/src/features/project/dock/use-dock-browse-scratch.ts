@@ -3,8 +3,9 @@
  * section's own source), never the one the open document happens to belong to. Only the Chat
  * screen's dock holds a document.
  */
-import type { ScratchSource } from "../context/use-scratch-catalogs";
+
 import { useChatScratchSource } from "../chat/use-chat-scratch-source";
+import type { ScratchSource } from "../context/use-scratch-catalogs";
 import { displayedChatThreadId, useChatNavigation } from "../routing/chat-navigation";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 

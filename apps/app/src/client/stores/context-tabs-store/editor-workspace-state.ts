@@ -8,6 +8,7 @@ import {
 import { isRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
+  DEFAULT_TAB_VIEW,
   isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
@@ -16,7 +17,6 @@ import {
   type ReviewPin,
   reviewEntriesOf,
   reviewEntryOf,
-  DEFAULT_TAB_VIEW,
   selectedDocumentIdOf,
   selectingDocument,
   type TabState,
@@ -51,7 +51,11 @@ export type EditorWorkspaceCommand =
       kind: "set-tab-state";
       projectId: string;
       tabInstanceId: string;
-      patch: { view?: Partial<NonNullable<TabState["view"]>>; preview?: boolean; reviewPin?: ReviewPin | null };
+      patch: {
+        view?: Partial<NonNullable<TabState["view"]>>;
+        preview?: boolean;
+        reviewPin?: ReviewPin | null;
+      };
     }
   | {
       /** A scope switch or a settled review drops every pin of the project. */
@@ -428,10 +432,7 @@ export function reduceEditorWorkspace(
       selectedTabKey: workspace.selectedTabKey,
     });
     // The writer's selection follows its tab; a planned selection applies only if nothing moved it since.
-    if (
-      command.selection &&
-      selectedDocumentIdOf(workspace) === command.selection.priorDocumentId
-    )
+    if (command.selection && selectedDocumentIdOf(workspace) === command.selection.priorDocumentId)
       next = selectingDocument(next, command.selection.nextDocumentId);
     if (JSON.stringify(next) === JSON.stringify(workspace))
       return outcome("already-committed", current);
@@ -608,7 +609,9 @@ export function reduceEditorWorkspace(
   }
   if (command.kind === "set-tab-state") {
     const workspace = current.projects[command.projectId];
-    const tab = workspace?.tabs.find((candidate) => candidate.tabInstanceId === command.tabInstanceId);
+    const tab = workspace?.tabs.find(
+      (candidate) => candidate.tabInstanceId === command.tabInstanceId,
+    );
     if (!workspace || !tab) return outcome("stale", current);
     const { patch } = command;
     const next = { ...tab } as ContextTab;
@@ -618,7 +621,8 @@ export function reduceEditorWorkspace(
     if (patch.reviewPin) next.reviewPin = patch.reviewPin;
     if (patch.preview === false) delete next.preview;
     const tabs = workspace.tabs.map((candidate) => {
-      if (candidate === tab) return patch.preview ? ({ ...next, preview: true } as ContextTab) : next;
+      if (candidate === tab)
+        return patch.preview ? ({ ...next, preview: true } as ContextTab) : next;
       if (!patch.preview || !candidate.preview) return candidate;
       const { preview: _preview, ...rest } = candidate;
       return rest as ContextTab;
@@ -632,8 +636,7 @@ export function reduceEditorWorkspace(
     if (!workspace) return outcome("not-referenced", current);
     const matches = (tab: ContextTab) =>
       tab.reviewPin !== undefined &&
-      (command.workId === undefined ||
-        tab.reviewPin.owner === workReviewOwner(command.workId)) &&
+      (command.workId === undefined || tab.reviewPin.owner === workReviewOwner(command.workId)) &&
       (command.itemKey === undefined || tab.reviewPin.itemKey === command.itemKey);
     if (!workspace.tabs.some(matches)) return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {

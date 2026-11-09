@@ -61,8 +61,7 @@ export function useOpenChatDocument(
       const attempt = claim ?? claimOpenIntent();
       return open({
         ...request,
-        beside: (tab, focus) =>
-          beside(tab, attempt, focus, undefined, keep ? "open" : "peek"),
+        beside: (tab, focus) => beside(tab, attempt, focus, undefined, keep ? "open" : "peek"),
       });
     },
     [beside, open],

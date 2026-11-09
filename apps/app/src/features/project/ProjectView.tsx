@@ -88,15 +88,8 @@ import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
-import {
-  useDesktopProjectController,
-} from "./DesktopProjectController";
+import { useDesktopProjectController } from "./DesktopProjectController";
 import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
-import {
-  type AiDraftLaunchTarget,
-  EditorReviewHandoffProvider,
-  EditorReviewIntentClaimant,
-} from "./review-launch";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import {
@@ -116,15 +109,15 @@ import {
   type MobileDocumentRoute,
   useMobileDocumentRoute,
 } from "./mobile/mobile-document-route";
+import { useSelectedOpenDocument } from "./open-documents";
 import {
   PresentedDocumentContext,
   type ReviewAddressAdmission,
   resolvePresentedDocument,
   reviewAddressWorkId,
 } from "./presented-document";
-import { useSelectedOpenDocument } from "./open-documents";
-import { useReviewAddressSync } from "./use-review-address-sync";
 import { ReviewAddressOwner, type ReviewAddressPort } from "./ReviewAddressOwner";
+import { EditorReviewHandoffProvider, EditorReviewIntentClaimant } from "./review-launch";
 import {
   type ChatDisplay,
   chatSurfaceThreadId,
@@ -146,6 +139,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
 import { useContextProjectAuthority } from "./use-context-project-authority";
+import { useReviewAddressSync } from "./use-review-address-sync";
 import { WorkPaneController } from "./WorkPaneController";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
@@ -619,12 +613,10 @@ function HydratedReviewControllers({
     return {
       write: (review) => {
         if (selectedKey)
-          useContextTabsStore
-            .getState()
-            .setTabState(props.projectId, selectedKey, {
-              reviewPin: review,
-              view: { version: "draft" },
-            });
+          useContextTabsStore.getState().setTabState(props.projectId, selectedKey, {
+            reviewPin: review,
+            view: { version: "draft" },
+          });
       },
       // A closed draft (Discard, here or on another device) has already ended its review; a
       // draft-only tab keeps naming it until settlement closes the tab, and admitting it
@@ -928,26 +920,24 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   ];
 
   return (
-    <>
-      <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
-        <ChatDocumentsBesideProvider>
-          <ProjectShell
-            layout={layout}
-            surfaces={stableSurfaces}
-            onSetSlotWidth={setSlotWidth}
-            onSetSlotOpen={setSlotOpenHere}
-            mainMinWidth={MAIN_MIN_WIDTH}
+    <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
+      <ChatDocumentsBesideProvider>
+        <ProjectShell
+          layout={layout}
+          surfaces={stableSurfaces}
+          onSetSlotWidth={setSlotWidth}
+          onSetSlotOpen={setSlotOpenHere}
+          mainMinWidth={MAIN_MIN_WIDTH}
+        >
+          <ProjectRouteBoundary
+            issue={props.routeIssues?.main}
+            destinationKey={props.routeLocationKey}
           >
-            <ProjectRouteBoundary
-              issue={props.routeIssues?.main}
-              destinationKey={props.routeLocationKey}
-            >
-              {renderDesktopPane(props, surfaceToggle)}
-            </ProjectRouteBoundary>
-          </ProjectShell>
-        </ChatDocumentsBesideProvider>
-      </TreeCreationProvider>
-    </>
+            {renderDesktopPane(props, surfaceToggle)}
+          </ProjectRouteBoundary>
+        </ProjectShell>
+      </ChatDocumentsBesideProvider>
+    </TreeCreationProvider>
   );
 }
 

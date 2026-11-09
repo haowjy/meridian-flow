@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  selectedDocumentIdOf,
   type ContextTab,
   editorTabsForWork,
   getContextTabs,
   isDraftOnly,
   rehydrateEditorWorkspace,
+  selectedDocumentIdOf,
   useContextTabsStore,
 } from "@/client/stores";
 import type { ProjectSearch } from "../routing/project-route";
@@ -179,7 +179,11 @@ describe("draft tab settlement", () => {
     if (shared?.kind !== "tracked") throw new Error("Expected tracked draft tab");
     await coordinator.promoteAppliedDraft("project-a", {
       ...shared,
-      reviews: { "work:work-a": shared.reviews!["work:work-a"]! },
+      reviews: {
+        "work:work-a": shared.reviews?.["work:work-a"] as NonNullable<
+          typeof shared.reviews
+        >[string],
+      },
     });
     expect(getContextTabs("project-a").tabs).toHaveLength(1);
     expect(isDraftOnly(getContextTabs("project-a").tabs[0] as ContextTab)).toBe(false);

@@ -304,11 +304,6 @@
       },
       {
         "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
-        "line": "void openReview?.({",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
         "line": "void resources",
         "count": 1
       },

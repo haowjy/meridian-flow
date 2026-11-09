@@ -277,8 +277,15 @@ msgstr ""
 msgid "{0} is text, so it was added as a document in assets. The chip links to it."
 msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
 
+#. placeholder {0}: other.needsYou
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "{0} needs you"
+msgstr ""
+
 #. placeholder {0}: children.length
+#. placeholder {0}: other.running
 #: src/features/chat/RunningSubagentsStrip.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "{0} running"
 msgstr "{0} 运行中"
 
@@ -619,6 +626,14 @@ msgstr ""
 msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
 msgstr ""
 
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "{needsYou} needs you"
+msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "{pending} documents to review"
+msgstr ""
+
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
@@ -690,6 +705,10 @@ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was removed when the reply that created it didn't finish."
+msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "{toReview} to review"
 msgstr ""
 
 #: src/features/chat/ask/AskReceipt.tsx
@@ -910,6 +929,10 @@ msgstr ""
 msgid "Active Work"
 msgstr ""
 
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Active Works"
+msgstr ""
+
 #: src/components/app/ToastRegion.tsx
 #~ msgid "Activity"
 #~ msgstr ""
@@ -1039,6 +1062,10 @@ msgstr ""
 msgid "All chats"
 msgstr ""
 
+#: src/features/project/shell/ProjectMenu.tsx
+msgid "All projects"
+msgstr ""
+
 #: src/features/project/work/useWorkChrome.tsx
 msgid "All Work"
 msgstr ""
@@ -1162,6 +1189,7 @@ msgstr ""
 msgid "Archive"
 msgstr ""
 
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Archived"
 msgstr ""
@@ -1553,6 +1581,7 @@ msgstr ""
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
+#: src/features/project/shell/sidebar/modes.ts
 msgid "Chat"
 msgstr ""
 
@@ -1578,6 +1607,7 @@ msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Chats"
 msgstr ""
@@ -1685,6 +1715,14 @@ msgstr ""
 msgid "Close settings"
 msgstr ""
 
+#: src/features/project/shell/ProjectShell.tsx
+msgid "Close side panel  ]"
+msgstr ""
+
+#: src/features/project/shell/ProjectShell.tsx
+msgid "Close sidebar  ["
+msgstr ""
+
 #: src/features/project/mobile/MobileChangeSheet.tsx
 msgid "Close the list"
 msgstr ""
@@ -1744,12 +1782,12 @@ msgid "Collapse changes"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
-msgid "Collapse dock"
-msgstr ""
+#~ msgid "Collapse dock"
+#~ msgstr ""
 
 #: src/features/project/shell/LeftSidebar.tsx
-msgid "Collapse sidebar  ["
-msgstr ""
+#~ msgid "Collapse sidebar  ["
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Color theme"
@@ -2953,16 +2991,16 @@ msgid "Expand changes"
 msgstr ""
 
 #: src/features/project/ProjectView.tsx
-msgid "Expand chat"
-msgstr ""
+#~ msgid "Expand chat"
+#~ msgstr ""
 
 #: src/features/project/ProjectView.tsx
-msgid "Expand context"
-msgstr ""
+#~ msgid "Expand context"
+#~ msgstr ""
 
 #: src/features/project/ProjectView.tsx
-msgid "Expand sidebar"
-msgstr ""
+#~ msgid "Expand sidebar"
+#~ msgstr ""
 
 #. placeholder {0}: artifact.expiresAt
 #: src/features/chat/ArtifactGrid.tsx
@@ -3673,6 +3711,10 @@ msgstr ""
 msgid "Loading Work…"
 msgstr ""
 
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Loading Works…"
+msgstr ""
+
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/DocumentPath.tsx
 #: src/features/project/context/FolderMenu.tsx
@@ -3689,6 +3731,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
+msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Manage Works…"
 msgstr ""
 
 #: src/features/import/destination.ts
@@ -3748,6 +3794,10 @@ msgstr ""
 msgid "missing kind"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ModeSwitch.tsx
+msgid "Mode"
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Model"
@@ -3773,6 +3823,10 @@ msgstr ""
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 msgid "More composer controls"
+msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "More sources"
 msgstr ""
 
 #: src/features/project/context/EntryDestinationPicker.tsx
@@ -3936,6 +3990,10 @@ msgstr ""
 msgid "Names cannot end with '/'"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Needs you"
+msgstr ""
+
 #: src/components/app/NewBadge.tsx
 msgid "New"
 msgstr ""
@@ -3945,6 +4003,7 @@ msgstr ""
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/lib/thread-title.ts
@@ -3952,6 +4011,7 @@ msgid "New chat"
 msgstr "新对话"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
+#: src/features/project/context/SourceHeading.tsx
 msgid "New document"
 msgstr ""
 
@@ -3963,8 +4023,13 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/context/SourceHeading.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New folder"
+msgstr ""
+
+#: src/features/project/context/SourceHeading.tsx
+msgid "New in {label}"
 msgstr ""
 
 #: src/features/project/work/WorkFilesView.tsx
@@ -4018,6 +4083,10 @@ msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "No changes left"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "No chats in this Work yet."
 msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -4108,6 +4177,8 @@ msgstr ""
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/ask/permission-request.ts
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "No Work"
 msgstr "无 Work"
 
@@ -4220,6 +4291,10 @@ msgstr ""
 msgid "ol"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Older"
+msgstr ""
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr ""
@@ -4277,6 +4352,10 @@ msgstr ""
 msgid "Open {title}"
 msgstr ""
 
+#: src/features/project/chat/ChatScratch.tsx
+msgid "Open a chat to see its Scratch."
+msgstr ""
+
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Open a document from the project tree, or start a new one."
 msgstr ""
@@ -4317,6 +4396,14 @@ msgstr ""
 
 #: src/features/project/context/viewers/ImageViewer.tsx
 msgid "Open original"
+msgstr ""
+
+#: src/features/project/shell/ProjectShell.tsx
+msgid "Open side panel  ]"
+msgstr ""
+
+#: src/features/project/shell/ProjectShell.tsx
+msgid "Open sidebar  ["
 msgstr ""
 
 #: src/features/chat/derivation/SourceChatLink.tsx
@@ -4365,6 +4452,10 @@ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "Organizing {name}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Other Works"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
@@ -4743,7 +4834,11 @@ msgid "Resize {0}"
 msgstr ""
 
 #: src/features/project/shell/ProjectShell.tsx
-msgid "Resize right rail"
+#~ msgid "Resize right rail"
+#~ msgstr ""
+
+#: src/features/project/shell/ProjectShell.tsx
+msgid "Resize side panel"
 msgstr ""
 
 #: src/features/project/shell/ProjectShell.tsx
@@ -4875,6 +4970,7 @@ msgstr ""
 
 #: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/SubagentHeader.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Running"
 msgstr "运行中"
 
@@ -4934,7 +5030,6 @@ msgid "Scratch for {name}"
 msgstr ""
 
 #: src/features/project/chat/use-chat-scratch-source.ts
-#: src/features/project/dock/use-dock-browse-scratch.ts
 msgid "Scratch for {workName}"
 msgstr ""
 
@@ -5054,12 +5149,17 @@ msgstr "将状态设为「{status}」"
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/BillingPage.tsx
+#: src/features/project/shell/ProjectMenu.tsx
 msgid "Settings"
 msgstr ""
 
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Settings sections"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Settled"
 msgstr ""
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -5187,6 +5287,10 @@ msgstr ""
 #: src/features/chat/tool-failure.tsx
 msgid "Something went wrong while running this."
 msgstr "运行时出了问题。"
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Sources"
+msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Split cell"
@@ -6144,7 +6248,6 @@ msgstr "耗时太久，已停止。"
 msgid "This version of Meridian can't display it."
 msgstr ""
 
-#: src/features/project/dock/DockDocumentCommands.tsx
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "This view couldn’t open."
 msgstr ""
@@ -6216,6 +6319,7 @@ msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/LeftSidebar.tsx
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Trash"
 msgstr ""
@@ -6539,6 +6643,7 @@ msgstr ""
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work"
 msgstr ""
@@ -6586,6 +6691,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Wrap lines"
+msgstr ""
+
+#: src/features/project/shell/sidebar/modes.ts
+msgid "Write"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts

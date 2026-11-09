@@ -28,9 +28,7 @@ it("admits Scratch documents but keeps Upload resources out of the Editor", () =
 
 it("drops snapshots holding ownerless Scratch tabs", () => {
   const scratch = { ...tab("scratch"), tabInstanceId: "tab" };
-  for (const project of [
-    { tabs: [{ ...scratch, workId: undefined }], selectedTabKey: null },
-  ]) {
+  for (const project of [{ tabs: [{ ...scratch, workId: undefined }], selectedTabKey: null }]) {
     expect(parseEditorWorkspace({ project })).toBeUndefined();
   }
 });

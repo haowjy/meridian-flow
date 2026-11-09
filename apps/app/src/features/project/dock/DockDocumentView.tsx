@@ -24,8 +24,8 @@ import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerHost } from "../context/ContextViewerHost";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
-import { useDockArchivedWork } from "./DockDocumentIdentity";
 import { type OpenDocumentTab, useOpenDocumentActions } from "../open-documents";
+import { useDockArchivedWork } from "./DockDocumentIdentity";
 
 export function DockDocumentView(props: {
   projectId: string;

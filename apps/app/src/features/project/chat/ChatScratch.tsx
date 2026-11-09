@@ -44,7 +44,7 @@ import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
 /** The document open beside the writer, if any: the dock's on the Chat screen, the selected tab in the Editor. */
-function useOpenDocumentId(projectId: string, editorWorkId: string | null): string | undefined {
+function useOpenDocumentId(projectId: string, _editorWorkId: string | null): string | undefined {
   const screen = useProjectScreen();
   const selected = useSelectedDocumentId(projectId);
   return screen === "chat" || screen === "context" ? (selected ?? undefined) : undefined;
