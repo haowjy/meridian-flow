@@ -4,7 +4,11 @@
  * peer moved) is still the same row.
  */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
-import type { CopyContextEntryView, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type {
+  CopyContextEntryView,
+  DocumentTrashEntry,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { LinkNoteSubject } from "../rename-operation-lifecycle";
 
@@ -23,12 +27,18 @@ export type DragEntry = { ref: EntryRef; name: string; view: CopyContextEntryVie
 /**
  * A list row dragged in its list's selection, or any other source naming a document or folder (a
  * chip, tab, crumb, Recent row, receipt or Uploads entry). Only a list row within one system moves
- * at once; a reference always asks.
+ * at once; a reference always asks. A `trash` row is a trashed document: dropped on the tree it is
+ * restored there (`restore-drop.ts`), never moved or copied.
  */
-export type DragSource = "list-row" | "reference";
+export type DragSource = "list-row" | "reference" | "trash";
 
 /** The entries being dragged and where they came from. */
 export type EntryDrag = { entries: readonly DragEntry[]; source: DragSource };
+
+/** A trashed document as a drag carries it: its identity and name. Its removal is read from Trash at the drop. */
+export function trashDragEntry(entry: Pick<DocumentTrashEntry, "documentId" | "name">): DragEntry {
+  return { ref: { kind: "file", id: entry.documentId }, name: entry.name, view: LIVE_VIEW };
+}
 
 export const LIVE_VIEW: CopyContextEntryView = { kind: "live" };
 

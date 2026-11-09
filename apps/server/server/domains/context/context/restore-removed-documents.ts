@@ -24,6 +24,7 @@ import { branchMayHold } from "../tree/branch-ownership.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../tree/mutation-scope.js";
 import { restoreDocument } from "../tree/removal.js";
 import { loadDocumentAddresses } from "../tree/tree-addresses.js";
+import { type RestoreSystem, readRestoreDestination } from "./restore-destination.js";
 
 const MAX_SCOPE_ATTEMPTS = 4;
 
@@ -31,6 +32,7 @@ export type RestoreRemovedDocuments = (input: {
   userId: UserId;
   projectId: ProjectId;
   documents: RestoreContextDocumentsRequest["documents"];
+  destination?: RestoreContextDocumentsRequest["destination"];
 }) => Promise<RestoreContextDocumentsResponse>;
 
 export function createRestoreRemovedDocuments(deps: {
@@ -84,11 +86,23 @@ async function restoreAttempt(
     }
     grants.push(grant);
   }
+  const restored = new Map<DocumentId, RestoreContextDocumentResult>();
+  const destination = input.destination
+    ? await readRestoreDestination(deps.db, { ...input, parent: input.destination.parent })
+    : undefined;
+  if (input.destination) {
+    // A restore stays inside the document's system: it has no Copy to offer across.
+    for (const grant of [...grants]) {
+      const documentId = targetDocumentId(grant.facts.target);
+      if (destination && documentSystem(grant.facts) === destination.system) continue;
+      restored.set(documentId, { documentId, outcome: "destination_unavailable" });
+      grants.splice(grants.indexOf(grant), 1);
+    }
+  }
   const admittedIds = grants.map(({ facts }) => targetDocumentId(facts.target));
-  if (!admittedIds.length) return outcomes(input.documents, new Map());
+  if (!admittedIds.length) return outcomes(input.documents, restored);
 
   const before = new Map<DocumentId, Awaited<ReturnType<typeof loadDocumentAddresses>>[number]>();
-  const restored = new Map<DocumentId, RestoreContextDocumentResult>();
   const admitted = await runEditAdmission({
     fileAccess: deps.fileAccess,
     grants,
@@ -96,19 +110,44 @@ async function restoreAttempt(
     works: {},
     commitScope: (operation) => runInDrizzleTransaction(deps.db, operation),
     async acquireMutationScope() {
-      await acquireTreeScope(deps.db, { documentIds: admittedIds });
+      await acquireTreeScope(deps.db, {
+        documentIds: admittedIds,
+        ...(destination ? { sourceIds: [destination.contextSourceId] } : {}),
+      });
       for (const address of await loadDocumentAddresses(deps.db, { ids: admittedIds }))
         before.set(address.documentId, address);
     },
     async operation() {
+      // The destination is read again under the locks: the folder may have been deleted, or
+      // moved to another source, since the drag began.
+      const now =
+        input.destination && destination
+          ? await readRestoreDestination(deps.db, { ...input, parent: input.destination.parent })
+          : undefined;
+      if (destination && now && now.contextSourceId !== destination.contextSourceId)
+        throw new TreeScopeChangedError();
+      let position = input.destination?.position;
       for (const request of input.documents) {
         const documentId = request.documentId as DocumentId;
-        if (refused.has(documentId)) continue;
+        if (refused.has(documentId) || restored.has(documentId)) continue;
+        if (destination && !now) {
+          restored.set(documentId, { documentId, outcome: "destination_unavailable" });
+          continue;
+        }
         const result = await restoreDocument(
           deps.db,
           {
             documentId,
             removal: deserializeRemovalIdentity(request.removal),
+            ...(destination
+              ? {
+                  into: {
+                    contextSourceId: destination.contextSourceId,
+                    parentFolderId: destination.parentFolderId,
+                    ...(position ? { position } : {}),
+                  },
+                }
+              : {}),
           },
           deps,
         );
@@ -116,8 +155,13 @@ async function restoreAttempt(
           restored.set(documentId, { documentId, outcome: result.kind });
           continue;
         }
+        // The next document follows this one; with no position given the parent's arrival rule applies.
+        if (position) position = { kind: "after", siblingId: documentId };
         const [after] = await loadDocumentAddresses(deps.db, { ids: [documentId] });
-        const landedAt = after && after.uri !== before.get(documentId)?.uri ? after.uri : undefined;
+        const landedAt =
+          after && (destination || after.uri !== before.get(documentId)?.uri)
+            ? after.uri
+            : undefined;
         restored.set(documentId, {
           documentId,
           outcome: "restored",
@@ -144,4 +188,11 @@ function outcomes(
       return restored.get(documentId) ?? { documentId, outcome: "refused" };
     }),
   };
+}
+
+/** A document's system by where it stands; a Work's, chat's or lineage's source has none a drag-restore serves. */
+function documentSystem(facts: FileGrant<"edit">["facts"]): RestoreSystem | null {
+  if (facts.ownerWork !== null || facts.ownerRootThreadId || facts.ownerChatThreadId) return null;
+  if (facts.scheme === "user") return "user";
+  return facts.scheme === "manuscript" || facts.scheme === "kb" ? "project" : null;
 }

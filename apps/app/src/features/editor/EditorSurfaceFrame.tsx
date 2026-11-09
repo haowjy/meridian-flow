@@ -9,6 +9,8 @@ export type EditorSurfaceFrameProps = {
   notices?: ReactNode;
   /** The persistent document toolbar, docked prose-aligned above the scroll area. */
   toolbar?: ReactNode;
+  /** What follows the formatting controls on the toolbar row: the document's state. */
+  toolbarTrailing?: ReactNode;
   children: ReactNode;
   /**
    * The whole scroll area is caret territory (the ProseMirror node spans it,
@@ -24,6 +26,7 @@ export type EditorSurfaceFrameProps = {
 export function EditorSurfaceFrame({
   notices,
   toolbar,
+  toolbarTrailing,
   children,
   textCursor,
   scrollClassName,
@@ -41,7 +44,10 @@ export function EditorSurfaceFrame({
         </div>
       ) : null}
       {toolbar ? (
+        // Equal gutters keep the toolbar on the prose column; the state sits at the pane's right
+        // edge, in the right gutter, and takes room from the column only when the pane is narrow.
         <div className="flex h-9 shrink-0 items-center [@media(pointer:coarse)]:h-11">
+          <div className="min-w-0 flex-1 basis-0" />
           {/* The toolbar's geometry is fixed (ten controls, one order), so a
               pane too narrow for it scrolls the row rather than dropping controls. */}
           <div
@@ -52,6 +58,7 @@ export function EditorSurfaceFrame({
           >
             {toolbar}
           </div>
+          <div className="flex flex-1 basis-0 justify-end pr-3">{toolbarTrailing}</div>
         </div>
       ) : null}
       <div

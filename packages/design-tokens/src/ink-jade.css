@@ -10,10 +10,12 @@
  * roles below, with shipped dark overrides in `themes.css`. Design rationale:
  * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/earthen-value-ladder-shell.md
  *
- * Accent semantics: jade = "do/go" (actions, links, focus, send/save);
- * cinnabar = the scarce seal for favorite/pinned punctuation and the brand
- * mark. Destructive actions use their own crimson role. Neither belongs in
- * routine selection/active rows.
+ * Accent semantics: jade = "do/go" (actions, links, focus, send/save) and
+ * "changes / waiting on you" (drafts, needs-you counts, the model's insertions);
+ * cinnabar = the scarce seal for the brand mark; gold = favorites (and the
+ * writer's edits in review). Destructive actions use their own crimson role.
+ * Selected/active/on states are ink on the accent ground, never jade; running
+ * is muted ink, so a jade dot always means something waits on the writer.
  *
  * Theme-backed tokens use Tailwind v4 namespaces directly; non-utility runtime
  * controls stay as plain root variables.

@@ -1,13 +1,14 @@
 /** Shared project chat row with accessible open and independent state controls. */
+
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
+import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { Star } from "lucide-react";
 import { memo, useEffect, useId, useState } from "react";
 import type { ThreadUserStateCommandView } from "@/client/query/thread-user-state-commands";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -77,7 +78,6 @@ export const ProjectChatRow = memo(function ProjectChatRow({
   const activity = formatProjectChatActivity(item.lastActivityAt, now, i18n.locale);
   const fullActivity = formatFullProjectChatActivity(item.lastActivityAt, i18n.locale);
   const agentName = item.agentName ?? "General";
-  const agentLabel = t`Agent: ${agentName}`;
   const active = menuOpen || focusWithin;
   useEffect(() => {
     onActiveChange?.(item.id, active);
@@ -141,20 +141,22 @@ export const ProjectChatRow = memo(function ProjectChatRow({
               // hit area extends past the 32px button instead of growing it.
               "pointer-events-auto relative [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-1.5 [@media(hover:none)]:after:content-[''] [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-1.5 [@media(pointer:coarse)]:after:content-['']",
               item.isFavorite
-                ? "text-primary hover:text-primary"
+                ? "text-gold hover:text-gold"
                 : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100",
             )}
           >
             <Star aria-hidden className={cn("size-4", item.isFavorite && "fill-current")} />
           </IconButton>
-          <WorkIdentity
+          <span
             data-project-chat-row-agent
-            className="px-1"
-            name={item.agentName}
-            unavailableLabel="General"
-            aria-label={agentLabel}
             title={agentName}
-          />
+            className="min-w-0 truncate px-1 text-xs font-medium text-foreground"
+          >
+            <span className="sr-only">
+              <Trans>Agent:</Trans>{" "}
+            </span>
+            {agentName}
+          </span>
         </div>
         <div
           data-project-chat-row-line

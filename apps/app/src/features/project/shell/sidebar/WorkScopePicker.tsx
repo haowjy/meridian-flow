@@ -2,15 +2,15 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
-import { Check, ChevronDown, Layers } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -49,18 +49,17 @@ export function WorkScopePicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
+        {/* A sidebar row like the rest: no box, the pressed fill while its menu is open. */}
         <button
           type="button"
-          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md border border-border-subtle bg-background/40 px-2 text-left text-[13px] hover:bg-background/70"
+          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] hover:bg-sidebar-accent/50 data-[state=open]:bg-sidebar-accent"
         >
-          <Layers className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
           {scoped || noWorkScoped ? (
-            <span className="min-w-0 flex-1 truncate">
-              <span className="text-ink-muted">
-                <Trans>Work</Trans>
-              </span>{" "}
-              <span className="font-medium">{scoped ? scoped.name : t`None`}</span>
-            </span>
+            <WorkIdentity
+              name={scoped ? scoped.name : t`None`}
+              unavailableLabel={t`None`}
+              className="flex-1 text-[13px]"
+            />
           ) : (
             <span className="min-w-0 flex-1 truncate text-ink-muted">
               <Trans>Loading Works…</Trans>
@@ -74,7 +73,7 @@ export function WorkScopePicker({
               {pending}
             </span>
           ) : null}
-          <ChevronDown className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
+          <ChevronsUpDown className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
@@ -89,9 +88,6 @@ export function WorkScopePicker({
         {active.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[11px] font-normal text-ink-subtle">
-              <Trans>Active Works</Trans>
-            </DropdownMenuLabel>
             {active.map((work) => (
               <PickRow
                 key={work.id}
@@ -158,10 +154,10 @@ function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
   const toReview = work.pendingDocumentCount;
   if (toReview === 0 && needsYou === 0) return null;
   return (
-    <span className="flex shrink-0 gap-2 text-[11px] text-ink-muted tabular-nums">
+    <span className="flex shrink-0 gap-2 text-[11px] text-primary tabular-nums">
       {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
-        <span className="text-primary">
+        <span>
           <Trans>{needsYou} needs you</Trans>
         </span>
       ) : null}
