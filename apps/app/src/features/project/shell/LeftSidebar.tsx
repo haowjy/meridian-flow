@@ -9,7 +9,6 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { PanelLeftClose } from "lucide-react";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
@@ -19,7 +18,7 @@ import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
-import { PanelToggleButton } from "./PanelToggleButton";
+import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
 import type { ScreenKey } from "./screens";
 import type { TitleEditHandle } from "./TitleEditSlot";
@@ -46,8 +45,6 @@ type LeftSidebarProps = {
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
-  /** Collapse the sidebar rail. */
-  onCollapse: () => void;
 };
 
 export function LeftSidebar({
@@ -61,7 +58,6 @@ export function LeftSidebar({
   activeContextScheme,
   activeContextPath,
   onSelectScreen,
-  onCollapse,
 }: LeftSidebarProps) {
   const trashNavigation = useProjectTrashNavigation();
   const titleEditor = useRef<TitleEditHandle>(null);
@@ -99,11 +95,7 @@ export function LeftSidebar({
       className="relative flex h-full min-h-0 w-full flex-col text-foreground"
     >
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
-        <PanelToggleButton
-          icon={PanelLeftClose}
-          label={t`Collapse sidebar  [`}
-          onClick={onCollapse}
-        />
+        <PanelToggleSpacer />
         <InlineProjectTitle
           editRef={titleEditor}
           title={projectTitle}

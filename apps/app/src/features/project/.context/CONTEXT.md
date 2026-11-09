@@ -17,12 +17,15 @@ A screen change changes `grid-area` or parks a surface; it doesn't portal, repar
 conditionally unmount stateful surfaces.
 
 Slot wrappers paint their material, and document shells stay transparent. Slot placement is
-derived from the active screen, not persisted. Preferences hydrate before the desktop component
+derived from the mode (`modeOf(screen)`: Editor is Write; Chat and Work are Chat), not persisted.
+Widths are per slot; open/closed is per mode, so each mode restores its own panels. Preferences hydrate before the desktop component
 mounts, and `ProjectView` gates the mount rather than placing a conditional between hooks. One
 merged layout subscription is the only whole-preferences subscription.
 
-The shell has one toggle inset (`px-2`), so a surface's collapse button and the expand control
-that replaces it sit at the same x. Region separation is tonal. Repeated header primitives are
+The two panel toggles are `ProjectShell`'s corner buttons, drawn once over the grid, so they
+never move when a panel opens or closes. A header under one keeps a `PanelToggleSpacer` in its
+place instead of a button of its own. A panel's content slides in on open; the grid columns
+change in one step, because animating them reflows the chapter on every frame. Region separation is tonal. Repeated header primitives are
 shared, but Chat's dock is not a resizable panel.
 
 ## Routes

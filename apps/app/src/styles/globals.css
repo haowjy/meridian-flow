@@ -288,6 +288,31 @@
   }
 }
 
+/* A panel's content slides in from its edge when the panel opens. The grid
+   column changes in one step; only transform and opacity animate. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-project-slot="rail-l"][data-project-surface-state="active"] {
+    animation: panel-in-left var(--motion-duration-panel) var(--motion-ease-shell);
+  }
+  [data-project-slot="dock"][data-project-surface-state="active"] {
+    animation: panel-in-right var(--motion-duration-panel) var(--motion-ease-shell);
+  }
+}
+
+@keyframes panel-in-left {
+  from {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+}
+
+@keyframes panel-in-right {
+  from {
+    transform: translateX(12px);
+    opacity: 0;
+  }
+}
+
 @keyframes streaming-pulse {
   0%, 100% {
     opacity: 1;

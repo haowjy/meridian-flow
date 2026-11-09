@@ -12,7 +12,6 @@
  * destination keeps the tab strip and editor/viewer body only.
  */
 
-import { t } from "@lingui/core/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
@@ -105,8 +104,9 @@ import { useDockDocumentRestoration } from "./dock/restore-dock-document";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import {
+  modeOf,
+  type PanelSlotId,
   type SlotGridSurface,
-  SURFACE_WIDTH_BOUNDS,
   type SurfaceId,
   useProjectLayout,
   useProjectSurfacePrefsActions,
@@ -671,16 +671,6 @@ function HydratedReviewControllers({
   );
 }
 
-/** A PaneHeader expand control derived from a stable surface id. */
-function expandToggle(
-  surfaceId: SurfaceId,
-  open: boolean,
-  onSetCollapsed: (surfaceId: SurfaceId, collapsed: boolean) => void,
-  label: string,
-): PaneHeaderRailToggle {
-  return { open, onExpand: () => onSetCollapsed(surfaceId, false), label };
-}
-
 /** Desktop layout for every destination. */
 export function DesktopProject(props: ReviewScopedProjectProps) {
   const screenSwitch = useDesktopProjectController({
@@ -741,18 +731,17 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // the manuscript prose width. The hold is derived from review being open and
   // never written to prefs, so the writer's saved rail state returns by itself.
   const proseFocus = useReviewProseFocus(props.activeScreen, props.presentedReview);
-  // useProjectLayout internally subscribes to prefs + slotPrefs and returns a
-  // merged SurfaceLayoutMap; that single subscription drives all layout-driven
-  // re-renders — no separate whole-prefs subscription is needed.
+  // useProjectLayout subscribes to the slot widths and this mode's panels and
+  // returns the merged SurfaceLayoutMap; no other whole-prefs subscription exists.
   const layout = useProjectLayout(props.activeScreen, proseFocus.collapsedSlots);
+  const mode = modeOf(props.activeScreen);
 
-  const { setSurfaceCollapsed, setSurfaceWidth, setDockCollapsed, setDockWidth } =
-    useProjectSurfacePrefsActions();
-  useCompactDesktopAutoCollapse(setDockCollapsed, setSurfaceCollapsed);
+  const { setSlotOpen, setSlotWidth, closeSlotEverywhere } = useProjectSurfacePrefsActions();
+  useCompactDesktopAutoCollapse(closeSlotEverywhere);
   const clearDocumentOn = useDockDocumentStore((state) => state.clearDocumentOn);
 
   useDockReveal((view) => {
-    setDockCollapsed(false);
+    setSlotOpen(mode, "dock", true);
     if (view === "chat") clearDocumentOn(props.activeScreen);
   });
 
@@ -763,24 +752,23 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     onScreen: props.activeScreen === "chat" && isOpen("context-rail") && !screenSwitch.dockDocument,
     showing: screenSwitch.dockDocument?.tab.documentId ?? null,
   });
-  // The single writer-driven collapse entry. Calls targeting a surface that is
-  // currently the dock occupant drive the shared dock pref instead of the
-  // surface's own pref — the dock reads as one persistent sidebar across
-  // screens. An explicit expand also releases review's hold on the rail, so
-  // the control can never write a pref that changes nothing on screen.
+  // The single writer-driven open/close entry, for this mode's panel. Opening
+  // the sidebar also releases review's hold on it, so the control can never
+  // write a pref that changes nothing on screen.
+  const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
+    if (open && slot === "rail-l") proseFocus.release();
+    setSlotOpen(mode, slot, open);
+  };
   const setCollapsedFor = (surfaceId: SurfaceId, collapsed: boolean) => {
-    if (layout[surfaceId].slot === "dock") {
-      setDockCollapsed(collapsed);
-      return;
-    }
-    if (!collapsed) proseFocus.release();
-    setSurfaceCollapsed(surfaceId, collapsed);
+    const { slot } = layout[surfaceId];
+    if (slot === "rail-l" || slot === "dock") setSlotOpenHere(slot, !collapsed);
   };
   const close = (surfaceId: SurfaceId) => () => {
     setCollapsedFor(surfaceId, true);
   };
-  const surfaceToggle = (surfaceId: SurfaceId, label: string) =>
-    expandToggle(surfaceId, isOpen(surfaceId), setCollapsedFor, label);
+  const surfaceToggle = (surfaceId: SurfaceId): PaneHeaderRailToggle => ({
+    open: isOpen(surfaceId),
+  });
 
   const screen = props.activeScreen;
   // The chat is mounted ONCE as a direct child of the project grid, so it
@@ -807,7 +795,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
           onSelectScreen={screenSwitch.selectScreen}
-          onCollapse={close("threads")}
         />
       ),
     },
@@ -847,8 +834,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               }
               routeDisplayed={props.activeScreen === "context"}
               active={editorActive}
-              sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-              dockToggle={surfaceToggle("chat", t`Expand chat`)}
+              sidebarToggle={surfaceToggle("threads")}
+              dockToggle={surfaceToggle("chat")}
               onSelectContextPath={props.onSelectContextPath}
               onOpenContextTarget={props.onOpenContextTarget}
               onShowEditorRecents={(options) => void props.routeCommands.showEditorRecents(options)}
@@ -876,8 +863,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 key="chat-pane-controller"
                 projectId={props.projectId}
                 threadId={chatSurfaceThread}
-                sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-                contextToggle={surfaceToggle("context-rail", t`Expand context`)}
+                sidebarToggle={surfaceToggle("threads")}
+                contextToggle={surfaceToggle("context-rail")}
               />
             ) : null}
             {/* This keyed surface remains the same mounted element when its slot
@@ -912,8 +899,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             {chatIndexShowing ? (
               <ChatIndexController
                 projectId={props.projectId}
-                sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-                contextToggle={surfaceToggle("context-rail", t`Expand context`)}
+                sidebarToggle={surfaceToggle("threads")}
+                contextToggle={surfaceToggle("context-rail")}
               />
             ) : null}
           </div>
@@ -929,11 +916,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           <ProjectShell
             layout={layout}
             surfaces={stableSurfaces}
-            onSetWidth={setSurfaceWidth}
-            onSetCollapsed={setCollapsedFor}
-            onSetDockWidth={setDockWidth}
-            onSetDockCollapsed={setDockCollapsed}
-            bounds={SURFACE_WIDTH_BOUNDS}
+            onSetSlotWidth={setSlotWidth}
+            onSetSlotOpen={setSlotOpenHere}
             mainMinWidth={MAIN_MIN_WIDTH}
           >
             <ProjectRouteBoundary
@@ -949,7 +933,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   );
 }
 
-type SurfaceToggleFactory = (surfaceId: SurfaceId, label: string) => PaneHeaderRailToggle;
+type SurfaceToggleFactory = (surfaceId: SurfaceId) => PaneHeaderRailToggle;
 
 function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
   switch (props.activeScreen) {
@@ -962,8 +946,8 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
           routeWork={props.routeWork}
           rememberedWork={props.rememberedWork}
           routeCommands={props.routeCommands}
-          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-          chatToggle={surfaceToggle("chat", t`Expand chat`)}
+          sidebarToggle={surfaceToggle("threads")}
+          chatToggle={surfaceToggle("chat")}
         />
       );
     case "context":
@@ -973,16 +957,13 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
   }
 }
 
-function useCompactDesktopAutoCollapse(
-  setDockCollapsed: (collapsed: boolean) => void,
-  setSurfaceCollapsed: (surfaceId: SurfaceId, collapsed: boolean) => void,
-) {
+function useCompactDesktopAutoCollapse(closeSlotEverywhere: (slot: PanelSlotId) => void) {
   useEffect(() => {
     const compact = window.matchMedia(COMPACT_DESKTOP_QUERY);
     const narrow = window.matchMedia(NARROW_DESKTOP_QUERY);
     const apply = () => {
-      if (compact.matches) setDockCollapsed(true);
-      if (narrow.matches) setSurfaceCollapsed("threads", true);
+      if (compact.matches) closeSlotEverywhere("dock");
+      if (narrow.matches) closeSlotEverywhere("rail-l");
     };
     compact.addEventListener("change", apply);
     narrow.addEventListener("change", apply);
@@ -991,5 +972,5 @@ function useCompactDesktopAutoCollapse(
       compact.removeEventListener("change", apply);
       narrow.removeEventListener("change", apply);
     };
-  }, [setDockCollapsed, setSurfaceCollapsed]);
+  }, [closeSlotEverywhere]);
 }
