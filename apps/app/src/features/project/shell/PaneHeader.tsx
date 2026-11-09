@@ -1,9 +1,8 @@
-import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { PanelToggleButton } from "./PanelToggleButton";
+import { PanelToggleSpacer } from "./PanelToggleButton";
 
 /**
  * PaneHeader — the thin (h-10 / 40px) chrome band at the top of a destination's
@@ -13,12 +12,9 @@ import { PanelToggleButton } from "./PanelToggleButton";
  * (same grammar as the document tab strip), and the pane's `page-sheet` body
  * rises out of it below. No bottom border: separation is tonal.
  *
- * The expand controls sit at the SAME x as each rail's in-rail close control,
- * so toggling a rail never moves the cursor ("click without moving the mouse").
- * When a rail is open its own header owns the close button and this renders
- * nothing in that slot — no reserved spacer; title/actions take the space.
- * (The cursor trick is between the two buttons' screen positions and doesn't
- * need the slot held open.)
+ * The panel toggles are the shell's corner buttons (`ProjectShell`). When a
+ * rail is closed its toggle floats over this band, so the band reserves its
+ * place; when it is open the toggle floats over the rail instead.
  *
  * A `notice` (a failed command on the pane's subject, like a rejected rename or
  * Archive) sits beside the title when the pane is wide, and wraps onto its own
@@ -27,11 +23,7 @@ import { PanelToggleButton } from "./PanelToggleButton";
  * the width neither remounts it (its alert is not announced again) nor drops
  * focus from its Retry.
  */
-export type PaneHeaderRailToggle = {
-  open: boolean;
-  onExpand: () => void;
-  label: string;
-};
+export type PaneHeaderRailToggle = { open: boolean };
 
 export type PaneHeaderProps = {
   title: ReactNode;
@@ -55,9 +47,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
   return (
     <div className="@container/pane-header shrink-0">
       <header className="flex flex-wrap items-center gap-x-1 px-2">
-        {leftToggle ? (
-          <PanelToggleButton icon={PanelLeftOpen} label={left.label} onClick={left.onExpand} />
-        ) : null}
+        {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (
           // The tab strip puts its first chip flush at the pane edge, or 8px past
           // the toggle's own px-2 zone; the offsets land on those same x values.
@@ -85,9 +75,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {actions}
-          {right && !right.open ? (
-            <PanelToggleButton icon={PanelRightOpen} label={right.label} onClick={right.onExpand} />
-          ) : null}
+          {right && !right.open ? <PanelToggleSpacer /> : null}
         </div>
       </header>
     </div>

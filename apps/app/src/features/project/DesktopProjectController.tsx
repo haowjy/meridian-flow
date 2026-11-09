@@ -25,6 +25,7 @@ import {
 } from "./dock/dock-document-store";
 import { handOffVisibleDocument } from "./dock/hand-off-visible-document";
 import { commitDockDocument } from "./dock/use-dock-placement";
+import { modeOf } from "./layout/placement";
 import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
 import { usePresentedDocument } from "./presented-document";
 import { useChatNavigation } from "./routing/chat-navigation";
@@ -61,7 +62,7 @@ export function useDesktopProjectController<
   const presented = usePresentedDocument();
   const editorPresentation = useDesktopEditorPresentation(input);
   const dockDocument = useDesktopDockPresentation(projectId, screen);
-  const collapsed = useProjectSurfacePrefsStore((state) => state.slotPrefs.dock.collapsed);
+  const collapsed = useProjectSurfacePrefsStore((state) => !state.modes[modeOf(screen)].dockOpen);
   const editorTab = editorPresentation.visibleTab;
   const dockTab = collapsed ? null : (dockDocument?.tab ?? null);
   const chat = useChatNavigation();
