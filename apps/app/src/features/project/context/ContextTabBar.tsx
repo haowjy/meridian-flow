@@ -42,8 +42,6 @@ export type ContextTabBarProps = {
   trailing?: ReactNode;
   /** Feedback in the strip's free end, where a closed tab's width went. */
   notice?: ReactNode;
-  /** The open document's state (Draft or Live, its changes and their commands), at the right end. */
-  state?: ReactNode;
 };
 
 export function ContextTabBar({
@@ -59,7 +57,6 @@ export function ContextTabBar({
   leading,
   trailing,
   notice,
-  state,
 }: ContextTabBarProps) {
   return (
     <div
@@ -157,7 +154,6 @@ export function ContextTabBar({
       {/* The strip's free end: tabs keep their width until a notice needs its
           short sentence, then they scroll. */}
       <RemovedNoticeSlot>{notice}</RemovedNoticeSlot>
-      {state ? <div className="ml-auto flex min-w-0 shrink items-center">{state}</div> : null}
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
     </div>
   );
