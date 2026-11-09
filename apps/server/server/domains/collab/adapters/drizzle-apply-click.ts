@@ -7,7 +7,6 @@
  * (`restoreDocument`, D79), then the text merges.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
 import {
   appendApplyRecord,
   applyBase,
