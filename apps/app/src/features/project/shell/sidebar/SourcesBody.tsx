@@ -15,6 +15,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -327,7 +328,7 @@ function FocusMenu({ mode, onSelect }: { mode: ModeKey; onSelect: (mode: ModeKey
         <TooltipTrigger asChild>
           <DropdownMenuTrigger
             aria-label={label}
-            className="focus-ring grid size-7 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground"
+            className="focus-ring grid size-7 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground"
           >
             <Icon className="size-4" aria-hidden />
           </DropdownMenuTrigger>
