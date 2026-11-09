@@ -185,7 +185,7 @@ export function WorkPickerPanel({
             ) : (
               <span className="size-4" />
             )}
-            <Trans>No Work</Trans>
+            <Trans>None</Trans>
           </Button>
         ) : null}
         {view.status === "loading" ? (

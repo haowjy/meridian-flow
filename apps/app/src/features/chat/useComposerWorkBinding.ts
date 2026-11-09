@@ -1,4 +1,5 @@
 /** Sole controller connecting the Work binding reducer to query and announcements. */
+
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useReducer, useRef } from "react";
@@ -8,6 +9,7 @@ import { type NormalizedCommit, useRebindThreadWork } from "@/client/query/useRe
 import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement } from "@/client/stores";
 import type { WorkCatalogView, WorkPickerOperation } from "@/components/app/work-composer-controls";
+import { workDisplayName } from "@/lib/work-name";
 import {
   type ComposerWorkBindingState,
   initialComposerWorkBindingState,
@@ -49,7 +51,7 @@ export function useComposerWorkBinding({
     dispatch({
       type: "binding.observed",
       work,
-      message: t`This chat's Work changed to ${work.name}`,
+      message: t`This chat's Work changed to ${workDisplayName(work)}`,
     });
   }, [work]);
 
@@ -110,7 +112,7 @@ export function useComposerWorkBinding({
           type: "change.committed",
           requestId: request.id,
           commit,
-          message: t`This chat now uses ${commit.work.name}.`,
+          message: t`This chat now uses ${workDisplayName(commit.work)}.`,
         });
       } catch (cause) {
         let failure: WorkBindingFailure;
