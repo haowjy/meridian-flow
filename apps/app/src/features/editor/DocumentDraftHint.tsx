@@ -27,7 +27,7 @@ export type DocumentDraftHintProps = {
 };
 
 const REVIEW_CLASS =
-  "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-medium text-jade-text hover:bg-primary/10 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:px-2.5";
+  "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-medium text-jade-text hover:bg-primary/10 popup-open:bg-primary/10 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:px-2.5";
 
 export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
   const { documentId } = tab;

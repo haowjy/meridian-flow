@@ -7,7 +7,7 @@
  * rejection that follows: a menu item that closes on a `SecurityError` and says
  * nothing has told the writer their diagram was copied.
  *
- * One answer, one place. Every door — a chip on the row, an item in a ⋮, an
+ * One answer, one place. Every door — a chip on the row, an item in a ⋯, an
  * item in the dialog — routes its promise through `run`, and the surface that
  * owns the verb renders the notice where the writer is already looking. The
  * failure keeps its reason: "the browser blocked the clipboard" and "this

@@ -4,7 +4,9 @@ import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { Network } from "lucide-react";
 import { useId, useMemo, useState } from "react";
+import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { requestConversationReveal } from "./conversation-reveal";
 import { subagentStatus } from "./subagent/display";
 import { runFromActivity } from "./subagent/run-model";
@@ -53,7 +55,7 @@ export function SubagentHeader({
           aria-label={t`Subagents, ${nodes.length}`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="focus-ring inline-flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="focus-ring inline-flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground"
         >
           <Network className="size-3.5" aria-hidden />
           <span aria-hidden="true">{nodes.length}</span>
@@ -64,7 +66,7 @@ export function SubagentHeader({
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="max-h-[min(70vh,30rem)] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto bg-background p-2"
+        className="max-h-[min(70vh,30rem)] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5"
       >
         <label className="sr-only" htmlFor={filterId}>
           <Trans>Filter subagents</Trans>
@@ -78,7 +80,7 @@ export function SubagentHeader({
         />
         {active.length ? (
           <>
-            <h3 className="px-2 py-1 text-xs font-medium text-muted-foreground">
+            <h3 className={dropdownGroupLabelClass}>
               <Trans>Running</Trans>
             </h3>
             <ul>
@@ -95,7 +97,7 @@ export function SubagentHeader({
         ) : null}
         {finished.length ? (
           <>
-            <h3 className="mt-[var(--chat-space-row)] px-2 py-1 text-xs font-medium text-muted-foreground">
+            <h3 className={cn(dropdownGroupLabelClass, "mt-[var(--chat-space-row)]")}>
               <Trans>Finished</Trans>
             </h3>
             <ul>

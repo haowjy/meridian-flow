@@ -24,6 +24,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useWorks } from "@/client/query/useWorks";
 import { useSelectedDocumentId } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
@@ -218,7 +219,7 @@ export function MenuScratchSection({
   if (!scratch) return null;
   return (
     <section aria-label={scratch.heading}>
-      <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">{scratch.heading}</h3>
+      <h3 className={dropdownGroupLabelClass}>{scratch.heading}</h3>
       <EntryList list={list}>
         <ChatScratchTree projectId={projectId} threadId={threadId} onPicked={onPicked} />
       </EntryList>

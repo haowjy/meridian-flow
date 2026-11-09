@@ -3,10 +3,15 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { entryNeedsLook, type ImportEntryStatus } from "@meridian/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { X } from "lucide-react";
+import { Files, Folder, type LucideIcon, X } from "lucide-react";
 import { type ReactNode, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { Button } from "@/components/ui/button";
+import {
+  dropdownGroupLabelClass,
+  dropdownPageClass,
+  dropdownRowVariants,
+} from "@/components/ui/dropdown-presentation";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -199,15 +204,11 @@ export function ImportPanelBody({
   onPick: (kind: PickKind) => void;
   onClose: () => void;
 }) {
-  const another = (kind: PickKind, label: ReactNode) => (
-    <Button
-      size="sm"
-      variant="ghost"
-      className={cn(touch && "min-h-11")}
-      onClick={() => onPick(kind)}
-    >
+  const pickRow = (kind: PickKind, Icon: LucideIcon, label: ReactNode) => (
+    <button type="button" className={dropdownRowVariants()} onClick={() => onPick(kind)}>
+      <Icon className="text-muted-foreground" aria-hidden />
       {label}
-    </Button>
+    </button>
   );
   return (
     <>
@@ -220,15 +221,18 @@ export function ImportPanelBody({
       ) : null}
       <div
         className={cn(
-          "flex shrink-0 items-center gap-1 px-3 py-1.5",
+          "flex shrink-0 flex-col",
+          dropdownPageClass,
           items.length > 0 && "border-t border-border-subtle",
         )}
       >
-        <span className="min-w-0 flex-1 text-caption text-ink-muted">
-          {items.length > 0 ? <Trans>Import another</Trans> : <Trans>Import</Trans>}
-        </span>
-        {canPickFolders() ? another("folder", <Trans>Folder…</Trans>) : null}
-        {another("files", <Trans>Files…</Trans>)}
+        {items.length > 0 ? (
+          <p className={dropdownGroupLabelClass}>
+            <Trans>Import another</Trans>
+          </p>
+        ) : null}
+        {canPickFolders() ? pickRow("folder", Folder, <Trans>Folder…</Trans>) : null}
+        {pickRow("files", Files, <Trans>Files…</Trans>)}
       </div>
     </>
   );

@@ -848,6 +848,10 @@
       background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
     }
   }
+  /* A chip that opens a switcher holds its hover pill while the switcher is open. */
+  &[aria-haspopup][aria-expanded="true"]::before {
+    background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
+  }
 }
 
 /** Link-style control — always reads as clickable (not hover-only). */

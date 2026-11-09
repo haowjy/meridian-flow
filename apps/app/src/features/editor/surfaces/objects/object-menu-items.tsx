@@ -1,6 +1,6 @@
 /**
  * What a diagram or an image offers, in one place for its three doors: the row's
- * two chips, the row's ⋮, and the right-click menu.
+ * two chips, the row's ⋯, and the right-click menu.
  *
  * Every item here is a read of the object's registration
  * (`core/editor/objects/object-types.ts`) rather than a branch on its node type.
@@ -80,12 +80,12 @@ export function objectFieldLabel(field: ObjectSurfaceField): string {
 }
 
 /**
- * The row: fullscreen, one copy, and the ⋮ (ruling 8).
+ * The row: fullscreen, one copy, and the ⋯ (ruling 8).
  *
  * A diagram's copy puts its **source** on the clipboard, not an image — revision
  * runs through the chat, so source is the bridge into that loop, and it works in
  * every browser where image-copy is the clipboard API's fussiest corner. The
- * image forms live in the ⋮.
+ * image forms live in the ⋯.
  */
 export function objectRowItems({
   editor,
@@ -121,7 +121,7 @@ export function objectRowItems({
 }
 
 /**
- * The ⋮, shared by the row's overflow and the right-click menu — one menu with
+ * The ⋯, shared by the row's overflow and the right-click menu — one menu with
  * two doors, per the kernel's rule that a surface has one entry point rather
  * than three.
  */
@@ -154,7 +154,7 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
       {/* Offered whether or not a project is behind the editor, and refusing out
           loud when there is not: the ingress lane already says "Images need a
           project before they can be uploaded", which is the answer law 5 wants,
-          and a ⋮ whose shape changes with the document teaches nothing.
+          and a ⋯ whose shape changes with the document teaches nothing.
 
           The picture is HELD as the chooser opens, not named by its number: the
           writer may be in front of an operating-system dialog for a minute while
