@@ -10,7 +10,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -51,8 +51,9 @@ export type ReviewHeaderModel = {
   commandError: BranchCommandFailure | null;
   /**
    * The Work's other listed drafts that hold a refusal or a lost answer: Apply
-   * draft and Apply all move on (or finish) while the command runs, so the
-   * review the writer is in must still say which drafts did not apply.
+   * all moves on (or finishes) while its commands run, and a draft can be
+   * refused after the writer left it, so the review the writer is in must still
+   * say which drafts did not apply.
    */
   failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   showLive: () => void;
@@ -133,12 +134,23 @@ export function useReviewHeader({
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
-  // Local Discard stays in this draft. Only Apply may advance to another file.
+  // The item this header shows while it is mounted; null once the writer has left it.
+  const shown = useRef<string | null>(itemKey);
+  useEffect(() => {
+    shown.current = itemKey;
+    return () => {
+      shown.current = null;
+    };
+  }, [itemKey]);
+  // Local Discard stays in this draft. Only an Apply that landed advances to another file: a
+  // refusal shows on the draft the writer applied, so it must not move them first.
   const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
     const start = controller.startDraft(mode, { documentId, itemKey });
-    void start.outcome;
-    if (mode === "apply" && next && start.sent) onOpenDraft(next);
+    if (mode !== "apply" || !next || !start.sent) return;
+    void start.outcome.then((outcome) => {
+      if (outcome.kind === "done" && shown.current === itemKey) onOpenDraft(next);
+    });
   };
   return {
     controller,
