@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { MoreHorizontal, Trash2 } from "lucide-react";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { type HTMLAttributes, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import {
   DropdownMenu,
@@ -15,6 +15,7 @@ import { ScratchSource } from "../../chat/ChatScratch";
 import { ContextTreePanel } from "../../context/ContextTreePanel";
 import { schemeIcon, schemeLabel } from "../../context/context-schemes";
 import { activeDragSession } from "../../context/entry-drag/drag-session";
+import { type TreeDropTarget, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
 import { useDeleteContextEntry } from "../../context/use-delete-context-entry";
 import { TrashSource } from "./TrashSource";
 import { acceptEntryDrag, draggedEntries } from "./trash-drop";
@@ -60,76 +61,118 @@ export function SourcesBody({
   const overflowShown = OVERFLOW_SOURCES.includes(source);
   const deletion = useDeleteContextEntry(projectId);
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        role="tablist"
-        aria-label={t`Sources`}
-        className="flex shrink-0 items-center gap-0.5 px-2 py-1"
-      >
-        {TAB_SOURCES.map((key) => (
+  const selectFrom = (key: SourceKey) => () => setSource(key);
+  const tabs = (rootIdOf?: (scheme: ProjectContextTreeScheme) => string | null) => (
+    <div
+      role="tablist"
+      aria-label={t`Sources`}
+      className="flex shrink-0 items-center gap-0.5 px-2 py-1"
+    >
+      {TAB_SOURCES.map((key) => {
+        const rootId = key !== "trash" && key !== "scratch" ? (rootIdOf?.(key) ?? null) : null;
+        return rootId && key !== "trash" && key !== "scratch" ? (
+          <TreeSourceTab
+            key={key}
+            source={key}
+            rootId={rootId}
+            active={key === source}
+            onSelect={selectFrom(key)}
+          />
+        ) : (
           <SourceTab
             key={key}
             source={key}
             active={key === source}
-            onSelect={() => setSource(key)}
+            onSelect={selectFrom(key)}
             onDropTrash={
-              key === "trash"
-                ? () => {
-                    deletion.deleteEntries(draggedEntries());
-                  }
-                : undefined
+              key === "trash" ? () => deletion.deleteEntries(draggedEntries()) : undefined
             }
           />
-        ))}
-        <span className="flex-1" />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={overflowShown}
-              aria-label={t`More sources`}
-              className={cn(
-                "focus-ring flex h-7 items-center gap-1 rounded-md px-1.5 text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
-                overflowShown && "bg-sidebar-accent text-foreground",
-              )}
-            >
-              {overflowShown ? <SourceIcon source={source} /> : null}
-              <MoreHorizontal className="size-4" aria-hidden />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {OVERFLOW_SOURCES.map((key) => (
-              <DropdownMenuItem key={key} onSelect={() => setSource(key)}>
-                <SourceIcon source={key} />
-                {sourceLabel(key)}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
-        {source === "trash" ? (
-          <TrashSource projectId={projectId} />
-        ) : source === "scratch" ? (
-          <ScratchSource
-            projectId={projectId}
-            threadId={chatThreadId}
-            editorWorkId={editorWorkId}
-          />
-        ) : contextLive ? (
-          <ContextTreePanel
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            activeScheme={activeScheme}
-            activePath={activePath}
-            onSelectFile={onSelectFile}
-            only={source}
-          />
-        ) : null}
-      </div>
+        );
+      })}
+      <span className="flex-1" />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={overflowShown}
+            aria-label={t`More sources`}
+            className={cn(
+              "focus-ring flex h-7 items-center gap-1 rounded-md px-1.5 text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
+              overflowShown && "bg-sidebar-accent text-foreground",
+            )}
+          >
+            {overflowShown ? <SourceIcon source={source} /> : null}
+            <MoreHorizontal className="size-4" aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {OVERFLOW_SOURCES.map((key) => (
+            <DropdownMenuItem key={key} onSelect={selectFrom(key)}>
+              <SourceIcon source={key} />
+              {sourceLabel(key)}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
+  );
+  const other =
+    source === "trash" ? (
+      <TrashSource projectId={projectId} />
+    ) : source === "scratch" ? (
+      <ScratchSource projectId={projectId} threadId={chatThreadId} editorWorkId={editorWorkId} />
+    ) : undefined;
+
+  return (
+    <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
+      {contextLive ? (
+        <ContextTreePanel
+          projectId={projectId}
+          editorWorkId={editorWorkId}
+          activeScheme={activeScheme}
+          activePath={activePath}
+          onSelectFile={onSelectFile}
+          only={source === "trash" || source === "scratch" ? undefined : source}
+          tabs={tabs}
+          body={other}
+        />
+      ) : (
+        <>
+          {tabs()}
+          {other}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A tree source's tab: a drop lands at the source's root, and a drag that rests opens it. */
+function TreeSourceTab({
+  source,
+  rootId,
+  active,
+  onSelect,
+}: {
+  source: Exclude<SourceKey, "trash" | "scratch">;
+  rootId: string;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const target = useMemo<TreeDropTarget>(
+    () => ({ scheme: source, catalogRootId: rootId, folder: null }),
+    [source, rootId],
+  );
+  const drop = useTreeDropTarget(target, { reveal: onSelect });
+  return (
+    <SourceTab
+      source={source}
+      active={active}
+      onSelect={onSelect}
+      dropProps={drop.dropProps}
+      lit={drop.dropState === "over"}
+    />
   );
 }
 
@@ -141,11 +184,16 @@ function SourceTab({
   active,
   onSelect,
   onDropTrash,
+  dropProps,
+  lit = false,
 }: {
   source: SourceKey;
   active: boolean;
   onSelect: () => void;
   onDropTrash?: () => void;
+  /** The tree's drop handlers, for a tab that drops at its source's root. */
+  dropProps?: HTMLAttributes<HTMLElement>;
+  lit?: boolean;
 }) {
   const spring = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [over, setOver] = useState(false);
@@ -164,7 +212,9 @@ function SourceTab({
           aria-selected={active}
           aria-label={sourceLabel(source)}
           onClick={onSelect}
+          {...dropProps}
           onDragOver={(event) => {
+            if (dropProps) return dropProps.onDragOver?.(event);
             if (!activeDragSession()) return;
             if (onDropTrash) acceptEntryDrag(event);
             if (spring.current || active) return;
@@ -174,8 +224,9 @@ function SourceTab({
               onSelect();
             }, SPRING_OPEN_MS);
           }}
-          onDragLeave={cancelSpring}
+          onDragLeave={dropProps?.onDragLeave ?? cancelSpring}
           onDrop={(event) => {
+            if (dropProps) return dropProps.onDrop?.(event);
             cancelSpring();
             if (!onDropTrash) return;
             event.preventDefault();
@@ -186,7 +237,7 @@ function SourceTab({
             active
               ? "bg-sidebar-accent text-foreground"
               : "text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
-            over && "bg-sidebar-accent ring-1 ring-border-focus ring-inset",
+            (over || lit) && "bg-sidebar-accent ring-1 ring-border-focus ring-inset",
           )}
         >
           <SourceIcon source={source} />
