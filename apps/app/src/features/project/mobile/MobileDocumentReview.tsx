@@ -76,7 +76,7 @@ export function MobileDocumentReview({
         ) : (
           <LiveDraftEntry documentId={documentId} manuscriptState={manuscriptState} />
         )}
-        <DocumentDraftHint projectId={projectId} tab={tab} variant="line" />
+        <DocumentDraftHint projectId={projectId} tab={tab} />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {itemKey ? (
           <ReviewBottom header={header} listOpen={listOpen} onListOpenChange={setListOpen} />

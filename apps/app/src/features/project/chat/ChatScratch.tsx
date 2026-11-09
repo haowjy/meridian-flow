@@ -277,7 +277,7 @@ function ChatScratchTree({
     Boolean(primary.catalog?.children(primary.catalog.root.entryId).length) || hasEarlier;
   return (
     <>
-      <TreeGroup>
+      <TreeGroup depth={1}>
         {hasEarlier && earlier.catalog && scratch.earlierRootThreadId ? (
           <div>
             <RailFolderRow
@@ -288,7 +288,7 @@ function ChatScratchTree({
               onToggle={() => expansion.toggleEntry(EARLIER_NOTES_ID)}
             />
             {expansion.isExpanded(EARLIER_NOTES_ID) ? (
-              <TreeGroup>
+              <TreeGroup depth={2}>
                 <ScratchCatalog
                   projectId={projectId}
                   catalog={earlier.catalog}

@@ -475,7 +475,7 @@ function SchemeSection({
           <div className={pane ? "min-h-0 overflow-y-auto overflow-x-hidden pb-1" : undefined}>
             {catalog && importedTree && env ? (
               <TreeEnvProvider value={env}>
-                <TreeGroup>
+                <TreeGroup depth={1}>
                   <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
                 </TreeGroup>
               </TreeEnvProvider>
