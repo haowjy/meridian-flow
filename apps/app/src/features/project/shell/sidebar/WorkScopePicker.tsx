@@ -43,7 +43,7 @@ export function WorkScopePicker({
   const active = works?.filter((work) => work.archivedAt === null) ?? [];
   const archived = works?.filter((work) => work.archivedAt !== null) ?? [];
   const scoped = works?.find((work) => work.id === workId) ?? null;
-  const noWorkScoped = scoped === null && (workId === null || workId === noWork?.id);
+  const noWorkScoped = workId !== null && workId === noWork?.id;
   const pending = scoped?.pendingDocumentCount ?? 0;
 
   return (
@@ -54,22 +54,22 @@ export function WorkScopePicker({
           className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md border border-border-subtle bg-background/40 px-2 text-left text-[13px] hover:bg-background/70"
         >
           <Layers className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
-          {noWorkScoped ? (
-            <span className="min-w-0 flex-1 truncate text-ink-muted">
-              <Trans>No Work</Trans>
-            </span>
-          ) : (
+          {scoped ? (
             <span className="min-w-0 flex-1 truncate">
               <span className="text-ink-muted">
                 <Trans>Work</Trans>
               </span>{" "}
-              <span className="font-medium">{scoped?.name ?? t`Loading…`}</span>
+              <span className="font-medium">{scoped.name}</span>
+            </span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-ink-muted">
+              {noWorkScoped ? <Trans>No Work</Trans> : <Trans>Loading Works…</Trans>}
             </span>
           )}
           {pending > 0 ? (
             <span
               className="rounded-full bg-primary/12 px-1.5 text-[11px] font-medium text-primary tabular-nums"
-              title={t`${pending} documents with changes`}
+              title={t`${pending} documents to review`}
             >
               {pending}
             </span>
@@ -156,14 +156,13 @@ function PickRow({
   );
 }
 
-/** Only state that asks for action: pending changes and chats waiting on the writer. */
+/** Only state that asks for action: documents to review and chats waiting on the writer. */
 function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
-  const changes = work.pendingDocumentCount;
-  if (changes === 0 && needsYou === 0) return null;
+  const toReview = work.pendingDocumentCount;
+  if (toReview === 0 && needsYou === 0) return null;
   return (
-    <span className="shrink-0 text-[11px] text-ink-muted tabular-nums">
-      {changes > 0 ? <Trans>{changes} changes</Trans> : null}
-      {changes > 0 && needsYou > 0 ? " · " : null}
+    <span className="flex shrink-0 gap-2 text-[11px] text-ink-muted tabular-nums">
+      {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
         <span className="text-primary">
           <Trans>{needsYou} needs you</Trans>

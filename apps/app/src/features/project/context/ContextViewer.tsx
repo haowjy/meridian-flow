@@ -12,7 +12,7 @@ import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { type ReactNode, useEffect, useRef } from "react";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -28,6 +28,7 @@ import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
 import type { ContextPaneState } from "./context-pane-state";
+import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
@@ -175,6 +176,22 @@ export function ContextViewer({
         recentsActive={paneState.kind === "empty-workspace"}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
+        state={
+          activeTab ? (
+            // Keyed by tab so edit state never crosses tabs.
+            <DocumentIdentityBar
+              key={activeTab.tabInstanceId ?? activeTab.documentId}
+              variant="state"
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              tab={activeTab}
+              readOnly={fileFrozen}
+              onCloseDraftOnly={isDraftOnly(activeTab) ? () => onCloseTab(activeTab) : undefined}
+              onCommitted={onCommitted}
+              onOpenExisting={onOpenExisting}
+            />
+          ) : null
+        }
         // With no tab left the landing's top margin holds it instead.
         notice={
           tabs.length > 0 ? <RemovedDocumentChip projectId={projectId} surface="editor" /> : null
@@ -200,8 +217,7 @@ export function ContextViewer({
               projectId={projectId}
               tab={activeTab}
               archivedWork={editorFrozen ? archivedEditorWork : null}
-              onCloseTab={onCloseTab}
-              identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
+              reviewNotices
             />
           ) : null}
           {/* The TRACKED editor host stays mounted while ANY tracked tab is
