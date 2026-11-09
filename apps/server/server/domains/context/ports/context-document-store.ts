@@ -10,7 +10,6 @@
  */
 import type { ProjectId } from "@meridian/contracts";
 import type {
-  ContextParentOrderPolicy,
   ContextSiblingPosition,
   DocumentFileType,
   Filetype,
@@ -33,7 +32,6 @@ export interface ContextFolder {
   parentId: string | null;
   name: string;
   rank?: string | null;
-  orderPolicy?: ContextParentOrderPolicy;
 }
 
 export interface ContextDocument {
@@ -136,7 +134,6 @@ export interface ContextDocumentStore {
   findDocumentLastLocation(
     documentId: string,
   ): Promise<{ path: string; name: string; deleted: boolean } | null>;
-  parentOrderPolicy(view: TreeView, parentId: string | null): Promise<"default" | "manual">;
   /** Every folder and document the view shows in this source, in one pass. */
   listTree(view: TreeView): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }>;
   /** The rendered filenames of every folder and document directly under `parentId`. */

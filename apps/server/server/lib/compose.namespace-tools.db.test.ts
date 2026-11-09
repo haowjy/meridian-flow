@@ -101,8 +101,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scope: "work",
       });
       await db.insert(schema.documents).values([
-        { id: CH1, contextSourceId: SOURCE_ID, name: "ch1", extension: "", fileType: "markdown" },
-        { id: CH2, contextSourceId: SOURCE_ID, name: "ch2", extension: "", fileType: "markdown" },
+        {
+          id: CH1,
+          contextSourceId: SOURCE_ID,
+          name: "ch1",
+          extension: "",
+          fileType: "markdown",
+          rank: "a0",
+        },
+        {
+          id: CH2,
+          contextSourceId: SOURCE_ID,
+          name: "ch2",
+          extension: "",
+          fileType: "markdown",
+          rank: "a1",
+        },
         {
           id: SCRATCH_NOTE,
           contextSourceId: SCRATCH_SOURCE,

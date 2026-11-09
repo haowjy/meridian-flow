@@ -77,6 +77,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "chapter",
           extension: "",
           fileType: "markdown",
+          rank: "a1",
         },
         {
           id: NOTES_ID,
@@ -149,6 +150,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.folders).values({
         contextSourceId: MANUSCRIPT_ID,
         name: "scenes",
+        rank: "a0",
       });
       await db.insert(schema.documents).values({
         id: data,
@@ -156,6 +158,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "outline",
         extension: "json",
         fileType: "json",
+        rank: "a2",
       });
       const manuscriptCall = await call("ls", { path: "manuscript://" });
       expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
