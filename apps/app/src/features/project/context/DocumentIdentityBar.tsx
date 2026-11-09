@@ -15,7 +15,6 @@ import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
-import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
@@ -268,9 +267,6 @@ export function DocumentIdentityBar({
               />
             )}
             {version}
-            {!reviewItemKey && !reviewPending ? (
-              <DraftReviewChip documentId={tab.documentId} />
-            ) : null}
             <ManuscriptStateSlot state={manuscriptState} className="ml-1" />
             {/* List failures are passive: an icon whose tooltip says where to act. */}
             {repair && !placementOpen && !repairable ? (
@@ -287,6 +283,11 @@ export function DocumentIdentityBar({
                 setFieldOpen(true);
               }}
             />
+            {reviewItemKey || reviewPending ? null : (
+              <span className="ml-auto flex shrink-0 pl-2">
+                <DocumentVersionMenu projectId={projectId} tab={tab} />
+              </span>
+            )}
           </div>
         </div>
         {/* Before the controls in DOM order: Tab follows the first line, then the second. */}
