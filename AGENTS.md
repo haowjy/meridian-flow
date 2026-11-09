@@ -120,15 +120,10 @@ each other, and the piece's worktree, stack and processes go as soon as it's in.
 carries the integration branch into `main`.
 
 A fix restores intended behavior; changing what writers are meant to see is a feature.
-A feature waits for the owner. Nothing else needs his approval to start or merge, big
-changes included. Before a merge, CI is green, the regressions the change could cause are
-tested, and the PR body is reread against the final diff, with evidence from the commit being
-merged. A big fix or refactor also needs an independent review.
-
-A change is big when it changes how a part of the system is designed: a new architecture, a
-reorganization, or a rewrite of how a subsystem works. What it touches doesn't make it big: a
-schema change, a migration, a contract, the wire protocol, a stored format or several domains
-can each be a small change. The invariants above still apply to every change.
+A feature waits for the owner. Nothing else needs his approval to start or merge. Before a
+merge, CI is green, the regressions the change could cause are tested, and the PR body is reread
+against the final diff, with evidence from the commit being merged. Whether a change also gets
+an independent review is your call.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with
