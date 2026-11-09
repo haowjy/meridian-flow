@@ -9,12 +9,16 @@
  * crumb, Recent row, receipt or Uploads entry), waits for the writer's choice
  * at the drop point, Move or Copy (see `drop-choice.ts`).
  */
+import type { DocumentTrashEntry, ListDocumentTrashResponse } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
 } from "../account-feature-context";
+import { useDocumentTrashRestore } from "../DocumentTrashRestoreProvider";
 import {
   type EntriesRoute,
   type EntriesVerdict,
@@ -44,6 +48,7 @@ import {
   type ReadyMove,
   resolveDrop,
 } from "./move-plan";
+import { planRestore, restoreLabel } from "./restore-drop";
 import {
   type EntrySelection,
   EntrySelectionProvider,
@@ -75,6 +80,8 @@ export function useEntryList({
   areas: readonly MoveArea[];
 }): EntryListController {
   const resources = useAccountResourceReplica();
+  const queryClient = useQueryClient();
+  const { restoreInto } = useDocumentTrashRestore();
   const { works, noWork } = useWorks(projectId);
   const projection = useAccountResourceProjection(projectId);
   const selection = useEntrySelection();
@@ -107,7 +114,25 @@ export function useEntryList({
       const view = moveView(latest.current);
       return { drag, view, resolved: resolveDrop(view, drag, target) };
     };
+    // Trash rows the drag carries, as Trash lists them now; a row Trash no longer lists is gone.
+    const trashed = (drag: NonNullable<ReturnType<typeof activeDragSession>>) => {
+      const listed =
+        queryClient.getQueryData<ListDocumentTrashResponse>(
+          projectQueryKeys.documentTrash(projectId),
+        )?.documents ?? [];
+      const entries = drag.entries.flatMap(({ ref }) => {
+        const found = listed.find(({ documentId }) => documentId === ref.id);
+        return found ? [found] : [];
+      });
+      return entries.length === drag.entries.length ? entries : ([] as DocumentTrashEntry[]);
+    };
     const judge = (target: Parameters<EntriesRoute["verdict"]>[0]): EntriesVerdict | null => {
+      const dragging = activeDragSession();
+      if (dragging?.source === "trash") {
+        const plan = planRestore(moveView(latest.current), trashed(dragging), target);
+        if (plan.kind === "refuse") return { kind: "refuse", label: plan.label };
+        return plan.kind === "ready" ? { kind: "accept", label: restoreLabel(plan) } : null;
+      }
       const drop = resolve(target);
       const resolved = drop?.resolved;
       if (!drop || !resolved) return null;
@@ -151,6 +176,13 @@ export function useEntryList({
         return verdict;
       },
       drop(target, point) {
+        const dragging = activeDragSession();
+        if (dragging?.source === "trash") {
+          const plan = planRestore(moveView(latest.current), trashed(dragging), target);
+          if (plan.kind === "ready")
+            restoreInto(plan.entries, plan.destination, plan.destinationName);
+          return;
+        }
         const drop = resolve(target);
         const resolved = drop?.resolved;
         if (!drop || !resolved) return;
@@ -169,7 +201,7 @@ export function useEntryList({
         if (planned.kind === "ready") runListMove(planned);
       },
     };
-  }, [runListMove]);
+  }, [projectId, queryClient, restoreInto, runListMove]);
 
   const choice = useMemo<DropChoiceState | null>(() => {
     if (!pending) return null;

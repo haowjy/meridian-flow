@@ -1,11 +1,16 @@
 /** What a list row needs to be selectable and draggable. */
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { startEntryDrag } from "./drag-session";
-import type { DragEntry } from "./entry";
+import type { DragEntry, DragSource } from "./entry";
 import { useEntrySelectionRow } from "./selection";
 
 /** `draggable` is false for a row that names nothing a drag could act on (a navigation-only folder). */
-export function useEntryRow(entry: DragEntry, active: boolean, draggable = true) {
+export function useEntryRow(
+  entry: DragEntry,
+  active: boolean,
+  draggable = true,
+  source: DragSource = "list-row",
+) {
   const { selection, selected, rowProps } = useEntrySelectionRow(entry, active);
   return {
     selected,
@@ -14,7 +19,7 @@ export function useEntryRow(entry: DragEntry, active: boolean, draggable = true)
       draggable: Boolean(selection?.draggable && draggable),
       onDragStart: (event: DragEvent) => {
         event.stopPropagation();
-        startEntryDrag(event, selection ? selection.dragged(entry) : [entry], "list-row");
+        startEntryDrag(event, selection ? selection.dragged(entry) : [entry], source);
       },
     },
     /** A selection gesture (Ctrl/Cmd or Shift) selects instead of opening or toggling. */

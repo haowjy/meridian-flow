@@ -39,6 +39,8 @@ import {
 } from "./context-row-geometry";
 import { schemeLabel } from "./context-schemes";
 import { type TrashRestoreState, useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
+import { trashDragEntry } from "./entry-drag/entry";
+import { useEntryRow } from "./entry-drag/use-entry-row";
 import { useOpenProjectDocument } from "./open-project-document";
 import { type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
 import type { TrashRestoreOutcome } from "./restore-trashed-document";
@@ -324,6 +326,8 @@ function TrashRow({
   const location = `${schemeLabel(entry.scheme)}/${entry.formerPath}`;
   const age = relativeTime(entry.removal.time, now);
   const restoring = state?.kind === "restoring";
+  // Inside a tree's selection scope the row selects and drags like a tree row, to be restored where it lands.
+  const row = useEntryRow(trashDragEntry(entry), selected, !restoring, "trash");
   return (
     <div>
       {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
@@ -331,11 +335,12 @@ function TrashRow({
         role="button"
         tabIndex={0}
         aria-current={selected ? "true" : undefined}
-        onClick={onOpen}
+        {...row.rowProps}
+        onClick={row.activate(onOpen)}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
-          onOpen();
+          row.activate(onOpen)(event);
         }}
         className={cn(contextTreeFileRowClassName(selected), "py-1.5 pl-2")}
       >

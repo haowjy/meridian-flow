@@ -41,6 +41,10 @@ import {
   refusedMoveDestination,
 } from "@/client/query/context-catalog-projection";
 import { useIsThreadPendingCreation } from "@/client/stores";
+import {
+  overlayPendingRestores,
+  usePendingRestores,
+} from "@/client/trash-restore/pending-restores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
   useAccountResourceProjection,
@@ -429,6 +433,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   }, [schemes, scopeFor]);
   const resources = useOptionalAccountResourceReplica();
   const { records, folders, snapshot, placement, error } = useAccountResourceProjection(projectId);
+  const restoring = usePendingRestores(projectId);
   const combine = useCallback(
     (queries: UseQueryResult<CatalogCacheView>[]) => {
       const results = {} as Record<S, CatalogViewResult>;
@@ -454,7 +459,11 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
           if (!requested || !sameCatalogProjectionScope(requested, scope)) continue;
           results[scheme] = {
             catalog: projected
-              ? projectCatalogView(projectId, scheme, projected, placement, records, folders)
+              ? overlayPendingRestores(
+                  projectCatalogView(projectId, scheme, projected, placement, records, folders),
+                  scheme,
+                  restoring,
+                )
               : null,
             isComplete: resources ? Boolean(checkpoint) : Boolean(query.data),
             isError: query.isError || error !== null,
@@ -475,7 +484,19 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
       }
       return results;
     },
-    [projectId, schemes, scopeFor, scopes, resources, records, folders, snapshot, placement, error],
+    [
+      projectId,
+      schemes,
+      scopeFor,
+      scopes,
+      resources,
+      records,
+      folders,
+      snapshot,
+      placement,
+      error,
+      restoring,
+    ],
   );
   return useQueries({
     queries: scopes.map((scope) => ({
