@@ -119,9 +119,10 @@ in several pieces gets one integration branch: each finished piece bases on it a
 it, instead of PRs stacked on each other, and the piece's worktree, stack and processes go as
 soon as it's in. One PR carries the integration branch into `main`.
 
-Before a merge, CI is green, the regressions the change could cause are tested, and the PR body
-is reread against the final diff, with evidence from the commit being merged. Whether a change
-also gets an independent review is your call.
+A PR merges as soon as it is complete and a reviewer has approved it: another model, or the
+owner. Before the merge, CI is green, the regressions the change could cause are tested, and the
+PR body is reread against the final diff, with evidence from the commit being merged. Don't hold
+a finished PR for the owner: he uses the app, and what he finds wrong becomes a follow-up PR.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with
