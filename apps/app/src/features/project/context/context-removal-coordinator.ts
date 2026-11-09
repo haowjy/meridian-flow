@@ -1,6 +1,6 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
-import { parseDraftOwnerKey } from "@meridian/contracts/branches";
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { LiveDocumentSessionAuthority, WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
@@ -1079,8 +1079,7 @@ export class ContextRemovalCoordinator {
   ): void {
     const state = this.projects.get(projectId);
     if (!state || !reviewEntryOf(tab, ownerKey)) return;
-    const owner = parseDraftOwnerKey(ownerKey);
-    const workId = owner?.kind === "work" ? owner.id : state.activeWorkId;
+    const workId = workIdOfDraftOwnerKey(ownerKey) ?? state.activeWorkId;
     if (!workId) return;
     state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, workId)));
   }

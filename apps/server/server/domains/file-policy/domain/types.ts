@@ -219,8 +219,11 @@ export interface FileGrant<N extends FileNeed = FileNeed> {
     : N extends "discard"
       ? { read: true; discard: true }
       : { read: true };
-  /** What `confirmEdit` re-checks. */
-  readonly need: N;
+  /**
+   * What `confirmEdit` re-checks. Typed `FileNeed`, not `N`, so a wider grant
+   * still satisfies `FileGrant<"read">`; the brand alone carries `N`.
+   */
+  readonly need: FileNeed;
   readonly principal: Principal;
   /** What was granted; `facts.target` names it. */
   readonly facts: FileFacts;
