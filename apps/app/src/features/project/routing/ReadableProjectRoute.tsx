@@ -20,6 +20,7 @@ import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
+import { useCurrentWork, writeCurrentWork } from "@/client/current-work";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
@@ -189,9 +190,17 @@ function ReadableProjectDestination({
   });
   const chatThreadId = chatSurfaceThreadId(chat.display);
   const displayedChat = threads.threads?.find((thread) => thread.id === chatThreadId) ?? null;
-  const rememberedEditor = useRef<string | undefined>(undefined);
+  // The tab's Work scope is the Editor's Work when the address names none. A stale id is no seed.
+  const scopeId = useCurrentWork(user.userId, projectId);
+  const rememberedEditor =
+    scopeId &&
+    (scopeId === noWorkId ||
+      workCatalog.entries?.some((work) => work.id === scopeId) ||
+      workCatalog.creations.has(scopeId))
+      ? scopeId
+      : undefined;
   const requestedWork = addressWorkSelection(address);
-  const editorSeed = rememberedEditor.current ?? displayedChat?.workId;
+  const editorSeed = rememberedEditor ?? displayedChat?.workId;
   // Chat may seed a genuinely absent Editor context once, never rebind it after navigation.
   const editorSelection: Exclude<AddressSelection, { kind: "absent" }> =
     activeScreen === "context" && requestedWork.kind !== "absent"
@@ -200,7 +209,7 @@ function ReadableProjectDestination({
         ? workSelectionFor({ kind: "editor" }, editorSeed, noWorkId)
         : { kind: "none" };
   const editorDefaultPending =
-    rememberedEditor.current === undefined &&
+    rememberedEditor === undefined &&
     !(activeScreen === "context" && requestedWork.kind !== "absent") &&
     editorDefaultWorkPending({
       workCatalogReady: workCatalog.status === "ready",
@@ -347,7 +356,7 @@ function ReadableProjectDestination({
         local: localPointer,
       };
       if (activeScreen === "context" && workId && !routeWorkIssue(editorWork))
-        rememberedEditor.current = workId;
+        writeCurrentWork(user.userId, projectId, workId);
     },
     [activeScreen, editorWork.status, address.destination, localPointer, noWorkId],
   );
@@ -985,7 +994,7 @@ function ReadableProjectDestination({
         ...toDestination({ kind: next === "work" ? "works" : "editor" }),
         work: workSelectionFor(
           { kind: next === "work" ? "works" : "editor" },
-          rememberedEditor.current ?? workId ?? undefined,
+          rememberedEditor ?? workId ?? undefined,
           noWorkId,
         ),
       },
