@@ -1503,7 +1503,11 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/ComposerWorkControl.tsx
-msgid "Change work for this chat, currently {0}"
+#~ msgid "Change work for this chat, currently {0}"
+#~ msgstr ""
+
+#: src/features/chat/ComposerWorkControl.tsx
+msgid "Change work for this chat, currently {name}"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -1619,6 +1623,10 @@ msgstr ""
 #: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Chats in this Work share its goal and scratch files."
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Chats without a Work"
 msgstr ""
 
 #: src/features/import/import-presentation.ts
@@ -4011,7 +4019,6 @@ msgid "New chat"
 msgstr "新对话"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/features/project/context/SourceHeading.tsx
 msgid "New document"
 msgstr ""
 
@@ -4023,14 +4030,13 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/context/SourceHeading.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New folder"
 msgstr ""
 
 #: src/features/project/context/SourceHeading.tsx
-msgid "New in {label}"
-msgstr ""
+#~ msgid "New in {label}"
+#~ msgstr ""
 
 #: src/features/project/work/WorkFilesView.tsx
 msgid "New note"
@@ -4179,8 +4185,8 @@ msgstr ""
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "No Work"
-msgstr "无 Work"
+#~ msgid "No Work"
+#~ msgstr "无 Work"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work matches your search."
@@ -4188,6 +4194,14 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
+msgstr ""
+
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/ask/permission-request.ts
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+#: src/lib/work-name.ts
+msgid "None"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
@@ -5149,6 +5163,7 @@ msgstr "将状态设为「{status}」"
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/BillingPage.tsx
+#: src/features/project/shell/LeftSidebar.tsx
 #: src/features/project/shell/ProjectMenu.tsx
 msgid "Settings"
 msgstr ""
@@ -5965,7 +5980,7 @@ msgstr ""
 msgid "This chat continues without a brief."
 msgstr ""
 
-#. placeholder {0}: commit.work.name
+#. placeholder {0}: workDisplayName(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat now uses {0}."
 msgstr ""
@@ -5985,7 +6000,7 @@ msgid "This chat's current Work could not be found. Refresh the page and try aga
 msgstr ""
 
 #. placeholder {0}: outcome.currentWork.name
-#. placeholder {0}: work.name
+#. placeholder {0}: workDisplayName(work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's Work changed to {0}"
 msgstr ""
@@ -6319,7 +6334,8 @@ msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
-#: src/features/project/shell/LeftSidebar.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Trash"
 msgstr ""
@@ -6559,8 +6575,8 @@ msgid "Usage"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
-msgid "User"
-msgstr ""
+#~ msgid "User"
+#~ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Versions of this document"
@@ -6761,6 +6777,10 @@ msgstr ""
 msgid "your files"
 msgstr ""
 
+#: src/features/project/context/context-schemes.ts
+msgid "Your files"
+msgstr ""
+
 #: src/features/import/ImportPanel.tsx
 msgid "Your imports in this project, with their controls."
 msgstr ""
@@ -6802,7 +6822,11 @@ msgid "Your selected Agent is unavailable. Choose another Agent."
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Your selected Work is unavailable. Choose another Work or No Work."
+#~ msgid "Your selected Work is unavailable. Choose another Work or No Work."
+#~ msgstr ""
+
+#: src/features/chat/CreationComposer.tsx
+msgid "Your selected Work is unavailable. Choose another Work, or None."
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx

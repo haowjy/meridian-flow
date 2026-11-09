@@ -21,7 +21,7 @@ export function TrashSource({ projectId }: { projectId: string }) {
   const entries = query.data?.documents ?? [];
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: a drop is a pointer shortcut for each row's Delete.
+    // biome-ignore lint/a11y/noStaticElementInteractions: a drop is a pointer shortcut for each row's Delete. slop-lint: allow suppression the reason is stated in this comment
     <div
       className={cn(
         "flex min-h-0 flex-1 flex-col rounded-md transition-colors",
