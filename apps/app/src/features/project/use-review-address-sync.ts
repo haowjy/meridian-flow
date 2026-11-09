@@ -1,11 +1,11 @@
 /**
- * Write's URL and the selected tab's review pin, kept in step. An address arriving (a review link,
- * Back to a review) is a command: it sets the tab's pin, or clears it when the address names no
- * review. After that the tab is the owner and the URL follows it, so a pin the writer changes (a
+ * Write's URL and the selected tab's review pin, kept in step. An address arriving (a link, a
+ * reload, Back) is a command: it selects the tab of the document it names, then sets that tab's
+ * pin, or clears it when the address names no review. After that the tab is the owner and the URL follows it, so a pin the writer changes (a
  * Live choice, the focused change) rewrites the address in place.
  */
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { tabKey, useContextTabsStore } from "@/client/stores";
+import { getContextTabs, selectedTabOf, tabKey, useContextTabsStore } from "@/client/stores";
 import type { OpenDocumentTab } from "./open-documents";
 import { type ReviewAddressAdmission, reviewAddress } from "./presented-document";
 
@@ -40,9 +40,17 @@ export function useReviewAddressSync({
   const pin = selected?.tab.reviewPin;
 
   useLayoutEffect(() => {
-    if (!writing || key === null || locationKey === undefined || arrived.current === locationKey)
+    if (!writing || locationKey === undefined || arrived.current === locationKey) return;
+    if (address.documentId !== documentId) {
+      // The address names a document other than the selected tab's: the address wins over the
+      // persisted selection, so select the tab it names. With no tab yet, the route installs one.
+      const named = address.documentId
+        ? getContextTabs(projectId).tabs.find((tab) => tab.documentId === address.documentId)
+        : undefined;
+      if (named) void useContextTabsStore.getState().selectTab(projectId, named.documentId, named);
       return;
-    if (address.documentId !== documentId) return;
+    }
+    if (key === null) return;
     if (address.itemKey && (address.admission !== "admitted" || !editorWorkId)) return;
     arrived.current = locationKey;
     const next =
@@ -68,8 +76,15 @@ export function useReviewAddressSync({
   const pinnedChange = pin?.changeId;
   useEffect(() => {
     if (!writing || key === null || arrived.current !== locationKey) return;
-    if ((address.itemKey ?? null) === pinnedItem && address.changeId === pinnedChange) return;
-    writeItemKey(pinnedItem, pinnedChange);
+    // The store, not this render's pin: the arrival above set the pin in this same commit, and the
+    // render's older pin would write the address back to what the arrival replaced.
+    const live = selectedTabOf(getContextTabs(projectId))?.reviewPin;
+    if (
+      (address.itemKey ?? null) === (live?.itemKey ?? null) &&
+      address.changeId === live?.changeId
+    )
+      return;
+    writeItemKey(live?.itemKey ?? null, live?.changeId);
   }, [
     writing,
     key,
@@ -79,5 +94,6 @@ export function useReviewAddressSync({
     pinnedItem,
     pinnedChange,
     writeItemKey,
+    projectId,
   ]);
 }

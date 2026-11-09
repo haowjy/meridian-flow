@@ -52,6 +52,8 @@ export function ReviewAddressOwner({
     const inline = review.controller.inlineReview;
     if (inline) {
       restoring.current = null;
+      if (requested === null && presented?.draftView && presented.documentId === inline.documentId)
+        return;
       const names =
         requested !== null &&
         presented?.documentId === inline.documentId &&
