@@ -16,6 +16,7 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
+import { useToolbarSlotRef } from "@/features/editor/toolbar-slot";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
@@ -144,6 +145,7 @@ export function DocumentIdentityBar({
   // Only a provisional placement can be repaired here.
   const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, tab);
+  const toolbarSlotRef = useToolbarSlotRef();
 
   const renderRow = (version: ReactNode, controls: ReactNode) => (
     <div
@@ -175,7 +177,7 @@ export function DocumentIdentityBar({
         )}
       >
         {/* One unit for wrapping: the commands never part from the path. */}
-        <div className="flex min-w-0 flex-auto items-center gap-1">
+        <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-1">
           {leading ? <div className="flex shrink-0 items-center gap-0.5">{leading}</div> : null}
           <div data-identity-main className="flex min-w-0 flex-auto items-center gap-1">
             {placementOpen ? (
@@ -232,6 +234,9 @@ export function DocumentIdentityBar({
             />
           </div>
         </div>
+        {variant === "band" && toolbarSlotRef ? (
+          <div ref={toolbarSlotRef} className="ml-auto flex shrink-0 items-center font-sans" />
+        ) : null}
         {/* Before the controls in DOM order: Tab follows the first line, then the second. */}
         {trailing ? (
           <div className="absolute top-0 right-2 flex h-10 items-center gap-0.5 [@media(pointer:coarse)]:h-11">
