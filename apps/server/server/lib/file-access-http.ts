@@ -29,7 +29,7 @@ function personPrincipal(userId: string): Principal {
 }
 
 /** 404 hides existence; an archived Work's files are 403 `work_archived`. */
-function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
+export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
   switch (denial.reason) {
     case "not_found":
       throw createError({ statusCode: 404, message: "Document not found" });

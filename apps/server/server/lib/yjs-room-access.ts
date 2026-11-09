@@ -1,5 +1,5 @@
 /**
- * Live Yjs connections by the owners (Works, or lineages as `lineage:<root>`) their file access depends on (file-access
+ * Live Yjs connections by the owners (Works and lineages, keyed by `draftOwnerKey`) their file access depends on (file-access
  * §7). A Work's archive, unarchive, delete or restore reaches exactly the rooms
  * of its own files, its scratch and its drafts, and no manuscript, kb or user
  * room. Draft rooms are named by draft id, so room names can't answer this.

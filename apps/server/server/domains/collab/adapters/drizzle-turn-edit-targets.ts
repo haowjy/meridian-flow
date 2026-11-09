@@ -8,11 +8,12 @@
  * read and reversed. Final address liveness stays with the lineage reader.
  */
 
+import { draftOwnerKey } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentEditParts, documentEdits } from "@meridian/database";
 import { branches, documentDrafts } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
-import { branchOwnerSql, ownerKeyOfColumns } from "../../../shared/draft-owner.js";
+import { branchOwnerSql, ownerOfColumns } from "../../../shared/draft-owner.js";
 import { livingOrOutlivedSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId } from "../domain/turn-live-lineage.js";
@@ -84,8 +85,10 @@ export async function readTurnEditTargets(
       targets.set(`${row.documentId}:live`, { documentId: row.documentId, scope: "live" });
       continue;
     }
-    const ownerKey = ownerKeyOfColumns(row);
-    if (!ownerKey || !row.branchId) continue;
+    if (!row.branchId || !row.projectId) continue;
+    const owner = ownerOfColumns({ ...row, projectId: row.projectId });
+    if (!owner) continue;
+    const ownerKey = draftOwnerKey(owner);
     const key = `${row.documentId}:draft:${ownerKey}`;
     const known = targets.get(key);
     if (known?.scope === "draft") {
@@ -95,13 +98,7 @@ export async function readTurnEditTargets(
     targets.set(key, {
       documentId: row.documentId,
       scope: "draft",
-      owner: row.workId
-        ? { kind: "work", workId: row.workId }
-        : {
-            kind: "lineage",
-            projectId: row.projectId as string,
-            rootThreadId: row.rootThreadId as string,
-          },
+      owner,
       ownerHandle: row.handle,
       branchIds: [row.branchId],
     });

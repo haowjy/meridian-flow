@@ -76,7 +76,7 @@ A `branches` row is one owner's pending file tree. The owner is a Work
 (`origin_work_id`) or, for a chat with no Work, a conversation lineage
 (`origin_root_thread_id`, no foreign key): exactly one while the branch is active
 (`branches_one_owner`). `branches.pending_document_count` is the branch's own
-count; `works.pending_document_count` sums its active branches. Migration 0129
+count; `works.pending_document_count` sums its active branches. Migration 0131
 closed empty No Work branches, moved single-lineage ones to their lineage, and left
 the rest on the No Work row as legacy branches (reviewable and discardable, no new
 writes). It moves a branch only when every author it ever recorded (open, applied and
