@@ -19,8 +19,8 @@
 @custom-variant focus-visible (:root[data-focus-keys] &:focus-visible);
 /* A trigger whose menu, popover or listbox is open. Keyed on aria-expanded, which
    a wrapping Tooltip can't overwrite the way it does data-state; aria-haspopup
-   keeps plain disclosures (expanded sections) out. */
-@custom-variant popup-open (&[aria-haspopup]:not([aria-haspopup="false"])[aria-expanded="true"]);
+   (implicit on a combobox) keeps plain disclosures (expanded sections) out. */
+@custom-variant popup-open (&:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"]);
 
 @theme {
   --container-chat-column: 56rem;
@@ -764,6 +764,8 @@
   --color-accent: var(--color-shelf-hover);
   --color-muted: var(--color-shelf-muted);
   --color-destructive: var(--color-shelf-destructive);
+  /* An open trigger on the rail wears the rail's hover, not the page's. */
+  --color-dropdown-hover: var(--color-shelf-hover);
 }
 
 /*
