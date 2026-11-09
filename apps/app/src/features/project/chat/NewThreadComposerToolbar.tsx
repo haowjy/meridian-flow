@@ -140,7 +140,7 @@ function useProspectiveWorkControl({
         : { status: "ready" as const, works, noWork, refreshing: false };
   const view = deriveWorkPickerViewModel(catalog, query, false);
 
-  const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`No Work`;
+  const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`None`;
   const label = work
     ? t`Choose Work for new chat, currently ${work.name}`
     : t`Choose Work for new chat, currently ${unavailableLabel}`;

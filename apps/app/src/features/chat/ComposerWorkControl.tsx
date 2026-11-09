@@ -1,4 +1,5 @@
 /** Work toolbar adapter over the single typed Work binding controller. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
@@ -12,6 +13,7 @@ import {
   deriveWorkPickerViewModel,
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
+import { workDisplayName } from "@/lib/work-name";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
 
 export function useComposerWorkToolbarControl({
@@ -32,22 +34,23 @@ export function useComposerWorkToolbarControl({
   const view = deriveWorkPickerViewModel(controller.catalog, query, controller.busy);
   const pageId = view.status;
   const noneSelected = work.isNoWork;
+  const name = workDisplayName(work);
   return {
     kind: "panel",
     id: "work",
     priority: 100,
     interaction: controller.busy ? "busy" : "enabled",
     item: {
-      ariaLabel: t`Change work for this chat, currently ${work.name}`,
+      ariaLabel: t`Change work for this chat, currently ${name}`,
       label: <Trans>Work</Trans>,
-      value: work.name,
+      value: name,
     },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger
         binding={trigger}
-        ariaLabel={t`Change work for this chat, currently ${work.name}`}
+        ariaLabel={t`Change work for this chat, currently ${name}`}
       >
-        <WorkIdentity name={work.name} unavailableLabel={t`Unavailable`} />
+        <WorkIdentity name={name} unavailableLabel={t`Unavailable`} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {

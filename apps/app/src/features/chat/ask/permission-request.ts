@@ -58,7 +58,7 @@ export function permissionRequestText(payload: PermissionAskPayload): {
 
 /** A Work as the request names it; its punctuation is the locale's. */
 function workLabel(work: { handle: string | null; name: string }): string {
-  if (!work.handle) return t`No Work`;
+  if (!work.handle) return t`None`;
   const { name, handle } = work;
   return t`${name} (@${handle})`;
 }
