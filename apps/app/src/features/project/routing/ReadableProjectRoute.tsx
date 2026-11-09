@@ -1099,6 +1099,7 @@ function ReadableProjectDestination({
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
             reviewItemKey={address.itemKey}
+            reviewOwner={reviewOwner}
             reviewDocumentId={closingDocumentId ?? undefined}
             reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}

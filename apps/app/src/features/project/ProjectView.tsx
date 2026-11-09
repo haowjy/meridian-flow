@@ -205,6 +205,8 @@ export type ProjectViewProps = {
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewItemKey?: string;
+  /** Whose draft the address's item reviews (`addressReviewOwner`). */
+  reviewOwner?: string | null;
   /** The document that item names. */
   reviewDocumentId?: string;
   reviewChangeId?: string;
@@ -577,7 +579,7 @@ function HydratedReviewControllers({
     screen: props.activeScreen,
     dock,
     editor: {
-      workId: props.editorWorkId,
+      reviewOwner: props.reviewOwner ?? null,
       scheme: props.activeContextScheme,
       path: props.activeContextPath,
       documentId: props.reviewAddressDocumentId,

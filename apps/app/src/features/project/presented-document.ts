@@ -21,7 +21,8 @@ export function resolvePresentedDocument(input: {
   phone: boolean;
   screen: ScreenKey;
   editor: {
-    workId: string | null;
+    /** Whose draft the address reviews: a draft owner key (`addressReviewOwner`). */
+    reviewOwner: string | null;
     scheme: ProjectContextTreeScheme | null;
     path: string | null;
     documentId?: string | null;
@@ -40,8 +41,8 @@ export function resolvePresentedDocument(input: {
       path: editor.path,
       draftOnly: editor.draftOnly,
       review:
-        editor.workId && editor.itemKey
-          ? { ownerKey: editor.workId, itemKey: editor.itemKey, changeId: editor.changeId }
+        editor.reviewOwner && editor.itemKey
+          ? { ownerKey: editor.reviewOwner, itemKey: editor.itemKey, changeId: editor.changeId }
           : null,
     };
   }
