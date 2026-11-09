@@ -13,22 +13,52 @@ import {
   matchesTabInstance,
   type ProjectTabsSlice,
   type ReviewEntries,
+  type ReviewPin,
   reviewEntriesOf,
   reviewEntryOf,
+  selectedDocumentIdOf,
+  selectingDocument,
+  type TabState,
+  tabKey,
   withoutReviewEntry,
+  withTabState,
 } from "./editor-workspace-model";
 
-export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v1";
+export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v2";
+export const EDITOR_WORKSPACE_VERSION = 2;
+const EMPTY_PROJECT: ProjectTabsSlice = { tabs: [], selectedTabKey: null };
 export type EditorWorkspaceSnapshot = Readonly<{
-  version: 1;
+  version: 2;
   accountId: string;
   projects: Readonly<Record<string, ProjectTabsSlice>>;
 }>;
 
 export type EditorWorkspaceCommand =
-  | { kind: "open"; projectId: string; tab: ContextTab }
+  | {
+      kind: "open";
+      projectId: string;
+      tab: ContextTab;
+      /** Select the tab in the same commit. */
+      select?: true;
+      /** Fill the preview slot: a new tab is marked, any other tab loses the mark. A tab already open is left as it is. */
+      preview?: true;
+    }
   | { kind: "close"; projectId: string; tabInstanceId: string }
-  | { kind: "select"; projectId: string; workId: string; tabInstanceId: string | null }
+  | { kind: "select"; projectId: string; tabInstanceId: string | null }
+  | {
+      /** The writer's choices on one tab: its view, whether it is the preview, its review pin. `null` clears a field. */
+      kind: "set-tab-state";
+      projectId: string;
+      tabInstanceId: string;
+      patch: { view?: Partial<NonNullable<TabState["view"]>>; preview?: boolean; reviewPin?: ReviewPin | null };
+    }
+  | {
+      /** A scope switch or a settled review drops every pin of the project. */
+      kind: "clear-review-pins";
+      projectId: string;
+      workId?: string;
+      itemKey?: string;
+    }
   | {
       kind: "reconcile-resource";
       projectId: string;
@@ -50,11 +80,7 @@ export type EditorWorkspaceCommand =
       kind: "apply-availability";
       projectId: string;
       removals: readonly ContextTab[];
-      selections: readonly {
-        workId: string;
-        priorDocumentId: string | null;
-        nextDocumentId: string | null;
-      }[];
+      selection: { priorDocumentId: string | null; nextDocumentId: string | null } | null;
       updates: readonly { prior: ContextTab; next: ContextTab }[];
     }
   | {
@@ -101,6 +127,7 @@ export function parseContextTab(value: unknown): ContextTab | null {
     return null;
   if (tab.kind === "new") {
     if (typeof tab.resourceHandle !== "string" || tab.resourceHandle.length === 0) return null;
+    if (!validTabState(tab)) return null;
     const { workId: _priorWork, ...local } = tab;
     return local as ContextTab;
   }
@@ -126,6 +153,7 @@ export function parseContextTab(value: unknown): ContextTab | null {
     (isWorkScopedScheme(tab.scheme) && !tab.workId && !tab.rootThreadId)
   )
     return null;
+  if (!validTabState(tab)) return null;
   if (tab.kind === "tracked" && tab.editable === true) {
     const classification = classifyFiletype(typeof tab.filetype === "string" ? tab.filetype : null);
     if (
@@ -151,6 +179,40 @@ export function parseContextTab(value: unknown): ContextTab | null {
   return null;
 }
 
+const isString = (value: unknown): value is string => typeof value === "string";
+
+/** What a tab session written by this build holds; anything else means the record is not ours. */
+function validTabState(tab: Record<string, unknown>): boolean {
+  const { view, preview, reviewPin, reviews } = tab;
+  if (
+    view !== undefined &&
+    !(
+      isRecord(view) &&
+      (view.version === "draft" || view.version === "live") &&
+      typeof view.showChanges === "boolean"
+    )
+  )
+    return false;
+  if (preview !== undefined && preview !== true) return false;
+  if (
+    reviewPin !== undefined &&
+    !(
+      isRecord(reviewPin) &&
+      isString(reviewPin.workId) &&
+      isString(reviewPin.itemKey) &&
+      (reviewPin.changeId === undefined || isString(reviewPin.changeId))
+    )
+  )
+    return false;
+  if (reviews !== undefined) {
+    if (tab.kind !== "tracked" || !isRecord(reviews)) return false;
+    for (const entry of Object.values(reviews))
+      if (!isRecord(entry) || !isString(entry.itemKey) || !isString(entry.tabInstanceToken))
+        return false;
+  }
+  return true;
+}
+
 function withoutResourceOwnership(tab: ContextTab): ContextTab {
   if (tab.kind === "tracked") {
     const { resourceHandle: _resourceHandle, origin: _origin, ...rest } = tab;
@@ -165,26 +227,20 @@ function withoutResourceOwnership(tab: ContextTab): ContextTab {
 
 function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
   if (!isRecord(value)) return null;
-  if (!Array.isArray(value.tabs) || !isRecord(value.selectedTabIdByWork)) return null;
+  if (!Array.isArray(value.tabs)) return null;
+  if (value.selectedTabKey !== null && typeof value.selectedTabKey !== "string") return null;
   const tabs = value.tabs.map(parseContextTab);
   if (tabs.some((tab) => tab === null)) return null;
   const resourceIds = new Set(
     tabs.filter((tab) => tab && !isEditorContextTab(tab)).map((tab) => tab?.documentId),
   );
   const parsedTabs = (tabs as ContextTab[]).filter((tab) => !resourceIds.has(tab.documentId));
-  if (parsedTabs.some(isDraftOnly)) return null;
   const instanceIds = parsedTabs.map((tab) => tab.tabInstanceId as string);
   if (new Set(instanceIds).size !== instanceIds.length) return null;
-  const selections: Record<string, string> = {};
-  const byId = new Map(parsedTabs.map((tab) => [tab.documentId, tab]));
-  for (const [workId, documentId] of Object.entries(value.selectedTabIdByWork)) {
-    if (!workId || typeof documentId !== "string") return null;
-    if (resourceIds.has(documentId)) continue;
-    const tab = byId.get(documentId);
-    if (!tab || !isEditorContextTab(tab)) return null;
-    selections[workId] = documentId;
-  }
-  return { tabs: parsedTabs, selectedTabIdByWork: selections };
+  const previews = parsedTabs.filter((tab) => tab.preview).length;
+  if (previews > 1) return null;
+  const selected = parsedTabs.find((tab) => tabKey(tab) === value.selectedTabKey);
+  return { tabs: parsedTabs, selectedTabKey: selected ? tabKey(selected) : null };
 }
 
 function withoutOwner(tab: ContextTab): ContextTab {
@@ -234,27 +290,20 @@ function normalizeProject(workspace: ProjectTabsSlice): ProjectTabsSlice {
   const tabs = workspace.tabs.filter(isEditorContextTab);
   return {
     tabs,
-    selectedTabIdByWork: Object.fromEntries(
-      Object.entries(workspace.selectedTabIdByWork).filter(([, documentId]) => {
-        const tab = tabs.find((candidate) => candidate.documentId === documentId);
-        return tab && isEditorContextTab(tab);
-      }),
-    ),
+    selectedTabKey: tabs.some((tab) => tabKey(tab) === workspace.selectedTabKey)
+      ? workspace.selectedTabKey
+      : null,
   };
 }
 
-function rewriteSelections(
-  selections: Record<string, string>,
-  from: string | undefined,
-  to: string,
-): Record<string, string> {
-  if (!from || from === to) return selections;
-  return Object.fromEntries(
-    Object.entries(selections).map(([workId, documentId]) => [
-      workId,
-      documentId === from ? to : documentId,
-    ]),
-  );
+/** The tab to select once `removed` is gone: it keeps the selection unless it was the selected one. */
+function selectionAfterRemoval(
+  workspace: ProjectTabsSlice,
+  removed: readonly ContextTab[],
+): string | null {
+  return removed.some((tab) => tabKey(tab) === workspace.selectedTabKey)
+    ? null
+    : workspace.selectedTabKey;
 }
 
 function canonicalizeTabs(tabs: readonly ContextTab[]): ContextTab[] {
@@ -283,23 +332,16 @@ function outcome(
 ): EditorWorkspaceCommandResult {
   return { kind, snapshot };
 }
-function committed(
-  current: EditorWorkspaceSnapshot,
-  projects: Readonly<Record<string, ProjectTabsSlice>>,
-): EditorWorkspaceCommandResult {
-  return outcome("committed", {
-    ...current,
-    projects: Object.fromEntries(
-      Object.entries(projects).map(([id, workspace]) => [id, normalizeProject(workspace)]),
-    ),
-  });
-}
+/** Only the changed project is rebuilt, so every other project's subscribers keep their slice. */
 function replaceProject(
   current: EditorWorkspaceSnapshot,
   projectId: string,
   workspace: ProjectTabsSlice,
 ): EditorWorkspaceCommandResult {
-  return committed(current, { ...current.projects, [projectId]: workspace });
+  return outcome("committed", {
+    ...current,
+    projects: { ...current.projects, [projectId]: normalizeProject(workspace) },
+  });
 }
 
 /** Total reducer for every durable workspace writer class. */
@@ -308,9 +350,9 @@ export function reduceEditorWorkspace(
   command: EditorWorkspaceCommand,
 ): EditorWorkspaceCommandResult {
   if (command.kind === "reconcile-bootstrap") {
-    const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
+    const workspace = current.projects[command.projectId] ?? EMPTY_PROJECT;
     const tabs = [...workspace.tabs];
-    let selections = { ...workspace.selectedTabIdByWork };
+    let selectedTabKey = workspace.selectedTabKey;
     const consumedMembers = new Set<string>();
     for (const change of command.changes) {
       const exactIndex = tabs.findIndex((tab) => sameTabIdentity(tab, change.prior));
@@ -328,15 +370,16 @@ export function reduceEditorWorkspace(
       consumedMembers.add(live.tabInstanceId as string);
       if (!change.next || isDraftOnly(change.next)) {
         tabs.splice(index, 1);
-        selections = Object.fromEntries(
-          Object.entries(selections).filter(([, documentId]) => documentId !== live.documentId),
-        );
+        if (selectedTabKey === tabKey(live)) selectedTabKey = null;
         continue;
       }
-      const incoming = durableContextTab({
-        ...change.next,
-        tabInstanceId: live.tabInstanceId,
-      } as ContextTab);
+      const incoming = withTabState(
+        durableContextTab({
+          ...change.next,
+          tabInstanceId: live.tabInstanceId,
+        } as ContextTab),
+        live,
+      );
       const conflictIndex = tabs.findIndex(
         (tab, candidateIndex) =>
           candidateIndex !== index &&
@@ -346,48 +389,50 @@ export function reduceEditorWorkspace(
       if (conflictIndex >= 0) {
         const winner = tabs[conflictIndex] as ContextTab;
         tabs.splice(index, 1);
-        selections = rewriteSelections(selections, live.documentId, winner.documentId);
+        if (selectedTabKey === tabKey(live)) selectedTabKey = tabKey(winner);
         continue;
       }
       tabs[index] = incoming;
-      selections = rewriteSelections(selections, live.documentId, incoming.documentId);
     }
-    const next = normalizeProject({ tabs, selectedTabIdByWork: selections });
+    const next = normalizeProject({ tabs, selectedTabKey });
     if (JSON.stringify(next) === JSON.stringify(workspace))
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, next);
   }
   if (command.kind === "apply-availability") {
-    const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
+    const workspace = current.projects[command.projectId] ?? EMPTY_PROJECT;
     const tabs = workspace.tabs.filter(
       (tab) => !command.removals.some((prior) => sameTabIdentity(tab, prior)),
     );
-    let selections = { ...workspace.selectedTabIdByWork };
     for (const update of command.updates) {
       const index = tabs.findIndex((tab) => sameTabIdentity(tab, update.prior));
       if (index < 0) continue;
-      tabs[index] = durableContextTab({
-        ...update.next,
-        tabInstanceId: tabs[index]?.tabInstanceId,
-      } as ContextTab);
-      selections = rewriteSelections(selections, update.prior.documentId, update.next.documentId);
+      const prior = tabs[index] as ContextTab;
+      tabs[index] = withTabState(
+        durableContextTab({
+          ...update.next,
+          tabInstanceId: prior.tabInstanceId,
+        } as ContextTab),
+        prior,
+      );
     }
-    for (const selection of command.selections) {
-      if ((selections[selection.workId] ?? null) !== selection.priorDocumentId) continue;
-      if (selection.nextDocumentId === null) delete selections[selection.workId];
-      else selections[selection.workId] = selection.nextDocumentId;
-    }
-    const next = normalizeProject({
+    let next = normalizeProject({
       tabs: canonicalizeTabs(tabs),
-      selectedTabIdByWork: selections,
+      selectedTabKey: workspace.selectedTabKey,
     });
+    // The writer's selection follows its tab; a planned selection applies only if nothing moved it since.
+    if (
+      command.selection &&
+      selectedDocumentIdOf(workspace) === command.selection.priorDocumentId
+    )
+      next = selectingDocument(next, command.selection.nextDocumentId);
     if (JSON.stringify(next) === JSON.stringify(workspace))
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, next);
   }
   if (command.kind === "settle-draft") {
     // The draft's document is live now: the same tab drops its review metadata in place.
-    const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
+    const workspace = current.projects[command.projectId] ?? EMPTY_PROJECT;
     const index = workspace.tabs.findIndex((tab) => matchesTabInstance(tab, command.tab));
     const prior = workspace.tabs[index];
     if (!prior) return outcome("stale", current);
@@ -475,7 +520,7 @@ export function reduceEditorWorkspace(
     });
   }
   if (command.kind === "open") {
-    const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
+    const workspace = current.projects[command.projectId] ?? EMPTY_PROJECT;
     // A draft-only tab keeps its review metadata while it is the document's one tab.
     const incoming = isDraftOnly(command.tab)
       ? ({
