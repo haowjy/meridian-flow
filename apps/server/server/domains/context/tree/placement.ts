@@ -13,7 +13,7 @@
  * source involved and the document locks of every target document.
  */
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
-import { firstFreeName } from "@meridian/contracts/protocol";
+import { type ContextSiblingPosition, firstFreeName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -221,18 +221,23 @@ export async function placeLive(
   db: Database,
   target: PlaceTarget,
   land: (parentId: FolderId | null, at: LiveLocation) => Promise<void>,
+  /** Where among the parent's children the node arrives; a sibling that is gone falls back to the arrival rule. */
+  position?: ContextSiblingPosition,
 ): Promise<Result<{ ancestors: readonly NodeRef[]; at: LiveLocation }, PlaceFault>> {
   const prepared = await prepareLivePlacement(db, target);
   if (!prepared.ok) return prepared;
   const { ancestors, parentId, at, filename } = prepared.value;
   await land(parentId, at);
   await normalizeNames(db, [target.node]);
-  await placeLiveSibling(db, {
+  const sibling = {
     node: target.node,
     sourceId: target.at.contextSourceId,
     parentId,
-    arrived: true,
-  });
+  };
+  const placed = position
+    ? await placeLiveSibling(db, { ...sibling, position, arrived: false })
+    : "stale-anchor";
+  if (placed === "stale-anchor") await placeLiveSibling(db, { ...sibling, arrived: true });
   await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
   return Ok({ ancestors, at });
 }

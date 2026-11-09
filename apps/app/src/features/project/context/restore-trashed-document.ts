@@ -43,5 +43,5 @@ export async function restoreTrashedDocument(
     await queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentTrash(projectId) });
     return { kind: "superseded" };
   }
-  return { kind: result.outcome };
+  return { kind: result.outcome === "destination_unavailable" ? "refused" : result.outcome };
 }

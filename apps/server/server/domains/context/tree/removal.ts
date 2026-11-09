@@ -10,7 +10,7 @@ import {
   serializeRemovalIdentity,
   type WorkId,
 } from "@meridian/contracts";
-import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
+import type { ContextSiblingPosition, DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   branchTreeChanges,
@@ -259,6 +259,15 @@ export async function restoreDocument(
     documentId: DocumentId;
     removal?: RemovalIdentity;
     at?: PlaceTarget["at"];
+    /**
+     * A writer's destination for the document under its own name: the parent, and where among its
+     * children it lands (omitted, the parent's arrival rule). The caller holds the parent's namespace.
+     */
+    into?: {
+      contextSourceId: ContextSourceId;
+      parentFolderId: FolderId | null;
+      position?: ContextSiblingPosition;
+    };
     /** Restores an undone create, including its discarded hidden identity. */
     created?: boolean;
   },
@@ -342,8 +351,10 @@ export async function restoreDocument(
         {
           node,
           at: input.at ?? {
-            contextSourceId: row.sourceId as ContextSourceId,
-            parentFolderId: row.folderId as FolderId | null,
+            contextSourceId: (input.into?.contextSourceId ?? row.sourceId) as ContextSourceId,
+            parentFolderId: (input.into
+              ? input.into.parentFolderId
+              : row.folderId) as FolderId | null,
             name: row.name,
             extension: row.extension,
           },
@@ -366,6 +377,7 @@ export async function restoreDocument(
             .where(eq(documents.id, input.documentId));
           await bumpLocationVersions(db, { documentIds: [input.documentId] });
         },
+        input.into?.position,
       );
       if (!landed.ok) {
         // A non-hidden document's chain holds no hidden folder, so only a blocked ancestor faults; a
@@ -389,6 +401,7 @@ export async function restoreDocument(
         ...new Set([
           row.sourceId as ContextSourceId,
           ...(input.at ? [input.at.contextSourceId] : []),
+          ...(input.into ? [input.into.contextSourceId] : []),
         ]),
       ],
       placed.placed.map((ref) => ref.id),
