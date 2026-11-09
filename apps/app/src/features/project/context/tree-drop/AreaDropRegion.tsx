@@ -15,6 +15,7 @@ export function AreaDropRegion({
   reveal,
   header,
   className,
+  fill = false,
   children,
 }: {
   scheme: ProjectContextTreeScheme;
@@ -23,6 +24,8 @@ export function AreaDropRegion({
   reveal: () => void;
   header: (dropProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
   className?: string;
+  /** The empty space below the rows takes drops at the root too, so a short list is still a target. */
+  fill?: boolean;
   children: React.ReactNode;
 }) {
   const target = useMemo<TreeDropTarget>(
@@ -34,6 +37,7 @@ export function AreaDropRegion({
     <DropRegion state={drop.dropState} className={className}>
       {header(drop.dropProps)}
       {children}
+      {fill ? <div {...drop.dropProps} className="min-h-12 flex-1" /> : null}
     </DropRegion>
   );
 }

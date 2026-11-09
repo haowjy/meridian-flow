@@ -300,7 +300,12 @@ selection of one), not the open row.
 ### Dropping across systems, and dropping references
 
 In the Write sidebar the sources sit behind icon tabs (`shell/sidebar/SourcesBody.tsx`).
-A drag that rests on a tab for 600 ms opens it, as on a closed folder. Trash is a tab
+The tabs render inside the tree's drop scope, which spans every project source and Your
+files (`ContextTreePanel`'s `tabs` slot). Dropping on a tree source's tab lands at that
+source's root ("Move to Knowledge Base"), and so does the empty space below an open
+source's last row; the usual crossing-system rules apply, so Your files still offers
+Copy only. A drag that rests on a tab for 600 ms opens it, as on a closed folder, for a
+drop into a folder inside. Trash is a tab
 too, not a scheme: rows dropped on its tab or its list are deleted at once, with no
 menu, through `useDeleteContextEntry().deleteEntries`.
 
