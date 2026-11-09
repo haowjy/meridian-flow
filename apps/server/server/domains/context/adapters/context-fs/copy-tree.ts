@@ -10,9 +10,8 @@
  * destination parent once and holds nothing; the insert re-reads the parent under the lock
  * and, if the roots would now take other names, answers `replan` instead of inserting.
  *
- * A copied folder is inserted before its children and keeps its source's own ordering policy,
- * so inserting the children in source order reproduces the source's visible order in a manual
- * folder and leaves name order alone in a default one. Two passes, because a link may cross
+ * A copied folder is inserted before its children, and the children take ranks in source
+ * order, so the copy reproduces the source's visible order. Two passes, because a link may cross
  * roots: the plan mints every identity first (a selected root takes the device's id when it
  * sent one), and the caller binds each document against the whole old→new map before anything
  * is written.

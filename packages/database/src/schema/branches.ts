@@ -117,7 +117,7 @@ export const branchTreeChanges = pgTable(
     movedRootSourceId: uuid("moved_root_source_id").$type<ContextSourceId>(),
     movedName: text("moved_name"),
     movedExtension: text("moved_extension"),
-    /** Branch-local rank override; null while the effective parent remains in default order. */
+    /** Branch-local rank override; null while the branch has not moved the row's rank. */
     movedRank: text("moved_rank"),
     /** `documents.location_version` when the branch first moved or deleted it. */
     baseVersion: bigint("base_version", { mode: "bigint" }),
