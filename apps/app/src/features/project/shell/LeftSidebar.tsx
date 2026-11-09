@@ -21,6 +21,7 @@ import { useOpenProjectDocument } from "../context/open-project-document";
 import { modeOf } from "../layout/placement";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useScreenCommands } from "../routing/ProjectNavigationContext";
+import { useWorkScope } from "../use-work-scope";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
@@ -29,7 +30,6 @@ import { ChatsBody } from "./sidebar/ChatsBody";
 import { ModeSwitch } from "./sidebar/ModeSwitch";
 import { MODES } from "./sidebar/modes";
 import { SourcesBody } from "./sidebar/SourcesBody";
-import { useWorkScope } from "./sidebar/use-work-scope-stub";
 import { WorkScopePicker } from "./sidebar/WorkScopePicker";
 import type { TitleEditHandle } from "./TitleEditSlot";
 
@@ -66,7 +66,7 @@ export function LeftSidebar({
   const settings = useSettingsNavigation();
   const openDocument = useOpenProjectDocument(projectId);
   const { noWork } = useWorks(projectId);
-  const scope = useWorkScope(projectId, editorWorkId ?? noWork?.id ?? null);
+  const scope = useWorkScope(projectId);
   const mode = modeOf(activeScreen);
 
   const handleSelectFile = (
