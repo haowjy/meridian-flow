@@ -1,0 +1,52 @@
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+export type SourceKey = "manuscript" | "kb" | "scratch" | "user" | "chats" | "trash" | "unfiled";
+
+/** Every source the strip can show, in strip order. */
+export const ALL_SOURCES: readonly SourceKey[] = [
+  "manuscript",
+  "kb",
+  "scratch",
+  "user",
+  "chats",
+  "trash",
+  "unfiled",
+];
+
+const DEFAULT_SHOWN: readonly SourceKey[] = [
+  "manuscript",
+  "kb",
+  "scratch",
+  "user",
+  "chats",
+  "trash",
+];
+
+type SidebarTabs = {
+  shown: readonly SourceKey[];
+  toggle: (source: SourceKey) => void;
+};
+
+/** Which sources the sidebar's strip shows: the writer's choice, kept on this device. */
+export const useSidebarTabs = create<SidebarTabs>()(
+  persist(
+    (set) => ({
+      shown: DEFAULT_SHOWN,
+      toggle: (source) =>
+        set((state) => {
+          const shown = state.shown.includes(source)
+            ? state.shown.filter((key) => key !== source)
+            : [...state.shown, source];
+          // The strip keeps its order whatever order tabs were added in.
+          return { shown: ALL_SOURCES.filter((key) => shown.includes(key)) };
+        }),
+    }),
+    {
+      name: "meridian.sidebar-tabs.v1",
+      partialize: (state) => ({ shown: state.shown }),
+      // Rehydrated after mount: the server renders the default strip.
+      skipHydration: true,
+    },
+  ),
+);
