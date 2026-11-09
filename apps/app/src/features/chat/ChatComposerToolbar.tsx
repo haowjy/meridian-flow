@@ -1,8 +1,10 @@
 /** App-specific composition of Agent, write-mode, and Work toolbar descriptors. */
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
+import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { useWriteModeToolbarControl } from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
+import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { useComposerWorkToolbarControl } from "./ComposerWorkControl";
 
 export function ChatComposerToolbar({
@@ -22,9 +24,11 @@ export function ChatComposerToolbar({
   onWriteModeChange(mode: AiWriteMode): void;
 }) {
   const agent = useComposerAgentToolbarControl({ mode: "readonly", name: agentName });
+  const { threads } = useProjectThreads(projectId);
+  const rootThreadId = threads?.find((thread) => thread.id === threadId)?.rootThreadId ?? null;
   const writeModeControl = useWriteModeToolbarControl({
     projectId,
-    workId: work.id,
+    ownerKey: chatOwnerKey(work, rootThreadId),
     value: writeMode,
     onChoose: onWriteModeChange,
   });

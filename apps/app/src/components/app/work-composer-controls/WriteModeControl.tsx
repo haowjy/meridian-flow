@@ -22,16 +22,17 @@ import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 
 export function useWriteModeToolbarControl({
   projectId,
-  workId,
+  ownerKey,
   value,
   onChoose,
 }: {
   projectId: string;
-  workId: string;
+  /** The draft owner key whose waiting documents the Draft option counts; "" until known. */
+  ownerKey: string;
   value: AiWriteMode;
   onChoose(mode: AiWriteMode): void;
 }): ComposerToolbarControl {
-  const waiting = useOwnerDrafts(projectId, workId).files?.length ?? 0;
+  const waiting = useOwnerDrafts(projectId, ownerKey).files?.length ?? 0;
   const draftRef = useRef<HTMLButtonElement | null>(null);
   const directRef = useRef<HTMLButtonElement | null>(null);
   const draftLabel = waiting > 0 ? t`Drafts (${waiting})` : t`Draft`;
