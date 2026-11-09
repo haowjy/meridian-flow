@@ -219,8 +219,13 @@ msgstr ""
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "{0, plural, other {# Works have drafts for this}}"
-msgstr "{0, plural, other {# 个工作中的草稿修改了此文档}}"
+msgid "{0, plural, other {# sets of drafts for this}}"
+msgstr ""
+
+#. placeholder {0}: others.length
+#: src/features/editor/DocumentDraftHint.tsx
+#~ msgid "{0, plural, other {# Works have drafts for this}}"
+#~ msgstr "{0, plural, other {# 个工作中的草稿修改了此文档}}"
 
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -854,13 +859,13 @@ msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr ""
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A Work has drafts for this"
-msgstr "一个工作中有此文档的草稿"
+#~ msgid "A Work has drafts for this"
+#~ msgstr "一个工作中有此文档的草稿"
 
 #. placeholder {0}: only.label
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A Work has drafts for this ({0})"
-msgstr "一个工作中有此文档的草稿（{0}）"
+#~ msgid "A Work has drafts for this ({0})"
+#~ msgstr "一个工作中有此文档的草稿（{0}）"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "a writer"
@@ -2820,6 +2825,15 @@ msgstr ""
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Drafts ({waiting})"
 msgstr "草稿（{waiting}）"
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Drafts for this"
+msgstr ""
+
+#. placeholder {0}: only.label
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Drafts for this ({0})"
+msgstr ""
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 #~ msgid "Drop image to insert it"
@@ -6346,8 +6360,12 @@ msgid "Unknown component: {kindLabel}"
 msgstr ""
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Unnamed Work"
-msgstr "未命名工作"
+msgid "Unnamed draft"
+msgstr ""
+
+#: src/features/editor/DocumentDraftHint.tsx
+#~ msgid "Unnamed Work"
+#~ msgstr "未命名工作"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
