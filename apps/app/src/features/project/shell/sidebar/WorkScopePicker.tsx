@@ -43,7 +43,7 @@ export function WorkScopePicker({
   const active = works?.filter((work) => work.archivedAt === null) ?? [];
   const archived = works?.filter((work) => work.archivedAt !== null) ?? [];
   const scoped = works?.find((work) => work.id === workId) ?? null;
-  const noWorkScoped = scoped === null && (workId === null || workId === noWork?.id);
+  const noWorkScoped = workId !== null && workId === noWork?.id;
   const pending = scoped?.pendingDocumentCount ?? 0;
 
   return (
@@ -54,16 +54,16 @@ export function WorkScopePicker({
           className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md border border-border-subtle bg-background/40 px-2 text-left text-[13px] hover:bg-background/70"
         >
           <Layers className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
-          {noWorkScoped ? (
-            <span className="min-w-0 flex-1 truncate text-ink-muted">
-              <Trans>No Work</Trans>
-            </span>
-          ) : (
+          {scoped ? (
             <span className="min-w-0 flex-1 truncate">
               <span className="text-ink-muted">
                 <Trans>Work</Trans>
               </span>{" "}
-              <span className="font-medium">{scoped?.name ?? t`Loading…`}</span>
+              <span className="font-medium">{scoped.name}</span>
+            </span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-ink-muted">
+              {noWorkScoped ? <Trans>No Work</Trans> : <Trans>Loading Works…</Trans>}
             </span>
           )}
           {pending > 0 ? (
