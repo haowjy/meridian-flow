@@ -67,7 +67,7 @@ export function RailPaneHeader({
         <h2
           aria-label={ariaLabel}
           title={title}
-          className="flex h-full min-w-0 flex-1 items-center pr-1 pl-1"
+          className="flex h-full min-w-0 flex-1 items-center pr-1"
         >
           <HeaderName icon={Icon} label={label} />
         </h2>

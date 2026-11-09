@@ -2,11 +2,11 @@
 import { cn } from "@/lib/utils";
 
 export const contextTreeRowClassName =
-  "h-8 [@media(hover:none)]:h-11 [@media(pointer:coarse)]:h-11";
+  "h-7 [@media(hover:none)]:h-11 [@media(pointer:coarse)]:h-11";
 
 /** A browsing row may grow past its resting height when it carries a second line. */
 export const contextTreeRowGrowClassName =
-  "min-h-8 [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11";
+  "min-h-7 [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11";
 
 // Adjacent selected rows join into one block, rounded only at the run's ends
 // (`data-selection-run`, set by the list's selection).
