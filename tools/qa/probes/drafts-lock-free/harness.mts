@@ -93,7 +93,7 @@ export async function openHarness(
   };
   await raw`insert into users(id,external_id,email) values (${ids.user},${`probe-${ids.user}`},${`probe-${ids.user}@example.invalid`})`;
   await raw`insert into projects(id,user_id,name,slug) values (${ids.project},${ids.user},'probe','probe')`;
-  await raw`insert into context_sources(id,project_id,name,slug,scope,is_primary) values (${ids.source},${ids.project},'probe','probe','project',true)`;
+  await raw`insert into context_sources(id,project_id,name,slug,scope) values (${ids.source},${ids.project},'probe','probe','project')`;
 
   const pending = createDrizzleWorkBranchPendingStore(db);
   const projection = createWorkProjectionMutation({

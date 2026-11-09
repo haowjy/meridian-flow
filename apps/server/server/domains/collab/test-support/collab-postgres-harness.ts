@@ -197,7 +197,6 @@ export async function seedDatabase(
     name: "Manuscript",
     slug: "manuscript",
     scope: "project",
-    isPrimary: true,
   });
   await db.insert(schema.documents).values([
     {
@@ -1471,7 +1470,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       }),
     liveMarkdown: (documentId: DocumentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
-    pushRows: () => db.select().from(schema.pushLineage),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,
     activePushJournalCount: async () =>
       (
