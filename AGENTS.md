@@ -114,16 +114,15 @@ Commit often. Worktrees, commits, pushes, PRs and issues need no permission.
 Documentation-only and comment-only changes need no PR: push them straight to `main`.
 A wrong comment or doc gets fixed as soon as you see it, without asking.
 
-A human merges into `main` or `staging`; `CLAUDE.md` grants Claude Opus more. A big feature gets one integration
-branch: each finished piece bases on it and merges into it, instead of PRs stacked on
-each other, and the piece's worktree, stack and processes go as soon as it's in. One PR
-carries the integration branch into `main`.
+A human merges into `main` or `staging`; `CLAUDE.md` grants Claude Opus more. A feature built
+in several pieces gets one integration branch: each finished piece bases on it and merges into
+it, instead of PRs stacked on each other, and the piece's worktree, stack and processes go as
+soon as it's in. One PR carries the integration branch into `main`.
 
-A fix restores intended behavior; changing what writers are meant to see is a feature.
-A feature waits for the owner. Nothing else needs his approval to start or merge. Before a
-merge, CI is green, the regressions the change could cause are tested, and the PR body is reread
-against the final diff, with evidence from the commit being merged. Whether a change also gets
-an independent review is your call.
+Before a merge, CI is green, the regressions the change could cause are tested, and the PR body
+is reread against the final diff, with evidence from the commit being merged. Whether a change
+also gets an independent review is your call. When the owner has been steering the work as it's
+built, confirm the result with him and let him review it before it merges.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with
