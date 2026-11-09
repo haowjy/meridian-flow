@@ -216,8 +216,7 @@ its row's link-update note and returns which rows moved and which the replica re
 `arrivals` in `execute-move.ts`, over `context-entry-name.ts`. A positional
 destination makes a same-parent placement a reorder rather than "already there";
 the subject is removed from name occupancy, so keeping its name cannot collide
-with itself. Cross-parent placement without a position appends when the server
-says the destination parent is manual.
+with itself. Cross-parent placement without a position appends.
 
 The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
 per real catalog. Earlier notes is a navigation disclosure outside the second
