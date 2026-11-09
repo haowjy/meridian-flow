@@ -67,14 +67,12 @@ local-origin documents retaining their lineage; all other durable deletions requ
 
 ## Visible Editor ownership
 
-`DesktopProjectController` owns the displayed Editor value for `DesktopProject`.
-It selects the retained same-Work pane and boundary visibility once, then resolves
-its tab identity through `resolveVisibleEditorTab` (local pointer, persisted tab
-selection, and removal binding) and applies the current resource projection.
-The pane consumes that resolved result; the rail captures the same visible tab at
-the click. A retained pane carries itself; hidden error, unavailable, recovery and
-chooser presentations carry nothing. No route-shaped Editor props travel back to
-the route, and no separate active-document pointer is stored.
+The tab store owns the open document: one `selectedTabKey` per project, shown by the Editor
+pane on the context screen and by the dock on the wide Chat screen. An address arriving is an
+open/select command (`selectTab` from the route's layout effect); the route no longer decides
+what is shown. `DesktopProjectController` resolves the pane's tab with `resolveRouteOwner`: the
+selected tab, or nothing when the locator names no owning tab. No separate active-document
+pointer is stored.
 
 ## Architecture
 

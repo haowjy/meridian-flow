@@ -1,6 +1,6 @@
 # features/project/dock — dock document contracts
 
-This reference covers the dock's document slot, claim-based opening, layout
+This reference covers the dock's document slot, tab-store opening, tab
 persistence, paint continuity, and review ownership. Read [`AGENTS.md`](../AGENTS.md)
 first; document session and editor behavior remain in the context/editor
 features.
@@ -17,12 +17,11 @@ its material; document shells stay transparent. `DockDocumentIdentity` owns
 one navigable path/header and receives `identity: null` in the body to avoid a
 second filename. Rename/move belong to file lists.
 
-A dock open claims the existing revision. The latest accepted claim wins;
-Close, project/Work fences, and later opens supersede earlier attempts. Peeks
-are not URL destinations, create no tabs, and return to the native occupant.
-Only `DesktopProjectController` hands a visible document from the rail to the
-Editor working set, installing the Editor tab before consuming the panel.
-Browser history and phone navigation do not hand off.
+The dock shows the project's selected tab (`useSelectedOpenDocument`); it has no document
+store. A chat door opens or selects a tab through the tab store (`use-dock-placement.ts`
+`commit`), peeking as the one preview tab unless the writer keeps it, then reveals the dock.
+"Open in Editor" shows Write; "Close" closes the tab. Browser history and phone navigation do
+not move documents between surfaces.
 
 ## Where documents open
 
@@ -38,28 +37,15 @@ a phone. A removed or terminal document closes the slot; a rename updates its
 header. A Chat-screen note stays open across chat switches and keeps browsing
 its own owner's Scratch.
 
-The Editor's warm tab and the dock can bind one session at once; closing either
-leaves the other bound, and the dock passes its visibility as the host's
-`active`, so the two views are never both active.
+## Review state
 
-The dock's review launch adapter keeps the chip, Next draft and auto-advance
-inside the dock while the draft dock and Work list still launch into the
-Editor. These destinations are adapter policy, not room or command ownership.
-
-## Local layout
-
-The account-stamped dock document layout is browser-tab session state. Restored
-candidates remain hidden until hydration and identity validation; restore never
-claims a revision or overrides an explicit writer pick. Invalid or terminal
-identities cannot flash on screen. Project/Work changes fence old claims.
-
-The document review address belongs to the occupant and is included in its
-layout identity. The presented review is shared through `useActiveReviewBinding`;
-draft-only settlement and address writes do not bump the document open revision.
-A launch carries `ReviewFocus`: a group id with its immutable projection frame.
-`FocusOpenedReview` waits for review paint and resolves only within that same
-projection. A stale frame or a persisted bare id opens without that selection;
-no server preview or operation-id lookup restores it.
+A tab carries its own `view` (Live/Draft, Show changes), `preview` flag and optional `reviewPin`,
+persisted in tab session v2 with draft-only tabs. The review controller follows the selected tab
+(`ReviewAddressOwner`): it enters, keeps or leaves the review the tab names, and only the
+focused change flows back into the pin. A launch carries `ReviewFocus`: a group id with its
+immutable projection frame. `FocusOpenedReview` waits for review paint and resolves only within
+that same projection. A stale frame or a persisted bare id opens without that selection.
+Launchers live in `../review-launch.tsx`.
 
 ## Review and paint
 
