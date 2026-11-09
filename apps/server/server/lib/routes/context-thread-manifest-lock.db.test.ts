@@ -160,7 +160,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Manuscript",
         slug: "manuscript",
         scope: "project",
-        isPrimary: true,
       });
       await db.insert(schema.works).values({
         id: NO_WORK_ID,

@@ -67,7 +67,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "Manuscript",
           slug: "manuscript",
           scope: "project",
-          isPrimary: true,
         },
         { id: SCRATCH_ID, workId: WORK_ID, name: "Scratch", slug: "scratch", scope: "work" },
       ]);

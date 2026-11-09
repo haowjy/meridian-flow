@@ -87,7 +87,6 @@ export function createWorkBranchFixture(db: Database) {
       name: "Manuscript",
       slug: "manuscript",
       scope: "project",
-      isPrimary: true,
     });
     await db.insert(documents).values({
       id: DOC_ID,
