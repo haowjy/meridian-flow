@@ -49,10 +49,10 @@ export function WorkScopePicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {/* A sidebar row like the rest: no box, the pressed fill while its menu is open. */}
+        {/* The Work in scope is state, not a link: it rests on the selected fill, like the selected tab. */}
         <button
           type="button"
-          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] hover:bg-sidebar-accent/50 data-[state=open]:bg-sidebar-accent"
+          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md bg-sidebar-accent/60 px-2 text-left text-[13px] hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent"
         >
           {scoped || noWorkScoped ? (
             <WorkIdentity
