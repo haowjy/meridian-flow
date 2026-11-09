@@ -109,6 +109,8 @@ export function startDraftDiscardSession(input: {
     return { kind: "done" };
   };
   if (editor) {
+    // A new command replaces what the last one left on the draft, as the dock's does below.
+    input.setState({ failure: null });
     const outcome = write();
     return { notice: { kind: "discarded", end() {} }, outcome: Promise.resolve(outcome) };
   }

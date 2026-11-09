@@ -1,5 +1,5 @@
 /** Work-scoped authority over the account command owner; notices belong to the surface that made them. */
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { parseDraftOwnerKey, type ThreadDraftListItem } from "@meridian/contracts/branches";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { documentBasename } from "@/client/query/work-branch-files";
 import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -55,6 +56,14 @@ export function useWorkBranchCommands({
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
   const locked = !ownerKey || !work || isWorkArchived(work);
+  // A lineage with no live chat is frozen: its draft rooms drop the writer's text, so a whole
+  // Discard goes to the server, which allows it.
+  const { threads } = useProjectThreads(projectId);
+  const lineage = parseDraftOwnerKey(ownerKey);
+  const frozen =
+    lineage?.kind === "lineage" &&
+    threads !== null &&
+    !threads.some((thread) => thread.rootThreadId === lineage.id);
   const [notice, setNotice] = useState<SurfaceNotice | null>(null);
   const heldNotice = useRef<SurfaceNotice | null>(null);
   const endNotice = () => {
@@ -223,9 +232,9 @@ export function useWorkBranchCommands({
       if (resetNotice) endNotice();
       if (locked) return blocked();
       const item = row(draft);
-      if (item?.isNew && target.kind === "draft") {
+      if (item && (item.isNew || frozen) && target.kind === "draft") {
         const removed: DiscardNotice = { kind: "removed", end() {} };
-        const outcome = owner.removeCreated(ref(draft), item).then((answer) => {
+        const outcome = owner.discardOnServer(ref(draft), item).then((answer) => {
           refresh([draft.documentId]);
           if (answer.kind !== "done") {
             if (heldNotice.current === removed) endNotice();
@@ -365,7 +374,18 @@ export function useWorkBranchCommands({
         });
       },
     };
-  }, [owner, locked, projectId, ownerKey, threadId, surface, editorHistory, queryClient, notice]);
+  }, [
+    owner,
+    locked,
+    frozen,
+    projectId,
+    ownerKey,
+    threadId,
+    surface,
+    editorHistory,
+    queryClient,
+    notice,
+  ]);
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);
