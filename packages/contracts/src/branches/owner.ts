@@ -23,6 +23,12 @@ export function parseDraftOwnerKey(key: string): { kind: "work" | "lineage"; id:
   return match ? { kind: match[1] as "work" | "lineage", id: match[2] as string } : null;
 }
 
+/** The Work an owner key names; null for a lineage, which has no Work, or a non-key. */
+export function workIdOfDraftOwnerKey(key: string): string | null {
+  const parsed = parseDraftOwnerKey(key);
+  return parsed?.kind === "work" ? parsed.id : null;
+}
+
 /** The owner a key names inside `projectId`; null when the key is not an owner key. */
 export function draftOwnerFromKey(key: string, projectId: ProjectId): DraftOwner | null {
   const parsed = parseDraftOwnerKey(key);

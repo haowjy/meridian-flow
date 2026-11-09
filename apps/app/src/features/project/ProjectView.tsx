@@ -13,7 +13,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { parseDraftOwnerKey } from "@meridian/contracts/branches";
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
@@ -597,10 +597,7 @@ function HydratedReviewControllers({
     presented?.review?.ownerKey ??
     workOwnerKey(props.editorWorkId ? { id: props.editorWorkId } : null);
   // A lineage's drafts carry no Work: its review reads the Editor's own Work for archive state.
-  const reviewWorkId =
-    parseDraftOwnerKey(reviewOwner)?.kind === "work"
-      ? parseDraftOwnerKey(reviewOwner)?.id
-      : props.editorWorkId;
+  const reviewWorkId = workIdOfDraftOwnerKey(reviewOwner) ?? props.editorWorkId;
   const reviewWork =
     reviewWorkId === props.editorWork?.id
       ? props.editorWork
